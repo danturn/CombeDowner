@@ -4,15 +4,20 @@
 // whether the key is folded, are kept in this browser's localStorage (cd-mapoff, cd-mapkey), the same
 // way the Settings page keeps its options, so it's the same next time on this computer.
 //
-// With the mouse captured there's no pointer, so the big map's crosshair works the key too: the row
-// under it lights up, and a click switches it (game.ts asks clickAt before putting a marker down).
+// The big map lets the mouse go, so the key's rows are clicked like any others. With a controller
+// there's no pointer, so the map's cursor works the key too: the row under it lights up, and a press
+// switches it (game.ts asks clickAt before putting a marker down). Some layers start off (DEFAULT_OFF):
+// each is switched off once, the first time this browser sees it, and then it's the player's choice.
 //
 // Who decides what: all your own. Nothing here goes over the network.
-import { arrow, bendyIcon, cableIcon, challengeIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+import { PLAYER_COLOURS } from "./markers";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
 
-const OFF_KEY = "cd-mapoff", FOLD_KEY = "cd-mapkey";
+const OFF_KEY = "cd-mapoff", FOLD_KEY = "cd-mapkey", DEFAULTS_KEY = "cd-mapdefaults";
+/** Off until switched on: what's lying about in the street is better found in the street than on a map. */
+const DEFAULT_OFF = ["pickups"];
 const SIZE = 22;   // an icon's size, CSS pixels
 
 type Draw = (g: CanvasRenderingContext2D, s: number) => void;
@@ -40,6 +45,9 @@ function sections(): [string, Row[]][] {
     icon: (g, s) => jobIcon(g, s / 2, s / 2, s / 15, k.colour, k.glyph),
   }));
   jobs.push({
+    label: "Several jobs together", note: "zoom in, or click it, to tell them apart",
+    icon: (g, s) => clusterIcon(g, s / 2, s / 2, s / 17, 3, "#e0a526"),
+  }, {
     layer: "search", label: "Where to search", note: "a job's clue or last sighting",
     icon: (g, s) => {
       g.beginPath(); g.arc(s / 2, s / 2, s * 0.36, 0, Math.PI * 2);
@@ -53,10 +61,10 @@ function sections(): [string, Row[]][] {
     ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
-      { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
-      { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
+      { layer: "traps", label: "Speed traps", note: "ride through one to get clocked; on the big map as you zoom in", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
+      { layer: "games", label: "Minigames", note: "the mine tours and the deli; on the big map as you zoom in", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
-      { layer: "stops", label: "Bus stops", note: "E at one to call a bus", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
+      { layer: "stops", label: "Bus stops", note: "E at one to call a bus; close by, or on the big map zoomed right in", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
       { layer: "route", label: "Your bus route", note: "the 2 or the 4, when you drive a bus", icon: (g, s) => {
         g.strokeStyle = ROUTE; g.lineWidth = s / 6; g.lineCap = "round";
         g.beginPath(); g.moveTo(s * 0.1, s * 0.75); g.lineTo(s * 0.45, s * 0.35); g.lineTo(s * 0.9, s * 0.45); g.stroke();
@@ -65,13 +73,13 @@ function sections(): [string, Row[]][] {
     ]],
     ["People and things", [
       { label: "You", icon: (g, s) => { g.translate(s / 2, s / 2); g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = s / 14; arrow(g, s / 22); g.fill(); g.stroke(); } },
-      { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = "#5fb4ff"; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
-      { layer: "markers", label: "Map markers", note: "tap the map, or press G", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, "#5fb4ff") },
-      { layer: "pickups", label: "Pickups and rides", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
+      { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = PLAYER_COLOURS[1]; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
+      { layer: "markers", label: "Map markers", note: "click the map, or press G: put one on a job, a challenge or a pub and it says what it is. Each player's are in their colour", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, PLAYER_COLOURS[0]) },
+      { layer: "pickups", label: "Pickups and rides", note: "off to start with", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
         [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
         [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],
       ] },
-      { layer: "people", label: "Naughty boys and cats", note: "close by", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
+      { layer: "people", label: "Naughty boys and cats", note: "close by, on the minimap", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
         ["#f4f4f4", "Naughty boy after someone"], ["#8f949a", "Hanging about"], ["#ff9a2a", "Cat out for blood"],
       ] },
       { layer: "bendy", label: "Bendy", note: "out at night; red when he's after someone", icon: (g, s) => bendyIcon(g, s / 2, s / 2, s / 14) },
@@ -95,7 +103,20 @@ function sections(): [string, Row[]][] {
 }
 
 function loadOff(): Set<string> {
-  try { const v = JSON.parse(localStorage.getItem(OFF_KEY) ?? "[]"); return new Set(Array.isArray(v) ? v.map(String) : []); } catch { return new Set(); }
+  const off = new Set<string>();
+  try {
+    const v = JSON.parse(localStorage.getItem(OFF_KEY) ?? "[]");
+    if (Array.isArray(v)) for (const l of v) off.add(String(l));
+    // a layer that starts off is switched off once, here, and after that it's the player's to choose
+    const had = new Set(String(localStorage.getItem(DEFAULTS_KEY) ?? "").split(","));
+    const fresh = DEFAULT_OFF.filter((l) => !had.has(l));
+    if (fresh.length) {
+      for (const l of fresh) off.add(l);
+      localStorage.setItem(OFF_KEY, JSON.stringify([...off]));
+      localStorage.setItem(DEFAULTS_KEY, [...had, ...fresh].filter(Boolean).join(","));
+    }
+  } catch { for (const l of DEFAULT_OFF) off.add(l); }
+  return off;
 }
 
 export class MapKey {

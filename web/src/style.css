@@ -252,7 +252,7 @@ kbd {
   display: block; width: min(calc(92vw - 196px), calc(100vh - 92px)); height: min(calc(92vw - 196px), calc(100vh - 92px));
   box-shadow: 0 0 0 3px var(--bronze-dk), 0 0 0 10px var(--bronze), 0 0 0 12px var(--bronze-dk), 0 10px 40px rgba(0, 0, 0, 0.7);
 }
-#bigmapcanvas { cursor: crosshair; }
+#bigmapcanvas { cursor: default; }
 /* The big map's key, beside it on the left rather than over it: a row per kind of thing, each a switch.
    (On a small screen there's no room beside it, so it sits in the map's top left corner, folded.) */
 #bigmapwrap { position: relative; display: flex; align-items: flex-start; gap: 12px; }
@@ -297,8 +297,11 @@ kbd {
 #keytip[hidden] { display: none; }
 #mapkey .keyrow[aria-pressed="false"] canvas { opacity: 0.25; }
 #mapkey .keyrow[aria-pressed="false"] span { text-decoration: line-through; color: var(--muted); }
+#mapkey .keyrow[aria-pressed="false"] + .keydots { opacity: 0.45; }
+/* the big map has the mouse free on purpose: no "click to aim" over it */
+body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
-#bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
+#bigmapclose, #bigmapme { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
 #hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #watch, #ammo, #bunting, #scoreboard.join) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */

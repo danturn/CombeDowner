@@ -280,6 +280,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     old.dispose(false);   // keep the connection and the voice links
     const { map, world } = current;
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    game.relock = lock;
     Telemetry.play(toMap);
     (window as any).__travelStage = "built";
     armTravel(game, code);
@@ -310,6 +311,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  game.relock = lock;
   Telemetry.play(id);
   Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
@@ -409,6 +411,8 @@ function resume() {
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
+  // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
+  if (!locked && game.mapOpen) { $("clickhint").hidden = true; return; }
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -421,7 +425,7 @@ document.addEventListener("pointerlockchange", () => {
 // the window. That click doesn't do anything else.
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
-  if (!$("pause").hidden || pubMap.isOpen) return;
+  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen) return;
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
@@ -430,6 +434,12 @@ addEventListener("pointerdown", (e) => {
   lock();
 }, true);
 addEventListener("keydown", (e) => {
+  // Esc shuts the big map, back to the game; the mouse can't be captured from Esc, so the next click does it
+  if (e.code === "Escape" && game?.mapOpen && !e.repeat) {
+    game.toggleMap();
+    if (!freeMode && document.pointerLockElement !== canvas) $("clickhint").hidden = false;
+    return;
+  }
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
   // Esc with the pause menu up closes it and goes back to the game. The browser won't capture the
   // mouse from the Esc key, so you play on with it loose and the next click captures it, as when
@@ -727,7 +737,7 @@ const pad = new GamepadControls(() => game && {
   player: () => game!.player,
   look: (dx, dy) => game!.look(dx, dy),
   driving: () => game!.driving,
-  button: padPress,
+  button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
 }, (text) => game?.toast(text, 4));
 const hold = (code: string) => (down: boolean) => key(code, down);
 // toggles are tapped, so getting in or out of a car between press and let-go can't leave one held

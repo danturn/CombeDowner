@@ -72,7 +72,7 @@
 //   whether the room is in free play.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { keyLabel, padInUse, padText, rumble } from "./gamepad";
+import { B as PAD, keyLabel, padInUse, padText, rumble } from "./gamepad";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -119,7 +119,7 @@ import { Net, type MessageType } from "./net";
 import { Minimap, Pin, type Blip, type Mate } from "./minimap";
 import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
-import { drawCompass, Markers } from "./markers";
+import { drawCompass, Markers, playerColours } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
 import { Quests, type Perch, type QuestWorld } from "./quests";
@@ -164,6 +164,7 @@ const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | 
 const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
+const MARK_SNAP = 12;           // metres: a marker put down this close to a job, a challenge or a minigame is put on it
 const SEND_HZ = 20;
 const NAUGHTY_HZ = 10;
 /** Who hit you, when it was a naughty boy, the rugby team or the cricket team: by kind (see naughtyboys.ts). */
@@ -669,6 +670,7 @@ export class Game {
     this.minimap.spots = this.gameSpots();
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
+    $("bigmapme").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.minimap.centreFull(this.player.pos.x, this.player.pos.z); });
     // tapping the full map itself puts your marker there (or takes it down, tapping it again)
     this.markers = new Markers(world.scene);
     this.mapGestures($("bigmapcanvas") as HTMLCanvasElement);
@@ -863,7 +865,7 @@ export class Game {
       this.voice.join(id);
       if (this.isHost) { this.sendScores(); this.pkT = 0; this.ldT = 0; }
       const mine = this.markers.at(this.net.selfId);
-      if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
+      if (mine) this.net.send("mk", mine.what ? [mine.x, mine.y, mine.z, mine.what] : [mine.x, mine.y, mine.z], id);
       this.quests.joined(id);
       this.invasion.joined(id);
       this.night.joined(id);
@@ -937,17 +939,18 @@ export class Game {
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
-      if (e.code === "KeyC" && !e.repeat && this.active && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
+      if (e.code === "KeyC" && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
       if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && this.active && this.car) this.indicate(e.code === "ArrowLeft" ? 1 : -1);
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
+      if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
         const c = this.minimap.cursor;
         this.minimap.zoomFull(e.code === "Equal" || e.code === "NumpadAdd" ? 1.5 : 1 / 1.5, c?.[0], c?.[1]);
       }
-      if (e.code === "KeyG" && !e.repeat && this.active) this.markLook();
+      if (e.code === "KeyG" && !e.repeat && this.active) { if (this.mapOpen) this.markUnderPointer(); else this.markLook(); }
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     }, sig);
     addEventListener("keyup", (e) => {
@@ -957,10 +960,22 @@ export class Game {
     addEventListener("blur", () => this.voice.radio(false), sig);
   }
 
+  /** The big map is up (and not borrowed by the pub menu). */
+  get mapOpen() { return !this.picker && !$("bigmap").hidden; }
+  /** Capture the mouse again (main.ts), when the map closes. */
+  relock?: () => void;
+
   toggleMap() {
     if (this.picker) { this.picker.back(); return; }
     const el = $("bigmap");
     el.hidden = !el.hidden;
+    // the map works like any other game's: an ordinary pointer to click, drag and zoom with, so the
+    // mouse is let go while it's up; a pad keeps it, and steers a cursor of its own with the stick
+    if (!el.hidden && document.pointerLockElement && !padInUse()) document.exitPointerLock();
+    if (el.hidden && !this.freeMode && !document.pointerLockElement) this.relock?.();
+    this.minimap.hover = null;
+    this.mapZoomHeld = 0;
+    this.mapHint();
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
     this.minimap.resetFull();     // and the whole map shows
     this.mapKey.hideTip();
@@ -971,7 +986,7 @@ export class Game {
 
   // ---- map markers --------------------------------------------------------------------------
   /** Put your marker at scene (x, z) on the ground there (y if known), or take it down (no x), and tell everyone. */
-  private setMarker(x?: number, z?: number, y?: number) {
+  private setMarker(x?: number, z?: number, y?: number, what?: string) {
     const me = this.net.selfId;
     if (x === undefined || z === undefined) {
       if (!this.markers.has(me)) return;
@@ -982,17 +997,35 @@ export class Game {
     }
     y ??= this.map.ground(x, z);
     x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10; z = Math.round(z * 10) / 10;
-    this.markers.set(me, x, y, z, colourFor(me));   // your colour, the same one everyone else sees it in
-    this.net.send("mk", [x, y, z]);
+    this.markers.set(me, x, y, z, this.mapColour(me), what);   // your colour, the same one everyone else sees it in
+    this.net.send("mk", what ? [x, y, z, what] : [x, y, z]);
+    if (what) this.toast(`Marked ${what}`, 1.5);
     SFX.tick();
   }
 
   /** A tap on the full map: a marker there, or, on your own marker, take it down. */
   private markOnMap(clientX: number, clientY: number) {
-    const at = this.minimap.fromFull(clientX, clientY), mine = this.markers.at(this.net.selfId);
+    const r = $("bigmapcanvas").getBoundingClientRect();
+    if (r.width) this.markAtFull((clientX - r.left) / r.width, (clientY - r.top) / r.width);
+  }
+
+  /** A click on the full map a fraction (u, v) across and down it. On a job, a challenge, a minigame
+   *  or a Flag Lads' pub, the marker goes on it and says what it is; on a bunch of jobs, the map
+   *  zooms in on them instead; on your own marker, it comes down. */
+  private markAtFull(u: number, v: number) {
+    const hit = this.minimap.pickAt(u, v), at = this.minimap.fromFullAt(u, v), mine = this.markers.at(this.net.selfId);
+    if (hit && hit.cluster >= 0) { this.minimap.zoomFull(2.5, u, v); return; }
+    if (hit?.mine) { this.setMarker(); return; }
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
+    else if (hit?.snap) this.setMarker(hit.wx, hit.wz, undefined, hit.name);
     else this.setMarker(at.x, at.z);
+  }
+
+  /** G with the map up: a marker under the pad's cursor or the pointer. */
+  private markUnderPointer() {
+    const c = this.minimap.cursor ?? this.minimap.hover;
+    if (c) this.markAtFull(c[0], c[1]);
   }
 
   /** The mouse moving the crosshair over the full map (when it's captured, so there's no pointer). */
@@ -1024,15 +1057,24 @@ export class Game {
       c.setPointerCapture(e.pointerId);
       down.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (down.size === 1) moved = 0;
+      if (e.pointerType !== "mouse") this.minimap.hover = null;
       if (down.size === 2) { const [a, b] = [...down.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); moved = 99; }
     });
     c.addEventListener("pointermove", (e) => {
       const p = down.get(e.pointerId);
-      if (!p) { if (e.pointerType === "mouse") this.pointMap(e.clientX, e.clientY); return; }
+      if (!p) {
+        if (e.pointerType !== "mouse") return;
+        this.pointMap(e.clientX, e.clientY);
+        const [u, v] = frac(e.clientX, e.clientY);
+        this.minimap.hover = [u, v];
+        c.style.cursor = this.minimap.pickAt(u, v) ? "pointer" : "";
+        return;
+      }
       const w = c.getBoundingClientRect().width || 1;
       if (down.size === 1) {
         moved += Math.hypot(e.clientX - p.x, e.clientY - p.y);
-        if (moved > 8) this.minimap.panFull((e.clientX - p.x) / w, (e.clientY - p.y) / w);
+        // (a few pixels' wobble is still a click, so a drag never drops a marker)
+        if (moved > 5) { this.minimap.panFull((e.clientX - p.x) / w, (e.clientY - p.y) / w); c.style.cursor = "grabbing"; }
       } else if (down.size === 2) {
         const [a, b] = [...down.entries()].map(([id, q]) => (id === e.pointerId ? { x: e.clientX, y: e.clientY } : q));
         const d = Math.hypot(a.x - b.x, a.y - b.y), [u, v] = frac((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -1043,10 +1085,14 @@ export class Game {
       p.x = e.clientX; p.y = e.clientY;
     });
     // (a finger lifting leaves too, and what it tapped should stay said)
-    c.addEventListener("pointerleave", (e) => { if (!down.size && (this.picker || e.pointerType === "mouse")) this.pointMap(); });
+    c.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse") this.minimap.hover = null;
+      if (!down.size && (this.picker || e.pointerType === "mouse")) this.pointMap();
+    });
     const up = (e: PointerEvent) => {
       if (!down.delete(e.pointerId)) return;
-      if (!down.size && moved <= 8 && e.type === "pointerup") {
+      c.style.cursor = "";
+      if (!down.size && moved <= 5 && e.type === "pointerup") {
         if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY); this.pointMap(e.clientX, e.clientY); }
       }
     };
@@ -1069,10 +1115,7 @@ export class Game {
     if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
     if (c[0] < 0) return;   // beside the map, between the key's rows
     if (this.picker) { this.picker.tap(r.left + c[0] * r.width, r.top + c[1] * r.height); return; }
-    const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
-    if (!at) return;
-    if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
-    else this.setMarker(at.x, at.z);
+    this.markAtFull(c[0], c[1]);
   }
 
   /** G: a marker on whatever you're looking at, or, looking at your own marker, take it down. */
@@ -1084,18 +1127,22 @@ export class Game {
     // looking at your own ring on the ground: take it down
     const mine = this.markers.at(this.net.selfId);
     if (mine && Math.hypot(mine.x - p.x, mine.z - p.z) < 4) { this.setMarker(); return; }
-    this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
+    const on = this.minimap.snapNear(p.x, p.z, Math.max(MARK_SNAP, hit.dist * 0.02));
+    if (on) this.setMarker(on.x, on.z, undefined, on.name);
+    else this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
   }
 
   /** Someone else's marker: where it is, or 0 when they take it down. */
   private onMarker(d: unknown, from: string) {
     if (!Array.isArray(d)) { this.markers.clear(from); return; }
-    const [x, y, z] = d.map(Number);
+    const [x, y, z] = d.slice(0, 3).map(Number);
     if (![x, y, z].every(Number.isFinite)) return;
-    const had = this.markers.has(from);
-    const r = this.remotes.get(from);
-    this.markers.set(from, x, y, z, r?.colour ?? colourFor(from));
-    if (!had) this.feed(`<b>${esc(r?.name ?? "Someone")}</b> put a marker on the map`);
+    const what = typeof d[3] === "string" ? d[3].slice(0, 60) : undefined;
+    const had = this.markers.at(from);
+    const r = this.remotes.get(from), colour = this.mapColour(from);
+    this.markers.set(from, x, y, z, colour, what);
+    if (what && what !== had?.what) this.toast(`${r?.name ?? "Someone"} marked ${what}`, 2.5);
+    if (!had) this.feed(`<b style="color:${colour}">${esc(r?.name ?? "Someone")}</b> ${what ? `marked ${esc(what)}` : "put a marker on the map"}`);
     SFX.tick();
   }
 
@@ -1114,6 +1161,7 @@ export class Game {
   }
 
   look(dx: number, dy: number) {
+    if (this.mapOpen) { const c = this.minimap.cursor; this.minimap.zoomFull(Math.exp(-dy * 0.0008), c?.[0], c?.[1]); return; }
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
@@ -1399,8 +1447,59 @@ export class Game {
       const job = this.marks.get(id);
       if (job) return { name: job.label, colour: job.colour, job: true };
       const r = this.remotes.get(id);
-      return { name: r?.name ?? "Player", colour: r?.colour ?? colourFor(id) };
+      return { name: r?.name ?? "Player", colour: this.mapColour(id) };
     });
+  }
+
+  /** A player's colour on the maps, for their arrow and their markers (markers.ts). */
+  private mapColour(id: string): string {
+    this.mapIds.length = 0;
+    this.mapIds.push(this.net.selfId);
+    for (const r of this.remotes.keys()) this.mapIds.push(r);
+    return playerColours(this.mapIds).get(id) ?? colourFor(id);
+  }
+  private mapIds: string[] = [];
+  private mapZoomHeld = 0;
+  private mapHintText = "";
+
+  /** The line under the big map: just the controls for whatever you're playing with. */
+  private mapHint() {
+    if (this.picker) return;
+    const text = padInUse() ? "Left stick: move the cursor · R2/L2 or right stick: zoom · A: mark · B: close · Y: find yourself"
+      : this.freeMode ? "Tap to mark · drag to move · pinch to zoom · tap your marker to take it down"
+      : "Click to mark · drag to move · wheel to zoom · WASD to move · Space: find yourself · M or Esc: close";
+    if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").textContent = text; }
+  }
+
+  /** A pad's button while the map's up: true if the map took it. */
+  mapPad(b: number, down: boolean): boolean {
+    if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
+    if (!down) return false;
+    if (b === PAD.cross) { this.markUnderPointer(); return true; }
+    if (b === PAD.circle) { this.toggleMap(); return true; }
+    if (b === PAD.triangle) { this.minimap.centreFull(this.player.pos.x, this.player.pos.z); return true; }
+    return false;
+  }
+
+  /** Each frame with the big map up: the keys and the pad move it, and the pad's cursor. */
+  private mapFrame(dt: number) {
+    this.mapHint();
+    const k = this.player.keys, mm = this.minimap;
+    const kx = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
+    const ky = (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0) - (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0);
+    if (kx || ky) mm.panFull(-kx * dt * 0.7, -ky * dt * 0.7);
+    if (this.mapZoomHeld) mm.zoomFull(Math.exp(this.mapZoomHeld * dt * 1.6), mm.cursor?.[0], mm.cursor?.[1]);
+    if (!padInUse()) return;
+    const j = this.player.joy, m = Math.hypot(j.x, j.y), w = $("bigmapcanvas").clientWidth;
+    if (!w) return;
+    // the cursor slows over things on the map, and drifts on to one as the stick eases off
+    const at = mm.cursor ? mm.magnetAt(mm.cursor[0], mm.cursor[1]) : null;
+    if (m > 0.05) this.moveCursor(j.x * w * 0.7 * dt * (at ? 0.45 : 1), j.y * w * 0.7 * dt * (at ? 0.45 : 1));
+    else if (!mm.cursor) this.moveCursor(0, 0);
+    if (at && mm.cursor && m < 0.5) {
+      const f = Math.min(1, dt * 10);
+      mm.cursor = [mm.cursor[0] + (at[0] - mm.cursor[0]) * f, mm.cursor[1] + (at[1] - mm.cursor[1]) * f];
+    }
   }
 
   /** The pub menu borrows the big map: its pins are drawn on it, and taps and pointing go to the picker. */
@@ -1410,6 +1509,7 @@ export class Game {
     $("bigmap").hidden = !picker;
     $("hud").classList.toggle("pubmode", !!picker);
     $("bigmapclose").textContent = picker ? "Back" : "Close map (M)";
+    $("bigmapme").hidden = !!picker;
     this.minimap.cursor = null;
     this.minimap.resetFull();
     this.mapKey.hideTip();
@@ -2172,7 +2272,9 @@ export class Game {
 
   /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
   private gameSpots() {
-    return [this.mineTour.spot(), this.deliDoor.spot(), this.bonfire.spot(), this.oddments.spot()].filter((s) => !!s);
+    const named = (s: { x: number; z: number } | undefined, name?: string) => s && { x: s.x, z: s.z, name };
+    // (the strange structure goes unnamed, on the map as everywhere else)
+    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood"), named(this.oddments.spot())].filter((s) => !!s);
   }
 
   private targets(): Target[] {
@@ -3789,7 +3891,7 @@ export class Game {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
-      p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
+      p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
@@ -4062,7 +4164,7 @@ export class Game {
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
     // other players: an arrow in their colour, ringed red if they've fired in the last two seconds
     const mates: Mate[] = [];
-    for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: r.colour, name: r.name, firing: now - r.lastShot < 2000 });
+    for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: this.mapColour(r.id), name: r.name, firing: now - r.lastShot < 2000 });
     // naughty boys nearby: white if they're after someone, grey if they're hanging about
     let chased = -1;   // the kind of gang after you, if any
     for (const c of this.naughtyBoys.living()) {
@@ -4124,6 +4226,7 @@ export class Game {
     compass.hidden = !this.markers.size;
     if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
+    if (this.mapOpen) this.mapFrame(dt);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     this.watch.update();
     $("hpnum").textContent = String(Math.ceil(this.hp));

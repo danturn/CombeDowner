@@ -186,21 +186,27 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
   hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
   the rope, the higher you go and the gustier the wind.
-- **The Climb** (a team challenge): up the tallest crag in its zone (on Signal Hill in Cape Town;
-  where there's no crag, the tallest building, as by the Royal United Hospital in Bath and in
-  Bradford-on-Avon): its holds, in climbing-wall colours, and its ledges are up the face, a big
-  orange flag on top, a rope hanging down one side and crash mats and a bucket of chalk at the foot
-  to start it by. From a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
-  together to win (the team is whoever was by the foot when it started, and anyone who takes a hold
-  after, so nobody left in town holds it up). Walk into the face (or E) to grab a hold; then the
-  keys or the stick reach for the next hold that way, Space lunges for one further off and C lets
-  go. Your grip drains as you hang and climb and comes back on a ledge. The big orange holds are out of
-  reach from their ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches
-  down to haul up a mate below, and the first one up drops a rope for the rest. A short fall hurts
-  your grip till you've rested; a big one knocks you out where you land, and a mate has to come
-  down, pick you up (E) and carry you back up to the team's ledge in time, or you're out, a ghost,
-  till someone drops a rope from the next ledge. If everyone's down, it's back to the bottom. Alone
-  there are more holds and none needs a boost; with more of you there are fewer, and more that do.
+- **The Climb** (a team challenge): it waits at the foot of the tallest crag in its zone (on
+  Signal Hill in Cape Town; where there's no crag, the tallest building, as by the Royal United
+  Hospital in Bath and in Bradford-on-Avon), with a big orange flag on top, a rope hanging down one
+  side and crash mats and a bucket of chalk at the foot. Take it on there and everyone by the foot
+  is lifted up to a crag of its own, a great buttress of honey-coloured limestone standing out of a
+  sea of cloud, the same on every map; E at the foot on the street takes anyone else up later, and
+  the stile in the wall at the front of the grass under it (E) is the way back down. Its way up is
+  made for a team: an easy slab to a ledge big enough for everyone, a blank wall whose first hold
+  is out of reach alone, a little ledge out to the left, a traverse across to the right, out under
+  an overhang and over its lip, up a chimney to a terrace, and the headwall to the top, where the
+  whole team has to stand together to win (the team is whoever's up at the crag, so nobody left in
+  town holds it up). Walk into the face (or E) to grab a hold; then the keys or the stick reach for
+  the next hold that way, Space lunges for one further off and C lets go. Your grip drains as you
+  hang and climb and comes back on a ledge. The big orange holds are out of reach from their
+  ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
+  mate below, and the first one up drops a rope for the rest. A short fall hurts your grip till
+  you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
+  (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
+  a rope from the next ledge. If everyone's down, it's back to the bottom. Alone there are more
+  holds and none needs a boost; with more of you there are fewer, and more that do. Win it and
+  you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
   it, and E again climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
@@ -233,6 +239,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
+- **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
+  you're on, challenges on its rim, and naughty boys, cats and Bendy close by. M opens the big map
+  for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel
+  to zoom round the pointer, WASD to slide it along, Space or Find me to come back to yourself, M or
+  Esc to close. Point at anything for its name. Zoomed out it shows the zones, challenges, players,
+  markers and jobs, with jobs too close together drawn as one badge with a count (click it to zoom
+  in); speed traps, minigames and bus stops, and the jobs' names, come in as you zoom in. Pickups and
+  rides are off both maps to start with (the key switches them back on). On a touch screen drag,
+  pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
+  R2/L2 or the right stick zoom, A marks and B closes.
+- **Map markers**: click the big map or press G at something to put your marker there; everyone sees
+  it. Put it on (or near) a job, a challenge, a minigame or a pub the Flag Lads hold and it snaps on
+  to it and says what it is ("Dan marked Push the Bus"). Each player's markers and arrow are in their
+  own colour on the maps, never one the maps use for something else; click your marker again to take
+  it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
