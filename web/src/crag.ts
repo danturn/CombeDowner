@@ -2,7 +2,9 @@
 // the sky over the challenge's place on the map, so it's the same on every map. Taking the
 // challenge on lifts the team up to its foot, and the end brings them back down to the street.
 // It's a great buttress standing up out of a sea of cloud, other tops poking out of it far off,
-// with a shelf of grass at its foot walled in by drystone walls. Nobody can wander off: the walls
+// with a shelf of grass at its foot walled in by drystone walls. The cloud is two layers of billows
+// drifting over a grey floor, seen through the gaps, with heaps of cumulus standing well off all
+// round, a few of them towering past the top. Nobody can wander off: the walls
 // hold you in, and anything that falls off the face lands on the grass.
 // The way up is laid out for a team, not found:
 // - the slab, leaning back, easy, up to the first ledge, wide enough for everyone;
@@ -13,7 +15,9 @@
 // - up a chimney, a groove in the rock, to the terrace that runs the whole width;
 // - and the headwall to the top, where everyone has to stand together.
 // The rock and the ledges are fixed; the holds come from the day's seed and how many are climbing
-// (routeFor), so every screen climbs the same holds.
+// (routeFor), so every screen climbs the same holds. They're laid as routes, a reach apart: runs of
+// easy moves, a white jug to rest on partway up the long sections, and on each a crux of longer
+// reaches, longer still the more of you there are.
 //
 // Who decides what: nothing here goes over the network. theclimb.ts says how many it's set for.
 import * as THREE from "three";
@@ -32,6 +36,7 @@ const TURN = 1.6;              // and how sharply
 const SMAX = SIDE + TURN * Math.sqrt(EDGE / 14);
 const SHELF = 14;              // half the width of the grass at the foot
 const CLOUD = -34;             // the top of the cloud, under the foot
+const DEPTHS = -70;            // the grey floor of the cloud, seen through the gaps between billows
 
 // the ledges' heights above the foot
 const Y1 = 7, Y2 = 14.5, Y3 = 21, Y4 = 28.5, Y5 = 35.5;
@@ -42,7 +47,8 @@ export interface Room { ox: number; oz: number; nx: number; nz: number; tx: numb
 /** o: where the rock behind it is, out from the face's line; d: how far it stands out from there. rope: where along
  *  its rope hangs, down to foot (scene Y). */
 export interface Ledge { y: number; s0: number; s1: number; o: number; d: number; rope: number; foot: number; name: string }
-export interface Hold { s: number; y: number; boost: boolean }
+/** rest: a big jug you can hang off and get your grip back. */
+export interface Hold { s: number; y: number; boost: boolean; rest: boolean }
 export interface Route { n: number; ledges: Ledge[]; holds: Hold[] }
 
 /** The crag over a place on the map whose ground is at ground. */
@@ -99,7 +105,9 @@ const SHELVES = [
   { y: H, s0: -HALF, s1: HALF, o: -1.0, d: 0, name: "the top" },
 ];
 
-/** The day's holds for n climbers: further apart, fewer spare ones and more boosts the more of you there are. */
+/** The day's holds for n climbers, laid as routes a reach apart: easy runs of holds, a rest jug on
+ *  the long sections, and a crux of longer reaches on each. More of you means longer cruxes, fewer
+ *  spare holds and fewer jugs, and more of the gaps need a boost. */
 export function routeFor(room: Room, seed: number, n: number): Route {
   const r = rng(hash("climb", seed, n)), Y = room.y0;
   const ledges: Ledge[] = SHELVES.map((l) => ({ ...l, y: Y + l.y, rope: (l.s0 + l.s1) / 2, foot: Y }));
@@ -112,53 +120,88 @@ export function routeFor(room: Room, seed: number, n: number): Route {
     }
     if (a.foot === Y) a.rope = a.s0 + 0.6 + r() * (a.s1 - a.s0 - 1.2);
   }
-  const step = n <= 1 ? 1.35 : n === 2 ? 1.55 : 1.7;
-  const spare = n <= 1 ? 0.85 : n === 2 ? 0.35 : n === 3 ? 0.15 : 0.05;
+  const span = (a: number, b: number) => a + r() * (b - a);
+  const easy: [number, number] = n <= 1 ? [0.5, 0.75] : [0.55, 0.85];
+  const hard: [number, number] = n <= 1 ? [0.9, 1.05] : n === 2 ? [1.1, 1.35] : [1.25, 1.55];
+  const spare = n <= 1 ? 0.35 : n === 2 ? 0.15 : n === 3 ? 0.06 : 0;
   // the wall above the first ledge needs a boost with two of you, the chimney too with three, the headwall with four
   const boost = [false, n >= 2, false, false, n >= 3, n >= 4];
   const paths: [number, number][][] = [
-    [[-1 + r() * 2, 1.9], [-0.5 + r(), Y1 - 1.6]],
-    boost[1] ? [[-4.6 + (r() - 0.5) * 0.6, Y1 + BOOST_HOLD], [-5.2, Y2 - 1.5]] : [[-3 + r(), Y1 + 1.9], [-5.2, Y2 - 1.5]],
-    [[-5 + r() * 0.6, Y2 + 1.9], [-1.5, Y2 + 2.4], [2.5, Y2 + 2.0], [4.6 + r() * 0.6, Y3 - 1.6]],
-    [[5 + r() * 0.6, Y3 + 1.9], [2.6, Y3 + 4.0], [0.6 + r(), Y4 - 1.5]],
+    [[-1 + r() * 2, 1.8], [-0.5 + r(), Y1 - 1.6]],
+    boost[1] ? [[-4.6 + (r() - 0.5) * 0.6, Y1 + BOOST_HOLD], [-5.2, Y2 - 1.5]] : [[-3 + r(), Y1 + 1.8], [-5.2, Y2 - 1.5]],
+    [[-5 + r() * 0.6, Y2 + 1.8], [-1.5, Y2 + 2.4], [2.5, Y2 + 2.0], [4.6 + r() * 0.6, Y3 - 1.6]],
+    [[5 + r() * 0.6, Y3 + 1.8], [2.6, Y3 + 4.0], [0.6 + r(), Y4 - 1.5]],
     [],
-    [[(r() - 0.5) * 2, Y5 + (boost[5] ? BOOST_HOLD : 1.9)], [-1 + r() * 2, H - 1.5]],
+    [[(r() - 0.5) * 2, Y5 + (boost[5] ? BOOST_HOLD : 1.8)], [-1 + r() * 2, H - 1.5]],
   ];
   const floors = [0, Y1, Y2, Y3, Y4, Y5, H];
   const holds: Hold[] = [];
   const clampS = (s: number) => Math.max(-HALF + 0.6, Math.min(HALF - 0.6, s));
   for (let k = 0; k < 6; k++) {
-    const main: [number, number][] = [];
-    if (k === 4) {
-      // up the chimney, from one side of the groove to the other
-      const y0 = Y4 + (boost[4] ? BOOST_HOLD : 1.9), y1 = Y5 - 1.5, count = Math.max(1, Math.ceil((y1 - y0) / (step * 0.85)));
-      const side = r() < 0.5 ? 1 : -1;
-      for (let i = 0; i <= count; i++) main.push([(i % 2 ? side : -side) * 0.7, y0 + ((y1 - y0) * i) / count]);
-    } else {
-      const pts = paths[k], lens = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]));
-      const total = lens.reduce((a, b) => a + b, 0), count = Math.max(1, Math.ceil(total / step));
-      for (let i = 0; i <= count; i++) {
-        let d = (total * i) / count, j = 0;
-        while (j < lens.length - 1 && d > lens[j]) { d -= lens[j]; j++; }
-        const t = lens[j] ? Math.min(1, d / lens[j]) : 0, a = pts[j], b = pts[j + 1] ?? pts[j];
-        const inner = i > 0 && i < count;
-        main.push([a[0] + (b[0] - a[0]) * t + (inner ? (r() - 0.5) * 0.4 : 0), a[1] + (b[1] - a[1]) * t + (inner ? (r() - 0.5) * 0.24 : 0)]);
-      }
-      // three or more: one gap under the bulge only a lunge will cross
-      if (k === 3 && n >= 3) {
-        for (let i = 1; i < main.length - 1; i++) {
-          if (Math.hypot(main[i + 1][0] - main[i - 1][0], main[i + 1][1] - main[i - 1][1]) <= 3.1) { main.splice(i, 1); break; }
+    const pts: [number, number][] = k === 4
+      ? [[0, Y4 + (boost[4] ? BOOST_HOLD : 1.8)], [0, Y5 - 1.5]]
+      : paths[k];
+    const lens = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]));
+    const total = lens.reduce((a, b) => a + b, 0);
+    // the crux: a stretch of longer reaches somewhere in the middle
+    const cl = total > 4 ? Math.min(total * 0.4, n <= 1 ? 1.8 : 1.6 + 0.5 * Math.min(n, 4)) : 0;
+    const c0 = cl ? span(1.2, Math.max(1.2, total - cl - 1.2)) : -1;
+    const steps: number[] = [];
+    for (let d = 0; d < total;) { const st = d >= c0 && d < c0 + cl ? span(...hard) : span(...easy); steps.push(st); d += st; }
+    const fit = total / steps.reduce((a, b) => a + b, 0);
+    const along: number[] = [0];
+    for (const st of steps) along.push(along[along.length - 1] + st * fit);
+    const main: { s: number; y: number }[] = [];
+    along.forEach((d0, i) => {
+      let d = Math.min(total, d0), j = 0;
+      while (j < lens.length - 1 && d > lens[j]) { d -= lens[j]; j++; }
+      const a = pts[j], b = pts[j + 1] ?? pts[j], t = lens[j] ? Math.min(1, d / lens[j]) : 0;
+      const ux = lens[j] ? (b[0] - a[0]) / lens[j] : 0, uy = lens[j] ? (b[1] - a[1]) / lens[j] : 1;
+      const inner = i > 0 && i < along.length - 1;
+      // up the chimney you bridge from one side of the groove to the other
+      const off = k === 4 ? (i % 2 ? 1 : -1) * span(0.6, 0.8) : inner ? (r() - 0.5) * 0.5 : 0;
+      const p = { s: a[0] + (b[0] - a[0]) * t - uy * off, y: a[1] + (b[1] - a[1]) * t + ux * off };
+      const last = main[main.length - 1];
+      if (!last || Math.hypot(p.s - last.s, p.y - last.y) >= 0.45) main.push(p);
+    });
+    // three or more: one gap under the bulge only a lunge will cross
+    let gap: [number, number] | null = null;
+    if (k === 3 && n >= 3) {
+      for (let i = 1; i < main.length - 2 && !gap; i++) {
+        for (let j = i + 2; j < main.length - 1; j++) {
+          const d = Math.hypot(main[j].s - main[i].s, main[j].y - main[i].y);
+          if (d > 3.1) break;
+          if (d >= 2.5) { main.splice(i + 1, j - i - 1); gap = [i, i + 1]; break; }
         }
       }
     }
+    // a jug to rest on, partway up the long sections: alone on every one, with more of you on fewer
+    let rest = -1;
+    if (total >= 4.5 && (n <= 2 || k % 2 === 1)) {
+      let best = Infinity;
+      main.forEach((_p, i) => {
+        if (i === 0 || i === main.length - 1 || (gap && (i === gap[0] || i === gap[1]))) return;
+        const mid = Math.abs(i - main.length / 2);
+        if (mid < best) { best = mid; rest = i; }
+      });
+    }
     const lo = floors[k] + (boost[k] ? BOOST_HOLD : 1.6), hi = floors[k + 1] - 0.6;
-    main.forEach(([s, y], i) => {
-      holds.push({ s: clampS(s), y: Y + y, boost: i === 0 && boost[k] });
-      if (r() < spare) {
-        const ss = clampS(s + (r() < 0.5 ? -1 : 1) * (0.7 + r() * 0.6)), sy = y + (r() - 0.5) * 0.8;
-        if (sy > lo && sy < hi) holds.push({ s: ss, y: Y + sy, boost: false });
-      }
+    const placed: { s: number; y: number }[] = [];
+    main.forEach((p, i) => {
+      const s = clampS(p.s);
+      holds.push({ s, y: Y + p.y, boost: i === 0 && boost[k], rest: i === rest });
+      placed.push({ s, y: p.y });
     });
+    // a spare beside the line now and then, never crowding another or bridging the lunge
+    if (!gap) {
+      main.forEach((p, i) => {
+        if (i === 0 || r() >= spare) return;
+        const ss = clampS(p.s + (r() < 0.5 ? -1 : 1) * span(0.65, 0.95)), sy = p.y + (r() - 0.5) * 0.5;
+        if (sy <= lo || sy >= hi || placed.some((q) => Math.hypot(q.s - ss, q.y - sy) < 0.55)) return;
+        holds.push({ s: ss, y: Y + sy, boost: false, rest: false });
+        placed.push({ s: ss, y: sy });
+      });
+    }
   }
   return { n, ledges, holds };
 }
@@ -281,7 +324,7 @@ function rockGeometry(): { rock: THREE.BufferGeometry; grass: THREE.BufferGeomet
     return { p: [s, H, o], c: turf(s, o + 40), uv: [s / 3, o / 3] };
   }));
   // the drops into the cloud: round the grass at the foot, and behind the top
-  const drop = (y0: number) => [y0, y0 - 3, y0 - 10, y0 - 25, CLOUD - 14];
+  const drop = (y0: number) => [y0, y0 - 3, y0 - 10, y0 - 25, DEPTHS - 2];
   const jag = (a: number, y: number, k: number, j: number) => (j ? 0.6 * vnoise(a / 2, y / 3, k) : 0);
   const low = drop(0), high = drop(H);
   parts.push(sheet(fcols, low.length - 1, (i, j) => {
@@ -363,18 +406,18 @@ export const STILE = -7.5;
 /** How far out the way down is, from the face. */
 export const STILE_OUT = FRONT - 0.3;
 
-/** Other tops out of the cloud, far off all round, and the cloud itself. */
-function distance(): { hills: THREE.BufferGeometry; cloud: THREE.BufferGeometry } {
+/** Other tops out of the cloud, far off all round, and banks of cumulus heaped up out of it. */
+function distance(): { hills: THREE.BufferGeometry; heaps: THREE.BufferGeometry } {
   const r = rng(hash("crag hills")), hills: THREE.BufferGeometry[] = [], puffs: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 18; i++) {
-    const a = (i / 18) * Math.PI * 2 + (r() - 0.5) * 0.3, R = 380 + r() * 380, h = 30 + r() * 50 + (i % 5 === 0 ? 70 : 0), rad = 70 + r() * 90;
+    const a = (i / 18) * Math.PI * 2 + (r() - 0.5) * 0.3, R = 380 + r() * 380, h = 30 + r() * 50 + (i % 5 === 0 ? 70 : 0) + (CLOUD - 12 - DEPTHS), rad = 70 + r() * 90;
     const g = new THREE.ConeGeometry(rad, h, 9, 4);
     const p = g.attributes.position as THREE.BufferAttribute;
     for (let k = 0; k < p.count; k++) {
       const x = p.getX(k), y = p.getY(k), z = p.getZ(k), n = vnoise(x / 25 + i * 7, z / 25, 13) * 0.25;
       p.setXYZ(k, x * (1 + n), y + vnoise(x / 30, z / 30 + i * 3, 14) * h * 0.08, z * (1 + n));
     }
-    g.translate(Math.sin(a) * R, CLOUD - 12 + h / 2, Math.cos(a) * R);
+    g.translate(Math.sin(a) * R, DEPTHS + h / 2, Math.cos(a) * R);
     const out = g.toNonIndexed(); g.dispose();
     const pos = out.attributes.position as THREE.BufferAttribute, col = new Float32Array(pos.count * 3);
     for (let k = 0; k < pos.count; k++) {
@@ -386,25 +429,101 @@ function distance(): { hills: THREE.BufferGeometry; cloud: THREE.BufferGeometry 
     out.computeVertexNormals();
     hills.push(out);
   }
-  const deck = new THREE.CircleGeometry(5000, 40);
-  deck.rotateX(-Math.PI / 2);
-  deck.translate(0, CLOUD, 0);
-  puffs.push(deck.toNonIndexed()); deck.dispose();
-  for (let i = 0; i < 70; i++) {
-    const a = r() * Math.PI * 2, R = 25 + r() * 420, s = 8 + r() * 26;
-    const g = new THREE.IcosahedronGeometry(1, 1);
-    g.scale(s * (1 + r()), s * (0.25 + r() * 0.2), s * (1 + r()));
-    g.translate(Math.sin(a) * R, CLOUD + r() * 3, Math.cos(a) * R);
-    puffs.push(g);
+  // heaps of cumulus well away from the crag: lots of small billows on a dome, flat underneath, grey
+  // there and white on top; a few tower up past the top, so there's cloud round you as well as under you
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + r() * 0.4, R = 330 + r() * 300, tall = i % 4 === 1;
+    const cx = Math.sin(a) * R, cz = Math.cos(a) * R, base = CLOUD - 4 + r() * 6;
+    const wide = tall ? 45 : 55 + r() * 40, high = tall ? 120 : 22 + r() * 16;
+    const count = tall ? 34 : 22;
+    for (let k = 0; k < count; k++) {
+      const q = Math.sqrt(r()), th = r() * Math.PI * 2, d = q * wide;
+      const dome = high * Math.sqrt(Math.max(0, 1 - q * q)) * (tall ? 0.4 + 0.6 * r() : 1);
+      const rad = (tall ? 13 : 9) + r() * 9;
+      const g = new THREE.IcosahedronGeometry(1, 1);
+      g.scale(rad * 1.25, rad, rad * 1.25);
+      g.translate(cx + Math.cos(th) * d, base + dome, cz + Math.sin(th) * d);
+      const pos = g.attributes.position as THREE.BufferAttribute, col = new Float32Array(pos.count * 3);
+      for (let j = 0; j < pos.count; j++) {
+        if (pos.getY(j) < base) pos.setY(j, base + (pos.getY(j) - base) * 0.15);
+        const t = Math.max(0, Math.min(1, (pos.getY(j) - base) / (high + rad)));
+        const w = 0.7 + 0.3 * Math.pow(t, 0.6);
+        col.set([w, w + 0.025 * (1 - t), w + 0.08 * (1 - t)], j * 3);
+      }
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.deleteAttribute("uv");
+      puffs.push(g);
+    }
   }
-  for (const g of puffs) g.deleteAttribute("uv");
-  const hillGeo = mergeGeometries(hills)!, cloud = mergeGeometries(puffs)!;
+  const hillGeo = mergeGeometries(hills)!, heaps = mergeGeometries(puffs)!;
   for (const g of [...hills, ...puffs]) g.dispose();
-  return { hills: hillGeo, cloud };
+  return { hills: hillGeo, heaps };
+}
+
+/** Value noise that repeats every p cells, for a texture that tiles. */
+function tiledNoise(x: number, y: number, p: number, k: number) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const m = (q: number) => ((q % p) + p) % p;
+  const a = hash3(m(i), m(j), k), b = hash3(m(i + 1), m(j), k), c = hash3(m(i), m(j + 1), k), d = hash3(m(i + 1), m(j + 1), k);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+/** The top of a sea of cloud seen from above, tiling: white where it's thick, grey-blue in the
+ *  hollows and lit from one side, and clear between the billows unless it's the bottom layer. */
+function cloudTexture(k: number, cover: number): THREE.CanvasTexture {
+  const N = 256, c = document.createElement("canvas");
+  c.width = c.height = N;
+  const g = c.getContext("2d")!, img = g.createImageData(N, N), v = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let f = 0, amp = 0.5, P = 6;
+    for (let o = 0; o < 5; o++) { f += amp * tiledNoise((x / N) * P, (y / N) * P, P, k * 10 + o); amp *= 0.5; P *= 2; }
+    v[y * N + x] = f / 0.97;
+  }
+  const smooth = (a: number, b: number, x: number) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const f = v[y * N + x], lit = f - v[((y + N - 3) % N) * N + ((x + N - 3) % N)];
+    const thick = smooth(cover, cover + 0.4, f);
+    const w = Math.max(0, Math.min(1, 0.45 + 0.5 * thick + lit * 5));
+    const o = (y * N + x) * 4;
+    img.data[o] = 150 + 105 * w; img.data[o + 1] = 160 + 95 * w; img.data[o + 2] = 182 + 73 * w;
+    img.data[o + 3] = cover < 0 ? 255 : 255 * smooth(cover, cover + 0.18, f);
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** The sea of cloud under the crag: two drifting layers of billows over a floor of grey cloud. */
+function cloudSea() {
+  const W = 2400, group = new THREE.Group(), made: { dispose(): void }[] = [];
+  const layer = (y: number, k: number, cover: number, tile: number, order: number) => {
+    const map = cloudTexture(k, cover);
+    map.repeat.set(W / tile, W / tile);
+    const geo = new THREE.PlaneGeometry(W, W);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshLambertMaterial({ map, color: "#eef1f6", emissive: "#3c424e", transparent: cover >= 0, depthWrite: cover < 0 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = y;
+    mesh.renderOrder = order;
+    mesh.frustumCulled = false;
+    group.add(mesh);
+    made.push(map, geo, mat);
+    return map;
+  };
+  layer(DEPTHS, 3, -1, 340, 0);
+  const mid = layer(CLOUD - 13, 2, 0.44, 210, 1), top = layer(CLOUD, 1, 0.52, 290, 2);
+  return {
+    group,
+    drift(t: number) { top.offset.set(t * 0.0008, t * 0.0003); mid.offset.set(-t * 0.0005, t * 0.0007); },
+    dispose() { for (const d of made) d.dispose(); },
+  };
 }
 
 const HOLD_COLOURS = ["#e8323c", "#2f6fe0", "#f5d21f", "#3cc24a", "#a24de0", "#ff5fb0", "#1fc8c8"];
 const BOOST_COLOUR = "#ff8a1f";
+const REST_COLOUR = "#f2efe6";
 
 /** The crag, built: put group in the scene; holds and ropes change with the route. Everything in it is
  *  placed in the crag's own frame (x along, z out, y up from the foot). */
@@ -422,23 +541,24 @@ export function buildCrag(room: Room) {
   grass.receiveShadow = true;
   const far = distance();
   const hillMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const cloudMat = new THREE.MeshLambertMaterial({ color: "#f6f6f8", emissive: "#5c606a" });
-  const hills = new THREE.Mesh(far.hills, hillMat), cloud = new THREE.Mesh(far.cloud, cloudMat);
-  hills.frustumCulled = cloud.frustumCulled = false;
-  group.add(rockMesh, grass, hills, cloud);
+  const heapMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: "#5a606c" });
+  const hills = new THREE.Mesh(far.hills, hillMat), heaps = new THREE.Mesh(far.heaps, heapMat), sea = cloudSea();
+  hills.frustumCulled = heaps.frustumCulled = false;
+  group.add(rockMesh, grass, hills, heaps, sea.group);
 
   // the holds
-  const holdGeo = new THREE.DodecahedronGeometry(0.5), holdMat = new THREE.MeshLambertMaterial({ color: "#ffffff", emissive: "#303030" });
+  const holdGeo = new THREE.DodecahedronGeometry(0.2), holdMat = new THREE.MeshLambertMaterial({ color: "#ffffff", emissive: "#303030" });
   let holdMesh: THREE.InstancedMesh | null = null;
   function setHolds(route: Route) {
     if (holdMesh) { group.remove(holdMesh); holdMesh.dispose(); }
     const mesh = new THREE.InstancedMesh(holdGeo, holdMat, Math.max(1, route.holds.length));
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), out = new THREE.Vector3(0, 0, 1), v3 = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
     route.holds.forEach((h, i) => {
-      const ly = h.y - room.y0, k = h.boost ? 1.35 : 1;
-      q.setFromAxisAngle(out, i * 2.4);
-      mesh.setMatrixAt(i, m4.compose(v3.set(h.s, ly, rockOut(h.s, ly) + 0.1), q, sc.set(1.15 * k, 0.85 * k, 0.5)));
-      mesh.setColorAt(i, c.set(h.boost ? BOOST_COLOUR : HOLD_COLOURS[(i * 3) % HOLD_COLOURS.length]));
+      const ly = h.y - room.y0, k = h.boost ? 1.5 : 1;
+      q.setFromAxisAngle(out, h.rest ? 0 : i * 2.4);
+      if (h.rest) sc.set(2.6, 0.75, 1.1); else sc.set(1.2 * k, 0.9 * k, 0.6);
+      mesh.setMatrixAt(i, m4.compose(v3.set(h.s, ly, rockOut(h.s, ly) + 0.06), q, sc));
+      mesh.setColorAt(i, c.set(h.boost ? BOOST_COLOUR : h.rest ? REST_COLOUR : HOLD_COLOURS[(i * 3) % HOLD_COLOURS.length]));
     });
     mesh.count = route.holds.length;
     mesh.receiveShadow = true;
@@ -486,10 +606,10 @@ export function buildCrag(room: Room) {
   group.add(flag, mats, sign);
 
   return {
-    group, banner, setHolds, setRopes,
+    group, banner, setHolds, setRopes, drift: sea.drift,
     dispose() {
       holdMesh?.dispose();
-      for (const d of [tex, rock, rockGeo, grassGeo, grassTex, grassMat, far.hills, far.cloud, hillMat, cloudMat, holdGeo, holdMat, ropeGeo, coilGeo, ropeMat, ropeMesh, coilMesh,
+      for (const d of [tex, rock, rockGeo, grassGeo, grassTex, grassMat, far.hills, far.heaps, hillMat, heapMat, sea, holdGeo, holdMat, ropeGeo, coilGeo, ropeMat, ropeMesh, coilMesh,
         white, flagMat, poleGeo, clothGeo, matGeo, matMat, mats, signTex, signMat, signGeo]) d.dispose();
     },
   };

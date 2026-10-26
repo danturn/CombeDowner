@@ -2,20 +2,22 @@
 // probe can reach the challenge's own placing) served to a muted headless Chrome, three tabs in one
 // local test room. Where the challenge goes on the map; then a run where both walkers get across
 // (a steadying autopilot on each walker, and one on the pilot keeping the span right), which must
-// win and leave one of the strange objects; then a run where the second walker lets go, which must
-// lose. Shots along the way.
+// win and leave one of the strange objects; then a run where the second walker keeps letting go:
+// each fall costs the team one of its shared lives on every screen and puts the faller back in the
+// first basket, and the last one brings the balloons down with a fail card and starts it again from
+// scratch. Shots along the way.
 //
-//   node tools/tightrope_probe.mjs --out rope [--map combe-down]
+//   node tools/tightrope_probe.mjs --out rope [--map combe-down] [--zone 9]   (opens the map up to that zone, so the field's in reach)
 //
 // Writes <out>/report.txt and <out>/*.png; exits 1 if a check fails.
 import { createRequire } from "module";
 import { spawn } from "child_process";
 import fs from "fs";
-import { MUTED_ARGS, silenceContext } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = createRequire(WEB + "package.json")("playwright");
-const argv = process.argv.slice(2), opt = { out: "rope", map: "combe-down", port: "5191", room: "ROPE" + Math.floor(Math.random() * 1000) };
+const argv = process.argv.slice(2), opt = { out: "rope", map: "combe-down", zone: "9", port: "5191", room: "ROPE" + Math.floor(Math.random() * 1000) };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 fs.mkdirSync(opt.out, { recursive: true });
 
@@ -38,7 +40,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function join(name) {
   const page = await context.newPage();
   page.on("pageerror", (e) => complaints.push(`${name} error: ${e.message}`));
-  await page.goto(`${base}/?map=${opt.map}&net=local&room=${opt.room}&time=11:00&fx=0`);
+  await page.goto(`${base}/?map=${opt.map}&net=local&room=${opt.room}&time=11:00&fx=0&zone=${opt.zone}`);
   await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 180000 });
   await page.fill("#name", name);
   await page.click("#play");
@@ -115,7 +117,8 @@ try {
       const g = window.__game();
       g.quests.take({ kind: "tightrope", seed, stars: 3, title: "The Balloon Tightrope", blurb: "", reward: "", x: b.x, z: b.z, where: b.name });
     }, [board, 1000 + Math.floor(Math.random() * 1e6)]);
-    const up = await until(tabs[0], 30, (s) => s.pr && s.pr.ph !== "gather");
+    const up = await until(tabs[0], 60, (s) => s.pr && s.pr.ph !== "gather");
+    if (up.pr?.ph === "gather") report.push(`${label} gather: ${JSON.stringify(await Promise.all(tabs.map((t) => state(t).then((s) => [s.x - board.x, s.z - board.z, s.up]))))}`);
     check(`${label}: everyone gathered and the balloons go up`, up.pr?.ph === "rise" || up.pr?.ph === "cross", JSON.stringify(up.pr));
     const roles = up.pr;
     const ss = await Promise.all(tabs.map(state));
@@ -138,14 +141,36 @@ try {
     check(`${label}: the first walker gets across`, first.pr?.c?.includes(roles.wk[0]), JSON.stringify(first.pr));
     if (drop) await walkTabs[1].evaluate(() => { window.__walk = "drop"; });
     if (drop) {
-      const off = await until(walkTabs[1], 60, (s) => !!s.pr?.f);
-      check(`${label}: the second walker, letting go, falls`, off.pr?.f === roles.wk[1]);
-      await wait(1800);
-      await tabs[ss.findIndex((s) => s.me === roles.wk[0])].screenshot({ path: `${opt.out}/fall-watched.png` });
-      await walkTabs[1].screenshot({ path: `${opt.out}/fall-first-person.png` });
-      const end = await until(tabs[0], 40, (s) => !!s.done || !s.job);
-      check(`${label}: a fall loses the challenge`, end.done ? end.done.won === false : true, JSON.stringify(end.done));
-      report.push(`${label} end: ${JSON.stringify(end.done)} faller at ${JSON.stringify(await state(walkTabs[1]).then((s) => [s.x, s.up]))}`);
+      // every fall costs the team a life, the faller goes back to the first basket, and the last one starts it all again
+      const most = (await state(tabs[0])).pr?.mx ?? 0;
+      check(`${label}: the team starts with its lives`, most === 3, `${most} lives for ${roles.wk.length} walkers`);
+      for (let k = 1; k <= most; k++) {
+        const off = await until(walkTabs[1], 60, (s) => !!s.pr?.f);
+        check(`${label}: fall ${k}: the second walker, letting go, falls`, off.pr?.f === roles.wk[1]);
+        const lv = await until(tabs[0], 5, (s) => s.pr?.lv === most - k);
+        const all = await Promise.all(tabs.map(state));
+        check(`${label}: fall ${k} costs one life, the same on every screen`, all.every((s) => s.pr?.lv === most - k), all.map((s) => s.pr?.lv).join(", "));
+        if (k === 1) {
+          await wait(1500);
+          await tabs[ss.findIndex((s) => s.me === roles.wk[0])].screenshot({ path: `${opt.out}/fall-watched.png` });
+          await walkTabs[1].screenshot({ path: `${opt.out}/fall-first-person.png` });
+        }
+        if (k < most) {
+          const back = await until(walkTabs[1], 12, (s) => !s.pr?.f && s.up > 50);
+          check(`${label}: after fall ${k} the faller's back in the first basket and on again`, !back.pr?.f && back.up > 50, `${back.up.toFixed(1)} m up, walker ${back.pr?.wk?.[back.pr?.n]}`);
+          void lv;
+        }
+      }
+      const fail = await until(tabs[0], 12, (s) => s.pr?.ph === "down");
+      const cards = await Promise.all(tabs.map((t) => t.evaluate(() => !!document.querySelector(".msc-end.failed"))));
+      check(`${label}: out of lives, the balloons come down with a fail card on every screen`, fail.pr?.ph === "down" && cards.every(Boolean), `phase ${fail.pr?.ph}, cards ${cards.join(",")}`);
+      await walkTabs[1].screenshot({ path: `${opt.out}/fail-card.png` });
+      for (const t of tabs) await t.evaluate(() => { window.__walk = ""; });
+      const again = await until(tabs[0], 40, (s) => s.pr?.ph === "rise" || s.pr?.ph === "cross");
+      check(`${label}: then it starts again from scratch with the lives back`, !!again.pr && again.pr.ph !== "gather" && again.pr.wk.length === roles.wk.length && again.pr.lv === most && again.pr.c.length === 0 && !again.done, JSON.stringify(again.pr));
+      if (again.pr?.ph === "gather") report.push(`${label} regather: ${JSON.stringify(await Promise.all(tabs.map((t) => t.evaluate(() => { const g = window.__game(), j = g.quests.running; return { card: j?.card().progress, alive: g.alive, me: g.net.selfId, players: g.questWorld ? null : null, x: g.player.pos.x, z: g.player.pos.z }; }))))}`);
+      await tabs[0].evaluate(() => window.__game().quests.callOff());
+      report.push(`${label} restarted: ${JSON.stringify(again.pr)}`);
     } else {
       const before = (await state(tabs[0])).objects.length;
       const end = await until(tabs[0], 200, (s) => !!s.done);
@@ -162,9 +187,11 @@ try {
 } catch (e) {
   if (e !== "placed") complaints.push(String(e?.stack ?? e));
 } finally {
+  for (const t of tabs) report.push(await silenceNote(t).catch((e) => `audio: no report (${e.message})`));
   const out = [...checks.map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.name}${c.detail ? ": " + c.detail : ""}`), "", ...report, "", ...complaints].join("\n");
   fs.writeFileSync(`${opt.out}/report.txt`, out + "\n");
   console.log(complaints.join("\n"));
+  console.log(report.filter((l) => l.startsWith("audio")).join("\n"));
   await browser.close();
   vite.kill();
   process.exit(checks.every((c) => c.ok) && checks.length && !complaints.length ? 0 : 1);

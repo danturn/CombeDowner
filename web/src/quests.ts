@@ -269,6 +269,8 @@ export interface Job {
   /** Where you're held up off the ground this frame, given which way you're pushing the keys or the
    *  stick (x right, y forward, -1..1); null to move as usual. */
   perch?(dt: number, move: { x: number; y: number }): Perch | null;
+  /** You're up in a space of the job's own (a crag in the sky), away from the streets, so the street's own HUD (the place name, the minimap) goes. */
+  aloft?(): boolean;
   /** Where losing or giving up the job leaves its mark on the town (scars.ts), if not its noticeboard. */
   scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
@@ -833,6 +835,7 @@ export class Quests {
     return out;
   }
   /** Where the running job is holding you up, if it is. */
+  aloft(): boolean { return !!this.job && !this.job.done && !!this.job.aloft?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
   /** On a touch screen, the Again button, when there's a race to run again. */

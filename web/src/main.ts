@@ -28,9 +28,16 @@ import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
 import { watchLoading } from "./loadnote";
 import { checkGraphics, playing, starting } from "./safegfx";
+import { buildLabel } from "./version";
+import * as Saves from "./saves";
+import { mine } from "./features";
+import { openLink } from "./link";
+import { easelUp, onEaselRelock } from "./easel";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+$("buildlabel").textContent = buildLabel();
+Saves.migrate();
 const LOCAL = params.get("net") === "local";   // link tabs in one browser instead of WebRTC (for testing)
 const UP = params.get("up") === "1";   // just climbed back up from the mines (or out of the deli)
 const UP_TOAST = params.get("from") === "deli" ? "Shift over, back out on the street by the Darling Deli" : "Back up out of the mines, at the door of 1 The Firs";
@@ -387,6 +394,7 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+onEaselRelock(lock);
 /** The pause menu's Trophies button says how much of Bath you've done. */
 function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
@@ -417,7 +425,7 @@ document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
   // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
-  if (!locked && game.mapOpen) { $("clickhint").hidden = true; return; }
+  if (!locked && (game.mapOpen || easelUp())) { $("clickhint").hidden = true; return; }
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -430,7 +438,7 @@ document.addEventListener("pointerlockchange", () => {
 // the window. That click doesn't do anything else.
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
-  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen) return;
+  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen || easelUp()) return;
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
@@ -659,10 +667,13 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
     try { if (!(await showMap(r.map))) return; }
     catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
   }
-  $("play").click();
-});
+  if (r.code === Saves.SOLO) { $<HTMLInputElement>("code").value = ""; start(Saves.SOLO, true); }
+  else $("play").click();
+}, (r) => Saves.progressText(Saves.progress(r.map, r.code), { zones: mine.zones, objects: mine.strange, challenges: mine.challenges }),
+() => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
 $("solo").onclick = () => start("SOLO", true);
+$("linkbtn").onclick = () => openLink(() => location.reload());
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
 codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });

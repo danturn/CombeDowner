@@ -8,9 +8,12 @@ import { execSync } from "node:child_process";
 // The game's version is when it last changed: the last commit on main to touch web/. So pushes that
 // only change the docs or the to-do list don't tell everyone playing that there's a new version.
 // (Falls back to now if git can't say.)
-const BUILD = (() => {
-  try { return Number(execSync("git log -1 --first-parent --format=%ct -- .", { cwd: fileURLToPath(new URL(".", import.meta.url)) }).toString().trim()) * 1000 || Date.now(); }
-  catch { return Date.now(); }
+// The commit's short hash goes with it, for the build label on the menu (version.ts).
+const [BUILD, COMMIT] = (() => {
+  try {
+    const [t, h] = execSync("git log -1 --first-parent --format=%ct:%h -- .", { cwd: fileURLToPath(new URL(".", import.meta.url)) }).toString().trim().split(":");
+    return [Number(t) * 1000 || Date.now(), h ?? ""];
+  } catch { return [Date.now(), ""]; }
 })();
 const single = process.env.VITE_SOLO_ONLY === "1";
 // When a link to a player drops, Trystero can look for them again straight away, but its Nostr
@@ -29,7 +32,7 @@ const reannounce = {
 export default defineConfig({
   base: "./",
   // when the game last changed, so players on an old page can be told to refresh (net.ts)
-  define: { __BUILD__: String(BUILD) },
+  define: { __BUILD__: String(BUILD), __COMMIT__: JSON.stringify(COMMIT) },
   // version.json says which version is live, for anyone who wants to check by hand
   plugins: [reannounce, { name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
   // so the change above applies in `npm run dev` too, which otherwise pre-packs Trystero untouched
