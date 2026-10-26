@@ -1,7 +1,7 @@
 # Writing a team challenge
 
 Team challenges are the big things to do on a map: the lock run, the balloon tightrope, the co-op
-climb, the bell ringing, pushing the bus. The map opens a zone at a time (`web/src/zones.ts`), each
+climb, the bell ringing, pushing the bus, the art gallery. The map opens a zone at a time (`web/src/zones.ts`), each
 zone has one or two challenges, and they stay shut until their zone is open; each one won leaves
 one of the strange objects (`web/src/oddments.ts`) where it finished, which is how the next zone
 gets opened. This page is for whoever writes the next.
@@ -105,9 +105,9 @@ combe-down cape-town` (from `web/`, after a build) prints every map's zones and 
 ## A space of its own
 
 When the map hasn't got the right place for the play (a ringing chamber, a proper crag), build one
-and take the players there. Two do: `bells.ts` puts its ringing chamber 50 m over the street by the
-church, and `theclimb.ts` its crag (`crag.ts`) 1000 m over the foot of the tallest face on the map.
-The pattern:
+and take the players there. Three do: `bells.ts` puts its ringing chamber 50 m over the street by the
+church, `theclimb.ts` its crag (`crag.ts`) 1000 m over the foot of the tallest face on the map, and
+`gallery.ts` its gallery room 50 m over the street outside a museum. The pattern:
 
 - What waits stays on the map, where `place` put it, and taking it on (or E there later) moves you
   into the space with `w.moveTo` (then your feet's height, on `w.body()`). Leaving, and the job's
@@ -123,6 +123,12 @@ The pattern:
   doesn't hold up the win.
 - Return true from the job's `aloft()` while you're up there, and the street's HUD (the place
   name, the force field warning, the minimap and compass) is put away until you're back down.
+- A space can hold a screen of its own too: the Art Gallery (`gallery.ts`) puts up a paint program
+  (`easel.ts`) while you're at your easel. While it's up the mouse is let go (main.ts asks
+  `easelUp()` before treating that as a pause) and keys are caught before the game sees them; the
+  job's `perch` holds you at the easel meanwhile. Anything big that has to go round (a painting, the
+  whole show's script) goes in pieces of a few kilobytes inside "qe" and is put back together on
+  arrival.
 
 ## A car of your own
 

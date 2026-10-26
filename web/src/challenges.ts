@@ -11,8 +11,10 @@
 // Who decides what: nobody. Where each challenge goes comes from the map alone, and which are open
 // from how many sockets are full (so which zones are open), which the host of oddments.ts decides
 // and sends round; so every player in a room has the same things waiting in the same places.
-// Running one is a job's business (quests.ts).
+// Running one is a job's business (quests.ts). With the challenges switched off (features.ts, the
+// host's say) none is open, so nothing of them shows anywhere.
 import type { GameMap } from "./map";
+import { feature } from "./features";
 import { dayNumber } from "./daylight";
 import type { Zones } from "./zones";
 import { hash, registerJob, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
@@ -117,10 +119,10 @@ export function useChallenges(map: GameMap, zones: Zones, sockets: () => number)
   const here = challengesOn(map);
   for (const c of list) {
     const p = here.find((q) => q.c.id === c.id);
-    const open = () => !!p && placedOn === map && filled() >= p.at;
+    const open = () => feature("challenges") && !!p && placedOn === map && filled() >= p.at;
     const offer = (seed: number, x: number, z: number, where: string): Offer => ({
       kind: c.id, seed, stars: c.stars ?? 3, title: c.name, blurb: c.blurb,
-      reward: "Something strange, left where you finish", x, z, where,
+      reward: feature("strange") ? "Something strange, left where you finish" : "Bragging rights", x, z, where,
     });
     registerJob({
       id: c.id, glyph: c.glyph, colour: c.colour, label: "Challenge",

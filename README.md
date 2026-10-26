@@ -110,6 +110,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
 - **Recent rooms.** The start screen lists the games you were last in (up to 8, newest first) with the map, how long ago and who was with you, and a "news" tag if that room has an unread Chronicle page. Tap one to go back to it; × forgets it. It's kept in your browser only, and can't say who is in a room now.
+- **A room is a save.** The strange objects, the sockets filled (so the zones and challenges open), the challenges won and the bonfire pile belong to the room you play them in. A new room name starts from nothing; go back to an old one and it carries on, from whoever in it has got furthest. Each room on the recent list says how far it's got ("3 of 6 zones open, 10 sockets filled, 1 challenge done"), and Practice solo is a save of its own on each map, listed there too once you've played it. Your name, look, settings, bests, trophies and the daily jobs are yours in every room.
+- **Link a device** (on the start screen) carries all of that to another phone or computer: show a code on one, type it on the other, say yes on both, and each ends up with everything either had (each room keeps whichever got furthest), with the name, look and settings of the one that showed the code. If the two can't both be online, Copy save as text on one and Paste a save on the other.
+- **Build label.** The foot of the start screen (and the note that comes up if the map stops loading) says which build the page is, so you can tell if you're on an old one.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe.
@@ -118,13 +121,18 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Still being tried out**: the strange objects, the zones and the team challenges below are switched
+  off on this site for now, so here the whole map is open, every way to get about runs from the start,
+  and none of the three shows anywhere. Add `?progression=1` to the address to try them; in a game
+  with others, the host's say counts for the room. They're on at danturn.github.io/CombeDowner and on
+  a copy run locally, where `?progression=0` switches them off.
 - **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
   anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
-  spawns) is put down right by it. Filled sockets glow. There's no counter: the structures are
-  the only record, and the room carries on from whoever has got furthest.
+  spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
+  structures are the record, and the room carries on from whoever has got furthest in that room.
 - **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
   (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
   field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
@@ -133,8 +141,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
   cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
   of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
-  "Explore all of the map (no zones)" on the menu (or add `?zones=0`) to have the whole map open: the
-  host's choice counts for the room.
+  "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
+  for the room.
 - **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
   maps to find it by, and walking up to it shows what it is and E (Use) starts it for the room.
 - **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,
@@ -257,6 +265,27 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
+- **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
+  Holburne, or failing that a big public building near a pedestrian street): an easel on the
+  pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
+  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
+  bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
+  first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
+  program for a minute and a half: pencil, brush, airbrush, fill, line, rectangle, ellipse, eraser and
+  colour picker, four sizes, sixteen colours (left click for the first, right click for the second),
+  Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
+  easel. The paintings go up in gilt frames with a card each, and in come the critics and a crowd of
+  the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
+  Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
+  with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
+  covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
+  subject at all and how much effort went in, and each has their likes: one critic loves a blank
+  canvas, another wants every square inch working. The critics' marks count double. Walk round while
+  they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
+  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
+  if the show averages enough it's a success and one of the strange objects turns up at the door. The
+  more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel

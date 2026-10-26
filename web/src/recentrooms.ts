@@ -1,6 +1,8 @@
 // The start screen's "Recent rooms": the games you were last in, kept in this browser only (cd-rooms),
 // so one tap takes you back to a room's name. It is only a memory of where you've been: the game is
 // peer to peer, so nothing here can know who is in a room now. Each browser keeps its own list.
+// A room is a save (saves.ts), so each says how far it's got, and each map's solo game is listed
+// with them once it's been played.
 
 import { newsFor } from "./paper";
 
@@ -50,9 +52,11 @@ export function ago(at: number, now = Date.now()): string {
   return d < 14 ? `${d} day${d === 1 ? "" : "s"} ago` : `${Math.floor(d / 7)} weeks ago`;
 }
 
-/** Fill the list on the start screen. `pick` rejoins; `label` is the map's name, or "" for the default map. */
-export function render(into: HTMLElement, label: (map: string) => string, pick: (r: RecentRoom) => void) {
-  const rooms = recent();
+/** Fill the list on the start screen. `pick` rejoins; `label` is the map's name, or "" for the default map;
+ *  `done` says how far a room has got; `solo` is the solo games played, as rooms named SOLO. */
+export function render(into: HTMLElement, label: (map: string) => string, pick: (r: RecentRoom) => void,
+  done: (r: RecentRoom) => string = () => "", solo: () => RecentRoom[] = () => []) {
+  const rooms = [...recent(), ...solo()].sort((a, b) => b.at - a.at);
   into.hidden = rooms.length === 0;
   const ul = into.querySelector("ul")!;
   ul.replaceChildren();
@@ -62,11 +66,11 @@ export function render(into: HTMLElement, label: (map: string) => string, pick: 
     go.type = "button";
     go.className = "recentgo";
     const code = document.createElement("b");
-    code.textContent = r.code;
+    code.textContent = r.code === "SOLO" ? "Solo" : r.code;
     go.append(code);
     const where = label(r.map);
     if (where) { const s = document.createElement("span"); s.textContent = where; go.append(s); }
-    if (newsFor(r.map, r.code)) {
+    if (r.code !== "SOLO" && newsFor(r.map, r.code)) {
       const n = document.createElement("i");
       n.className = "newsdot";
       n.title = "Unread news in the Chronicle";
@@ -76,14 +80,17 @@ export function render(into: HTMLElement, label: (map: string) => string, pick: 
     const when = document.createElement("small");
     when.textContent = [ago(r.at), r.with.length ? `with ${r.with.join(", ")}` : ""].filter(Boolean).join(", ");
     go.append(when);
+    const far = done(r);
+    if (far) { const p = document.createElement("small"); p.className = "recentdone"; p.textContent = far; go.append(p); }
     go.onclick = () => pick(r);
     const x = document.createElement("button");
     x.type = "button";
     x.className = "recentx";
     x.textContent = "×";
     x.title = x.ariaLabel = `Forget ${r.code}`;
-    x.onclick = () => { forget(r.code); render(into, label, pick); };
-    li.append(go, x);
+    x.onclick = () => { forget(r.code); render(into, label, pick, done, solo); };
+    li.append(go);
+    if (r.code !== "SOLO") li.append(x);
     ul.append(li);
   }
 }
