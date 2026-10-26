@@ -1,8 +1,10 @@
 // The final look: the world and the weapon render into a multisampled buffer at a low
-// resolution (about 540 lines), get tone mapped, then pass through a retro grade: punchier colour
-// and contrast, squeezed onto a limited palette with an ordered dither, like a 90s shooter's 256
-// colours but without the mud. The frame is blown up by a whole number of screen pixels, so every
-// pixel is a crisp, even square. The HUD is HTML on top, so it stays sharp.
+// resolution (about 540 lines), then one pass tone maps it and puts it through a retro grade:
+// punchier colour and contrast, squeezed onto a limited palette with an ordered dither, like a 90s
+// shooter's 256 colours but without the mud. That pass draws the screen's canvas at the same low
+// resolution, and the browser blows it up by a whole number of screen pixels without smoothing, so
+// every pixel is a crisp, even square and no pass is ever drawn at the screen's full size. The HUD
+// is HTML on top, so it stays sharp.
 // Resolution in Settings (settings.ts) picks how many lines that is (fewer for a faster frame on a
 // big or dense screen, more for a sharper one), and Retro look turns the grade off; both are
 // remembered on this computer for every page.
@@ -10,21 +12,22 @@
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import * as Telemetry from "./telemetry";
 
+// tone mapping (ACES, as every page sets the renderer) and the screen's sRGB, then the grade
 const RetroShader = {
-  uniforms: { tDiffuse: { value: null }, pixel: { value: 1 }, size: { value: new THREE.Vector2(1, 1) }, grade: { value: 1 } },
+  uniforms: { tDiffuse: { value: null }, size: { value: new THREE.Vector2(1, 1) }, grade: { value: 1 }, toneMappingExposure: { value: 1 } },
   vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float pixel; uniform vec2 size; uniform float grade; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 size; uniform float grade; varying vec2 vUv;
+    #include <tonemapping_pars_fragment>
     // 4x4 ordered (Bayer) dither threshold, 0 to 1
     float bayer2(vec2 a){ a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
     float bayer4(vec2 a){ return bayer2(0.5 * a) * 0.25 + bayer2(a); }
     void main(){
-      // each screen pixel takes the middle of the low-res pixel it falls in
-      vec2 px = floor(gl_FragCoord.xy / pixel);
+      vec2 px = floor(gl_FragCoord.xy);
       vec3 c = texture2D(tDiffuse, (px + 0.5) / size).rgb;
+      c = sRGBTransferOETF(vec4(ACESFilmicToneMapping(c), 1.0)).rgb;
       if (grade < 0.5) { gl_FragColor = vec4(c, 1.0); return; }
       float l = dot(c, vec3(0.299, 0.587, 0.114));
       c = clamp(mix(vec3(l), c, 1.2), 0.0, 1.0);          // more saturated
@@ -55,12 +58,15 @@ export class Post {
   // enough for the gun however far the main camera's near edge is pushed out to see a long way (view.ts)
   private weaponCam = new THREE.PerspectiveCamera(72, 1, 0.02, 50);
   private retro: ShaderPass;
+  /** Screen pixels per CSS pixel the page asked the renderer for; the renderer itself is held at 1. */
+  private ratio: number;
 
   /** retro: the colour grade; lowRes: draw at the chosen resolution (normally about 540 lines) rather than full.
    *  plain: an 8-bit buffer with no multisampling, for graphics chips that can't be trusted with more (safegfx.ts). */
   constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.PerspectiveCamera, retro: boolean, private lowRes: boolean,
     plain = false, samples = 4) {
-    resStep = storedRes();   // the crash guard (safegfx.ts) may have turned it down since this module loaded
+    resStep = storedRes();
+    this.ratio = renderer.getPixelRatio();   // the crash guard (safegfx.ts) may have turned it down since this module loaded
     const target = new THREE.WebGLRenderTarget(1, 1, plain ? { type: THREE.UnsignedByteType, samples: 0 } : { type: THREE.HalfFloatType, samples });
     this.composer = new EffectComposer(renderer, target);
     this.worldPass = new RenderPass(new THREE.Scene(), camera);
@@ -68,21 +74,29 @@ export class Post {
     this.weaponPass.clear = false;
     this.weaponPass.clearDepth = true;
     this.retro = new ShaderPass(RetroShader);
+    // (three would add its own tone mapping to this pass, as it draws to the screen; it does it itself)
+    (this.retro.material as THREE.ShaderMaterial).toneMapped = false;
     let fx = retro;
     try { fx &&= localStorage.getItem(FX_KEY) !== "0"; } catch { /* storage may be blocked */ }
     this.retro.uniforms.grade.value = fx ? 1 : 0;
-    for (const p of [this.worldPass, this.weaponPass, new OutputPass(), this.retro]) this.composer.addPass(p);
+    for (const p of [this.worldPass, this.weaponPass, this.retro]) this.composer.addPass(p);
+    renderer.domElement.style.imageRendering = "pixelated";
   }
 
   setSize() {
-    const buf = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const r = this.renderer;
+    if (r.getPixelRatio() !== 1) { this.ratio = r.getPixelRatio(); r.setPixelRatio(1); }
+    const bx = Math.floor(innerWidth * this.ratio), by = Math.floor(innerHeight * this.ratio);
     // a whole number of screen pixels per game pixel, as near the chosen number of lines as that allows
     const lines = this.lowRes ? RES_STEPS[resStep].lines : 0;
-    const f = lines ? Math.max(1, Math.round(buf.y / lines)) : 1;
-    const w = Math.ceil(buf.x / f), h = Math.ceil(buf.y / f);
+    const f = lines ? Math.max(1, Math.round(by / lines)) : 1;
+    const w = Math.ceil(bx / f), h = Math.ceil(by / f);
+    r.setSize(w, h, false);
+    // (the canvas reaches a part of a game pixel past the window's edge rather than squash the last one)
+    r.domElement.style.width = `${w * f / this.ratio}px`;
+    r.domElement.style.height = `${h * f / this.ratio}px`;
     this.composer.setPixelRatio(1);
     this.composer.setSize(w, h);
-    this.retro.uniforms.pixel.value = f;
     this.retro.uniforms.size.value.set(w, h);
   }
 
@@ -100,6 +114,7 @@ export class Post {
     const info = this.renderer.info;
     info.autoReset = false;
     info.reset();
+    this.retro.uniforms.toneMappingExposure.value = this.renderer.toneMappingExposure;
     this.composer.render();
     Telemetry.drawn(this.renderer);
   }
