@@ -70,6 +70,8 @@
 // - The zones (zones.ts): how many are open follows from the sockets full, so the wall stands in the
 //   same place on every screen with nothing more sent; the host's word on the sockets also says
 //   whether the room is in free play.
+// - Which of the zones, the strange objects and the team challenges are on (features.ts) is the
+//   host's say, sent with its state ("st"); everyone else plays by the host's switches.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { B as PAD, keyLabel, padInUse, padText, rumble } from "./gamepad";
@@ -84,6 +86,7 @@ import { Oddments } from "./oddments";
 import { Reveal } from "./reveal";
 import { challengesOn, useChallenges } from "./challenges";
 import { Zones, type TravelFind } from "./zones";
+import { mine as myFeatures, packFeatures, setFeatures, unpackFeatures, type Features } from "./features";
 import "./challengetest";
 import "./lockrun";
 import "./bells";
@@ -302,6 +305,7 @@ interface StateExtra {
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
   vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
+  ft?: number;         // the host's switches for the zones, the strange objects and the challenges (features.ts)
 }
 const stripped = (e: Record<string, unknown>) => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined && v !== false && v !== 0)) as StateExtra;
 
@@ -316,7 +320,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7 };
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -1760,7 +1764,7 @@ export class Game {
     // the game's passive mode, from the host. Only take it from someone who says they're host: a
     // newcomer can look like the host for a moment, before we've heard how long they've been here.
     // A host on a page from before passive mode says nothing, which means off.
-    if (from === this.hostId && (e?.host ?? true)) this.setRoomPassive(!!e?.passive);
+    if (from === this.hostId && (e?.host ?? true)) { this.setRoomPassive(!!e?.passive); this.setRoomFeatures(unpackFeatures(e?.ft) ?? myFeatures); }
     r.avatar.setWings(!!e?.wings, !!e?.glow);
     r.smoking = !!e?.smoke;
     r.avatar.setRage(r.smoking);
@@ -2029,6 +2033,15 @@ export class Game {
 
   /** Where a player is, as this player sees them. */
   /** The game's passive mode changed (the host's say): tell the player. */
+  /** The zones, the strange objects and the challenges as the host has them: whatever's changed comes or goes. */
+  private setRoomFeatures(f: Features) {
+    if (!setFeatures(f).length) return;
+    this.oddments.switched();
+    this.quests?.repost();
+    this.mapKey.showFeatures();
+    this.minimap.spots = this.gameSpots();
+  }
+
   private setRoomPassive(on: boolean) {
     if (on === this.passive) return;
     this.passive = on;
@@ -3819,12 +3832,13 @@ export class Game {
       if (this.isHost) this.setRoomPassive(myPassive);
       else if (myPassive !== this.passive) this.toast("The host decides passive mode for this game", 3);
     }
+    if (this.isHost) this.setRoomFeatures(myFeatures);
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat || this.basket ? 1 : q(p.crouch),
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code() })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */

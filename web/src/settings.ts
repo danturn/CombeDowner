@@ -17,6 +17,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import type { DebugPanel } from "./debug";
+import { mine } from "./features";
 import { resetPadSettings } from "./gamepad";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
 import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
@@ -35,8 +36,8 @@ const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, BACKGROUND = 1, VOICE = 1;
 /** Your passive mode setting: if you're host, nothing the game runs attacks anyone (game.ts). Other players still can. */
 export let passive = load("cd-passive", 0) === 1;
 
-/** Explore all of the map with no zones (zones.ts): if you're host, for the whole room. ?zones=0 does it for one visit. */
-export let freeRoam = load("cd-freeroam", 0) === 1 || new URLSearchParams(location.search).get("zones") === "0";
+/** Explore all of the map with no zones (zones.ts): if you're host, for the whole room. ?zones=0 (features.ts) does it for one visit. */
+export let freeRoam = load("cd-freeroam", 0) === 1;
 
 /** Mouse sensitivity, as a multiple of the normal. */
 export let sensitivity = load("cd-sens", SENS) || SENS;
@@ -109,6 +110,8 @@ export function settingsPage(h: Hooks) {
   const setPassive = (on: boolean) => { passive = on; keep("cd-passive", on); calm.checked = menuCalm.checked = on; };
   calm.checked = menuCalm.checked = passive;
   const roam = $<HTMLInputElement>("menu-freeroam");
+  // with the zones switched off there's nothing but free play, so no choice to make
+  if (roam && !mine.zones) { const l = roam.closest("label"); if (l) l.style.display = "none"; }
   if (roam) { roam.checked = freeRoam; roam.onchange = () => { freeRoam = roam.checked; keep("cd-freeroam", roam.checked); }; }
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
