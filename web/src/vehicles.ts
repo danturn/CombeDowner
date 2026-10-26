@@ -632,6 +632,12 @@ export class Vehicle implements Mover {
   by = "";
   /** When the last update came from whoever's moving it (ms). */
   heard = -1e9;
+  /** Seats nobody can take (a driving examiner's, in the front passenger seat). */
+  readonly kept = new Set<number>();
+  /** Host: who isn't let back in (a passenger thrown out of a driving test). */
+  readonly barred = new Set<string>();
+  /** Takes over from the driver's own controls for a moment (an examiner's dual-control brake, or the handbrake yanked from the back). */
+  assist: ((inp: Controls) => Controls) | null = null;
   readonly root = new THREE.Group();
   private body: THREE.Group;
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
@@ -750,7 +756,7 @@ export class Vehicle implements Mover {
 
   /** The first free seat (the driver's if it is), or -1. gone: whether someone in a seat has left the game. */
   freeSeat(gone: (id: string) => boolean = () => false): number {
-    return this.seats.findIndex((id) => !id || gone(id));
+    return this.seats.findIndex((id, k) => !this.kept.has(k) && (!id || gone(id)));
   }
 
   /** How far (x, z) is from its sides: 0 inside it. */
@@ -804,6 +810,7 @@ export class Vehicle implements Mover {
 
   // ---- driving it yourself --------------------------------------------------------------------
   drive(dt: number, inp: Controls, paved: (x: number, z: number) => boolean, traffic?: Shove) {
+    if (this.assist) inp = this.assist(inp);
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
@@ -1318,6 +1325,11 @@ export class Vehicles {
     // square's waiting list here, so dropSquare never measures it
     if (!this.started.has(i)) this.started.set(i, { kind, paint, x: NaN, z: NaN });
     return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
+  }
+
+  /** A vehicle of a job's own (a driving test's learner car), numbered the same on every screen, so the host's word on who sits in it reaches it. */
+  own(i: number, kind: VKind, paint: string, x: number, z: number, a: number, label = ""): Vehicle {
+    return this.byI.get(i) ?? this.add(i, kind, paint, x, z, a, label);
   }
 
   /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */

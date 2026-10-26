@@ -160,7 +160,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
   to start. Hold E (Use) at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
-  and press again right on it for a surge, and it counts for more when you all heave together. Steady
+  and press again right on it for a surge (or shout "HEAVE!" into your mic right on it), and it counts for more when you all heave together. Steady
   shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and
   faster, until it gets away from you. Someone can climb into the cab (E at the front) to steer off
   the kerb (A and D, or the stick) and pull the handbrake (Space, or Jump) to hold it while you rest;
@@ -212,6 +212,28 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   hauls you off your feet. Two bad rows running and it collapses into a jangle; too many over the
   touch and the conductor calls Stand. With fewer than three of you, steady old ringers make up three
   bells, and anyone who climbs up late stands by the wall and watches.
+- **The Driving Test** (a team challenge, on any map with a car park on a decent road): a learner
+  car with L plates and a roof sign waits outside the test centre (on London Road East in Bath), the
+  examiner stood by it with his clipboard. E by them starts it; whoever gets in the driver's seat
+  takes the test, he sits beside them, and two more can ride in the back. He gives directions as you
+  go round a loop of the real streets near the centre, a few minutes long ("At the end of the road,
+  turn left", "Take the second road on the right"), and marks you as a real examiner would: fifteen
+  minor faults is still a pass, and one serious or dangerous fault fails you on the spot (he stamps on
+  his brake, says nothing for a moment, then "I'm afraid that's a fail"). He watches your signals at
+  every turn (← and →, or the arrow buttons), your speed against the limit, whether you stop at the
+  end of a road, the kerb, which side of the road you're on and whether you look round (the mouse or
+  the stick) before you move off and before you turn. Hit anything and that's that. The same minor
+  fault four times over is a serious one. He'll ask you to pull up on the left on the way round and
+  back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
+  the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
+  back you can turn the radio up or down (K and J) or change the station (I), wind the window down
+  (U) or pull the handbrake (Space), or use the buttons on the screen: the handbrake skids the car,
+  and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din (the
+  radio, or real noise on the back seats' mics) and he tells you to keep it down; the third
+  telling-off is a minor fault for the driver. He hears the driver laughing or shouting too, and
+  notices if they've gone quiet for ages. One pass in
+  the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
+  tests a day (more with a bigger room).
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

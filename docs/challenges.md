@@ -122,6 +122,30 @@ The pattern:
 - Let the host know who's up there (the Climb's "cs" says so), so someone who's gone back down
   doesn't hold up the win.
 
+## A car of your own
+
+A challenge can put one of the game's own vehicles out for players to drive like any other (The
+Driving Test's learner car, `drivingtest.ts`): `w.vehicle(i, kind, paint, x, z, a, label)` adds it to
+the game's vehicles, and `w.dropVehicle(v)` takes it away again, getting anyone in it out first.
+Give it the same number on every screen (anything from `2 ** 39` up, clear of the parked cars, the
+traffic and the squares') and build it from the seed on each, and the host's word on who sits where
+reaches it as it does any car. `v.kept` holds seats nobody can take (the examiner's), `v.barred`
+(host) who isn't let back in, and `v.assist`, on the driver's screen, takes over their controls for a
+moment (a dual-control brake, a handbrake yanked from the back). `w.seated()` says which vehicle and
+seat you're in, `w.getOut()` gets you out, `w.windows(open)` lets the street's sound in, and
+`SFX.carRadio(level)` turns the music up or down as a car radio. `w.pavement(x, z)` says whether a
+point is up on the pavement, for judging the kerb, and `missionSheet` (`missionscreens.ts`) puts up a
+filled-in form, for a results sheet.
+
+## Listening to the players
+
+`w.voice(id)` says how loud someone is on their mic (you included): `state` 0 quiet, 1 talking, 2
+shouting, and `laughing`, a rough guess. Each player measures only their own voice
+(`voicelevel.ts`) and it rides in their position updates, so the host can read anyone's. Nobody's
+words are heard or recorded. For your own voice, `voiceLevel.shoutAt` is when your last shout began,
+for timing a shout against a beat as Push the Bus does with its "heave". Without a mic everyone's
+quiet, so anything that listens must also work with keys alone.
+
 ## The reward
 
 Winning a challenge brings exactly one object, at `done.x, done.z`, once per challenge per game day.

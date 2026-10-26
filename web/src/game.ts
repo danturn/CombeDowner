@@ -90,6 +90,7 @@ import "./bells";
 import "./theclimb";
 import "./pushbus";
 import "./tightrope";
+import "./drivingtest";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -122,6 +123,7 @@ import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
 import { Quests, type Perch, type QuestWorld } from "./quests";
+import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
 import { Signals } from "./signals";
 import "./wanted";
@@ -273,6 +275,7 @@ export interface GameCarry {
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
+  level: number;                                                 // how loud they say they are on their mic (voicelevel.ts)
   rideCode: number; grindStyle: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
   cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   bal?: number;                             // the balloon basket they're in (balloons.ts, its number), if any
@@ -297,6 +300,7 @@ interface StateExtra {
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
+  vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
 }
 const stripped = (e: Record<string, unknown>) => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined && v !== false && v !== 0)) as StateExtra;
 
@@ -311,7 +315,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3 };
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -372,6 +376,8 @@ export class Game {
   private nicking = false;                       // the car we've asked for is one we're pulling out of the traffic
   /** The vehicle you're in, and which seat (0 is the driver's). */
   private ride: { v: Vehicle; seat: number } | null = null;
+  private windowsDown = false;                     // a job's car with its windows wound down (drivingtest.ts): the street comes in
+  private sentLevel = 0;                           // how loud we last said we were (voicelevel.ts)
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   /** At the wheel of something (a game controller's triggers are then its pedals). */
@@ -1572,7 +1578,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0, grindStyle: 0 };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0, grindStyle: 0, level: 0 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -1647,6 +1653,7 @@ export class Game {
     r.inCar = e?.car;
     r.grindStyle = e?.gr ?? 0;
     r.avatar.wave = e?.wv ?? 0;
+    r.level = e?.vl ?? 0;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2193,9 +2200,9 @@ export class Game {
       const c = this.traffic.take(d.t!);
       if (c) v = this.vehicles.spawn(d.v, c.paint, c.make, c.x, c.z, c.a);
     }
-    if (!v || v.driver.startsWith("@")) return;
+    if (!v || v.driver.startsWith("@") || v.barred.has(from)) return;
     const gone = (id: string) => id !== from && id !== this.net.selfId && !this.peers().includes(id);
-    const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
+    const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && !v.kept.has(d.k!) && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
     const k = v.seats.includes(from) ? v.seats.indexOf(from) : want >= 0 ? want : v.freeSeat(gone);
     if (k >= 0 && s.alive && s.life === d.life) {
       const was = this.vehicles.of(from);
@@ -3694,7 +3701,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code() })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -3899,7 +3906,7 @@ export class Game {
     this.drawRides(dt);
     this.engineSounds();
     const at = this.player.pos;
-    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, !!this.ride || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
+    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, (!!this.ride && !this.windowsDown) || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
     this.vsT -= dt;
     if (this.vsT <= 0) {
       this.vsT = 1 / SEND_HZ;
@@ -3965,7 +3972,7 @@ export class Game {
     this.torches.update(this.camera, this.torchOn && this.alive, [...this.remotes.values()].filter((r) => r.torch && r.avatar.alive && r.avatar.root.visible)
       .map((r) => { const a = r.avatar; return { x: a.x, y: a.y + EYE + (CROUCH_EYE - EYE) * a.crouch + (PRONE_EYE - EYE) * a.prone, z: a.z, yaw: a.yaw, pitch: a.pitch }; }));
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
-    if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
+    if (this.voice.mode !== this.sentTalk || voiceLevel.code() !== this.sentLevel) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }
     const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
     this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => this.posOf(id));
@@ -4512,6 +4519,17 @@ export class Game {
       body: () => this.player,
       stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
       pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },
+      vehicle: (i, kind, paint, x, z, a, label) => this.vehicles.own(i, kind, paint, x, z, a, label),
+      dropVehicle: (v) => {
+        if (this.ride?.v === v) this.getOut();
+        if (this.askedCar === v.i) this.askedCar = -1;
+        this.vehicles.remove(v);
+      },
+      seated: () => (this.ride ? { v: this.ride.v, seat: this.ride.seat } : null),
+      getOut: () => this.getOut(),
+      windows: (open) => { this.windowsDown = open; },
+      pavement: (x, z) => this.world.pavement(x, z),
+      voice: (id) => decodeLevel(id === this.net.selfId ? voiceLevel.code() : this.remotes.get(id)?.level ?? 0),
     };
   }
 

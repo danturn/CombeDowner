@@ -117,6 +117,8 @@ function style() {
 .msc-night .small{display:flex;gap:10px;border-top:1px solid #1b1b1d;margin-top:8px;padding-top:6px}
 .msc-night .small div{flex:1;font-size:clamp(11px,2.2vw,14px);line-height:1.25}
 .msc-night .small h4{margin:0 0 2px;font-size:1em;text-transform:uppercase;letter-spacing:.06em;color:#8a2a1f}
+.msc-sheet .band{position:relative}
+.msc-sheet .stamp{position:absolute;right:18px;top:14px;transform:rotate(-12deg);font:800 clamp(26px,6vw,48px) 'Barlow Condensed',Impact,sans-serif;letter-spacing:.08em;border:4px solid;padding:0 10px;opacity:.85}
 @media (max-width:700px),(max-height:500px){.msc-night .small{flex-direction:column;gap:4px}.msc-night{top:2%}}
 @keyframes msc-in{from{transform:scale(2.2) rotate(-5deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes msc-fade{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
@@ -312,6 +314,16 @@ export function missionEnd(o: MissionEnd): EndHandle {
     requestAnimationFrame(tick);
   }
   return handle;
+}
+
+/** A form filled in at the end (the driving test's report): a heading, a big stamp across it, and
+ *  sections of lines. Lines are plain text. */
+export function missionSheet(o: { kind: string; title: string; who: string; stamp: string; good: boolean; sections: { head: string; lines: string[] }[]; foot?: string; life?: number }) {
+  const colour = o.good ? "#1f6a33" : "#a3201c";
+  putCard("msc-night msc-sheet", `<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div><div class="by">${esc(o.who)}</div>`
+    + `<div class="stamp" style="color:${colour};border-color:${colour}">${esc(o.stamp)}</div>`
+    + `<div class="small">${o.sections.map((x) => `<div><h4>${esc(x.head)}</h4>${x.lines.length ? x.lines.map((l) => esc(l)).join("<br>") : "None"}</div>`).join("")}</div>`
+    + (o.foot ? `<div class="stand">${esc(o.foot)}</div>` : ""), o.life ?? 14, colour);
 }
 
 /** The night out's front page (nightout.ts): a newspaper card over the game, written by paper.ts. Items' text is html already escaped. */
