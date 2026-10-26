@@ -787,11 +787,19 @@ padSettings();
 
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
+const told = new Set<string>();
 function frame(now: number) {
+  // booked first, so something going wrong in one frame can't stop every frame after it
+  requestAnimationFrame(frame);
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   pad.poll(dt);
-  if (game) { game.update(dt); playing(raw); } else attract(now);
+  try {
+    if (game) { game.update(dt); playing(raw); } else attract(now);
+  } catch (e) {
+    const what = String((e as Error)?.stack ?? e);
+    if (!told.has(what)) { told.add(what); console.error("a frame went wrong, carrying on:", e); }
+  }
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
   // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
@@ -802,7 +810,6 @@ function frame(now: number) {
   debug.frame(raw);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
