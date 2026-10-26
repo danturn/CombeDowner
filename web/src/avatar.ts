@@ -172,7 +172,7 @@ export class Avatar {
   x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0; prone = 0;
   /** Tipped over sideways (radians), and the arms held out with a pole or flailing (a tightrope). */
   lean = 0;
-  hold: "" | "pole" | "flail" | "push" | "rope" = "";
+  hold: "" | "pole" | "flail" | "push" | "shove" | "rope" = "";
 
   /** hairColour: theirs instead of the one the seed picks; the rest of the look is still the seed's. */
   constructor(name: string, colour: string, seed = name + colour, hairColour?: string) {
@@ -582,7 +582,7 @@ export class Avatar {
     // lean into a run, and a little with where they're looking
     const look = Math.max(-1.3, Math.min(1.3, this.pitch));
     this.upper.position.y = hipY;
-    this.upper.rotation.x = (-0.14 * run - crouch * 0.12 + look * 0.12 - (this.hold === "push" ? 0.5 : 0)) * (1 - pr) + (PROP + Math.sin(this.wiggle * 0.5) * 0.03) * pr;
+    this.upper.rotation.x = (-0.14 * run - crouch * 0.12 + look * 0.12 - (this.hold === "push" ? 0.5 : this.hold === "shove" ? 0.75 : 0)) * (1 - pr) + (PROP + Math.sin(this.wiggle * 0.5) * 0.03) * pr;
     const lean = this.upper.rotation.x;
     // the head looks where they're looking, whichever way up the body is, and a baby's head is big
     this.head.rotation.x = Math.max(-0.8 + 0.4 * pr, Math.min(0.8, this.pitch)) - lean + Math.PI / 2 * pr;
@@ -618,6 +618,10 @@ export class Avatar {
       // shoulder to something heavy: both hands flat out in front at chest height
       arm(ru, rl, _t.set(0.2, -0.12, -0.5), _a.set(0.8, -0.6, 0.2), true);
       arm(lu, ll, _t.set(-0.2, -0.12, -0.5), _a.set(-0.8, -0.6, 0.2), false);
+    } else if (this.hold === "shove") {
+      // leant right in at a bus's back, arms out straight to it
+      arm(ru, rl, _t.set(0.22, -0.08, -0.6), _a.set(0.8, -0.6, 0.2), true);
+      arm(lu, ll, _t.set(-0.22, -0.08, -0.6), _a.set(-0.8, -0.6, 0.2), false);
     } else if (this.hold === "rope") {
       // both hands up on a bell rope's sally, just in front of the face
       const bob = Math.sin(this.wiggle * 1.6) * 0.06;

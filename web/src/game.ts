@@ -3121,7 +3121,12 @@ export class Game {
     p.onGround = true;
     p.speed = 0;
     p.crouch = 0;
+    if (at.around) {
+      const off = Math.atan2(Math.sin(p.yaw - at.around.yaw), Math.cos(p.yaw - at.around.yaw));
+      p.yaw = at.around.yaw + Math.max(-at.around.max, Math.min(at.around.max, off));
+    }
     p.applyToCamera(this.camera);
+    this.camera.position.y -= at.low ?? 0;
     this.camera.rotation.x += at.pitch ?? 0;
     this.camera.rotation.z += at.roll ?? 0;
     if (at.eye) { this.camera.position.set(at.eye.x, at.eye.y, at.eye.z); this.camera.lookAt(at.eye.lx, at.eye.ly, at.eye.lz); }

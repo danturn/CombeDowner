@@ -415,6 +415,14 @@ function busTrim(kind: BusKind): Part[] {
   ];
 }
 
+// a bus's windows catch the sky, so close to they read as glass rather than a dark hole
+const WIN = "#25313a";
+function glassFill(g: CanvasRenderingContext2D, top: number, bottom: number): CanvasGradient {
+  const f = g.createLinearGradient(0, top, 0, bottom);
+  f.addColorStop(0, "#c8d6e0"); f.addColorStop(0.45, "#7a8fa0"); f.addColorStop(1, "#3c4c58");
+  return f;
+}
+
 /** One side of a bus, front at the right end (or the left: the nearside, with the door). */
 function busSide(kind: BusKind, frontRight: boolean): THREE.CanvasTexture {
   const S = SPECS[kind], Lv = LIVERY[kind], k = 1024 / S.L, w = 1024, h = Math.round((S.H - Lv.base) * k);
@@ -424,7 +432,7 @@ function busSide(kind: BusKind, frontRight: boolean): THREE.CanvasTexture {
   const X = (along: number) => (frontRight ? along : S.L - along) * k;   // along: metres from the back
   const Y = (up: number) => (S.H - up) * k;
   const rect = (a0: number, a1: number, u0: number, u1: number, col: string) => {
-    g.fillStyle = col;
+    g.fillStyle = col === WIN ? glassFill(g, Y(u1), Y(u0)) : col;
     const x0 = X(a0), x1 = X(a1);
     g.fillRect(Math.min(x0, x1), Y(u1), Math.abs(x1 - x0), (u1 - u0) * k);
   };
@@ -434,10 +442,10 @@ function busSide(kind: BusKind, frontRight: boolean): THREE.CanvasTexture {
   rect(0, S.L, skirt, skirt + 0.04, Lv.badger ? "#1b3b20" : "#c9a23a");
   // windows: dark glass between yellow pillars, a door on the nearside at the front
   const front = S.L - 1.25;
-  for (let a = 0.35; a < front - 0.2; a += 1.35) rect(a, Math.min(a + 1.2, front - 0.1), win[0], win[1], "#25313a");
-  rect(front + 0.1, S.L - 0.2, win[0], win[1], "#25313a");
+  for (let a = 0.35; a < front - 0.2; a += 1.35) rect(a, Math.min(a + 1.2, front - 0.1), win[0], win[1], WIN);
+  rect(front + 0.1, S.L - 0.2, win[0], win[1], WIN);
   if (!frontRight) { rect(front - 0.15, S.L - 0.35, Lv.base + 0.05, win[1], "#1d262d"); rect(front + 0.38, front + 0.42, Lv.base + 0.05, win[1], Lv.body); }
-  if (two) for (let a = 0.3; a < S.L - 0.4; a += 1.48) rect(a, Math.min(a + 1.33, S.L - 0.25), 2.88, 3.7, "#25313a");
+  if (two) for (let a = 0.3; a < S.L - 0.4; a += 1.48) rect(a, Math.min(a + 1.33, S.L - 0.25), 2.88, 3.7, WIN);
   // the wheel arches
   g.fillStyle = "#141516";
   for (const ax of Lv.axles) { g.beginPath(); g.arc(X(S.L / 2 + ax), Y(Lv.r), (Lv.r + 0.12) * k, Math.PI, 0); g.fill(); }
@@ -474,24 +482,24 @@ function busEnd(kind: BusKind, front: boolean): THREE.CanvasTexture {
   c.width = w; c.height = h;
   const g = c.getContext("2d")!;
   const Y = (up: number) => (S.H - up) * k;
-  const rect = (x0: number, x1: number, u0: number, u1: number, col: string) => { g.fillStyle = col; g.fillRect(x0 * k, Y(u1), (x1 - x0) * k, (u1 - u0) * k); };
+  const rect = (x0: number, x1: number, u0: number, u1: number, col: string) => { g.fillStyle = col === WIN ? glassFill(g, Y(u1), Y(u0)) : col; g.fillRect(x0 * k, Y(u1), (x1 - x0) * k, (u1 - u0) * k); };
   const two = Lv.decks === 2, skirt = two ? 1.38 : 1.15, W = S.W, mid = W / 2;
   rect(0, W, Lv.base, S.H, Lv.body);
   rect(0, W, Lv.base, skirt, Lv.skirt);
   if (front) {
     const ws = two ? [1.45, 2.38] : [1.2, 2.25], blind = two ? [2.45, 2.76] : [2.32, 2.66];
-    rect(0.08, mid - 0.03, ws[0], ws[1], "#25313a"); rect(mid + 0.03, W - 0.08, ws[0], ws[1], "#25313a");   // windscreen
+    rect(0.08, mid - 0.03, ws[0], ws[1], WIN); rect(mid + 0.03, W - 0.08, ws[0], ws[1], WIN);   // windscreen
     rect(0.25, W - 0.25, blind[0], blind[1], "#0d0d0d");                                                    // destination blind
     g.fillStyle = "#ffb52a"; g.textAlign = "center"; g.textBaseline = "middle";
     g.font = `700 ${Math.round(0.19 * k)}px "Helvetica Neue", Arial, sans-serif`;
     g.fillText(Lv.dest, mid * k, Y((blind[0] + blind[1]) / 2));
-    if (two) { rect(0.1, mid - 0.05, 2.86, 3.7, "#25313a"); rect(mid + 0.05, W - 0.1, 2.86, 3.7, "#25313a"); }
+    if (two) { rect(0.1, mid - 0.05, 2.86, 3.7, WIN); rect(mid + 0.05, W - 0.1, 2.86, 3.7, WIN); }
     rect(mid - 0.55, mid + 0.55, Lv.base + 0.1, Lv.base + 0.65, "#16181a");                                 // grille
     rect(0.1, 0.5, Lv.base + 0.25, Lv.base + 0.45, "#eef0e6"); rect(W - 0.5, W - 0.1, Lv.base + 0.25, Lv.base + 0.45, "#eef0e6");
     rect(mid - 0.3, mid + 0.3, Lv.base + 0.02, Lv.base + 0.12, "#f2f2ea");                                   // plate
   } else {
     for (let u = Lv.base + 0.15; u < skirt - 0.1; u += 0.12) rect(0.4, W - 0.4, u, u + 0.05, "#16181a");   // engine louvres
-    if (two) rect(0.3, W - 0.3, 2.9, 3.6, "#25313a"); else rect(0.3, W - 0.3, 1.3, 2.1, "#25313a");
+    if (two) rect(0.3, W - 0.3, 2.9, 3.6, WIN); else rect(0.3, W - 0.3, 1.3, 2.1, WIN);
     rect(0.1, 0.35, Lv.base + 0.25, Lv.base + 0.65, "#b02a20"); rect(W - 0.35, W - 0.1, Lv.base + 0.25, Lv.base + 0.65, "#b02a20");
     rect(mid - 0.3, mid + 0.3, skirt - 0.05, skirt + 0.07, "#e8c42a");
   }
