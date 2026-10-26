@@ -255,6 +255,12 @@ export class GameMap {
   /** More to bump into, from the railways (the sides of the platforms): each pushes a circle at feet
    *  height y out of itself and says how high above the feet it was (-Infinity if it didn't). */
   pushers: ((pos: { x: number; z: number }, y: number, r: number) => number)[] = [];
+  /** More for rounds to hit, from the strange structures (oddments.ts): each gives the first hit
+   *  along a ray within maxDist, or null. */
+  rays: ((ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number) => RayHit | null)[] = [];
+  /** Ground kept clear round what stands there only while the game runs (the strange structures),
+   *  scene x, z and radius: blocked() counts it, so nothing put down by the game lands on it. */
+  readonly keepClear: { x: number; z: number; r: number }[] = [];
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
@@ -1169,8 +1175,20 @@ export class GameMap {
     return best;
   }
 
-  /** True if a circle at (x, z) touches a building, wall or tree. */
+  /** Scene (x, z), or if that's on ground kept clear, the nearest spot just off it. */
+  offKept(x: number, z: number): [number, number] {
+    for (const k of this.keepClear) {
+      const d = Math.hypot(x - k.x, z - k.z);
+      if (d >= k.r) continue;
+      const ux = d > 1e-6 ? (x - k.x) / d : 1, uz = d > 1e-6 ? (z - k.z) / d : 0;
+      return [k.x + ux * (k.r + 1), k.z + uz * (k.r + 1)];
+    }
+    return [x, z];
+  }
+
+  /** True if a circle at (x, z) touches a building, wall or tree, or ground kept clear. */
   blocked(x: number, z: number, r: number): boolean {
+    if (this.keepClear.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + r)) return true;
     const p = { x, z };
     this.collide(p, -1e9, r);
     return Math.hypot(p.x - x, p.z - z) > 1e-3;
@@ -1193,6 +1211,10 @@ export class GameMap {
       const hit = rayBox(ox, oy, oz, dx, dy, dz, m);
       if (!hit || hit.t > maxDist || (best && hit.t >= best.dist)) continue;
       best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: hit.ny, nz: hit.nz, mover: m };
+    }
+    for (const f of this.rays) {
+      const h = f(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist);
+      if (h && (!best || h.dist < best.dist)) best = h;
     }
     return this.groundHit(ox, oy, oz, dx, dy, dz, maxDist, best);
   }

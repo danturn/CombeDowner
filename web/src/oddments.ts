@@ -3,7 +3,8 @@
 // big things bring one: a team challenge won (challenges.ts), a pub won back from the Flag Lads,
 // a job done to gold or three stars (no more than FEATS_A_DAY of those a game day). One turns up
 // where it was earned, and has to be carried by hand to the structure, a leaning stack of dark
-// frames standing on open ground, with a few empty sockets up its corners. Each zone of the map
+// frames standing on open ground, with a few empty sockets up its corners. It's solid, and the
+// ground round it is kept clear of everything else the game puts down (map.ts keepClear). Each zone of the map
 // but the last (zones.ts) has a structure of its own, and only the one in the furthest zone open
 // takes objects. Carrying one fills your one carry slot (as a ride or a ladder does), stops you
 // sprinting and slows you a little; X sets it down, and if you're downed it drops where you fell,
@@ -24,7 +25,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
-import type { GameMap } from "./map";
+import { type GameMap, type RayHit, rayCircle } from "./map";
 import { challengesOn, isChallenge } from "./challenges";
 import type { Zone, Zones } from "./zones";
 import type { Job, Offer } from "./quests";
@@ -36,6 +37,8 @@ const REACH = 2.2;                 // how close to pick one up
 const SET_REACH = 5.5;             // and to the structure's middle to set it in a socket
 const SEND_EVERY = 3;
 const SHOWN = 1800;                // the structure is drawn from this far off
+const SOLID = 3.3;                 // the plinth's radius, which takes in the frames above it
+const KEEP = 9;                    // nothing the game puts down lands this near a structure's middle
 const GLOW = "#ff5a7a", BODY = "#ffc4cf";
 
 export interface Holder { id: string; x: number; y: number; z: number; yaw: number; alive: boolean }
@@ -213,6 +216,13 @@ function structure(n: number): { root: THREE.Group; sockets: THREE.Vector3[]; fr
   return { root, sockets, frames };
 }
 
+/** How high a structure with n sockets stands, objects in its top sockets and all. */
+function structureTop(n: number) {
+  let y = 0.55;
+  for (let k = 0; k < Math.max(1, Math.ceil(n / 4)); k++) y += 0.95 + k * 0.06;
+  return y + 0.7;
+}
+
 // ---- the game's side of them ----------------------------------------------------------------------
 
 type Built = { root: THREE.Group; sockets: THREE.Vector3[]; frames: THREE.Mesh[][] };
@@ -254,6 +264,7 @@ export class Oddments {
       if (d) this.s = this.saved = { ...d, e: undefined, a: undefined };
     } catch { /* no storage: from nothing */ }
     for (const zone of zones.list) if (zone.home && zone.sockets) this.structs.push({ zone, x: zone.home.x, y: zone.home.y, z: zone.home.z, built: null, inSockets: [] });
+    this.makeSolid();
     zones.set(this.s.f, free);
     const q = new URLSearchParams(location.search);
     // for testing: ?objects=6 has that many turn up round you, and ?zone=3 opens up to the third zone
@@ -262,6 +273,43 @@ export class Oddments {
     const zone = q.get("zone");
     if (zone !== null && Number.isFinite(+zone)) this.devZone = Math.max(1, Math.min(zones.count, Math.round(+zone)));
   }
+
+  /** The structures stand solid from the start, wherever anyone is, and the ground round them is
+   *  kept clear of everything else the game puts down (noticeboards, races, spawns, cars, objects). */
+  private makeSolid() {
+    const solid = this.structs.map((t) => ({ x: t.x, z: t.z, y: t.y, top: t.y + structureTop(t.zone.sockets) }));
+    this.pusher = (pos, y, r) => {
+      let block = -Infinity;
+      for (const t of solid) {
+        if (y > t.top) continue;
+        const dx = pos.x - t.x, dz = pos.z - t.z, d = Math.hypot(dx, dz), m = SOLID + r;
+        if (d >= m) continue;
+        const ux = d > 1e-6 ? dx / d : 1, uz = d > 1e-6 ? dz / d : 0;
+        pos.x = t.x + ux * m; pos.z = t.z + uz * m;
+        block = Math.max(block, t.top - y);
+      }
+      return block;
+    };
+    this.ray = (ox, oy, oz, dx, dy, dz, maxDist) => {
+      let best: RayHit | null = null;
+      for (const t of solid) {
+        const hit = rayCircle(ox, oz, dx, dz, t.x, t.z, SOLID);
+        if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
+        const y = oy + dy * hit;
+        if (y < t.y || y > t.top) continue;
+        const hx = ox + dx * hit - t.x, hz = oz + dz * hit - t.z, l = Math.hypot(hx, hz) || 1;
+        best = { dist: hit, kind: "barrier", nx: hx / l, ny: 0, nz: hz / l };
+      }
+      return best;
+    };
+    this.kept = solid.map((t) => ({ x: t.x, z: t.z, r: KEEP }));
+    this.map.pushers.push(this.pusher);
+    this.map.rays.push(this.ray);
+    this.map.keepClear.push(...this.kept);
+  }
+  private pusher: GameMap["pushers"][number] = () => -Infinity;
+  private ray: GameMap["rays"][number] = () => null;
+  private kept: GameMap["keepClear"] = [];
 
   private get key() { return `cd-oddments:${this.mapId}`; }
 
@@ -509,7 +557,9 @@ export class Oddments {
   /** Set yours down where you stand (X, or taking something else into your hands). */
   drop(me: Holder, isHost: boolean) {
     if (!this.carrying(me.id)) return;
-    const d = { op: "drop", x: me.x + Math.sin(me.yaw) * -0.8, y: me.y, z: me.z + Math.cos(me.yaw) * -0.8 };
+    // in front of you, but never into a wall or the structure you're stood against
+    const at = this.map.collide({ x: me.x + Math.sin(me.yaw) * -0.8, z: me.z + Math.cos(me.yaw) * -0.8 }, me.y, 0.3);
+    const d = { op: "drop", x: at.x, y: me.y, z: at.z };
     SFX.oddment("drop");
     if (isHost) this.ask(me.id, d, me.id, [me, ...this.others]); else this.send("odq", d);
   }
@@ -633,5 +683,11 @@ export class Oddments {
   /** How many challenges are on this map at all (for the debug panel). */
   challenges() { return challengesOn(this.map).length; }
 
-  dispose() { this.group.removeFromParent(); }
+  dispose() {
+    this.group.removeFromParent();
+    const out = <T,>(list: T[], v: T) => { const k = list.indexOf(v); if (k >= 0) list.splice(k, 1); };
+    out(this.map.pushers, this.pusher);
+    out(this.map.rays, this.ray);
+    for (const k of this.kept) out(this.map.keepClear, k);
+  }
 }

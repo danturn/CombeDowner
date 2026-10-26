@@ -122,7 +122,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
   anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
-  Combe Down), and E sets it in a socket. Filled sockets glow. There's no counter: the structures are
+  Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
+  spawns) is put down right by it. Filled sockets glow. There's no counter: the structures are
   the only record, and the room carries on from whoever has got furthest.
 - **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
   (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force

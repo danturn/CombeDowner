@@ -4583,7 +4583,7 @@ export class Game {
         const out: { n: string; x: number; z: number }[] = [];
         for (const p of [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []]) {
           if (!p.n || p.r.length < 3) continue;
-          const x = p.r.reduce((s, q) => s + q[0], 0) / p.r.length, z = -p.r.reduce((s, q) => s + q[1], 0) / p.r.length;
+          const [x, z] = this.map.offKept(p.r.reduce((s, q) => s + q[0], 0) / p.r.length, -p.r.reduce((s, q) => s + q[1], 0) / p.r.length);
           if (this.map.fieldEdge(x, z) < 20) continue;
           if (!out.some((o) => o.n === p.n && Math.hypot(o.x - x, o.z - z) < 150)) out.push({ n: p.n, x, z });
         }
