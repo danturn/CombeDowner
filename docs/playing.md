@@ -52,6 +52,9 @@ the balloons with 5. Once open, travel still stops at the wall: a bus you drive,
 can't go through it, and a bus you call only comes from inside it. Cars you can drive are always
 there: they're parked in the first zone.
 
+Put somewhere past the wall (a link with a spot in it, Go to, or the wall going up round where you
+already were), you come to clear ground just inside it, the nearest there is, and the wall says why.
+
 A room opens up to the furthest zone anyone in it has reached, and never goes backwards. To have
 everything open, tick "Explore all of the map (no zones)" on the main menu, or add `?zones=0`; the
 host's choice counts for everyone in the room.
@@ -192,7 +195,8 @@ button. Whatever was on that button swaps to the one you left, and getting out o
 a button. A button can carry one thing on a tap and another on a hold, as Square and Circle do.
 Reset to default (Warzone layout) puts them all back. Buttons you moved before the Warzone layout
 stay where you put them, and the rest take the new layout. While you play with the pad, the prompts
-show the pad's buttons instead of keys, and say "hold □" where a hold is needed.
+show the pad's buttons instead of keys, and say "hold □" where a hold is needed. A pad (or a touch
+screen) aims without the mouse, so "Click to aim" only shows while you're on the mouse and keys.
 
 | Button | On foot | Driving |
 |---|---|---|
@@ -458,7 +462,9 @@ stops the clock in the morning, to try it.
 Every game day a fresh set of jobs goes up on noticeboards at real places round Bath, a few near
 the village and the rest across town, each a badge on the maps. Walk up to one and press E (Use) to
 take it on. Everyone in the game is on the same job at once, with a card at the top left saying how
-it's going, and the reward drops where it finishes. Everyone gets the same noticeboards that day,
+it's going, and the reward drops where it finishes. Its title card comes up over the crosshair for
+four seconds, clear of that card and of the prompts under the crosshair, and anything the game has
+to call out waits till it's gone. Everyone gets the same noticeboards that day,
 and a job you've done stays ticked off till the next. Call off a job from the pause menu.
 
 **Today's jobs**: when you join, the front page of the Bath Chronicle shows three little missions

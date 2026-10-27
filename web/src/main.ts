@@ -6,7 +6,7 @@ import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
-import { STREETS, controlsPage, ctl, ctlText, placeNow } from "./controls";
+import { STREETS, controlsPage, ctl, ctlText, input, placeNow } from "./controls";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -819,6 +819,7 @@ padSettings();
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 const told = new Set<string>();
+let inputWas = "";
 function frame(now: number) {
   // booked first, so something going wrong in one frame can't stop every frame after it
   requestAnimationFrame(frame);
@@ -826,6 +827,9 @@ function frame(now: number) {
   last = now;
   const js0 = performance.now();
   pad.poll(dt);
+  // for the stylesheet: a pad or a touch screen aims without the mouse, so no "click to aim"
+  const using = input();
+  if (using !== inputWas) document.body.dataset.input = inputWas = using;
   try {
     if (game) { game.update(dt); playing(raw); } else attract(now);
   } catch (e) {

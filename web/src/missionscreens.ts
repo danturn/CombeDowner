@@ -1,8 +1,10 @@
 // The screens every mission shares, so a job, a race and the bonfire all look and feel alike:
-// a title card when it starts, a panel with the goal and how far you've got that stays up all the
-// way through, a banner for each stage (a wave, a clue, a checkpoint), and a card at the end that
-// is a party for a win and a quiet one for a loss. All drawn here on the page over the game, in the
-// look of the HUD and the race finish banner, in the HUD's own layer so they go when it does.
+// a title card when it starts (over the crosshair, clear of the panel and of the prompts under the
+// crosshair, with call-outs held back till it's gone), a panel with the goal and how far you've got
+// that stays up all the way through, a banner for each stage (a wave, a clue, a checkpoint), and a
+// card at the end that is a party for a win and a quiet one for a loss. All drawn here on the page
+// over the game, in the look of the HUD and the race finish banner, in the HUD's own layer so they
+// go when it does.
 //
 // Nothing here ever takes a click, and nothing goes over the network: each player's screen draws
 // them from the events that player already gets (quests.ts, race.ts, bonfire.ts). The panel is
@@ -14,6 +16,7 @@ import { ctlText } from "./controls";
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
 const ACCENT = "#3ec7e8";
 const FADE = 0.8;            // seconds a card spends fading
+const START_SECS = 4;        // a title card's time up: call-outs are held back while it is
 const PIECES = 180;
 
 export interface MissionStart { title: string; goal: string; detail?: string; label?: string; colour?: string; /** Your best at this kind of mission, in words ("gold", "3 stars"). */ best?: string }
@@ -87,8 +90,11 @@ function style() {
 .msc .goal{font-weight:600;font-size:clamp(17px,3.6vw,28px);margin-top:6px;line-height:1.15}
 .msc .detail{font-weight:600;font-size:clamp(13px,2.8vw,19px);margin-top:4px;color:#c8d4dc}
 .msc .detail.best{color:#ffd84a}
-.msc-start,.msc-stage{top:34%}
-.msc-stage .title{font-size:clamp(24px,5vw,42px)}
+.msc-start,.msc-stage{top:auto;bottom:calc(50% + 30px);left:50%;right:auto;transform:translateX(-50%);width:min(760px,94vw)}
+#hud:has(#mprog:not([hidden])) :is(.msc-start,.msc-stage){width:clamp(260px,calc(100vw - 2 * (min(320px,100vw - 230px) + 56px)),760px)}
+:is(.msc-start,.msc-stage) .title{font-size:clamp(26px,4.6vw,46px)}
+:is(.msc-start,.msc-stage) .goal{font-size:clamp(15px,2.4vw,22px)}
+.msc-stage .title{font-size:clamp(24px,4.4vw,40px)}
 .msc-end{inset:0;top:0;justify-content:center}
 .msc-end canvas{position:absolute;inset:0;width:100%;height:100%}
 .msc-end .band{position:relative}
@@ -120,7 +126,13 @@ function style() {
 .msc-night .small h4{margin:0 0 2px;font-size:1em;text-transform:uppercase;letter-spacing:.06em;color:#8a2a1f}
 .msc-sheet .band{position:relative}
 .msc-sheet .stamp{position:absolute;right:18px;top:14px;transform:rotate(-12deg);font:800 clamp(26px,6vw,48px) 'Barlow Condensed',Impact,sans-serif;letter-spacing:.08em;border:4px solid;padding:0 10px;opacity:.85}
-@media (max-width:700px),(max-height:500px){.msc-night .small{flex-direction:column;gap:4px}.msc-night{top:2%}}
+@media (max-width:700px),(max-height:500px){.msc-night .small{flex-direction:column;gap:4px}.msc-night{top:2%}
+  .msc-start,.msc-stage{bottom:calc(50% + 22px)}
+  #hud:has(#mprog:not([hidden])) :is(.msc-start,.msc-stage){width:clamp(240px,calc(100vw - 2 * (min(240px,100vw - 170px) + 40px)),760px)}
+  :is(.msc-start,.msc-stage) .band{padding:6px 10px 8px}
+  :is(.msc-start,.msc-stage) .title{font-size:clamp(22px,4.4vw,32px)}
+  :is(.msc-start,.msc-stage) .goal{font-size:clamp(13px,2.2vw,16px);margin-top:3px}
+  :is(.msc-start,.msc-stage) .detail{font-size:13px;margin-top:2px}}
 @keyframes msc-in{from{transform:scale(2.2) rotate(-5deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes msc-fade{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
 @keyframes msc-pop{from{transform:scale(1)}to{transform:scale(1.08) rotate(-2deg)}}
@@ -195,6 +207,12 @@ function dropCard() {
 /** Take down the card in the middle of the screen now (a race's countdown wants the middle). */
 export function missionCardDrop() { dropCard(); }
 
+/** A title or stage card has the space over the crosshair: call-outs wait till it's gone, as they
+ *  do for a race's countdown, rather than land on top of it. */
+export function missionCardUp() {
+  return !!card && !card.classList.contains("out") && (card.classList.contains("msc-start") || card.classList.contains("msc-stage"));
+}
+
 function putCard(cls: string, html: string, life: number, colour: string) {
   style();
   dropCard();
@@ -219,11 +237,12 @@ export function missionStart(o: MissionStart) {
     + (o.detail ? `<div class="detail">${esc(ctlText(o.detail))}</div>` : "")
     + (o.best ? `<div class="detail best">Your best: ${esc(o.best)} \u2014 beat it</div>` : "");
   dropCard();
-  if (!paperUp()) { putCard("msc-start", html, 5, col); return; }
+  ending?.remove();   // the last mission's end card makes way for the new one
+  if (!paperUp()) { putCard("msc-start", html, START_SECS, col); return; }
   let waited = 0;
   const poll = () => {
     if (paperUp() && (waited += 300) < 20000) { paperWait = window.setTimeout(poll, 300); return; }
-    putCard("msc-start", html, 5, col);
+    putCard("msc-start", html, START_SECS, col);
   };
   paperWait = window.setTimeout(poll, 300);
 }
