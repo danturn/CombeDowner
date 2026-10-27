@@ -2550,7 +2550,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         for a, b in zip(q, q[1:]):
             n = math.hypot(b[0] - a[0], b[1] - a[1])
             if d <= n:
-                return all(len(e) > 3 and e[3] in (1, 2) for e in (a, b))
+                return any(len(e) > 3 and e[3] in (1, 2) for e in (a, b))
             d -= n
         return False
 
