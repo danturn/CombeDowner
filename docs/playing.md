@@ -179,7 +179,7 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 
 | Button | On foot | Driving |
 |---|---|---|
-| Left stick | walk (pushed right forward, run) | steer |
+| Left stick | walk | steer |
 | Right stick | look | look |
 | R2 | shoot (kick, bowl) | accelerate |
 | L2 | aim, held | brake and reverse |
@@ -188,7 +188,7 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 | Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
 | Triangle | reload | |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
-| L3 | a ride's grind or manual (Shift) | |
+| L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
 | R3, held | radio | radio |
 | D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
 | Create, held | the scores | the scores |
@@ -741,8 +741,13 @@ sways. Pints (40 health) wait outside the nearest pubs, and sniper rifles, round
 turn up outside shops and pubs near you. The middle of Firs Field fills with either a sniper rifle
 or a bottle of Co-op Bucks Fizz, which fills you right up. Run dry and it's fists.
 
-It's paintball by default: the guns are markers with a hopper of loose balls on top that roll and
-rattle as you move and shoot. Each player's paint is their own colour and splats where it lands.
+It's paintball by default: the rifle is a marker with a hopper of loose balls on top that roll and
+rattle as you move and shoot. The sniper is a magazine-fed marker firing First Strike rounds, little
+finned shells you can see stacked in its clear magazine; they fly flat and spinning where the
+rifle's balls lob and wobble, crack instead of pop, and leave a tighter, longer splat. Reloading it
+drops the empty magazine, slaps a full one in and works the bolt. To reload the rifle you bring up a pod, flip it open over the hopper
+and pour the balls in; sprint before they're in and you keep only what you had. Each player's paint
+is their own colour (the balls in your hopper too) and splats where it lands.
 For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or type `claret`
 while playing. The browser remembers it, and it's only what you see.
 

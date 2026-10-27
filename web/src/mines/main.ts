@@ -253,6 +253,7 @@ padActions([
   { id: "crouch", name: "Crouch", button: B.circle, keys: ["KeyC"], run: hold("KeyC") },
   { id: "prev", name: "Previous weapon", button: B.l1, keys: ["Wheel"], run: wheel(-40) },
   { id: "next", name: "Next weapon", button: B.r1, keys: ["Wheel"], run: wheel(40) },
+  { id: "sprint", name: "Sprint", button: B.l3, keys: ["ShiftLeft"], run: (down) => { if (down) game?.player.padSprint(); } },
   { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], run: hold("KeyV") },
   { id: "map", name: "Whole map", button: B.touchpad, keys: ["KeyM"], run: (down) => { if (down) tap("KeyM"); } },
   { id: "slot1", name: "First weapon", button: B.up, keys: ["Digit1"], run: slot(1) },

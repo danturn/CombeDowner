@@ -108,7 +108,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
-  everyone else. Paint splats stay on whoever you hit, and go where they go.
+  everyone else. Paint splats stay on whoever you hit, and go where they go. The rifle's balls lob
+  out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
+  magazine, flat and fast, with a sharper crack and a tighter splat.
 - **Recent rooms.** The start screen lists the games you were last in (up to 8, newest first) with the map, how long ago and who was with you, and a "news" tag if that room has an unread Chronicle page. Tap one to go back to it; × forgets it. It's kept in your browser only, and can't say who is in a room now.
 - **A room is a save.** The strange objects, the sockets filled (so the zones and challenges open), the challenges won and the bonfire pile belong to the room you play them in. A new room name starts from nothing; go back to an old one and it carries on, from whoever in it has got furthest. Each room on the recent list says how far it's got ("3 of 6 zones open, 10 sockets filled, 1 challenge done"), and Practice solo is a save of its own on each map, listed there too once you've played it. Your name, look, settings, bests, trophies and the daily jobs are yours in every room.
 - **Link a device** (on the start screen) carries all of that to another phone or computer: show a code on one, type it on the other, say yes on both, and each ends up with everything either had (each room keeps whichever got furthest), with the name, look and settings of the one that showed the code. If the two can't both be online, Copy save as text on one and Paste a save on the other.
@@ -330,7 +332,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   door in the street.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
-  knows, and the game says when it sees one. Left stick walks (all the way forward runs), right stick looks, R2 shoots and L2 aims; Cross
+  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; Cross
   jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
   L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
   d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,

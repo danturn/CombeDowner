@@ -310,7 +310,17 @@ def main(argv=None):
     jobs = [(ti, tj, OUT, a.raw, terrain, a.once) for ti, tj in wanted]
     rows = []
     with ProcessPoolExecutor(a.jobs) as pool:
-        for n, r in enumerate(pool.map(one, jobs), 1):
+        # the busiest squares start first, so the pool doesn't end waiting on one; rows come back in
+        # square order whatever order they ran in
+        def load(job):
+            ti, tj = job[0], job[1]
+            return sum(os.path.getsize(p) for a_, b_ in neighbours(ti, tj)
+                       for p in (os.path.join(a.once, f"{a_}_{b_}", "blocks.json"),)
+                       if os.path.exists(p))
+        futures = {}
+        for k in sorted(range(len(jobs)), key=lambda k: -load(jobs[k])):
+            futures[k] = pool.submit(one, jobs[k])
+        for n, r in enumerate((futures[k].result() for k in range(len(jobs))), 1):
             rows.append(r)
             if "failed" in r:
                 print(f"[{n}/{len(jobs)}] {r['square'][0]}_{r['square'][1]} FAILED "
@@ -323,6 +333,17 @@ def main(argv=None):
                       f"{(m['plot_edge_support_mean'] or 0) * 100:.0f}% "
                       f"checks {sum(m['data_checks'].values())}", flush=True)
 
+    summary = summarise(rows, OUT, a.raw, terrain, a.once, start)
+    if summary["failed"]:
+        sys.exit(1)
+    return summary
+
+
+def summarise(rows, out, raw, terrain, once, start):
+    """The city summary from every square's report: the checks, the held-out widths, the
+    neighbour check and the deferred fragments, written to `out`."""
+    global OUT
+    OUT = out
     good = [r for r in rows if "metrics" in r]
     failed = [r for r in rows if "failed" in r]
 
@@ -343,14 +364,14 @@ def main(argv=None):
     worst_list = [[r["square"][0], r["square"][1]] for r in worst_sq]
 
     worst_agree, missing_agree, n_edges, n_lines, bad_agree = neighbour_check(rows)
-    frag_fails, n_deferred, n_resolved = resolve_fragments(rows, OUT, a.raw, terrain,
-                                                            a.once)
+    frag_fails, n_deferred, n_resolved = resolve_fragments(rows, out, raw, terrain,
+                                                            once)
     # the unresolved fragments are findings on the square that held the fragment, under the same rule
     # name, so they join the checks and the failure count exactly as a square's own failures do
     rows_checks += frag_fails
     for c in frag_fails:
         checks_all[c["rule"]] += 1
-    json.dump(rows_checks, open(os.path.join(OUT, "checks.json"), "w"), indent=1)
+    json.dump(rows_checks, open(os.path.join(out, "checks.json"), "w"), indent=1)
     frag_by_square = collections.Counter(tuple(c["square"]) for c in frag_fails)
 
     summary = dict(
@@ -396,8 +417,8 @@ def main(argv=None):
         neighbour_disagreeing=bad_agree[:20],
         worst_squares=worst_list,
     )
-    json.dump(summary, open(os.path.join(OUT, "summary.json"), "w"), indent=1)
-    json.dump(widths, open(os.path.join(OUT, "held-out.json"), "w"), indent=1)
+    json.dump(summary, open(os.path.join(out, "summary.json"), "w"), indent=1)
+    json.dump(widths, open(os.path.join(out, "held-out.json"), "w"), indent=1)
 
     print()
     print(f"built {len(good)} of {len(rows)} squares in {summary['secs']:.0f}s"
@@ -422,11 +443,9 @@ def main(argv=None):
           f"{len(frag_fails)} unresolved")
     if checks_all:
         print("data findings: " + ", ".join(f"{k} {v}" for k, v in checks_all.most_common()))
-    print(f"written to {OUT}: summary.json, checks.json, held-out.json")
+    print(f"written to {out}: summary.json, checks.json, held-out.json")
     if len(good):
         print(f"worst squares: {' '.join(f'{a}_{b}' for a, b in worst_list)}")
-    if failed:
-        sys.exit(1)
     return summary
 
 

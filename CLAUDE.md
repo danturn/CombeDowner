@@ -141,9 +141,12 @@ run the clash check (`tools/check_map.py`), once the change is right.
 On Dan's fork, Dan's agents run full map builds and screenshots on Dan's Mac, through the
 project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
 [--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a
-throwaway worktree, reuses a commit it has already built, and writes the timings, changed files,
-clash check and shots to one report folder. A cloud container has no graphics card, so take one
-frame there at most.
+throwaway worktree, reuses a commit it has already built (`--cold` builds the partition from an
+empty store), and writes the timings, what each partition stage took from its store (`cache.txt`),
+changed files, clash check and shots to one report folder. A cloud container has no graphics card,
+so take one frame there at most. Before each big merge into Spencer's main, run
+`tools/mac_build.sh <commit> --verify`: it builds the map from the store and again from an empty
+one, and fails, naming the first stage that differs, unless every map file is the same.
 
 Voice chat's delay from one player's mic to another's ears can be measured with
 `node tools/voicelag.mjs --game` (two pages linked over real WebRTC, fake mic; `--old` for the

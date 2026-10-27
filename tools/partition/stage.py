@@ -10,12 +10,16 @@ rebuild can't stack one partition on another, and no rebuild can put the old-sty
 game in its place.
 
 The city-wide passes (the street graph and its corridors, the bridges and road heights, the worked
-blocks) and each square's assembly from them (`city.py`) run into `<dir>/partition/once/` and
-`<dir>/partition/city/`, and are kept until something they're built from changes: their tools, the
-map's layers in `<dir>` and `data/<map>/`, the squares' lidar walls, or the canal and railway files.
-A square is written (`write_tile.py`) again only when those, the writer's own tools and kept lidar,
-or its `prep_map.py` square have changed: a change to the writer alone rewrites the squares in a
-few minutes, and `--only` reuses the passes and writes just those squares.
+blocks) and each square's assembly from them run into `<dir>/partition/once/` and
+`<dir>/partition/city/` through `pipeline.py`, which gives every stage its own key: its own code and
+what it reads (the stage before it, and the parts of the map's layers it looks at). A stage whose key
+was built before is taken from the store (`$CD_PARTITION_CACHE`, else `<dir>/partition/cache/`), so
+only what a change reaches is built again. A square is written (`write_tile.py`) again only when its
+own assembly, what the passes wrote, the map's data, the writer's own tools and kept lidar, or its
+`prep_map.py` square have changed, and a square written before under the same key comes from the
+store. `--only` divides and assembles only what those squares gather from, and writes only them. The
+metrics, checks and city summary come last (`pipeline.py report`), off the map's own path: a change
+to them redoes only the reports.
 
 The stage runs for a map marked `partition=True` in `tools/area.py` (Combe Down's Bath, so far the
 only one with the Land Registry's parcels and the lidar it needs kept, `measured.py`): for any
@@ -79,19 +83,29 @@ def digest(paths, extra=()):
     return h.hexdigest()
 
 
-def passes_key(map_id, src_dir):
-    """What the city-wide passes are built from. The terrain tiles are left out: the partition fetches
-    any it lacks into the folder, which would change the key on every run, and they're unpacked from
-    the repository's `terrain15.zip`, which is in."""
+WRITER_REACH = 1000.0    # metres: further than the writer reads any layer from its square
+
+
+def data_keys(map_id, src_dir, store, tiles):
+    """The map's data, for each square's writing: the part of every map layer within WRITER_REACH of
+    the square, and the rest of the map's data files whole. The terrain tiles are left out: the
+    partition fetches any it lacks into the folder, which would change the key on every run, and
+    they're unpacked from the repository's `terrain15.zip`, which is in."""
+    from partition import cache
+    from partition.data import box_of
     data = os.path.join(ROOT, "data", map_id)
     kept = os.path.join(data, "measured", "partition.zip")      # the writer's alone
-    inputs = [os.path.join(src_dir, n) for n in sorted(os.listdir(src_dir)) if n.endswith(".geojson")]
+    layers = sorted(n[:-8] for n in os.listdir(src_dir) if n.endswith(".geojson"))
+    inputs = []
     for d, sub, names in os.walk(data):
         sub[:] = sorted(sub)
-        inputs += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".") and os.path.join(d, n) != kept]
+        inputs += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".")
+                   and os.path.join(d, n) != kept and not n.endswith(".geojson.xz")]
     maps = os.path.join(ROOT, "web", "public", "maps")
     inputs += [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
-    return digest(code_files("__init__.py", "city.py") + inputs)
+    whole = digest(inputs)
+    L = cache.Layers(src_dir, store)
+    return {t: digest([], (whole, [L.digest(n, box_of(*t), WRITER_REACH) for n in layers])) for t in tiles}
 
 
 def read(path):
@@ -150,38 +164,39 @@ def main(argv):
     name = lambda t: f"{t[0]}_{t[1]}"
     start = time.time()
 
-    key = passes_key(map_id, src_dir)
-    fresh = read(os.path.join(once, ".key")) != key
-    if fresh:
-        shutil.rmtree(once, ignore_errors=True)
-        shutil.rmtree(city, ignore_errors=True)
-    # a square is assembled again when the passes are new, or it was never assembled from these
-    assemble = [t for t in wanted if t in ours and (fresh or read(os.path.join(keys, name(t) + ".city")) != key)]
-    failed = set()
-    if fresh or assemble:
-        print(f"partition: {'the city-wide passes, then ' if fresh else ''}{len(assemble)} squares to assemble"
-              f" (log in {root}/city.log)", flush=True)
-        t0 = time.time()
-        cmd = [os.path.join(HERE, "city.py"), "--once", once, "--out", city, "--raw", src_dir, "--jobs", str(jobs)]
-        if set(assemble) != ours:
-            cmd += ["--only", *(f"{a},{b}" for a, b in assemble)]
-        run(cmd, os.path.join(root, "city.log"))
-        summary = json.load(open(os.path.join(city, "summary.json"))) if os.path.exists(os.path.join(city, "summary.json")) else {}
-        bad = {tuple(s) for s in summary.get("failed", [])}
-        if not os.path.exists(os.path.join(once, "blocks.json")):
-            sys.exit(f"partition: the city-wide passes failed, see {root}/city.log")
-        open(os.path.join(once, ".key"), "w").write(key)
-        for t in assemble:
-            if t in bad or not os.path.exists(os.path.join(city, name(t), "partition.json")):
-                failed.add(t)
-            else:
-                open(os.path.join(keys, name(t) + ".city"), "w").write(key)
-        print(f"partition: assembled in {time.time() - t0:.0f}s"
-              + (f"; {len(failed)} failed: {' '.join(map(name, sorted(failed)))}" if failed else ""), flush=True)
+    # every stage up to the assembly, each kept in the store under its own key (pipeline.py)
+    store = os.environ.get("CD_PARTITION_CACHE") or os.path.join(root, "cache")
+    t0 = time.time()
+    result = os.path.join(root, "build.json")
+    for f in (result, os.path.join(root, "cache.txt"), os.path.join(root, "stages.json")):
+        if os.path.exists(f):
+            os.remove(f)
+    from partition import cache
+    # prep_map's squares aren't in the store, but a build checked against another names them first
+    # if they differ (verify.py)
+    cache.add_stages(root, {"prep": {name(t): cache.file_digest(os.path.join(base, name(t) + ".json"))
+                                     for t in wanted}})
+    print(f"partition: the passes and {len(wanted)} squares' assembly (log in {root}/city.log, store {store})",
+          flush=True)
+    run([os.path.join(HERE, "pipeline.py"), "build", src_dir, once, city, store, str(jobs), result,
+         *([] if only is None else [f"{a},{b}" for a, b in wanted])], os.path.join(root, "city.log"))
+    if not os.path.exists(result):
+        sys.exit(f"partition: the passes failed, see {root}/city.log")
+    passes = json.load(open(result))
+    failed = {tuple(s) for s in passes["failed"]}
+    print(f"partition: assembled in {time.time() - t0:.0f}s, stages run: {passes['ran'] or 'none'}"
+          + (f"; {len(failed)} failed: {' '.join(map(name, sorted(failed)))}" if failed else ""), flush=True)
 
-    # a square is written again when its prep_map square or the passes have changed
-    writer = digest(code_files("write_tile.py") + [KEPT])
-    wkey = lambda t: digest([os.path.join(base, name(t) + ".json")], (key, writer))
+    # a square is written again when its prep_map square, its own assembly, what the passes wrote,
+    # the map's data or the writer has changed
+    tw = time.time()
+    wt = os.path.join(HERE, "write_tile.py")
+    writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "string_city_wires"),
+                                         (os.path.join(HERE, "measured.py"), "missed")),
+                          cache.file_digest(KEPT), cache.libraries())
+    data = data_keys(map_id, src_dir, store, wanted)
+    wkey = lambda t: digest([os.path.join(base, name(t) + ".json")],
+                            (passes["partition"].get(name(t)), passes["upstream"], data[t], writer))
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:
@@ -195,22 +210,45 @@ def main(argv):
             os.remove(os.path.join(keys, name(t) + ".tile"))
     for t in copy:
         keep_prep(t)
+    written, kept, wrote = {}, set(), set()
     if todo:
         from concurrent.futures import ProcessPoolExecutor
         t0 = time.time()
-        print(f"partition: writing {len(todo)} squares", flush=True)
-        jobs_ = [(a, b, out_dir, once, city, os.path.join(base, name((a, b)) + ".json")) for a, b in todo]
-        done, missed = [], 0
+        from partition.cache import Store
+        st = Store(store)
+        # a square written before under the same key comes from the store, as it was before the seams
+        for t in todo:
+            got = st.get("write", wkey(t), out_dir)
+            if got is not None:
+                kept.add(t)
+                written.update(got)
+        print(f"partition: writing {len(todo) - len(kept)} squares ({len(kept)} from the store)", flush=True)
+        jobs_ = [(a, b, out_dir, once, city, os.path.join(base, name((a, b)) + ".json"))
+                 for a, b in todo if (a, b) not in kept]
+        missed = 0
         with ProcessPoolExecutor(jobs) as pool:
-            for r in pool.map(write, jobs_):
+            # the biggest squares start first; results are taken in square order, which the seams use
+            part = lambda j: os.path.join(city, name((j[0], j[1])), "partition.json")
+            size = lambda j: os.path.getsize(part(j)) if os.path.exists(part(j)) else 0
+            from partition.once import _timed, pool_use
+            futures, spans, tp = {}, [], time.time()
+            for k in sorted(range(len(jobs_)), key=lambda k: -size(jobs_[k])):
+                futures[k] = pool.submit(_timed, write, jobs_[k])
+            for k in range(len(jobs_)):
+                r, pid, a, b = futures[k].result()
+                spans.append((pid, a - tp, b - tp, name(jobs_[k][:2])))
                 t = tuple(r["square"])
                 if "failed" in r:
                     print(f"  {name(t)} FAILED ({r['failed']}): left as prep_map built it", flush=True)
                     keep_prep(t)
                     failed.add(t)
                 else:
-                    done.append(t)
+                    written.update(st.put("write", wkey(t), out_dir, [name(t) + ".json"]))
+                    wrote.add(t)
                     missed += r["missed"]
+        if spans:
+            print("  " + pool_use("writing", spans, time.time() - tp, jobs), flush=True)
+        done = [t for t in todo if t in kept or t in wrote]
         stubs = drop_edge_stubs(out_dir, done)
         loose_wires = string_city_wires(out_dir, done)
         for t in done:
@@ -221,6 +259,23 @@ def main(argv):
             # a dozen or so are the far ends of paths the old build dipped for bridges of its own
             print(f"partition: {missed} points under bridges had no kept lidar ground"
                   + (": pack it again (tools/mapdata.py pack)" if missed > 100 else ""))
+    # squares unchanged since this folder's last build count as taken: their key matched
+    for t in wanted:
+        if t not in copy and t not in todo:
+            written[name(t) + ".json"] = cache.file_digest(out_of(t))
+    unchanged = len(wanted) - len(todo) - len(copy)
+    with open(os.path.join(root, "cache.txt"), "a") as f:
+        f.write(cache.tally_line("write", [wkey(t) for t in wanted if t not in copy], unchanged + len(kept),
+                                 len(wrote), time.time() - tw) + "\n")
+    cache.add_stages(root, {"write": written})
+    # the metrics, checks and the city summary: they only report, so they come after the map is written
+    t0 = time.time()
+    run([os.path.join(HERE, "pipeline.py"), "report", src_dir, once, city, store, str(jobs),
+         *([] if only is None else [f"{a},{b}" for a, b in wanted])], os.path.join(root, "report.log"))
+    print(f"partition: reports in {time.time() - t0:.0f}s (log in {root}/report.log)", flush=True)
+    if os.path.exists(os.path.join(root, "cache.txt")):
+        print(f"partition: what each stage took from the store ({root}/cache.txt)")
+        print(open(os.path.join(root, "cache.txt")).read(), end="", flush=True)
     print(f"partition: {len(wanted) - len(todo) - len(copy)} squares unchanged, "
           f"{len(copy) - len(failed & set(copy))} outside the partition kept as prep_map built them, "
           f"{time.time() - start:.0f}s in all")

@@ -230,16 +230,23 @@ export class Blood {
   /**
    * A splat on whatever's at p, facing out along normal n: a paintball's burst (paint given, in
    * paintball), or with blood on (paint null), blood up a wall behind someone who was shot; big
-   * for a headshot or the sniper.
+   * for a headshot or the sniper. In paintball, big is a First Strike round's: a tighter splat
+   * drawn out along along, the way it was flying.
    */
-  mark(p: THREE.Vector3, n: THREE.Vector3, paint: string | null, big = false) {
+  mark(p: THREE.Vector3, n: THREE.Vector3, paint: string | null, big = false, along?: THREE.Vector3) {
     if (gore() === !!paint) return;
     this.n.copy(n).normalize();
-    this.q.setFromUnitVectors(Blood.UP, this.n).multiply(this.qy.setFromAxisAngle(Blood.UP, Math.random() * 6.3));
+    this.q.setFromUnitVectors(Blood.UP, this.n);
+    let turn = Math.random() * 6.3;
+    if (paint && big && along) {
+      const d = along.clone().applyQuaternion(this.q.clone().invert());
+      if (d.x * d.x + d.z * d.z > 1e-4) turn = Math.atan2(d.x, d.z);
+    }
+    this.q.multiply(this.qy.setFromAxisAngle(Blood.UP, turn));
     const at = p.clone().addScaledVector(this.n, 0.02);
     if (paint) {
       const s = 0.8 + Math.random() * 0.35;   // the splat's drops reach well past its middle
-      this.paints.add(this.m.compose(at, this.q, new THREE.Vector3(s, 1, s)), Math.random() < 0.7 ? 0 : 3, 0.95, SPLAT_LIFE, this.clock, 0.08, new THREE.Color(paint));
+      this.paints.add(this.m.compose(at, this.q, big ? new THREE.Vector3(s * 0.5, 1, s * 1.25) : new THREE.Vector3(s, 1, s)), Math.random() < 0.7 ? 0 : 3, 0.95, SPLAT_LIFE, this.clock, 0.08, new THREE.Color(paint));
     } else {
       const s = big ? 1.6 + Math.random() * 0.6 : 0.9 + Math.random() * 0.5;
       this.splats.add(this.m.compose(at, this.q, new THREE.Vector3(s, 1, s * 1.3)), big ? 0 : 1 + Math.floor(Math.random() * 2), 0.95, SPLAT_LIFE, this.clock, 0.12);

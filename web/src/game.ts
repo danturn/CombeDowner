@@ -487,6 +487,8 @@ export class Game {
   private convAt = new Map<string, number>();    // host: when each player last scored at the posts or stumps (ms)
   firing = false;
   aiming = false;
+  private wasAiming = false;
+  private wasReloading = false;
   binoculars = false;   // B: held up to your eyes
   private bino = 0;     // how far up they are, 0..1
   shootOnce = false;   // a tap in touch mode
@@ -1814,7 +1816,7 @@ export class Game {
       } else if (mark === 2) on = this.follower(o, dir, len);   // someone: it goes after them, and bursts on them
       const at = on;
       this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED,
-        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body, at?.obj) : undefined, on ?? undefined);
+        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body, at?.obj) : undefined, on ?? undefined, sniper);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
       if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
@@ -2086,7 +2088,7 @@ export class Game {
       body.root.updateMatrixWorld(true);
       at = body.part.localToWorld(body.p.clone());
       const out = body.n.clone().transformDirection(body.part.matrixWorld);
-      this.effects.splash(at, out, colour, 7);
+      this.effects.splash(at, out, colour, heavy ? 5 : 7, heavy);
       this.blood.stick(body, colour);
       SFX.impact("barrier", ...this.hear(at.x, at.y, at.z), heavy, true);
       return;
@@ -2098,11 +2100,11 @@ export class Game {
       kind ??= h?.kind;
     }
     const out = n ?? dir.clone().negate();
-    this.effects.splash(at, out, colour, mark === 2 ? 10 : 7);
+    this.effects.splash(at, out, colour, (mark === 2 ? 10 : 7) - (heavy ? 3 : 0), heavy);
     // the splat stays on whoever it hit and goes where they go
     const sticks = mark === 2 && victim && onBody(victim, at.clone().addScaledVector(dir, -0.6), dir, 1.6);
     if (sticks) this.blood.stick(sticks, colour);
-    if (mark === 1) this.blood.mark(at, out, colour);
+    if (mark === 1) this.blood.mark(at, out, colour, heavy, dir);
     const sound = mark === 2 ? "body" : kind ?? (at.y - this.map.ground(at.x, at.z) < 0.2 ? "ground" : "building");
     SFX.impact(sound, ...this.hear(at.x, at.y, at.z), heavy, true);
   }
@@ -3821,7 +3823,7 @@ export class Game {
         SFX.impact(wall.kind, ...this.hear(end.x, end.y, end.z), kind === "sniper");
       }
     }
-    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands, chase);
+    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands, chase, heavy);
     if (melee) return;
     const q = (v: number) => Math.round(v * 100) / 100;
     this.net.send("shot", [q(muzzle.x), q(muzzle.y), q(muzzle.z), q(end.x), q(end.y), q(end.z), mark, kind === "sniper" ? 1 : 0]);
@@ -3940,6 +3942,13 @@ export class Game {
     p.assist = this.freeMode;
     const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket && !aloft;
     this.rideTricks.update(dt, p, onRide ? this.held : null, onRide ? this.camera : null);
+    // aiming, shooting or starting a reload breaks off a sprint; sprinting again lowers the sights
+    // and cuts a reload short, as in Call of Duty
+    const reloadBegan = w.reloading > 0 && !this.wasReloading;
+    if (p.sprinting && (this.aiming && !this.wasAiming || this.firing || this.shootOnce || reloadBegan)) p.holdOffSprint();
+    else if (p.sprinting && w.reloading > 0) w.cancelReload();
+    this.wasAiming = this.aiming;
+    this.wasReloading = w.reloading > 0;
     if (p.sprinting || !this.alive || car || helm) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists
@@ -3972,6 +3981,7 @@ export class Game {
     const idle = this.active && this.alive && p.speed < 0.2 && !this.firing && !look.dx && !look.dy;
     this.idleT = idle ? this.idleT + dt : 0;
     if (this.idleT > IDLE_LINE) { Quips.idle(); this.idleT = IDLE_LINE - 60; }
+    w.paint(paintFor(colourFor(this.net.selfId)));
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
