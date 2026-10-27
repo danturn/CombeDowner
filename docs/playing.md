@@ -741,8 +741,11 @@ sways. Pints (40 health) wait outside the nearest pubs, and sniper rifles, round
 turn up outside shops and pubs near you. The middle of Firs Field fills with either a sniper rifle
 or a bottle of Co-op Bucks Fizz, which fills you right up. Run dry and it's fists.
 
-It's paintball by default: the guns are markers with a hopper of loose balls on top that roll and
-rattle as you move and shoot. To reload the rifle you bring up a pod, flip it open over the hopper
+It's paintball by default: the rifle is a marker with a hopper of loose balls on top that roll and
+rattle as you move and shoot. The sniper is a magazine-fed marker firing First Strike rounds, little
+finned shells you can see stacked in its clear magazine; they fly flat and spinning where the
+rifle's balls lob and wobble, crack instead of pop, and leave a tighter, longer splat. Reloading it
+drops the empty magazine, slaps a full one in and works the bolt. To reload the rifle you bring up a pod, flip it open over the hopper
 and pour the balls in; sprint before they're in and you keep only what you had. Each player's paint
 is their own colour (the balls in your hopper too) and splats where it lands.
 For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or type `claret`
