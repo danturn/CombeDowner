@@ -531,7 +531,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
-  for (const [cx, cy, dx, dy, left, right, reach, floor] of cuttings(map)) {
+  const cuts = cuttings(map);
+  for (const [cx, cy, dx, dy, left, right, reach, floor] of cuts) {
     const nx = -dy, ny = dx, to = floor - Z0 - 0.05, pad = T.dx, r = Math.hypot(Math.max(-left, right) + pad, reach + pad);
     const i0 = Math.max(0, Math.floor((cx - r - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((cx + r - T.x0) / T.dx));
     const j0 = Math.max(0, Math.floor((cy - r - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((cy + r - T.y0) / T.dy));
@@ -565,7 +566,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // (and inside the canal's banks, where its own ground is drawn instead: works.ts)
   const drawnGround = (x: number, z: number) => {
     const h = map.works?.height(x, -z);
-    return h !== undefined && h !== null ? h - map.z0 : drawnBare(x, z);
+    return h !== undefined && h !== null ? h - map.z0 : Math.min(drawnBare(x, z), cutFloor(x, -z));
+  };
+  // (a path into a tunnel lies on the cutting's floor up to the tube's, not up the grid's slope onto the hill)
+  const cutFloor = (x: number, y: number) => {
+    let low = Infinity;
+    for (const [cx, cy, dx, dy, left, right, reach, floor] of cuts) {
+      const ox = x - cx, oy = y - cy, out = -(ox * dx + oy * dy), s = ox * -dy + oy * dx;
+      if (out > -2 && out < reach && s > left && s < right) low = Math.min(low, floor - Z0);
+    }
+    return low;
   };
   const drawnBare = (x: number, z: number) => {
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;

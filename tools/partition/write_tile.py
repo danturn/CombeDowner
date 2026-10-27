@@ -2873,6 +2873,13 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     if bores is not None:
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)
+    tubes = [LineString([q[:2] for q in t["p"]]).buffer(TN.HALF + 0.3, cap_style="flat")
+             for t in tunnels or [] if len(t.get("p") or []) > 1]
+    if tubes:
+        # a road or path in a tunnel is the tube's floor (the game's): its face would lie on the hill
+        # over the bore, standing up inside the tube from its mouth
+        tubes = unary_union(tubes)
+        road, pave, path, plaza = (g.difference(tubes) for g in (road, pave, path, plaza))
     taken = taken.union(path)
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))

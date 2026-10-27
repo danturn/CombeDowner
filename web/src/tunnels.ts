@@ -20,7 +20,7 @@ const STEP = 1.5;        // metres between rings of the tube
 const CHUNK = 60;        // rings per mesh, so the far parts are skipped when out of view
 const FACE_DEPTH = 1.0;  // how thick the portal's stone face is
 /** How far into the tube the terrain is hidden, from each portal. */
-const MOUTH = 18;
+const MOUTH = 40;
 
 /** The tube's cross-section from one wall's foot over the arch to the other's: [across, up]. */
 function profile(): number[][] {
@@ -126,10 +126,18 @@ function portals(t: Tunnel) {
 export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
   alignPortals(map.d.tn ?? [], map.d.b);
-  for (const t of map.d.tn ?? []) for (const m of portals(t)) {
-    if (onSeam(m.x, m.y, map.d.b)) continue;
-    a.push(new THREE.Vector4(m.x, -m.y, m.dx, -m.dy));
-    b.push(new THREE.Vector4(m.z - map.z0, TUNNEL.crown, TUNNEL.half, MOUTH));
+  // (piece by piece along the tube, which bends: a straight cut from the portal left the hillside
+  // standing in the tube a few metres round a bend; and no further than its far portal)
+  for (const t of map.d.tn ?? []) for (const p of [t.p, [...t.p].reverse()]) {
+    if (p.length < 2 || onSeam(p[0][0], p[0][1], map.d.b)) continue;
+    for (let i = 0, s = 0; i < p.length - 1 && s < MOUTH; i++) {
+      const l = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
+      if (l < 1e-3) continue;
+      const dx = (p[i + 1][0] - p[i][0]) / l, dy = (p[i + 1][1] - p[i][1]) / l;
+      a.push(new THREE.Vector4(p[i][0], -p[i][1], dx, -dy));
+      b.push(new THREE.Vector4(Math.min(p[i][2], p[i + 1][2]) - map.z0, TUNNEL.crown, TUNNEL.half, l + 0.3));
+      s += l;
+    }
   }
   // and none of the hill's slope standing in the cutting in front of a headwall, between its wing
   // walls, where the apron is the ground (the ground's grid is too coarse to rise straight up the wall)
