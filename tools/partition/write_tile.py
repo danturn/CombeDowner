@@ -2738,6 +2738,25 @@ def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
     return out
 
 
+def _tube_floor(t, rd):
+    """The ground a tunnel's tube takes, less the reach of every way that passes over it on the hill
+    (a lane or path over the roof keeps its faces)."""
+    tl = LineString([q[:3] for q in t["p"]])
+    flat = LineString([q[:2] for q in t["p"]])
+    tube = flat.buffer(TN.HALF + 0.3, cap_style="flat")
+    over = []
+    for r in rd:
+        if len(r["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        if not line.intersects(tube):
+            continue
+        if any(tube.contains(Point(q[:2])) and q[2] > tl.interpolate(flat.project(Point(q[:2]))).z + TN.CROWN * 0.5
+               for q in r["p"]) or not any(tube.contains(Point(q[:2])) for q in r["p"]):
+            over.append(line.buffer(r.get("w", 4) / 2 + max(r.get("pv") or (0, 0)) + 0.5, cap_style="flat"))
+    return _minus(tube, unary_union(over)) if over else tube
+
+
 PORTAL_BEHIND = 12.0   # metres behind a portal's face that the road going in has no say over the hill
 
 
@@ -2897,8 +2916,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     if bores is not None:
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)
-    tubes = [LineString([q[:2] for q in t["p"]]).buffer(TN.HALF + 0.3, cap_style="flat")
-             for t in tunnels or [] if len(t.get("p") or []) > 1]
+    tubes = [_tube_floor(t, rd) for t in tunnels or [] if len(t.get("p") or []) > 1]
     for _, (px, py), (dx, dy), own in planes:
         # and beside the bore behind its headwall the road going in is the hill (others on it stay)
         H, D = PORTAL_HALF, PORTAL_BEHIND
