@@ -91,6 +91,7 @@ import { missionEnd } from "./missionscreens";
 import { type Fact, type House, countsIn, houseNear, loadedRound, placeAt, shopNear } from "./clues";
 import { Lock } from "./lock";
 import { drawSketch } from "./sketch";
+import { HOLD_MS as HOLD_USE, isKey } from "./controls";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
 const COLOUR = "#e0a526";
@@ -687,7 +688,9 @@ class Trail implements Job {
   private houses = new Map<number, House | null>();   // a look leg's house, once its street is loaded (null: none to be had)
   private sketches = new Map<number, HTMLCanvasElement>();   // sketch legs' drawings, once drawn
   private sketchEl: HTMLDivElement | null = null;   // the sketch held up full screen
-  private sketchKey = false;                 // the clue key's held down (J, or the Sketch button)
+  private sketchKey = false;                 // the Sketch button's held down (a touch screen)
+  private useAt = 0;                         // when use (E) went down, for a hold of it to study the sketch
+  private askOnLetGo = false;                // a tap of use asks a local, decided when it's let go
   private sketchBtn: HTMLButtonElement | null = null;
   private keys = new AbortController();
   private paces = new Map<number, { x: number; z: number; text: string } | null>();   // the chest's pacing riddle, once its place is loaded
@@ -704,11 +707,14 @@ class Trail implements Job {
     this.build(w.players().length);
     w.flares?.(1);
     const sig = { signal: this.keys.signal };
-    addEventListener("keydown", (e) => { if (e.code === "KeyJ" && !e.repeat && !(e.target instanceof HTMLInputElement)) this.sketchKey = true; }, sig);
-    addEventListener("keyup", (e) => { if (e.code === "KeyJ") this.sketchKey = false; }, sig);
-    addEventListener("blur", () => { this.sketchKey = false; this.digKey = false; }, sig);
-    addEventListener("keydown", (e) => { if (e.code === "KeyE" && !e.repeat) this.digKey = true; }, sig);
-    addEventListener("keyup", (e) => { if (e.code === "KeyE") this.digKey = false; }, sig);
+    addEventListener("blur", () => { this.sketchKey = false; this.digKey = false; this.askOnLetGo = false; }, sig);
+    addEventListener("keydown", (e) => { if (isKey(e.code, "use") && !e.repeat) { this.digKey = true; this.useAt = performance.now(); } }, sig);
+    addEventListener("keyup", (e) => {
+      if (!isKey(e.code, "use")) return;
+      this.digKey = false;
+      if (this.askOnLetGo && performance.now() - this.useAt < HOLD_USE) this.ask();
+      this.askOnLetGo = false;
+    }, sig);
   }
 
   /** The legs, for pc players: whoever took the trail says how many of them there were (progress). */
@@ -949,7 +955,7 @@ class Trail implements Job {
     if (this.liftT >= (two ? LIFT_TWO : alone ? LIFT_ONE : LIFT_ALONE) && (!two || [...this.liftBy].sort()[0] === this.w.selfId)) {
       this.liftT = 0;
       this.sendTin(n);
-    } else if (!two && !alone && this.liftT > 1 && this.liftT - dt <= 1) this.w.toast("It's heavy: someone hold E with you, or keep heaving", 2.5);
+    } else if (!two && !alone && this.liftT > 1 && this.liftT - dt <= 1) this.w.toast("It's heavy: someone hold {use} with you, or keep heaving", 2.5);
   }
 
   /** On a touch screen, a button to hold for the spade. */
@@ -978,7 +984,7 @@ class Trail implements Job {
   private sketchUpdate(n: number) {
     const s = this.t.legs[n], sk = s?.sketch, holders = sk ? this.holders(n) : [], mine = holders.indexOf(this.w.selfId);
     this.touchButton(mine >= 0);
-    const show = mine >= 0 && this.sketchKey && this.w.me().alive;
+    const show = mine >= 0 && (this.sketchKey || (this.digKey && performance.now() - this.useAt >= HOLD_USE)) && this.w.me().alive;
     if (!show || !sk) { if (this.sketchEl) this.sketchEl.hidden = true; return; }
     let pic = this.sketches.get(n);
     if (!pic) {
@@ -1231,14 +1237,15 @@ class Trail implements Job {
 
   hint() {
     const pace = this.pacing(this.mine), s = this.t.legs[this.mine], me = this.w.me();
-    if (pace && s && Math.hypot(s.x - me.x, s.z - me.z) < 160) return this.found ? "Hold <b>E</b> to lift the chest" : "Hold <b>E</b> to dig here";
+    if (pace && s && Math.hypot(s.x - me.x, s.z - me.z) < 160) return this.found ? "Hold <b>{use}</b> to lift the chest" : "Hold <b>{use}</b> to dig here";
     if (this.near) {
       const last = this.near.tin.n === this.t.legs.length - 1;
       const tin = this.near.tin;
-      if (tin.word) return `<b>E</b> Open the tin marked ${esc(tin.word)}`;
-      return last ? "<b>E</b> Dig up the Bath Bun chest" : this.halvesOf(tin.n).length > 1 ? `<b>E</b> Open tin ${tin.h ? "B" : "A"}` : "<b>E</b> Open the tin";
+      if (tin.word) return `<b>{use}</b> Open the tin marked ${esc(tin.word)}`;
+      return last ? "<b>{use}</b> Dig up the Bath Bun chest" : this.halvesOf(tin.n).length > 1 ? `<b>{use}</b> Open tin ${tin.h ? "B" : "A"}` : "<b>{use}</b> Open the tin";
     }
-    return this.askReady() ? "<b>E</b> Ask a local (costs a brass star)" : "";
+    const ask = this.askReady() ? "<b>{use}</b> Ask a local (costs a brass star)" : "";
+    return this.holdsSketch() ? (ask ? `${ask} · hold <b>{use}</b> Study the sketch` : "Hold <b>{use}</b> Study the sketch") : ask;
   }
 
   private askReady() {
@@ -1252,7 +1259,16 @@ class Trail implements Job {
     if (this.near && !this.pacing(this.near.tin.n)) { this.open(this.near.tin); return true; }
     const s = this.t.legs[this.mine], me = this.w.me();
     if (this.pacing(this.mine) && s && Math.hypot(s.x - me.x, s.z - me.z) < 160) return true;   // the spade's in your hands: digging is a hold, not a press
-    if (!this.askReady()) return false;
+    // holding the sketch, a hold of use studies it: only a tap, told on letting go, asks a local
+    if (this.holdsSketch()) { this.askOnLetGo = this.askReady(); return true; }
+    return this.ask();
+  }
+
+  private holdsSketch() { return !!this.t.legs[this.mine]?.sketch && this.holders(this.mine).includes(this.w.selfId); }
+
+  /** A local points the way, for a brass star. */
+  private ask(): boolean {
+    if (this.done || !this.askReady()) return false;
     // a local points the way: every circle for this clue comes up, or shrinks a step
     const n = this.mine;
     for (const h of this.halvesOf(n)) {
@@ -1615,9 +1631,9 @@ class Trail implements Job {
     const got = this.costs.slice(0, n).reduce((a, c) => a + legStars(c), 0), here = this.costs[n] ? legStars(this.costs[n]) : 0;
     const asked = this.costs[n]?.ask ?? 0;
     const sub = this.race
-      ? [`par ${clock(this.t.par)}`, `K: ${this.kAt} of ${total} tins`, lead ? `best rival on clue ${Math.min(total, lead + 1)}` : "", this.askReady() ? "E to ask a local" : ""]
+      ? [`par ${clock(this.t.par)}`, `K: ${this.kAt} of ${total} tins`, lead ? `best rival on clue ${Math.min(total, lead + 1)}` : "", this.askReady() ? "{use} to ask a local" : ""]
       : [`brass stars ${got}${n < total ? ` + ${"★".repeat(here)}${"☆".repeat(STARS - here)}` : ""}`, asked ? `${asked} local${asked > 1 ? "s" : ""} asked` : "",
-        this.askReady() ? "E to ask a local (costs a star)" : ""];
+        this.askReady() ? "{use} to ask a local (costs a star)" : ""];
     return {
       line: `Clue ${n + 1} of ${total}${n === total - 1 ? " (the chest)" : ""}: ${clue}`,
       sub: sub.filter(Boolean).join(" · "),
@@ -1653,9 +1669,9 @@ class Trail implements Job {
         const holders = this.holders(n), mine = holders.includes(this.w.selfId), solo = this.w.players().length < 2;
         const others = holders.filter((id) => id !== this.w.selfId).map((id) => `<b>${esc(this.w.nameOf(id))}</b>`).join(" and ");
         const near = `${riddle}<br>`;
-        if (solo) return `${near}A sketch map of round there, with an X on it. Hold <b>J</b> (or the Sketch button) to study it; you can't see the big map while you do.`;
+        if (solo) return `${near}A sketch map of round there, with an X on it. Hold <b>{use}</b> to study it; you can't see the big map while you do.`;
         if (!mine) return `${near}${others} ${holders.length > 1 ? "hold" : "holds"} the sketch map, with an X on it. Get them to talk you in.`;
-        return `${near}You hold the sketch map${holders.length > 1 ? ` (torn: ${others} ${holders.length > 2 ? "have" : "has"} the rest)` : ""}. Hold <b>J</b> (or the Sketch button) to study it, and talk the others in. You can't see the big map while you do.`;
+        return `${near}You hold the sketch map${holders.length > 1 ? ` (torn: ${others} ${holders.length > 2 ? "have" : "has"} the rest)` : ""}. Hold <b>{use}</b> to study it, and talk the others in. You can't see the big map while you do.`;
       }
       case "sound": {
         const bell = s.kind === "church" || s.kind === "rest";

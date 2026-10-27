@@ -670,81 +670,81 @@ export class PuzzleSet {
       const wy = (pt: number[]) => this.y(pt[0] + pt[2] * 0.6, pt[1] + pt[3] * 0.6);
       switch (p.kind) {
         case "levers":
-          p.pts.forEach((pt, k) => { if (!s[1 + k]) out.push({ x: pt[0], y: wy(pt) + 1.4, z: pt[1], text: "<b>E</b> Pull the lever", use: { id, a: "pull", v: k } }); });
+          p.pts.forEach((pt, k) => { if (!s[1 + k]) out.push({ x: pt[0], y: wy(pt) + 1.4, z: pt[1], text: "<b>{use}</b> Pull the lever", use: { id, a: "pull", v: k } }); });
           break;
         case "block": {
           if (s[0]) break;
           const x = (s[1] + 0.5) * CELL, z = (s[2] + 0.5) * CELL;
-          out.push({ x, y: this.y(x, z) + 1.0, z, text: "<b>E</b> Push the stone", use: { id, a: "push" }, reach: 2.6 });
+          out.push({ x, y: this.y(x, z) + 1.0, z, text: "<b>{use}</b> Push the stone", use: { id, a: "push" }, reach: 2.6 });
           break;
         }
         case "bells":
-          if (!s[0]) p.pts.forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.6, z, text: `<b>E</b> Ring bell ${ROMAN[k]}`, use: { id, a: "ring", v: k } }));
+          if (!s[0]) p.pts.forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.6, z, text: `<b>{use}</b> Ring bell ${ROMAN[k]}`, use: { id, a: "ring", v: k } }));
           break;
         case "dials": {
           if (s[0]) break;
           const pt = p.pts[0], tx = -pt[3], tz = pt[2];
-          for (let k = 0; k < 3; k++) out.push({ x: pt[0] + tx * (k - 1) * 0.34, y: wy(pt) + 1.25, z: pt[1] + tz * (k - 1) * 0.34, text: `<b>E</b> Turn the ${["left", "middle", "right"][k]} dial (${s[1 + k]})`, use: { id, a: "dial", v: k } });
+          for (let k = 0; k < 3; k++) out.push({ x: pt[0] + tx * (k - 1) * 0.34, y: wy(pt) + 1.25, z: pt[1] + tz * (k - 1) * 0.34, text: `<b>{use}</b> Turn the ${["left", "middle", "right"][k]} dial (${s[1 + k]})`, use: { id, a: "dial", v: k } });
           break;
         }
         case "candles":
-          if (!s[0]) p.pts.forEach(([x, z], k) => { if (!(s[1 + k] > 0)) out.push({ x, y: this.y(x, z) + 1.3, z, text: "<b>E</b> Light the candle", use: { id, a: "light", v: k } }); });
+          if (!s[0]) p.pts.forEach(([x, z], k) => { if (!(s[1 + k] > 0)) out.push({ x, y: this.y(x, z) + 1.3, z, text: "<b>{use}</b> Light the candle", use: { id, a: "light", v: k } }); });
           break;
         case "key": {
           if (s[0]) break;
           const pt = p.pts[0];
           out.push(s[1] === 2
-            ? { x: pt[0], y: wy(pt) + 1.0, z: pt[1], text: "<b>E</b> Unlock the foreman's gate", use: { id, a: "unlock" } }
+            ? { x: pt[0], y: wy(pt) + 1.0, z: pt[1], text: "<b>{use}</b> Unlock the foreman's gate", use: { id, a: "unlock" } }
             : { x: pt[0], y: wy(pt) + 1.0, z: pt[1], text: "Locked. Something down here has the foreman's key" });
           break;
         }
         case "secret": {
           if (s[0]) break;
           const pt = p.pts[0];
-          out.push({ x: pt[0], y: wy(pt) + 1.3, z: pt[1], text: "<b>E</b> Press the loose stone", use: { id, a: "press" }, reach: 1.8 });
+          out.push({ x: pt[0], y: wy(pt) + 1.3, z: pt[1], text: "<b>{use}</b> Press the loose stone", use: { id, a: "press" }, reach: 1.8 });
           break;
         }
         case "flood": {
           if (s[0]) break;
           const [x, z] = p.pts[0];
-          out.push({ x, y: this.y(x, z) + 1.2, z, text: `Hold <b>E</b> to pump (${Math.floor(s[1])}% out)`, use: { id, a: "pump" }, hold: true });
+          out.push({ x, y: this.y(x, z) + 1.2, z, text: `Hold <b>{use}</b> to pump (${Math.floor(s[1])}% out)`, use: { id, a: "pump" }, hold: true });
           break;
         }
         case "mirrors":
           if (!s[0]) p.cells.forEach((c, k) => {
             const { i, j } = this.cellOf(c), x = (i + 0.5) * CELL, z = (j + 0.5) * CELL;
-            out.push({ x, y: this.y(x, z) + 1.2, z, text: `<b>E</b> Turn mirror ${ROMAN[k]}`, use: { id, a: "turn", v: k } });
+            out.push({ x, y: this.y(x, z) + 1.2, z, text: `<b>{use}</b> Turn mirror ${ROMAN[k]}`, use: { id, a: "turn", v: k } });
           });
           break;
         case "gems": {
           if (s[0]) break;
-          p.pts.slice(1).forEach(([x, z], gI) => { if (s[1 + gI] === 0) out.push({ x, y: this.y(x, z) + 1.05, z, text: `<b>E</b> Take the ${GEMS[gI]} gem`, use: { id, a: "take", v: gI } }); });
+          p.pts.slice(1).forEach(([x, z], gI) => { if (s[1 + gI] === 0) out.push({ x, y: this.y(x, z) + 1.05, z, text: `<b>{use}</b> Take the ${GEMS[gI]} gem`, use: { id, a: "take", v: gI } }); });
           const pt = p.pts[0];
           SOCKET_Y.forEach((sy, q) => {
             const { held, next } = this.gemSwap(s, q);
             const where = `the ${SOCKET_NAMES[q]} socket`;
             const text = held < 0 && next < 0 ? `An empty socket. Find the gems`
-              : held < 0 ? `<b>E</b> Put the ${GEMS[next]} gem in ${where}`
-              : next < 0 ? `<b>E</b> Take the ${GEMS[held]} gem out of ${where}`
-              : `<b>E</b> Swap the ${GEMS[held]} gem for the ${GEMS[next]}`;
+              : held < 0 ? `<b>{use}</b> Put the ${GEMS[next]} gem in ${where}`
+              : next < 0 ? `<b>{use}</b> Take the ${GEMS[held]} gem out of ${where}`
+              : `<b>{use}</b> Swap the ${GEMS[held]} gem for the ${GEMS[next]}`;
             out.push({ x: pt[0] + pt[2] * 0.15, y: wy(pt) + sy, z: pt[1] + pt[3] * 0.15, text, use: held < 0 && next < 0 ? undefined : { id, a: "socket", v: q } });
           });
           break;
         }
         case "statues":
-          if (!s[0]) p.pts.slice(1).forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.6, z, text: `<b>E</b> Turn watcher ${ROMAN[k]}`, use: { id, a: "turn", v: k } }));
+          if (!s[0]) p.pts.slice(1).forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.6, z, text: `<b>{use}</b> Turn watcher ${ROMAN[k]}`, use: { id, a: "turn", v: k } }));
           break;
         case "bridge": {
           if (s[0]) break;
           const [wx, wz] = p.pts[0], [lx, lz] = p.pts[1];
-          out.push({ x: wx, y: this.y(wx, wz) + 0.95, z: wz, text: `Hold <b>E</b> to wind the bridge up (${Math.floor(s[1])}%)`, use: { id, a: "wind" }, hold: true });
-          out.push({ x: lx, y: this.y(lx, lz) + 1.0, z: lz, text: "<b>E</b> Pull the lever", use: { id, a: "pull" } });
+          out.push({ x: wx, y: this.y(wx, wz) + 0.95, z: wz, text: `Hold <b>{use}</b> to wind the bridge up (${Math.floor(s[1])}%)`, use: { id, a: "wind" }, hold: true });
+          out.push({ x: lx, y: this.y(lx, lz) + 1.0, z: lz, text: "<b>{use}</b> Pull the lever", use: { id, a: "pull" } });
           break;
         }
         case "riddle": {
           const pt = p.pts[0];
           out.push({ x: pt[0], y: wy(pt) + 1.7, z: pt[1], text: `The tablet reads: <i>${p.text.join(" ")}</i>`, reach: 3.5 });
-          if (!s[0]) p.pts.slice(1).forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.0, z, text: `<b>E</b> Offer the ${p.items[k]}`, use: { id, a: "offer", v: k } }));
+          if (!s[0]) p.pts.slice(1).forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.0, z, text: `<b>{use}</b> Offer the ${p.items[k]}`, use: { id, a: "offer", v: k } }));
           break;
         }
       }

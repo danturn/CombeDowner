@@ -9,19 +9,17 @@
 // when you let go, the hold once it's been held a moment. It's only another way of pressing the same
 // keys and buttons: the pad is read each frame, and each page (main.ts, mines/main.ts) says what its
 // buttons do as a table of actions (padActions), mostly pressing the keyboard key that does it, so
-// nothing in the game knows a pad is there. Any action can be moved to another button in Settings,
-// kept in this browser. Once the pad is the last thing you touched, the prompts name its buttons
-// rather than the keys (keyLabel, padText), and a key or the mouse puts the keys' names back. Off the game (the menus, the pause screen) the d-pad or left stick moves between the
+// nothing in the game knows a pad is there. Which button each control is on, and what the prompts
+// call it, comes from the one table of controls (controls.ts). Any action can be moved to another
+// button in Settings, kept in this browser. Once the pad is the last thing you touched, the prompts
+// name its buttons rather than the keys (ctl in controls.ts), and a key or the mouse puts the keys' names back. Off the game (the menus, the pause screen) the d-pad or left stick moves between the
 // buttons, Cross presses one and Circle goes back, as Esc does.
 //
 // Who decides what: nobody. Like the keyboard, a pad only moves you; what you do goes out as usual.
 import type { Player } from "./player";
+import { B, HOLD_MS, PAD_NAME, keyName, padHooks, type Control, type Where } from "./controls";
 
-/** The standard layout's buttons, named the PlayStation way. */
-export const B = {
-  cross: 0, circle: 1, square: 2, triangle: 3, l1: 4, r1: 5, l2: 6, r2: 7,
-  create: 8, options: 9, l3: 10, r3: 11, up: 12, down: 13, left: 14, right: 15, ps: 16, touchpad: 17,
-} as const;
+export { B, PAD_NAME };
 
 /** What a page lets the pad do while you're playing. */
 export interface PadPage {
@@ -54,8 +52,6 @@ const LOOK_X = 2000, LOOK_Y = 1600;
 // small pushes still aim finely
 const RAMP_NEAR_FULL = 0.9, RAMP_AFTER = 0.3, RAMP_IN = 0.2, RAMP = 1.6;
 const REPEAT_FIRST = 0.4, REPEAT = 0.14;   // seconds before a held d-pad moves on again round a menu
-// long enough that a quick tap never counts as a hold, short enough that a hold doesn't feel slow
-const HOLD_MS = 300;
 
 /** The controller settings, kept in this browser like the others (settings.ts). */
 const PAD_DEFAULTS = { lookX: 1, lookY: 1, invert: false, boost: true, dead: STICK_DEAD, rumble: true };
@@ -91,19 +87,22 @@ function showPadSettings() {
   }
 }
 
-// the controls list's keys as the pad names them, for the ones the page's mapping doesn't
-const LIST_EXTRA: Record<string, string> = { Mouse: "Right stick", W: "Left stick", Shift: "L3" };
-
-/** The controls list on the menu gets each key's button beside it, shown once a pad's been seen. */
+/** The controls list on the menu, from the page's table: each control's keys, and its pad button
+ *  beside them once a pad's been seen. Rows marked data-ctl in the page are filled in; the rest
+ *  (voice, pickups) stay as written. */
 function padControlsList() {
-  for (const dt of document.querySelectorAll<HTMLElement>(".keys dt")) {
-    dt.querySelector(".padkey")?.remove();
+  for (const dt of document.querySelectorAll<HTMLElement>(".keys dt[data-ctl]")) {
+    const cs = dt.dataset.ctl!.split(" ").map((id) => page.find((c) => c.id === id)).filter((c): c is Control => !!c);
+    dt.replaceChildren();
+    for (const c of cs) {
+      const words = c.say?.keys ? [c.say.keys] : [...(c.keys ?? []).map(keyName), ...(c.mouse !== undefined ? [keyName(`Mouse${c.mouse}`)] : [])];
+      for (const w of words) { const k = document.createElement("kbd"); k.textContent = w; dt.append(k, " "); }
+    }
     const named = new Set<string>();
-    for (const k of dt.querySelectorAll("kbd")) {
-      const t = k.textContent ?? "";
-      const code = WORD_CODE[t] ?? (t === "Wheel" ? "Wheel" : /^\d$/.test(t) ? `Digit${t}` : t.length === 1 ? `Key${t}` : t);
-      const n = LIST_EXTRA[t] ?? padName(code);
-      if (n) for (const part of n.split("/")) named.add(part);
+    for (const c of cs) {
+      const a = actions.find((x) => x.id === c.id);
+      const n = a ? label(a, over(a) ? a.where : "foot") : c.say?.pad;
+      if (n) named.add(n);
     }
     if (!named.size) continue;
     const span = document.createElement("span");
@@ -116,6 +115,8 @@ function padControlsList() {
 
 /** Wire up the controller settings on this page, wherever their boxes are. */
 export function padSettings() {
+  // the menus' own buttons, which never move: ✕ presses and ○ goes back
+  for (const el of document.querySelectorAll<HTMLElement>("[data-padhint]")) el.textContent = (el.textContent ?? "").replace("{ok}", PAD_NAME[B.cross]).replace("{back}", PAD_NAME[B.circle]);
   padControlsList();
   buttonsList();
   showPadSettings();
@@ -144,90 +145,81 @@ function stick(x: number, y: number): [number, number] {
 let usedAt = -1e9;
 let padIndex = -1;
 
-// ---- what the prompts call each key ----------------------------------------------------------
+// ---- the buttons ----------------------------------------------------------------------------
 
-/** The PlayStation names, in letters the HUD's font has. */
-export const PAD_NAME: Record<number, string> = {
-  [B.cross]: "✕", [B.circle]: "○", [B.square]: "□", [B.triangle]: "△", [B.l1]: "L1", [B.r1]: "R1", [B.l2]: "L2", [B.r2]: "R2",
-  [B.create]: "Create", [B.options]: "Options", [B.l3]: "L3", [B.r3]: "R3",
-  [B.up]: "d-pad ↑", [B.down]: "d-pad ↓", [B.left]: "d-pad ←", [B.right]: "d-pad →", [B.touchpad]: "Touchpad",
-};
-
-// the keyboard's own key codes as the prompts write them, and back
-const KEY_NAME: Record<string, string> = { Space: "Space", Tab: "Tab", Escape: "Esc", ShiftLeft: "Shift", Mouse0: "Left click", Mouse2: "Right click", Wheel: "Wheel" };
-const keyName = (code: string) => KEY_NAME[code] ?? code.replace(/^(Key|Digit)/, "");
-
-/** Something a pad button does, and the button it's on unless you've moved it (Settings, Controller). */
-export interface PadAction {
-  id: string;
-  name: string;
-  button: number;
-  /** The keys the prompts name for it, so they can name its button instead. */
-  keys?: string[];
-  /** One of the rows of its own at the wheel: driving, its button does this rather than what it does on foot. */
-  wheel?: boolean;
-  /** Does nothing at the wheel, so a button it shares with a driving row is that row's while you drive. */
-  foot?: boolean;
-  /** Still needed at the wheel (getting out, the radio, the map, the scores), so no driving row may take its button. */
-  live?: boolean;
-  /** Taken by holding its button, when something else is on a tap of it; on a button of its own it goes at once. */
-  hold?: boolean;
+/** A control with a pad button on this page, and what pressing it does. */
+export interface PadAction extends Control {
+  pad: number;
+  where: Where;
   /** For a hold: when this says so, a tap is enough (there's something to use right there). */
   now?: () => boolean;
   run(down: boolean): void;
 }
+/** What a page's controls do on the pad, by control id: run(down), or that and when a tap is enough for a hold. */
+export type PadRuns = Record<string, ((down: boolean) => void) | { run: (down: boolean) => void; now?: () => boolean }>;
 
 // never moved: Options pauses, and the PS button is the browser's
 const FIXED = new Set<number>([B.options, B.ps]);
 
+let page: Control[] = [];
 let actions: PadAction[] = [];
 let bound: Record<string, number> = {};
 let bindKey = "";
-let atWheel = () => false;
+let context: () => Where = () => "foot";
 let listening: PadAction | null = null;
 
 // kept with the buttons you've moved; a list without it was saved under the old layout
 const LAYOUT_KEY = "_layout", LAYOUT = "warzone";
 
-/** This page's buttons: what each does, where it's kept in this browser, and whether you're at the
- *  wheel. `before` is where any row sat in the layout before this one, for lists kept from then. */
-export function padActions(list: PadAction[], storeAs: string, driving: () => boolean = () => false, before: Record<string, number> = {}) {
-  actions = list;
+/** This page's buttons, from its table of controls (controls.ts) and what each does here; where
+ *  they're kept in this browser; and where you are (on foot, at a wheel or helm, in a back seat).
+ *  `before` is where any control sat in the layout before Warzone's, for lists kept from then. */
+export function padActions(table: Control[], runs: PadRuns, storeAs: string, where: () => Where = () => "foot", before: Record<string, number> = {}) {
+  page = table;
+  actions = table.filter((c) => c.pad !== undefined && runs[c.id]).map((c) => {
+    const r = runs[c.id];
+    return { ...c, pad: c.pad!, where: c.where ?? "all", ...(typeof r === "function" ? { run: r } : r) };
+  });
   bindKey = storeAs;
-  atWheel = driving;
-  bound = Object.fromEntries(list.map((a) => [a.id, a.button]));
+  context = where;
+  bound = Object.fromEntries(actions.map((a) => [a.id, a.pad]));
   const moved = new Set<string>();
   try {
     const saved = JSON.parse(localStorage.getItem(storeAs) ?? "{}") as Record<string, unknown>;
     // the old lists kept every button, moved or not: one still where the old layout had it wasn't
     // moved, so it takes the new layout's place
     const old = saved[LAYOUT_KEY] !== LAYOUT;
-    for (const a of list) {
+    for (const a of actions) {
       const b = saved[a.id];
-      if (typeof b !== "number" || !PAD_NAME[b] || FIXED.has(b) || b === a.button) continue;
+      if (typeof b !== "number" || !PAD_NAME[b] || FIXED.has(b) || b === a.pad) continue;
       if (old && b === before[a.id]) continue;
       bound[a.id] = b;
       moved.add(a.id);
     }
   } catch { /* nothing kept, or private window: the defaults */ }
   // a button you moved stays put: anything of the new layout's that would fight it over a button moves off
-  for (const a of list) {
-    if (moved.has(a.id) || !list.some((y) => y !== a && bound[y.id] === bound[a.id] && clashes(a, y))) continue;
+  for (const a of actions) {
+    if (moved.has(a.id) || !actions.some((y) => y !== a && bound[y.id] === bound[a.id] && clashes(a, y))) continue;
     const back = before[a.id];
     bound[a.id] = back !== undefined && !taken(a, back) ? back : freeFor(a, bound[a.id]);
   }
+  padHooks((id) => { const a = actions.find((x) => x.id === id); return a ? label(a, over(a) ? a.where : context()) : undefined; }, padInUse);
 }
 
 function saveButtons() {
   const kept: Record<string, unknown> = { [LAYOUT_KEY]: LAYOUT };
-  for (const a of actions) if (bound[a.id] !== a.button) kept[a.id] = bound[a.id];
+  for (const a of actions) if (bound[a.id] !== a.pad) kept[a.id] = bound[a.id];
   try { localStorage.setItem(bindKey, JSON.stringify(kept)); } catch { /* just this visit */ }
 }
 
-/** The rows a button press means now: the driving rows at the wheel if it has any, else the rest. */
-function rowsOn(b: number, wheel: boolean): PadAction[] {
+/** A row that takes its button over in a place of its own (a wheel or helm, a back seat). */
+const over = (a: PadAction) => a.where === "wheel" || a.where === "back";
+
+/** The rows a button press means now: the rows of the place you're in if it has any on it, else the rest. */
+function rowsOn(b: number, here: Where): PadAction[] {
   const on = actions.filter((a) => bound[a.id] === b);
-  return wheel && on.some((x) => x.wheel) ? on.filter((x) => x.wheel) : on.filter((x) => !x.wheel && !(wheel && x.foot));
+  const own = on.filter((a) => a.where === here && over(a));
+  return own.length ? own : on.filter((a) => a.where === "all" || (a.where === "foot" && here !== "wheel"));
 }
 
 // a button with a tap and a hold on it, pressed and not yet let go or held long enough to tell
@@ -241,9 +233,9 @@ export function padPress(b: number, down: boolean) {
     for (const a of actions) if (bound[a.id] === b) a.run(false);
     return;
   }
-  const wheel = atWheel();
-  if (wheel && (b === B.r2 || b === B.l2)) return;
-  const rows = rowsOn(b, wheel);
+  const here = context();
+  if (here === "wheel" && (b === B.r2 || b === B.l2)) return;
+  const rows = rowsOn(b, here);
   const tapRow = rows.find((x) => !x.hold), holdRow = rows.find((x) => x.hold);
   if (tapRow && holdRow && !holdRow.now?.()) { pending = { b, at: performance.now(), tap: tapRow, hold: holdRow }; return; }
   (holdRow ?? tapRow)?.run(true);
@@ -255,26 +247,29 @@ function padTick(now: number) {
 }
 
 /** A row's button as a prompt names it: "hold □" when a tap of it would do something else. */
-function label(a: PadAction, wheel: boolean): string {
+function label(a: PadAction, here: Where): string {
   const b = bound[a.id], name = PAD_NAME[b];
-  return a.hold && !a.now?.() && rowsOn(b, wheel).some((x) => !x.hold) ? `hold ${name}` : name;
+  return a.hold && !a.now?.() && rowsOn(b, here).some((x) => !x.hold) ? `hold ${name}` : name;
 }
 
-/** The button a key the prompts name is on: the driving row's at the wheel, else the one on foot. */
+/** The button a key is on, for the old way of naming keys (keyLabel): the row of the place you're in, else the one on foot. */
 const padName = (code: string): string | undefined => {
   if (code === "Escape") return PAD_NAME[B.options];
-  const has = actions.filter((a) => a.keys?.includes(code));
-  const wheel = has.filter((a) => a.wheel), foot = has.filter((a) => !a.wheel);
-  const at = atWheel(), use = at && wheel.length ? wheel : foot.length ? foot : wheel;
+  const has = actions.filter((a) => a.keys?.includes(code) || (a.mouse !== undefined && code === `Mouse${a.mouse}`));
+  const here = context(), mine = has.filter((a) => a.where === here && over(a)), plain = has.filter((a) => !over(a));
+  const use = mine.length ? mine : plain.length ? plain : has;
   if (!use.length) return undefined;
-  return [...new Set(use.map((a) => label(a, at && !!a.wheel)))].join("/");
+  return [...new Set(use.map((a) => label(a, over(a) ? a.where : here)))].join("/");
 };
 
 /** The Buttons list in Settings: each action and its button. Choose one and press the button to put it on. */
+/** Whether two rows can both be live at once: one for everywhere, or both for the same place. */
+const together = (a: PadAction, b: PadAction) => a.where === "all" || b.where === "all" || a.where === b.where;
+
 function buttonsList() {
   for (const box of document.querySelectorAll<HTMLElement>(".padbuttons")) {
     box.replaceChildren();
-    for (const [head, rows] of [["", actions.filter((a) => !a.wheel)], ["At the wheel", actions.filter((a) => a.wheel)]] as const) {
+    for (const [head, rows] of [["", actions.filter((a) => !over(a))], ["At the wheel or a helm", actions.filter((a) => a.where === "wheel")], ["In the back seat", actions.filter((a) => a.where === "back")]] as const) {
       if (!rows.length) continue;
       if (head) { const h = document.createElement("p"); h.className = "hint"; h.textContent = head; box.append(h); }
       for (const a of rows) {
@@ -284,7 +279,7 @@ function buttonsList() {
         const name = document.createElement("span"), btn = document.createElement("kbd");
         name.textContent = a.name;
         btn.textContent = listening === a ? "Press a button…"
-          : a.hold && actions.some((y) => y !== a && bound[y.id] === bound[a.id] && !y.hold && !y.wheel === !a.wheel) ? `hold ${PAD_NAME[bound[a.id]]}` : PAD_NAME[bound[a.id]];
+          : a.hold && actions.some((y) => y !== a && bound[y.id] === bound[a.id] && !y.hold && together(a, y)) ? `hold ${PAD_NAME[bound[a.id]]}` : PAD_NAME[bound[a.id]];
         row.append(name, btn);
         row.addEventListener("click", () => { listening = a; buttonsList(); refocus(a.id); });
         row.dataset.act = a.id;
@@ -308,10 +303,12 @@ function refocus(id: string) {
   el.addEventListener("blur", () => el.classList.remove("padfocus"), { once: true });
 }
 
-/** Would these two fight over a button? Two taps or two holds on foot, the same at the wheel, or a
- *  driving row and something still needed at the wheel. */
+/** Would these two fight over a button? Two taps or two holds on foot, the same in one place of
+ *  its own (a wheel, a back seat), or a row of such a place and something still needed there. */
 function clashes(x: PadAction, y: PadAction) {
-  return !!x.wheel === !!y.wheel ? !!x.hold === !!y.hold : !!x.wheel ? !!y.live : !!x.live;
+  if (!over(x) && !over(y)) return !!x.hold === !!y.hold;
+  if (over(x) && over(y)) return x.where === y.where && !!x.hold === !!y.hold;
+  return over(x) ? !!y.live : !!x.live;
 }
 const taken = (x: PadAction, at: number) => actions.some((y) => y !== x && bound[y.id] === at && clashes(x, y));
 
@@ -332,7 +329,7 @@ function assign(a: PadAction, b: number) {
 }
 
 function resetButtons() {
-  for (const a of actions) bound[a.id] = a.button;
+  for (const a of actions) bound[a.id] = a.pad;
   listening = null;
   saveButtons();
   buttonsList();

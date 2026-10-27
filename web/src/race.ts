@@ -45,7 +45,7 @@
 // tenth of a second, and you race a see-through rider of it; finishing with a best sends your run
 // round, so everyone else in the room races your ghost too, alongside the real riders.
 //
-// Backspace (Again on a touch screen, a tap of Square on a pad) puts just you back on the line with a quick 3-2-1 of your own
+// Use (E, □, or Again on a touch screen; Backspace too) puts just you back on the line with a quick 3-2-1 of your own
 // and your own clock: a time trial for you, while the room's race and its results stand. It works
 // for two minutes after a race is over too.
 //
@@ -69,7 +69,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
-import { keyLabel, padInUse } from "./gamepad";
+import { ctl } from "./controls";
 import * as RS from "./racescreens";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
@@ -336,9 +336,8 @@ registerJob({
   start: (o, w, started, by, local) => new Race(o, w, started, by, !!local),
 });
 
-/** What a prompt calls going again: Backspace, the pad's reload button (it presses R, which race.ts takes
- *  as Again when there's nothing to reload for), or the touch screen's Again button. */
-const againKey = () => (RS.touchUp() ? "Again" : padInUse() ? keyLabel("KeyR") : "Backspace");
+/** What a prompt calls going again: use (E, □), or the touch screen's Again button. */
+const againKey = () => ctl("again");
 
 /** "1:23.4". */
 function clock(s: number, tenths = false) {
@@ -550,14 +549,7 @@ class Race implements Job {
   private heads = new Map<string, { x: number; z: number; h: number }>();   // where each racer was and which way they're going, for the camera behind them
   private keys: ((e: KeyboardEvent) => void) | null = null;
   private lastMe: { x: number; z: number } | null = null;
-  /** A pad has no Backspace: its reload button (which presses R) goes again instead, on a ride
-   *  or in a race once you're not racing flat out. */
-  private padAgain = (e: KeyboardEvent) => {
-    if (e.isTrusted || e.code !== "KeyR" || this.done || !this.w.me().alive) return;
-    if (!(this.racing || this.w.riding()) || (this.racing && !this.over && !this.out && !this.dnf) || this.waiting()) return;
-    e.preventDefault(); e.stopImmediatePropagation();
-    this.restart();
-  };
+
   private stats = { top: 0, v: 0, boosts: 0, slip: 0, barged: 0, knocked: 0 };
   private arrow = hudBit("top:calc(50% - 96px);width:48px;margin-left:-24px;color:" + COLOUR);
   private flash = hudBit("top:calc(50% + 48px);width:260px;margin-left:-130px");
@@ -625,7 +617,6 @@ class Race implements Job {
       if (!local) w.send("qe", { k: "brd", s: offer.seed, t: mine.t, n: mine.n });
     }
     this.own = local;
-    addEventListener("keydown", this.padAgain, true);
     if (local) {
       if (w.me().alive) { this.racing = true; w.moveTo(this.start.x, this.start.z, this.start.yaw); w.ride(this.rt.ride); }
       return;
@@ -634,8 +625,8 @@ class Race implements Job {
     const left = Math.ceil((this.close - Date.now()) / 1000);
     if (lone) return;
     if (left <= 0) w.toast(`A race is on: you're watching this one. ${againKey()} to have a go of your own`, 3);
-    else if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press E and enter`, 3);
-    else w.toast(`A race is taking entries: E to enter (${left} s)`, 4);
+    else if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press {use} and enter`, 3);
+    else w.toast(`A race is taking entries: {use} to enter (${left} s)`, 4);
   }
 
   /** Each leg's time limit and gold pace at each gate, and where the boost pads lie. */
@@ -690,9 +681,19 @@ class Race implements Job {
   }
   private here(id: string) { return this.w.players().some((p) => p.id === id); }
 
-  hint() { return this.canEnter() ? `<b>E</b> Enter the race (${Math.ceil((this.close - Date.now()) / 1000)} s)` : ""; }
+  hint() {
+    if (this.canEnter()) return `<b>{use}</b> Enter the race (${Math.ceil((this.close - Date.now()) / 1000)} s)`;
+    return this.againOk() ? "<b>{again}</b> Go again" : "";
+  }
+
+  /** Use goes again on a ride, or in a race once you're not racing flat out: not mid-race, nor waiting for the end. */
+  private againOk() {
+    if (this.done || !this.w.me().alive || this.waiting()) return false;
+    return (this.racing || this.w.riding()) && !(this.racing && !this.over && !this.out && !this.dnf);
+  }
 
   use(): boolean {
+    if (this.againOk() && !this.canEnter()) return this.restart();
     if (!this.canEnter()) return false;
     this.enter(this.w.selfId);
     this.w.send("qe", { k: "ent", s: this.offer.seed });
@@ -833,7 +834,7 @@ class Race implements Job {
         kind: this.offer.title,
         head: `Waiting for racers<span class="dots"></span>`, count: Math.ceil((this.close - nowMs) / 1000),
         sub: `${this.entries.length} in: ${names(this.entries)}`,
-        small: inIt ? `You're in · ${esc(rideSpecs[this.rt.ride].name)}` : this.w.me().alive ? `<b>${esc(RS.control("KeyE", "Use"))}</b> to enter` : "",
+        small: inIt ? `You're in · ${esc(rideSpecs[this.rt.ride].name)}` : this.w.me().alive ? `<b>${esc(RS.control("use"))}</b> to enter` : "",
       });
     } else if (!this.local && !this.grid) {
       RS.waiting({ kind: this.offer.title, head: `Lining up<span class="dots"></span>`, sub: `${this.entries.length} in: ${names(this.entries)}` });
@@ -888,7 +889,7 @@ class Race implements Job {
       this.keys = (e: KeyboardEvent) => {
         if (e.repeat || e.target instanceof HTMLInputElement) return;
         const by = e.code === "KeyQ" || e.code === "ArrowLeft" || (e.code === "KeyB" && !e.isTrusted) ? -1
-          : e.code === "KeyE" || e.code === "ArrowRight" || (e.code === "KeyG" && !e.isTrusted) ? 1 : 0;
+          : (e.code === "KeyE" && e.isTrusted) || e.code === "ArrowRight" || (e.code === "KeyG" && !e.isTrusted) ? 1 : 0;
         if (!by || !this.cycle(by)) return;
         e.preventDefault(); e.stopImmediatePropagation();
       };
@@ -913,7 +914,7 @@ class Race implements Job {
     } else this.eye = null;
     const mine = this.results.findIndex((r) => r.id === this.w.selfId);
     const head = this.dnf ? "Out of the race" : `Finished${mine >= 0 ? ` — ${nth(mine + 1)}` : ""}, ${clock(this.myT, true)}`;
-    const sw = RS.touchUp() ? "◀ ▶" : padInUse() ? `${keyLabel("Digit1")} / ${keyLabel("Digit2")}` : "Q / E";
+    const sw = ctl("watch");
     const left = this.results.length ? Math.max(0, Math.ceil(AFTER - (Date.now() - this.firstT) / 1000)) : 0;
     RS.spectating({
       head,
@@ -1497,7 +1498,7 @@ class Race implements Job {
     if (!this.local && !this.grid) {
       const left = Math.max(0, Math.ceil((this.close - nowMs) / 1000)), inIt = this.entries.includes(this.w.selfId);
       return {
-        line: left <= 0 ? "Entries closed: lining up" : inIt ? `<b class="clue">You're in</b> · the grid in ${left} s` : `<b class="clue">Entries open</b>: <b>${esc(RS.control("KeyE", "Use"))}</b> to enter · ${left} s`,
+        line: left <= 0 ? "Entries closed: lining up" : inIt ? `<b class="clue">You're in</b> · the grid in ${left} s` : `<b class="clue">Entries open</b>: <b>${esc(RS.control("use"))}</b> to enter · ${left} s`,
         sub: `${this.entries.length} in: ${names(this.entries)}<br>${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}`,
         bar: 1 - Math.min(1, Math.max(0, (this.close - nowMs) / (ENTRY * 1000))),
       };
@@ -1546,7 +1547,6 @@ class Race implements Job {
     this.flash.remove();
     this.timer.remove();
     RS.waiting(null); this.unwatch();
-    removeEventListener("keydown", this.padAgain, true);
     this.rideNormally();
     this.dropPads();
   }

@@ -76,7 +76,8 @@
 //   host's say, sent with its state ("st"); everyone else plays by the host's switches.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { B as PAD, keyLabel, padInUse, padText, rumble } from "./gamepad";
+import { padInUse, padText, rumble } from "./gamepad";
+import { B as PAD, control, ctl, ctlText, input, isKey, strip, stripOf } from "./controls";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -234,9 +235,9 @@ const CAR_LINE: Record<string, string> = {
   nova: "Vauxhall Nova: the estate's finest",
   metro: "Austin Metro: a British car to beat the world",
   sierra: "Ford Sierra: the jelly mould",
-  police: "Police Sierra. H for the siren",
+  police: "Police Sierra. {horn} for the siren",
   transit: "Ford Transit: room for your mates in the back",
-  icecream: "Mr Whippy. H for Greensleeves",
+  icecream: "Mr Whippy. {horn} for Greensleeves",
   chipvan: "Mr D's chip van: mind the fryers on the corners",
   milkfloat: "Milk float: fifteen miles an hour, flat out",
   c5: "Sinclair C5. Keep your head down",
@@ -393,6 +394,8 @@ export class Game {
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   /** At the wheel of something (a game controller's triggers are then its pedals). */
   get driving() { return !!this.car; }
+  /** At a car's wheel or a narrowboat's helm: the pad's driving buttons (the horn rings the bell). */
+  get atWheel() { return !!this.car || !!this.world.canal?.helmOf(this.net.selfId); }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
   private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
   private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
@@ -943,33 +946,33 @@ export class Game {
       this.look(e.movementX, e.movementY);
     }, sig);
     addEventListener("keydown", (e) => {
-      if (e.code === "Tab") { e.preventDefault(); this.dailyT = 0; $("scoreboard").classList.remove("join"); $("scoreboard").hidden = false; this.renderScores(); }
-      if (e.code === "KeyR" && this.active) this.reload();
+      if (isKey(e.code, "scores")) { e.preventDefault(); this.dailyT = 0; $("scoreboard").classList.remove("join"); $("scoreboard").hidden = false; this.renderScores(); }
+      if (isKey(e.code, "reload") && this.active) this.reload();
       if (this.active && !e.repeat) {
         const n = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
         // at a bus stop with the menu up, 1 and 2 call a bus rather than switching weapons
         if (BUS_KEYS[e.code] && this.busMenu > performance.now()) this.callBus(BUS_KEYS[e.code]);
         else if (n >= 0) this.switchTo(SLOTS[n], true);
-        if (e.code === "KeyQ") this.cycleWeapon(1);
+        if (isKey(e.code, "swap")) this.cycleWeapon(1);
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
-      if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
+      if (this.active && !e.repeat && isKey(e.code, "use")) { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
-      if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
-      if (e.code === "KeyC" && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
+      if (isKey(e.code, "bino") && !e.repeat && this.active) this.toggleBinoculars();
+      if (isKey(e.code, "view") && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
       if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && this.active && this.car) this.indicate(e.code === "ArrowLeft" ? 1 : -1);
-      if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
+      if (isKey(e.code, "ride") && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
-      if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
-      if (e.code === "KeyM" && !e.repeat) this.toggleMap();
+      if (isKey(e.code, "torch") && !e.repeat && this.active) this.toggleTorch();
+      if (isKey(e.code, "map") && !e.repeat) this.toggleMap();
       if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
         const c = this.minimap.cursor;
         this.minimap.zoomFull(e.code === "Equal" || e.code === "NumpadAdd" ? 1.5 : 1 / 1.5, c?.[0], c?.[1]);
       }
-      if (e.code === "KeyG" && !e.repeat && this.active) { if (this.mapOpen) this.markUnderPointer(); else this.markLook(); }
-      if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
+      if (isKey(e.code, "mark") && !e.repeat && this.active) { if (this.mapOpen) this.markUnderPointer(); else this.markLook(); }
+      if (isKey(e.code, "radio") && !e.repeat && this.active) this.voice.radio(true);
     }, sig);
     addEventListener("keyup", (e) => {
       if (e.code === "Tab") $("scoreboard").hidden = true;
@@ -1141,7 +1144,7 @@ export class Game {
   /** A click on the full map with the mouse captured: your marker under the crosshair (or taken down, if it's on it). */
   private markAtCursor() {
     const c = this.minimap.cursor;
-    if (!c) { this.toast("Move the mouse to aim, then click to mark", 2); return; }
+    if (!c) { this.toast(input() === "pad" ? "Move the cursor with the left stick, then {map.mark} to mark" : "Move the mouse to aim, then click to mark", 2); return; }   // keys-ok: the mouse's own way
     // the crosshair on the key: switch that row instead
     const r = $("bigmapcanvas").getBoundingClientRect();
     if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
@@ -1499,19 +1502,19 @@ export class Game {
   /** The line under the big map: just the controls for whatever you're playing with. */
   private mapHint() {
     if (this.picker) return;
-    const text = padInUse() ? "Left stick: move the cursor · R2/L2 or right stick: zoom · A: mark · B: close · Y: find yourself"
-      : this.freeMode ? "Tap to mark · drag to move · pinch to zoom · tap your marker to take it down"
-      : "Click to mark · drag to move · wheel to zoom · WASD to move · Space: find yourself · M or Esc: close";
-    if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").textContent = text; }
+    const text = strip("map") + (input() === "touch" ? " · tap your marker to take it down" : "");
+    if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").innerHTML = text; }
   }
 
   /** A pad's button while the map's up: true if the map took it. */
   mapPad(b: number, down: boolean): boolean {
     if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
     if (!down) return false;
-    if (b === PAD.cross) { this.markUnderPointer(); return true; }
-    if (b === PAD.circle) { this.toggleMap(); return true; }
-    if (b === PAD.triangle) { this.minimap.centreFull(this.player.pos.x, this.player.pos.z); return true; }
+    const is = (id: string) => b === control(id)?.pad;
+    if (is("map.mark")) { this.markUnderPointer(); return true; }
+    if (is("map.close")) { this.toggleMap(); return true; }
+    if (is("map.find")) { this.minimap.centreFull(this.player.pos.x, this.player.pos.z); return true; }
+    if (is("map.pencil")) { this.signals.togglePencil(); return true; }
     return false;
   }
 
@@ -1542,7 +1545,7 @@ export class Game {
     this.minimap.pins = picker?.pins ?? [];
     $("bigmap").hidden = !picker;
     $("hud").classList.toggle("pubmode", !!picker);
-    $("bigmapclose").textContent = picker ? "Back" : "Close map (M)";
+    $("bigmapclose").textContent = picker ? "Back" : `Close map (${ctl("map.close", input() === "touch" ? "keys" : input())})`;
     $("bigmapme").hidden = !!picker;
     this.minimap.cursor = null;
     this.minimap.resetFull();
@@ -1974,7 +1977,7 @@ export class Game {
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
     if (d.kind === "boost") { this.boostT = BOOST_SECONDS; this.toast(`Lucozade: double damage for ${BOOST_SECONDS} seconds`, 2.5); }
     if (isRide(d.kind)) this.giveRide(d.kind);
-    if (d.kind === "ladder" && !this.tookLadder()) this.toast(this.freeMode ? "A ladder! Face a building and press Ride to put it up to the roof" : "A ladder! Face a building and press X to put it up to the roof", 3.5);
+    if (d.kind === "ladder" && !this.tookLadder()) this.toast("A ladder! Face a building and press {ride} to put it up to the roof", 3.5);
     if (d.kind === "ammo") {
       w.reserve = Math.min(MAX_RESERVE, w.reserve + AMMO_PICKUP);
       this.toast(`+${AMMO_PICKUP} rifle rounds`, 1.5);
@@ -1990,7 +1993,7 @@ export class Game {
     } else if (d.kind === "sniper") {
       w.giveSniper();
       this.aiming = false;
-      this.toast("Sniper rifle: 10 rounds. Right click for the scope, 3 to pick it, 2 for the rifle", 3.5);
+      this.toast(input() === "keys" ? "Sniper rifle: 10 rounds. {aim} for the scope, {sniper} to pick it, {rifle} for the rifle" : "Sniper rifle: 10 rounds. {aim} for the scope, {swap} to change weapon", 3.5);
       this.feed(`You picked up the sniper rifle`);
     }
   }
@@ -2632,7 +2635,7 @@ export class Game {
     v.pose(dt, performance.now());
     if (v.impact > 3) SFX.crash(Math.min(1, (v.impact - 3) / 12));
     if (v.spec.milk && v.impact > 3.5) this.smashMilk(v);
-    if (v.flipped) { SFX.crash(0.7); this.toast(`Over she goes. E to get out`, 3); }
+    if (v.flipped) { SFX.crash(0.7); this.toast("Over she goes. {out} to get out", 3); }
     if (Math.abs(v.speed) > (v.spec.crush ? 0.6 : 4)) this.runOver(v);
     // in the driver's seat
     const s = v.seat();
@@ -2903,7 +2906,7 @@ export class Game {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
       this.throttle = 0; this.tiller = 0;
-      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : padInUse() ? `Left stick to steer, ${keyLabel("KeyE")} to let go` : "W/S throttle, A/D tiller, C for the view, E to let go"}`, 3.5);
+      this.toast(`You take the tiller of ${b.name}. {throttle} throttle, {steer} tiller, {view} for the view, {out} to let go`, 3.5);
       SFX.door();
       return true;
     }
@@ -3096,7 +3099,7 @@ export class Game {
     B.board(near.b);
     this.balloonA = near.b.a;
     this.aiming = this.binoculars = false;
-    this.toast(B.flying ? `You're flying ${near.b.name}. W for the burner, S for the vent, A and D to turn` : `Aboard ${near.b.name}. Enjoy the view`, 3.5);
+    this.toast(B.flying ? `You're flying ${near.b.name}. {burner} for the burner, {vent} for the vent, {steer} to turn` : `Aboard ${near.b.name}. Enjoy the view`, 3.5);
     this.sendState();
     return true;
   }
@@ -3185,7 +3188,7 @@ export class Game {
     const r = this.trolleyNear();
     if (!r) return false;
     this.basket = r.id;
-    this.toast(`In ${r.name}'s trolley. E to climb out`, 2.5);
+    this.toast(`In ${r.name}'s trolley. {use} to climb out`, 2.5);
     this.sendState();
     return true;
   }
@@ -3317,7 +3320,7 @@ export class Game {
         this.player.pos.x += sn * side * (cm.hw + 0.3 - Math.abs(across));
         this.player.pos.z += cs * side * (cm.hw + 0.3 - Math.abs(across));
         this.carrier = null;
-        this.toast(`Low bridge! Lie flat on the roof (${keyLabel("KeyZ")}) to go under`, 3);
+        this.toast("Low bridge! Lie flat on the roof ({prone}) to go under", 3);
       }
     }
     // stepping into a cable car cabin
@@ -3671,7 +3674,7 @@ export class Game {
   private onBus(d: { m: string; kind: string; v: number }) {
     const what = d.kind === "bus" ? "double-decker" : "minibus";
     if (d.m === "coming") { this.myBus = d.v; this.toast(`A ${what} is on its way. It's the green dot on the map`, 3); }
-    else if (d.m === "here") { this.myBus = -1; SFX.door(); this.toast(`Your ${what} is here. E to get on`, 3); }
+    else if (d.m === "here") { this.myBus = -1; SFX.door(); this.toast(`Your ${what} is here. {use} to get on`, 3); }
     else if (d.m === "none") this.toast(`No ${d.kind === "bus" ? "double-deckers" : "minibuses"} free. Try the other one`, 2.5);
     else if (d.m === "full") this.toast(`There's no room for a ${what} at this stop`, 2.5);
     else if (d.m === "wait") this.toast("You've just called one. Give it a minute", 2);
@@ -4301,10 +4304,10 @@ export class Game {
     $("magfill").style.width = fists ? "0%" : `${(w.rounds / gun.mag) * 100}%`;
     $("ammo").style.setProperty("--segs", String(gun.mag || 1));
     $("ammo").classList.toggle("low", !fists && w.rounds <= (sniper ? 2 : 6));
-    $("reloadmsg").textContent = padText(fists ? (w.has("rifle") ? "Press 2 for the rifle" : w.has("sniper") ? "Press 3 for the sniper" : "Out of ammo: find some rounds")
-      : sniper ? (w.reloading > 0 ? "Reloading…" : w.sniperAmmo === 0 ? (w.sniperReserve ? "Press R to reload" : "Out of sniper rounds")
+    $("reloadmsg").textContent = ctlText(fists ? (w.has("rifle") ? "Press {rifle} for the rifle" : w.has("sniper") ? "Press {sniper} for the sniper" : "Out of ammo: find some rounds")
+      : sniper ? (w.reloading > 0 ? "Reloading…" : w.sniperAmmo === 0 ? (w.sniperReserve ? "Press {reload} to reload" : "Out of sniper rounds")
         : w.rechambering ? "Working the bolt…" : w.sniperAmmo === 1 ? "Last round" : w.sniperAmmo === 2 ? "2 rounds left" : "")
-      : w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? (w.reserve ? "Press R to reload" : "Out of ammo")
+      : w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? (w.reserve ? "Press {reload} to reload" : "Out of ammo")
       : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : "");
     $("scope").hidden = !this.scoped || !this.alive;
     $("binoculars").hidden = this.bino < 0.85 || !this.alive;
@@ -4336,9 +4339,7 @@ export class Game {
         const yaw = p.yaw, ahead = -wind.x * Math.sin(yaw) - wind.z * Math.cos(yaw), right = wind.x * Math.cos(yaw) - wind.z * Math.sin(yaw);
         $("windarrow").style.transform = `rotate(${Math.atan2(right, ahead)}rad)`;
       }
-      $("kickhint").textContent = this.freeMode ? `Stick: aim and ${bowl ? "pace" : "power"} · Fire to ${bowl ? "bowl" : "kick"} · Jump to walk off`
-        : padInUse() ? `Left stick: aim and ${bowl ? "pace" : "power"} · ${keyLabel("Space")} to ${bowl ? "bowl" : "kick"} · ${keyLabel("KeyE")} to walk off`
-        : `A/D aim · W/S ${bowl ? "pace" : "power"} · Space to ${bowl ? "bowl" : "kick"} · E to walk off`;
+      $("kickhint").innerHTML = stripOf([["steer", "aim"], ["throttle", bowl ? "pace" : "power"], ["kick", bowl ? "bowl" : "kick"], ["walkoff", "walk off"]]);
     }
     this.shootCard();
     $("hud").classList.toggle("tv", this.broadcast.on);
@@ -4397,26 +4398,21 @@ export class Game {
       $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
       $("mph").textContent = String(sky.up);
       const out = this.balloons.clearance() <= 3;
-      $("drivehint").textContent = !flying ? (out ? `${this.k("KeyE", "Car")} to get out` : "Along for the ride")
-        : this.freeMode ? `Stick up: burner · down: vent · sideways: turn${out ? " · Car: get out" : ""}`
-        : padInUse() ? `Left stick up: burner · down: vent · sideways: turn${out ? ` · ${keyLabel("KeyE")} out` : ""}`
-        : `W burner · S vent · A/D turn${out ? " · E out" : ""}`;
+      $("drivehint").innerHTML = !flying ? (out ? stripOf([["use", "get out"]]) : "Along for the ride")
+        : stripOf([["burner", "burner"], ["vent", "vent"], ["steer", "turn"], ...(out ? [["use", "get out"] as [string, string]] : [])]);
     }
     if (helm) {
       $("drivename").textContent = `${helm.name}, narrowboat`;
       $("mph").textContent = String(Math.round(Math.abs(helm.v) * 2.237));
-      $("drivehint").textContent = this.freeMode ? "Stick: throttle and tiller · Fire: bell · ◀ ▶: wave · Car: let go"
-        : padInUse() ? `Left stick: throttle and tiller · ${keyLabel("KeyH")} bell · ${keyLabel("KeyE")} to let go` : "W/S throttle · A/D tiller · H/↑ bell · ←/→ wave · C view · E to let go";
+      $("drivehint").innerHTML = stripOf([["throttle", "throttle"], ["steer", "tiller"], ["horn", "bell"], ["left", ""], ["right", "wave"], ["view", "view"], ["out", "let go"]]);
     }
     if (car) {
       const horn = car.kind === "police" ? "siren" : car.kind === "icecream" ? "chimes" : "horn";
       const blink = performance.now() % 760 < 380;
       $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
-      $("drivehint").textContent = car.tip ? `${this.k("KeyE", "Car")} to get out`
-        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · ◀ ▶: indicate · View: inside or out · Car: get out`
-        : padInUse() ? `R2 drive · L2 brake · Left stick steer · ${keyLabel("ArrowLeft")} ${keyLabel("ArrowRight")} indicate · ${keyLabel("Space")} handbrake · ${keyLabel("KeyH")} ${horn} · ${keyLabel("KeyC")} view · ${keyLabel("KeyE")} out`
-        : `W/S drive · A/D steer · ←/→ indicate · Space handbrake · H/↑ ${horn} · C view · E out`;
+      $("drivehint").innerHTML = car.tip ? stripOf([["out", "get out"]])
+        : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]);
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
@@ -4441,29 +4437,29 @@ export class Game {
       // nothing to say, and E there does nothing.
       const door = !ride && !near && !tour && !deli && this.alive ? this.atTrainDoor() : null;
       const doorLink = door ? this.world.railway!.linkFor(door) : null;
-      const train = door && doorLink ? `<b>${this.k("KeyE", "Car")}</b> Board the ${esc(doorLink.to_station)} train` : "";
+      const train = door && doorLink ? `<b>{use}</b> Board the ${esc(doorLink.to_station)} train` : "";
     // stood on a station platform with no train to get on: the next one from this platform, as the board says
     const wait = !door && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder" | "odd") => (k === "ladder" ? "the ladder" : k === "odd" ? "the strange thing" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
-    const text = tour ? `<b>${this.k("KeyE", "Car")}</b> Go in for a mine tour`
-      : deli ? `<b>${this.k("KeyE", "Car")}</b> Work a shift in the deli kitchen`
+    const text = tour ? `<b>{use}</b> Go in for a mine tour`
+      : deli ? `<b>{use}</b> Work a shift in the deli kitchen`
       : train ? train
-      : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : padText(job))
-      : near ? `<b>${this.k("KeyE", "Car")}</b> ${verb} the ${esc(near.name)}`
-      : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.k("KeyE", "Car")}</b> Climb into ${esc(balloon.b.name)}'s basket`)
-      : tiller ? (this.zones.can("boat") ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}` : esc(this.zones.shut("boat")))
-      : moored >= 0 ? (this.zones.can("boat") ? `<b>${this.k("KeyE", "Use")}</b> Cast off ${esc(canal!.mooredName(moored))} and take the tiller` : esc(this.zones.shut("boat")))
-      : lock >= 0 ? `<b>${this.k("KeyE", "Use")}</b> ${esc(canal!.lockHint(lock))}`
-      : menu ? `<button data-bus="minibus"><b>${keyLabel("Digit1")}</b> Minibus</button> <button data-bus="bus"><b>${keyLabel("Digit2")}</b> Double-decker</button>`
-      : stop ? (this.zones.can("bus") ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus` : esc(this.zones.shut("bus")))
-      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.k("KeyE", "Car")}</b> to get out`
-      : this.basket ? `In the trolley · <b>${this.k("KeyE", "Use")}</b> to climb out`
-      : swap ? `<b>${this.k("KeyE", "Use")}</b> ${swap}`
-      : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.k("KeyX", "Ride")}</b> to get off${this.freeMode ? "" : ` · ${esc(padText(rideSpecs[this.held].keys))}`}`
-      : this.held && performance.now() < this.rideTip ? `<b>${this.k("KeyX", "Ride")}</b> Get on ${esc(rideSpecs[this.held].name)}`
-      : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : padText(wood))
+      : job ? job
+      : near ? `<b>{use}</b> ${verb} the ${esc(near.name)}`
+      : balloon ? (balloon.why ? esc(balloon.why) : `<b>{use}</b> Climb into ${esc(balloon.b.name)}'s basket`)
+      : tiller ? (this.zones.can("boat") ? `<b>{use}</b> Take the tiller of ${esc(tiller.name)}` : esc(this.zones.shut("boat")))
+      : moored >= 0 ? (this.zones.can("boat") ? `<b>{use}</b> Cast off ${esc(canal!.mooredName(moored))} and take the tiller` : esc(this.zones.shut("boat")))
+      : lock >= 0 ? `<b>{use}</b> ${esc(canal!.lockHint(lock))}`
+      : menu ? `<button data-bus="minibus"><b>{minibus}</b> Minibus</button> <button data-bus="bus"><b>{bus}</b> Double-decker</button>`
+      : stop ? (this.zones.can("bus") ? `<b>{use}</b> Call a bus` : esc(this.zones.shut("bus")))
+      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>{use}</b> to get out`
+      : this.basket ? `In the trolley · <b>{use}</b> to climb out`
+      : swap ? `<b>{use}</b> ${swap}`
+      : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>{ride}</b> to get off${` · ${esc(rideSpecs[this.held].keys)}`}`
+      : this.held && performance.now() < this.rideTip ? `<b>{ride}</b> Get on ${esc(rideSpecs[this.held].name)}`
+      : wood && !ladder.startsWith("<b>") ? wood
       : ladder || wait;
     // in a race's countdown the prompt waits too, and what to do with the ride is said once it's over
     const hush = this.quests.quiet();
@@ -4475,12 +4471,12 @@ export class Game {
     }
     if (hush && !this.hushed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
     this.hushed = hush;
-    show($("usehint"), hush ? "" : text, !hush && !!text);
+    show($("usehint"), hush ? "" : ctlText(text), !hush && !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
-    const rk = this.k("KeyX", "Ride");
+    const rk = "{ride}";
     const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
     const odd = !this.held && !lad && this.alive && this.oddments.carrying(me);
     const words = odd ? `Carrying something strange<small><b>${rk}</b> to put it down</small>`
@@ -4488,10 +4484,10 @@ export class Game {
       : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
     const chip = !words ? "" : `<span class="carryicon">${carryIcon(odd ? "odd" : lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
-    show($("ridechip"), chip, !!chip);
-    const jobUse = job.includes("<b>E</b>");
-    const ladderUse = ladder.startsWith(`<b>${this.k("KeyE", "Use")}</b>`);
-    const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
+    show($("ridechip"), ctlText(chip), !!chip);
+    const jobUse = job.includes("<b>{use}</b>") || job.includes("<b>{again}</b>");
+    const ladderUse = ladder.startsWith("<b>{use}</b>");
+    const woodUse = wood.startsWith("<b>{use}</b>") && !ladderUse;
     const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
     const goal = this.sports.goalCall;
     $("t-car").hidden = !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
@@ -4512,16 +4508,14 @@ export class Game {
     }
     const dives = !!c && c.role === "keeper" && this.alive;
     $("t-dl").hidden = $("t-dr").hidden = !dives;
-    if (dives) say($("shoothint"), this.freeMode ? "You're in goal: tap a Dive button"
-      : padInUse() ? `You're in goal: hold the left stick to one side and press ${keyLabel("Space")} to dive` : "You're in goal: hold A or D and press Space to dive");
+    if (dives) say($("shoothint"), input() === "touch" ? "You're in goal: tap a Dive button" : ctlText("You're in goal: hold {steer} to one side and press {dive} to dive"));
     $("shoothint").hidden = !dives;
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */
   private ladderHint(): string {
-    const p = this.player, use = this.k("KeyE", "Use"), put = this.k("KeyX", "Ride");
-    if (p.ladder) return this.freeMode ? "On the ladder · Stick to climb · Jump to let go"
-      : padInUse() ? `On the ladder · Left stick to climb · ${keyLabel("Space")} to let go` : "On the ladder · W to climb, S to go down · Space to let go";
+    const p = this.player, use = "{use}", put = "{ride}";
+    if (p.ladder) return `On the ladder · ${stripOf([["climbup", "to climb"], ["climbdown", "to go down"], ["letgo", "to let go"]])}`;
     if (this.ladders.carriers.has(this.net.selfId)) {
       // where it would go is worth working out only a few times a second
       if ((this.aimT -= 1) <= 0) {
@@ -4621,12 +4615,11 @@ export class Game {
   }
 
   /** What a prompt calls a key: its touch button on a touch screen, else the key or the pad's button. */
-  private k(code: string, touch: string) { return this.freeMode ? touch : keyLabel(code); }
 
   toast(text: string, secs = 2) {
     // a race's countdown has the middle of the screen: the call-out comes once GO has gone
     if (this.quests.quiet()) { this.heldToast = { text, secs }; return; }
-    if (!this.freeMode) text = padText(text);
+    text = ctlText(this.freeMode ? text : padText(text));
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
     el.textContent = text;

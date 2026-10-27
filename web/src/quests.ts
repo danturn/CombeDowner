@@ -44,7 +44,7 @@ import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
-import { padText } from "./gamepad";
+import { ctlText } from "./controls";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
@@ -690,10 +690,10 @@ export class Quests {
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
     if (this.job?.offer.seed === p.offer.seed) return "";
     if (this.job && !this.local) return "Finish or call off your job first";
-    return p.kind.challenge ? `<b>E</b> ${esc(p.offer.title)}` : `<b>E</b> ${p.kind.take ?? "Take the job"}`;
+    return p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
   }
 
-  /** E pressed. Returns true if it was for a job. */
+  /** Use pressed. Returns true if it was for a job. */
   use(): boolean {
     const me = this.w.me();
     if (!me.alive) return false;
@@ -905,9 +905,9 @@ export class Quests {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? padText(p.kind.challenge ? "E to start it" : `E to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
+        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "{use} to start it" : `{use} to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
     }
-    show($("jobposter"), poster, !!poster);
+    show($("jobposter"), ctlText(poster), !!poster);
   }
 
   dispose() {

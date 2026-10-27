@@ -27,9 +27,9 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { View as BalloonView, BALLOON_DESIGNS, wind } from "./balloons";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
+import { strip } from "./controls";
 import { dayNumber } from "./daylight";
 import { model } from "./furniture";
-import { keyLabel } from "./gamepad";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
 import { hearts, missionEnd } from "./missionscreens";
@@ -58,7 +58,6 @@ const BACK_IN = 4.5;           // seconds in the grass before a faller's back in
 
 const smooth = (t: number) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u); };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const touchy = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 
 // ---- where it goes ------------------------------------------------------------------------------
 
@@ -601,8 +600,7 @@ registerChallenge({
             w.mark("@challenge", null);
             SFX.jobStep();
             const pi = pilots.indexOf(me), wi = walkers.indexOf(me);
-            const k = (c: string) => keyLabel(c);
-            if (pi >= 0) w.toast(`You're flying ${names[pi]}. ${touchy() ? "Push the stick up to pull in and down to let out" : `${k("KeyW")} pulls in, ${k("KeyS")} lets out`}: keep the rope just right`, 6);
+            if (pi >= 0) w.toast(`You're flying ${names[pi]}. {rope.in} pulls in, {rope.out} lets out: keep the rope just right`, 6);
             else if (wi >= 0) w.toast(wi === 0 ? "You're first on the rope" : `You're number ${wi + 1} on the rope. Watch how the others do it`, 4);
             return;
           }
@@ -680,7 +678,7 @@ registerChallenge({
           return { line: `Everyone to ${esc(offer.where || "the field")}`, sub: "The balloons go up once you're all there", progress: `${near} / ${all}` };
         }
         const lv = hearts(lives, most);
-        if (phase === "rise") return { line: `${lv} Up she goes`, sub: `${esc(names[0])} and ${esc(names[1])}, ${Math.round(H)} m up, ${Math.round(R)} m of rope`, bar: riseT / RISE, stage: { key: "rise", title: "Up she goes", sub: "Hold tight", colour: COLOUR } };
+        if (phase === "rise") return { line: `${lv} Up she goes`, sub: `${esc(names[0])} and ${esc(names[1])}, ${H.toFixed(0)} m up, ${R.toFixed(0)} m of rope`, bar: riseT / RISE, stage: { key: "rise", title: "Up she goes", sub: "Hold tight", colour: COLOUR } };
         if (phase === "down") return { line: won ? "Everyone made it across" : `${lv} Out of lives: coming down to start again`, bar: downT / DOWN, progress: `${done} / ${total}`, stage: { key: "down", title: won ? "Everyone across!" : "Out of lives", sub: won ? "Bringing her down" : "Down to start again", colour: COLOUR } };
         const id = current(), who = id === me ? "You" : esc(w.nameOf(id));
         const pi = pilots.indexOf(me);
@@ -688,10 +686,10 @@ registerChallenge({
           ? { key: `fell${lives}`, title: "Off the rope!", sub: `${fallen === me ? "You" : esc(w.nameOf(fallen))} fell · ${lives} ${lives === 1 ? "life" : "lives"} left`, colour: "#d8262e" }
           : { key: `w${n}`, title: id === me ? "Your turn" : `${who} on the rope`, sub: `${n + 1} of ${total}`, colour: COLOUR };
         const f = id === me ? (walk ? walk.d / span() : over ? 1 : 0) : (others.get(id)?.d ?? 0) / span();
-        if (pi >= 0) return { line: `${lv} Flying ${esc(names[pi])}: keep the rope just right`, sub: gauge() + (touchy() ? " Stick up to pull in, down to let out" : ` <b>${keyLabel("KeyW")}</b> pull in · <b>${keyLabel("KeyS")}</b> let out`), progress: `${done} / ${total}`, bar: f, stage };
+        if (pi >= 0) return { line: `${lv} Flying ${esc(names[pi])}: keep the rope just right`, sub: `${gauge()} ${strip("rope", ["rope.in", "rope.out"])}`, progress: `${done} / ${total}`, bar: f, stage };
         if (id === me && !fallen) return {
           line: `${lv} Your turn on the rope`,
-          sub: touchy() ? "Stick left and right to lean, up to walk. Stand still to steady yourself" : `<b>${keyLabel("KeyA")}</b> <b>${keyLabel("KeyD")}</b> lean · <b>${keyLabel("KeyW")}</b> walk · stand still to steady yourself`,
+          sub: `${strip("rope", ["rope.lean", "rope.walk"])} · stand still to steady yourself`,
           progress: `${done} / ${total}`, bar: f, stage,
         };
         const sub = walkers.includes(me) ? (crossed.has(me) ? "You're across. Cheer them on" : `You're number ${walkers.indexOf(me) + 1} of ${total}`) : "Everyone has to get across";
@@ -723,7 +721,7 @@ registerChallenge({
       },
       hint() {
         if (phase !== "cross" || !walkers.includes(me) || current() === me || fall || !walkerAt()) return "";
-        return `<b>E</b> ${basketView ? "Follow the walker" : "Watch from the basket"}`;
+        return `<b>{use}</b> ${basketView ? "Follow the walker" : "Watch from the basket"}`;
       },
 
       end() {

@@ -29,6 +29,7 @@
 import type * as THREE from "three";
 import type { GameMap } from "./map";
 import { snapshot } from "./snapshot";
+import { ctlText } from "./controls";
 import { morningGaffer } from "./invasion";
 import { nameOf, scars, squareOf } from "./yours";
 
@@ -476,7 +477,7 @@ function render(ed: Log | null, no: number): News {
       by: "By our chief reporter",
       body: [
         "They say they're \"taking the streets back\". Nobody is quite sure from whom. The Crier asked one of them what the flags were for. \"I'm not being funny, but,\" he said, and then didn't finish.",
-        "Residents can help: shoot the flags off the lamp posts to clear a square, and when the phone goes, get down the pub they've taken over and see them off. Each square you clear shows on the big map (M).",
+        "Residents can help: shoot the flags off the lamp posts to clear a square, and when the phone goes, get down the pub they've taken over and see them off. Each square you clear shows on the big map ({map}).",
       ],
       cap: "The first flag goes up. It won't be the last, the lads say.",
     };
@@ -511,7 +512,7 @@ function render(ed: Log | null, no: number): News {
     strap: strap.map((s) => `<span>${esc(s)}</span>`).join(""),
     lead: `<div class="chron-lead"><h3>${esc(story.head)}</h3><p class="stand">${esc(story.stand)}</p><div class="by">${esc(story.by)}</div>`
       + `<div class="chron-photo"><figure><img src="${img}" alt=""></figure><p class="cap">${esc(story.cap)}</p></div>`
-      + story.body.map((p) => `<p>${esc(p)}</p>`).join("") + `</div>`,
+      + story.body.map((p) => `<p>${ctlText(esc(p))}</p>`).join("") + `</div>`,
     side: side + gaffer,
     small: `<div class="chron-small">${small.map((i) => `<div><h4>${esc(i.head)}</h4><p>${i.text}</p></div>`).join("")}</div>`,
   };

@@ -14,7 +14,8 @@
 import * as Telemetry from "../telemetry";
 import * as THREE from "three";
 import * as SFX from "../audio";
-import { keyLabel, padText, rumble } from "../gamepad";
+import { rumble } from "../gamepad";
+import { ctl, ctlText } from "../controls";
 import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
@@ -759,14 +760,14 @@ export class MineGame {
     const r = RELICS[id];
     const cls = ["slot", o.key ? "weapon" : "", o.held ? "held" : "", r?.cursed ? "cursed" : "", o.fresh ? "fresh" : ""].filter(Boolean).join(" ");
     return `<div class="${cls}" data-id="${esc(id)}"><img src="${iconURL(id)}" alt="${esc(r?.name ?? heldName(id))}" draggable="false">`
-      + (o.key ? `<i>${o.key}</i>` : "") + (o.n && o.n > 1 ? `<b>${o.n}</b>` : "") + `</div>`;
+      + (o.key ? `<i>${ctl(`slot${o.key}`)}</i>` : "") + (o.n && o.n > 1 ? `<b>${o.n}</b>` : "") + `</div>`;
   }
 
   /** Your belt (what you can hold, keys 1 to 4) and your pack (relics, stacked). */
   private invHtml(fresh = "") {
     const belt = this.loadout.map((id, k) => this.slot(id, { key: k + 1, held: id === this.held, fresh: id === fresh }));
     // empty hooks on the belt, so you can see there's room for more
-    for (let k = belt.length; k < 4; k++) belt.push(`<div class="slot empty"><i>${k + 1}</i></div>`);
+    for (let k = belt.length; k < 4; k++) belt.push(`<div class="slot empty"><i>${ctl(`slot${k + 1}`)}</i></div>`);
     const counts = new Map<string, number>();
     for (const r of this.relics) if (!(r in WEAPONS)) counts.set(r, (counts.get(r) ?? 0) + 1);
     const pack = [...counts].map(([id, n]) => this.slot(id, { n, fresh: id === fresh }));
@@ -791,9 +792,9 @@ export class MineGame {
       if (!el) { tip.hidden = true; return; }
       const id = el.dataset.id!, r = RELICS[id], w = WEAPONS[id];
       const what = w ? `Hits for ${w.dmg}${w.cleave ? ", everything in front of you" : ""}, ${w.cd < 0.4 ? "very fast" : w.cd > 0.8 ? "slow" : "quick"}`
-        : id === "bow" ? "Hold to draw, let go to loose" : id === "fire" ? "Fire bolts, and right click for a healing light" : r?.blurb ?? "";
+        : id === "bow" ? "Hold {fire} to draw, let go to loose" : id === "fire" ? "Fire bolts, and {heal} for a healing light" : r?.blurb ?? "";
       const key = el.closest("#sumrelics") ? "" : el.querySelector("i")?.textContent;
-      tip.innerHTML = `<b>${esc(r?.name ?? heldName(id))}</b><span>${esc(r && !w ? r.blurb : what)}</span>${key ? `<em>Press ${key} to hold</em>` : ""}`;
+      tip.innerHTML = `<b>${esc(r?.name ?? heldName(id))}</b><span>${ctlText(esc(r && !w ? r.blurb : what))}</span>${key ? `<em>Press ${key} to hold</em>` : ""}`;
       tip.classList.toggle("cursed", !!r?.cursed);
       tip.hidden = false;
       const b = el.getBoundingClientRect();
@@ -815,7 +816,7 @@ export class MineGame {
     $("pkname").textContent = r.name;
     $("pkblurb").textContent = r.blurb;
     const k = this.loadout.indexOf(item);
-    $("pkhint").textContent = item in WEAPONS ? padText(`In your hands now. ${keyLabel(`Digit${k + 1}`)} or the mouse wheel to switch`) : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
+    $("pkhint").textContent = item in WEAPONS ? ctlText(`In your hands now. {slot${k + 1}} or {swap} to switch`) : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
     const card = $("pickup");
     card.classList.toggle("cursed", !!r.cursed);
     card.classList.remove("show");
@@ -1032,7 +1033,7 @@ export class MineGame {
       return d < 1.2 || (d < reach && (dx * fx + dz * fz) / d > 0.4);
     };
     for (const r of this.remotes.values()) {
-      if (r.down && r.depth === W.depth && r.run === W.run && near(r.x, r.z, 2.5)) return { text: `Hold <b>E</b> to pick up ${esc(r.name)}`, hold: r.id };
+      if (r.down && r.depth === W.depth && r.run === W.run && near(r.x, r.z, 2.5)) return { text: `Hold <b>{use}</b> to pick up ${esc(r.name)}`, hold: r.id };
     }
     // puzzle parts: the one you're looking most squarely at
     if (this.puzzles) {
@@ -1053,10 +1054,10 @@ export class MineGame {
     }
     for (let k = 0; k < lv.chests.length; k++) {
       const c = lv.chests[k];
-      if (!c.opened && near(c.x, c.z)) return { text: "<b>E</b> Open the chest", act: () => this.ask({ k: "chest", id: k }) };
+      if (!c.opened && near(c.x, c.z)) return { text: "<b>{use}</b> Open the chest", act: () => this.ask({ k: "chest", id: k }) };
     }
     if (near(lv.exit.x, lv.exit.z, 2.8)) {
-      if (W.gate === 1) return { text: this.L!.boss ? "<b>E</b> Climb out into the daylight" : "<b>E</b> Climb down the winze", act: () => this.ask({ k: "down" }) };
+      if (W.gate === 1) return { text: this.L!.boss ? "<b>{use}</b> Climb out into the daylight" : "<b>{use}</b> Climb down the winze", act: () => this.ask({ k: "down" }) };
       const g = [...this.mobs.values()].find((m) => guards(m) && m.state !== 3);
       if (this.L!.boss || (g && W.ps.every((s) => s[0] === 1))) return { text: `${g ? esc(bossName(g)) : "Something"} has the way ${this.L!.boss ? "out" : "down"} blocked` };
       const left = W.ps.filter((s) => s[0] !== 1).length;
@@ -1325,7 +1326,7 @@ export class MineGame {
     let hint = t?.text ?? "";
     if (this.reviving) hint += ` <span class="prog"><i style="width:${Math.round(this.reviveT * 100)}%"></i></span>`;
     if (this.down && W.ph === 0) hint = "You're down. A friend can pick you up";
-    $("usehint").innerHTML = padText(hint);
+    $("usehint").innerHTML = ctlText(hint);
     $("usehint").hidden = !hint;
     // walk over a pint to drink it
     for (const [id, o] of this.pints) {
@@ -1607,7 +1608,7 @@ export class MineGame {
 
   sign(text: string) { $("where").textContent = text; this.signT = 5; }
   toast(text: string, secs = 2) {
-    text = padText(text);
+    text = ctlText(text);
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
     el.textContent = text;

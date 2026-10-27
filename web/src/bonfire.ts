@@ -622,7 +622,7 @@ export class Bonfire {
     }
     missionProgress({
       id: "bonfire", label: "Bonfire", colour: FIRE, goal: "Build the bonfire", progress: `${this.s.n} / ${NEED}`, bar: this.s.n / NEED,
-      hint: carrying ? "Carrying wood: take it to the pile" : "Fetch bundles from the woods (E)",
+      hint: carrying ? "Carrying wood: take it to the pile" : "Fetch bundles from the woods ({use})",
     });
   }
 
@@ -658,7 +658,7 @@ export class Bonfire {
   /** What to say in the middle of the screen, or "". */
   hint(me: Player): string {
     if (!this.ready || !me.alive) return "";
-    if (this.wanted() && !this.carriers.has(me.id) && this.bundleAt(me) >= 0) return `<b>E</b> Pick up a bundle of wood for the bonfire`;
+    if (this.wanted() && !this.carriers.has(me.id) && this.bundleAt(me) >= 0) return `<b>{use}</b> Pick up a bundle of wood for the bonfire`;
     const d = Math.hypot(me.x - this.x, me.z - this.z);
     if (d > 12 || Math.abs(me.y - this.y) > 4) return "";
     if (this.s.b) return "Bonfire night!";

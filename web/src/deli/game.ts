@@ -377,7 +377,7 @@ export class DeliGame {
     const pk = `${h.grab}|${h.chop}|${touch}`;
     if (pk !== this.promptKey) {
       this.promptKey = pk;
-      const grab = touch ? "Grab" : "E", chop = touch ? "Chop" : "Hold F";
+      const grab = touch ? "Grab" : "E", chop = touch ? "Chop" : "Hold F"; // keys-ok
       $("prompt").innerHTML = [h.grab && `<span><kbd>${grab}</kbd> ${esc(h.grab)}</span>`, h.chop && `<span><kbd>${chop}</kbd> Chop</span>`].filter(Boolean).join("");
       for (const [id, on] of [["t-grab", !!h.grab], ["t-chop", h.chop]] as const) $(id).classList.toggle("ready", on);
     }

@@ -5,7 +5,8 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
-import { B, GamepadControls, key, keyLabel, padActions, padInUse, padPress, padSettings, tap } from "./gamepad";
+import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
+import { STREETS, controlsPage, ctl, ctlText, placeNow } from "./controls";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -343,8 +344,8 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
     : `Game: ${code}, on ${mapName(id)}. Tell your friends the name, or send them the link below.`;
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
-    : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot. "
-      + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
+    : ctlText("Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot. "
+      + "Players near you hear your mic; hold {radio} to talk to everyone. Headphones stop your speakers echoing into your mic.");
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
   touchControls = new TouchControls(game, canvas, showPause);
@@ -610,7 +611,7 @@ async function play(code: string) {
       if (!(await waitForMic(ctrl.signal))) return;
       start(code, LOCAL, net);
       if (UP) game!.toast(UP_TOAST, 4);
-      else game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press Esc for the invite link.`, 6);
+      else game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press {pause} for the invite link.`, 6);
       return;
     }
     if (!mapInfo(found.map) || !valid(found.map)) {
@@ -718,8 +719,8 @@ setInterval(() => {
   if ($("pause").hidden) closeChronicle();
   const at = !!game?.active && game.quests.atBoard();
   if (paperHud.hidden !== !at) paperHud.hidden = !at;
-  // a pad has no N: the Chronicle's in the pause menu, which Options opens
-  const text = !at ? "" : padInUse() ? `Read the Chronicle: ${keyLabel("Escape")} menu` : `Read the Chronicle${MOUSE ? " (N)" : ""}`;
+  // N reads it too, but a pad and a touch screen have no N: the pause menu has it for everyone
+  const text = !at ? "" : `Read the Chronicle: ${ctl("pause")} menu`;
   if (at && paperHud.textContent !== text) paperHud.textContent = text;
 }, 300);
 addEventListener("keydown", (e) => {
@@ -761,7 +762,7 @@ const pad = new GamepadControls(() => game && {
   playing: () => !!game?.active && $("pause").hidden,
   player: () => game!.player,
   look: (dx, dy) => game!.look(dx, dy),
-  driving: () => game!.driving,
+  driving: () => game!.atWheel,
   button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
 }, (text) => game?.toast(text, 4));
 const hold = (code: string) => (down: boolean) => key(code, down);
@@ -772,48 +773,47 @@ const weapon = (by: 1 | -1) => (down: boolean) => {
   if (game.busMenuUp) game.callBus(by < 0 ? "minibus" : "bus");
   else game.cycleWeapon(by);
 };
-padActions([
-  { id: "fire", name: "Shoot", button: B.r2, keys: ["Mouse0"], foot: true,
-    run: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } } },
-  { id: "aim", name: "Aim", button: B.l2, keys: ["Mouse2"], foot: true,
-    run: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } } },
-  { id: "jump", name: "Jump, or the handbrake", button: B.cross, keys: ["Space"], run: hold("Space") },
-  { id: "reload", name: "Reload", button: B.square, keys: ["KeyR"], foot: true, run: press("KeyR") },
-  { id: "use", name: "Use, get in or out", button: B.square, keys: ["KeyE"], live: true, hold: true,
-    now: () => !!game?.useOffered, run: hold("KeyE") },
-  { id: "crouch", name: "Crouch, or stand up", button: B.circle, keys: ["KeyC"], foot: true,
-    run: (down) => {
-      const p = game?.player;
-      if (!down || !p || p.diveBusy) return;
-      if (p.proneLatch || p.crouchLatch) p.proneLatch = p.crouchLatch = false;
-      else p.crouchLatch = true;
-    } },
-  { id: "prone", name: "Lie down, or stand up", button: B.circle, keys: ["KeyZ"], foot: true, hold: true,
-    run: (down) => {
-      const p = game?.player;
-      if (!down || !p || p.diveBusy) return;
-      if (p.proneLatch) p.proneLatch = false;
-      else if (p.canProne) { if (!p.dive()) { p.crouchLatch = false; p.proneLatch = true; } }
-      else p.crouchLatch = true;
-    } },
-  { id: "swap", name: "Switch weapon", button: B.triangle, foot: true, run: (down) => { if (down) game?.cycleWeapon(1); } },
-  { id: "prev", name: "Previous weapon (or a minibus)", button: B.l1, keys: ["Digit1", "Wheel"], foot: true, run: weapon(-1) },
-  { id: "next", name: "Next weapon (or a double-decker)", button: B.r1, keys: ["Digit2", "Digit3", "KeyQ", "Wheel"], foot: true, run: weapon(1) },
-  { id: "trick", name: "Sprint, or trick or grind on a ride", button: B.l3, keys: ["ShiftLeft"],
-    run: (down) => { if (!game) return; game.player.trickHeld = down; if (down) game.player.padSprint(); } },
-  { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], live: true, run: hold("KeyV") },
-  { id: "scores", name: "Scores", button: B.create, keys: ["Tab"], live: true, run: hold("Tab") },
-  { id: "map", name: "Full map", button: B.touchpad, keys: ["KeyM"], live: true, run: press("KeyM") },
-  { id: "torch", name: "Torch", button: B.up, keys: ["KeyF"], run: press("KeyF") },
-  { id: "ride", name: "On or off a ride, put up a ladder", button: B.down, keys: ["KeyX"], run: press("KeyX") },
-  { id: "bino", name: "Binoculars", button: B.left, keys: ["KeyB"], foot: true, run: press("KeyB") },
-  { id: "mark", name: "Mark the spot", button: B.right, keys: ["KeyG"], foot: true, run: press("KeyG") },
-  { id: "out", name: "Get out", button: B.triangle, keys: ["KeyE"], wheel: true, run: press("KeyE") },
-  { id: "horn", name: "Horn, siren or chimes", button: B.r1, keys: ["KeyH"], wheel: true, run: hold("KeyH") },
-  { id: "view", name: "Inside or chase camera", button: B.circle, keys: ["KeyC"], wheel: true, run: (down) => { if (down) game?.toggleView(); } },
-  { id: "left", name: "Indicate left", button: B.left, keys: ["ArrowLeft"], wheel: true, run: press("ArrowLeft") },
-  { id: "right", name: "Indicate right", button: B.right, keys: ["ArrowRight"], wheel: true, run: press("ArrowRight") },
-], "cd-padbuttons", () => !!game?.driving, { reload: B.triangle });
+controlsPage(STREETS);
+padActions(STREETS, {
+  fire: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } },
+  aim: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } },
+  jump: hold("Space"),
+  reload: press("KeyR"),
+  use: { now: () => !!game?.active && !!game.useOffered, run: hold("KeyE") },
+  crouch: (down) => {
+    const p = game?.player;
+    if (!down || !p || p.diveBusy) return;
+    if (p.proneLatch || p.crouchLatch) p.proneLatch = p.crouchLatch = false;
+    else p.crouchLatch = true;
+  },
+  prone: (down) => {
+    const p = game?.player;
+    if (!down || !p || p.diveBusy) return;
+    if (p.proneLatch) p.proneLatch = false;
+    else if (p.canProne) { if (!p.dive()) { p.crouchLatch = false; p.proneLatch = true; } }
+    else p.crouchLatch = true;
+  },
+  swap: (down) => { if (down) game?.cycleWeapon(1); },
+  prev: weapon(-1),
+  next: weapon(1),
+  trick: (down) => { if (!game) return; game.player.trickHeld = down; if (down) game.player.padSprint(); },
+  radio: hold("KeyV"),
+  scores: hold("Tab"),
+  map: press("KeyM"),
+  torch: press("KeyF"),
+  ride: press("KeyX"),
+  bino: press("KeyB"),
+  mark: press("KeyG"),
+  out: press("KeyE"),
+  horn: hold("KeyH"),
+  view: (down) => { if (down) game?.toggleView(); },
+  left: press("ArrowLeft"),
+  right: press("ArrowRight"),
+  radioup: press("KeyK"),
+  radiodown: press("KeyJ"),
+  station: press("KeyI"),
+  window: press("KeyU"),
+}, "cd-padbuttons", () => placeNow() === "back" ? "back" : game?.atWheel ? "wheel" : "foot", { reload: B.triangle });
 padSettings();
 
 let last = performance.now();

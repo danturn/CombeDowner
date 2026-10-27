@@ -606,11 +606,11 @@ export class Oddments {
   hint(me: Holder): string {
     if (!me.alive || !this.on) return "";
     if (this.carrying(me.id)) {
-      if (this.atStructure(me) && this.s.f < this.total) return "<b>E</b> Set it in the structure";
+      if (this.atStructure(me) && this.s.f < this.total) return "<b>{use}</b> Set it in the structure";
       if (this.atFull(me)) return "This one's full. The next structure wants it";
       return "";
     }
-    return this.nearest(me) ? "<b>E</b> Pick it up" : "";
+    return this.nearest(me) ? "<b>{use}</b> Pick it up" : "";
   }
 
   // ---- every frame ----

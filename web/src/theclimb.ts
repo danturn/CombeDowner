@@ -41,7 +41,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { challengesOn, registerChallenge } from "./challenges";
 import { BACK, BOOST_HOLD, buildCrag, FRONT, H, HALF, rockMost, rockOut, ropeOut, roomOver, routeFor, STILE, STILE_OUT, type Room, type Route } from "./crag";
-import { keyLabel } from "./gamepad";
+import { strip } from "./controls";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
 import type { Player } from "./player";
@@ -1112,7 +1112,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       const line = mine?.st === "ko" ? `Out cold: ${Math.ceil(mine.left)}s for a mate to carry you up`
         : mine?.st === "ghost" ? "A ghost: wait for a rope from the next ledge"
           : carrying ? `Carry ${w.nameOf(carrying)} up to ${cp ? `ledge ${cp}` : "the foot"}`
-            : !meIn() ? `Go to ${f.name}: E at its foot to go up` : L >= S() ? "Wait at the top for everyone" : "Get everyone to the top together";
+            : !meIn() ? `Go to ${f.name}: {use} at its foot to go up` : L >= S() ? "Wait at the top for everyone" : "Get everyone to the top together";
       return {
         line: `${hearts(lives, most)} ${line}`, sub: [`Climbers: ${climbers.size}`, statusLine()].filter(Boolean).join(" · "),
         progress: `Ledge ${cp} / ${S()}`, bar: cp / Math.max(1, S()),
@@ -1140,12 +1140,12 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     mode = M.Free; pt = null; carrying = ""; carriedBy = "";
   }
 
-  /** What E does here, and what to say about it. */
+  /** What use does here, and what to say about it. */
   function action(): { say: string; go: () => void } | null {
     const pl = body();
     if (!pl || job.done) return null;
     if (mode === M.Out || mode === M.Carried || mode === M.Ghost || mode === M.Tween) return null;
-    const me = w.me(), E = "<b>E</b>";
+    const me = w.me(), E = "<b>{use}</b>";
     if (carrying) return { say: `${E} Put ${esc(w.nameOf(carrying))} down`, go: () => { w.send("qe", { k: "put", s: seed, id: carrying }); if (w.isHost) job.event!({ k: "put", id: carrying }, w.selfId); } };
     if (!inRoom(me.x, me.y, me.z)) {
       if (!me.alive || footDist(f, me.x, me.z) > UP) return null;
@@ -1193,15 +1193,14 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   function hang(): string {
     const pl = body();
     if (!pl) return "";
-    const C = `<b>${keyLabel("KeyC")}</b>`;
-    if (mode === M.Hang) return `${pt && pt.i >= 0 && route.holds[pt.i]?.rest ? "A jug: hang here to get your grip back · " : ""}Move to reach · <b>Space</b> lunge · ${C} let go`;
-    if (mode === M.Rope) return `Up or down the rope · ${C} let go`;
+    if (mode === M.Hang) return `${pt && pt.i >= 0 && route.holds[pt.i]?.rest ? "A jug: hang here to get your grip back · " : ""}${strip("climb", ["climb.reach", "climb.lunge", "climb.letgo"])}`;
+    if (mode === M.Rope) return strip("climb", ["climb.rope", "climb.letgo"]);
     if (mode === M.Ghost) return "You're a ghost: fly about and watch";
     if (mode !== M.Free || !pl.onGround) return "";
     const me = w.me(), k = ledgeAt(me.x, me.y, me.z, true);
     if (k < 0 || k >= S()) return "";
     const [s] = local(me.x, me.z), next = route.holds.find((h) => h.boost && h.y > route.ledges[k].y && h.y < route.ledges[k].y + BOOST_HOLD + 0.1);
-    if (next && Math.abs(next.s - s) < 2.5 && !ropes.has(k + 1)) return `Out of reach: a mate crouches (${C}) and you stand on their shoulders`;
+    if (next && Math.abs(next.s - s) < 2.5 && !ropes.has(k + 1)) return "Out of reach: a mate crouches ({crouch}) and you stand on their shoulders";
     return "";
   }
 

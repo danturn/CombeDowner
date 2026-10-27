@@ -96,7 +96,7 @@ export function osGrid(lat: number, lon: number): { e: number; n: number; ref: s
   if (l1 > 7) l1++;
   if (l2 > 7) l2++;
   const pad = (v: number) => String(Math.floor(v) % 100000).padStart(5, "0");
-  const ref = l1 >= 0 && l1 < 26 && l2 >= 0 && l2 < 26 ? `${String.fromCharCode(65 + l1, 65 + l2)} ${pad(E)} ${pad(N)}` : "off the grid";
+  const ref = l1 >= 0 && l1 < 26 && l2 >= 0 && l2 < 26 ? `${String.fromCharCode(65 + l1, 65 + l2)} ${pad(E)} ${pad(N)}` : "off the grid"; // keys-ok
   return { e: Math.round(E), n: Math.round(N), ref };
 }
 
@@ -130,7 +130,7 @@ export class DebugPanel {
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="go">Go to (O)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="day">+1 day (Y)</button><button type="button" data-k="bonfire">Bonfire night (N)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
+    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="go">Go to (O)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="day">+1 day (Y)</button><button type="button" data-k="bonfire">Bonfire night (N)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`; // keys-ok
     document.body.append(this.el);
     this.body = this.el.querySelector("pre")!;
     this.copyBtn = this.el.querySelector('[data-k="copy"]')!;
@@ -176,7 +176,7 @@ export class DebugPanel {
   }
 
   /** Show the draw distance on the button (Settings changes it too). */
-  showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
+  showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; } // keys-ok
 
   toggle(on = !this.open) {
     this.open = on;

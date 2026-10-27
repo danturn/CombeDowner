@@ -7,7 +7,7 @@
 // phone. Nothing here goes over the network: race.ts says what to show from what it already knows.
 // The only things that take a press are the results card (Continue, Again) and the buttons to
 // switch who you're watching on a touch screen.
-import { keyLabel, padInUse } from "./gamepad";
+import { ctl, isKey } from "./controls";
 import { missionCardDrop } from "./missionscreens";
 
 const COLOUR = "#3ec7e8";
@@ -115,10 +115,8 @@ const nth = (n: number) => `${n}<sup>${n % 100 >= 11 && n % 100 <= 13 ? "th" : [
 /** On a touch screen: its own buttons are up rather than the keys. */
 export const touchUp = () => { const t = document.getElementById("touch"); return !!t && !t.hidden; };
 
-/** What to call a key in a prompt: the touch button, the pad's button once it's in use, else the key. */
-export function control(code: string, touch: string): string {
-  return touchUp() ? touch : keyLabel(code);
-}
+/** What to call a control in a prompt: its key, pad button or touch word (controls.ts). */
+export const control = (id: string) => ctl(id);
 
 function el(cls: string): HTMLDivElement {
   style();
@@ -233,7 +231,7 @@ export function summary(o: Summary, again?: () => void) {
   const table = o.rows && o.rows.length > 1
     ? `<table>${o.rows.slice(0, 10).map((r, k) => `<tr class="${r.me ? "me" : ""}${r.dnf ? " dnf" : ""}"><td>${r.dnf ? "–" : `${k + 1}.`}</td><td>${esc(r.name)}</td><td class="t">${esc(r.time)}</td></tr>`).join("")}</table>`
     : "";
-  const ok = control("Space", "Tap"), more = again ? control(padInUse() ? "KeyR" : "Backspace", "Tap") : "";
+  const ok = ctl("jump"), more = again ? ctl("again") : "";
   e.innerHTML = `<div class="rcard">${o.dnf ? "" : `<div class="flag"></div>`}<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div>`
     + `<div class="rrow">${place}<div><div class="time">${esc(o.time)}</div>${o.lines.map((l) => `<div class="line">${esc(l)}</div>`).join("")}</div>${medal}</div>`
     + (o.best ? `<div class="best">${esc(o.best)}</div>` : "")
@@ -254,12 +252,12 @@ export function summary(o: Summary, again?: () => void) {
   };
   const handle = { remove };
   card = handle;
-  // Space or Enter carries on (and so does the pad's Cross, which presses Space); Backspace, or the
-  // pad's reload button, which presses R, goes again. Taken here so the press doesn't jump or reload too.
+  // jump (Space, Enter, ✕) carries on; use (E, □) or Backspace goes again. Taken here so the press
+  // doesn't jump or get in a car too.
   const onKey = (k: KeyboardEvent) => {
     if (k.repeat) return;
     if (k.code === "Space" || k.code === "Enter") { k.preventDefault(); k.stopImmediatePropagation(); remove(); }
-    else if (again && (k.code === "Backspace" || (k.code === "KeyR" && !k.isTrusted))) { k.preventDefault(); k.stopImmediatePropagation(); remove(); again(); }
+    else if (again && (k.code === "Backspace" || isKey(k.code, "use"))) { k.preventDefault(); k.stopImmediatePropagation(); remove(); again(); }
   };
   addEventListener("keydown", onKey, true);
   e.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", remove);

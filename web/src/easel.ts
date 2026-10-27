@@ -8,10 +8,13 @@
 //
 // While it's up it has the mouse and the keyboard to itself: the mouse is let go (main.ts asks
 // easelUp() before it treats that as a pause) and keys are caught before the game sees them, so
-// painting doesn't walk you about. Esc steps back from the easel; Ctrl+Z undoes.
+// painting doesn't walk you about. Esc steps back from the easel; Ctrl+Z undoes. A pad can't paint
+// (it has no pointer), but it goes round the buttons as it does a menu. A strip under the colours
+// names the controls for the input in use, from the easel's table in controls.ts.
 //
 // Who decides what: nobody. The painting is yours until you hang it; encode() is what goes round.
 import * as SFX from "./audio";
+import { ctl, strip } from "./controls";
 
 export const W = 240, H = 180;
 /** The sixteen colours, white first: a blank canvas is all zeros. */
@@ -152,6 +155,7 @@ function style() {
 #easel .acts{display:flex;gap:4px;margin-left:auto}
 #easel .acts button{min-width:54px;height:30px;padding:0 8px}
 #easel .acts button.hang{font-weight:700;background:#ffe9a8}
+#easel .keys{padding:0 6px 3px;font-size:11px;color:#222}
 #easel .status{border-top:1px solid #808080;padding:2px 6px;display:flex;gap:10px;color:#222;font-size:11px}
 #easel .status .xy{margin-left:auto;min-width:56px;border-left:1px solid #808080;padding-left:6px}
 @media (max-width:700px),(max-height:480px){#easel .brief{font-size:12px;padding:2px 6px}#easel .brief b{font-size:13px}#easel .brief .j{display:none}#easel .status{display:none}
@@ -219,12 +223,13 @@ export class Easel {
     const tools = TOOLS.map(([t, tip]) => `<button data-t="${t}" title="${tip}"><img src="${icon(t)}" width="22" height="22" alt=""></button>`).join("");
     const pal = PALETTE.map((c, i) => `<button data-c="${i}" title="${COLOUR_NAMES[i]}" style="background:${c}"></button>`).join("");
     el.innerHTML = `<div class="win">
-      <div class="tt"><span class="nm">untitled - Paint</span><span class="clock">0:00</span><button class="x" title="Step back (Esc)">×</button></div>
+      <div class="tt"><span class="nm">untitled - Paint</span><span class="clock">0:00</span><button class="x" title="Step back (${ctl("easel.leave")})">×</button></div>
       <div class="brief">Paint: <b>${b.theme}</b><div class="j">${b.judges}</div></div>
       <div class="mid"><div class="tools"><div class="box">${tools}</div><div class="opts"></div></div>
         <div class="well"><canvas class="art" width="${W}" height="${H}"></canvas></div></div>
       <div class="low"><div class="cur"><i class="f"></i><i class="b"></i></div><div class="pal">${pal}</div>
-        <div class="acts"><button class="un" title="Undo (Ctrl+Z)">Undo</button><button class="clr">Clear</button><button class="hang">Hang it!</button></div></div>
+        <div class="acts"><button class="un" title="Undo (${ctl("easel.undo")})">Undo</button><button class="clr">Clear</button><button class="hang">Hang it!</button></div></div>
+      <div class="keys"></div>
       <div class="status"><span class="tip"></span><span class="xy"></span></div></div>`;
     document.body.appendChild(el);
     this.el = el;
@@ -290,9 +295,11 @@ export class Easel {
     if (was) relock?.();
   }
 
-  /** The clock in the title bar, and the airbrush while it's held: every frame while it's up. */
+  /** The clock in the title bar, the controls strip, and the airbrush while it's held: every frame while it's up. */
   tick(dt = 0) {
     if (!this.el || !this.brief) return;
+    const keys = this.el.querySelector(".keys"), k = strip("easel");
+    if (keys && keys.innerHTML !== k) keys.innerHTML = k;
     const secs = Math.max(0, Math.ceil(this.brief.left() / 1000));
     if (secs !== this.lastSecs && this.clockEl) {
       this.lastSecs = secs;
