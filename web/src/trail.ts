@@ -1937,7 +1937,7 @@ class Trail implements Job {
         const t = this.plaqueOf(n), friends = this.w.players().length >= 2;
         const read = this.plaqueRead.has(n) ? `<br>The plaque says: ${t.rows.map((r) => `<b>${esc(r)}</b>`).join("; ")}.` : "";
         return `${riddle}<br>There's a plaque there that rules out all but one of ${t.words.length} tins standing round the corner, out of sight of it. `
-          + `${friends ? "One of you read, the others open: " : ""}a wrong tin costs a brass star.${read}`;
+          + `${friends ? "One of you read, the others open: a" : "A"} wrong tin costs a brass star.${read}`;
       }
       default: {
         const pace = n === this.t.legs.length - 1 ? this.pacing(n) : null;
