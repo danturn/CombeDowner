@@ -16,7 +16,7 @@ const KEY = String.raw`(?:[A-Z]|[1-9]|Space|Shift|Esc|Tab|Enter|Backspace)`;
 const RULES = [
   [new RegExp(String.raw`<b>${KEY}</b>`), "a key in bold"],
   [new RegExp(String.raw`\b(?:Press|press|Hold|hold|Tap|tap) ${KEY}(?![\w'])`), "press/hold a key"],
-  [new RegExp(String.raw`\((?:[A-Z]|Esc|Space|Tab)\)`), "a key in brackets"],
+  [new RegExp(String.raw`(?<!\w)\((?:[A-Z]|Esc|Space|Tab)\)`), "a key in brackets"],
   [new RegExp(String.raw`(?:^|[\s"'\x60(·:])${KEY} (?:to|for) [a-z]`), "a key to do something"],
   [/\bW\/S\b|\bA\/D\b|\bA or D\b|\bWASD\b|\bH\/↑/, "movement keys"],
   [/\b(?:[Cc]lick (?:to|for)|[Ll]eft click|[Rr]ight click)\b/, "a mouse click"],

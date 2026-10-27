@@ -2201,6 +2201,18 @@ export function warmer(up: boolean, shrink = false) {
   notes.forEach((f, k) => tone(d, t + k * 0.11, 0.4, 0.1, f, f, up ? "sine" : "triangle", 0.01));
 }
 
+/** A treasure trail's search circle drawing in: a breath of air sweeping down, and two notes a fifth
+ *  apart sliding together, then a bright ping as they meet. */
+export function searchShrink() {
+  if (!ctx) return;
+  const t = now(), d = out(0.6, 0, 0, 0.3);
+  burst(d, t, 0.55, 0.12, 3200, { to: 500, q: 2.5, attack: 0.08 });
+  tone(d, t + 0.05, 0.5, 0.08, 523, 698, "triangle", 0.03);
+  tone(d, t + 0.05, 0.5, 0.08, 1047, 698, "triangle", 0.03);
+  tone(d, t + 0.52, 0.6, 0.11, 1397, 1397, "sine", 0.005);
+  tone(d, t + 0.52, 0.35, 0.04, 2794, 2794, "sine", 0.005);
+}
+
 /** A biscuit tin with something loose in it, rattling on its post: a clink and a couple of small knocks. */
 export function tinRattle(distance = 0, pan = 0) {
   if (!ctx || distance > 160) return;

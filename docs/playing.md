@@ -529,9 +529,27 @@ A chain of four to six riddles, each about a real pub, church, park or street in
 for Saint Mary"), with a biscuit tin on a post nearby holding the next one. The riddles get harder
 with the stars, and now and then one is a sepia sketch of the view instead. Nothing gives the answer
 away: a one-star riddle says roughly which way ("somewhere south of here"), and from two stars there's
-no distance or compass at all. No circle comes up by itself. Stuck, press E to ask a local, and a
-circle goes on the map (smaller each time you ask). The tin only shows when you're close, and rattles
-when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
+no distance or compass at all.
+
+A trail starts with a big splash: TREASURE HUNT and the trail's name, how many tins there are before
+the chest, whether there's a clock (together there isn't; in a race it's when K gets to the chest),
+how the search circle works, and the first clue, large. It fades by itself. Open the big map to see the clue
+again (it sits over the map; tap Clue on a touch screen), and
+each new clue comes up big for a few seconds when you get it.
+
+No circle comes up by itself, and none shrinks by itself: only a local's hint does. From 45 seconds
+into a clue you can ask one (use: E or □). That first press only says what you'd get and what it costs ("Hint 2 of
+3: the search circle round tin 1 shrinks from 260 m across to 150 m", "Costs 1 brass star: this leg
+goes from ★★☆ to ★☆☆"); press use again within a few seconds to pay, or walk on and keep your star.
+Paid, the circle comes up or draws in, with a call-out ("The search area is shrinking!") and a sound
+everyone on the trail hears, whoever asked. Each tin has three hints (260, 150 and 80 m across), 20
+seconds apart, and the chest one (360 m). The card shows which hint you're on and counts down to the
+next; when there are no more it says so and E doesn't offer one, so you never pay for nothing. In a
+race hints are free (they cost you time). The circle always has the tin (on a plaque leg, the true
+tin, not the plaque) well inside it, at least 12 m in from the edge. Asked from far off, before that
+part of Bath has loaded on your screen, the first circle is a big one round the whole area the tin
+could be in, and it settles round the tin as you get near; closer hints wait till you're there. The
+tin only shows when you're close, and rattles when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
 something in the street there ("from the post box, 14 paces south-west"). Hold E (Dig on a touch
 screen) to dig where you stand: in the wrong place you get a hole with a worm in it, which everyone
 can see and which fills itself in after half an hour. Near the Bath Bun chest the spade hits wood,
@@ -545,12 +563,14 @@ you've seen the tin, so friends further off can help. On a touch screen tap abov
 wheel; at a keyboard W and S (or the scroll wheel, or the number keys) turn a wheel, A and D move
 between them, E tries it and Escape leaves it. A wrong code jams the lock for ten seconds. A look
 leg sends you to a street or place and then names a house you have to pick out by eye ("the house
-with the teal door", or the only red-brick one in the row): its tin is on the doorstep, and only
-shows when you're nearly there.
+with the teal door", or the only red-brick one in the row): its tin is on the doorstep (or out on
+the street, if the garden's shut in behind a hedge or a wall), and only shows when you're nearly
+there. Tins are never put in a building, on a roof, in the water or anywhere you can't walk to.
 
 Together there's no clock and no par. Each leg is worth three brass stars: asking a local, jamming a lock and
 opening a decoy or the wrong tin each cost one. The rosette comes from your total (gold for nine in
-ten), and the end card says how each leg went. A trail done together can't be lost. A race keeps
+ten), and the end card (like a race's) gives your time, tins found, hints bought, jams and wrong holes,
+how each leg went and the reward. A trail done together can't be lost. A race keeps
 its clock and par, and you're racing K too, a ghost rival who runs to the best time anyone's done
 on that trail on your device (the par the first time). If she gets to the chest first, she digs it
 up, leaving a hole and a note. Twin tins must be opened within 30 seconds of each other (or a little
@@ -561,7 +581,7 @@ friend half the name (alternate letters) on their own screen; on your own, the o
 to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
 A sketch-map leg gives you a riddle to the place and a rough inked sketch of 250 m round it, with
 an X where the tin is and no names (on hard trails, no north arrow either, and it may be turned
-round). Hold use (E or □; the Sketch button on a touch screen) to study it full screen, while a tap of it still asks a local; you can't see the big
+round). Hold use (E or □; the Clue button on a touch screen) to study it full screen, while a tap of it still asks a local; you can't see the big
 map while you do. With friends only the map-holder has it (one for every two of you, each with a
 torn strip of it), so they have to talk the others in.
 
