@@ -326,6 +326,7 @@ const POUR_IN = new THREE.Vector3(0, HOP_C.y + HOP_IN.y * 0.85, -0.03);
 const READY = new THREE.Vector3(-0.2, 0.17, 0.02);       // where the hand holds the pod up, before tipping it
 const BELOW = new THREE.Vector3(-0.08, -0.55, 0.12);     // how far below that it comes up from
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3();
+const ELBOW = new THREE.Vector3(-0.3, -0.36, -0.22);   // seen from your eye
 
 /**
  * Your left hand with a pod: the clear plastic tube of paintballs you reload a marker from, with a
@@ -335,13 +336,14 @@ const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector
 class PodHand {
   readonly arm = new THREE.Group();
   readonly pod = new THREE.Group();
+  /** The forearm in its sleeve, from the wrist down and away off the bottom left of the screen. */
+  readonly forearm = box(0.075, 0.075, 1, "#3d4651", 0, 0, 0);
   private cap = new THREE.Group();
   readonly balls: THREE.InstancedMesh;
   constructor() {
     this.arm.add(box(0.08, 0.075, 0.075, "#c49a7c", 0, 0, 0));          // fist round the pod
     this.arm.add(box(0.084, 0.06, 0.02, "#b58a6c", 0, -0.003, -0.043));  // knuckles
     this.arm.add(box(0.024, 0.04, 0.045, "#b58a6c", -0.045, 0.026, -0.01)); // thumb
-    this.arm.add(box(0.068, 0.068, 0.11, "#3d4651", 0, 0, 0.085));     // cuff of the sleeve
     const body = new THREE.Mesh(new THREE.CylinderGeometry(POD_R, POD_R, POD_TOP - POD_BASE, 12, 1, true),
       new THREE.MeshLambertMaterial({ color: "#d8e4ee", transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide }));
     body.position.y = (POD_TOP + POD_BASE) / 2;
@@ -356,7 +358,7 @@ class PodHand {
     this.balls = new THREE.InstancedMesh(new THREE.SphereGeometry(BALL_R, 8, 6), ballMaterial("#7dff4a"), POD_BALLS + 3);
     this.balls.frustumCulled = false;
     this.pod.add(this.balls);
-    this.arm.visible = this.pod.visible = false;
+    this.arm.visible = this.pod.visible = this.forearm.visible = false;
   }
 
   /** Pose it for the move m; t: a clock for the stream of balls. */
@@ -389,6 +391,20 @@ class PodHand {
     }
     this.balls.count = n;
     this.balls.instanceMatrix.needsUpdate = true;
+  }
+
+  /**
+   * Run the sleeve from the wrist to elbow (in the gun's measurements, off the screen), so the hand
+   * is always joined on to you however it's turned or thrown.
+   */
+  sleeve(elbow: THREE.Vector3) {
+    this.forearm.visible = this.arm.visible;
+    if (!this.arm.visible) return;
+    const wrist = _p.set(0, 0, 0.04).applyQuaternion(this.arm.quaternion).add(this.arm.position);
+    const along = _v.subVectors(elbow, wrist), len = along.length();
+    this.forearm.position.copy(wrist).addScaledVector(along, 0.5);
+    this.forearm.quaternion.setFromUnitVectors(_n.set(0, 0, 1), along.divideScalar(len));
+    this.forearm.scale.set(1, 1, len);
   }
 
   /** Where the hand is, reach of the way up and turn of the way to upended, in the gun's measurements. */
@@ -517,7 +533,7 @@ export class Weapon {
     this.models = { fists, rifle: rifleModel(this.hoppers.rifle), sniper: sniperModel(true, this.hoppers.sniper) };
     for (const m of Object.values(this.models)) this.model.add(m);
     this.rifleLid = this.models.rifle.getObjectByName("lid")!;
-    this.model.add(this.podHand.arm, this.podHand.pod);
+    this.model.add(this.podHand.arm, this.podHand.pod, this.podHand.forearm);
     this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22),
       new THREE.MeshBasicMaterial({ color: "#ffd27a", transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     this.flash.visible = false;
@@ -686,8 +702,12 @@ export class Weapon {
     // a punch: the fist shoots forward and back
     this.fists.forEach((f, i) => { f.position.z = i === this.jab ? -this.kick * 0.32 : 0; f.position.y = i === this.jab ? this.kick * 0.04 : 0; });
     this.rifleLid.rotation.x = -this.move.lid * 1.9;
-    if (paint) this.podHand.pose(this.move, this.t);
-    else this.podHand.arm.visible = this.podHand.pod.visible = false;
+    if (paint) {
+      this.podHand.pose(this.move, this.t);
+      // the elbow is kept just off the bottom left of the screen, in front of your eye
+      this.model.updateMatrixWorld();
+      this.podHand.sleeve(this.model.worldToLocal(ELBOW.clone().applyQuaternion(camera.quaternion).add(camera.position)));
+    } else this.podHand.arm.visible = this.podHand.pod.visible = this.podHand.forearm.visible = false;
     this.shakeHopper(dt);
     this.holdRadio(dt, camera, onRadio, bob, bobAmt);
     this.flashT -= dt;
