@@ -122,6 +122,11 @@ export class Player {
   keys = new Set<string>();
   /** On-screen joystick, -1..1 each way (y down = backwards). */
   joy = { x: 0, y: 0 };
+  /** The controller is moving the stick: a click of L3 sprints (sprintLatch) rather than pushing all the way. */
+  padStick = false;
+  sprintLatch = false;
+  /** Aiming, shooting or reloading broke off the sprint: it waits until you let go of sprint and ask again. */
+  private sprintHeldOff = false;
   /** Crouch toggled by the on-screen button. */
   crouchLatch = false;
   /** Lying on your front (Z, or the crouch button again): 0 up .. 1 flat out, eased. */
@@ -245,10 +250,30 @@ export class Player {
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone + (this.ride ? this.ride.lift - this.dip : 0); }
   get sprinting() {
     if (this.ride || this.noSprint) return false;
-    // the stick pushed all the way, forward or forward and to the side, as Shift with W and A or D
-    const stick = Math.hypot(this.joy.x, this.joy.y) > 0.9 && this.joy.y < -0.4;
-    return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.prone < 0.5 && this.onGround;
+    if (this.sprintHeldOff || !this.wantsSprint) return false;
+    return this.crouch < 0.5 && this.prone < 0.5 && this.onGround;
   }
+
+  /** Asking to sprint: Shift with W, the touch stick pushed all the way forward (or forward and to
+   *  the side), or on a controller L3 clicked with the stick still forward. */
+  private get wantsSprint() {
+    const m = Math.hypot(this.joy.x, this.joy.y), ahead = this.joy.y < -0.4;
+    const stick = this.padStick ? this.sprintLatch && m > 0.3 && ahead : m > 0.9 && ahead;
+    return stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"));
+  }
+
+  /** Aiming, shooting or reloading: stop sprinting until sprint is asked for afresh. */
+  holdOffSprint() { this.sprintHeldOff = true; this.sprintLatch = false; }
+
+  /** Once a frame: a controller's sprint ends when the stick comes back off forward, and a sprint
+   *  that was broken off can start again once it's let go. */
+  private settleSprint() {
+    if (this.padStick && !(Math.hypot(this.joy.x, this.joy.y) > 0.3 && this.joy.y < -0.4)) this.sprintLatch = false;
+    if (!this.wantsSprint) this.sprintHeldOff = false;
+  }
+
+  /** L3 on a controller: sprint, afresh even if aiming had broken it off. */
+  padSprint() { this.sprintLatch = true; this.sprintHeldOff = false; }
 
   jump() { this.wantJump = true; }
   /** Space was for something else (a lunge on The Climb's face: theclimb.ts): no jump when you're back on your feet. */
@@ -269,6 +294,7 @@ export class Player {
 
   update(dt: number, active: boolean) {
     const k = this.keys;
+    this.settleSprint();
     this.jumped = false;
     this.landed = 0;
     this.crashed = 0;
