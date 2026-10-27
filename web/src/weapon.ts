@@ -3,8 +3,10 @@
 // with a hopper of paintballs on top and an air tank for a stock, and they fire paintballs you can
 // see fly; with blood on they're the real rifles, with muzzle flashes and tracers. The paintballs
 // in your own hopper are loose: one for each round in the gun, rolling about as you move, jumping
-// when you fire and dropping in from the top as you reload (Hopper, below). All of this is only
-// what you see of your own gun, so nothing here goes over the network.
+// when you fire and pouring in as you reload. The rifle is reloaded the paintball way (PodHand,
+// below): your left hand brings up a pod of balls, flips its cap and the hopper's lid and tips it
+// in, then flings the empty pod away. All of this is only what you see of your own gun, so nothing
+// here goes over the network.
 import * as THREE from "three";
 import { gore, look, watch } from "./gore";
 import { nightNow } from "./daylight";
@@ -85,7 +87,11 @@ function markerModel(body: string, trim: string, balls: string, long: boolean, l
       g.add(b);
     }
   }
-  g.add(box(0.07, 0.015, 0.12, trim, 0, 0.19, -0.04));              // lid
+  // the lid is hinged at its front edge, so it flips forward out of the way of a pour
+  const lid = named("lid", new THREE.Group());
+  lid.position.set(0, 0.19, -0.1);
+  lid.add(box(0.07, 0.015, 0.12, trim, 0, 0, 0.06));
+  g.add(lid);
   // the air tank as the stock, with its regulator
   g.add(tube(0.042, 0.26, "#c9cdd2", 0, -0.03, 0.27));
   g.add(tube(0.03, 0.04, "#1c1e20", 0, -0.03, 0.12));
@@ -179,6 +185,12 @@ function fist(x: number): THREE.Group {
 }
 
 const BALL_R = 0.014;
+const ballMaterial = (color: string) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.1 });
+/** Turn the balls drawn with mat to the colour of paint. */
+const recolour = (mat: THREE.Material | THREE.Material[], paint: string) => {
+  const m = mat as THREE.MeshLambertMaterial;
+  m.color.set(paint); m.emissive.set(paint);
+};
 const HOP_C = new THREE.Vector3(0, 0.13, -0.04);                       // the middle of the hopper's bowl
 const HOP_IN = new THREE.Vector3(0.075 - BALL_R, 0.064 - BALL_R, 0.105 - BALL_R);   // how far a ball's middle can go each way
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4();
@@ -187,7 +199,7 @@ const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Matrix4
  * The paintballs loose in your own hopper, one for each round in the gun. Each is a little ball
  * that falls, rolls and knocks into the others inside the bowl. They feel which way is down as you
  * tilt the gun, slosh when you run, jump or swing round, jump about when you fire (the bottom one
- * goes down the neck into the gun), and new ones tumble in from the top as you reload. Works in
+ * goes down the neck into the gun), and new ones pour in from the pod as you reload. Works in
  * the gun's own measurements, so it doesn't matter where you are in the world. One draw call.
  */
 class Hopper {
@@ -198,8 +210,7 @@ class Hopper {
   private n = 0;            // balls in the bowl
   private fill = 0;         // seconds until the next one drops in
   constructor(private cap: number, color: string) {
-    this.mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(BALL_R, 8, 6),
-      new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.1 }), cap);
+    this.mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(BALL_R, 8, 6), ballMaterial(color), cap);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
     for (let i = 0; i < cap; i++) { this.pos.push(new THREE.Vector3()); this.vel.push(new THREE.Vector3()); this.was.push(new THREE.Vector3()); }
@@ -210,12 +221,17 @@ class Hopper {
     this.draw();
   }
 
-  /** Another ball in at the top, h (0..1) of the way down from the lid. */
-  private drop(h = 0) {
+  /** Another ball in at the top, h (0..1) of the way down from the lid, or poured in at a spot. */
+  private drop(h = 0, at?: THREE.Vector3) {
     if (this.n >= this.cap) return;
     const p = this.pos[this.n], v = this.vel[this.n];
-    p.set((Math.random() - 0.5) * HOP_IN.x, HOP_IN.y * (0.8 - h * 1.6), (Math.random() - 0.5) * HOP_IN.z).add(HOP_C);
-    v.set((Math.random() - 0.5) * 0.2, -0.3, (Math.random() - 0.5) * 0.2);
+    if (at) {
+      p.set((Math.random() - 0.5) * 0.02, 0, (Math.random() - 0.5) * 0.02).add(at);
+      v.set((Math.random() - 0.5) * 0.3, -1, (Math.random() - 0.5) * 0.3);
+    } else {
+      p.set((Math.random() - 0.5) * HOP_IN.x, HOP_IN.y * (0.8 - h * 1.6), (Math.random() - 0.5) * HOP_IN.z).add(HOP_C);
+      v.set((Math.random() - 0.5) * 0.2, -0.3, (Math.random() - 0.5) * 0.2);
+    }
     this.n++;
   }
 
@@ -231,15 +247,17 @@ class Hopper {
   }
 
   /**
-   * One frame. rounds: what's in the gun now; down: the push the balls feel (gravity less the gun's
-   * own acceleration), in the gun's measurements.
+   * One frame. shown: how many balls to have in the bowl (the rounds in the gun, and any being
+   * poured in); down: the push the balls feel (gravity less the gun's own acceleration), in the
+   * gun's measurements; from: where poured balls come in. Any more than shown go at once, newest
+   * first, so a pour cut short leaves just the rounds really in the gun.
    */
-  update(dt: number, rounds: number, down: THREE.Vector3) {
-    this.n = Math.min(this.n, rounds);
-    if (this.n < rounds) {
+  update(dt: number, shown: number, down: THREE.Vector3, from?: THREE.Vector3) {
+    this.n = Math.min(this.n, shown);
+    if (this.n < shown) {
       this.fill -= dt;
-      if (this.fill <= 0) { this.drop(); this.fill = 0.035; }
-    }
+      while (this.fill <= 0 && this.n < shown) { this.drop(0, from); this.fill += from ? 0.02 : 0.035; }
+    } else this.fill = 0;
     dt = Math.min(dt, 1 / 30);
     this.step(dt / 2, down);
     this.step(dt / 2, down);
@@ -282,6 +300,104 @@ class Hopper {
     for (let i = 0; i < this.n; i++) this.mesh.setMatrixAt(i, _m.makeTranslation(this.pos[i]));
     this.mesh.count = this.n;
     this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+/** How far each part of the reload has got, 0..1: what PodHand and the gun are posed from. */
+interface Move { tilt: number; reach: number; cap: number; lid: number; turn: number; pour: number; toss: number }
+const ramp = (u: number, a: number, b: number) => { const k = Math.min(1, Math.max(0, (u - a) / (b - a))); return k * k * (3 - 2 * k); };
+/** The reload, u of the way through it (0..1). */
+function reloadMove(u: number, m: Move) {
+  m.tilt = ramp(u, 0, 0.16) - ramp(u, 0.84, 1);
+  m.reach = ramp(u, 0.03, 0.24) - ramp(u, 0.76, 0.94);
+  m.cap = ramp(u, 0.17, 0.25);
+  m.lid = ramp(u, 0.2, 0.3) - ramp(u, 0.78, 0.88);
+  m.turn = ramp(u, 0.27, 0.41);
+  m.pour = Math.min(1, Math.max(0, (u - 0.38) / 0.34));
+  m.toss = Math.min(1, Math.max(0, (u - 0.75) / 0.14));
+}
+
+const POD_R = 0.034, POD_TOP = 0.2, POD_BASE = -0.03;   // the pod, from where the hand grips it
+const POD_BALLS = 10;
+const ARM_PITCH = 0.9, ARM_YAW = -1.0, ARM_TURN = 2.6;   // the forearm comes up from low on your left
+/** Where the pod's mouth goes to pour, just inside the hopper's open top. */
+const POUR_AT = new THREE.Vector3(0, 0.205, -0.03);
+const POUR_IN = new THREE.Vector3(0, HOP_C.y + HOP_IN.y * 0.85, -0.03);
+const READY = new THREE.Vector3(-0.2, 0.17, 0.02);       // where the hand holds the pod up, before tipping it
+const BELOW = new THREE.Vector3(-0.08, -0.55, 0.12);     // how far below that it comes up from
+const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3();
+
+/**
+ * Your left hand with a pod: the clear plastic tube of paintballs you reload a marker from, with a
+ * flip cap. It's posed in the gun's own measurements, so it goes where the gun goes. The forearm
+ * comes in from your left and the pod is tipped over by turning the wrist, as you would.
+ */
+class PodHand {
+  readonly arm = new THREE.Group();
+  readonly pod = new THREE.Group();
+  private cap = new THREE.Group();
+  readonly balls: THREE.InstancedMesh;
+  constructor() {
+    this.arm.add(box(0.08, 0.075, 0.075, "#c49a7c", 0, 0, 0));          // fist round the pod
+    this.arm.add(box(0.084, 0.06, 0.02, "#b58a6c", 0, -0.003, -0.043));  // knuckles
+    this.arm.add(box(0.024, 0.04, 0.045, "#b58a6c", -0.045, 0.026, -0.01)); // thumb
+    this.arm.add(box(0.068, 0.068, 0.11, "#3d4651", 0, 0, 0.085));     // cuff of the sleeve
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(POD_R, POD_R, POD_TOP - POD_BASE, 12, 1, true),
+      new THREE.MeshLambertMaterial({ color: "#d8e4ee", transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide }));
+    body.position.y = (POD_TOP + POD_BASE) / 2;
+    body.renderOrder = 1;
+    this.pod.add(body);
+    // the cap is hinged on the side away from the hopper, so it flips back out of the pour
+    this.cap.position.set(0, POD_TOP, -POD_R);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(POD_R + 0.004, POD_R + 0.004, 0.022, 12), new THREE.MeshLambertMaterial({ color: "#22252a" }));
+    lid.position.set(0, 0.01, POD_R);
+    this.cap.add(lid);
+    this.pod.add(this.cap);
+    this.balls = new THREE.InstancedMesh(new THREE.SphereGeometry(BALL_R, 8, 6), ballMaterial("#7dff4a"), POD_BALLS + 3);
+    this.balls.frustumCulled = false;
+    this.pod.add(this.balls);
+    this.arm.visible = this.pod.visible = false;
+  }
+
+  /** Pose it for the move m; t: a clock for the stream of balls. */
+  pose(m: Move, t: number) {
+    this.arm.visible = m.reach > 0.001;
+    this.pod.visible = m.toss < 1 && (this.arm.visible || m.toss > 0);
+    if (!this.arm.visible && !this.pod.visible) return;
+    PodHand.place(m.reach, m.turn, this.arm.position, this.arm.quaternion);
+    if (m.toss > 0) {
+      // let go at the end of the pour: it flies off to the left, tumbling
+      const s = m.toss;
+      PodHand.place(1, 1, this.pod.position, this.pod.quaternion);
+      this.pod.position.add(_p.set(-0.45 * s, 0.2 * s - 0.9 * s * s, -0.35 * s));
+      this.pod.quaternion.multiply(_q.setFromEuler(_e.set(s * 2, 0, s * 6)));
+    } else {
+      this.pod.position.copy(this.arm.position);
+      this.pod.quaternion.copy(this.arm.quaternion);
+    }
+    this.cap.rotation.x = -m.cap * 2.1;
+    // the balls lie at the bottom of the pod, run to its mouth as it's tipped, and stream out
+    const left = Math.round(POD_BALLS * (1 - m.pour)), down = ramp(m.turn, 0.3, 0.8);
+    let n = 0;
+    for (let k = 0; k < left; k++) {
+      const y = POD_BASE + 0.016 + k * 0.02 + (POD_TOP - POD_BASE - 0.032 - (left - 1) * 0.02) * down;
+      this.balls.setMatrixAt(n++, _m.makeTranslation(k % 2 ? 0.012 : -0.012, y, (k % 3 - 1) * 0.006));
+    }
+    if (m.pour > 0 && m.pour < 1 && m.turn > 0.9) for (let k = 0; k < 3; k++) {
+      const f = (t * 7 + k / 3) % 1;
+      this.balls.setMatrixAt(n++, _m.makeTranslation((k - 1) * 0.006, POD_TOP + 0.005 + f * 0.05, 0));
+    }
+    this.balls.count = n;
+    this.balls.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Where the hand is, reach of the way up and turn of the way to upended, in the gun's measurements. */
+  private static place(reach: number, turn: number, pos: THREE.Vector3, q: THREE.Quaternion) {
+    q.setFromEuler(_e.set(ARM_PITCH, ARM_YAW, turn * ARM_TURN, "YXZ"));
+    // tipped right over, the mouth sits in the hopper's top
+    const tipped = _p.set(0, POD_TOP, 0).applyQuaternion(_q.setFromEuler(_e.set(ARM_PITCH, ARM_YAW, ARM_TURN, "YXZ")));
+    pos.subVectors(POUR_AT, tipped).sub(READY).multiplyScalar(turn).add(READY);
+    pos.addScaledVector(BELOW, 1 - reach);
   }
 }
 
@@ -367,6 +483,10 @@ export class Weapon {
   private models: Record<GunKind, THREE.Group>;
   /** The loose paintballs in each marker's hopper. */
   private hoppers = { rifle: new Hopper(MAG, "#7dff4a"), sniper: new Hopper(GUNS.sniper.mag, "#ffe14a") };
+  private rifleLid: THREE.Object3D;
+  private podHand = new PodHand();
+  private paintColour = "";
+  private move: Move = { tilt: 0, reach: 0, cap: 0, lid: 0, turn: 0, pour: 0, toss: 0 };
   private hopAt = new THREE.Vector3();    // where the hopper was last frame, in the world
   private hopVel = new THREE.Vector3();
   private hopAcc = new THREE.Vector3();   // how hard the gun is being moved about, smoothed
@@ -396,6 +516,8 @@ export class Weapon {
     fists.add(...this.fists);
     this.models = { fists, rifle: rifleModel(this.hoppers.rifle), sniper: sniperModel(true, this.hoppers.sniper) };
     for (const m of Object.values(this.models)) this.model.add(m);
+    this.rifleLid = this.models.rifle.getObjectByName("lid")!;
+    this.model.add(this.podHand.arm, this.podHand.pod);
     this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22),
       new THREE.MeshBasicMaterial({ color: "#ffd27a", transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     this.flash.visible = false;
@@ -412,6 +534,14 @@ export class Weapon {
   }
 
   get gun() { return GUNS[this.kind]; }
+  /** The balls in your own hoppers and pod are your own paint colour, the one you fire. */
+  paint(colour: string) {
+    if (colour === this.paintColour) return;
+    this.paintColour = colour;
+    for (const m of [this.hoppers.rifle.mesh, this.hoppers.sniper.mesh, this.podHand.balls]) recolour(m.material, colour);
+  }
+  /** Reloaded from a pod: the paintball rifle. The sniper and the real guns just dip and roll. */
+  private get podded() { return this.kind === "rifle" && !gore(); }
   /** Rounds left in what you're holding (Infinity for fists). */
   get rounds() { return this.kind === "fists" ? Infinity : this.kind === "sniper" ? this.sniperAmmo : this.ammo; }
   get canFire() { return this.cooldown <= 0 && this.reloading <= 0 && this.switching <= 0 && this.rounds > 0; }
@@ -455,6 +585,7 @@ export class Weapon {
   /** Back to how you spawn: the rifle, a full magazine, spare rounds, no sniper. */
   reset() {
     Object.assign(this, { kind: "rifle", ammo: MAG, reserve: RESERVE, hasSniper: false, sniperAmmo: 0, sniperReserve: 0, reloading: 0, cooldown: 0, sniperCool: 0, switching: 0, aim: 0 });
+    for (const k of Object.keys(this.move) as (keyof Move)[]) this.move[k] = 0;
     this.show();
   }
 
@@ -512,6 +643,7 @@ export class Weapon {
         this.sniperReserve -= take;
       }
     }
+    this.stepMove(dt);
     const canAim = this.kind !== "fists" && this.reloading <= 0 && this.switching <= 0 && !this.rechambering && !sprinting;
     this.aim += ((wantAim && canAim ? 1 : 0) - this.aim) * Math.min(1, dt * (this.kind === "sniper" ? 9 : 14));
     this.kick *= Math.max(0, 1 - dt * (this.kind === "fists" ? 9 : 18));
@@ -537,8 +669,9 @@ export class Weapon {
     p.y += Math.abs(Math.cos(bob)) * 0.012 * bobAmt + this.sway.y * steady;
     if (this.kind !== "fists") p.z += this.kick * (this.kind === "sniper" ? 0.1 : 0.06);
     if (sprinting) p.y -= 0.05;
-    const rl = this.reloading > 0 ? Math.sin((1 - this.reloading / RELOAD_TIME[this.kind]) * Math.PI) : 0;
-    p.y -= rl * 0.12;
+    // reloading: a marker is turned over to the left to take the pod; a real gun just dips and rolls
+    const tilt = this.move.tilt, paint = this.podded;
+    if (paint) { p.x -= tilt * 0.06; p.y -= tilt * 0.03; } else p.y -= tilt * 0.12;
     // working the bolt: the rifle dips and rolls towards you
     const since = this.gun.interval - this.cooldown;
     const bolt = this.kind === "sniper" && this.cooldown > 0 ? Math.max(0, Math.sin(((since - BOLT_START) / (BOLT_END - BOLT_START)) * Math.PI)) * (since < BOLT_END ? 1 : 0) : 0;
@@ -547,16 +680,39 @@ export class Weapon {
     p.y -= sw * 0.3;
     this.model.position.copy(p).applyQuaternion(camera.quaternion).add(camera.position);
     this.model.quaternion.copy(camera.quaternion);
-    this.model.rotateX(this.kick * (this.kind === "sniper" ? 0.12 : this.kind === "fists" ? 0 : 0.06 * steady) - rl * 0.5 - sw * 0.6);
-    this.model.rotateZ(rl * 0.4 + bolt * 0.35 + (sprinting ? 0.35 : 0));
+    this.model.rotateX(this.kick * (this.kind === "sniper" ? 0.12 : this.kind === "fists" ? 0 : 0.06 * steady) - tilt * (paint ? 0.35 : 0.5) - sw * 0.6);
+    this.model.rotateZ(tilt * 0.4 + bolt * 0.35 + (sprinting ? 0.35 : 0));
     this.model.rotateY(sprinting ? 0.45 : 0);
     // a punch: the fist shoots forward and back
     this.fists.forEach((f, i) => { f.position.z = i === this.jab ? -this.kick * 0.32 : 0; f.position.y = i === this.jab ? this.kick * 0.04 : 0; });
+    this.rifleLid.rotation.x = -this.move.lid * 1.9;
+    if (paint) this.podHand.pose(this.move, this.t);
+    else this.podHand.arm.visible = this.podHand.pod.visible = false;
     this.shakeHopper(dt);
     this.holdRadio(dt, camera, onRadio, bob, bobAmt);
     this.flashT -= dt;
     this.flash.visible = this.flashT > 0;
     this.flashLight.intensity = this.flashT > 0 ? 3 : 0;
+  }
+
+  /**
+   * Where the reload's got to. Cut short (a sprint, a switch, dying), everything eases back from
+   * wherever it was: the lid shuts, the wrist rights the pod so nothing more pours, and the hand
+   * takes it back down out of sight.
+   */
+  private stepMove(dt: number) {
+    const m = this.move;
+    if (this.reloading > 0 && this.kind !== "fists") {
+      const u = 1 - this.reloading / RELOAD_TIME[this.kind];
+      if (this.podded) reloadMove(u, m);
+      else { m.tilt = Math.sin(u * Math.PI); m.reach = m.lid = 0; }
+      return;
+    }
+    const k = Math.min(1, dt * 10);
+    m.tilt -= m.tilt * k; m.lid -= m.lid * k; m.turn -= m.turn * k; m.cap -= m.cap * k;
+    m.reach -= m.reach * Math.min(1, dt * 7);
+    if (m.toss > 0) m.toss = Math.min(1, m.toss + dt * 7);
+    if (m.reach < 0.002 && m.tilt < 0.002) for (const key of Object.keys(m) as (keyof Move)[]) m[key] = 0;
   }
 
   /**
@@ -578,7 +734,10 @@ export class Weapon {
     this.hopAt.copy(at);
     this.hopVel.copy(vel);
     const down = new THREE.Vector3(0, -9.8, 0).sub(this.hopAcc).applyQuaternion(q.clone().invert()).divideScalar(s);
-    this.hoppers[this.kind].update(dt, this.rounds, down);
+    // during the pour the balls are seen going in, but they're only rounds once the reload's done
+    let shown = this.rounds;
+    if (this.reloading > 0 && this.podded) shown += Math.floor(Math.min(MAG - shown, this.reserve) * this.move.pour);
+    this.hoppers[this.kind].update(dt, shown, down, this.podded ? POUR_IN : undefined);
   }
 
   private bars: Partial<Record<BarsKind, THREE.Group>> = {};
@@ -608,7 +767,7 @@ export class Weapon {
   private holdRadio(dt: number, camera: THREE.PerspectiveCamera, on: boolean, bob: number, bobAmt: number) {
     this.radio += ((on ? 1 : 0) - this.radio) * Math.min(1, dt * 12);
     if (this.radio < 0.01) this.radio = 0;
-    const up = this.radio, free = up > 0.4;   // the hand has left the gun
+    const up = this.radio, free = up > 0.4 || this.podHand.arm.visible;   // the hand has left the gun
     for (const m of Object.values(this.models)) { const h = m.getObjectByName("frontHand"); if (h) h.visible = !free; }
     this.fists[0].visible = !free;
     this.radioHand.visible = up > 0;
