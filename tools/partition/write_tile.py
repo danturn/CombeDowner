@@ -525,24 +525,27 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
 
 
 VERGED = {"motorway", "motorway_link", "trunk", "trunk_link"}
-OUT_OF_TOWN = 25.0
+OUT_OF_TOWN = 25.0   # metres from a building that a road's point is in town
+IN_TOWN = 0.3        # the share of a road's points in town that makes it a street in town
 PAVE_DRAWN = 2.0     # metres: a kerbed street's pavement where its record gives none
-VERGE_REACH = 2.6    # metres past a verged road's carriageway that the partition's pavement faces may reach   # metres from the nearest building a road must keep to be out of town
+VERGE_REACH = 2.6    # metres past a verged road's carriageway that the partition's pavement faces may reach
 
 
 def verge_out_of_town(rd, houses):
     """A dual carriageway, its slip roads and the roundabout they meet out of town have grass verges,
     not pavements: walkers there have their own paths, mapped as such. Drawn with a pavement each
     side, the two carriageways and the slips between them were one sheet of paving and road. Each
-    such record's `pv` becomes [0, 0]; one with a building near it is a street in town, and keeps
-    its pavements (`street_surfaces` leaves the partition's pavement faces off the others)."""
+    such record's `pv` becomes [0, 0]; one with buildings near much of it is a street in town, and
+    keeps its pavements (`street_surfaces` leaves the partition's pavement faces off the others)."""
     tree = STRtree(houses) if houses else None
     for r in rd:
         if r["c"] not in VERGED or len(r["p"]) < 2 or not (r["c"].endswith("_link") or r.get("ow")):
             continue
-        line = LineString([q[:2] for q in r["p"]])
-        if tree is not None and len(tree.query(line, predicate="dwithin", distance=OUT_OF_TOWN)):
-            continue
+        if tree is not None:
+            pts = shapely.points([q[:2] for q in r["p"]])
+            near = tree.query(pts, predicate="dwithin", distance=OUT_OF_TOWN)
+            if len(set(near[0].tolist())) > IN_TOWN * len(r["p"]):
+                continue
         r["pv"] = [0.0, 0.0]
 
 
@@ -4717,7 +4720,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                               lidar_tall(sq), carried,
                               (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))))
     hold_steep_streets(rd, T)
-    verge_out_of_town(rd, houses)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
@@ -4725,6 +4727,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     carry_one_way(rd, tile.get("rd") or [])
+    verge_out_of_town(rd, houses)
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
     rd, _ = drop_paths_along_streets(rd)
