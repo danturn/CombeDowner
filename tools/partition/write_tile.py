@@ -2178,15 +2178,30 @@ def clear_portals(tile, gone):
             continue
         zones[g].append((fx, fy, dx, dy))
     behind, front, past = PORTAL_CLEAR
-    polys = []
+    polys, cuts = [], []
     for g in zones.values():
         fx, fy, dx, dy = g[0]
         at = [(x - fx) * -dy + (y - fy) * dx for x, y, _, _ in g]
-        lo, hi = min(at) - PORTAL_HALF - past, max(at) + PORTAL_HALF + past
+        lo, hi = min(at) - PORTAL_HALF, max(at) + PORTAL_HALF
         corner = lambda s, o: (fx - dy * s + dx * o, fy + dx * s + dy * o)
-        polys.append(Polygon([corner(lo, behind), corner(hi, behind), corner(hi, -front), corner(lo, -front)]))
+        polys.append(Polygon([corner(lo - past, behind), corner(hi + past, behind), corner(hi + past, -front), corner(lo - past, -front)]))
+        cuts.append(Polygon([corner(lo, 0), corner(hi, 0), corner(hi, -PORTAL_FRONT), corner(lo, -PORTAL_FRONT)]))
     if not polys:
         return
+    # nor does a wall, fence or hedge cross the cutting between the wing walls, down into it and up again
+    cut = unary_union(cuts)
+    kept_br = []
+    for l in tile.get("br") or []:
+        inside = [cut.contains(Point(q[0], q[1])) for q in l["p"]]
+        if not any(inside):
+            kept_br.append(l)
+            continue
+        gone["br"] = gone.get("br", 0) + 1
+        for st in stretches({i for i, v in enumerate(inside) if not v}):
+            if len(st) > 1:
+                kept_br.append(dict(l, p=[l["p"][i] for i in st]))
+    tile["br"] = kept_br
+    tile["gt"] = [q for q in tile.get("gt") or [] if not cut.contains(Point((q[0] + q[2]) / 2, (q[1] + q[3]) / 2))]
     zone = unary_union(polys)
     for key, reach in (("tr", 2.8), ("sb", 0.7)):
         rows = tile.get(key) or []

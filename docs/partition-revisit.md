@@ -1277,25 +1277,43 @@ same as main):
   pier past the arches; a wing wall runs out along each side of the cutting while the hill there
   stands a metre over the floor (up to 12 m), and between them the ground is dug to the floor
   (`world.ts`, from `cuttings`) and covered by a flat apron, with the grid's slope back up onto the
-  hill hidden like a mouth. A path in that cutting lies on its floor (`drawnGround`). Trade-offs: the
-  wing walls follow the survey, not the laid ground, and step by the metre; the apron is plain grass
-  colour; the terrain is hidden 40 m into each tube along its own bends (`MOUTH`), so a tube under
+  hill hidden like a mouth. A path in that cutting lies on its floor (`drawnGround`). A wing wall's
+  top is the upper hull of the survey's bank every metre (straight slopes, never under the bank),
+  with a coping; one still holding a high bank at 12 m runs on 3 m more, down to the ground at its
+  line. No tree's crown (2.8 times its size) reaches over a headwall or its wing walls, and no wall,
+  fence or hedge crosses the cutting (`write_tile.clear_portals`); no street face but the roads'
+  going in lies in the cutting (`street_surfaces`). Trade-offs: the wing walls follow the survey,
+  not the laid ground; the cutting is as wide as the headwall's whole reach (a pier's width past
+  each arch and more), wider than the roads in it; the apron is plain grass colour; the terrain is hidden 40 m into each tube along its own bends (`MOUTH`), so a tube under
   less than an arch of hill further in than that shows the hill inside it.
 - [ ] **Faces are cut where two streets' levels differ** (`write_tile.level_cuts`). Where two streets'
   carriageways or pavements meet with their levels (the ground under each one's line) more than
   1.5 m apart, the faces are cut along the line equally far from both, so each keeps its own level
   and the game stands a kerb or stone face between them; and a portal's face line divides the road
-  going in from whatever lies on the hill over it (`portal_planes`). A street's level is its own
+  going in from whatever lies on the hill over it (`portal_planes`), on the one line the game's
+  headwall stands on where bores come out side by side (`portal_faces`, as `alignPortals`). A corner
+  of a face behind it that no street reaches takes the nearest street allowed there (the lane over
+  the roof), and one in front the road going in's, not the grid's dug or sloping ground. A street's level is its own
   height, not the ground's, where the ground stands more than 1.5 m over it (a road's last metres
   into a portal). No road, pavement or path face lies inside a tunnel's tube. Trade-off: a real
   ramp between two streets whose middles differ by that much is cut into a step.
+- [ ] **A dip under a bridge lowers only the roads joined to the one under it** (`structures.joined_near`,
+  and `prep_map.py`'s copy). Every road within 35 m of the crossing used to come down with it: the
+  Bailbrook roundabout's north-west slip, beside the A46's cutting but joining it nowhere near the
+  cycle bridge over it, was dug 3.5 m under the survey, and the survey left standing between it and
+  the cutting was a spike of grass. Joined means meeting within those 35 m at a level within 2 m.
+  And a grid point standing 2 m over all eight of its neighbours after the ground is laid comes down
+  to the highest of them (`write_tile._unspiked`). Trade-off: a road that meets the one under only
+  further off, but runs close beside it, keeps its level and may stand over the cutting's edge.
 - [ ] **Out-of-town trunk roads have verges** (`write_tile.verge_out_of_town`). A one-way trunk or
   motorway, or any slip road, with fewer than 30% of its points within 25 m of a building has no
   pavements (`pv` [0, 0]) and the partition's pavement faces beside it are left off. The 9.5 m given
   to the Bailbrook roundabout's three lanes is OSM's lanes tag and right; the sheet of asphalt was
   each carriageway's 2 m pavements meeting the next one's and filling the gaps between slips. A
   pavement that really runs along such a road (OSM's sidewalk tag, or a footpath mapped beside it,
-  which is drawn as a path anyway) is not drawn as one.
+  which is drawn as a path anyway) is not drawn as one. The verge is measured from the carriageway
+  as laid, which the survey's kerbs can make wider than the record: measured from the record's
+  width, strips of pavement were left either side as paving.
 - [ ] **OSM's own bridge and tunnel tags** (`tools/osm.py` keeps `bridge`, `tunnel`, `layer` and
   `covered` on the streets; `structures.osm_structures` lays `bridge` and `tunnel` on the edges they
   cover, alongside Overture's flags, and a `covered` way stays on the ground). The packed
