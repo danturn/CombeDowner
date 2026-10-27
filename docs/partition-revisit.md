@@ -1239,19 +1239,24 @@ same as main):
   paths on the ground below meet at the same point (`_join_spans`: the university walkways).
   A path whose record stops one point past its deck, still in the air with nothing going on, has the
   deck run on to that end (`decks_to_loose_ends`).
-- [ ] **A deck over a tunnel stretch is not hill** (`tunnels.rebore`, run once every way is known, in
-  `structures.solve` and in `prep_map.py`): the survey keeps the decks over an underpass as ground, so
-  the Bailbrook Underpass was bored. A tunnel point counts as under a deck where another way passes
-  within 5 m across at 2.5 to 10 m over its floor (or is a bridge in the data at any height), and so
-  does the ground between two such points that stands no more than 1 m above them; a bore runs only
-  between points of real hill. 2.5 m, not a deck's 4.6 m headroom, because `prep_map.py` carries the
-  floor straight under the junction and leaves it 4 m high there, so the lane over it showed 3.5 m.
-  The trade-offs: a tunnel's bore can start later where a street crosses its shallow end on the hill
-  (in the squares' own builds the Two Tunnels are unchanged, but `prep_map.py`'s run for 2_0 moves the
-  Combe Down Tunnel's bore 24 m in where it reaches into 1_1, which only 1_1's own build draws); a real
-  tunnel whose only cover is a street 2.5 to 10 m up, with no hill either side, would lose its bore;
-  and a deck more than 10 m over an underpass that is not marked as a bridge still counts as hill.
+- [ ] **Only a bridge in the data over a tunnel stretch is not hill** (`tunnels.rebore`, run once
+  every way is known, in `structures.solve` and in `prep_map.py`). The survey keeps a bridge's deck
+  as ground, so a tunnel point counts as under a deck where a way the data marks as a bridge passes
+  within 5 m across, 2.5 m or more over its floor, and so does the ground between two such points that
+  stands no more than 1 m above them; a bore runs only between points of real hill. This used to count
+  any way 2.5 to 10 m over the floor as a deck, which opened the Bailbrook Underpass into a cutting with
+  its lane and footway on decks over the A46; OSM marks it `tunnel=yes`, `layer=-1`, with Bailbrook
+  Lane, the lane and the path on the ground over its roof, so it is bored again (56 m of its 70 m;
+  the rest is its approach cuttings). The trade-offs: an underpass under a junction whose crossing
+  roads the data does not mark as bridges is bored if the ground over it is deep enough (none other
+  changes today: run over the whole graph, Bailbrook is the only bore that differs); and each
+  carriageway gets its own 4.8 m tube (`TUNNEL` in `web/src/map.ts`), narrower than a two-lane trunk.
   The game's tunnels still come from `prep_map.py`'s squares (`tn`), not the partition's `bored`.
+- [ ] **OSM's own bridge and tunnel tags** (`tools/osm.py` keeps `bridge`, `tunnel`, `layer` and
+  `covered` on the streets; `structures.osm_structures` lays `bridge` and `tunnel` on the edges they
+  cover, alongside Overture's flags, and a `covered` way stays on the ground). The packed
+  `data/combe-down/osm-roads` was fetched before these tags were kept, so nothing changes until it is
+  fetched again and measured; `layer` and `covered` are carried but no rule reads them yet.
 
 ## A faster build, the same map (27 October)
 
@@ -1280,23 +1285,11 @@ same as main):
 ## Bridges over roads (27 October)
 
 - [x] **A minor way laid along the top of an underpass is a flat lid.** At the Bailbrook Underpass
-  the data is right: the A46 runs through a 70 m covered stretch (OSM and Overture both mark it a
-  tunnel, and the lidar's ground runs on over it), and the service road, a track and a footway are
-  on its lid. The game opens it as a cutting instead of boring it (a 4.8 m tube can't take a dual
-  carriageway), so those ways had nothing under them. Now, as general rules: a road's tunnel flag
-  only marks the same road (its class or name), not a lane drawn along it (`match_structures`); a
-  way drawn along on top of a road's tunnel for 8 m or more is laid along the bank beside it, clear
-  of the cutting, before the ways are noded into the street graph (`tunnels.beside_tunnels`, in
-  `once.build_graph` and in `prep_map.py`), taking the minor ways that ended on it with it and
-  meeting a street that stays where its new line crosses it; where there's no room either side it
-  is left out there; only the part of a way that crosses an underpass is its bridge, and one running
-  along beside the cutting stays on its bank, with no bridge reaching out along it (`tunnels.across`,
-  `bank` in the writer); and a way level with a deck beside it, not joining the road under it, isn't
-  dipped with that road. The trade-offs: the covered stretch is open sky, as before; a path running
-  along a cutting's edge inside the width the game digs for the road (8.5 m from a trunk road's
-  centre line, more than a one-way carriageway needs) stands on a stone face over the dug slope,
-  as the west footway does north of the footbridge, where the 4 m ground grid can't hold the bank's
-  top that close to the road.
+  the service road and footway mapped on the tunnel's roof became a 58 m deck along the top of the
+  A46's east carriageway. The underpass is bored again (only the data's bridges over a tunnel count
+  as decks, above), so they are on the ground over its roof; and Overture's tunnel flag on the A46
+  no longer marks the lane alongside as in the tunnel too (`match_structures`: a road's flag only
+  marks the same road, by class or name).
 - [ ] **Pavements in a dual carriageway's median keep its piers out.** A bridge over both
   carriageways is now one flattened elliptical arch springing from the banks (Bailbrook Lane, Mill
   Lane), where the real ones may have a pier in the middle. A pier allowed on a median wider than

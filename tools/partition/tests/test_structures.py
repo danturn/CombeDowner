@@ -127,16 +127,13 @@ class Structures(unittest.TestCase):
                                               "road_flags": [{"values": ["is_tunnel"], "between": [0.2, 0.8]}]})])
         self.assertEqual(list(out), [0])
 
-    def test_a_lane_along_a_tunnels_lid_goes_to_the_bank_with_what_ends_on_it(self):
-        import tunnels as TN
-        tunnel = (LineString([(0, 0), (0, 70)]), "trunk")
-        ways = [(LineString([(0.8, -20), (0.8, 30), (0.8, 90)]), "service"),
-                (LineString([(-30, 30), (0.8, 30)]), "footway"),
-                (LineString([(-40, 0), (40, 0)]), "trunk")]
-        lane, path, road = TN.beside_tunnels(ways, [tunnel], lambda c: {"trunk": 12, "service": 3.5}.get(c, 1.6))
-        self.assertTrue(all(abs(x) > 8.5 for x, y in lane.coords if 5 < y < 65))
-        self.assertEqual(path.coords[-1], next(q for q in lane.coords if abs(q[1] - 30) < 0.01))
-        self.assertEqual(list(road.coords), [(-40.0, 0.0), (40.0, 0.0)])
+
+    def test_osm_tags_mark_their_stretch_and_a_covered_way_stays_on_the_ground(self):
+        from structures import osm_structures
+        edges = [dict(id=0, obs=[(0, 30, {"highway": "trunk"}), (30, 100, {"highway": "trunk", "tunnel": "yes", "layer": "-1"})]),
+                 dict(id=1, obs=[(0, 20, {"highway": "footway", "covered": "yes"})])]
+        out = osm_structures(edges, {0: {"tunnel": [[28.0, 90.0]]}})
+        self.assertEqual(out, {0: {"tunnel": [[28.0, 100.0]]}})
 
 
 if __name__ == "__main__":

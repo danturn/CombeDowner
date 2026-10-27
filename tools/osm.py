@@ -36,7 +36,8 @@ def get(url, data=None, timeout=180):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
-ROAD_TAGS = ("highway", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway")
+ROAD_TAGS = ("highway", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway",
+             "bridge", "tunnel", "layer", "covered")
 BRIDGE_TAGS = ("bridge", "bridge:structure", "bridge:support", "material", "layer", "highway", "railway",
                "waterway", "man_made", "name", "bridge:name")
 ROADS = False

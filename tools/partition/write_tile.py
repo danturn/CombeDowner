@@ -610,8 +610,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     if any(g is None for g in gs):
         return None
     if prof and prof.get("gone"):
-        # the stretches left out: in one of the canal's tunnels (the tunnel's ledge is the towpath),
-        # or along on top of the road in an underpass, with nowhere to stand
+        # the stretches in one of the canal's tunnels are left out: the tunnel's ledge is the towpath
         steps = len(prof["z"]) - 1
         gone = set(prof["gone"])
         keep = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) not in gone for x, y in seg]
@@ -629,15 +628,11 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     steps = len(prof["z"]) - 1
     under = set(prof.get("dip") or ())
     towpath = set(prof.get("tow") or ())
-    banked = set(prof.get("bank") or ())
-    bank = set()
     for i, (x, y) in enumerate(seg):
         f = whole.project(Point(x, y)) / (whole.length or 1) * steps
         lo = max(0, min(steps - 1, int(f)))
         zs.append(prof["z"][lo] + (prof["z"][lo + 1] - prof["z"][lo]) * (f - lo))
         near = int(round(f))
-        if near in banked:
-            bank.add(i)
         if near in prof["span"]:
             spans.add(i)
         elif near in prof["deck"]:
@@ -660,7 +655,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     # build's lower approaches, the deck's end stood a metre over the ground.
     # (but not across another street, whose own height the ground is laid to)
     approach = _approaches(seg, zs, gs, spans | decks, ground, _across_streets(seg, streets) if streets and (spans or decks) else ())
-    grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow | approach | bank)
+    grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow | approach)
     # (and a span's last points lying on the bank, as the lidar's true ground has it, are its abutment)
     for st in stretches(set(spans)):
         for order in (st, st[::-1]):
