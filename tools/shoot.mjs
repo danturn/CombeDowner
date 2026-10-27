@@ -29,7 +29,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import { MUTED_ARGS, silence, silenceNote } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 // Playwright from PW if given, else the game's own (web/node_modules, after npm install), else wherever node finds it
 const WEB = new URL("../web/", import.meta.url).pathname;
@@ -87,8 +87,10 @@ const browser = await chromium.launch({
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
-const page = await browser.newPage({ viewport: { width: W, height: H } });
-// no sound can play: see tools/quiet-guard.mjs
+// no sound can play: see tools/quiet-guard.mjs (the context's guards and the page's, before any goto)
+const context = await browser.newContext({ viewport: { width: W, height: H } });
+await silenceContext(context);
+const page = await context.newPage();
 await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
