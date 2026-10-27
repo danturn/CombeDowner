@@ -485,6 +485,7 @@ export class Game {
   private convAt = new Map<string, number>();    // host: when each player last scored at the posts or stumps (ms)
   firing = false;
   aiming = false;
+  private wasAiming = false;
   binoculars = false;   // B: held up to your eyes
   private bino = 0;     // how far up they are, 0..1
   shootOnce = false;   // a tap in touch mode
@@ -3938,6 +3939,9 @@ export class Game {
     p.assist = this.freeMode;
     const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket && !aloft;
     this.rideTricks.update(dt, p, onRide ? this.held : null, onRide ? this.camera : null);
+    // aiming, shooting or reloading breaks off a sprint; asking to sprint again lowers the sights
+    if (p.sprinting && (this.aiming && !this.wasAiming || this.firing || this.shootOnce || w.reloading > 0)) p.holdOffSprint();
+    this.wasAiming = this.aiming;
     if (p.sprinting || !this.alive || car || helm) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists

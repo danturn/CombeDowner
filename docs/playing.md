@@ -179,7 +179,7 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 
 | Button | On foot | Driving |
 |---|---|---|
-| Left stick | walk (pushed right forward, run) | steer |
+| Left stick | walk | steer |
 | Right stick | look | look |
 | R2 | shoot (kick, bowl) | accelerate |
 | L2 | aim, held | brake and reverse |
@@ -188,7 +188,7 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 | Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
 | Triangle | reload | |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
-| L3 | a ride's grind or manual (Shift) | |
+| L3 | sprint while the stick's forward; aiming, shooting or reloading stops it (on a ride: grind or manual) | |
 | R3, held | radio | radio |
 | D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
 | Create, held | the scores | the scores |
