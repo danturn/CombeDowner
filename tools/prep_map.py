@@ -950,20 +950,24 @@ for k, r in enumerate(pending):
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0     # headroom under a bridge for a road, for a path; metres over which a road eases down to it
 
 
-def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
+def ease_roads(x, y, head, skip, down=True, reach=None, own=None, under=None):
     """Bring every road's points within DIP of (x, y) down to head (or up, with down False),
     easing in and out, so roads meeting there stay joined; skip: road indexes left alone (the
     bridge itself), and any road's points on a span or a deck are left alone too (except road
     own's, the one being carried over the canal); a road that's a bridge somewhere else is still
-    brought down beside it, and its deck carried to its new approaches afterwards (carry_spans)."""
+    brought down beside it, and its deck carried to its new approaches afterwards (carry_spans).
+    under=(road under, deck height): a way not joining the road under, level with the deck, is on
+    the bank beside the bridge, and stays there."""
     n = 0
     for j in road_tree.query(shapely.Point(x, y).buffer(reach or DIP)):
         j = int(j)
         if j in skip: continue
         o = pending[j]
+        beside = under is not None and j != under[0] and not joined(j, under[0])
         for i, q in enumerate(o["run"]):
             if j != own and (i in o["span"] or i in o["deck"]): continue
             if i in o["tow"]: continue          # (the towpath stays level with the canal's banks)
+            if beside and o["z"][i] > under[1] - 1.5: continue
             d = math.dist(q[:2], (x, y))
             if d >= DIP: continue
             e = d / DIP; e = e * e * (3 - 2 * e)
@@ -1180,7 +1184,7 @@ for k, r in enumerate(pending):
             dips.append((j, x))
             head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5      # (a little to spare, the deck being sampled a point or two off the crossing)
             # the road under, and the roads joining it there, dip together
-            dipped += ease_roads(x.x, x.y, head, own_road(k, line))
+            dipped += ease_roads(x.x, x.y, head, own_road(k, line), under=(j, deck))
 # 3b. and under the railway's bridges and viaducts (tools/railway.py marks them)
 for t, track in enumerate(rail_tracks):
     tp = track["p"]
