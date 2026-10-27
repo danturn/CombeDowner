@@ -1790,6 +1790,17 @@ export function land(hard: boolean, force: number) {
   if (force > 0.65) say(out(0.3, 0, 0, 0.04), t + 0.02, 0.13, ["u", "u"], [120, 95], 1, YOU, 0.4);
 }
 
+/** Landing flat on your front at the end of a dive: a body's thump, and the breath knocked out of you. */
+export function diveThud(hard: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.05);
+  step(hard, 0.45);
+  tone(d, t, 0.2, 0.8, 72, 32);
+  burst(d, t, 0.22, 0.55, hard ? 520 : 320, { type: "lowpass" });
+  kit(d, t + 0.02, 0.35);
+  say(out(0.3, 0, 0, 0.04), t + 0.03, 0.14, ["u", "u"], [130, 95], 1, YOU, 0.45);
+}
+
 // ---- voices ----------------------------------------------------------------------------------
 // Shouts and grunts are a buzz (the vocal cords) and a hiss (breath) shaped by three resonances
 // (formants) that glide from vowel to vowel, the way a mouth does.

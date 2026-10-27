@@ -45,7 +45,7 @@
 // tenth of a second, and you race a see-through rider of it; finishing with a best sends your run
 // round, so everyone else in the room races your ghost too, alongside the real riders.
 //
-// Backspace (Again on a touch screen, Triangle on a pad) puts just you back on the line with a quick 3-2-1 of your own
+// Backspace (Again on a touch screen, a tap of Square on a pad) puts just you back on the line with a quick 3-2-1 of your own
 // and your own clock: a time trial for you, while the room's race and its results stand. It works
 // for two minutes after a race is over too.
 //
@@ -336,7 +336,7 @@ registerJob({
   start: (o, w, started, by, local) => new Race(o, w, started, by, !!local),
 });
 
-/** What a prompt calls going again: Backspace, the pad's Triangle (it presses R, which race.ts takes
+/** What a prompt calls going again: Backspace, the pad's reload button (it presses R, which race.ts takes
  *  as Again when there's nothing to reload for), or the touch screen's Again button. */
 const againKey = () => (RS.touchUp() ? "Again" : padInUse() ? keyLabel("KeyR") : "Backspace");
 
@@ -550,7 +550,7 @@ class Race implements Job {
   private heads = new Map<string, { x: number; z: number; h: number }>();   // where each racer was and which way they're going, for the camera behind them
   private keys: ((e: KeyboardEvent) => void) | null = null;
   private lastMe: { x: number; z: number } | null = null;
-  /** A pad has no Backspace: its Triangle (which presses R, to reload) goes again instead, on a ride
+  /** A pad has no Backspace: its reload button (which presses R) goes again instead, on a ride
    *  or in a race once you're not racing flat out. */
   private padAgain = (e: KeyboardEvent) => {
     if (e.isTrusted || e.code !== "KeyR" || this.done || !this.w.me().alive) return;

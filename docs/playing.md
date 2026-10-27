@@ -173,9 +173,17 @@ still aim finely with small pushes. Once a pad's been seen, Settings (and the mi
 a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
 the stick's dead zone and rumble, all usable with the pad itself.
 
+The buttons are laid out as Call of Duty: Warzone's defaults, so they feel familiar. Square reloads
+on a tap and uses on a hold (about a third of a second); when there's something to use, get in or
+take right there (the prompt is up), a tap uses it instead. Circle crouches on a tap and lies you
+down on a hold, and either again stands you up.
+
 You can move any button to another in Settings, Controller, Buttons: pick a row, then press the new
 button. Whatever was on that button swaps to the one you left, and getting out of a car always keeps
-a button. While you play with the pad, the prompts show the pad's buttons instead of keys.
+a button. A button can carry one thing on a tap and another on a hold, as Square and Circle do.
+Reset to default (Warzone layout) puts them all back. Buttons you moved before the Warzone layout
+stay where you put them, and the rest take the new layout. While you play with the pad, the prompts
+show the pad's buttons instead of keys, and say "hold □" where a hold is needed.
 
 | Button | On foot | Driving |
 |---|---|---|
@@ -184,9 +192,9 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 | R2 | shoot (kick, bowl) | accelerate |
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
-| Square | use, get in or out (E) | get out |
-| Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
-| Triangle | reload | |
+| Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out |
+| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | driver's seat or chase camera |
+| Triangle | switch weapon | get out |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
 | R3, held | radio | radio |
@@ -198,8 +206,9 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
 A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Down the mines,
-R2 swings or shoots, L2 is the healing light, Square uses, L1 and R1 go through what you carry and
-the d-pad picks the first four. The browser still wants one click or key before it plays sound or
+R2 swings or shoots, L2 is the healing light, Square uses (hold it to pump, wind or pick a friend
+up), Circle crouches (mid-sprint, dives), Triangle, L1 and R1 go through what you carry and the
+d-pad picks the first four. The browser still wants one click or key before it plays sound or
 holds the mouse.
 
 **The debug panel** (F3, or Debug info in the pause menu on a phone or iPad) shows where you are
@@ -222,7 +231,7 @@ a square for what you've done there. Other players show as arrows in their colou
 minimap anyone out of range sits on the rim in their direction. Doors into the minigames are a
 white star in a cyan ring, and the cable car is a red and white line.
 
-**Markers**: click or tap a spot on the big map, or press G while looking at one, to put down your
+**Markers**: click or tap a spot on the big map, or press G (or the middle mouse button) while looking at one, to put down your
 marker in your colour. Everyone sees it on both maps, as a ring of light in the street and as a pin
 on the compass strip with how far away it is. Do it again to move it, tap it again to take it down,
 and it goes when you leave.
@@ -790,7 +799,10 @@ For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or 
 while playing. The browser remembers it, and it's only what you see.
 
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
-you're a baby doing tummy time on a play mat. F (Torch) switches your torch on, and everyone sees
+you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a
+low lunge two or three metres forward that lands you flat with a thud, and a moment to get your
+breath before you can get up or shoot. A wall stops the dive dead; you can't dive off a ride, in
+water or carrying something strange. Down the mines, crouching (C) mid-sprint dives. F (Torch) switches your torch on, and everyone sees
 the beam.
 
 ### Naughty boys

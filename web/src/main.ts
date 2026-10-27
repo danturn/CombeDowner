@@ -754,9 +754,9 @@ const pictureHooks = settingsPage({
   Telemetry.quality(() => [quality.chosenView, quality.deepest]);
 }
 
-// A game controller: what each button does here, mostly the key that does it (gamepad.ts). Each row
-// can be moved to another button in Settings; the rows "at the wheel" take over their button while
-// you drive.
+// A game controller: what each button does here, mostly the key that does it (gamepad.ts), laid out
+// as Warzone's defaults. Each row can be moved to another button in Settings; the rows "at the wheel"
+// take over their button while you drive.
 const pad = new GamepadControls(() => game && {
   playing: () => !!game?.active && $("pause").hidden,
   player: () => game!.player,
@@ -778,17 +778,25 @@ padActions([
   { id: "aim", name: "Aim", button: B.l2, keys: ["Mouse2"], foot: true,
     run: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } } },
   { id: "jump", name: "Jump, or the handbrake", button: B.cross, keys: ["Space"], run: hold("Space") },
-  { id: "use", name: "Use, get in or out", button: B.square, keys: ["KeyE"], live: true, run: hold("KeyE") },
-  { id: "reload", name: "Reload", button: B.triangle, keys: ["KeyR"], run: press("KeyR") },
-  { id: "crouch", name: "Crouch, then lie down", button: B.circle, keys: ["KeyC"], foot: true,
+  { id: "reload", name: "Reload", button: B.square, keys: ["KeyR"], foot: true, run: press("KeyR") },
+  { id: "use", name: "Use, get in or out", button: B.square, keys: ["KeyE"], live: true, hold: true,
+    now: () => !!game?.useOffered, run: hold("KeyE") },
+  { id: "crouch", name: "Crouch, or stand up", button: B.circle, keys: ["KeyC"], foot: true,
     run: (down) => {
       const p = game?.player;
-      if (!down || !p) return;
-      // crouch, then down on your front, then up again, as the touch Crouch button does
-      if (p.proneLatch) p.proneLatch = false;
-      else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
-      else p.crouchLatch = !p.crouchLatch;
+      if (!down || !p || p.diveBusy) return;
+      if (p.proneLatch || p.crouchLatch) p.proneLatch = p.crouchLatch = false;
+      else p.crouchLatch = true;
     } },
+  { id: "prone", name: "Lie down, or stand up", button: B.circle, keys: ["KeyZ"], foot: true, hold: true,
+    run: (down) => {
+      const p = game?.player;
+      if (!down || !p || p.diveBusy) return;
+      if (p.proneLatch) p.proneLatch = false;
+      else if (p.canProne) { if (!p.dive()) { p.crouchLatch = false; p.proneLatch = true; } }
+      else p.crouchLatch = true;
+    } },
+  { id: "swap", name: "Switch weapon", button: B.triangle, foot: true, run: (down) => { if (down) game?.cycleWeapon(1); } },
   { id: "prev", name: "Previous weapon (or a minibus)", button: B.l1, keys: ["Digit1", "Wheel"], foot: true, run: weapon(-1) },
   { id: "next", name: "Next weapon (or a double-decker)", button: B.r1, keys: ["Digit2", "Digit3", "KeyQ", "Wheel"], foot: true, run: weapon(1) },
   { id: "trick", name: "Sprint, or trick or grind on a ride", button: B.l3, keys: ["ShiftLeft"],
@@ -800,11 +808,12 @@ padActions([
   { id: "ride", name: "On or off a ride, put up a ladder", button: B.down, keys: ["KeyX"], run: press("KeyX") },
   { id: "bino", name: "Binoculars", button: B.left, keys: ["KeyB"], foot: true, run: press("KeyB") },
   { id: "mark", name: "Mark the spot", button: B.right, keys: ["KeyG"], foot: true, run: press("KeyG") },
+  { id: "out", name: "Get out", button: B.triangle, keys: ["KeyE"], wheel: true, run: press("KeyE") },
   { id: "horn", name: "Horn, siren or chimes", button: B.r1, keys: ["KeyH"], wheel: true, run: hold("KeyH") },
   { id: "view", name: "Inside or chase camera", button: B.circle, keys: ["KeyC"], wheel: true, run: (down) => { if (down) game?.toggleView(); } },
   { id: "left", name: "Indicate left", button: B.left, keys: ["ArrowLeft"], wheel: true, run: press("ArrowLeft") },
   { id: "right", name: "Indicate right", button: B.right, keys: ["ArrowRight"], wheel: true, run: press("ArrowRight") },
-], "cd-padbuttons", () => !!game?.driving);
+], "cd-padbuttons", () => !!game?.driving, { reload: B.triangle });
 padSettings();
 
 let last = performance.now();

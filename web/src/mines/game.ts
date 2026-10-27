@@ -194,6 +194,9 @@ export class MineGame {
       get lastBlock() { return self.level?.lastBlock ?? -1; },
     };
     this.player = new Player(ground);
+    // no lying down here: crouching mid-sprint dives, though not out of the water
+    this.player.diveOnCrouch = true;
+    this.player.noDive = () => { const q = this.player.pos, lv = this.level; return !!lv && !!lv.water(q.x, q.z) && q.y < lv.ground(q.x, q.z) + 0.3; };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
     this.mapCtx = ($("automap") as HTMLCanvasElement).getContext("2d")!;
     this.bigCtx = ($("bigmapcanvas") as HTMLCanvasElement).getContext("2d")!;
@@ -1265,6 +1268,7 @@ export class MineGame {
     this.player.crouchLatch = this.down;
     this.player.grip = lv.isIce(this.player.pos.x, this.player.pos.z) ? ICE_GRIP : 1;
     this.player.update(dt, playing);
+    if (this.player.diveLanded) SFX.diveThud(false);
     const pp = this.player.pos, floorY = lv.ground(pp.x, pp.z), roof = lv.roofAt(pp.x, pp.z);
     if (pp.y + this.player.eyeHeight + 0.15 > roof) {
       pp.y = Math.max(floorY, roof - this.player.eyeHeight - 0.15);
@@ -1289,7 +1293,7 @@ export class MineGame {
     // fighting: whatever's in your hands. Swing a melee weapon, draw and loose a bow, cast fire
     this.swingCd = Math.max(0, this.swingCd - dt);
     this.mana = Math.min(MANA, this.mana + MANA_REGEN * dt);
-    const canFight = playing && !this.down && (this.freeLook || !!document.pointerLockElement);
+    const canFight = playing && !this.down && !this.player.diveBusy && (this.freeLook || !!document.pointerLockElement);
     if (this.freeLook && playing) {
       if (this.mouseX < 0.06) this.player.yaw += dt * 2.2;
       else if (this.mouseX > 0.94) this.player.yaw -= dt * 2.2;
