@@ -85,7 +85,7 @@ export interface MapData {
 
 /** What each kind of wall, fence, hedge and railing is made of, how thick it is and its colour: world.ts
  *  draws them so, and the walls you hit are that thick. */
-export type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
+export type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron" | "steel";
 export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[] }> = {
   wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
   stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
@@ -93,6 +93,8 @@ export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[
   fence: { mat: "wood", t: 0.08, col: [0.55, 0.42, 0.3] },
   hedge: { mat: "leaf", t: 0.9, col: [0.42, 0.58, 0.3] }, hedge_low: { mat: "leaf", t: 0.7, col: [0.46, 0.62, 0.32] },
   railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
+  dry_stone: { mat: "stone", t: 0.6, col: [0.7, 0.68, 0.6] }, wire_fence: { mat: "iron", t: 0.05, col: [0.42, 0.44, 0.42] },
+  guard_rail: { mat: "steel", t: 0.1, col: [0.7, 0.72, 0.74] },
 };
 export const barrierLook = (c: string) => BARRIER_LOOK[c] ?? BARRIER_LOOK.wall;
 
@@ -127,6 +129,7 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   wall: 0.9, retaining_wall: 0.9, fence: 1.2, hedge: 1.3,
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
+  dry_stone: 1.2, wire_fence: 1.2, guard_rail: 0.75,                   // as OpenStreetMap names them
 };
 /** The full-detail squares round a map (built by tools/prep_tiles.py into public/maps/<id>/):
  *  each is cells x cells of the terrain grid that starts at (x0, y0), dx apart. */

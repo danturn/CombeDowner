@@ -1820,7 +1820,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // wall or hedge there doesn't hang above the grass with a gap under it
       const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.1 : Infinity); });
       const tops = [barrierTop(l, i, Z0), barrierTop(l, i + 1, Z0)];
-      const P = (k: number, top: boolean) => [c4[k][0], top ? tops[k === 0 || k === 3 ? 0 : 1] : foot[k], -c4[k][1]];
+      // a crash barrier is a steel beam held up off the verge, not a wall down to it
+      const lift = spec.mat === "steel" ? 0.32 : 0;
+      const P = (k: number, top: boolean) => {
+        const tp = tops[k === 0 || k === 3 ? 0 : 1];
+        return [c4[k][0], top ? tp : lift ? tp - lift : foot[k], -c4[k][1]];
+      };
       const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
@@ -1860,6 +1865,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
     wood: new THREE.MeshLambertMaterial({ map: TX.boards(), vertexColors: true, side: THREE.DoubleSide }),
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),
+    steel: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
   };
   for (const [k, geo] of barGeos) {
     const g = geo.build();
