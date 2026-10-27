@@ -38,7 +38,7 @@ import numpy as np
 import shapely
 from PIL import Image
 from shapely.geometry import shape, box, Point
-from shapely.ops import substring, transform, unary_union
+from shapely.ops import nearest_points, substring, transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
@@ -932,16 +932,37 @@ for k, r in enumerate(pending):
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0     # headroom under a bridge for a road, for a path; metres over which a road eases down to it
 
 
-def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
+def joined_near(j, x, y, skip):
+    """Road j and the roads that meet it within DIP of (x, y), at its level, and those that meet
+    them: a road beside it there that joins it nowhere near is not brought down with it."""
+    zone = shapely.Point(x, y).buffer(DIP)
+    near = {int(i): road_lines[int(i)].intersection(zone) for i in road_tree.query(zone) if int(i) not in skip}
+    near[j] = road_lines[j].intersection(zone)
+
+    def z_at(i, p):
+        run = pending[i]["run"]
+        return pending[i]["z"][min(range(len(run)), key=lambda m: math.dist(run[m][:2], (p.x, p.y)))]
+    seen, todo = {j}, [j]
+    while todo:
+        a = todo.pop()
+        for b, g in near.items():
+            if b in seen or g.is_empty or near[a].is_empty or near[a].distance(g) > 0.5: continue
+            pa, pb = nearest_points(near[a], g)
+            if abs(z_at(a, pa) - z_at(b, pb)) < 2.0: seen.add(b); todo.append(b)
+    return seen
+
+
+def ease_roads(x, y, head, skip, down=True, reach=None, own=None, only=None):
     """Bring every road's points within DIP of (x, y) down to head (or up, with down False),
     easing in and out, so roads meeting there stay joined; skip: road indexes left alone (the
     bridge itself), and any road's points on a span or a deck are left alone too (except road
     own's, the one being carried over the canal); a road that's a bridge somewhere else is still
-    brought down beside it, and its deck carried to its new approaches afterwards (carry_spans)."""
+    brought down beside it, and its deck carried to its new approaches afterwards (carry_spans).
+    With `only`, just those roads."""
     n = 0
     for j in road_tree.query(shapely.Point(x, y).buffer(reach or DIP)):
         j = int(j)
-        if j in skip: continue
+        if j in skip or (only is not None and j not in only): continue
         o = pending[j]
         for i, q in enumerate(o["run"]):
             if j != own and (i in o["span"] or i in o["deck"]): continue
@@ -1162,7 +1183,8 @@ for k, r in enumerate(pending):
             dips.append((j, x))
             head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5      # (a little to spare, the deck being sampled a point or two off the crossing)
             # the road under, and the roads joining it there, dip together
-            dipped += ease_roads(x.x, x.y, head, own_road(k, line))
+            skip = own_road(k, line)
+            dipped += ease_roads(x.x, x.y, head, skip, only=joined_near(j, x.x, x.y, skip))
 # 3b. and under the railway's bridges and viaducts (tools/railway.py marks them)
 for t, track in enumerate(rail_tracks):
     tp = track["p"]
@@ -1181,7 +1203,7 @@ for t, track in enumerate(rail_tracks):
                 if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 4 for i in o["span"] | o["deck"]): continue     # (a bridge itself right there)
                 kk = min(range(k, e + 1), key=lambda kk: math.dist(tp[kk][:2], (x.x, x.y)))
                 head = tp[kk][2] - 0.9 - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD)
-                dipped += ease_roads(x.x, x.y, head, set())
+                dipped += ease_roads(x.x, x.y, head, set(), only=joined_near(j, x.x, x.y, set()))
                 dips.append((j, x))
         k = e + 1
 if dipped: print(f"bridges: {dipped} road points dipped to pass under a bridge")

@@ -257,21 +257,29 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
     scene.add(apron);
     for (const [end, side, run] of [[left, -1, w.wings[0]], [right, 1, w.wings[1]]] as const) {
       if (run.length < 2) continue;
-      const pts = [new THREE.Vector2(0, -1), ...run.map(([o, h]) => new THREE.Vector2(o, h - z)), new THREE.Vector2(run[run.length - 1][0], -1)];
+      const top = run.map(([o, h]) => new THREE.Vector2(o, h - z));
+      const pts = [new THREE.Vector2(0, -1), ...top, new THREE.Vector2(run[run.length - 1][0], -1)];
       const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: WING_THICK, bevelEnabled: false });
+      // a coping along its top, a little proud of the wall each side, as the headwall has
+      const cap = new THREE.ExtrudeGeometry(new THREE.Shape([...top.map((q) => new THREE.Vector2(q.x, q.y + COPING)), ...[...top].reverse()]),
+        { depth: WING_THICK + 0.3, bevelEnabled: false }).translate(0, 0, -0.15);
       // local x out of the tunnel along the cutting, y up, z across to the tunnel's left
       const ox = -dx, oy = -dy, s0 = side < 0 ? end - WING_THICK : end;
-      geo.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(ox, 0, -oy), new THREE.Vector3(0, 1, 0), new THREE.Vector3(nx, 0, -ny))
-        .setPosition(cx + nx * s0, z - Z0, -(cy + ny * s0)));
-      const wing = new THREE.Mesh(geo, wingMat);
-      wing.castShadow = wing.receiveShadow = true;
-      scene.add(wing);
+      const place = new THREE.Matrix4().makeBasis(new THREE.Vector3(ox, 0, -oy), new THREE.Vector3(0, 1, 0), new THREE.Vector3(nx, 0, -ny))
+        .setPosition(cx + nx * s0, z - Z0, -(cy + ny * s0));
+      for (const g of [geo, cap]) {
+        g.applyMatrix4(place);
+        const wing = new THREE.Mesh(g, wingMat);
+        wing.castShadow = wing.receiveShadow = true;
+        scene.add(wing);
+      }
     }
   }
 }
 
 const WING = 12;         // metres out along the cutting a wing wall may run
 const WING_THICK = 0.6;
+const COPING = 0.3;
 const HIGH = 1.0;        // metres over the floor the hill beside the cutting must stand to want a wall
 
 interface Headwall {
@@ -304,14 +312,16 @@ function walls(map: GameMap): Headwall[] {
     let top = Math.max(...g.map((m) => m.z)) - z + TUNNEL.crown + 1.2;
     for (let s = left; s <= right; s += 1) for (const d of [0, FACE_DEPTH]) top = Math.max(top, ground(cx + nx * s + dx * d, cy + ny * s + dy * d) - z + 0.4);
     top = Math.min(top, 16);
+    // The wall's top runs in straight slopes over the bank it holds, never below it: the survey's
+    // every metre gave a lumpy top, a step for each bump in the bank.
     const wing = (s: number, side: number) => {
       const run: number[][] = [];
       for (let k = 0; k <= WING; k++) {
         const x = cx + nx * (s + side * 1.5) - dx * k, y = cy + ny * (s + side * 1.5) - dy * k, h = ground(x, y) - z;
-        if (h < HIGH) { if (run.length) run.push([k, z + HIGH * 0.5]); break; }
-        run.push([k, z + Math.min(top, Math.max(HIGH, h + 0.3))]);
+        if (h < HIGH) { if (run.length) run.push([k, HIGH * 0.5]); break; }
+        run.push([k, Math.min(top, Math.max(HIGH, h + 0.3))]);
       }
-      return run;
+      return upperHull(run).map(([k, h]) => [k, z + h]);
     };
     const wings: [number[][], number[][]] = [wing(left, -1), wing(right, 1)];
     const reach = Math.max(2, ...wings.map((w) => (w.length ? w[w.length - 1][0] : 0)));
@@ -325,4 +335,17 @@ function walls(map: GameMap): Headwall[] {
  *  Each is [face's middle x, y, way in x, y, left, right, how far out, floor], data coords. */
 export function cuttings(map: GameMap): number[][] {
   return walls(map).map((w) => [w.cx, w.cy, w.dx, w.dy, w.left, w.right, w.reach, w.z]);
+}
+
+/** The upper hull of points in order along x: straight runs over them, never below one. */
+function upperHull(pts: number[][]): number[][] {
+  const out: number[][] = [];
+  for (const p of pts) {
+    while (out.length >= 2) {
+      const a = out[out.length - 2], b = out[out.length - 1];
+      if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0) out.pop(); else break;
+    }
+    out.push(p);
+  }
+  return out;
 }

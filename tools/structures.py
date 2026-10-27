@@ -20,7 +20,7 @@ import math
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point
-from shapely.ops import substring
+from shapely.ops import nearest_points, substring
 from shapely.strtree import STRtree
 
 import tunnels as TN
@@ -667,17 +667,39 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                     for i2 in st:
                         r["span"].discard(i2)
 
-    def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
+    def joined_near(j, x, y, skip):
+        """Road j and the roads that meet it within DIP of (x, y), at its level, and those that meet
+        them: a road beside it there that joins it nowhere near is not brought down with it."""
+        zone = Point(x, y).buffer(DIP)
+        near = {int(i): road_lines[int(i)].intersection(zone) for i in road_tree.query(zone) if int(i) not in skip}
+        near[j] = road_lines[j].intersection(zone)
+
+        def z_at(i, p):
+            run = pending[i]["run"]
+            return pending[i]["z"][min(range(len(run)), key=lambda m: math.dist(run[m][:2], (p.x, p.y)))]
+        seen, todo = {j}, [j]
+        while todo:
+            a = todo.pop()
+            for b, g in near.items():
+                if b in seen or g.is_empty or near[a].is_empty or near[a].distance(g) > 0.5:
+                    continue
+                pa, pb = nearest_points(near[a], g)
+                if abs(z_at(a, pa) - z_at(b, pb)) < 2.0:
+                    seen.add(b)
+                    todo.append(b)
+        return seen
+
+    def ease_roads(x, y, head, skip, down=True, reach=None, own=None, only=None):
         """Bring every road's points within DIP of (x, y) down to head (or up, with down False),
         easing in and out, so roads meeting there stay joined; skip: road indexes left alone (the
         bridge itself), and any road's points on a span or a deck are left alone too (except road
         own's, the one being carried over the canal), as is the towpath; a road that is a bridge
         somewhere else is still brought down beside it, and its deck carried to its new approaches
-        afterwards (carry_spans)."""
+        afterwards (carry_spans). With `only`, just those roads."""
         n = 0
         for j in road_tree.query(Point(x, y).buffer(reach or DIP)):
             j = int(j)
-            if j in skip:
+            if j in skip or (only is not None and j not in only):
                 continue
             o = pending[j]
             for i, q in enumerate(o["run"]):
@@ -935,7 +957,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                     continue
                 dips.append((j, x))
                 head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5
-                dipped += ease_roads(x.x, x.y, head, own_road(k, line))
+                skip = own_road(k, line)
+                dipped += ease_roads(x.x, x.y, head, skip, only=joined_near(j, x.x, x.y, skip))
     # 3b. and under the railway's bridges and viaducts
     for track in rail_tracks:
         tp = track["p"]
@@ -962,7 +985,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                         continue
                     kk = min(range(k, e + 1), key=lambda kk: math.dist(tp[kk][:2], (x.x, x.y)))
                     head = tp[kk][2] - 0.9 - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD)
-                    dipped += ease_roads(x.x, x.y, head, set())
+                    dipped += ease_roads(x.x, x.y, head, set(), only=joined_near(j, x.x, x.y, set()))
                     dips.append((j, x))
             k = e + 1
     if dipped:

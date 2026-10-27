@@ -1765,7 +1765,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
     k = np.clip((flat_w - flat_f) / ease, 0, 1)
     k = k * k * (3 - 2 * k)
     k[np.isinf(flat_w)] = 1
-    grid = flat_z * (1 - k) + grid * k
+    grid = _unspiked(flat_z * (1 - k) + grid * k)
     keep = np.zeros(grid.shape, dtype=bool)
     keep[0, :] = keep[-1, :] = keep[:, 0] = keep[:, -1] = True
     for g in houses:
@@ -1781,6 +1781,24 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
         a, b = ground_at(before, x, y, split), ground_at(T, x, y, split)
         return 0.0 if a is None or b is None else b - a
     return change
+
+
+SPIKE = 2.0   # metres a grid point may stand over all eight of its neighbours
+
+
+def _unspiked(grid, rounds=2):
+    """A point of the survey left standing between ways laid well below it on every side (a slip
+    road and the cutting beside it) stood up as a spike of grass: it comes down to its highest
+    neighbour. Natural ground at the grid's spacing never stands that far over all round it."""
+    for _ in range(rounds):
+        p = np.pad(grid, 1, mode="edge")
+        n, m = grid.shape
+        top = np.max([p[1 + a:1 + a + n, 1 + b:1 + b + m] for a in (-1, 0, 1) for b in (-1, 0, 1) if a or b], axis=0)
+        high = grid > top + SPIKE
+        if not high.any():
+            break
+        grid = np.where(high, top, grid)
+    return grid
 
 
 def settle_on_laid_ground(rd, change, ground, reach=3):
@@ -2143,6 +2161,39 @@ def under_a_deck(gaps, x, y, foot, room=0.3):
         if outline.contains(pt) and foot < float(np.interp(line.project(pt), cum, under)) - room:
             return True
     return False
+
+
+PORTAL_CLEAR = (2.0, 13.0, 1.0)   # metres behind a headwall's face, out in front of it and past its wing walls kept clear of trees
+
+
+def clear_portals(tile, gone):
+    """No tree or shrub stands on a tunnel's headwall or its wing walls, nor hangs over them: from a
+    little behind the face, over the hill above the arch, out along the cutting as far as a wing wall
+    may run (web/src/tunnels.ts WING), with its canopy's reach. An end cut at the square's edge, deep
+    under the hill, is no portal."""
+    b = tile.get("b")
+    zones = collections.defaultdict(list)
+    for a, (fx, fy), dx, dy, g in portal_faces(tile.get("tn")):
+        if b and min(abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[0] - b[2]), abs(a[1] - b[3])) < 0.5:
+            continue
+        zones[g].append((fx, fy, dx, dy))
+    behind, front, past = PORTAL_CLEAR
+    polys = []
+    for g in zones.values():
+        fx, fy, dx, dy = g[0]
+        at = [(x - fx) * -dy + (y - fy) * dx for x, y, _, _ in g]
+        lo, hi = min(at) - PORTAL_HALF - past, max(at) + PORTAL_HALF + past
+        corner = lambda s, o: (fx - dy * s + dx * o, fy + dx * s + dy * o)
+        polys.append(Polygon([corner(lo, behind), corner(hi, behind), corner(hi, -front), corner(lo, -front)]))
+    if not polys:
+        return
+    zone = unary_union(polys)
+    for key, reach in (("tr", 1.5), ("sb", 0.6)):
+        rows = tile.get(key) or []
+        kept = [q for q in rows if zone.distance(Point(q[0], q[1])) >= q[3] * reach]
+        if len(kept) < len(rows):
+            gone[key] = gone.get(key, 0) + len(rows) - len(kept)
+            tile[key] = kept
 
 
 def clear_under_decks(tile, gaps, gone):
@@ -2714,27 +2765,66 @@ def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
     """Each tunnel portal's headwall as (the line across its face, the portal, the way in, the streets
     that run into it there). In front of the face is the cutting, the street's; behind it is the hill
     over the bore, whatever runs on top of it."""
+    faces, shared = portal_faces(tunnels), collections.defaultdict(set)
+    owners = []
+    for a, _, _, _, g in faces:
+        P = Point(a[0], a[1])
+        own = set()
+        for k, l in enumerate(lines):
+            if l.distance(P) > reach:
+                continue
+            c = heights[k].interpolate(l.project(P))
+            if c.has_z and abs(c.z - a[2]) < rise:
+                own.add(k)
+        owners.append(own)
+        # (the roads into bores side by side are each the cutting's, in front of the one headwall)
+        shared[g] |= own
     out = []
+    for (_, (fx, fy), dx, dy, g), own in zip(faces, owners):
+        if not own:
+            continue
+        face = LineString([(fx + dy * PORTAL_HALF, fy - dx * PORTAL_HALF),
+                           (fx - dy * PORTAL_HALF, fy + dx * PORTAL_HALF)])
+        out.append((face, (fx, fy), (dx, dy), shared[g]))
+    return out
+
+
+def portal_faces(tunnels):
+    """Each tunnel's ends as (the end, where its headwall's face is, the way in, its headwall). Bores coming out
+    side by side share one headwall, square to them, at the outermost one's mouth: the game carries
+    each bore that stops short on to it (web/src/tunnels.ts alignPortals), and a face left where
+    the data's bore stopped had the median kerb between them climbing the wall."""
+    ends = []
     for t in tunnels or []:
         p = t.get("p") or []
         if len(p) < 2:
             continue
         for a, b in ((p[0], p[1]), (p[-1], p[-2])):
             n = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
-            dx, dy = (b[0] - a[0]) / n, (b[1] - a[1]) / n
-            P = Point(a[0], a[1])
-            own = set()
-            for k, l in enumerate(lines):
-                if l.distance(P) > reach:
-                    continue
-                c = heights[k].interpolate(l.project(P))
-                if c.has_z and abs(c.z - a[2]) < rise:
-                    own.add(k)
-            if not own:
+            ends.append((id(t), a, (b[0] - a[0]) / n, (b[1] - a[1]) / n))
+    group = list(range(len(ends)))
+
+    def root(i):
+        while group[i] != i:
+            i = group[i]
+        return i
+    for i, (ti, a, dx, dy) in enumerate(ends):
+        for j in range(i + 1, len(ends)):
+            tj, b, ex, ey = ends[j]
+            if ti == tj or dx * ex + dy * ey < 0.9:
                 continue
-            face = LineString([(a[0] + dy * PORTAL_HALF, a[1] - dx * PORTAL_HALF),
-                               (a[0] - dy * PORTAL_HALF, a[1] + dx * PORTAL_HALF)])
-            out.append((face, (a[0], a[1]), (dx, dy), own))
+            ox, oy = b[0] - a[0], b[1] - a[1]
+            if math.hypot(ox, oy) < 2 * PORTAL_HALF + 4 and abs(ox * dx + oy * dy) < 8:
+                group[root(j)] = root(i)
+    out = []
+    for i, (_, a, dx, dy) in enumerate(ends):
+        mates = [ends[j] for j in range(len(ends)) if root(j) == root(i)]
+        mx, my = sum(m[2] for m in mates), sum(m[3] for m in mates)
+        n = math.hypot(mx, my) or 1.0
+        mx, my = mx / n, my / n
+        line = min(m[1][0] * mx + m[1][1] * my for m in mates)
+        by = (a[0] * mx + a[1] * my - line) / max(0.5, dx * mx + dy * my)
+        out.append((a, (a[0] - dx * by, a[1] - dy * by), dx, dy, root(i)))
     return out
 
 
@@ -2832,9 +2922,13 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         reached = [k for k in reached if not in_air(k, p)] or reached
         if planes:
             # (behind a portal's face, beside the bore, a road going in has no say: it is the hill's)
-            reached = [k for k in reached if _portal_owner(planes, k, x, y)]
+            allowed = [k for _, k in near if _portal_owner(planes, k, x, y)]
+            reached = [k for k in reached if k in allowed]
             if not reached:
-                return None
+                # (a corner on the face's line just past a lane's reach over the portal is still the
+                # lane's, not the cutting's floor dug under it; and in front of the face, between
+                # the bores, it is the road's going in, not the grid's slope up the wall)
+                return allowed[0] if allowed else None
         if beside_cut is not None and beside_cut.contains(p):
             # (the cut between two streets at different levels runs where they are equally far)
             return reached[0]
@@ -2938,6 +3032,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (PAVE_DRAWN,)) + 0.3, cap_style="flat")
                 for l, r in zip(lines, streets) if r["c"] in KERBED and any(r.get("pv") or (1,))]
         bare = unary_union([l.buffer(r["w"] / 2 + VERGE_REACH, cap_style="flat") for l, r in verged])
+        # (from the edge of its carriageway as laid, which the survey's kerbs can make wider than
+        # its record: measured from the record's width, strips of the pavement were left as paving)
+        bare = bare.union(_minus(road.intersection(bare), unary_union(kept or [Polygon()])).buffer(VERGE_REACH))
         bare = _minus(bare, unary_union(kept or [Polygon()]))
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
         pave, plaza = _minus(pave, bare), _minus(plaza, bare)
@@ -4886,6 +4983,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                         dv=dv, carriageway=drawn_carriageway(tile["sf"]), paving=paving,
                         stand=face_heights(tile["sf"]))
     clear_under_decks(tile, gaps, gone)
+    clear_portals(tile, gone)
     # placed after the clash pass, which would take a car for a thing standing in the road
     no_parking = unary_union([g for g in (blocked_ground([], tile, rail_tracks, canal, sq),) if g is not None]
                              + [g[0] for g in gaps])
