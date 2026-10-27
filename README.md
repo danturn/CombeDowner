@@ -56,7 +56,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
   point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
   something at each stop for a minute, so waiting for him at the right one catches him without a
-  chase, for a bonus. A Gaffer who got away is a Wanted poster too.
+  chase, for a bonus. A Gaffer who got away is a Wanted poster too. It opens with the poster as a big
+  splash (his features as pictures, his round of stops, the clock and how to catch him), and J (hold
+  the pad's touchpad, or Poster on a touch screen) brings it back, ticking off what the witnesses
+  have said. The search circle is a band and wall of red light in the streets, clues stand under red
+  beams with a "?", every shrink is called out with its new size, a card by the crosshair ticks off
+  which of his features the man you're looking at has, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord

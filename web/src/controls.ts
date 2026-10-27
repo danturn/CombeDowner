@@ -93,6 +93,7 @@ export const STREETS: Control[] = [
   { id: "torch", name: "Torch", keys: ["KeyF"], pad: B.up, touch: "Torch" },
   { id: "ride", name: "On or off a ride, put up a ladder", keys: ["KeyX"], pad: B.down, touch: "Ride" },
   { id: "bino", name: "Binoculars", keys: ["KeyB"], pad: B.left, touch: "Bino", where: "foot" },
+  { id: "job", name: "See the job's poster again", keys: ["KeyJ"], pad: B.touchpad, hold: true, touch: "Poster" },
   { id: "mark", name: "Mark the spot", keys: ["KeyG"], mouse: 1, pad: B.right, where: "foot" },
   { id: "pause", name: "Pause", keys: ["Escape"], pad: B.options, touch: "II" },
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },

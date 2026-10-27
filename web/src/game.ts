@@ -77,7 +77,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { padInUse, padText, rumble } from "./gamepad";
-import { B as PAD, control, ctl, ctlText, input, isKey, strip, stripOf } from "./controls";
+import { B as PAD, control, ctl, ctlText, input, isKey, placeNow, strip, stripOf } from "./controls";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -966,6 +966,8 @@ export class Game {
       if (isKey(e.code, "ride") && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (isKey(e.code, "torch") && !e.repeat && this.active) this.toggleTorch();
+      // the back seat's radio has J (and the pad's button) to itself
+      if (isKey(e.code, "job") && !e.repeat && this.active && placeNow() !== "back") this.quests.recall();
       if (isKey(e.code, "map") && !e.repeat) this.toggleMap();
       if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {

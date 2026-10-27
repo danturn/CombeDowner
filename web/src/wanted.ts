@@ -6,9 +6,11 @@
 // one or two of the others; a third, which a witness will give you, tells him apart. One witness in
 // three is wrong, and says so if you press them (E again).
 //
-// A search circle 300 m across goes on the map with him somewhere inside. Inside it are clues: a
-// witness to talk to, or a leaflet he's dropped. Find one (E) and the circle shrinks and closes in on
-// him, for everyone. Knocking out one of his lookouts counts as a clue too (a quirk: two lookouts,
+// A search circle 600 m across goes on the map with him somewhere inside, and stands out in the
+// streets as a band of red light with a low wall of it fading upwards. Inside it are clues: a witness
+// to talk to, or a leaflet he's dropped, each under a tall red beam with a "?" over it (and on the
+// compass once you're near). Find one (E) and the circle shrinks and closes in on him, for everyone,
+// with a call-out saying how small it is now and who found what. Knocking out one of his lookouts counts as a clue too (a quirk: two lookouts,
 // and one more for every three in the room, up to four). Then it's down to looking: through
 // binoculars (B) from a roof or a hill you can see them all from 420 m, and the one who spots can call
 // out who has what to a friend on the ground. Point at the man you think it is (E). Right, and
@@ -41,6 +43,12 @@
 // A Gaffer who got away from a pub takeover (invasion.ts) is a poster too, under his own name and
 // with his pub on it: he's mode 1 (on foot), 2 (a scooter: slippery) or 3 (his van: a bus pass).
 //
+// It opens with a big splash (wantedscreens.ts): the poster with his features as pictures, his round
+// of stops, the clock, and how to catch him. The job control (or the big map) brings the poster back,
+// and it keeps up: a witness's word goes on it, ticked once they swear to it, crossed once they back
+// down. Look at one of the men dressed like him (up close, or through binoculars) and a card beside
+// the crosshair ticks off which of the known features he has. The end is a results card.
+//
 // Each bounty is short: six to eight minutes. Run out of time and he slips the net, but once only:
 // the circle opens up again, wider, round his next stop, with a couple more minutes on the clock.
 //
@@ -50,12 +58,18 @@
 // circle, and sends all of that round every second ("at", with who the lookalikes are, who has given
 // up and the seconds lost). Finding a clue ("clue"), pressing a witness ("push"), pointing him out
 // ("id") and cuffing a man ("cuff") are asked of the host, who says what came of it ("found", "words",
-// "spot", "nope", "led", "wrong"). The host says when someone gives up ("give", "gv"), slips off
+// "spot", "nope", "led", "wrong"). "found" and "words" carry the clue's number (and "found" what kind
+// it was and the circle's new size) so every poster can show what each witness said; an older page
+// leaves them out, and the poster just goes without. The host says when someone gives up ("give", "gv"), slips off
 // ("slip"), is handed in ("in"), is put down ("down"), gets away for now ("again"), gets out of sight
 // ("lost") or for good ("away").
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { FEAT_ARITY, MOUNTS, NAUGHTY, CRICKET, RUGBY, SOCIETY, look, withFeats } from "./naughtyboys";
+import { FEAT_ARITY, MOUNTS, NAUGHTY, CRICKET, RUGBY, SOCIETY, featsOf, look, withFeats } from "./naughtyboys";
+import { summary } from "./racescreens";
+import { SearchRing } from "./searchring";
+import { callout } from "./trailscreens";
+import { type Known, FEAT_SHORT, miniIcon, suspectTag, wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { type Grade } from "./trophies";
@@ -155,6 +169,13 @@ const LOSE = 35;            // lead him from further than this and he slips off
 const HANDED_IN = 6;        // close enough to the police to hand him in
 const CORNERED = 10;        // slippery: someone this close and he can't bolt
 const VANISH = 320;         // nobody this close to him and he's off out of sight, to turn up at his next stop
+const CLUE_MARKED = 150;    // a clue goes on your compass this near
+const POSTER_UP = 14;       // seconds the poster stays up when it's asked for
+/** How many clues it takes to bring the circle down as small as it goes. */
+const CLUES = (() => { let r = CIRCLE, n = 0; while (r > SMALLEST) { r = Math.max(SMALLEST, r * SHRINK); n++; } return n; })();
+const across = (r: number) => `${Math.round((r * 2) / 10) * 10} m`;
+const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
+const paperUp = () => { const b = document.getElementById("scoreboard"); return !!b && !b.hidden; };
 const COLOUR = "#e04848";
 const POLICE = "#2f5fb8";
 
@@ -250,7 +271,7 @@ let kit: Record<string, THREE.BufferGeometry | THREE.Material> | null = null;
 /** Shared by every clue and police box: made once, never thrown away. */
 function parts() {
   return kit ??= {
-    beam: new THREE.CylinderGeometry(0.3, 0.3, 6, 10, 1, true).translate(0, 3, 0),
+    beam: new THREE.CylinderGeometry(0.45, 0.45, 26, 10, 1, true).translate(0, 13, 0),
     glow: new THREE.MeshBasicMaterial({ color: COLOUR, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
     sheet: new THREE.PlaneGeometry(0.3, 0.42).rotateX(-Math.PI / 2),
     paper: lambert("#f4f1e6"),
@@ -264,7 +285,20 @@ function parts() {
     blue: lambert(POLICE),
     lamp: new THREE.SphereGeometry(0.13, 10, 8).translate(0, 2.55, 0),
     light: new THREE.MeshBasicMaterial({ color: "#fff6c0", toneMapped: false }),
+    ask: new THREE.SpriteMaterial({ map: askTexture(), sizeAttenuation: false, depthWrite: false, toneMapped: false, fog: false }),
   };
+}
+/** A "?" in a red disc, for over a clue. */
+function askTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  g.fillStyle = COLOUR; g.beginPath(); g.arc(32, 32, 29, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 4; g.strokeStyle = "#fff"; g.stroke();
+  g.fillStyle = "#fff"; g.font = "bold 44px Georgia, serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("?", 32, 35);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 const mesh = (g: string, m: string, rotY = 0) => {
   const p = parts(), o = new THREE.Mesh(p[g] as THREE.BufferGeometry, p[m] as THREE.Material);
@@ -277,7 +311,10 @@ function clueModel(t: number) {
   beam.name = "beam";
   if (t === 0) { const b = mesh("band", "red"); b.position.set(0, 0.035, -0.16); const s = mesh("sheet", "paper"); s.position.y = 0.03; g.add(s, b); }
   else g.add(mesh("coat", "mac"), mesh("head", "skin"));
-  g.add(beam);
+  const ask = new THREE.Sprite(parts().ask as THREE.SpriteMaterial);
+  ask.scale.set(0.05, 0.05, 1);
+  ask.position.y = 7;
+  g.add(beam, ask);
   return g;
 }
 /** The police waiting for him: a blue police box with its lamp on. */
@@ -336,12 +373,24 @@ class Wanted implements Job {
   private clean = true;                // host: he's never had to run for it, so catching him is an ambush
   private crewT = 0; private actT = DWELL_EVERY; private gave = new Set<number>();
   private sendT = 0; private markT = 0; private beamT = 0;
+  // what the screens need, on every player
+  private sus: ReturnType<typeof suspects>;
+  private claims = new Map<number, { v: number; how: "said" | "sworn" | "doubt" }>();   // what each witness said of the third feature
+  private ring3d: SearchRing;
+  private splashed = false; private splashWait = 0;
+  private posterT = 0;
+  private crewTold = false;                                         // the call-out that he's among lookalikes
+  private clueMarks = new Set<number>();
+  private areaT = 0; private areaMarked = false;
+  private tally = new Map<string, { clues: number; spot: boolean; wrong: number; took: string }>();
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
     this.d = details(offer, w);
     this.limit = (5 + offer.stars) * 60;
     const h = this.d.haunts[0];
     this.zone = { x: h.cx, z: h.cz, r: CIRCLE };
+    this.sus = suspects(offer.seed, LOOKALIKES);
+    this.ring3d = new SearchRing(w.scene, w.map, COLOUR);
     this.circle();
   }
 
@@ -351,8 +400,9 @@ class Wanted implements Job {
 
   /** The search circle, while nobody's eyes are on him and he's not on the run. */
   private circle() {
-    this.w.circle("wanted", this.spotted || this.gaveUp || this.running ? null : { ...this.zone, colour: COLOUR });
+    this.w.circle("wanted", this.searching ? { ...this.zone, colour: COLOUR, pulse: true } : null);
   }
+  private get searching() { return !this.spotted && !this.gaveUp && !this.running; }
 
   // ---- everyone -------------------------------------------------------------------------------
 
@@ -388,8 +438,9 @@ class Wanted implements Job {
       }
     }
     for (const [n, v] of this.views) if (!keep.has(n)) { this.w.scene.remove(v.view); this.views.delete(n); }
+    this.screens(dt);
     if (this.views.size && (this.beamT += dt) > 0.1) {
-      (parts().glow as THREE.MeshBasicMaterial).opacity = 0.22 + 0.12 * Math.sin(performance.now() / 260);
+      (parts().glow as THREE.MeshBasicMaterial).opacity = 0.4 + 0.15 * Math.sin(performance.now() / 260);
       this.beamT = 0;
     }
     if (this.led && !this.police && this.w.map.detailedAt(this.led.x, this.led.z)) {
@@ -397,6 +448,177 @@ class Wanted implements Job {
       this.police.position.set(this.led.x, this.w.map.ground(this.led.x, this.led.z), this.led.z);
       this.w.scene.add(this.police);
     } else if (!this.led && this.police) { this.w.scene.remove(this.police); this.police = null; }
+  }
+
+  // ---- the screens --------------------------------------------------------------------------
+
+  /** The splash, the poster, the card beside the crosshair, the circle in the streets and the clues on the compass. */
+  private screens(dt: number) {
+    const me = this.w.me();
+    // the Chronicle (up for a while when you join, or on Tab) would sit on top of it: it waits its turn
+    if (!this.splashed && (!paperUp() || (this.splashWait += dt) > 25)) { this.splashed = true; this.showSplash(); }
+    if (this.posterT > 0) this.posterT -= dt;
+    wantedPoster(this.posterT > 0 && me.alive ? { ...this.posterInfo(), foot: this.posterFoot() } : null);
+    this.ring3d.update(this.searching ? this.zone : null, me, dt);
+    this.tag();
+    // the clues near you on the compass and the map
+    const near = new Set<number>();
+    if (this.searching) for (const c of this.clues) if (c.q < 2 && Math.hypot(c.x - me.x, c.z - me.z) < CLUE_MARKED) near.add(c.n);
+    for (const n of this.clueMarks) if (!near.has(n)) { this.w.mark(`@wclue${n}`, null); this.clueMarks.delete(n); }
+    for (const n of near) if (!this.clueMarks.has(n)) {
+      const c = this.clues.find((q) => q.n === n)!, v = this.views.get(n) ?? c;
+      this.w.mark(`@wclue${n}`, { x: v.x, z: v.z }, c.t ? "Witness" : "Leaflet", COLOUR);
+      this.clueMarks.add(n);
+    }
+    // outside the circle, the way to it
+    if ((this.areaT -= dt) <= 0) {
+      this.areaT = 1;
+      const out = this.searching && Math.hypot(me.x - this.zone.x, me.z - this.zone.z) > this.zone.r + 15;
+      if (out) { this.w.mark("@wanted-area", { x: this.zone.x, z: this.zone.z }, `Search area (${across(this.zone.r)} across)`, COLOUR); this.areaMarked = true; }
+      else if (this.areaMarked) { this.w.mark("@wanted-area", null); this.areaMarked = false; }
+    }
+    // the first sight of him among the men dressed like him
+    if (!this.crewTold && this.ring && !this.spotted) {
+      const b = this.w.naughtyBoys.at(this.ring.i);
+      if (this.aim || (b?.alive && Math.hypot(b.x - me.x, b.z - me.z) < 70)) {
+        this.crewTold = true;
+        callout(`${this.dressed().length} men dressed alike`, `He's one of them. Look at each (binoculars: <b>{bino}</b>): only he has every feature on the poster`, 5, COLOUR);
+      }
+    }
+  }
+
+  /** How many men dress like him, besides him: more the more of you there are. */
+  private lookalikes() { return LOOKALIKES - 1 + Math.min(4, Math.floor(this.w.players().length / 2)); }
+
+  /** The men here dressed like him (him included), as drawn. */
+  private dressed() {
+    const ch = this.w.naughtyBoys;
+    return [...(this.ring ? [this.ring] : []), ...this.crew].filter((c) => {
+      const b = ch.at(c.i);
+      return b?.alive && b.gen === c.gen && featsOf(b.look).some(Boolean);
+    });
+  }
+
+  /** His features as known now: the poster's two, and the third as the witnesses have it. */
+  private known(): Known[] {
+    const s = this.sus, out: Known[] = [{ f: s.pa, v: s.him[s.pa], how: "poster" }, { f: s.pb, v: s.him[s.pb], how: "poster" }];
+    const said = [...this.claims.values()];
+    const best = said.find((c) => c.how === "sworn") ?? said.filter((c) => c.how === "said").pop() ?? said.find((c) => c.how === "doubt");
+    out.push(best ? { f: s.wa, v: best.v, how: best.how } : { f: s.wa, v: 0, how: "none" });
+    return out;
+  }
+
+  private posterInfo() {
+    const n = this.lookalikes();
+    return {
+      title: this.d.title,
+      known: this.known(),
+      stops: this.d.haunts.map((h, k) => ({ label: h.label, kind: (h.bus ? "bus" : h.label.includes("pub") ? "pub" : "park") as "pub" | "park" | "bus", now: k === this.h % this.d.haunts.length })),
+      notes: [
+        `Runs with ${esc(this.d.crew.who)}, and <b>${n} of them dress like him</b>, each with some of his features. Only he has all three.`,
+        ...this.d.quirks.map((q) => `<b>${QUIRK[q].split(":")[0]}:</b>${QUIRK[q].split(":")[1]}`),
+        this.found ? `<b>${HIDDEN[this.d.hidden].split(":")[0]}:</b>${HIDDEN[this.d.hidden].split(":")[1]}` : "<b>And one more thing</b> nobody's sure of: find a clue.",
+      ],
+    };
+  }
+
+  private posterFoot() {
+    const left = Math.max(0, this.left);
+    return `<b>${clock(left)}</b> left · clues ${Math.min(this.found, CLUES)}/${CLUES} · circle ${across(this.zone.r)} across`;
+  }
+
+  /** The big card as the bounty starts. */
+  private showSplash() {
+    wantedSplash({
+      ...this.posterInfo(),
+      clock: `${clock(this.limit)} on the clock · ${"★".repeat(this.offer.stars)}`,
+      rules: [
+        `<b>Search the red circle.</b> Clues are inside it under red beams: a witness, a leaflet he dropped${this.has("lookouts") ? ", or knock out a lookout" : ""}. Each clue (<b>{use}</b>) shrinks the circle onto him.`,
+        `<b>Spot the right man.</b> Look at each lookalike (binoculars: <b>{bino}</b>) to tick off his features. A witness gives the third, but one in three is wrong: <b>{use}</b> again to press them. Then <b>{use}</b> That's him!`,
+        `<b>Catch him.</b> Put him down for the bounty, or wear him down up close till his hands go up and cuff him (<b>{use}</b>) for more. Catch him at a stop with no chase for an ambush bonus.`,
+      ],
+      again: `<b>{job}</b>: this poster again, any time`,
+    });
+  }
+
+  /** The job control: the poster again, or away again. */
+  recall() {
+    if (this.done) return false;
+    this.posterT = this.posterT > 0 ? 0 : POSTER_UP;
+    if (this.posterT > 0) wantedSplash(null);
+    return true;
+  }
+
+  /** The card beside the crosshair: the man you're looking at, against what's known of him. */
+  private tag() {
+    const a = this.aim, b = a ? this.w.naughtyBoys.at(a.i) : null;
+    if (!a || !b || this.spotted || !this.w.me().alive) { suspectTag(null); return; }
+    const his = featsOf(b.look), known = this.known(), rows: { f: number; v: number; ok: boolean | null }[] = [];
+    let miss = -1, doubt = false;
+    for (const k of known) {
+      if (k.how === "none") continue;
+      const has = his[k.f] === k.v;
+      const ok = k.how === "doubt" ? (has ? false : null) : has;
+      rows.push({ f: k.f, v: his[k.f], ok });
+      if (!has && (k.how === "poster" || k.how === "sworn") && miss < 0) miss = k.f;
+      if (k.how === "doubt" && has) doubt = true;
+    }
+    const third = known[2], poster = known.slice(0, 2);
+    const others = this.dressed().filter((c) => { const f = featsOf(this.w.naughtyBoys.at(c.i)!.look); return poster.every((k) => f[k.f] === k.v); }).length;
+    let verdict: string, say: string, colour: string;
+    if (miss >= 0) {
+      const want = known.find((k) => k.f === miss)!;
+      verdict = "Not him"; colour = "#ff6a5e";
+      say = `He's got ${FEAT_SHORT[miss][his[miss]].toLowerCase()}; ${want.how === "poster" ? "the poster says" : "the witness swears"} ${FEAT_SHORT[miss][want.v].toLowerCase()}`;
+    } else if (third.how === "sworn") {
+      verdict = "That's him!"; colour = "#58e06a"; say = "<b>{use}</b> to point him out";
+    } else if (third.how === "none") {
+      verdict = "Fits the poster"; colour = "#ffd84a";
+      say = others > 1 ? `So do ${others - 1} more of them here: a witness will tell you one more thing` : "A witness will tell you one more thing, to be sure";
+    } else if (third.how === "said") {
+      const has = his[third.f] === third.v;
+      verdict = has ? "Could well be him" : "Probably not him"; colour = has ? "#ffd84a" : "#ff9a5e";
+      say = has ? "If the witness is right: press them (<b>{use}</b> again) to be sure" : "Unless the witness is wrong";
+    } else {
+      verdict = doubt ? "Probably not him" : "Could be him"; colour = doubt ? "#ff9a5e" : "#ffd84a";
+      say = "The witness backed down on that one";
+    }
+    suspectTag({ rows, verdict, say, colour });
+  }
+
+  /** Someone's part in it, for the results card. */
+  private part(id: string) {
+    let t = this.tally.get(id);
+    if (!t) this.tally.set(id, (t = { clues: 0, spot: false, wrong: 0, took: "" }));
+    return t;
+  }
+
+  /** The results card: how it ended, how long it took, and who did what. */
+  private results(how: "in" | "down" | "away", by: string, ambush: boolean) {
+    wantedScreensDown();
+    const secs = (Date.now() - this.started) / 1000;
+    if (by) this.part(by).took = how === "in" ? "took him in" : "put him down";
+    const rows = [...this.tally.entries()].map(([id, t]) => ({
+      name: this.who(id),
+      time: [t.clues && `${t.clues} clue${t.clues > 1 ? "s" : ""}`, t.spot && "spotted him", t.took, t.wrong && `${t.wrong} wrong`].filter(Boolean).join(" · ") || "-",
+      me: id === this.w.selfId,
+    }));
+    const title = how === "in" ? (ambush ? "Ambushed and cuffed!" : "Taken in alive!") : how === "down" ? (ambush ? "Ambushed!" : "Put down!") : "He got away";
+    summary({
+      kind: `Wanted · ${this.d.title}`, title, dnf: how === "away", time: clock(secs),
+      medal: how === "away" ? "" : how === "in" ? (ambush ? "gold" : "silver") : ambush ? "silver" : "bronze",
+      medalWord: how === "away" ? "Escaped" : how === "in" ? "Cuffed" : "Down",
+      lines: [how === "away" ? "He slipped the net for good" : `${this.who(by)} ${how === "in" ? "took him in alive" : "put him down"}${ambush ? ", at his stop with no chase: ambush bonus" : ""}`],
+      stats: [
+        { k: "Clues", v: String(this.found) },
+        { k: "Lookalikes", v: String(this.lookalikes()) },
+        { k: "Time lost", v: `${this.pen} s` },
+        { k: "Stars", v: "★".repeat(this.offer.stars) },
+      ],
+      rows: rows.length > 1 ? rows : undefined,
+      reward: how === "away" ? undefined : how === "in" ? `${this.offer.reward.split(";")[0]}, and ${this.offer.stars + 1} more for taking him in alive` : this.offer.reward.split(";")[0],
+      colour: COLOUR,
+    });
   }
 
   /** The clue you're stood at, if any. */
@@ -541,7 +763,8 @@ class Wanted implements Job {
     const real = b ?? { x: sx, z: sz };
     // on the run till someone catches up with him (or he gives up)
     if (this.running && (this.gaveUp || alive.some((p) => Math.hypot(p.x - real.x, p.z - real.z) < SPOT_NEAR))) this.running = false;
-    this.clues = this.clues.filter((c) => Math.hypot(c.x - this.zone.x, c.z - this.zone.z) < this.zone.r);
+    // a witness who's been asked stays to be pressed, even once the circle's moved off them
+    this.clues = this.clues.filter((c) => (c.t === 1 && c.q === 1) || Math.hypot(c.x - this.zone.x, c.z - this.zone.z) < this.zone.r);
     if (!this.spotted && !this.gaveUp && this.clues.length < 2 && (this.clueT -= dt) <= 0) {
       this.clueT = 1;
       this.placeClue(real.x, real.z);
@@ -590,7 +813,7 @@ class Wanted implements Job {
       : c!.t === 0 ? `they found ${pickOf(Math.random, LEAFLETS)}`
       : `a witness said: "${pickOf(Math.random, WITNESSES).replace("{feat}", this.said(n)).replace("{Feat}", cap(this.said(n))).replace("{way}", way)}"`;
     this.clueT = 2;
-    this.tell({ k: "found", by, t: text, f: this.found + 1 });
+    this.tell({ k: "found", by, t: text, f: this.found + 1, n, ty: c?.t ?? -1, r: Math.round(r) });
     this.sendT = 0;
   }
 
@@ -598,17 +821,15 @@ class Wanted implements Job {
   private wrong(n: number) { return hash(this.offer.seed, "witness", n) % 3 === 0; }
 
   /** What witness n says about the third feature: the truth, or what his twin on the poster has. */
-  private said(n: number) {
-    const s = suspects(this.offer.seed, LOOKALIKES);
-    return FEAT_WORDS[s.wa][this.wrong(n) ? s.lie : s.him[s.wa]];
-  }
+  private said(n: number) { return FEAT_WORDS[this.sus.wa][this.saidValue(n)]; }
+  private saidValue(n: number) { return this.wrong(n) ? this.sus.lie : this.sus.him[this.sus.wa]; }
 
   /** Host: someone presses a witness: is he sure? */
   private press(n: number, by: string) {
     const c = this.clues.find((q) => q.n === n);
     if (!c || c.t !== 1 || c.q !== 1) return;
     c.q = 2;
-    this.tell({ k: "words", by, t: pickOf(Math.random, this.wrong(n) ? BACKPEDAL : SWEAR), w: this.wrong(n) ? 1 : 0 });
+    this.tell({ k: "words", by, t: pickOf(Math.random, this.wrong(n) ? BACKPEDAL : SWEAR), w: this.wrong(n) ? 1 : 0, n });
     this.sendT = 0;
   }
 
@@ -780,7 +1001,7 @@ class Wanted implements Job {
     switch (d.k) {
       case "at": case "again": {
         const h = (Number(d.h) || 0) % this.d.haunts.length;
-        if (h !== this.h && !this.spotted && d.k === "at") this.w.toast(`Word is he's moved on to ${this.d.haunts[h].label}`, 3);
+        if (h !== this.h && !this.spotted && d.k === "at") callout("He's moved on", `Word is he's off to ${esc(this.d.haunts[h].label)}: the circle moves with him`, 4, COLOUR);
         this.h = h;
         if (d.i >= 0) this.ring = { i: Number(d.i), gen: Number(d.g) }; else if (!host) this.ring = null;
         this.seen = { x: Number(d.x), z: Number(d.z) };
@@ -795,7 +1016,10 @@ class Wanted implements Job {
         this.led = Array.isArray(d.ld) ? { by: String(d.ld[0]), x: Number(d.ld[1]), z: Number(d.ld[2]), n: String(d.ld[3]) } : null;
         if (!this.led) this.w.mark("@wanted-in", null);
         if (d.ag) this.again = true;
-        if (d.k === "again") { this.again = true; this.spotted = false; this.w.mark("@wanted", null); SFX.jobStep(); this.w.toast(`${this.d.title} has slipped the net! Last chance: the circle's open again round ${this.haunt.label}`, 4.5); }
+        if (d.k === "again") {
+          this.again = true; this.spotted = false; this.w.mark("@wanted", null); SFX.jobStep();
+          callout("He's slipped the net!", `Last chance: the circle's open again, ${across(this.zone.r)} across, round ${esc(this.haunt.label)}, with ${EXTRA / 60 | 0}:${String(EXTRA % 60).padStart(2, "0")} more on the clock`, 5, COLOUR);
+        }
         this.hands();
         this.circle();
         break;
@@ -807,6 +1031,7 @@ class Wanted implements Job {
         SFX.jobStep();
         const first = !this.rewarded, by = String(d.by ?? from);
         this.rewarded = true;
+        this.part(by).spot = true;
         this.w.toast(`${this.who(by, "You've")}${by === this.w.selfId ? "" : "'s"} spotted ${this.d.title}!${first ? " A prize for the spotter" : ""}`, 3);
         this.w.feed(`${this.feedWho(by)} spotted <b style="color:${COLOUR}">${esc(this.d.title)}</b>${first ? " (a prize for the spotter)" : ""}`);
         // the spotter's prize, at their feet (up a roof, it's on the ground below)
@@ -828,12 +1053,16 @@ class Wanted implements Job {
       case "push": if (host) this.press(Number(d.n), from); break;
       case "nope":
         this.pen = Math.max(this.pen, Number(d.pn) || 0);
-        if (d.by === this.w.selfId) { SFX.clunk(); this.w.toast(`That's not him! It cost you ${PEN_ID} seconds`, 3); }
+        this.part(String(d.by ?? from)).wrong++;
+        if (d.by === this.w.selfId) { SFX.clunk(); this.w.toast(`That's not him! It cost you ${PEN_ID} seconds. Check his features against the poster ({job})`, 3.5); }
         break;
-      case "words":
+      case "words": {
+        const c = this.claims.get(Number(d.n));
+        if (d.n !== undefined && c) c.how = d.w ? "doubt" : "sworn";
         SFX.jobStep();
-        this.w.toast(`${this.who(String(d.by ?? from))} pressed the witness: "${String(d.t ?? "")}"${d.w ? " (so that might be wrong)" : ""}`, 4.5);
+        this.w.toast(`${this.who(String(d.by ?? from))} pressed the witness: "${String(d.t ?? "")}"${d.w ? " (so that might be wrong)" : ""}${c ? ". The poster's updated" : ""}`, 4.5);
         break;
+      }
       case "gv": {
         const i = Number(d.i);
         this.meek.add(i);
@@ -852,6 +1081,7 @@ class Wanted implements Job {
         this.w.naughtyBoys.hands(Number(d.i), Number(d.g), 0, "I'll be speaking to my solicitor!");
         this.complaint = { text: String(d.t ?? ""), until: Date.now() + 10000 };
         SFX.clunk();
+        this.part(String(d.by ?? from)).wrong++;
         this.w.toast(`Wrong man! ${this.complaint.text}`, 6);
         this.w.feed(`${this.feedWho(String(d.by ?? from))} cuffed the wrong man`);
         break;
@@ -859,9 +1089,13 @@ class Wanted implements Job {
       case "found": {
         const f = Number(d.f) || this.found + 1, first = this.found === 0;
         this.found = Math.max(this.found, f);
+        const by = String(d.by ?? from);
+        this.part(by).clues++;
+        if (d.n !== undefined && Number(d.ty) === 1 && !this.claims.has(Number(d.n))) this.claims.set(Number(d.n), { v: this.saidValue(Number(d.n)), how: "said" });
         SFX.jobStep();
-        this.w.toast(`${this.who(String(d.by ?? from))}: ${String(d.t ?? "")}. The circle closes in`, 4);
-        this.w.feed(`${this.feedWho(String(d.by ?? from))} found a clue`);
+        const r = Number(d.r) || Math.max(SMALLEST, this.zone.r * SHRINK);
+        callout(`Circle closing: ${across(r)} across`, `${esc(this.who(by))}: ${esc(String(d.t ?? ""))}`, 5, COLOUR);
+        this.w.feed(`${this.feedWho(by)} found a clue`);
         if (first) setTimeout(() => { if (!this.done) this.w.toast(`Word is he's ${REVEAL[this.d.hidden]}`, 4); }, 4200);
         break;
       }
@@ -889,21 +1123,23 @@ class Wanted implements Job {
         break;
       case "in": {
         const x = Number(d.x), z = Number(d.z), by = String(d.by);
-        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z, wear: ["deer"], grade: this.grade() };
+        this.done = { won: true, screen: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z, wear: ["deer"], grade: this.grade() };
         this.w.feed(`${this.feedWho(by)} took <b style="color:${COLOUR}">${esc(this.d.title)}</b> in alive`);
         // the bigger reward for bringing him in: more prizes, on top of the usual
         if (host) for (let k = 0; k <= this.offer.stars + (d.cl ? 1 : 0); k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), true);
-        if (d.cl) this.w.toast("Caught at his stop with no chase: an ambush bonus!", 4);
+        this.results("in", by, !!d.cl);
         this.collect();
         break;
       }
       case "down":
         if (host && d.cl) this.w.prize(Number(d.x) + 1.5, Number(d.z), true);
-        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!${d.cl ? " Caught at his stop, no chase: bonus!" : ""}`, x: Number(d.x), z: Number(d.z), wear: ["deer"], grade: this.grade() };
+        this.done = { won: true, screen: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!${d.cl ? " Caught at his stop, no chase: bonus!" : ""}`, x: Number(d.x), z: Number(d.z), wear: ["deer"], grade: this.grade() };
+        this.results("down", String(d.by), !!d.cl);
         this.collect();
         break;
       case "away":
-        this.done = { won: false, text: `${this.d.title} got away` };
+        this.done = { won: false, screen: true, text: `${this.d.title} got away` };
+        this.results("away", "", false);
         break;
     }
   }
@@ -937,7 +1173,7 @@ class Wanted implements Job {
     return {
       ...c, sub: c.sub?.replace(/^\d+:\d\d left( · )?/, ""),
       timer: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`,
-      progress: { led: "Leading him in", up: "Cuff him", spot: "Spotted", run: "Chasing", search: "Searching" }[phase],
+      progress: { led: "Leading him in", up: "Cuff him", spot: "Spotted", run: "Chasing", search: `Clues ${Math.min(this.found, CLUES)}/${CLUES}` }[phase],
       stage: stage.title ? { key: phase, ...stage } : undefined,
     };
   }
@@ -947,6 +1183,7 @@ class Wanted implements Job {
     const me = this.w.me(), left = Math.max(0, Math.round(this.left)), bar = left / (this.limit + (this.again ? EXTRA : 0));
     const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
     const traits = [...this.d.quirks.map((q) => QUIRK[q].split(":")[0]), this.found ? HIDDEN[this.d.hidden].split(":")[0] : "one more?"].join(", ");
+    const look = this.known().map((k) => (k.how === "none" ? "<b>?</b>" : miniIcon(k.f, k.v))).join("");
     const where = (x: number, z: number) => `${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`;
     if (this.complaint) return { line: esc(this.complaint.text), sub: `${clock} left · the real one has moved on`, bar };
     if (this.led) {
@@ -965,9 +1202,10 @@ class Wanted implements Job {
     if (this.running && this.seen) {
       return { line: `He's legged it! He's ${where(this.seen.x, this.seen.z)}, making for <b>${esc(hh.label)}</b>. Follow the marker, and corner him before you shoot`, sub: `${clock} left · ${traits}`, bar };
     }
+    const inside = Math.hypot(me.x - this.zone.x, me.z - this.zone.z) <= this.zone.r;
     return {
-      line: `Somewhere in the circle round <b>${esc(hh.label)}</b>, ${where(this.zone.x, this.zone.z)}. Look for the man the poster describes among his lookalikes, through binoculars ({bino}) if you can, and ask a witness for one more thing about him`,
-      sub: `${clock} left · then ${esc(next.label)} · ${traits}`, bar,
+      line: `${inside ? "In the red circle" : "Get to the red circle"} round <b>${esc(hh.label)}</b>. Clues shrink it. Find the man with ${look}`,
+      sub: `Circle ${across(this.zone.r)} across${inside ? "" : `, ${where(this.zone.x, this.zone.z)}`} · then ${esc(next.label)} · ${traits} · poster: {job}`, bar,
     };
   }
 
@@ -975,6 +1213,11 @@ class Wanted implements Job {
     this.w.mark("@wanted", null);
     this.w.mark("@wanted-in", null);
     this.w.circle("wanted", null);
+    this.w.mark("@wanted-area", null);
+    for (const n of this.clueMarks) this.w.mark(`@wclue${n}`, null);
+    this.clueMarks.clear();
+    this.ring3d.dispose();
+    wantedScreensDown();
     for (const v of this.views.values()) this.w.scene.remove(v.view);
     this.views.clear();
     this.meek.clear();
