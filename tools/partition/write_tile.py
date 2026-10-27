@@ -663,8 +663,9 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     # (over the old build's cutting at a tunnel's mouth, left dug, a street well above it is carried across)
     if carried is not None:
         lifted = {i for i, (x, y) in enumerate(seg) if i not in decks and zs[i] - gs[i] > 1.5 and carried(x, y)}
-        # (but one running along the top of the cutting, beside the road coming out, is on its bank)
-        beside_mouth = {i for i in lifted if roof and roof[2] and roof[2](seg, i)}
+        # (but one over the tube's roof is on the hill over it, and one running along the top of the
+        # cutting, beside the road coming out, is on its bank)
+        beside_mouth = {i for i in lifted if roof and ((roof[0] and roof[0](*seg[i], zs[i])) or (roof[2] and roof[2](seg, i)))}
         spans |= lifted - beside_mouth
     else:
         beside_mouth = set()
