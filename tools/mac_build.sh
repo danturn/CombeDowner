@@ -3,12 +3,19 @@
 # from an agent is one line to run. It is for the Mac's Remote Control session, but runs on any
 # machine with git, Python (numpy, shapely, Pillow) and Node.
 #
-#   tools/mac_build.sh <commit or branch> [--map] [--only "ti,tj ti,tj"] [--check] [--shots views.json]
-#                      [--push <branch>] [--out <dir>] [--map-id <id>]
+#   tools/mac_build.sh <commit or branch> [--map] [--only "ti,tj ti,tj"] [--cold] [--verify] [--check]
+#                      [--shots views.json] [--push <branch>] [--out <dir>] [--map-id <id>]
 #
 #   --map           rebuild the map: canal, railway, every square, the whole-city map and the pubs
 #                   (the order in README.md, "Rebuild a map")
 #   --only "..."    rebuild only those squares (quick looks)
+#   --cold          build the partition from an empty store (a new folder, deleted afterwards), not
+#                   from the stages kept in $CACHE/partition
+#   --verify        build the map twice, from the store and then from an empty one, and compare every
+#                   map file byte for byte: verify.txt says "identical", or which files differ and the
+#                   first partition stage whose outputs differ. Exits 1 on any difference. Run it before
+#                   each big merge into Spencer's main: a stage's key is read from its source, and
+#                   can miss a name made at run time, an environment variable or a file it reads.
 #   --check         run the clash check (tools/check_map.py --all) after building, and keep its report
 #   --shots f.json  build the game and take the views in f.json with tools/shoot.mjs
 #   --push b        commit the rebuilt map files to branch b on Dan's fork (danturn/CombeDowner)
@@ -21,8 +28,10 @@
 #  - if that commit's map was built here before with the same options, it says so and reuses it;
 #  - shares node_modules between worktrees with the same package-lock.json, and the partition's
 #    stages in $CACHE/partition, so a fresh worktree builds only what its commit changed;
-#  - writes build.log, check.txt (with --check), changed.txt (which map files changed), the shots
-#    and timings.txt to the report folder, and removes the worktree at the end, even if it fails.
+#  - writes build.log, cache.txt (each partition stage's key, what came from the store, what was
+#    built and how long it took), check.txt (with --check), changed.txt (which map files changed),
+#    the shots and timings.txt to the report folder, and removes the worktree at the end, even if it
+#    fails.
 set -euo pipefail
 
 REPO=${COMBEDOWNER_REPO:-/Users/dan/CombeDowner}
@@ -34,11 +43,13 @@ hash16() { if command -v shasum >/dev/null; then shasum; else sha1sum; fi | cut 
 
 ref=${1:?usage: tools/mac_build.sh <commit or branch> [--map] [--only \"ti,tj ...\"] [--check] [--shots views.json] [--push branch] [--out dir]}
 shift
-do_map= only= check= shots= push= out=
+do_map= only= check= shots= push= out= cold= verify=
 while [ $# -gt 0 ]; do
   case $1 in
     --map) do_map=1 ;;
     --only) only=$2; do_map=1; shift ;;
+    --cold) cold=1; do_map=1 ;;
+    --verify) verify=1; do_map=1 ;;
     --check) check=1 ;;
     --shots) shots=$(cd "$(dirname "$2")" && pwd)/$(basename "$2"); shift ;;
     --push) push=$2; shift ;;
@@ -59,9 +70,11 @@ until mkdir "$LOCK" 2>/dev/null; do
 done
 echo "$ref since $(date +%H:%M:%S)" > "$LOCK/who"
 
-WT=
+WT= EMPTY= KEPT=
 cleanup() {
   [ -n "$WT" ] && git -C "$REPO" worktree remove --force "$WT" 2>/dev/null || true
+  [ -n "$EMPTY" ] && rm -rf "$EMPTY"
+  [ -n "$KEPT" ] && rm -rf "$KEPT"
   rm -rf "$LOCK"
 }
 trap cleanup EXIT
@@ -87,17 +100,15 @@ cd "$WT"
 # ---- the map ------------------------------------------------------------------------------------
 key="$sha${only:+ only $only}"
 done_mark=$CACHE/maps/$(echo "$key" | hash16)
-if [ -n "$do_map" ] && [ -d "$done_mark" ]; then
+if [ -n "$do_map" ] && [ -z "$cold$verify" ] && [ -d "$done_mark" ]; then
   echo "this commit's map was built here before (${only:-every square}): reusing it"
   cp -R "$done_mark/maps/." web/public/maps/
   cp "$done_mark"/*.txt "$out/" 2>/dev/null || true
   do_map=
   reused=1
 fi
-if [ -n "$do_map" ]; then
-  t=$(date +%s)
-  # the partition's stages, kept between builds and worktrees (tools/partition/pipeline.py)
-  export CD_PARTITION_CACHE=$CACHE/partition/$MAP
+build_map() {    # <partition store> <log>
+  export CD_PARTITION_CACHE=$1
   {
     python3 -I tools/mapdata.py unpack $MAP
     python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
@@ -111,8 +122,39 @@ if [ -n "$do_map" ]; then
       python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
       python3 -I tools/ground_kinds.py $MAP
     fi
-  } > "$out/build.log" 2>&1 || { stamp "map build FAILED" "$t"; tail -30 "$out/build.log"; exit 1; }
+  } > "$2" 2>&1 || { stamp "map build FAILED" "$t"; tail -30 "$2"; exit 1; }
+}
+STAGES=data/raw/$MAP/wide/partition
+# the partition's stages, kept between builds and worktrees (tools/partition/pipeline.py)
+store=$CACHE/partition/$MAP
+if [ -n "$cold$verify" ]; then EMPTY=$(mktemp -d "${TMPDIR:-/tmp}/combedowner-empty-store-XXXX"); fi
+[ -n "$cold" ] && store=$EMPTY
+if [ -n "$verify" ]; then
+  t=$(date +%s)
+  build_map "$store" "$out/build.log"
+  stamp "map build from the store" "$t"
+  cp "$STAGES/cache.txt" "$out/cache.txt" 2>/dev/null || true
+  KEPT=$(mktemp -d "${TMPDIR:-/tmp}/combedowner-verify-XXXX")
+  cp -R web/public/maps "$KEPT/maps"
+  cp "$STAGES/stages.json" "$KEPT/stages.json" 2>/dev/null || true
+  # back to the commit as checked out, so the second build starts where the first did
+  git checkout -q -- web/public/maps
+  git clean -fdxq web/public/maps data
+  t=$(date +%s)
+  build_map "$EMPTY" "$out/build-cold.log"
+  stamp "map build from an empty store" "$t"
+  cp "$STAGES/cache.txt" "$out/cache-cold.txt" 2>/dev/null || true
+  verified=0
+  python3 -I "$HERE/partition/verify.py" "$KEPT/maps" web/public/maps "$KEPT/stages.json" "$STAGES/stages.json" \
+    > "$out/verify.txt" || verified=1
+  cat "$out/verify.txt"
+elif [ -n "$do_map" ]; then
+  t=$(date +%s)
+  build_map "$store" "$out/build.log"
   stamp "map build" "$t"
+  cp "$STAGES/cache.txt" "$out/cache.txt" 2>/dev/null || true
+fi
+if [ -n "$do_map" ]; then
   git status --short web/public/maps > "$out/changed.txt"
   echo "$(wc -l < "$out/changed.txt" | tr -d ' ') map files changed"
 fi
@@ -122,7 +164,7 @@ if [ -n "$check" ]; then
   python3 -I tools/check_map.py $MAP web/public/maps --all > "$out/check.txt" 2>&1 || true
   stamp "clash check" "$t"
 fi
-if [ -n "$do_map" ]; then
+if [ -n "$do_map" ] && [ -z "$cold$verify" ]; then
   mkdir -p "$done_mark/maps"
   git ls-files -m -o --exclude-standard web/public/maps | while read -r f; do
     mkdir -p "$done_mark/maps/$(dirname "${f#web/public/maps/}")"
@@ -159,3 +201,4 @@ if [ -n "$push" ] && { [ -n "$do_map" ] || [ -n "${reused:-}" ]; }; then
   fi
 fi
 echo "report in $out"
+if [ "${verified:-0}" != 0 ]; then echo "verify: the build from the store differs from one from an empty store"; exit 1; fi

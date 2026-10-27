@@ -61,19 +61,32 @@ class Run:
         self.lib = cache.libraries()
         self.ran = collections.Counter()
         self.weight = {}
+        self.tally = {}
+
+    def count(self, stage, keys, got, secs):
+        """What `stage` took from the store and built, for `cache.txt`, and the digests of its outputs,
+        for `stages.json`: a build checked against one from an empty store names the first stage
+        whose outputs differ."""
+        t = self.tally.setdefault(stage, dict(keys=[], secs=0.0, files={}))
+        t["keys"] += keys
+        t["secs"] += secs
+        t["files"].update(got)
 
     def stage(self, stage, key, dest, names, run):
         """Outputs `names` (in `dest`) for `key`: from the store, or by `run()` and then stored."""
+        t0 = time.time()
         got = self.store.get(stage, key, dest)
         if got is None:
             run()
             got = self.store.put(stage, key, dest, names)
             self.ran[stage] += 1
+        self.count(stage, [key], got, time.time() - t0)
         return got
 
     def pool(self, stage, fn, tasks, keys, dest_of, names_of):
         """A pooled stage: each task's outputs from the store, or run in the pool and then stored.
         Returns {task square: {name: digest}} and the squares whose task failed."""
+        t0 = time.time()
         out, todo = {}, []
         for t, k in zip(tasks, keys):
             got = self.store.get(stage, k, dest_of(t))
@@ -90,7 +103,17 @@ class Run:
                 if (t[0], t[1]) not in failed:
                     out[(t[0], t[1])] = self.store.put(stage, k, dest_of(t), names_of(t))
             self.ran[stage] += len(todo) - len(failed)
+        self.count(stage, list(keys), {n: d for got in out.values() for n, d in got.items()},
+                   time.time() - t0)
         return out, failed
+
+    def write_tally(self, root):
+        """One line a stage in `<root>/cache.txt`, and its outputs' digests in `<root>/stages.json`."""
+        with open(os.path.join(root, "cache.txt"), "a") as f:
+            for stage, t in self.tally.items():
+                f.write(cache.tally_line(stage, t["keys"], len(t["keys"]) - self.ran[stage], self.ran[stage],
+                                         t["secs"]) + "\n")
+        cache.add_stages(root, {stage: t["files"] for stage, t in self.tally.items()})
 
 
 def digest_of(files):
@@ -139,7 +162,9 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     skey = cache.key_of("structures", cache.code_key((ONCE, "pass_structures")), R.lib, graph_d,
                         whole("water"), cache.file_digest(os.path.join(ROOT, "data", MAP, "terrain15.zip")),
                         *(cache.file_digest(os.path.join(maps, f"{MAP}-{k}.json")) for k in ("rail", "canal")))
+    ts = time.time()
     s = R.store.get("structures", skey, once)
+    took = time.time() - ts
     side = None
     if s is None:
         from concurrent.futures import ProcessPoolExecutor
@@ -175,10 +200,11 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     log(f"  pass 2: {len(tasks)} squares, {R.ran['divide']} divided, {time.time() - t0:.0f}s so far")
 
     if side is not None:
-        beside.result()
+        took = beside.result()
         side.shutdown()
         s = R.store.put("structures", skey, once, ["structures.json"])
         R.ran["structures"] += 1
+    R.count("structures", [skey], s, took)
     structures_d = s["structures.json"]
     log(f"  pass 1: bridges and road heights {'built' if side is not None else 'kept'}, "
         f"{time.time() - t0:.0f}s so far")
@@ -207,13 +233,16 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
         f"{time.time() - t0:.0f}s in all")
     log(f"  store: {R.store.hits} taken, {R.store.misses} built; stages run: {dict(R.ran)}")
     R.store.prune()
+    R.write_tally(os.path.dirname(os.path.abspath(once)))
     return dict(assembled=[list(t) for t in sorted(done)], failed=[list(t) for t in sorted(bad)],
                 partition={name(t): done[t].get(f"{name(t)}/partition.json") for t in done},
                 upstream=cache.sha(corridors_d + structures_d + pieces_d), ran=dict(R.ran))
 
 
 def structures_one(once, raw):
+    t = time.time()
     O.pass_structures(once, raw, os.path.join(raw, "terrain15"))
+    return time.time() - t
 
 
 def assemble_one(ti, tj, city, raw, once):
@@ -266,6 +295,7 @@ def report(raw, once, city, store, jobs, wanted=None, log=print):
     rows = [json.load(open(os.path.join(city, name(t), "row.json")))
             for t in sq if os.path.exists(os.path.join(city, name(t), "row.json"))]
     log(f"  reports: {len(sq)} squares, {R.ran['report']} made, {time.time() - t0:.0f}s")
+    R.write_tally(os.path.dirname(os.path.abspath(once)))
     if rows:
         summarise(rows, city, raw, os.path.join(raw, "terrain15"), once, t0)
 

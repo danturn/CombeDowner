@@ -1226,8 +1226,8 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - [ ] **Each stage of the partition is kept under its own key** (`partition/cache.py`,
   `partition/pipeline.py`). A key's code is the functions the stage runs, found by reading the
   source and following the names they use; a function called by a name made at run time would be
-  missed, so a periodic build from an empty store (`CD_PARTITION_CACHE` pointed at a new folder) is
-  the check, and `cache.VERSION` is raised by hand when a stage's files change shape.
+  missed, so a build from an empty store compared with one from the store
+  (`tools/mac_build.sh --verify`, before each big merge into Spencer's main) is the check, and `cache.VERSION` is raised by hand when a stage's files change shape.
 - [ ] **A square is written again when the map's layers change within 1 km of it**
   (`stage.WRITER_REACH`), or any other data file at all. The writer reads nothing further out
   today; a new reader that does needs the reach raising.

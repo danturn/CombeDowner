@@ -168,8 +168,14 @@ def main(argv):
     store = os.environ.get("CD_PARTITION_CACHE") or os.path.join(root, "cache")
     t0 = time.time()
     result = os.path.join(root, "build.json")
-    if os.path.exists(result):
-        os.remove(result)
+    for f in (result, os.path.join(root, "cache.txt"), os.path.join(root, "stages.json")):
+        if os.path.exists(f):
+            os.remove(f)
+    from partition import cache
+    # prep_map's squares aren't in the store, but a build checked against another names them first
+    # if they differ (verify.py)
+    cache.add_stages(root, {"prep": {name(t): cache.file_digest(os.path.join(base, name(t) + ".json"))
+                                     for t in wanted}})
     print(f"partition: the passes and {len(wanted)} squares' assembly (log in {root}/city.log, store {store})",
           flush=True)
     run([os.path.join(HERE, "pipeline.py"), "build", src_dir, once, city, store, str(jobs), result,
@@ -183,7 +189,7 @@ def main(argv):
 
     # a square is written again when its prep_map square, its own assembly, what the passes wrote,
     # the map's data or the writer has changed
-    from partition import cache
+    tw = time.time()
     wt = os.path.join(HERE, "write_tile.py")
     writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "string_city_wires"),
                                          (os.path.join(HERE, "measured.py"), "missed")),
@@ -204,17 +210,22 @@ def main(argv):
             os.remove(os.path.join(keys, name(t) + ".tile"))
     for t in copy:
         keep_prep(t)
+    written, kept, wrote = {}, set(), set()
     if todo:
         from concurrent.futures import ProcessPoolExecutor
         t0 = time.time()
         from partition.cache import Store
         st = Store(store)
         # a square written before under the same key comes from the store, as it was before the seams
-        kept = {t for t in todo if st.get("write", wkey(t), out_dir) is not None}
+        for t in todo:
+            got = st.get("write", wkey(t), out_dir)
+            if got is not None:
+                kept.add(t)
+                written.update(got)
         print(f"partition: writing {len(todo) - len(kept)} squares ({len(kept)} from the store)", flush=True)
         jobs_ = [(a, b, out_dir, once, city, os.path.join(base, name((a, b)) + ".json"))
                  for a, b in todo if (a, b) not in kept]
-        wrote, missed = set(), 0
+        missed = 0
         with ProcessPoolExecutor(jobs) as pool:
             # the biggest squares start first; results are taken in square order, which the seams use
             part = lambda j: os.path.join(city, name((j[0], j[1])), "partition.json")
@@ -232,7 +243,7 @@ def main(argv):
                     keep_prep(t)
                     failed.add(t)
                 else:
-                    st.put("write", wkey(t), out_dir, [name(t) + ".json"])
+                    written.update(st.put("write", wkey(t), out_dir, [name(t) + ".json"]))
                     wrote.add(t)
                     missed += r["missed"]
         if spans:
@@ -248,11 +259,23 @@ def main(argv):
             # a dozen or so are the far ends of paths the old build dipped for bridges of its own
             print(f"partition: {missed} points under bridges had no kept lidar ground"
                   + (": pack it again (tools/mapdata.py pack)" if missed > 100 else ""))
+    # squares unchanged since this folder's last build count as taken: their key matched
+    for t in wanted:
+        if t not in copy and t not in todo:
+            written[name(t) + ".json"] = cache.file_digest(out_of(t))
+    unchanged = len(wanted) - len(todo) - len(copy)
+    with open(os.path.join(root, "cache.txt"), "a") as f:
+        f.write(cache.tally_line("write", [wkey(t) for t in wanted if t not in copy], unchanged + len(kept),
+                                 len(wrote), time.time() - tw) + "\n")
+    cache.add_stages(root, {"write": written})
     # the metrics, checks and the city summary: they only report, so they come after the map is written
     t0 = time.time()
     run([os.path.join(HERE, "pipeline.py"), "report", src_dir, once, city, store, str(jobs),
          *([] if only is None else [f"{a},{b}" for a, b in wanted])], os.path.join(root, "report.log"))
     print(f"partition: reports in {time.time() - t0:.0f}s (log in {root}/report.log)", flush=True)
+    if os.path.exists(os.path.join(root, "cache.txt")):
+        print(f"partition: what each stage took from the store ({root}/cache.txt)")
+        print(open(os.path.join(root, "cache.txt")).read(), end="", flush=True)
     print(f"partition: {len(wanted) - len(todo) - len(copy)} squares unchanged, "
           f"{len(copy) - len(failed & set(copy))} outside the partition kept as prep_map built them, "
           f"{time.time() - start:.0f}s in all")

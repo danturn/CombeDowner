@@ -55,6 +55,20 @@ def libraries():
     return [sys.version.split()[0], np.__version__, shapely.__version__, shapely.geos_version_string]
 
 
+def tally_line(stage, keys, taken, built, secs):
+    """One stage's line in `cache.txt`. A stage with a key a square shows the digest of them all."""
+    key = keys[0] if len(keys) == 1 else sha("".join(keys))
+    return f"{stage:<11} key {key[:10]}  {taken:>4} from the store  {built:>4} built  {secs:7.1f}s"
+
+
+def add_stages(root, stages):
+    """Add {stage: {output file: digest}} to `<root>/stages.json`, which `verify.py` compares."""
+    path = os.path.join(root, "stages.json")
+    have = json.load(open(path)) if os.path.exists(path) else {}
+    have.update(stages)
+    json.dump(have, open(path, "w"), indent=0, sort_keys=True)
+
+
 # ---- code --------------------------------------------------------------------------------------
 
 _MODULES = {}
