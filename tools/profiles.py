@@ -12,6 +12,7 @@ like the survey's ground under it: shared by tools/prep_map.py (the roads) and t
 """
 
 APPROACH = 10   # points back from a bridge's end over which the survey may have the line dropping into the gap
+MOUTH = 8.0     # metres out from a tunnel's end over which its floor takes the lowest road
 
 
 def carry_profile(z, d, on, free, fixed=(None, None), least=None, fit=True):
@@ -32,6 +33,10 @@ def carry_profile(z, d, on, free, fixed=(None, None), least=None, fit=True):
         win = [j for j in range(i - step * APPROACH, i - step * 2 + step, step) if 0 <= j < n and free[j]]
         near = [z[j] for j in range(min(i, i - step * APPROACH), max(i, i - step * APPROACH) + 1) if 0 <= j < n and free[j]] or [z[i]]
         h = z[i]
+        if not fit:
+            # where the data's tunnel ends a little onto the hill, the survey there is the face over
+            # the portal, metres above the road: the floor starts from the road just outside
+            h = min([z[j] for j in range(i, i - step * APPROACH, -step) if 0 <= j < n and free[j] and abs(d[j] - d[i]) <= MOUTH] or [h])
         if fit and len(win) >= 3:
             xs, ys = [d[j] for j in win], [z[j] for j in win]
             mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
