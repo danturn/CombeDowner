@@ -2882,7 +2882,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (PAVE_DRAWN,)) + 0.3, cap_style="flat")
                 for l, r in zip(lines, streets) if r["c"] in KERBED and any(r.get("pv") or (1,))]
         bare = unary_union([l.buffer(r["w"] / 2 + VERGE_REACH, cap_style="flat") for l, r in verged])
-        pave = pave.difference(bare.difference(unary_union(kept or [Polygon()])))
+        bare = bare.difference(unary_union(kept or [Polygon()]))
+        # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
+        pave, plaza = pave.difference(bare), plaza.difference(bare)
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
