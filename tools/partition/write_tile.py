@@ -644,6 +644,9 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
             tow.add(i)
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
+    # (and a stretch inside the game's tunnel, whose bore can start a little further out than ours)
+    if roof and roof[1]:
+        deep |= {i for i, (x, y) in enumerate(seg) if roof[1](x, y, zs[i])}
     # (over the old build's cutting at a tunnel's mouth, left dug, a street well above it is carried across)
     if carried is not None:
         spans |= {i for i, (x, y) in enumerate(seg) if i not in decks and zs[i] - gs[i] > 1.5 and carried(x, y)}
@@ -670,7 +673,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     # but where a bridge starts off the towpath, its first point meets the ground the deck starts from
     tow -= {j for i in spans | decks for j in (i - 1, i + 1)}
     # (over a tunnel's roof, where its mouth was dug, the way keeps its height and the ground is laid to it)
-    roofed = {i for i, (x, y) in enumerate(seg) if i not in spans | decks and roof(x, y, zs[i])} if roof else set()
+    roofed = {i for i, (x, y) in enumerate(seg) if i not in spans | decks and roof[0](x, y, zs[i])} if roof and roof[0] else set()
     held = decks | tow | approach | roofed | (dipped - beside if others is not None else set())
     # (a deck's last points may come down to the ground, except at an end whose approach keeps its height)
     ends = {i for i in deck_ends(spans | decks) if not any(abs(i - j) <= 4 for j in approach)}
@@ -1317,25 +1320,26 @@ def _lift(tile, seen):
     return float(np.clip(min((g - s for g, s in zip(tile, seen)), key=abs), -1.5, 1.5))
 
 
-def over_roof(tunnels):
+def over_roof(tunnels, inside=False):
     """A predicate (x, y, z): is a way at height z there over a tunnel's roof (within its cutting's
     width of the bore, between its mouths, a crown's height or more over its floor)? The base tile
-    digs the ground over the first metres of a bore, which a lane over it would otherwise fall into."""
+    digs the ground over the first metres of a bore, which a lane over it would otherwise fall into.
+    With `inside`, is it in the tube instead (below the crown), where the game hides it?"""
     tubes = [(LineString([q[:2] for q in t["p"]]), t["p"]) for t in tunnels or [] if len(t["p"]) > 1]
     if not tubes:
         return None
-    reach = TN.HALF + TN.CUT
+    reach = TN.HALF + (0 if inside else TN.CUT)
 
-    def roofed(x, y, z):
+    def test(x, y, z):
         pt = Point(x, y)
         for line, p in tubes:
             s = line.project(pt)
             if 0 < s < line.length and line.distance(pt) <= reach:
                 k = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (x, y)))
-                if z >= p[k][2] + TN.CROWN:
+                if (z < p[k][2] + TN.CROWN) if inside else (z >= p[k][2] + TN.CROWN):
                     return True
         return False
-    return roofed
+    return test
 
 
 def fill_dug_ground(T, base_rd, tunnels, roads, profiles, houses=(), rails=()):
@@ -1502,7 +1506,7 @@ def _grid_points(T, ring, reach):
     return W, gx, gy
 
 
-def lay_ground(T, rd, houses=(), rails=()):
+def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
     """Lay the tile's ground to this build's own streets and paths where they meet their bridges,
     by the old build's rules (`prep_map.py`'s flatten, its protection of the ground under a span, cut
     0.6 m under the deck where it humps up and lifted along every way at grade, and its blend), on
@@ -1512,9 +1516,11 @@ def lay_ground(T, rd, houses=(), rails=()):
     bridge in it, and the path ran through solid ground). The ground under a street at grade and
     under the railway stays as it was, and nothing beside a street's carriageway wins it; nor does
     the outermost ring of the grid, which the next square shares, nor the ground in buildings.
+    Nor is the ground held or laid for a street inside a tunnel, whose roof a way over it is laid to.
     `_lay` on a record holds the points laid to. Returns the change, as a function of a map point,
     so what stands on the ground can follow it."""
     nx, ny, z0 = T["nx"], T["ny"], T["z0"]
+    in_tube = over_roof(tunnels, inside=True)
     grid = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
     old = grid.copy()
     flat_w = np.full(grid.shape, np.inf)
@@ -1650,7 +1656,8 @@ def lay_ground(T, rd, houses=(), rails=()):
             # (but where a street meets another's bridge, that bridge's end is dug past for a path
             # just beyond it, and the point they share rides on its deck: settle_on_laid_ground)
             at_deck = {i for i, q in enumerate(p) if (q[0], q[1]) in deck_nodes}
-            for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2) and tuple(q[:2]) not in lay}):
+            for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2) and tuple(q[:2]) not in lay
+                                 and not (in_tube and in_tube(*q[:3]))}):
                 for a, b in zip(st, st[1:]):
                     hold([p[a], p[b]], reach, 0.0 if a in at_deck or b in at_deck else r.get("w", 4) / 2 + 0.5)
     for t in rails:
@@ -1674,7 +1681,8 @@ def lay_ground(T, rd, houses=(), rails=()):
         if not street and len(p) > 1 and overhead.intersects(LineString([q[:2] for q in p])):
             lay = lay | {tuple(q[:2]) for q in p if len(q) < 4 and buried(q) and tuple(q[:2]) not in (r.get("_tow") or ())}
             r["_lay"] = lay
-        for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2) and tuple(q[:2]) in lay}):
+        for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2) and tuple(q[:2]) in lay
+                             and not (in_tube and in_tube(*q[:3]))}):
             if len(st) >= 2:
                 run = [p[i] for i in st]
                 # a cutting is dug as wide as a street's verge, so the ground the path reads between
@@ -4500,7 +4508,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, profiles,
                               (water, rails + canal_lines,
                                [(Polygon(w["r"][0]), w["z"]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]),
-                              lidar_tall(sq), carried, over_roof(tile.get("tn")))
+                              lidar_tall(sq), carried,
+                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True)))
     hold_steep_streets(rd, T)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
@@ -4521,7 +4530,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
     # the ground is laid to these streets and paths before anything else stands on it
-    laid = lay_ground(T, rd, houses, rail_tracks)
+    laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"))
     settle_on_laid_ground(rd, laid, road_ground)
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
