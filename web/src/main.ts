@@ -220,11 +220,14 @@ async function pickMap(id: string) {
 const t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
-  const v = (window as any).__view;   // experiments: [cam x, cam y, height above ground, look x, look y] in data metres
+  // experiments: [cam x, cam y, height above ground, look x, look y] in data metres; a height below
+  // nought is above the floor of the tunnel there instead (inside one, the ground is the hill over it)
+  const v = (window as any).__view;
   if (v) {
     const [cx, cy, h, lx, ly, lh = 1.2] = v;
-    camera.position.set(cx, map.ground(cx, -cy) + h, -cy);
-    camera.lookAt(lx, map.ground(lx, -ly) + lh, -ly);
+    const above = (x: number, z: number, h: number) => (h < 0 ? (map.tunnelFloor(x, z) ?? map.ground(x, z)) - h : map.ground(x, z) + h);
+    camera.position.set(cx, above(cx, -cy, h), -cy);
+    camera.lookAt(lx, above(lx, -ly, lh), -ly);
     world.update(cx, camera.position.y, -cy);
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
     return;

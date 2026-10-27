@@ -13,14 +13,16 @@
 // above the ground to look from (1.7, eye height, if left out). A views file is
 // {"name": "east,north,bearing,tilt[,height]", ...}; a view can also be {"at": "...", "time": "21:30"}
 // for another time of day, or [cam east, cam north, height, look east, look north, look height]
-// (heights above the ground) to look at a spot rather than in a direction.
+// (heights above the ground; below nought, above the floor of the tunnel there) to look at a spot
+// rather than in a direction.
 //
 // It uses the Chrome installed on the machine (Playwright's "chrome" channel), so there's no
 // browser to download. Options: --dist web/dist, --out shots, --tag <added to each file name>, --map combe-down,
 // --time 11:00 (the clock stopped there; "now" for the real one), --size 1280x720, --fx 0 (no
 // retro colour grade), --view 1200 (draw distance), --play (start a solo game and shoot from it,
 // for traffic, naughty boys and the rest that the menu doesn't run; slower), --timeout 60 (seconds a view
-// may take to load before it's shot anyway, with a warning). PW=<path to playwright> if it isn't
+// may take to load before it's shot anyway, with a warning), --query "portal=b,440,4470" (more of
+// the address, to try one of the game's own options). PW=<path to playwright> if it isn't
 // installed where node can find it; CHROME=<a Chrome or Chromium> to use that one.
 //
 // Writes <out>/<name>[-<tag>].png for each view, and <out>/shots.json with how long each took,
@@ -130,6 +132,7 @@ async function open(time, v) {
   if (time !== "now") q.set("time", time);
   if (v.at) q.set("at", v.at);
   for (const k of ["fx", "view", "res"]) if (opt[k] != null) q.set(k, opt[k]);
+  for (const [k, v] of new URLSearchParams(opt.query ?? "")) q.set(k, v);
   await page.goto(`http://127.0.0.1:${port}/?${q}`);
   // build the squares' scenery in bigger slices a frame than in play: nobody's playing
   await page.evaluate(() => { window.__budget = 40; });
@@ -151,10 +154,11 @@ async function open(time, v) {
           g.camera.rotation.set(t * Math.PI / 180, -b * Math.PI / 180, 0, "YXZ");
         } else if (look) {
           const [cx, cy, h, lx, ly, lh = 1.2] = look;
+          const above = (x, z, h) => (h < 0 ? (m.tunnelFloor(x, z) ?? m.ground(x, z)) - h : m.ground(x, z) + h);
           g.player.pos.set(cx, m.ground(cx, -cy), -cy);
           u(dt);
-          g.camera.position.set(cx, m.ground(cx, -cy) + h, -cy);
-          g.camera.lookAt(lx, m.ground(lx, -ly) + lh, -ly);
+          g.camera.position.set(cx, above(cx, -cy, h), -cy);
+          g.camera.lookAt(lx, above(lx, -ly, lh), -ly);
         } else u(dt);
         g.camera.updateMatrixWorld();
         if (g.weapon) g.weapon.scene.visible = false;

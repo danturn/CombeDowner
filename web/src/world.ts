@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, TUNNEL, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -532,12 +532,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
   const cuts = cuttings(map);
-  for (const [cx, cy, dx, dy, left, right, reach, floor] of cuts) {
-    const nx = -dy, ny = dx, to = floor - Z0 - 0.05, pad = T.dx, r = Math.hypot(Math.max(-left, right) + pad, reach + pad);
+  // Behind the headwall the hill is made up to just under its top for a grid square or so, where it
+  // stands lower and no street lies on it: the grid's triangles from the dug floor in front dipped
+  // behind the wall and left the top of the tube standing out of the ground.
+  for (const [cx, cy, dx, dy, left, right, reach, floor, top] of cuts) {
+    const nx = -dy, ny = dx, to = floor - Z0 - 0.05, fill = top - Z0 - 0.3, pad = T.dx, back = T.dx * 1.5;
+    const r = Math.hypot(Math.max(-left, right) + pad, Math.max(reach, back) + pad);
     const i0 = Math.max(0, Math.floor((cx - r - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((cx + r - T.x0) / T.dx));
     const j0 = Math.max(0, Math.floor((cy - r - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((cy + r - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx - cx, y = T.y0 + j * T.dy - cy, out = -(x * dx + y * dy), s = x * nx + y * ny, v = j * T.nx + i;
+      if (out < 0 && out > -back && s > left && s < right && !covered[v]) {
+        // (never above a street beside it, but the tunnel's own road, ending at the portal, doesn't count)
+        const by = roundTo[v] < to + TUNNEL.crown ? Infinity : roundTo[v];
+        sink[v] = Math.min(sink[v], T.h[v] / 10 - Math.min(fill, by));
+        continue;
+      }
       if (out < 0 || out > reach || s < left - pad || s > right + pad) continue;
       sink[v] = Math.max(sink[v], T.h[v] / 10 - to);
     }
@@ -577,7 +587,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     return low;
   };
-  const drawnBare = (x: number, z: number) => {
+  // (round a cutting, where the ground is dug a grid square past its walls, a street or path on the
+  // bank above stands on the bank, not on the dug floor: its side face would hang down the wall)
+  const cutBank = (x: number, y: number) => {
+    for (const [cx, cy, dx, dy, left, right, reach] of cuts) {
+      const ox = x - cx, oy = y - cy, out = -(ox * dx + oy * dy), s = ox * -dy + oy * dx;
+      if (out > -2 && out < reach + T.dx && s > left - T.dx && s < right + T.dx) return map.trueGround(x, -y);
+    }
+    return -Infinity;
+  };
+  const drawnBare =(x: number, z: number) => {
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
     if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.trueGround(x, z);   // out in the wider map
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
@@ -1596,7 +1615,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const over = Math.max(roof(a[0], -a[2]), roof(b[0], -b[2])) + 0.13;
         const foot = (q: number[], step: number) => {
           if (Number.isFinite(step)) return Math.min(step, q[1] - 0.02);
-          const dg = Math.max(drawnGround(q[0], q[2]), over);
+          const dg = Math.max(drawnGround(q[0], q[2]), over, cutBank(q[0], -q[2]));
           return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity);
         };
         const fa = foot(a, stepA), fb = foot(b, stepB);
@@ -2152,7 +2171,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   buildLandmarks(map, scene);
   // the wider map's (where its full-detail squares aren't built yet: those carry their own)
   if (core && map.wide?.d.lm && !map.tileIndex) buildLandmarks(map, scene, map.wide.d.lm);
-  buildTunnels(map, scene);
+  buildTunnels(map, scene, (x, y) => drawnGround(x, -y));
   mark("landmarks-tunnels");
   yield* buildFurniture(map, scene, culler);
   mark("furniture");

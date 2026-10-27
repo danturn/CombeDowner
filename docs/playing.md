@@ -970,6 +970,7 @@ Add these to the address:
 | `?res=full` | full resolution |
 | `?fx=0` | turns off the retro colour grade |
 | `?trees=flat` | draws every tree as a flat picture |
+| `?portal=b,440,4470` | tries another style on the tunnel mouths nearest that spot (a stone, b concrete box, c grass banks, d concrete trough, e bare cut face; no spot for every tunnel) |
 | `?gore=1` / `?gore=0` | real guns and blood, or paintball |
 | `?wood=25` | starts Get Wood's bonfire with that many bundles on it |
 | `?objects=6` | that many of the strange objects turn up round you, and a test challenge (Stand Together) joins the map |
