@@ -2082,9 +2082,9 @@ def bridge_decks(rd, ground=None):
     def flying(a, b):
         z = ground((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
         return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b)) and z is not None and min(a[2], b[2]) - z > HEADROOM
-    high = [LineString([a[:2], b[:2]]).buffer(r["w"] / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat")
+    high = [LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat")
             for r in rd for a, b in zip(r["p"], r["p"][1:]) if flying(a, b)]
-    below = [LineString([a[:2], b[:2]]).buffer(r["w"] / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])), cap_style="flat")
+    below = [LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])), cap_style="flat")
              for r in rd for a, b in zip(r["p"], r["p"][1:])
              if not any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))]
     if not high or not below:
