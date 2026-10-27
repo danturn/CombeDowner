@@ -21,6 +21,14 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **OpenStreetMap's street details (branch `claude/osm-tags`):** a new download, `osm-detail`
+  (`tools/osm.py ... detail`: paths' surfaces, service roads' kinds, steps' handrails, crash
+  barriers), read by the street graph (`partition/once.py`) and the writer; the writer adds `cx`
+  (crossings and lights, for a later driving-test check) and `pb` (gates and stiles across paths) to
+  the squares, `su`/`sv`/`sc`/`hr` to `rd`, and grass/dirt/gravel lists to `sf`; mapped wall and fence
+  makes and guard rails (`partition/settle.py`); bus shelters, post box types and K6 boxes
+  (`tools/streets.py`). Drawn in `furniture.ts` and `world.ts`.
+
 - **The partition is now part of the map build (both sides, please read):** `tools/prep_tiles.py`
   runs the partition (`tools/partition/stage.py`) after `prep_map.py`, so the squares in
   `web/public/maps/combe-down/` are the partition's; `prep_map.py`'s own go to
