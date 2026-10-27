@@ -109,6 +109,7 @@ import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } 
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
+import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
@@ -4405,6 +4406,7 @@ export class Game {
     $("drive").hidden = !car && !helm && !sky;
     $("ammo").hidden = !!car || !!helm || !!sky;
     $("drive").querySelector("small")!.textContent = sky ? "m up" : "mph";
+    if (!car) $("limit").hidden = true;
     if (sky) {
       const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
       $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
@@ -4423,6 +4425,8 @@ export class Game {
       const blink = performance.now() % 760 < 380;
       $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
+      const lim = limitShown(this.map, car.x, car.z, Math.cos(car.a), -Math.sin(car.a));
+      show($("limit"), lim ? String(lim) : "", !!lim);
       $("drivehint").innerHTML = car.tip ? stripOf([["out", "get out"]])
         : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]);
     }

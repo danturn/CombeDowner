@@ -49,6 +49,7 @@ from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
 from structures import match_structures
+from maxspeed import resolve as speed_limits
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
                     classify_edges, front_normals, join_evidence, make_plots)
 
@@ -323,6 +324,11 @@ def build_graph(out, raw, log=print):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))
     log(f"  {len(roads)} road pieces over the whole map")
+    # each way's speed limit rides along in its tags, as "_ms", to the squares' streets
+    limits, _ = speed_limits(roads, log=log)
+    for _, p in roads:
+        if p.get("osm") in limits:
+            p["_ms"] = limits[p["osm"]]
     edges = street_graph(roads, bb, log=log)
     # a stable id and order: sorted by the line's own bounding box, a geometric key, so the same
     # edge keeps the same id however the ways were read and however many processes ran

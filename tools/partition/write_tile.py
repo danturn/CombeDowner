@@ -514,8 +514,21 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                             if not r.get("path"):
                                 # always written: left out, the game gives a street 1.7 m of pavement each side
                                 rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
+                                ms = _limit_at(r.get("obs"), whole, part)
+                                if ms:
+                                    rec["ms"] = ms
                             out.append(rec)
     return out
+
+
+def _limit_at(obs, whole, pts):
+    """The speed limit (mph) of the way under the middle of a record, from the street graph's tags."""
+    if not obs or len(pts) < 2:
+        return None
+    mid = LineString([q[:2] for q in pts]).interpolate(0.5, normalized=True)
+    t = whole.project(mid)
+    tags = min(obs, key=lambda o: 0 if o[0] <= t <= o[1] else min(abs(t - o[0]), abs(t - o[1])))[2]
+    return tags.get("_ms")
 
 
 def _at_edge(a, b, inside, step=0.05):
