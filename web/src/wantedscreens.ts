@@ -43,13 +43,13 @@ function style() {
 .wsc.wsc .note b{color:#8a1a14}
 .wsc.wsc ul{max-width:760px}
 .wsc.wsc .clock{font-weight:800;font-size:clamp(15px,3vmin,22px);color:#ffd84a}
-.wsc-tag{position:fixed;left:calc(50% + 72px);top:50%;transform:translateY(-50%);pointer-events:none;z-index:6;
+.wsc-tag{position:fixed;left:calc(50% + 96px);top:calc(50% + 58px);pointer-events:none;z-index:6;
   font-family:'Barlow Condensed',Impact,sans-serif;color:#fff;text-shadow:0 2px 0 #000;background:rgba(8,14,20,.82);border-left:4px solid var(--v,#ffd84a);
-  padding:4px 8px 5px;max-width:min(300px,44vw)}
+  padding:4px 8px 5px;max-width:min(240px,40vw)}
 .wsc-tag[hidden]{display:none}
 .wsc-tag .row{display:flex;gap:4px}
-.wsc-tag .mini{position:relative;width:34px;text-align:center;font:700 11px/1 'Barlow Condensed',sans-serif}
-.wsc-tag .mini svg{width:30px;height:30px;background:#f4ecd4;border-radius:4px;display:block;margin:0 auto 1px}
+.wsc-tag .mini{position:relative;width:28px;text-align:center;font:700 11px/1 'Barlow Condensed',sans-serif}
+.wsc-tag .mini svg{width:25px;height:25px;background:#f4ecd4;border-radius:4px;display:block;margin:0 auto 1px}
 .wsc-tag .mini .tick{position:absolute;right:-2px;top:-4px;width:15px;height:15px;border-radius:50%;font:900 11px/15px sans-serif;border:1px solid #000}
 .wsc-tag .v{font-weight:800;font-size:clamp(14px,2.6vmin,18px);color:var(--v,#ffd84a);margin-top:3px;line-height:1.1}
 .wsc-tag .s{font-weight:600;font-size:clamp(11px,2vmin,14px);color:#c8d4dc;line-height:1.15}
@@ -58,8 +58,8 @@ function style() {
   .wsc.wsc .feat{width:52px}.wsc.wsc .feat svg{width:38px;height:38px}.wsc.wsc .stop svg{width:28px;height:28px}
   .wsc.wsc .note ~ .note{display:none}.wsc.wsc ul{font-size:11.5px;line-height:1.2;margin-top:3px}.wsc.wsc .again{font-size:13px;margin-top:2px}
   .tsc-splash.wsc .paper{margin:4px auto 2px}.tsc-splash.wsc .clock{font-size:13px}
-  .wsc-tag{left:calc(50% + 60px)}}
-body[data-input=touch] .wsc-tag{left:auto;right:calc(50% + 40px)}`;
+  .wsc-tag{left:calc(50% + 80px);top:calc(50% + 40px)}}
+body[data-input=touch] .wsc-tag{left:auto;right:calc(50% + 80px)}`;
   document.head.appendChild(s);
 }
 

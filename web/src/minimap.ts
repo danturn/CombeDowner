@@ -14,6 +14,9 @@
 // The minimap is for right now, the big map for planning: zoomed out the big map keeps to what
 // matters most (jobs close together are one badge with a count), and the rest comes in as it's
 // zoomed in. Whatever's under the pointer is named, and a marker put down on it says what it's on.
+// Off the minimap's edge, a job's marker sits on the rim its way with how far it is, and a search
+// circle you're well outside gets an arrow on the rim with how far to its edge (unless a job's marker
+// inside it already points there), so the minimap alone says which way to go.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { PencilLine } from "./signals";
@@ -317,6 +320,41 @@ function drawRoutes(g: CanvasRenderingContext2D, routes: RouteLine[], P: (x: num
     for (let i = -1; i < 1; i++) for (let j = -1; j < 1; j++) { g.fillStyle = (i + j) & 1 ? "#111" : "#fff"; g.fillRect(fx + i * q, fy + j * q, q, q); }
     g.restore();
   }
+}
+
+/** "450 m", "2.1 km". */
+const metres = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+
+/** A word or two by the rim, upright on screen whichever way the map's turned: (ox, oy) is where, in the map's turned frame. */
+function rimLabel(g: CanvasRenderingContext2D, text: string, ox: number, oy: number, yaw: number, colour: string, dpr: number) {
+  g.save();
+  g.rotate(yaw);
+  g.translate(ox, oy);
+  g.rotate(-yaw);
+  g.font = `700 ${10.5 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.lineWidth = 3 * dpr; g.strokeStyle = "rgba(0,0,0,0.85)"; g.strokeText(text, 0, 0);
+  g.fillStyle = colour; g.fillText(text, 0, 0);
+  g.restore();
+}
+
+/** An arrow on the rim pointing out along (ux, uz), a unit vector in the map's turned frame, with a label just inside it. */
+function rimArrow(g: CanvasRenderingContext2D, ux: number, uz: number, at: number, colour: string, text: string, yaw: number, dpr: number) {
+  const px = ux * at, pz = uz * at, s = 7 * dpr, sx = -uz, sz = ux;
+  g.save();
+  g.fillStyle = colour; g.strokeStyle = "rgba(0,0,0,0.8)"; g.lineWidth = 1.5 * dpr;
+  g.beginPath();
+  g.moveTo(px + ux * s, pz + uz * s);
+  g.lineTo(px - ux * s * 0.6 + sx * s, pz - uz * s * 0.6 + sz * s);
+  g.lineTo(px - ux * s * 0.6 - sx * s, pz - uz * s * 0.6 - sz * s);
+  g.closePath(); g.fill(); g.stroke();
+  g.translate(px - ux * 16 * dpr, pz - uz * 16 * dpr);
+  g.rotate(-yaw);
+  g.font = `700 ${10.5 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.lineWidth = 3 * dpr; g.strokeStyle = "rgba(0,0,0,0.85)"; g.strokeText(text, 0, 0);
+  g.fillStyle = colour; g.fillText(text, 0, 0);
+  g.restore();
 }
 
 /** Search circles, as a dashed ring with a faint fill. P turns scene (x, z) into canvas pixels; scale is canvas pixels to the metre. */
@@ -1330,6 +1368,12 @@ export class Minimap {
     }
     drawRoutes(g, this.routes, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], dpr);
     if (on("search")) drawCircles(g, this.circles, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], scale, dpr);
+    // a search circle wholly off the minimap: an arrow on the rim its way, with how far to its edge
+    for (const c of on("search") ? this.circles : []) {
+      const dx = (c.x - x) * scale, dz = (c.z - z) * scale, d = Math.hypot(dx, dz), near = d - c.r * scale;
+      // a job's own marker inside it already points there from the rim
+      if (near > R && !this.markers.some((m) => m.job && Math.hypot(m.x - c.x, m.z - c.z) < c.r)) rimArrow(g, dx / d, dz / d, R - 15 * dpr, c.colour, `Circle ${metres(near / scale)}`, yaw, dpr);
+    }
     // today's jobs and the speed traps: on the map, or within a walk on the rim pointing the way
     for (const j of this.jobs) {
       if (!on(j.layer)) continue;
@@ -1346,10 +1390,12 @@ export class Minimap {
     // the map markers: on the map in range, otherwise pinned to the rim in their direction
     for (const m of on("markers") ? this.markers : []) {
       let dx = (m.x - x) * scale, dz = (m.z - z) * scale;
-      const d = Math.hypot(dx, dz), edge = R - 16 * dpr;
-      if (d > edge) { dx *= edge / d; dz *= edge / d; }
+      const d = Math.hypot(dx, dz), edge = R - 16 * dpr, off = d > edge;
+      if (off) { dx *= edge / d; dz *= edge / d; }
       g.save(); g.translate(dx, dz); g.rotate(-yaw);
       pinIcon(g, 0, 0, 0.95 * dpr, m.colour, m.mine);
+      // a job's marker off the edge says how far, so the rim reads as a direction to go in
+      if (off && m.job) rimLabel(g, metres(d / scale), -(dx / edge) * 20 * dpr, -(dz / edge) * 20 * dpr, yaw, m.colour, dpr);
       g.restore();
     }
     // the minigames: their marker, upright, on the map or (within a walk) on the rim pointing the way

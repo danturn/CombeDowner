@@ -382,6 +382,7 @@ class Wanted implements Job {
   private crewTold = false;                                         // the call-out that he's among lookalikes
   private clueMarks = new Set<number>();
   private areaT = 0; private areaMarked = false;
+  private verdict: "yes" | "no" | "maybe" = "maybe";                   // what the card beside the crosshair makes of the man you're looking at
   private tally = new Map<string, { clues: number; spot: boolean; wrong: number; took: string }>();
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
@@ -571,7 +572,7 @@ class Wanted implements Job {
       verdict = "Not him"; colour = "#ff6a5e";
       say = `He's got ${FEAT_SHORT[miss][his[miss]].toLowerCase()}; ${want.how === "poster" ? "the poster says" : "the witness swears"} ${FEAT_SHORT[miss][want.v].toLowerCase()}`;
     } else if (third.how === "sworn") {
-      verdict = "That's him!"; colour = "#58e06a"; say = "<b>{use}</b> to point him out";
+      verdict = "That's him!"; colour = "#58e06a"; say = "Every feature fits";
     } else if (third.how === "none") {
       verdict = "Fits the poster"; colour = "#ffd84a";
       say = others > 1 ? `So do ${others - 1} more of them here: a witness will tell you one more thing` : "A witness will tell you one more thing, to be sure";
@@ -583,6 +584,7 @@ class Wanted implements Job {
       verdict = doubt ? "Probably not him" : "Could be him"; colour = doubt ? "#ff9a5e" : "#ffd84a";
       say = "The witness backed down on that one";
     }
+    this.verdict = verdict === "That's him!" ? "yes" : verdict.includes("not him") || verdict === "Not him" ? "no" : "maybe";
     suspectTag({ rows, verdict, say, colour });
   }
 
@@ -660,7 +662,9 @@ class Wanted implements Job {
     if (this.canCuff()) return "<b>{use}</b> Cuff him";
     const c = this.clueHere();
     if (c && c.q < 2) return c.t === 0 ? "<b>{use}</b> Pick up the leaflet" : c.q === 0 ? "<b>{use}</b> Ask the witness" : "<b>{use}</b> Press the witness: are they sure?";
-    return this.aim && !this.spotted ? "<b>{use}</b> That's him!" : "";
+    if (!this.aim || this.spotted) return "";
+    // the prompt agrees with the card beside the crosshair, but you can always make your own call
+    return this.verdict === "yes" ? "<b>{use}</b> It's him!" : this.verdict === "no" ? "<b>{use}</b> Point him out anyway" : "<b>{use}</b> Point him out";
   }
 
   use() {
@@ -1202,10 +1206,10 @@ class Wanted implements Job {
     if (this.running && this.seen) {
       return { line: `He's legged it! He's ${where(this.seen.x, this.seen.z)}, making for <b>${esc(hh.label)}</b>. Follow the marker, and corner him before you shoot`, sub: `${clock} left · ${traits}`, bar };
     }
-    const inside = Math.hypot(me.x - this.zone.x, me.z - this.zone.z) <= this.zone.r;
+    const fromMid = Math.hypot(me.x - this.zone.x, me.z - this.zone.z), inside = fromMid <= this.zone.r;
     return {
       line: `${inside ? "In the red circle" : "Get to the red circle"} round <b>${esc(hh.label)}</b>. Clues shrink it. Find the man with ${look}`,
-      sub: `Circle ${across(this.zone.r)} across${inside ? "" : `, ${where(this.zone.x, this.zone.z)}`} · then ${esc(next.label)} · ${traits} · poster: {job}`, bar,
+      sub: `Circle ${across(this.zone.r)} across${inside ? `, its edge ${far(this.zone.r - fromMid)} away` : `, ${where(this.zone.x, this.zone.z)}`} · then ${esc(next.label)} · ${traits} · poster: {job}`, bar,
     };
   }
 
