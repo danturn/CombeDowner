@@ -1,7 +1,8 @@
 // A race's own screens, big and in the middle, on top of the screens every mission shares
 // (missionscreens.ts): the banner while the racers gather and line up, the 3, 2, 1, GO! with its
 // start lights, the banner while you watch the others after you've finished or come off, and the
-// results card at the end, which stays up till you carry on.
+// results card at the end, which stays up till you carry on. A treasure trail's screens share the
+// look (trailscreens.ts), and its end card is this results card in the trail's colour.
 //
 // All drawn on the page in the HUD's layer and sized by the screen, so they work the same on a
 // phone. Nothing here goes over the network: race.ts says what to show from what it already knows.
@@ -16,7 +17,8 @@ export const MEDAL_COLOUR: Record<string, string> = { author: "#7ff0ff", gold: "
 const CARD_SECS = 8;
 
 let styled = false;
-function style() {
+/** The race screens' look, for other set pieces (a treasure trail: trailscreens.ts) to share; --rc on an element sets its colour. */
+export function style() {
   if (styled) return;
   styled = true;
   const s = document.createElement("style");
@@ -24,19 +26,19 @@ function style() {
 .rsc{position:fixed;left:0;right:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;text-align:center;
   font-family:'Barlow Condensed',Impact,sans-serif;color:#fff;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.6);z-index:6}
 .rsc[hidden]{display:none}
-.rsc .band{width:min(760px,94vw);box-sizing:border-box;padding:10px 16px 12px;background:linear-gradient(90deg,transparent,rgba(8,14,20,.84) 15%,rgba(8,14,20,.84) 85%,transparent);box-shadow:inset 0 -3px 0 ${COLOUR}}
+.rsc .band{width:min(760px,94vw);box-sizing:border-box;padding:10px 16px 12px;background:linear-gradient(90deg,transparent,rgba(8,14,20,.84) 15%,rgba(8,14,20,.84) 85%,transparent);box-shadow:inset 0 -3px 0 var(--rc,${COLOUR})}
 .rsc .head{font-weight:800;font-size:clamp(30px,7vmin,64px);letter-spacing:.06em;line-height:1;text-transform:uppercase}
 .rsc .rsub{font-weight:700;font-size:clamp(15px,3.2vmin,26px);margin-top:4px;line-height:1.15}
 .rsc .small{font-weight:600;font-size:clamp(13px,2.4vmin,19px);color:#c8d4dc;margin-top:3px}
-.rsc b{color:${COLOUR}}
+.rsc b{color:var(--rc,${COLOUR})}
 .rsc-wait{top:36%}
-.rsc .kind{font-weight:700;font-size:clamp(12px,2.4vmin,17px);letter-spacing:.2em;text-transform:uppercase;color:${COLOUR}}
+.rsc .kind{font-weight:700;font-size:clamp(12px,2.4vmin,17px);letter-spacing:.2em;text-transform:uppercase;color:var(--rc,${COLOUR})}
 .rsc-wait .dots::after{content:'';animation:rsc-dots 1.2s steps(4) infinite}
 .rsc-wait .count{font-weight:900;font-size:clamp(34px,8vmin,72px);line-height:1;color:#ffd84a;font-variant-numeric:tabular-nums}
 .rsc-count{top:0;bottom:0;justify-content:center}
 body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility:hidden}
 .rsc-count .num{font-weight:900;font-size:clamp(150px,42vmin,420px);line-height:.85;animation:rsc-punch .9s cubic-bezier(.15,1.5,.4,1) both}
-.rsc-count .num.go{color:${COLOUR};font-size:clamp(130px,36vmin,360px)}
+.rsc-count .num.go{color:var(--rc,${COLOUR});font-size:clamp(130px,36vmin,360px)}
 .rsc-count .lights{display:flex;gap:clamp(10px,2.4vmin,22px);margin-bottom:clamp(8px,2vmin,20px);padding:clamp(6px,1.4vmin,12px) clamp(10px,2.4vmin,20px);background:#111a;border:2px solid #000;border-radius:8px}
 .rsc-count .lamp{width:clamp(26px,6vmin,56px);height:clamp(26px,6vmin,56px);border-radius:50%;background:#2a1414;border:3px solid #000;box-shadow:inset 0 -4px 0 #0006}
 .rsc-count .lamp.red{background:radial-gradient(circle at 40% 35%,#ffb4a8,#ff2a1a 55%,#a00);box-shadow:0 0 22px #ff2a1a,inset 0 -4px 0 #0004}
@@ -49,19 +51,19 @@ body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility
 .rsc-spec table{margin:6px auto 0;border-collapse:collapse;font-weight:700;font-size:clamp(13px,2.4vmin,19px)}
 .rsc-spec td{padding:0 8px;text-align:left}
 .rsc-spec td.t{text-align:right;font-variant-numeric:tabular-nums}
-.rsc-spec tr.me td{color:${COLOUR}}
+.rsc-spec tr.me td{color:var(--rc,${COLOUR})}
 .rsc-spec tr.watch td{color:#ffd84a}
 .rsc-flip{position:absolute;top:50%;pointer-events:auto;font:800 28px 'Barlow Condensed',Impact,sans-serif;width:64px;height:64px;border-radius:50%;
-  background:rgba(8,14,20,.7);color:#fff;border:2px solid ${COLOUR};box-shadow:none}
+  background:rgba(8,14,20,.7);color:#fff;border:2px solid var(--rc,${COLOUR});box-shadow:none}
 .rsc-flip.l{left:14px}.rsc-flip.r{right:14px}
 .rsc-end{inset:0;justify-content:center;background:radial-gradient(ellipse at center,rgba(4,8,12,.55),rgba(4,8,12,.8));pointer-events:auto;transition:opacity .5s}
 .rsc-end.out{opacity:0}
 .rsc-end .rcard{width:min(680px,94vw);max-height:94vh;overflow:hidden;box-sizing:border-box;padding:clamp(10px,2.4vmin,22px) clamp(12px,3vmin,28px);
-  background:linear-gradient(rgba(10,18,26,.94),rgba(6,10,14,.94));border:2px solid ${COLOUR};box-shadow:0 0 0 4px #000,0 12px 40px #000;
+  background:linear-gradient(rgba(10,18,26,.94),rgba(6,10,14,.94));border:2px solid var(--rc,${COLOUR});box-shadow:0 0 0 4px #000,0 12px 40px #000;
   animation:rsc-card .6s cubic-bezier(.2,1.5,.4,1) both}
 .rsc-end.dnf .rcard{border-color:#ff5a4e}
 .rsc-end .flag{height:12px;margin:0 auto 6px;background:repeating-conic-gradient(#111 0 25%,#f4f4f2 0 50%) 0 0/12px 12px}
-.rsc-end .kind{font-weight:700;font-size:clamp(12px,2.4vmin,17px);letter-spacing:.2em;text-transform:uppercase;color:${COLOUR}}
+.rsc-end .kind{font-weight:700;font-size:clamp(12px,2.4vmin,17px);letter-spacing:.2em;text-transform:uppercase;color:var(--rc,${COLOUR})}
 .rsc-end .title{font-weight:900;font-size:clamp(30px,7vmin,58px);line-height:1;letter-spacing:.04em;text-transform:uppercase}
 .rsc-end.dnf .title{color:#ff8a80}
 .rsc-end .rrow{display:flex;align-items:center;justify-content:center;gap:clamp(12px,4vmin,40px);margin:6px 0}
@@ -87,13 +89,13 @@ body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility
 .rsc-end table{margin:4px auto 0;border-collapse:collapse;font-weight:700;font-size:clamp(13px,2.6vmin,19px)}
 .rsc-end td{padding:0 8px;text-align:left}
 .rsc-end td.t{text-align:right;font-variant-numeric:tabular-nums}
-.rsc-end tr.me td{color:${COLOUR}}
+.rsc-end tr.me td{color:var(--rc,${COLOUR})}
 .rsc-end tr.dnf td{color:#9aa}
 .rsc-end .reward{font-weight:700;font-size:clamp(14px,2.8vmin,20px);color:#ffd84a;margin-top:6px}
 .rsc-end .go{display:flex;justify-content:center;gap:10px;margin-top:10px}
 .rsc-end button{pointer-events:auto;font:800 clamp(16px,3.2vmin,22px) 'Barlow Condensed',Impact,sans-serif;letter-spacing:.08em;text-transform:uppercase;
-  padding:6px 18px 5px;color:#fff;background:#ffffff14;border:2px solid ${COLOUR};cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
-.rsc-end button.main{background:${COLOUR};color:#08131a}
+  padding:6px 18px 5px;color:#fff;background:#ffffff14;border:2px solid var(--rc,${COLOUR});cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
+.rsc-end button.main{background:var(--rc,${COLOUR});color:#08131a}
 .rsc-end button .fill{position:absolute;left:0;bottom:0;height:3px;background:#fff;animation:rsc-fill ${CARD_SECS}s linear both}
 @media (max-height:600px){.rsc-end .podium{display:none}.rsc-end .stats{margin:4px 0 2px}.rsc-end .flag{display:none}}
 @keyframes rsc-punch{0%{transform:scale(2.6);opacity:0}25%{transform:scale(.92);opacity:1}40%{transform:scale(1.04)}70%{transform:scale(1);opacity:1}100%{transform:scale(.96);opacity:0}}
@@ -212,6 +214,8 @@ export interface Summary {
   podium?: { name: string; time: string }[];
   rows?: { name: string; time: string; me?: boolean; dnf?: boolean }[];
   reward?: string;
+  /** The card's colour, if not a race's. */
+  colour?: string;
 }
 
 let card: { remove(): void } | null = null;
@@ -223,6 +227,7 @@ export function summary(o: Summary, again?: () => void) {
   card?.remove();
   const e = document.createElement("div");
   e.className = `rsc rsc-end${o.dnf ? " dnf" : ""}`;
+  if (o.colour) e.style.setProperty("--rc", o.colour);
   const medal = o.medal
     ? `<div class="medal" style="--m:${MEDAL_COLOUR[o.medal] ?? "#ffd23a"}">${esc((o.medalWord ?? o.medal).toUpperCase())}</div>`
     : `<div class="medal none">${esc((o.medalWord ?? (o.dnf ? "DNF" : "No medal")).toUpperCase())}</div>`;

@@ -14,14 +14,23 @@
 // here"); from two stars there's no distance or compass at all, only the place, with letters
 // missing, jumbled or as a cryptic hint ("where a sly red raider of bins drinks"). Now and then the
 // riddle is a picture instead: a little inked sketch of the view from near the tin (snapshot.ts),
-// taken once that part of Bath is loaded round you. No search circle comes up by itself: stuck, you
-// can ask a local (E), and a circle goes on the maps, off-centre, smaller each time you ask. The
-// tin only shows within a few metres' walk and rattles when you're close. On medium and hard
-// trails some legs have an empty decoy tin near the real one.
+// taken once that part of Bath is loaded round you. No search circle comes up by itself, and none
+// ever shrinks by itself: stuck, you can ask a local, three hints a tin (one for the chest), the
+// first 45 seconds into a clue and then 20 seconds apart. The first E says what the hint gives and
+// what it costs, and only a second E pays: a circle goes on the maps, off-centre, then smaller each
+// time, and always with the tin (or the chest, or a plaque's true tin) well inside it. A hint there's
+// nothing left to give for is never taken. Each tin is placed only once all of Bath round it is
+// loaded, so it lands in the same spot on every screen, never in a building, a garden behind a wall
+// or the water. The tin only shows within a few metres' walk and rattles when you're close. On
+// medium and hard trails some legs have an empty decoy tin near the real one.
+//
+// It opens with a big splash (trailscreens.ts): what you're after, any clock, how the circle
+// works, and the first clue large. J (the Clue button on a touch screen, or the big map with a pad)
+// brings the clue back. It ends on the race results card (racescreens.ts) in the trail's gold.
 //
 // Together, there's no clock and no par: the trail is scored on elegance instead. Each leg is worth
-// three brass stars, and you lose one for asking a local and one for opening a decoy or the wrong
-// tin. The rosette comes from the total (gold for nine in ten of the stars, then silver, then
+// three brass stars, and you lose one for each hint from a local and one for opening a decoy or the
+// wrong tin. The rosette comes from the total (gold for nine in ten of the stars, then silver, then
 // bronze), and the end card lists how each leg went. A trail done together can't be lost, so it
 // leaves no scar. A race keeps its clock and its par, and has a ghost rival, K: her time is the
 // best anyone's done that trail on this device, or the par the first time. Beat her to the chest
@@ -38,7 +47,7 @@
 //   the tin is where the lines cross. Each line you see is pencilled on your own map (signals.ts).
 // - Sketch maps: a riddle to the place, and a rough inked sketch of 250 m round it with an X on it
 //   (sketch.ts), turned round and with no north arrow on hard trails. With friends only the
-//   map-holder sees it, full screen while they hold the clue key (J), with no big map meanwhile,
+//   map-holder sees it, full screen while they hold the clue key (J, or the Clue button), with no big map meanwhile,
 //   and talks the others in; one map-holder for every two of you, picked by the room's ids in
 //   order, each with their own torn strip of it. On your own, you hold it.
 // - Split clues: the place's name in two halves, alternate letters each. With friends each of you
@@ -75,7 +84,8 @@
 // leg is twin tins. Digging a hole goes round as "hole", hitting the chest as "found", and taking
 // hold of it or letting go as "lift": whichever of two holding it has the lower id calls it lifted.
 // Asking a local, jamming a lock and opening a decoy go round as "el", so together
-// everyone's stars agree. Getting up to a look-out goes round as "saw", so everyone's card says who's
+// everyone's stars and circles agree (each circle is worked out from how many hints the leg's had,
+// round the tin's own spot, which every screen works out alike). Getting up to a look-out goes round as "saw", so everyone's card says who's
 // seen which line, but the line is only ever drawn for whoever is stood up there; which half of a
 // split clue you hold comes from the room's ids in order. How many took the trail on goes round in
 // its progress (with the poster, to anyone who joins). Nobody needs the host for any of it. K runs on
@@ -84,17 +94,18 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
-import { clearSpot, streetSpot } from "./haunts";
+import { streetSpot } from "./haunts";
 import { PATHS } from "./map";
 import { snapshot } from "./snapshot";
-import { missionEnd } from "./missionscreens";
+import { control, summary } from "./racescreens";
+import { callout, clueCard, offer, splash, trailScreensDown } from "./trailscreens";
 import { type Fact, type House, countsIn, houseNear, loadedRound, placeAt, shopNear } from "./clues";
 import { Lock } from "./lock";
 import { drawSketch } from "./sketch";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
 const COLOUR = "#e0a526";
-const RINGS = [130, 75, 40];              // the circle's sizes, a step smaller each time you ask a local
+const RINGS = [130, 75, 40];              // the circle's radii, a step smaller with each hint from a local
 const RING_SHOWN = 150;                   // the circle's edge glows on the ground within this many metres
 const GLINT_NEAR = 12;                    // the tin only glints this close
 const TIN_NEAR = 40;                      // and isn't even put up until you're this close
@@ -106,6 +117,12 @@ const SILVER = 1.15;                      // silver's par and a bit
 const WALK_PACE = 4.5;                    // metres a second along the streets, for spacing the legs
 const ASK_AFTER = 45;                     // seconds on a clue before you can ask a local
 const ASK_AGAIN = 20;                     // and between asks
+const ASK_CONFIRM = 6;                    // seconds to press E again and pay, once a local's offered
+const SETTLE = 120;                       // a tin's only placed once this much of Bath round it is loaded
+const CLUE_UP = 12;                       // seconds the clue stays up when you ask to see it again
+const RING_MARGIN = 12;                   // a tin is always at least this far inside its circle
+// how far a tin can end up from where it was aimed, as spotOf, pacing and wordList place them
+const STREET_REACH = 48, LOOK_REACH = 170, WORD_REACH = 142, PACE_REACH = 98;
 const STARS = 3;                          // brass stars a leg is worth
 const GOLD_SHARE = 0.9, SILVER_SHARE = 0.65;   // of all the brass stars, for a gold or silver rosette
 const OPEN = 2.6;                         // how close to open a tin
@@ -124,7 +141,7 @@ const PLAQUE_NEAR = 70;                   // a word leg's plaque is put up this 
 const SOUND_EVERY = 4;                    // seconds between the bell's tolls, or the busker's tune
 const CLOSE_RATTLE = 30;                  // the tin rattles this close
 const DIG = 2;                            // seconds of digging for a hole
-const DIG_NEAR = 3;                       // a hole this near the chest finds it
+const DIG_NEAR = 4;                       // a hole this near the chest finds it: paces are only roughly a metre
 const LIFT_TWO = 1.2, LIFT_ONE = 5, LIFT_ALONE = 15;   // seconds to lift the chest: two of you, on your own, or alone while friends are elsewhere
 const HOLE_LIFE = 30 * 60 * 1000;         // a wrong hole fills itself in after half an hour
 const PACE_KINDS: [string, string][] = [["postbox", "the post box"], ["bench", "the bench"], ["info", "the bus stop"], ["bin", "the bin"], ["lamp", "the lamp post"]];
@@ -548,10 +565,78 @@ function segDist(x: number, y: number, a: number[], b: number[]) {
   return Math.hypot(a[0] + ex * t - x, a[1] + ey * t - y);
 }
 
+type Map_ = QuestWorld["map"];
+/** Is scene (x, z) in the river, the canal or a pond, in the maps loaded here? */
+function wet(map: Map_, x: number, z: number) {
+  for (const m of [map, ...map.tilesNear(x, z, 10)]) for (const wp of [...(m === map ? map.wide?.wp ?? [] : []), ...(m.d.wp ?? [])]) {
+    const ring = wp.r[0];
+    if (!ring) continue;
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if (yi > -z !== yj > -z && x < ((xj - xi) * (-z - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    if (inside) return true;
+  }
+  return false;
+}
+/** Somewhere a tin can stand and be got to: outdoors, dry and clear. */
+const firm = (map: Map_, x: number, z: number) => !map.indoors(x, z) && !wet(map, x, z) && !map.blocked(x, z, 0.6);
+/** The nearest firm ground to (x, z) within r. */
+function firmSpot(map: Map_, x: number, z: number, r: number): { x: number; z: number } | null {
+  for (let d = 0; d <= r; d++) for (let k = 0, n = d ? 12 : 1; k < n; k++) {
+    const a = (k / n) * Math.PI * 2, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
+    if (firm(map, px, pz)) return { x: px, z: pz };
+  }
+  return null;
+}
+/** Can you walk straight from (ax, az) to (bx, bz), as paces are counted, with nothing in the way? */
+function straightWalk(map: Map_, ax: number, az: number, bx: number, bz: number) {
+  const L = Math.hypot(bx - ax, bz - az);
+  for (let t = 1.5; t <= L; t += 0.75) {
+    const x = ax + ((bx - ax) * t) / L, z = az + ((bz - az) * t) / L;
+    if (map.indoors(x, z) || wet(map, x, z) || map.blocked(x, z, 0.25)) return false;
+  }
+  return true;
+}
+/** Can you walk from (x, z) to a street or path, within r, round whatever's in the way? Half a metre
+ *  at a time, as a garden gate's about a metre wide: a doorstep behind an unbroken hedge isn't. */
+function walkable(map: Map_, x: number, z: number, r: number) {
+  // the streets and paths round about, once, as segments (ax, az, bx, bz)
+  const segs: number[] = [];
+  for (const m of [map, ...map.tilesNear(x, z, r + 5)]) for (const rd of m.d.rd) for (let k = 1; k < rd.p.length; k++) {
+    const ax = rd.p[k - 1][0], az = -rd.p[k - 1][1], bx = rd.p[k][0], bz = -rd.p[k][1];
+    if (Math.min(ax, bx) < x + r + 3 && Math.max(ax, bx) > x - r - 3 && Math.min(az, bz) < z + r + 3 && Math.max(az, bz) > z - r - 3) segs.push(ax, az, bx, bz);
+  }
+  const onWay = (px: number, pz: number) => {
+    for (let k = 0; k < segs.length; k += 4) {
+      const ax = segs[k], az = segs[k + 1], ex = segs[k + 2] - ax, ez = segs[k + 3] - az, l2 = ex * ex + ez * ez || 1;
+      const t = Math.max(0, Math.min(1, ((px - ax) * ex + (pz - az) * ez) / l2));
+      if (Math.hypot(ax + ex * t - px, az + ez * t - pz) < 2) return true;
+    }
+    return false;
+  };
+  const S = 0.5, seen = new Set(["0,0"]), q: [number, number][] = [[0, 0]];
+  for (let k = 0; k < q.length; k++) {
+    const [i, j] = q[k];
+    if (onWay(x + i * S, z + j * S)) return true;
+    for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) {
+      const key = `${a},${b}`;
+      if (seen.has(key) || Math.hypot(a, b) * S > r) continue;
+      seen.add(key);
+      if (!map.indoors(x + a * S, z + b * S) && !map.blocked(x + a * S, z + b * S, 0.25)) q.push([a, b]);
+    }
+  }
+  return false;
+}
+/** A circle's size as a player reads it off the map: across, to the nearest 10 m. */
+const across = (r: number) => `${Math.round((r * 2) / 10) * 10} m`;
+
 /** What a leg cost in brass stars: locals asked, locks jammed, decoys opened; and who opened its tin. */
 interface Cost { ask: number; jam: number; decoy: number; by: string; digs?: number }
 const legStars = (c: Cost) => Math.max(0, STARS - c.ask - c.jam - c.decoy);
 const K_COLOUR = "#b0b8c8";
+const paperUp = () => { const b = document.getElementById("scoreboard"); return !!b && !b.hidden; };
 /** What a local says when asked the way. */
 const LOCALS = ["\"Oh, you want round there, love.\"", "\"Seen a tin? Try over that way.\"", "\"Everyone's asking me that today.\"",
   "\"I'll draw you a circle, shall I?\"", "\"Down there and about a bit, I think.\""];
@@ -653,7 +738,6 @@ class Trail implements Job {
   private twins = new Set<number>();         // legs that are twin tins this time
   private spots = new Map<string, { x: number; z: number }>();   // where each tin stands, by "leg:half", once known
   private tins = new Map<string, Tin>();     // the tins put up round you
-  private rings = new Map<string, number>(); // how far each tin's search circle has shrunk (an index into RINGS)
   private halves: [number, number] = [-1e9, -1e9];   // when each of twin tins was last opened (seconds, this page's clock)
   private halfBy: [string, string] = ["", ""];
   private pics = new Map<number, string>();  // picture clues drawn, by leg (as image data)
@@ -687,7 +771,7 @@ class Trail implements Job {
   private houses = new Map<number, House | null>();   // a look leg's house, once its street is loaded (null: none to be had)
   private sketches = new Map<number, HTMLCanvasElement>();   // sketch legs' drawings, once drawn
   private sketchEl: HTMLDivElement | null = null;   // the sketch held up full screen
-  private sketchKey = false;                 // the clue key's held down (J, or the Sketch button)
+  private sketchKey = false;                 // the clue key's held down by the sketch's holder (J, or the Clue button)
   private sketchBtn: HTMLButtonElement | null = null;
   private keys = new AbortController();
   private paces = new Map<number, { x: number; z: number; text: string } | null>();   // the chest's pacing riddle, once its place is loaded
@@ -697,6 +781,10 @@ class Trail implements Job {
   private liftBy = new Set<string>();        // who's holding E at the chest
   private liftT = 0;
   private digBtn: HTMLButtonElement | null = null;
+  private offerT = 0;                        // seconds left to pay for the hint a local's offered
+  private splashed = false;                  // the start's splash has been up
+  private splashWait = 0;
+  private clueT = 0;                         // seconds the clue's up again for (J, or the Clue button)
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
     this.race = !!((offer.mode ?? 0) & 1);
@@ -704,7 +792,7 @@ class Trail implements Job {
     this.build(w.players().length);
     w.flares?.(1);
     const sig = { signal: this.keys.signal };
-    addEventListener("keydown", (e) => { if (e.code === "KeyJ" && !e.repeat && !(e.target instanceof HTMLInputElement)) this.sketchKey = true; }, sig);
+    addEventListener("keydown", (e) => { if (e.code === "KeyJ" && !e.repeat && !(e.target instanceof HTMLInputElement)) this.clueKey(); }, sig);
     addEventListener("keyup", (e) => { if (e.code === "KeyJ") this.sketchKey = false; }, sig);
     addEventListener("blur", () => { this.sketchKey = false; this.digKey = false; }, sig);
     addEventListener("keydown", (e) => { if (e.code === "KeyE" && !e.repeat) this.digKey = true; }, sig);
@@ -717,6 +805,9 @@ class Trail implements Job {
     this.pc = Math.max(1, Math.min(8, pc));
     this.t = trailOf(offer, this.w, this.pc);
     this.costs = this.t.legs.map(() => ({ ask: 0, jam: 0, decoy: 0, by: "" }));
+    // anything worked out from the legs before is for legs that may no longer be the same
+    for (const m of [this.spots, this.decoys, this.wordSpots, this.plaques, this.locks, this.houses, this.paces, this.sketches, this.notes, this.pics]) m.clear();
+    this.picTried.clear();
     this.kTime = kBest(offer.seed) ?? this.t.par * K_SLOW;
     const r = rng(hash("clues", offer.seed));
     let fx = offer.x, fz = offer.z;
@@ -733,19 +824,23 @@ class Trail implements Job {
   private halvesOf(n: number) { return this.twins.has(n) && this.t.legs[n]?.twin ? [0, 1] : [0]; }
   private aim(n: number, h: number) { const s = this.t.legs[n]; return h ? { x: s.twin!.tx, z: s.twin!.tz } : { x: s.tx, z: s.tz }; }
 
-  /** Where tin (n, h) stands: on a street or path near its place, the same for everyone; once that part of Bath is loaded. */
+  /** Where tin (n, h) stands: on a street or path near its place, the same for everyone. Null until
+   *  all of Bath round it is loaded here: picked from half-loaded squares, it could land in a building
+   *  that hadn't come in yet, or somewhere else on another player's screen. */
   private spotOf(n: number, h: number) {
     const key = `${n}:${h}`, had = this.spots.get(key);
     if (had) return had;
     const a = this.aim(n, h), map = this.w.map;
-    if (!map.detailedAt(a.x, a.z)) return null;
+    if (!loadedRound(map, a.x, a.z, SETTLE)) return null;
     if (this.t.legs[n].step === "look") {
       // on the doorstep of the house the clue picks out
       const house = this.houseOf(n);
       if (house === undefined) return null;
       if (house) {
         const ox = house.x + Math.sin(house.a) * 2.2, oz = house.z + Math.cos(house.a) * 2.2;
-        const c = map.indoors(ox, oz) ? (([x, z]) => ({ x, z }))(clearSpot(map, ox, oz, 6) ?? [ox, oz]) : { x: ox, z: oz };
+        let c = firm(map, ox, oz) ? { x: ox, z: oz } : firmSpot(map, ox, oz, 6);
+        // shut in behind a hedge or a wall with no gate: it waits on the street outside instead
+        if (!c || !walkable(map, c.x, c.z, 30)) { const st = onStreet(this.w, house.x, house.z, 40) ?? { x: ox, z: oz }; c = firmSpot(map, st.x, st.z, 8) ?? st; }
         this.spots.set(key, c);
         return c;
       }
@@ -757,13 +852,13 @@ class Trail implements Job {
     }
     if (this.t.legs[n].step === "bearing" || this.t.legs[n].step === "sketch") {
       // right where the lines cross, or under the X
-      const c = (([x, z]) => ({ x, z }))(clearSpot(map, a.x, a.z, 6) ?? [a.x, a.z]);
+      const f = firmSpot(map, a.x, a.z, 6), c = f && walkable(map, f.x, f.z, 20) ? f : { x: a.x, z: a.z };
       this.spots.set(key, c);
       return c;
     }
     const r = rng(hash("tin", this.offer.seed, n, h));
-    const p = streetSpot(map, a.x, a.z, 0, 45, 0.6, (x, z) => !map.indoors(x, z), 4, 3, r);
-    const c = p ? { x: p.x, z: p.z } : (([x, z]) => ({ x, z }))(clearSpot(map, a.x, a.z, 20) ?? [a.x, a.z]);
+    const p = streetSpot(map, a.x, a.z, 0, 45, 0.6, (x, z) => !map.indoors(x, z) && !wet(map, x, z), 4, 3, r);
+    const c = p ? { x: p.x, z: p.z } : firmSpot(map, a.x, a.z, 20) ?? { x: a.x, z: a.z };
     this.spots.set(key, c);
     return c;
   }
@@ -774,6 +869,10 @@ class Trail implements Job {
     const n = this.mine, s = this.t.legs[n], me = this.w.me();
     if (!s) return;
     this.legT += dt; this.askT += dt;
+    // the Chronicle (up for a while when you join, or on Tab) would sit on top of it: it waits its turn
+    if (!this.splashed && (!paperUp() || (this.splashWait += dt) > 25)) { this.splashed = true; this.showSplash(); }
+    if (this.offerT > 0 && ((this.offerT -= dt) <= 0 || this.near || !this.askReady())) { this.offerT = 0; offer(null); }
+    this.clueUpdate(dt);
     this.lock.update(dt);
     if (this.lock.open && this.lockAt && (Math.hypot(this.lockAt.x - me.x, this.lockAt.z - me.z) > OPEN + 2 || !this.lockAt.key.startsWith(`${n}:`) || !me.alive)) {
       if (this.lockAt) this.wheels.set(this.lockAt.key, this.lock.wheels);
@@ -886,9 +985,11 @@ class Trail implements Job {
     if (n !== this.t.legs.length - 1) return null;
     if (this.paces.has(n)) return this.paces.get(n);
     const s = this.t.legs[n], map = this.w.map;
-    if (!loadedRound(map, s.x, s.z, 120)) return undefined;
+    // the street things are gathered from a good way past the ones used, so "the only one round
+    // there" is judged against everything you could see from it
+    if (!loadedRound(map, s.x, s.z, 170)) return undefined;
     const r = rng(hash("paces", this.offer.seed)), items: (string | number)[][] = [];
-    for (const m of [map, ...map.tilesNear(s.x, s.z, 120)]) for (const f of m.d.fx ?? []) if (Math.hypot(+f[1] - s.x, -f[2] - s.z) < 110) items.push(f);
+    for (const m of [map, ...map.tilesNear(s.x, s.z, 170)]) for (const f of m.d.fx ?? []) if (Math.hypot(+f[1] - s.x, -f[2] - s.z) < 160) items.push(f);
     items.sort((a, b) => +a[1] - +b[1] || +a[2] - +b[2]);
     let out: { x: number; z: number; text: string } | null = null;
     for (const [kind, said] of PACE_KINDS) {
@@ -898,7 +999,7 @@ class Trail implements Job {
         const fx = +f[1], fz = -f[2];
         for (let t = 0; t < 8 && !out; t++) {
           const a = Math.floor(r() * 8) * (Math.PI / 4), steps = 10 + Math.floor(r() * 16), x = fx + Math.sin(a) * steps, z = fz - Math.cos(a) * steps;
-          if (map.indoors(x, z) || map.blocked(x, z, 0.8)) continue;
+          if (map.indoors(x, z) || map.blocked(x, z, 0.8) || wet(map, x, z) || !straightWalk(map, fx, fz, x, z)) continue;
           out = { x, z, text: `From ${said} there, walk <b>${steps} paces ${compassWord(x - fx, z - fz)}</b> (a pace is about a metre) and dig.` };
         }
         if (out) break;
@@ -977,7 +1078,7 @@ class Trail implements Job {
    *  can't see the big map meanwhile. Everyone else has to be talked in. */
   private sketchUpdate(n: number) {
     const s = this.t.legs[n], sk = s?.sketch, holders = sk ? this.holders(n) : [], mine = holders.indexOf(this.w.selfId);
-    this.touchButton(mine >= 0);
+    this.touchButton();
     const show = mine >= 0 && this.sketchKey && this.w.me().alive;
     if (!show || !sk) { if (this.sketchEl) this.sketchEl.hidden = true; return; }
     let pic = this.sketches.get(n);
@@ -1007,18 +1108,54 @@ class Trail implements Job {
     document.getElementById("bigmap")?.setAttribute("hidden", "");
   }
 
-  /** On a touch screen, a button to hold the sketch up, for the map-holder. */
-  private touchButton(want: boolean) {
-    if (want && !this.sketchBtn) {
-      const host = document.getElementById("t-signals") ?? document.getElementById("touch");
-      if (!host) return;
-      const b = (this.sketchBtn = document.createElement("button"));
-      b.className = "tbtn small"; b.textContent = "Sketch";
-      b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); try { b.setPointerCapture(e.pointerId); } catch { /* gone */ } this.sketchKey = true; });
-      const up = () => { this.sketchKey = false; };
-      b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
-      host.appendChild(b);
-    } else if (!want && this.sketchBtn) { this.sketchBtn.remove(); this.sketchBtn = null; this.sketchKey = false; }
+  /** On a touch screen, the clue key as a button: tap for the clue again, or hold for the sketch if it's yours. */
+  private touchButton() {
+    if (this.sketchBtn) return;
+    const host = document.getElementById("t-signals") ?? document.getElementById("touch");
+    if (!host) return;
+    const b = (this.sketchBtn = document.createElement("button"));
+    b.className = "tbtn small"; b.textContent = "Clue";
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); try { b.setPointerCapture(e.pointerId); } catch { /* gone */ } this.clueKey(); });
+    const up = () => { this.sketchKey = false; };
+    b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+    host.appendChild(b);
+  }
+
+  /** The clue key (J, or the Clue button) pressed: the map-holder on a sketch leg holds it up while
+   *  it's down; anyone else gets the clue back, big, or puts it away again. */
+  private clueKey() {
+    const n = this.mine;
+    if (this.t.legs[n]?.sketch && this.holders(n).includes(this.w.selfId)) { this.sketchKey = true; return; }
+    this.clueT = this.clueT > 0 ? 0 : CLUE_UP;
+    if (this.clueT > 0) splash(null);
+  }
+
+  /** The clue again, big: while you've asked for it, and whenever the big map's open (with a pad,
+   *  that's the way to it: the pad has no button to spare for a clue key). */
+  private clueUpdate(dt: number) {
+    if (this.clueT > 0) this.clueT -= dt;
+    const map = document.getElementById("bigmap"), mapOpen = !!map && !map.hidden;
+    if (!(this.clueT > 0 || mapOpen) || !this.w.me().alive) { clueCard(null); return; }
+    const n = this.mine, total = this.t.legs.length;
+    clueCard({ tag: `Clue ${n + 1} of ${total}${n === total - 1 ? ": the chest" : ""}`, clue: this.clueHtml(n), foot: this.hintLine() });
+  }
+
+  /** The big card as the trail starts: what you're after, any clock, how the circle works, and the clue. */
+  private showSplash() {
+    const n = this.mine, total = this.t.legs.length, tins = total - 1, of = RINGS.length;
+    const find = `Find <b>${tins} locked tin${tins > 1 ? "s" : ""}</b>, one clue at a time, then dig up the <b>Bath Bun chest</b>`;
+    const clockLine = this.race ? `A race: first to the chest wins. K gets there at <b>${clock(this.kTime)}</b>, so that's your time limit. Par ${clock(this.t.par)}.`
+      : `No clock: take your time. Each leg's worth three brass stars, and the tidier you are the better the rosette.`;
+    const friends = this.w.players().length >= 2;
+    const rules = [
+      `Each tin is locked: its code is read off the place round it.${friends && !this.race ? " Anyone's find moves everyone on." : ""}`,
+      `Stuck? Ask a local (<b>${control("KeyE", "Use")}</b>, from ${ASK_AFTER} s into a clue): a search circle goes on your map with the tin inside. `
+        + `Up to ${of} hints a tin, ${ASK_AGAIN} s apart, each circle smaller (${RINGS.map((r) => across(r)).join(", ")} across)`
+        + (this.race ? ". Free in a race: they only cost you time." : ", a brass star each. You see what you'd get before you pay."),
+      "The circle never shrinks by itself: only when someone asks. Your card counts down to the next hint.",
+      "The chest is buried: its clue gives paces to count from something in the street. Hold <b>" + control("KeyE", "Dig") + "</b> to dig.",
+    ];
+    splash({ name: this.offer.title, find, clock: clockLine, tag: `Clue ${n + 1} of ${total}`, clue: this.clueHtml(n), rules });
   }
 
   /** Where look-out i's line ends: past the tin by an amount fixed by the seed. */
@@ -1044,9 +1181,9 @@ class Trail implements Job {
     const from = this.legStart(n), s = this.t.legs[n], map = this.w.map;
     const toward = Math.atan2(s.z - from.z, s.x - from.x), a = toward + (rng(hash("note", this.offer.seed, n))() - 0.5) * 1.6;
     const tx = from.x + Math.cos(a) * NOTE_AWAY, tz = from.z + Math.sin(a) * NOTE_AWAY;
-    if (!map.detailedAt(tx, tz)) return null;
-    const p = streetSpot(map, tx, tz, 0, 40, 0.6, (x, z) => !map.indoors(x, z), 4, 3, rng(hash("notespot", this.offer.seed, n)));
-    const c = p ? { x: p.x, z: p.z } : (([x, z]) => ({ x, z }))(clearSpot(map, tx, tz, 15) ?? [tx, tz]);
+    if (!loadedRound(map, tx, tz, 60)) return null;
+    const p = streetSpot(map, tx, tz, 0, 40, 0.6, (x, z) => !map.indoors(x, z) && !wet(map, x, z), 4, 3, rng(hash("notespot", this.offer.seed, n)));
+    const c = p ? { x: p.x, z: p.z } : firmSpot(map, tx, tz, 15) ?? { x: tx, z: tz };
     this.notes.set(n, c);
     return c;
   }
@@ -1075,23 +1212,28 @@ class Trail implements Job {
     }
   }
 
-  /** A word leg's three tins, a little way from the plaque: only the one with the plaque's word on it is the real one. */
-  private wordTins(n: number, dt: number) {
-    const plaque = this.spots.get(`${n}:0`), map = this.w.map, me = this.w.me(), table = this.plaqueOf(n);
-    if (!plaque) return;
-    let list = this.wordSpots.get(n);
-    if (!list) {
-      // round the corner from the plaque, out of sight of it, so someone has to read it out
-      const r = rng(hash("wordspots", this.offer.seed, n));
-      list = [];
-      for (const word of table.words) {
-        const p = streetSpot(map, plaque.x, plaque.z, 50, 90, 0.6, (x, z) => !map.indoors(x, z) && list!.every((o) => Math.hypot(o.x - x, o.z - z) > 12), 4, 3, r);
-        const fx = plaque.x + (list.length - 1) * 8, fz = plaque.z + 60;
-        const c = p ?? (([x, z]) => ({ x, z }))(clearSpot(map, fx, fz, 12) ?? [fx, fz]);
-        list.push({ x: c.x, z: c.z, word });
-      }
-      this.wordSpots.set(n, list);
+  /** Where a word leg's tins stand, round the corner from the plaque, out of sight of it, so someone
+   *  has to read it out. Null until the plaque's placed and everything round it is loaded. */
+  private wordList(n: number) {
+    const had = this.wordSpots.get(n);
+    if (had) return had;
+    const plaque = this.spotOf(n, 0), map = this.w.map, table = this.plaqueOf(n);
+    if (!plaque || !loadedRound(map, plaque.x, plaque.z, 100)) return null;
+    const r = rng(hash("wordspots", this.offer.seed, n)), list: { x: number; z: number; word: string }[] = [];
+    for (const word of table.words) {
+      const p = streetSpot(map, plaque.x, plaque.z, 50, 90, 0.6, (x, z) => !map.indoors(x, z) && !wet(map, x, z) && list.every((o) => Math.hypot(o.x - x, o.z - z) > 12), 4, 3, r);
+      const fx = plaque.x + (list.length - 1) * 8, fz = plaque.z + 60;
+      const c = p ?? firmSpot(map, fx, fz, 12) ?? { x: fx, z: fz };
+      list.push({ x: c.x, z: c.z, word });
     }
+    this.wordSpots.set(n, list);
+    return list;
+  }
+
+  /** A word leg's tins: only the one with the plaque's word on it is the real one. */
+  private wordTins(n: number, dt: number) {
+    const plaque = this.spots.get(`${n}:0`), map = this.w.map, me = this.w.me(), table = this.plaqueOf(n), list = this.wordList(n);
+    if (!plaque || !list) return;
     list.forEach((o, k) => {
       const key = `${n}:w${k}`, d = Math.hypot(o.x - me.x, o.z - me.z);
       if (!this.tins.has(key) && d < TIN_NEAR) {
@@ -1129,8 +1271,23 @@ class Trail implements Job {
 
   /** A race K got to first: she digs up the chest. Only a race can be lost. */
   private lose() {
-    const s = this.t.legs[this.t.legs.length - 1], at = this.spots.get(`${this.t.legs.length - 1}:0`) ?? { x: s.tx, z: s.tz };
-    this.done = { won: false, text: `K got to the chest first, in ${clock(this.kTime)}`, x: at.x, z: at.z };
+    trailScreensDown();
+    const n = this.t.legs.length - 1, s = this.t.legs[n], at = this.spots.get(`${n}:0`) ?? { x: s.tx, z: s.tz };
+    const pace = this.paces.get(n)?.text.replace(/<[^>]*>/g, "");
+    summary({ kind: `Treasure hunt · ${this.offer.title}`, title: "K got there first", dnf: true, time: clock(this.kTime), medal: "", medalWord: "Lost",
+      lines: [`The chest was buried by ${s.n}.`, ...pace ? [pace.replace(/ and dig\.$/, ".")] : []],
+      stats: this.stats(Math.min(this.mine, n)), reward: "K's hole is on your map, where the chest was: her note's a second chance today", colour: COLOUR });
+    this.done = { won: false, screen: true, text: `K got to the chest first, in ${clock(this.kTime)}`, x: at.x, z: at.z };
+  }
+
+  /** The numbers for the end card: tins opened, hints bought, and what else went wrong. */
+  private stats(tins: number) {
+    const sum = (f: (c: Cost) => number) => this.costs.reduce((a, c) => a + f(c), 0), all = this.t.legs.length - 1;
+    const out = [{ k: "Tins found", v: `${tins} / ${all}` }, { k: "Hints bought", v: String(sum((c) => c.ask)) }];
+    const jams = sum((c) => c.jam), holes = sum((c) => c.digs ?? 0);
+    if (jams) out.push({ k: "Locks jammed", v: String(jams) });
+    if (holes) out.push({ k: "Wrong holes", v: String(holes) });
+    return out;
   }
 
   /** Where losing leaves its mark: the chest's hole, dug by K. */
@@ -1139,15 +1296,46 @@ class Trail implements Job {
     return s ? this.spots.get(`${k}:0`) ?? { x: s.tx, z: s.tz } : null;
   }
 
-  /** The circle for tin (n, h) at its current size: off-centre by an amount fixed by the seed, so the tin is somewhere inside it. */
-  private ringOf(n: number, h: number) {
-    const key = `${n}:${h}`, k = this.rings.get(key) ?? -1, at = this.spots.get(key);
-    if (k < 0 || !at) return null;
-    const R = n === this.t.legs.length - 1 ? LAST_RING : RINGS[Math.min(k, RINGS.length - 1)], r = rng(hash("ring", this.offer.seed, n, h, k)), a = r() * Math.PI * 2, f = (0.3 + r() * 0.4) * R;
-    return { x: at.x + Math.cos(a) * f, z: at.z + Math.sin(a) * f, r: R, k };
+  /**
+   * The circle for tin (n, h) after hint k (its current one if k isn't given), off-centre by an
+   * amount fixed by the seed. Once the tin's placed here it's round the tin itself, never more than
+   * 0.7 of the way out, so the tin is always well inside. Before then (that part of Bath isn't loaded
+   * here yet) it's round where the tin was aimed, made big enough to hold anywhere the tin could
+   * turn out to be: it firms up round the tin once you're near.
+   */
+  private ringOf(n: number, h: number, k = this.ringStep(n)) {
+    if (k < 0) return null;
+    const known = this.targetOf(n, h), at = known ?? this.aim(n, h), spread = known ? 0 : this.reach(n, h);
+    const R = Math.max(this.radius(n, k), spread + RING_MARGIN), hi = Math.min(0.7 * R, R - spread - RING_MARGIN), lo = Math.min(0.3 * R, hi);
+    const r = rng(hash("ring", this.offer.seed, n, h, k)), a = r() * Math.PI * 2, f = lo + r() * (hi - lo);
+    return { x: at.x + Math.cos(a) * f, z: at.z + Math.sin(a) * f, r: R, k, known: !!known };
   }
 
+  /** The furthest tin (n, h) can end up from where it was aimed, however the map round it turns out. */
+  private reach(n: number, h: number) {
+    const s = this.t.legs[n], a = this.aim(n, h), off = h && s.twin ? 0 : Math.hypot(a.x - s.x, a.z - s.z);
+    if (n === this.t.legs.length - 1) return off + PACE_REACH;
+    if (s.step === "bearing" || s.step === "sketch") return 7;
+    if (s.step === "look") return off + LOOK_REACH;
+    if (s.step === "word") return WORD_REACH;
+    return STREET_REACH;
+  }
+
+  private radius(n: number, k: number) { return n === this.t.legs.length - 1 ? LAST_RING : RINGS[Math.min(k, RINGS.length - 1)]; }
   private maxRing(n: number) { return n === this.t.legs.length - 1 ? 0 : RINGS.length - 1; }
+  /** Hints to be had on leg n: three for a tin, one for the chest. */
+  private hintsOn(n: number) { return this.maxRing(n) + 1; }
+  /** Which of leg n's circles is up: one for each hint had (-1: none yet). Worked out from the hints
+   *  themselves, so everyone together (and anyone who joins) has the same circle. */
+  private ringStep(n: number) { return Math.min(this.maxRing(n), (this.costs[n]?.ask ?? 0) - 1); }
+
+  /** What there is to find on leg n: the tin (the true one of a plaque's), or the chest. Its circle is
+   *  drawn round this, not round the plaque, whose tins stand round the corner from it. */
+  private targetOf(n: number, h: number) {
+    const s = this.t.legs[n];
+    if (s?.step === "word") return this.wordList(n)?.find((o) => o.word === s.word) ?? null;
+    return this.spotOf(n, h);
+  }
 
   /** Where leg n's decoy tin stands: a little way from the real one, so it's in the same circle. */
   private decoyOf(n: number) {
@@ -1155,9 +1343,9 @@ class Trail implements Job {
     if (had || !real || !this.t.legs[n]?.decoy) return had ?? null;
     const r = rng(hash("decoy", this.offer.seed, n)), a = r() * Math.PI * 2, f = 14 + r() * 14;
     const tx = real.x + Math.cos(a) * f, tz = real.z + Math.sin(a) * f;
-    if (!map.detailedAt(tx, tz)) return null;
-    const p = streetSpot(map, tx, tz, 0, 25, 0.6, (x, z) => !map.indoors(x, z) && Math.hypot(x - real.x, z - real.z) > 8, 4, 3, r);
-    const c = p ? { x: p.x, z: p.z } : (([x, z]) => ({ x, z }))(clearSpot(map, tx, tz, 15) ?? [tx, tz]);
+    if (!loadedRound(map, tx, tz, 60)) return null;
+    const p = streetSpot(map, tx, tz, 0, 25, 0.6, (x, z) => !map.indoors(x, z) && !wet(map, x, z) && Math.hypot(x - real.x, z - real.z) > 8, 4, 3, r);
+    const c = p ? { x: p.x, z: p.z } : firmSpot(map, tx, tz, 15) ?? { x: tx, z: tz };
     this.decoys.set(n, c);
     return c;
   }
@@ -1238,13 +1426,53 @@ class Trail implements Job {
       if (tin.word) return `<b>E</b> Open the tin marked ${esc(tin.word)}`;
       return last ? "<b>E</b> Dig up the Bath Bun chest" : this.halvesOf(tin.n).length > 1 ? `<b>E</b> Open tin ${tin.h ? "B" : "A"}` : "<b>E</b> Open the tin";
     }
-    return this.askReady() ? "<b>E</b> Ask a local (costs a brass star)" : "";
+    if (!this.askReady()) return "";
+    const k = this.ringStep(this.mine) + 1, of = this.hintsOn(this.mine);
+    return this.offerT > 0 ? `<b>E</b> again to pay for hint ${k + 1} of ${of}` : `<b>E</b> Ask a local for a hint (${k + 1} of ${of})`;
   }
 
-  private askReady() {
-    if (this.legT < ASK_AFTER || this.askT < ASK_AGAIN) return false;
-    const n = this.mine;
-    return this.halvesOf(n).some((h) => (this.rings.get(`${n}:${h}`) ?? -1) < this.maxRing(n));
+  /** Whether a local can be asked on this clue: wait, seconds till one can (Infinity: not on this
+   *  clue at all), and why not, in words, when it isn't the clock. */
+  private askState(): { wait: number; why: string } {
+    const n = this.mine, s = this.t.legs[n], me = this.w.me();
+    if (!s) return { wait: Infinity, why: "" };
+    const k = this.ringStep(n);
+    if (k >= this.maxRing(n)) return { wait: Infinity, why: k < 0 ? "" : n === this.t.legs.length - 1 ? "the chest's only hint is had" : "no more hints: the circle's as small as it goes" };
+    if (this.pacing(n) && Math.hypot(s.x - me.x, s.z - me.z) < 160) return { wait: Infinity, why: "you're there: count the paces and dig" };
+    const wait = Math.max(0, ASK_AFTER - this.legT, ASK_AGAIN - this.askT);
+    if (wait > 0) return { wait, why: "" };
+    // a closer hint only once the tin's placed here: from afar the circle can't be drawn any tighter, and you'd pay for nothing
+    if (k >= 0 && this.halvesOf(n).some((h) => !this.ringOf(n, h)?.known)) return { wait: 0, why: "get nearer for a closer hint" };
+    return { wait: 0, why: "" };
+  }
+
+  private askReady() { const a = this.askState(); return a.wait === 0 && !a.why; }
+
+  /** What asking a local would get you and cost, before anything's paid. */
+  private showOffer() {
+    const n = this.mine, k = this.ringStep(n) + 1, of = this.hintsOn(n), last = n === this.t.legs.length - 1, twin = this.halvesOf(n).length > 1;
+    const R = this.ringOf(n, 0, k)?.r ?? this.radius(n, k), was = k > 0 ? this.ringOf(n, 0, k - 1)?.r ?? this.radius(n, k - 1) : 0;
+    const thing = last ? "the buried chest" : twin ? "each of the twin tins" : `tin ${n + 1}`;
+    const get = (k === 0 ? `A search circle ${across(R)} across goes on your map, with ${thing} somewhere inside it.`
+      : `The search circle round ${thing} shrinks from ${across(was)} across to ${across(R)}.`)
+      + (k + 1 < of ? ` ${of - k - 1} more hint${of - k - 1 > 1 ? "s" : ""} after this, 20 seconds apart.` : " It's the last hint there is for it.");
+    const left = this.costs[n] ? legStars(this.costs[n]) : 0;
+    const price = this.race ? "Free in a race: it only costs you time"
+      : left === 0 ? "Free: this leg has no brass stars left to lose"
+      : `Costs 1 brass star: this leg goes from ${"★".repeat(left)}${"☆".repeat(STARS - left)} to ${"★".repeat(left - 1)}${"☆".repeat(STARS - left + 1)}`;
+    offer({ head: `Hint ${k + 1} of ${of}`, get, price, go: `<b>${control("KeyE", "Use")}</b> again to pay · walk on to keep it` });
+  }
+
+  /** A hint's been had on leg n (by you, or by a friend): the circle comes up or draws in, for all to see. */
+  private shrunk(n: number, from: string) {
+    this.askT = 0;   // anyone's hint starts the wait, so two of you don't pay for the same step at once
+    if (n !== this.mine) return;
+    const k = this.ringStep(n), of = this.hintsOn(n), R = this.ringOf(n, 0)?.r ?? this.radius(n, k), last = n === this.t.legs.length - 1;
+    const who = from === this.w.selfId ? `${pickOf(rng(hash("local", this.offer.seed, n, k)), LOCALS)} ` : `${esc(this.w.nameOf(from))} asked a local. `;
+    const thing = last ? "The chest is" : this.halvesOf(n).length > 1 ? "Both tins are" : "The tin is";
+    callout(k === 0 ? "A search circle's on your map" : "The search area is shrinking!", `${who}Hint ${k + 1} of ${of}: ${thing} somewhere in a circle ${across(R)} across.`);
+    SFX.searchShrink();
+    for (const h of this.halvesOf(n)) this.showRing(n, h);
   }
 
   use() {
@@ -1253,23 +1481,17 @@ class Trail implements Job {
     const s = this.t.legs[this.mine], me = this.w.me();
     if (this.pacing(this.mine) && s && Math.hypot(s.x - me.x, s.z - me.z) < 160) return true;   // the spade's in your hands: digging is a hold, not a press
     if (!this.askReady()) return false;
-    // a local points the way: every circle for this clue comes up, or shrinks a step
+    // the first press only says what the hint gives and costs: the second pays
+    if (this.offerT <= 0) { this.offerT = ASK_CONFIRM; this.showOffer(); return true; }
+    this.offerT = 0; offer(null);
     const n = this.mine;
-    for (const h of this.halvesOf(n)) {
-      const key = `${n}:${h}`;
-      this.rings.set(key, Math.min(this.maxRing(n), (this.rings.get(key) ?? -1) + 1));
-      this.showRing(n, h);
-    }
-    this.askT = 0;
-    this.spend(n, "ask");
-    SFX.warmer(true, true);
-    this.w.toast(pickOf(rng(hash("local", this.offer.seed, n, this.costs[n]?.ask ?? 0)), LOCALS) + " It's on your map.", 3.5);
+    this.spend(n, "ask", this.costs[n]?.ask ?? 0);
     return true;
   }
 
   /** A brass star lost on leg n, for everyone doing it with you. */
-  private spend(n: number, what: "ask" | "jam" | "decoy") {
-    const msg = { k: "el", s: this.offer.seed, n, w: what };
+  private spend(n: number, what: "ask" | "jam" | "decoy", step?: number) {
+    const msg = { k: "el", s: this.offer.seed, n, w: what, h: step };
     if (!this.race) this.w.send("qe", msg);
     this.event(msg, this.w.selfId);
   }
@@ -1397,10 +1619,13 @@ class Trail implements Job {
     if (d.k === "el") {
       const n = Number(d.n), c = this.costs[n], what = d.w;
       if (!c || (this.race && from !== this.w.selfId) || (what !== "ask" && what !== "jam" && what !== "decoy")) return;
+      // two of you asking for the same hint at once (h: how many the asker had seen): only the first
+      // to arrive is a hint, so only the first is paid for; and none past the last
+      if (what === "ask" && (c.ask > this.maxRing(n) || (d.h !== undefined && Number(d.h) !== c.ask))) return;
       c[what as "ask" | "jam" | "decoy"]++;
-      if (from !== this.w.selfId && n === this.mine && what === "ask") {
-        for (const h of this.halvesOf(n)) { const key = `${n}:${h}`; this.rings.set(key, Math.min(this.maxRing(n), (this.rings.get(key) ?? -1) + 1)); }
-        this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> asked a local: there's a circle on the map`);
+      if (what === "ask") {
+        if (from !== this.w.selfId) this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> asked a local: hint ${Math.min(c.ask, this.hintsOn(n))} of ${this.hintsOn(n)}`);
+        this.shrunk(n, from);
       }
       return;
     }
@@ -1456,6 +1681,8 @@ class Trail implements Job {
     else if (!this.race && this.costs[n] && !this.costs[n].by) this.costs[n].by = from;
     if (me) {
       this.legT = 0; this.askT = ASK_AGAIN; this.near = null;
+      this.offerT = 0; offer(null);
+      if (!last) this.clueT = CLUE_UP;   // the next clue, big, without having to ask for it
       this.halves = [-1e9, -1e9]; this.halfBy = ["", ""];
       if (d.sp) this.twins.add(n + 1);
       this.w.circle("trail", null); this.w.circle("trail2", null);
@@ -1484,6 +1711,7 @@ class Trail implements Job {
 
   /** A race over: your time against the par, and K's to beat next time. */
   private raceEnd(from: string, mine: boolean, t: number, at: { x: number; z: number }) {
+    trailScreensDown();
     const secs = (t - this.started) / 1000, par = this.t.par;
     const medal = secs <= par ? "gold" : secs <= par * SILVER ? "silver" : "bronze";
     const score = Math.max(0, Math.round(1000 + (par - secs) * 2));
@@ -1494,23 +1722,35 @@ class Trail implements Job {
       text += ` (${medal}, score ${score}). A ${medal} rosette for your jacket!`;
       this.w.announce?.();
     }
-    this.done = { won: true, text, x: at.x, z: at.z, wear: medal === "gold" && mine ? ["helmet"] : undefined,
+    const all = this.t.legs.length - 1;
+    summary({ kind: `Treasure hunt · ${this.offer.title}`, title: mine ? "You won!" : `${this.w.nameOf(from)} won`, time: clock(secs), medal: mine ? medal : "",
+      medalWord: mine ? undefined : "Beaten", lines: [`Par ${clock(par)} · K would have been ${clock(this.kTime)}`],
+      stats: [...this.stats(mine ? all : Math.min(this.mine, all)), ...mine ? [{ k: "Score", v: String(score) }] : []],
+      reward: mine ? `${this.offer.stars} prize${this.offer.stars > 1 ? "s" : ""} at the chest and a ${medal} rosette for your jacket` : undefined, colour: COLOUR });
+    this.done = { won: true, screen: true, text, x: at.x, z: at.z, wear: medal === "gold" && mine ? ["helmet"] : undefined,
       grade: mine ? { tier: medal === "gold" ? 3 : medal === "silver" ? 2 : 1, best: { v: (medal === "gold" ? 3 : medal === "silver" ? 2 : 1) * 1e5 - secs, text: medal } } : undefined };
   }
 
   /** Done together: the rosette from the brass stars, and the end card telling how each leg went. */
   private togetherEnd(at: { x: number; z: number }) {
+    trailScreensDown();
     const got = this.costs.reduce((a, c) => a + legStars(c), 0), of = this.costs.length * STARS, share = got / of;
     const medal = share >= GOLD_SHARE ? "gold" : share >= SILVER_SHARE ? "silver" : "bronze";
     addRosette(medal);
     const lines = [`${got} of ${of} brass stars: a ${medal} rosette for your jacket!`, ...this.costs.map((c, k) => this.moment(c, k))];
+    let newBest = false;
     if (this.daily) {
       const day = dayNumber(), best = dailyBest(day);
+      newBest = best !== null && got > best;
       if (best === null || got > best) { try { localStorage.setItem(DAILY_KEY, JSON.stringify({ day, best: got })); } catch { /* ignore */ } }
       this.w.feed(`Trail of the day: <b>${got} of ${of}</b> brass stars${best !== null ? (got > best ? ", a new best!" : `, your best ${best}`) : ""}`);
     }
     this.w.announce?.();
-    missionEnd({ result: "complete", title: "Bath Bun chest dug up!", lines, medal });
+    const all = this.t.legs.length - 1;
+    summary({ kind: `Treasure hunt · ${this.offer.title}`, title: "Chest dug up!", time: clock((Date.now() - this.started) / 1000), medal,
+      lines: [`${got} of ${of} brass stars`], best: newBest ? "NEW BEST TODAY!" : undefined, stats: this.stats(all),
+      rows: this.costs.map((c, k) => ({ name: this.moment(c, k).replace(/^\S+ /, ""), time: "★".repeat(legStars(c)) + "☆".repeat(STARS - legStars(c)) })),
+      reward: `${this.offer.stars} prize${this.offer.stars > 1 ? "s" : ""} at the chest and a ${medal} rosette for your jacket`, colour: COLOUR });
     this.done = { won: true, screen: true, text: lines[0], x: at.x, z: at.z, wear: medal === "gold" ? ["helmet"] : undefined,
       grade: { tier: medal === "gold" ? 3 : medal === "silver" ? 2 : 1, best: { v: got, text: `${got} of ${of} brass stars` } } };
   }
@@ -1587,9 +1827,9 @@ class Trail implements Job {
     if (Array.isArray(p?.tw)) for (const n of p.tw) this.twins.add(Number(n));
   }
 
-  card(): Card {
-    const n = this.mine, total = this.t.legs.length, s = this.t.legs[n];
-    const lead = this.race ? Math.max(0, ...[...this.at].filter(([k]) => k !== this.w.selfId).map(([, v]) => v)) : 0;
+  /** Leg n's clue as the card, the splash and the clue key show it (html). */
+  private clueHtml(n: number) {
+    const s = this.t.legs[n], total = this.t.legs.length;
     let clue = "";
     if (s) {
       const pic = this.pics.get(n), [a, b] = this.clues[n] ?? ["", ""];
@@ -1612,12 +1852,29 @@ class Trail implements Job {
         break;
       }
     }
+    return clue;
+  }
+
+  /** Where the hints stand on this clue, for the card: the circle that's up, and when the next can be had or why not. */
+  private hintLine() {
+    const n = this.mine, k = this.ringStep(n), of = this.hintsOn(n), { wait, why } = this.askState();
+    const ring = k >= 0 ? this.ringOf(n, 0) : null;
+    const had = ring ? `hint ${k + 1} of ${of}: circle ${across(ring.r)} across` : "";
+    const next = why ? `<span style="opacity:.6">${why}</span>`
+      : wait === Infinity ? ""
+      : wait > 0 ? `next hint in <b>${clock(Math.ceil(wait))}</b>`
+      : `<b>${control("KeyE", "Use")}</b> ask a local for hint ${k + 2} of ${of}`;
+    return [had, next].filter(Boolean).join(" · ");
+  }
+
+  card(): Card {
+    const n = this.mine, total = this.t.legs.length, s = this.t.legs[n];
+    const lead = this.race ? Math.max(0, ...[...this.at].filter(([k]) => k !== this.w.selfId).map(([, v]) => v)) : 0;
+    const clue = this.clueHtml(n);
     const got = this.costs.slice(0, n).reduce((a, c) => a + legStars(c), 0), here = this.costs[n] ? legStars(this.costs[n]) : 0;
-    const asked = this.costs[n]?.ask ?? 0;
     const sub = this.race
-      ? [`par ${clock(this.t.par)}`, `K: ${this.kAt} of ${total} tins`, lead ? `best rival on clue ${Math.min(total, lead + 1)}` : "", this.askReady() ? "E to ask a local" : ""]
-      : [`brass stars ${got}${n < total ? ` + ${"★".repeat(here)}${"☆".repeat(STARS - here)}` : ""}`, asked ? `${asked} local${asked > 1 ? "s" : ""} asked` : "",
-        this.askReady() ? "E to ask a local (costs a star)" : ""];
+      ? [`par ${clock(this.t.par)}`, `K reaches the chest at ${clock(this.kTime)} (${this.kAt} of ${total} so far)`, lead ? `best rival on clue ${Math.min(total, lead + 1)}` : "", this.hintLine()]
+      : [`brass stars ${got}${n < total ? ` + ${"★".repeat(here)}${"☆".repeat(STARS - here)}` : ""}`, this.hintLine()];
     return {
       line: `Clue ${n + 1} of ${total}${n === total - 1 ? " (the chest)" : ""}: ${clue}`,
       sub: sub.filter(Boolean).join(" · "),
@@ -1653,9 +1910,9 @@ class Trail implements Job {
         const holders = this.holders(n), mine = holders.includes(this.w.selfId), solo = this.w.players().length < 2;
         const others = holders.filter((id) => id !== this.w.selfId).map((id) => `<b>${esc(this.w.nameOf(id))}</b>`).join(" and ");
         const near = `${riddle}<br>`;
-        if (solo) return `${near}A sketch map of round there, with an X on it. Hold <b>J</b> (or the Sketch button) to study it; you can't see the big map while you do.`;
+        if (solo) return `${near}A sketch map of round there, with an X on it. Hold <b>J</b> (or the Clue button) to study it; you can't see the big map while you do.`;
         if (!mine) return `${near}${others} ${holders.length > 1 ? "hold" : "holds"} the sketch map, with an X on it. Get them to talk you in.`;
-        return `${near}You hold the sketch map${holders.length > 1 ? ` (torn: ${others} ${holders.length > 2 ? "have" : "has"} the rest)` : ""}. Hold <b>J</b> (or the Sketch button) to study it, and talk the others in. You can't see the big map while you do.`;
+        return `${near}You hold the sketch map${holders.length > 1 ? ` (torn: ${others} ${holders.length > 2 ? "have" : "has"} the rest)` : ""}. Hold <b>J</b> (or the Clue button) to study it, and talk the others in. You can't see the big map while you do.`;
       }
       case "sound": {
         const bell = s.kind === "church" || s.kind === "rest";
@@ -1671,7 +1928,7 @@ class Trail implements Job {
       }
       case "look": {
         const house = this.houses.get(n);
-        if (house) return `${riddle}<br>There, find <b>${esc(house.name)}</b>. Its tin's on the doorstep, and its lock asks about the house.`;
+        if (house) return `${riddle}<br>There, find <b>${esc(house.name)}</b>. Its tin's on the doorstep (or out on the street, if the garden's shut in), and its lock asks about the house.`;
         if (house === null) return riddle;
         return `${riddle}<br>When you're there, you'll be told what to look for.`;
       }
@@ -1701,6 +1958,7 @@ class Trail implements Job {
   held() { return this.lock.open && this.lockAt ? { x: this.w.me().x, z: this.w.me().z } : null; }
 
   end() {
+    trailScreensDown();
     this.lock.hide();
     this.keys.abort();
     this.sketchEl?.remove(); this.sketchEl = null;
