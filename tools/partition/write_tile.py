@@ -1355,6 +1355,7 @@ def _surveyed_under(ground, p, st, xs, ys):
 
 
 HUMP_DEPTH = 0.9     # metres: the deepest deck (an arch's, check_map's DECK_DEPTH), under which an opening is kept
+OPEN_ROOM = 1.2      # metres under the deck that make a stretch of the opening, for the bank between two to go
 FILL_UNDER = 1.0     # metres the base tile's ground under its old span may sit below the survey before it counts as dug
 PORTAL = 8.0         # metres round a tunnel's mouth, and out along the way into it, that the ground is left as dug
 
@@ -1631,7 +1632,9 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
             blk = grid[W]; blk[inn] = np.minimum(blk[inn], deck - 0.6)
             blk = seen[W]; blk[inn] = np.fmin(blk[inn], _surveyed_under(lambda x, y: ground_at(T, x, y, split=False), p, st, gx[inn], gy[inn]))
     # a bank left standing into the opening, between two stretches with room under the deck, is the
-    # bridge's own fill in the survey: the opening runs on under it, from abutment to abutment
+    # bridge's own fill in the survey: the opening runs on under it, from abutment to abutment (room
+    # is counted a little short of the clash check's 1.5 m, which reads the ground between the grid's
+    # points, where it is lower beside a point that has a little less)
     for r in rd:
         p = r["p"]
         for st in stretches({i for i, q in enumerate(p) if flagged(q, 1)}):
@@ -1651,7 +1654,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
             cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
             under = np.interp(s_, cum, [q[2] for q in run]) - HUMP_DEPTH
             vals = grid[W][inn]
-            open_ = s_[under - vals > 1.5]
+            open_ = s_[under - vals > OPEN_ROOM]
             if not len(open_):
                 continue
             mid = (s_ > open_.min()) & (s_ < open_.max())
@@ -2084,6 +2087,7 @@ def bridge_kinds(rd, osm, water, rails, canal_lines, ground=None):
 
 
 BANK = 1.5        # metres: the end of a span the abutment stands on
+ABUTMENT = 2.5    # metres round a span's end that its abutment stands on, beside the deck as well as under it
 
 
 def deck_gaps(rd, ground, depth=0.9):
@@ -2119,7 +2123,11 @@ def deck_gaps(rd, ground, depth=0.9):
             core = substring(line, BANK, line.length - BANK)
             outline = core.buffer(hl + 0.4, single_sided=True, cap_style="flat").union(
                 core.buffer(-(hr + 0.4), single_sided=True, cap_style="flat"))
-            out.append((outline, line, cum, under))
+            # (to its very ends, out beside the abutments where a wide deck overhangs the bank, but
+            # not on the abutments themselves)
+            whole = line.buffer(hl, single_sided=True, cap_style="flat").union(line.buffer(-hr, single_sided=True, cap_style="flat"))
+            whole = whole.difference(Point(xy[0]).buffer(ABUTMENT)).difference(Point(xy[-1]).buffer(ABUTMENT))
+            out.append((outline, line, cum, under, whole))
     return out
 
 
@@ -2131,7 +2139,7 @@ def deck_skirts(gaps):
     the lidar sees the bridge's own side there as a wall, which would stand at the foot of the bank
     a second time under the parapet. Walls running on from the parapets past the ends are not in it."""
     out = []
-    for outline, line, cum, under in gaps:
+    for outline, line, cum, under, _ in gaps:
         half = max(0.5, outline.area / max(0.1, line.length - 2 * BANK) / 2)
         out.append(line.buffer(half + SKIRT, cap_style="flat").difference(line.buffer(half - 0.05, cap_style="flat")))
     return out
@@ -2141,7 +2149,7 @@ def deck_ends_reach(gaps, past=1.0):
     """The ground a bridge's abutments stand on, at each end of each gap and a metre past it: no
     boundary is drawn there, or a fence panel stands against the abutment's face."""
     out = []
-    for outline, line, cum, under in gaps:
+    for outline, line, cum, under, _ in gaps:
         # (as wide as the deck's outline, out to its parapets)
         half = max(0.5, outline.area / max(0.1, line.length - 2 * BANK) / 2)
         for a, b in ((-past, BANK), (line.length - BANK, line.length + past)):
@@ -2156,11 +2164,12 @@ def deck_ends_reach(gaps, past=1.0):
     return out
 
 
-def under_a_deck(gaps, x, y, foot, room=0.3):
-    """Does something whose foot is at `foot` stand in the gap under a bridge's deck at (x, y)?"""
+def under_a_deck(gaps, x, y, foot, room=0.3, whole=False):
+    """Does something whose foot is at `foot` stand in the gap under a bridge's deck at (x, y)? With
+    `whole`, anywhere under the deck, beside its abutments too."""
     pt = Point(x, y)
-    for outline, line, cum, under in gaps:
-        if outline.contains(pt) and foot < float(np.interp(line.project(pt), cum, under)) - room:
+    for outline, line, cum, under, all_of in gaps:
+        if (all_of if whole else outline).contains(pt) and foot < float(np.interp(line.project(pt), cum, under)) - room:
             return True
     return False
 
@@ -2245,7 +2254,7 @@ def clear_under_decks(tile, gaps, gone):
                       ("fx", lambda q: (q[1], q[2], q[3]))):
         keep = []
         for q in tile.get(field) or []:
-            if (field != "fx" or q[0] != "car") and under_a_deck(gaps, *xy(q)):
+            if (field != "fx" or q[0] != "car") and under_a_deck(gaps, *xy(q), whole=True):
                 gone[field] += 1
             else:
                 keep.append(q)
