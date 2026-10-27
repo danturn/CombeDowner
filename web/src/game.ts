@@ -114,7 +114,7 @@ import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
-import { missionActive } from "./missionscreens";
+import { missionActive, missionCardUp } from "./missionscreens";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
 import { CatState, Cats, ESCAPE } from "./cats";
@@ -545,7 +545,8 @@ export class Game {
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private swapAt: Item | null = null;              // a ride or a ladder at your feet while your hands are full: E swaps for it
   private riding = false;
-  private heldToast: { text: string; secs: number } | null = null;   // a call-out kept back till a race's countdown is over
+  private heldToast: { text: string; secs: number } | null = null;   // a call-out kept back till a race's countdown or a title card is over
+  private calmed = false;
   private hushed = false;                          // a race's countdown had the middle of the screen last frame
   private rideTip = 0;                             // till when the middle of the screen says what to do with what you've just got, or just got on
   private tipSlot: string | null = null;           // what was in your hands last frame, to start that tip when it changes
@@ -3605,6 +3606,17 @@ export class Game {
       this.minimap.spots = this.gameSpots();
     }
     const p = this.player.pos, now = performance.now(), fence = this.map.zoneFence;
+    // Walking never gets you past the wall, so you were put there (a link, Go to, a journey, or the
+    // wall going up round you). The collisions alone would shove you onto the wall's line in one
+    // step, however far, perhaps into a house: clear ground just inside it instead.
+    if (fence && this.alive && !this.car && !this.ride && this.balloons.aboard < 0 && fence.edge(p.x, p.z) < -2) {
+      const [ix, iz] = this.map.fieldInside(p.x, p.z, 2);
+      const [x, z] = clearSpot(this.map, ix, iz, 25) ?? [ix, iz];
+      this.player.spawn(x, z, this.player.yaw);
+      this.landing = { t: 20 };
+      this.wallSaid = 0;
+      this.sendState();
+    }
     if (fence && now > this.wallSaid && this.alive && fence.edge(p.x, p.z) < 4 && this.map.fieldEdgeBase(p.x, p.z) > 4) {
       this.wallSaid = now + 15000;
       const next = Z.list[Z.open], cur = Z.current(this.oddments.filled);
@@ -4462,15 +4474,17 @@ export class Game {
       : wood && !ladder.startsWith("<b>") ? wood
       : ladder || wait;
     // in a race's countdown the prompt waits too, and what to do with the ride is said once it's over
-    const hush = this.quests.quiet();
-    if (this.hushed && !hush) {
-      if (this.riding) this.rideTip = performance.now() + TIP_MS;
+    // and call-outs wait for a mission's title card too, which has the space where they'd go
+    const hush = this.quests.quiet(), calm = hush || missionCardUp();
+    if (this.hushed && !hush && this.riding) this.rideTip = performance.now() + TIP_MS;
+    if (calm && !this.calmed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
+    if (!calm && this.heldToast) {
       const held = this.heldToast;
       this.heldToast = null;
-      if (held) this.toast(held.text, held.secs);
+      this.toast(held.text, held.secs);
     }
-    if (hush && !this.hushed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
     this.hushed = hush;
+    this.calmed = calm;
     show($("usehint"), hush ? "" : ctlText(text), !hush && !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
@@ -4618,7 +4632,7 @@ export class Game {
 
   toast(text: string, secs = 2) {
     // a race's countdown has the middle of the screen: the call-out comes once GO has gone
-    if (this.quests.quiet()) { this.heldToast = { text, secs }; return; }
+    if (this.quests.quiet() || missionCardUp()) { this.heldToast = { text, secs }; return; }
     text = ctlText(this.freeMode ? text : padText(text));
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
