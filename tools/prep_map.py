@@ -956,8 +956,8 @@ def ease_roads(x, y, head, skip, down=True, reach=None, own=None, under=None):
     bridge itself), and any road's points on a span or a deck are left alone too (except road
     own's, the one being carried over the canal); a road that's a bridge somewhere else is still
     brought down beside it, and its deck carried to its new approaches afterwards (carry_spans).
-    under=(road under, deck height): a way not joining the road under, level with the deck, is on
-    the bank beside the bridge, and stays there."""
+    under=(road under, deck height, span line, its reach): a way not joining the road under, level
+    with the deck and clear of the deck, is on the bank beside the bridge, and stays there."""
     n = 0
     for j in road_tree.query(shapely.Point(x, y).buffer(reach or DIP)):
         j = int(j)
@@ -967,7 +967,7 @@ def ease_roads(x, y, head, skip, down=True, reach=None, own=None, under=None):
         for i, q in enumerate(o["run"]):
             if j != own and (i in o["span"] or i in o["deck"]): continue
             if i in o["tow"]: continue          # (the towpath stays level with the canal's banks)
-            if beside and o["z"][i] > under[1] - 1.5: continue
+            if beside and o["z"][i] > under[1] - 1.5 and under[2].distance(shapely.Point(q[:2])) > under[3]: continue
             d = math.dist(q[:2], (x, y))
             if d >= DIP: continue
             e = d / DIP; e = e * e * (3 - 2 * e)
@@ -1184,7 +1184,7 @@ for k, r in enumerate(pending):
             dips.append((j, x))
             head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5      # (a little to spare, the deck being sampled a point or two off the crossing)
             # the road under, and the roads joining it there, dip together
-            dipped += ease_roads(x.x, x.y, head, own_road(k, line), under=(j, deck))
+            dipped += ease_roads(x.x, x.y, head, own_road(k, line), under=(j, deck, shapely.LineString([run[i][:2] for i in st]) if len(st) > 1 else line, RW.get(r["c"], 4) / 2 + 3.0))
 # 3b. and under the railway's bridges and viaducts (tools/railway.py marks them)
 for t, track in enumerate(rail_tracks):
     tp = track["p"]

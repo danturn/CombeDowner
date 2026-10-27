@@ -31,7 +31,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   parapets run unbroken round its bends and where its pieces join, stopping only where another
   deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
   pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the
-  road runs on under it unbroken; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
+  road runs on under it unbroken; a street with a junction on its deck is one bridge through it.
+  A way is only a bridge where it crosses something: a lane or path the map data draws along the top
+  of a road in a cutting runs along the bank beside it instead. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way.

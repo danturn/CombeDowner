@@ -1279,11 +1279,24 @@ same as main):
 
 ## Bridges over roads (27 October)
 
-- [ ] **A minor way laid along the top of an underpass is a flat lid.** At the Bailbrook Underpass
-  the service road and footway mapped on the tunnel's roof become a 58 m deck along the top of the
-  A46's east carriageway, with no arches or piers (everything under it is road). Restoring the
-  70 m tunnel the data marks, or dropping a way that only runs along an underpass's top, would read
-  better; both need a rule in `structures.py`, not the game.
+- [x] **A minor way laid along the top of an underpass is a flat lid.** At the Bailbrook Underpass
+  the data is right: the A46 runs through a 70 m covered stretch (OSM and Overture both mark it a
+  tunnel, and the lidar's ground runs on over it), and the service road, a track and a footway are
+  on its lid. The game opens it as a cutting instead of boring it (a 4.8 m tube can't take a dual
+  carriageway), so those ways had nothing under them. Now, as general rules: a road's tunnel flag
+  only marks the same road (its class or name), not a lane drawn along it (`match_structures`); a
+  way drawn along on top of a road's tunnel for 8 m or more is laid along the bank beside it, clear
+  of the cutting, before the ways are noded into the street graph (`tunnels.beside_tunnels`, in
+  `once.build_graph` and in `prep_map.py`), taking the minor ways that ended on it with it and
+  meeting a street that stays where its new line crosses it; where there's no room either side it
+  is left out there; only the part of a way that crosses an underpass is its bridge, and one running
+  along beside the cutting stays on its bank, with no bridge reaching out along it (`tunnels.across`,
+  `bank` in the writer); and a way level with a deck beside it, not joining the road under it, isn't
+  dipped with that road. The trade-offs: the covered stretch is open sky, as before; a path running
+  along a cutting's edge inside the width the game digs for the road (8.5 m from a trunk road's
+  centre line, more than a one-way carriageway needs) stands on a stone face over the dug slope,
+  as the west footway does north of the footbridge, where the 4 m ground grid can't hold the bank's
+  top that close to the road.
 - [ ] **Pavements in a dual carriageway's median keep its piers out.** A bridge over both
   carriageways is now one flattened elliptical arch springing from the banks (Bailbrook Lane, Mill
   Lane), where the real ones may have a pier in the middle. A pier allowed on a median wider than
