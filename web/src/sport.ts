@@ -41,6 +41,7 @@
 // keeper's client says its copy of the ball has arrived too (so no dive is missed to lag), at
 // most for a moment, and the keeper counts as not having dived if nothing comes.
 import * as THREE from "three";
+import { input } from "./controls";
 import { GameMap, POST_GAP, POST_HEIGHT, footballLayout, pitchId, rugbyLayout } from "./map";
 import { Player } from "./player";
 import { STUMPS } from "./pitches";
@@ -623,7 +624,7 @@ export class Sports {
       if (this.bout || from === me) return;
       const fresh = !this.call || this.call.owner !== from;
       this.call = { owner: from, pitch: d.p, end: d.e, at: now };
-      if (fresh && Array.isArray(d.m) && this.near(d.p, d.e)) this.onSay?.(`${String(d.m[0]).slice(0, 20)} wants a keeper: stand on the goal line and press E`, 4);
+      if (fresh && Array.isArray(d.m) && this.near(d.p, d.e)) this.onSay?.(`${String(d.m[0]).slice(0, 20)} wants a keeper: stand on the goal line and press {use}`, 4);
       return;
     }
     if (!d.r.includes(me) || from === me || !Array.isArray(d.g) || d.g.length !== d.r.length || !Array.isArray(d.m) || d.m.length !== d.r.length) return;
@@ -710,7 +711,7 @@ export class Sports {
     if (!g || Math.hypot(player.pos.x - g[0], player.pos.z - g[1]) > GOAL_USE) return false;
     this.send?.("sd", ["k", c.pitch, c.end], c.owner);
     this.call = null;
-    this.onSay?.("You're in goal. Hold A or D and press Space to dive when the kick comes", 4);
+    this.onSay?.(`You're in goal. ${input() === "touch" ? "Tap a Dive button" : "Hold {steer} to one side and press {dive}"} to dive when the kick comes`, 4);
     return true;
   }
 

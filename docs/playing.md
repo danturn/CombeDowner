@@ -52,6 +52,9 @@ the balloons with 5. Once open, travel still stops at the wall: a bus you drive,
 can't go through it, and a bus you call only comes from inside it. Cars you can drive are always
 there: they're parked in the first zone.
 
+Put somewhere past the wall (a link with a spot in it, Go to, or the wall going up round where you
+already were), you come to clear ground just inside it, the nearest there is, and the wall says why.
+
 A room opens up to the furthest zone anyone in it has reached, and never goes backwards. To have
 everything open, tick "Explore all of the map (no zones)" on the main menu, or add `?zones=0`; the
 host's choice counts for everyone in the room.
@@ -173,9 +176,27 @@ still aim finely with small pushes. Once a pad's been seen, Settings (and the mi
 a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
 the stick's dead zone and rumble, all usable with the pad itself.
 
+The buttons are laid out as Call of Duty: Warzone's defaults, so they feel familiar. Square reloads
+on a tap and uses on a hold (about a third of a second); when there's something to use, get in or
+take right there (the prompt is up), a tap uses it instead. Circle crouches on a tap and lies you
+down on a hold, and either again stands you up.
+
+One button does everything you interact with: use (E on the keys, Square on a pad, Use on a touch
+screen) gets you in a car, opens a tin, takes the call on Push the Bus, goes again after a race,
+leans on a lock beam, cuffs, votes for a painting and the rest. Where two things are near, it does
+the one the prompt names. Minigames that play quite differently (the tin lock, the bell chamber, the
+Climb, the tightrope, the easel, the big map, the Driving Test's back seat) show their own controls
+along the bottom while you're in them. Every prompt names the control for whatever you're playing
+with: the key, the pad's button (as you've set it) or the touch button. They all come from one table
+in the game's code (`web/src/controls.ts`), which the lists here follow.
+
 You can move any button to another in Settings, Controller, Buttons: pick a row, then press the new
 button. Whatever was on that button swaps to the one you left, and getting out of a car always keeps
-a button. While you play with the pad, the prompts show the pad's buttons instead of keys.
+a button. A button can carry one thing on a tap and another on a hold, as Square and Circle do.
+Reset to default (Warzone layout) puts them all back. Buttons you moved before the Warzone layout
+stay where you put them, and the rest take the new layout. While you play with the pad, the prompts
+show the pad's buttons instead of keys, and say "hold □" where a hold is needed. A pad (or a touch
+screen) aims without the mouse, so "Click to aim" only shows while you're on the mouse and keys.
 
 | Button | On foot | Driving |
 |---|---|---|
@@ -184,22 +205,25 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 | R2 | shoot (kick, bowl) | accelerate |
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
-| Square | use, get in or out (E) | get out |
-| Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
-| Triangle | reload | |
-| L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
+| Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out (let go of a tiller) |
+| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | driver's seat or chase camera |
+| Triangle | switch weapon | get out |
+| L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
 | R3, held | radio | radio |
-| D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
+| D-pad | up torch, down ride, left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
 | Create, held | the scores | the scores |
-| Touchpad | the map | the map |
+| Touchpad | tap: the map (on it: Cross marks, Triangle finds you, Square is the pencil, Circle closes); hold: the job's poster again (a Wanted bounty) | the map |
 | Options | pause | pause |
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
-A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Down the mines,
-R2 swings or shoots, L2 is the healing light, Square uses, L1 and R1 go through what you carry and
-the d-pad picks the first four. The browser still wants one click or key before it plays sound or
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. At a
+narrowboat's helm the pad works as at a car's wheel: the triggers are the throttle, R1 rings the bell
+and Triangle lets go. Down the mines,
+R2 swings or shoots, L2 is the healing light, Square uses (hold it to pump, wind or pick a friend
+up), Circle crouches (mid-sprint, dives), Triangle, L1 and R1 go through what you carry and the
+d-pad picks the first four. The browser still wants one click or key before it plays sound or
 holds the mouse.
 
 **The debug panel** (F3, or Debug info in the pause menu on a phone or iPad) shows where you are
@@ -222,7 +246,7 @@ a square for what you've done there. Other players show as arrows in their colou
 minimap anyone out of range sits on the rim in their direction. Doors into the minigames are a
 white star in a cyan ring, and the cable car is a red and white line.
 
-**Markers**: click or tap a spot on the big map, or press G while looking at one, to put down your
+**Markers**: click or tap a spot on the big map, or press G (or the middle mouse button) while looking at one, to put down your
 marker in your colour. Everyone sees it on both maps, as a ring of light in the street and as a pin
 on the compass strip with how far away it is. Do it again to move it, tap it again to take it down,
 and it goes when you leave.
@@ -438,7 +462,9 @@ stops the clock in the morning, to try it.
 Every game day a fresh set of jobs goes up on noticeboards at real places round Bath, a few near
 the village and the rest across town, each a badge on the maps. Walk up to one and press E (Use) to
 take it on. Everyone in the game is on the same job at once, with a card at the top left saying how
-it's going, and the reward drops where it finishes. Everyone gets the same noticeboards that day,
+it's going, and the reward drops where it finishes. Its title card comes up over the crosshair for
+four seconds, clear of that card and of the prompts under the crosshair, and anything the game has
+to call out waits till it's gone. Everyone gets the same noticeboards that day,
 and a job you've done stays ticked off till the next. Call off a job from the pause menu.
 
 **Today's jobs**: when you join, the front page of the Bath Chronicle shows three little missions
@@ -484,14 +510,31 @@ the Crown in a hurry". The lads you left behind are still yours to clear for the
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says
 two things about how he looks, his routine (a pub, a park, a bus stop, round and round, but not
 where) and two quirks: slippery, lookouts or mob-handed. A hidden third is given away by the first
-clue. A search circle 300 m across goes on the map.
+clue. A search circle 600 m across goes on the map.
+
+It opens with a big splash: the WANTED poster with his features as pictures (a tick for the two the
+poster gives, a "?" for the one a witness will), his round of stops (where he's at now lit up), the
+clock, and three lines on how to catch him. The job control (J, a hold of the pad's touchpad, or the
+Poster button on a touch screen) brings the poster back any time, and it keeps up: a witness's word
+on the third feature goes on it, ticked once they swear to it, crossed once they back down. The
+job card names the features too, as little pictures, with how many clues you've found ("Clues 1/3")
+and how big the circle is.
+
+The circle is a red ring on the minimap and the big map, and in the streets a band of red light on
+the ground with a low wall of light standing on it, so you can see its edge from inside, from
+outside and from a roof. Outside it, the compass points to it. Clues stand under tall red beams with
+a "?" over them, and go on your compass once you're within 150 m. Each clue found is called out
+across the screen with the circle's new size and what was found.
 
 He is not alone in looking like that: four to six of his crew are dressed like him, each with a
 different mix of a hat, a coloured jacket, a bag, a dog and a limp (more of them the more of you
 there are, and more lookouts). The poster's two features fit him and one or two of the others, and a
 witness (E) gives a third feature that picks him out: but one witness in three is wrong, and owns up
-if you press them (E again). Leaflets and knocked-out lookouts still shrink the circle. Look through
-binoculars (B, from a roof or a hill if you can) to see who has what, then point him out with E. Point
+if you press them (E again). Leaflets and knocked-out lookouts still shrink the circle. The first time
+you see them, a call-out says how many men are dressed alike. Look at one (up close, or through
+binoculars, B, from a roof or a hill if you can) and a card beside the crosshair shows his features,
+each ticked or crossed against what's known, and what that adds up to ("Not him", "Fits the poster:
+so do two more", "That's him!"). Then point him out with E. Point
 at the wrong man and it costs you 15 seconds on the clock. Once he's pointed out, everyone gets a
 marker on him. Put him down for the prizes, or wear him down until he gives up, cuff him (E) and
 walk him to the police at the nearest bus stop or police box for more, while his mates try to
@@ -501,7 +544,9 @@ and the real one moves on.
 He does something at each stop for a minute (a pint, feeding the ducks, waiting for a bus). Work
 out where from the poster, wait for him there and catch him without a chase for a bonus prize. Each
 bounty is six to eight minutes, with one second chance if he slips the net. A Gaffer who got away
-from a takeover is a Wanted poster too, under his own name.
+from a takeover is a Wanted poster too, under his own name. It ends on a results card: how it went
+(taken in, put down, ambushed or got away), the time, the clues, the lookalikes, the time lost to
+wrong men, and with friends, who found what.
 
 ### Treasure trails
 
@@ -509,9 +554,27 @@ A chain of four to six riddles, each about a real pub, church, park or street in
 for Saint Mary"), with a biscuit tin on a post nearby holding the next one. The riddles get harder
 with the stars, and now and then one is a sepia sketch of the view instead. Nothing gives the answer
 away: a one-star riddle says roughly which way ("somewhere south of here"), and from two stars there's
-no distance or compass at all. No circle comes up by itself. Stuck, press E to ask a local, and a
-circle goes on the map (smaller each time you ask). The tin only shows when you're close, and rattles
-when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
+no distance or compass at all.
+
+A trail starts with a big splash: TREASURE HUNT and the trail's name, how many tins there are before
+the chest, whether there's a clock (together there isn't; in a race it's when K gets to the chest),
+how the search circle works, and the first clue, large. It fades by itself. Open the big map to see the clue
+again (it sits over the map; tap Clue on a touch screen), and
+each new clue comes up big for a few seconds when you get it.
+
+No circle comes up by itself, and none shrinks by itself: only a local's hint does. From 45 seconds
+into a clue you can ask one (use: E or □). That first press only says what you'd get and what it costs ("Hint 2 of
+3: the search circle round tin 1 shrinks from 260 m across to 150 m", "Costs 1 brass star: this leg
+goes from ★★☆ to ★☆☆"); press use again within a few seconds to pay, or walk on and keep your star.
+Paid, the circle comes up or draws in, with a call-out ("The search area is shrinking!") and a sound
+everyone on the trail hears, whoever asked. Each tin has three hints (260, 150 and 80 m across), 20
+seconds apart, and the chest one (360 m). The card shows which hint you're on and counts down to the
+next; when there are no more it says so and E doesn't offer one, so you never pay for nothing. In a
+race hints are free (they cost you time). The circle always has the tin (on a plaque leg, the true
+tin, not the plaque) well inside it, at least 12 m in from the edge. Asked from far off, before that
+part of Bath has loaded on your screen, the first circle is a big one round the whole area the tin
+could be in, and it settles round the tin as you get near; closer hints wait till you're there. The
+tin only shows when you're close, and rattles when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
 something in the street there ("from the post box, 14 paces south-west"). Hold E (Dig on a touch
 screen) to dig where you stand: in the wrong place you get a hole with a worm in it, which everyone
 can see and which fills itself in after half an hour. Near the Bath Bun chest the spade hits wood,
@@ -525,12 +588,14 @@ you've seen the tin, so friends further off can help. On a touch screen tap abov
 wheel; at a keyboard W and S (or the scroll wheel, or the number keys) turn a wheel, A and D move
 between them, E tries it and Escape leaves it. A wrong code jams the lock for ten seconds. A look
 leg sends you to a street or place and then names a house you have to pick out by eye ("the house
-with the teal door", or the only red-brick one in the row): its tin is on the doorstep, and only
-shows when you're nearly there.
+with the teal door", or the only red-brick one in the row): its tin is on the doorstep (or out on
+the street, if the garden's shut in behind a hedge or a wall), and only shows when you're nearly
+there. Tins are never put in a building, on a roof, in the water or anywhere you can't walk to.
 
 Together there's no clock and no par. Each leg is worth three brass stars: asking a local, jamming a lock and
 opening a decoy or the wrong tin each cost one. The rosette comes from your total (gold for nine in
-ten), and the end card says how each leg went. A trail done together can't be lost. A race keeps
+ten), and the end card (like a race's) gives your time, tins found, hints bought, jams and wrong holes,
+how each leg went and the reward. A trail done together can't be lost. A race keeps
 its clock and par, and you're racing K too, a ghost rival who runs to the best time anyone's done
 on that trail on your device (the par the first time). If she gets to the chest first, she digs it
 up, leaving a hole and a note. Twin tins must be opened within 30 seconds of each other (or a little
@@ -541,7 +606,7 @@ friend half the name (alternate letters) on their own screen; on your own, the o
 to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
 A sketch-map leg gives you a riddle to the place and a rough inked sketch of 250 m round it, with
 an X where the tin is and no names (on hard trails, no north arrow either, and it may be turned
-round). Hold J (the Sketch button on a touch screen) to study it full screen; you can't see the big
+round). Hold use (E or □; the Clue button on a touch screen) to study it full screen, while a tap of it still asks a local; you can't see the big
 map while you do. With friends only the map-holder has it (one for every two of you, each with a
 torn strip of it), so they have to talk the others in.
 
@@ -584,9 +649,13 @@ off leaves nothing.
 ### Races
 
 From the noticeboard to a real place 1 to 3 km away, on a ride that suits the land in between.
-Taking a race opens the entries for 15 seconds: anyone in the game, wherever they are in Bath,
-presses E to enter (whoever took it is in already). When they close, everyone who entered, and only
-them, is put on a starting grid across the street with the ride, for a countdown to GO. The start
+At its noticeboard, E (Square on a pad) starts the race; the Chronicle pinned there too is a smaller
+line underneath (N, or the pause menu on a pad). Taking a race opens the entries for 15 seconds:
+anyone in the game, wherever they are in Bath, presses E to enter (whoever took it is in already),
+and a big banner says who's in and counts down. On your own in the room there's nobody to wait for,
+so it goes straight to the start. When the entries close, everyone who entered, and only them, is
+put on a starting grid across the street with the ride, for a countdown to GO: a big 3, 2, 1, GO! in
+the middle of the screen under three start lights, each with a beep, and a higher one for GO. The start
 and the finish are always on a proper street, never on grass, and the route between them follows
 the streets: it's drawn on the minimap and the big map, with a ring for each checkpoint still to
 go. Checkpoints are gates across the road, and you have to ride through each one in order before
@@ -596,10 +665,24 @@ best, and the card shows where you're lying in the race. A clock counts down to 
 checkpoint, and what's left over carries on to the one after; it's set from bronze pace with time to
 spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
 getting short. Run out and you're out of the placings and the medals, but you can ride on to the
-line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Over the line you get a banner, confetti
-and a fanfare, with your place, your time and medal, whether it's a best, and everyone's times as
-they come in. There's gold, silver, bronze and a hidden author's time, and you race ghosts of your
-best run and the room's fastest. Backspace (Again) puts just you back on the line. There's a daily
+line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Boost pads lie
+along the road between checkpoints, two or three on most legs. Killed on the way, you're out of the
+race: no time and no medal.
+
+At the end comes a results card: your place in big podium colours, your time, your medal with a
+shine on it (or DNF), your best on the route ("NEW BEST!" if you beat it), how far you were off
+gold, and a few things from the run (top speed, boosts, slipstream, barges), with the podium and
+everyone's standings in a room race (anyone who didn't finish at the bottom), any prize, and a
+fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or for
+about 8 seconds; Again (use: E or □, or Backspace) goes again. On your own you get it as soon as
+you're over the line or out. In a room race, over the line or out of it while others are still
+riding, you wait where you stopped, held still and safe from harm (killed, you come back once it's
+over), and watch the others from behind: Q and E or the arrow keys switch who (d-pad ← and →
+on a pad; the arrows either side on a touch screen), over a banner with the standings so far.
+The race ends when everyone's over the line or out of it, or a minute after the winner, and everyone
+gets the results card together. There's gold, silver, bronze and a hidden author's time, and you
+race ghosts of your best run and the room's fastest. Use (E or □; Again on a touch screen; Backspace too) puts
+just you back on the line, once you're over it or on your ride. There's a daily
 race round the village too, with a board of times and the local legend.
 
 ### Seagull Attack
@@ -752,7 +835,10 @@ For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or 
 while playing. The browser remembers it, and it's only what you see.
 
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
-you're a baby doing tummy time on a play mat. F (Torch) switches your torch on, and everyone sees
+you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a
+low lunge two or three metres forward that lands you flat with a thud, and a moment to get your
+breath before you can get up or shoot. A wall stops the dive dead; you can't dive off a ride, in
+water or carrying something strange. Down the mines, crouching (C) mid-sprint dives. F (Torch) switches your torch on, and everyone sees
 the beam.
 
 ### Naughty boys
@@ -852,7 +938,7 @@ when you press Play, and you can mute it from the pause menu.
 **Signals**, for when talking won't do: press L (Flare on a touch screen) to send up a red flare
 that hangs 60 m over you for half a minute, seen right across the town (one a minute, or one per
 clue on a treasure trail); H on foot (Whistle) for a two-fingered whistle anyone within 300 m hears
-from where you are; and with the big map open, P or its Pencil button to draw on the map with a
+from where you are; and with the big map open, P (□ on a pad) or its Pencil button to draw on the map with a
 finger or the mouse. Everyone in the room sees your lines in your colour, and Rub out takes yours
 off. On a trail they're wiped when the clue changes.
 

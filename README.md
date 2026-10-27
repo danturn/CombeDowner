@@ -60,7 +60,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
   point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
   something at each stop for a minute, so waiting for him at the right one catches him without a
-  chase, for a bonus. A Gaffer who got away is a Wanted poster too.
+  chase, for a bonus. A Gaffer who got away is a Wanted poster too. It opens with the poster as a big
+  splash (his features as pictures, his round of stops, the clock and how to catch him), and J (hold
+  the pad's touchpad, or Poster on a touch screen) brings it back, ticking off what the witnesses
+  have said. The search circle is a band and wall of red light in the streets, clues stand under red
+  beams with a "?", every shrink is called out with its new size, a card by the crosshair ticks off
+  which of his features the man you're looking at has, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
@@ -69,23 +74,32 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
-  Races take entries, put the entrants on a grid in the street, run through checkpoints along a
-  route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every job,
+  Races take entries (a big banner says who's in and counts down; on your own in the room it goes
+  straight to the start), put the entrants on a grid in the street for a big 3, 2, 1, GO! under
+  start lights, run through checkpoints along a route drawn on the map, and end with a results
+  card: your place, time and medal, your best, how the run went and everyone's standings, with a
+  fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
+  ride, you wait where you stopped, safe, and watch them (Q/E, the d-pad or the arrows on a touch
+  screen switch who); everyone gets the results together at the end. Every job,
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
- Every ride is faster in a race, boost pads lie along the route, and riding close behind
+ Every ride is faster in a race, boost pads lie along the route (two or three between checkpoints), and riding close behind
   someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
-  Treasure trails don't give the answer away (no distances or compass from two stars, and no search
-  circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
-  and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
+  Treasure trails open with a big splash saying what you're after, any clock, how the search circle
+  works and the first clue, large (the big map, or the Clue button on a touch screen, brings the clue back), and end
+  on a results card like a race's. They don't give the answer away (no distances or compass from two
+  stars, and no search circle unless you ask a local: E shows what the hint gives and costs, and only
+  a second E pays; three hints a tin, each circle smaller and always with the tin well inside, and it
+  never shrinks by itself, with a countdown on your card to the next) and, together, have no clock:
+  each leg is worth three brass stars, and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
   you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
   look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
   pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up with J, and talks
+  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up by holding use or the Clue button, and talks
   the others in), bearings (two look-outs, each showing whoever's up there a gold line
   on the ground towards the tin; it's where they cross), clues split in two
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
@@ -100,15 +114,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
   till 90% is covered. Bigger rooms get more to do: more ties, nests, gates, mounds and tag, and
   tougher guards. Put one right for a prize.
+- **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
+  flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
   catches the next one, and a long grind wobbles: tap the opposite way to steady it. On every ride and in
   every vehicle A and D (or the left stick) steer and the mouse only looks about, swinging back to the
   way you're going as soon as you leave it be or speed up; come off and you're back on the way the ride
-  was pointing, never where you were looking. Grinds, jumps and
+  was pointing, never where you were looking. On a ride a tap of A or D is a nudge of a few degrees
+  and holding it builds to full lock; a stick pushed forward with a little lean goes straight, and
+  steers once it's clearly over. In the air only a hard turn spins you, and you snap on to a grind by
+  yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
-  any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
+  any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
+  one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
@@ -189,7 +209,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
   handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
   smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
-  one pusher can take the call (Q, the Call button, or shout HEAVE three beats running): then the
+  one pusher can take the call (use, on the bus, or shout HEAVE three beats running; stepping back lets go): then the
   heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
   them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
   the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
@@ -257,14 +277,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   turn left", "Take the second road on the right"), and marks you as a real examiner would: fifteen
   minor faults is still a pass, and one serious or dangerous fault fails you on the spot (he stamps on
   his brake, says nothing for a moment, then "I'm afraid that's a fail"). He watches your signals at
-  every turn (← and →, or the arrow buttons), your speed against the limit, whether you stop at the
+  every turn (← and →, or the arrow buttons), your speed against each street's real limit (the one on
+  the sign by the speedo), whether you stop at the
   end of a road, the kerb, which side of the road you're on and whether you look round (the mouse or
   the stick) before you move off and before you turn. Hit anything and that's that. The same minor
   fault four times over is a serious one. He'll ask you to pull up on the left on the way round and
   back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
   the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
   back you can turn the radio up or down (K and J) or change the station (I), wind the window down
-  (U) or pull the handbrake (Space), or use the buttons on the screen: the handbrake skids the car,
+  (U) or pull the handbrake (Space); on a pad the d-pad does the radio, station and window; or use the buttons on the screen: the handbrake skids the car,
   and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din (the
   radio, or real noise on the back seats' mics) and he tells you to keep it down; the third
   telling-off is a minor fault for the driver. He hears the driver laughing or shouting too, and
@@ -302,7 +323,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   rides are off both maps to start with (the key switches them back on). On a touch screen drag,
   pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
   R2/L2 or the right stick zoom, A marks and B closes.
-- **Map markers**: click the big map or press G at something to put your marker there; everyone sees
+- **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
   checkpoint, a minigame, the strange structure, a pub, a bus stop or a cable car station, and the
   marker goes exactly on it and says what it is ("Dan marked Push the Bus"); clicking a bunch of jobs
@@ -311,7 +332,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   their own colour on the maps, never one the maps use for something else; click your marker, or the
   thing it's on, again to take it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
-  (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
+  (on foot) is a whistle heard 300 m off; and with the big map open, P (□ on a pad) is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
 - **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
   streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
@@ -336,9 +357,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   door in the street.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
-  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; Cross
-  jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
-  L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
+  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; the
+  buttons follow Call of Duty: Warzone's defaults: Cross jumps, Square reloads on a tap and uses on a
+  hold (a tap uses when there's a prompt), Circle crouches on a tap and lies down on a hold,
+  Triangle switches weapon, L1 and R1 go back and forward through them. In a car R2 and L2 are the
+  pedals, the left stick steers, Triangle gets out and R1 is the horn. Options pauses, and on the menus the
   d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
   dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in

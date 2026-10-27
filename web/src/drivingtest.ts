@@ -8,6 +8,7 @@
 // against the limit, whether you stop at the end of a road before pulling out, the kerb, your
 // position on the road, whether you look round before you move off and before you turn (that's the
 // mirrors: look about with the mouse or the stick), and, if you hit anything at all, that's that.
+// The limit is the street's own, as the map has it (tools/maxspeed.py), or a guess by its kind where it has none.
 // Somewhere along the way he slaps the dashboard and shouts "Stop!", and he asks you to pull up on the
 // left, once on the way round and once back at the centre, and sees how close to the kerb you got.
 // A serious fault and he stamps on his own brake, says nothing for a moment, and then: "I'm afraid
@@ -36,7 +37,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
-import { keyLabel, padInUse } from "./gamepad";
+import { controlsHere, ctl, isKey, stripOf } from "./controls";
 import { type GameMap, type Road, roadHalf } from "./map";
 import { missionSheet } from "./missionscreens";
 import { openGround } from "./oddments";
@@ -55,6 +56,7 @@ const DRIVE = new Set(["primary", "secondary", "tertiary", "residential", "uncla
 const DECENT = new Set(["primary", "secondary", "tertiary"]);
 /** How keen the route is to go down each kind of street. */
 const LIKE: Record<string, number> = { primary: 0.6, secondary: 0.9, tertiary: 1.2, residential: 1, unclassified: 0.7, living_street: 0.2 };
+/** The limit a street with none on the map is taken to have. */
 const limitOf = (c: string) => (c === "residential" || c === "unclassified" || c === "living_street" ? 20 : 30);
 
 const EXAMINERS = ["Mr Pike", "Mr Dibble", "Mr Thwaite", "Mr Crabtree", "Mr Hollis", "Mr Stoat"];
@@ -64,7 +66,7 @@ const LAUGHS = ["Something funny?", "Glad someone's enjoying it.", "I'm not laug
 
 // ---- the streets, as a network: the same on every screen ----------------------------------------
 
-interface Edge { to: number; len: number; c: string; n: string; half: number; two: boolean }
+interface Edge { to: number; len: number; c: string; n: string; half: number; two: boolean; ms: number }   // ms: its speed limit, 0 if the map has none
 interface Graph { x: number[]; z: number[]; out: Edge[][]; nb: Set<number>[] }
 
 const graphs = new WeakMap<GameMap, Graph>();
@@ -87,12 +89,12 @@ function graphOf(map: GameMap): Graph {
     if (n === undefined) { n = g.x.length; ids.set(k, n); g.x.push(x); g.z.push(z); g.out.push([]); g.nb.push(new Set()); }
     return n;
   };
-  const link = (a: number, b: number, c: string, n: string, half: number, fwd: boolean, back: boolean) => {
+  const link = (a: number, b: number, c: string, n: string, half: number, ms: number, fwd: boolean, back: boolean) => {
     if (a === b || g.nb[a].has(b)) return;
     const len = Math.hypot(g.x[b] - g.x[a], g.z[b] - g.z[a]), two = fwd && back;
     g.nb[a].add(b); g.nb[b].add(a);
-    if (fwd) g.out[a].push({ to: b, len, c, n, half, two });
-    if (back) g.out[b].push({ to: a, len, c, n, half, two });
+    if (fwd) g.out[a].push({ to: b, len, c, n, half, two, ms });
+    if (back) g.out[b].push({ to: a, len, c, n, half, two, ms });
   };
   for (const r of roadsOf(map)) {
     if (!DRIVE.has(r.c) || r.p.length < 2) continue;
@@ -102,7 +104,7 @@ function graphOf(map: GameMap): Graph {
       const x = q[0], z = -q[1];
       if (map.fieldEdge(x, z) < 40) { prev = -1; continue; }
       const n = node(x, z);
-      if (prev >= 0) link(prev, n, r.c, r.n ?? "", half, fwd, back);
+      if (prev >= 0) link(prev, n, r.c, r.n ?? "", half, r.ms ?? 0, fwd, back);
       prev = n;
     }
   }
@@ -120,7 +122,7 @@ function graphOf(map: GameMap): Graph {
       const d = Math.hypot(g.x[m] - g.x[n], g.z[m] - g.z[n]);
       if (d < bd) { bd = d; best = m; }
     }
-    if (best >= 0 && e) link(n, best, e.c, e.n, e.half, true, true);
+    if (best >= 0 && e) link(n, best, e.c, e.n, e.half, e.ms, true, true);
   }
   graphs.set(map, g);
   return g;
@@ -194,7 +196,7 @@ function homeway(g: Graph, from: number, to: number, banned: Set<string>, used: 
 
 // ---- a test's route, and what the examiner says along it -----------------------------------------
 
-interface Pt { x: number; z: number; s: number; c: string; n: string; half: number; two: boolean }
+interface Pt { x: number; z: number; s: number; c: string; n: string; half: number; two: boolean; ms: number }
 interface Step { s: number; text: string; dir: number; give: boolean; street: string; ann: number }
 interface Route { pts: Pt[]; len: number; steps: Step[]; pull: number; stop: number }
 interface Centre { map: GameMap; a: number; b: number; x: number; z: number; ang: number; street: string }
@@ -233,7 +235,7 @@ function routeOf(c: Centre, seed: number): Route | null {
     const pts: Pt[] = [];
     const add = (x: number, z: number, e: Edge | undefined) => {
       const l = pts.length ? pts[pts.length - 1] : null;
-      pts.push({ x, z, s: l ? l.s + Math.hypot(x - l.x, z - l.z) : 0, c: e?.c ?? first.c, n: e?.n ?? first.n, half: e?.half ?? first.half, two: e?.two ?? first.two });
+      pts.push({ x, z, s: l ? l.s + Math.hypot(x - l.x, z - l.z) : 0, c: e?.c ?? first.c, n: e?.n ?? first.n, half: e?.half ?? first.half, two: e?.two ?? first.two, ms: e?.ms ?? first.ms });
     };
     add(c.x, c.z, first);
     for (let i = 0; i < nodes.length; i++) add(g.x[nodes[i]], g.z[nodes[i]], g.out[nodes[i]].find((e) => e.to === nodes[i + 1]) ?? first);
@@ -590,17 +592,17 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
   const ask = (a: string) => { if (mySeat() >= 2) say({ k: "pr", a }); };
   addEventListener("keydown", (e) => {
     if (e.repeat || mySeat() < 2) return;
-    const a = e.code === "KeyK" ? "up" : e.code === "KeyJ" ? "down" : e.code === "KeyI" ? "stn" : e.code === "KeyU" ? "win" : e.code === "Space" ? "hb" : "";
+    const a = isKey(e.code, "radioup") ? "up" : isKey(e.code, "radiodown") ? "down" : isKey(e.code, "station") ? "stn" : isKey(e.code, "window") ? "win" : isKey(e.code, "handbrake") ? "hb" : "";
     if (a) ask(a);
   }, sig);
   const panel = document.createElement("div");
   panel.style.cssText = "position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;pointer-events:auto";
   panel.hidden = true;
-  for (const [a, label, key] of [["up", "Radio up", "KeyK"], ["down", "Radio down", "KeyJ"], ["stn", "Change station", "KeyI"], ["win", "Window", "KeyU"], ["hb", "Handbrake!", "Space"]]) {
+  for (const [a, label, id] of [["up", "Radio up", "radioup"], ["down", "Radio down", "radiodown"], ["stn", "Change station", "station"], ["win", "Window", "window"], ["hb", "Handbrake!", "handbrake"]]) {
     const b = document.createElement("button");
     b.className = "tbtn small";
     b.style.cssText = "width:auto;height:auto;padding:6px 10px;font-size:14px;border-radius:8px";
-    b.innerHTML = `${label} <small>${esc(keyLabel(key))}</small>`;
+    b.innerHTML = `${label} <small>${esc(ctl(id, "keys"))}</small>`;
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); ask(a); }, sig);
     panel.appendChild(b);
   }
@@ -692,7 +694,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
       movingWasStopped = false;
       if (now - lastMirror > 7000) fault("Mirrors: moved off without looking round", 1);
     }
-    const pt = ptAt(rt, prog), lim = limitOf(pt.c), mph = speed * MPH;
+    const pt = ptAt(rt, prog), lim = pt.ms || limitOf(pt.c), mph = speed * MPH;
     // speed
     speedCool -= dt;
     if (fresh && mph > lim * 1.5 + 2) fault(`Speed: ${Math.round(mph)} mph in a ${lim}`, 2);
@@ -845,6 +847,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
       } else if (inCar) { inCar = false; SFX.carRadio(1); w.windows?.(false); lastRadio = -1; }
       lastStation = station;
       panel.hidden = seat < 2 || !!job.done;
+      controlsHere("back", !panel.hidden);
       // from the back seat your eyes are up by the roof, and the roof sign would fill the view
       kit.visible = seat < 2;
       if ((markT -= dt) <= 0) {
@@ -967,8 +970,8 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
           progress,
         };
       }
-      const sub = seat === 0 ? `Look round before moving off and turning · ${padInUse() ? `${keyLabel("ArrowLeft")} ${keyLabel("ArrowRight")}` : "← →"} to indicate`
-        : seat >= 2 ? `In the back: ${keyLabel("KeyK")} ${keyLabel("KeyJ")} radio · ${keyLabel("KeyI")} station · ${keyLabel("KeyU")} window · ${keyLabel("Space")} handbrake`
+      const sub = seat === 0 ? `Look round before moving off and turning · ${ctl("left")} ${ctl("right")} to indicate`
+        : seat >= 2 ? `In the back: ${stripOf([["radioup", "radio up"], ["radiodown", "down"], ["station", "station"], ["window", "window"], ["handbrake", "handbrake"]])}`
         : `${w.nameOf(driver)} is driving`;
       const last = faults[faults.length - 1];
       const stage = last ? { key: `t${test}f${faults.length}`, title: ["", "Minor fault", "Serious fault", "Dangerous fault"][last.g] ?? "Fault", sub: last.x, colour: last.g > 1 ? COLOUR : "#ffd84a", life: last.g > 1 ? 3.5 : 2.2 } : undefined;
@@ -981,6 +984,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
     end() {
       ac.abort();
       panel.remove();
+      controlsHere("back", false);
       car.assist = null;
       if (inCar) { SFX.carRadio(1); w.windows?.(false); }
       w.mark("@challenge", null);

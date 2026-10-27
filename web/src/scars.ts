@@ -642,7 +642,7 @@ export class Scars {
     }
     if (ghostD >= rt.goal) {
       this.run = null;
-      this.w.toast("The ghost got there first. Back to the line and press E to go again", 4);
+      this.w.toast("The ghost got there first. Back to the line and press {use} to go again", 4);
       if (v?.ghost) v.ghost.position.set(0, 0, 0);
     }
   }
@@ -658,10 +658,10 @@ export class Scars {
       if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Shoot the cable ties holding the banner up: ${bits(m)} of ${ties(s.c)} cut`; }
     } else if (s.k === "gulls") {
       key = this.nearI >= 0 ? 100 : bits(m);
-      if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = this.nearI >= 0 ? "<b>E</b> Knock the nest off the roof" : `Shoot or climb up to the gulls' nests (a ladder helps): ${bits(m)} of ${nestsFor(s.c)} down`; }
+      if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = this.nearI >= 0 ? "<b>{use}</b> Knock the nest off the roof" : `Shoot or climb up to the gulls' nests (a ladder helps): ${bits(m)} of ${nestsFor(s.c)} down`; }
     } else if (s.k === "trail") {
       if (this.work) { key = 200 + Math.round((this.work.t / WORK) * 10); if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Digging… ${Math.round((this.work.t / WORK) * 100)}%`; } }
-      else if (this.nearI >= 0) { key = 300; if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = "<b>E</b> Dig here (hold)"; } }
+      else if (this.nearI >= 0) { key = 300; if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = "Hold <b>{use}</b> to dig here"; } }
       else {
         const me = this.w.me(), v = this.views.get(s.id), real = v?.mx ? Math.hypot(v.mx[0] - me.x, v.mx[1] - me.z) : 1e9;
         key = 400 + (real < 150 ? Math.floor(real / 5) : 500);
@@ -677,7 +677,7 @@ export class Scars {
         if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Gate ${this.run.next + 1} of ${rt.gates.length}: the ghost gets to the end in ${Math.max(0, ahead)}s`; }
       } else {
         key = 590;
-        if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = this.near === s ? `<b>E</b> Race the smug ghost through ${gatesFor(s.c)} gate${gatesFor(s.c) > 1 ? "s" : ""}` : "Beat the smug ghost: back to the line"; }
+        if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = this.near === s ? `<b>{use}</b> Race the smug ghost through ${gatesFor(s.c)} gate${gatesFor(s.c) > 1 ? "s" : ""}` : "Beat the smug ghost: back to the line"; }
       }
     } else {
       const p = this.paint.get(s.id), pct = p?.inkN ? Math.min(100, Math.round((p.covN / (p.inkN * COVER)) * 100)) : 0;

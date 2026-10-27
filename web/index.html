@@ -33,9 +33,9 @@
     <div id="vignette"></div>
     <div id="letterbox"><span id="caption"></span><small>Any key to skip</small></div>
     <div id="talkers"></div>
-    <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
+    <canvas id="minimap" aria-label="Minimap. Tap it for the full map"></canvas>
     <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
-    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div><p id="bigmapmine"></p></div><div class="bigmapbar"><p id="bigmaphint">Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapme" type="button">Find me</button><button id="bigmapclose" type="button">Close map (M)</button></div></div>
+    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div><p id="bigmapmine"></p></div><div class="bigmapbar"><p id="bigmaphint"></p><button id="bigmapme" type="button">Find me</button><button id="bigmapclose" type="button">Close map</button></div></div>
     <div id="feed"></div>
     <div id="notices" aria-live="polite"></div>
     <div id="watch" aria-hidden="true"><b class="gs-brand">G-SHOCK</b><div class="gs-face"><span class="gs-l">LIGHT</span><span class="gs-r">SHOCK RESIST</span><canvas id="watchlcd"></canvas></div><b class="gs-prot">PROTECTION</b></div>
@@ -71,7 +71,7 @@
     <div id="usehint" hidden></div>
     <div id="drive" class="panel" hidden>
       <div class="label" id="drivename"></div>
-      <div class="driverow"><span id="mph">0</span><small>mph</small></div>
+      <div class="driverow"><span id="limit" hidden></span><span id="mph">0</span><small>mph</small></div>
       <em id="drivehint"></em>
     </div>
     <div id="death" hidden>
@@ -92,7 +92,7 @@
       <table><thead><tr><th>Resident</th><th>Kills</th><th>Deaths</th><th>Naughty boys</th></tr></thead><tbody id="scores"></tbody></table>
     </div>
     <div id="toast"></div>
-    <div id="clickhint" hidden>Click to aim</div>
+    <div id="clickhint" hidden>Click to aim</div><!-- keys-ok: only shown with a mouse -->
     <div id="np" hidden aria-live="polite">
       <div class="np-bar"><span>Combe Downer Amp</span></div>
       <div class="np-body">
@@ -184,26 +184,30 @@
         <details>
           <summary>Controls</summary>
           <dl class="keys">
-            <dt><kbd>Mouse</kbd></dt><dd>Look</dd>
-            <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd>
-            <dt><kbd>Shift</kbd></dt><dd>Sprint</dd>
-            <dt><kbd>Space</kbd></dt><dd>Jump</dd>
-            <dt><kbd>C</kbd></dt><dd>Crouch</dd>
-            <dt><kbd>Left click</kbd></dt><dd>Shoot</dd>
-            <dt><kbd>Right click</kbd></dt><dd>Aim (click again to stop)</dd>
-            <dt><kbd>R</kbd></dt><dd>Reload</dd>
-            <dt><kbd>B</kbd></dt><dd>Binoculars (press again to put them down)</dd>
+            <dt data-ctl="look"></dt><dd>Look</dd>
+            <dt data-ctl="move"></dt><dd>Move</dd>
+            <dt data-ctl="sprint"></dt><dd>Sprint</dd>
+            <dt data-ctl="jump"></dt><dd>Jump</dd>
+            <dt data-ctl="crouch"></dt><dd>Crouch</dd>
+            <dt data-ctl="prone"></dt><dd>Lie down (mid-sprint, you dive)</dd>
+            <dt data-ctl="fire"></dt><dd>Shoot</dd>
+            <dt data-ctl="aim"></dt><dd>Aim (again to stop)</dd>
+            <dt data-ctl="reload"></dt><dd>Reload</dd>
+            <dt data-ctl="use"></dt><dd>Use: get in, open, take, call a bus, go again</dd>
+            <dt data-ctl="bino"></dt><dd>Binoculars (again to put them down)</dd>
             <dt>Voice</dt><dd>Players nearby hear your mic</dd>
-            <dt><kbd>V</kbd></dt><dd>Hold to talk to everyone on the radio</dd>
-            <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Fists, rifle, sniper rifle</dd>
-            <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
+            <dt data-ctl="radio"></dt><dd>Hold to talk to everyone on the radio</dd>
+            <dt data-ctl="fists rifle sniper"></dt><dd>Fists, rifle, sniper rifle</dd>
+            <dt data-ctl="swap"></dt><dd>Next weapon (the mouse wheel too)</dd>
             <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
-            <dt><kbd>X</kbd></dt><dd>On or off your ride (rides are pink on the minimap)</dd>
-            <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
-            <dt><kbd>M</kbd></dt><dd>Full map (tap it to put your marker on it)</dd>
-            <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
-            <dt><kbd>,</kbd><kbd>.</kbd></dt><dd>Previous and next music track</dd>
-            <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
+            <dt data-ctl="ride"></dt><dd>On or off your ride (rides are pink on the minimap)</dd>
+            <dt data-ctl="torch"></dt><dd>Torch</dd>
+            <dt data-ctl="horn"></dt><dd>Horn, at a wheel (a bell at a narrowboat's helm)</dd>
+            <dt data-ctl="scores"></dt><dd>Scores</dd>
+            <dt data-ctl="map"></dt><dd>Full map (tap it to put your marker on it)</dd>
+            <dt data-ctl="mark"></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
+            <dt data-ctl="music"></dt><dd>Previous and next music track</dd>
+            <dt data-ctl="pause"></dt><dd>Pause and invite link</dd>
             <dt>Controller</dt><dd id="padnote">Press a button on your controller to wake it up</dd>
           </dl>
         </details>
@@ -217,7 +221,7 @@
 
   <div id="chronicle" class="overlay" hidden>
     <div class="chron-sheet">
-      <button id="chronclose" type="button">Close the paper (Esc)</button>
+      <button id="chronclose" type="button">Close the paper</button>
       <div id="chrondaily" class="daily"></div>
     </div>
   </div>
@@ -288,7 +292,7 @@
           <label class="check"><input id="pad-boost" type="checkbox" checked> Turn faster when the stick is held right over</label>
           <label class="slider">Stick dead zone <input id="pad-dead" type="range" min="0.05" max="0.35" step="0.01" value="0.12"></label>
           <label class="check"><input id="pad-rumble" type="checkbox" checked> Rumble</label>
-          <p class="hint">Buttons: choose one with ✕, then press the button to put it on (○ calls it off). Options and the sticks stay put.</p>
+          <p class="hint" data-padhint>Buttons: choose one with {ok}, then press the button to put it on ({back} calls it off). A button can do one thing on a tap and another on a hold. Options and the sticks stay put.</p>
           <div class="padbuttons"></div>
         </fieldset>
         <fieldset class="setgroup">

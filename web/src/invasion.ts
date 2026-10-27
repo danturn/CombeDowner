@@ -1165,7 +1165,7 @@ export class Invasion {
       if (d.t === "grun") this.gafferRuns(d);
       else if (d.t === "gup") {
         SFX.jobStep();
-        if (this.runner) { this.runner.up = true; this.w.toast(`${this.runner.name} has given up! Get up close and cuff him (E)`, 4); }
+        if (this.runner) { this.runner.up = true; this.w.toast(`${this.runner.name} has given up! Get up close and cuff him ({use})`, 4); }
       } else if (d.t === "gcu") {
         SFX.jobDone(true);
         const by = String(d.by ?? ""), who = by === this.w.selfId ? "You" : this.w.nameOf(by);
@@ -1235,9 +1235,9 @@ export class Invasion {
     this.w.feed(`<b style="color:${PURPLE}">${esc(String(d.n))}</b> is making a run for it ${MOUNTS[+d.how] ?? MOUNTS[0]}`);
   }
 
-  /** E at the Gaffer with his hands up. */
+  /** Use at the Gaffer with his hands up. */
   hint(): string {
-    return this.cuffable() ? "<b>E</b> Cuff the Gaffer" : "";
+    return this.cuffable() ? "<b>{use}</b> Cuff the Gaffer" : "";
   }
   private cuffable() {
     const g = this.runner, me = this.w.me();

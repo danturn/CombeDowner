@@ -293,7 +293,34 @@ classes, class_ix = [], {}
 def ix(table, index, v):
     if v not in index: index[v] = len(table); table.append(v)
     return index[v]
-roads = []
+roads, limits = [], []      # limits: each road's speed limit in mph (0 for none), in the same order
+import maxspeed
+osm_ways = [(transform(proj, g), p) for g, p in L("osm-roads") if g.geom_type == "LineString"] \
+    if os.path.exists(f"{src_dir}/osm-roads.geojson") else []
+way_limit, kind_limit = maxspeed.resolve(osm_ways) if osm_ways else ({}, {})
+lim_ways = [(g, way_limit[p["osm"]]) for g, p in osm_ways if p.get("osm") in way_limit]
+lim_tree = shapely.STRtree([g for g, _ in lim_ways]) if lim_ways else None
+
+
+def limit_of(seg, cls):
+    """Overture's road takes the limit of the OpenStreetMap way under its middle running its way."""
+    if maxspeed.kind(cls) not in maxspeed.LIMITED: return 0
+    mid = seg.interpolate(0.5, normalized=True)
+    a, b = seg.interpolate(max(0, seg.project(mid) - 2)), seg.interpolate(min(seg.length, seg.project(mid) + 2))
+    u = np.array([b.x - a.x, b.y - a.y]); u /= np.linalg.norm(u) or 1
+    best = None
+    for k in (lim_tree.query(mid.buffer(8)) if lim_tree is not None else ()):
+        g, v = lim_ways[int(k)]
+        d = g.distance(mid)
+        if d > 8 or (best and d >= best[0]): continue
+        s = g.project(mid)
+        c, e = g.interpolate(max(0, s - 2)), g.interpolate(min(g.length, s + 2))
+        w = np.array([e.x - c.x, e.y - c.y]); w /= np.linalg.norm(w) or 1
+        if abs(float(u @ w)) < 0.7: continue      # a street crossing this one
+        best = (d, v)
+    return best[1] if best else kind_limit.get(maxspeed.kind(cls), 0)
+
+
 for g, p in L("segment"):
     if p.get("subtype") != "road": continue
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
@@ -330,6 +357,7 @@ for g, p in L("segment"):
                 roads.append(head + [1] + pts)
             else:
                 roads.append(head + [0] + flat_line(seg.coords))
+            limits.append(limit_of(seg, p.get("class")))
 print(f"roads: {len(roads)} pieces")
 
 # ---- named places -----------------------------------------------------------------------
@@ -401,6 +429,7 @@ out = dict(
            h=b64(dq.astype("<i2")), k=b64(GT)),
     cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,
 )
+if any(limits): out["ms"] = limits
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 TOPS.save()
 print(f"{len(blds)} buildings ({sum(1 for b in info if b['roof'])} pitched), {len(roads)} road pieces, {len(ponds)} water pieces, "

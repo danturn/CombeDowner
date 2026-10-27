@@ -2,13 +2,16 @@
 // code read off the place (clues.ts says what to count). Get it wrong and the lock jams with a clunk
 // for ten seconds while the tin rattles at you. On a touch screen each wheel has a tap above and
 // below it; at a keyboard W and S turn the wheel you're on and A and D move between them (or the
-// scroll wheel turns it, or type the digits), E or Enter tries it, and Escape leaves it.
+// scroll wheel turns it, or type the digits), E or Enter tries it, and Escape leaves it. A pad sends
+// those as arrows, Enter and Escape (gamepad.ts). The strip underneath names them for the input in
+// use, from the lock's table in controls.ts.
 //
 // While the lock's up it has the keyboard and the scroll wheel to itself: they're caught before the
 // game sees them, so turning a wheel doesn't walk you off or change your gun.
 //
 // Who decides what: nobody. The lock is your own; opening the tin is what goes round (trail.ts).
 import * as SFX from "./audio";
+import { strip } from "./controls";
 
 const JAM = 10;   // seconds a wrong code jams the lock
 
@@ -62,11 +65,10 @@ export class Lock {
     if (was) this.set = was.slice(0, 3);
     const el = (this.el = document.createElement("div"));
     el.id = "tinlock";
-    const touch = matchMedia("(pointer: coarse)").matches;
     el.innerHTML = `<p class="ask">${o.ask}</p><div class="wheels">${[0, 1, 2].map((k) =>
       `<div class="wheel" data-k="${k}"><button data-d="1" aria-label="Up">▲</button><div class="n">0</div><button data-d="-1" aria-label="Down">▼</button></div>`).join("")}</div>`
       + `<div class="jam"></div><div class="row"><button class="try">Try it</button><button class="leave">Leave it</button></div>`
-      + (touch ? "" : `<div class="keys">W/S or the wheel to turn · A/D to move · E to try · Esc to leave</div>`);
+      + `<div class="keys"></div>`;
     el.addEventListener("pointerdown", (e) => {
       e.stopPropagation();
       const b = (e.target as HTMLElement).closest("button");
@@ -144,5 +146,7 @@ export class Lock {
     const jam = el.querySelector(".jam")!, t = this.jamT > 0 ? `Jammed! ${Math.ceil(this.jamT)} s` : "";
     if (jam.textContent !== t) jam.textContent = t;
     (el.querySelector(".try") as HTMLButtonElement).disabled = this.jamT > 0;
+    const keys = el.querySelector(".keys")!, k = strip("lock");
+    if (keys.innerHTML !== k) keys.innerHTML = k;
   }
 }

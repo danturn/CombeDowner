@@ -5,7 +5,7 @@
 //   per leg; otherwise one a minute.
 // - A whistle (H on foot, or the Whistle button): a two-fingered whistle heard from where you are by
 //   anyone within 300 m, further than voices carry.
-// - A pencil (P with the big map open, or its Pencil button): draw on the big map with a finger or
+// - A pencil (P or □ with the big map open, or its Pencil button): draw on the big map with a finger or
 //   the mouse, and everyone in the room sees your lines in your colour. Rub out takes yours off. On
 //   a trail they're wiped when the leg changes. The trail can also pencil lines of its own onto your
 //   map alone (a look-out's bearing).
@@ -188,6 +188,9 @@ export class Signals {
     this.rebuild();
   }
 
+  /** The pencil on or off (P, or the pad's button for it, with the big map up). */
+  togglePencil() { this.setPencil(!this.pencilOn); }
+
   private setPencil(on: boolean) {
     this.pencilOn = on;
     this.bar?.querySelector(".pencil")?.classList.toggle("on", on);
@@ -256,7 +259,7 @@ export class Signals {
     if (bar && wrap) {
       const box = (this.bar = document.createElement("span"));
       box.style.cssText = "display:inline-flex;gap:8px;margin-right:8px";
-      box.innerHTML = `<button type="button" class="pencil">Pencil (P)</button><button type="button" class="rub">Rub out</button>`;
+      box.innerHTML = `<button type="button" class="pencil">Pencil</button><button type="button" class="rub">Rub out</button>`;
       box.addEventListener("pointerdown", (e) => {
         e.stopPropagation(); e.preventDefault();
         const b = (e.target as HTMLElement).closest("button");

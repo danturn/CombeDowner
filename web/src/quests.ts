@@ -14,6 +14,9 @@
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
 // the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
+// The job control (J, a hold of the pad's touchpad, Poster on a touch screen) brings back the
+// running job's own poster, for a job that has one (a Wanted bounty: recall).
+//
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
@@ -44,6 +47,7 @@ import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
+import { ctl, ctlText } from "./controls";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
@@ -258,12 +262,23 @@ export interface Job {
   shoot?(q: Quarry, power: number): void;
   /** A boss of the job's own for the boss bar (Big Lad): its name and how much fight is left, 0..1. */
   bossBar?(): { name: string; fill: number } | null;
+  /** The job's poster or clue brought back up (the job control); false if it has none. */
+  recall?(): boolean;
   /** Take down anything the job put up. */
   end(): void;
   /** Backspace: back on the start line for a go of your own. Returns false if it can't. */
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number; y?: number } | null;
+  /** You're waiting for the job's end (over a race's line while others ride on): nothing hurts you,
+   *  and if you're dead you come back once it's over. */
+  waiting?(): boolean;
+  /** Where to look from while you wait, dead: behind someone still going. */
+  spectate?(): { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null;
+  /** Switch who you're watching while you wait (by: 1 next, -1 last). True if that's what the press was for. */
+  cycle?(by: number): boolean;
+  /** The middle of the screen is the job's (a race's countdown): toasts and prompts wait. */
+  quiet?(): boolean;
   /** Anything of the job's standing in the road for the traffic to pull round (a broken-down bus). */
   obstacles?(): { x: number; z: number; r: number; parked?: boolean; a?: number }[];
   /** Where you're held up off the ground this frame, given which way you're pushing the keys or the
@@ -287,6 +302,8 @@ export interface JobKind {
   goal?(o: Offer): string;
   /** Can be done again the same day (a race, to beat your time). */
   again?: boolean;
+  /** What E at its noticeboard does, if not "Take the job" ("Start the race"). */
+  take?: string;
   /** Today's job of this kind on the noticeboard at spot, from r. Null if it can't make one there. */
   offer(r: Rng, spot: PostSpot, w: QuestWorld): Offer | null;
   /** local: a go of your own (Backspace after it's over), not the room's. */
@@ -481,6 +498,7 @@ export class Quests {
   private last: Offer | null = null;   // the last job that can be run again, and when it ended
   private lastT = 0;
   private again: HTMLButtonElement | null = null;
+  private posterBtn: HTMLButtonElement | null = null;
   private home: { x: number; z: number };
   private ready: () => boolean;
   /** A job's step or end, for the quips. */
@@ -619,6 +637,7 @@ export class Quests {
     if (this.ready()) for (const f of free) f.update(dt, this.w);
     this.hud(me);
     this.againButton();
+    this.recallButton();
   }
 
   /** A challenge's thing at its place: up while it's waiting to be taken and you're near, down while
@@ -678,10 +697,10 @@ export class Quests {
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
     if (this.job?.offer.seed === p.offer.seed) return "";
     if (this.job && !this.local) return "Finish or call off your job first";
-    return p.kind.challenge ? `<b>E</b> ${esc(p.offer.title)}` : `<b>E</b> Take the job`;
+    return p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
   }
 
-  /** E pressed. Returns true if it was for a job. */
+  /** Use pressed. Returns true if it was for a job. */
   use(): boolean {
     const me = this.w.me();
     if (!me.alive) return false;
@@ -825,6 +844,12 @@ export class Quests {
   /** The running job's boats and the like, to stand on. */
   movers(): Mover[] { return this.job && !this.job.done ? this.job.movers?.() ?? [] : []; }
 
+  /** Waiting for the job's end, out of harm's way (a race you're out of, while others ride on). */
+  waiting(): boolean { return !!this.job && !this.job.done && !!this.job.waiting?.(); }
+  spectate() { return this.job && !this.job.done ? this.job.spectate?.() ?? null : null; }
+  cycle(by: number): boolean { return !!this.job && !this.job.done && !!this.job.cycle?.(by); }
+  quiet(): boolean { return !!this.job && !this.job.done && !!this.job.quiet?.(); }
+
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
   /** The running job's things in the road, for the traffic. */
@@ -837,6 +862,24 @@ export class Quests {
   /** Where the running job is holding you up, if it is. */
   aloft(): boolean { return !!this.job && !this.job.done && !!this.job.aloft?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
+
+  /** The job control: the running job's poster or clue again. */
+  recall(): boolean { return !!this.job && !this.job.done && !!this.job.recall?.(); }
+
+  /** On a touch screen, the Poster button, while the running job has one to bring back. */
+  private recallButton() {
+    const touch = document.getElementById("touch");
+    if (!touch) return;
+    if (!this.posterBtn) {
+      const b = (this.posterBtn = document.createElement("button"));
+      b.className = "tbtn small"; b.textContent = ctl("job", "touch"); b.hidden = true;
+      b.style.cssText = "position:absolute;right:16px;top:150px;pointer-events:auto";
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); this.recall(); });
+      touch.appendChild(b);
+    }
+    const show = !!this.job && !this.job.done && !!this.job.recall && this.w.me().alive;
+    if (this.posterBtn.hidden === show) this.posterBtn.hidden = !show;
+  }
 
   /** On a touch screen, the Again button, when there's a race to run again. */
   private againButton() {
@@ -887,15 +930,16 @@ export class Quests {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "E to start it" : "E to take the job") : "Step up to take it"}</em>`;
+        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "{use} to start it" : `{use} to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
     }
-    show($("jobposter"), poster, !!poster);
+    show($("jobposter"), ctlText(poster), !!poster);
   }
 
   dispose() {
     this.clear();
     for (const f of free) f.dispose?.(this.w);
     this.again?.remove();
+    this.posterBtn?.remove();
     for (const p of this.posts) this.unbuild(p);
   }
 }

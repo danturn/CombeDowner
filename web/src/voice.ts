@@ -218,7 +218,7 @@ export class Voice {
       voiceLevel.attach(stream);
       this.refresh();
       this.net.addStream(stream);
-      this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);
+      this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold {radio} for the radio", 3);
     });
   }
 

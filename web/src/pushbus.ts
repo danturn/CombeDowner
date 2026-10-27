@@ -47,7 +47,7 @@ import * as SFX from "./audio";
 import { hitPosed } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { carSteerable, paintFor } from "./furniture";
-import { keyLabel } from "./gamepad";
+import { ctl } from "./controls";
 import { carShape, trafficMake } from "./makes";
 import { type GameMap, roadHalf } from "./map";
 import { Figure, look, NAUGHTY } from "./naughtyboys";
@@ -220,7 +220,6 @@ function clearRest(h: Hill, hl: number, hw: number, map: GameMap) {
 }
 
 const touchOn = () => document.getElementById("touch")?.hidden === false;
-const heaveName = () => (touchOn() ? "Heave" : keyLabel("Space"));
 
 // leant in at the bus: your eye lower than standing, looking down at the panel, your hands on it below your eye
 const LEAN_LOW = 0.3, LEAN_AHEAD = 0.15, LEAN_PITCH = -0.25, EYE_UP = 1.65 - LEAN_LOW, HAND_UP = 0.95;
@@ -400,9 +399,9 @@ registerChallenge({
   blurb: "The bus has broken down at the bottom of the hill. Get behind it and heave it all the way to the top, on the count."
     + "<br>On your own: push, and heave on every HEAVE!"
     + "<br>Two or more: one can take the cab, the only one who sees how fast it's going and what's coming, with the handbrake to let the pushers rest"
-    + "<br>Three or more: one pusher can take the call (Q), and the heaves go when they say",
+    + "<br>Three or more: one pusher can take the call ({use}), and the heaves go when they say",
   glyph: "B", colour: COLOUR, tier: 1, stars: 3,
-  goal: () => `Push the bus to the top of the hill: ${touchOn() ? "Use" : keyLabel("KeyE")} at its back, then ${heaveName()} on every HEAVE! One of you can take the cab at the front, and with three, one can call the heaves`,
+  goal: () => `Push the bus to the top of the hill: {use} at its back, then {heave} on every HEAVE! One of you can take the cab at the front, and with three, one can call the heaves`,
   place(map) {
     const hs = hillsOf(map);
     if (!hs.length) return null;
@@ -518,22 +517,9 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   }
   const carLat = Math.max(0.9, hill.half - 1.1);
 
-  /** Whether (x, z) is in the water (a pond, the river, the canal), for where a runaway ends up. */
-  const inWater = (x: number, z: number) => {
-    for (const m of [w.map, ...w.map.tilesNear(x, z, 10)]) for (const wp of [...(m === w.map ? w.map.wide?.wp ?? [] : []), ...(m.d.wp ?? [])]) {
-      const ring = wp.r[0];
-      if (!ring) continue;
-      let inside = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [xi, yi] = ring[i], [xj, yj] = ring[j];
-        if (yi > -z !== yj > -z && x < ((xj - xi) * (-z - yi)) / (yj - yi) + xi) inside = !inside;
-      }
-      if (inside) return true;
-    }
-    return false;
-  };
+  const inWater = (x: number, z: number) => w.map.inWater(x, z);
 
-  // ---- input: E at the back to get on and off, Space (or Heave) on the beat, A/D and Space in the cab, Q to take the call
+  // ---- input: use at the back to get on, and on it to take the call (or let go, stepping back does too); jump (Heave) on the beat; steer and the handbrake in the cab
   const ac = new AbortController(), sig = { signal: ac.signal };
   // only stepping back lets go: a stray A or D mustn't drop you off the bus
   const AWAY = new Set(["KeyS", "ArrowDown"]);
@@ -541,26 +527,12 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     if (e.repeat) return;
     keys.add(e.code);
     if (e.code === "Space") { if (inCab) handbrake(); else if (onBus) heave(false); }
-    else if (e.code === "KeyQ" && onBus) takeCall();
     else if (onBus && AWAY.has(e.code)) stepOff();
   }, sig);
   addEventListener("keyup", (e) => { keys.delete(e.code); }, sig);
   addEventListener("blur", () => { keys.clear(); }, sig);
   const tjump = document.getElementById("t-jump");
   tjump?.addEventListener("pointerdown", () => { if (inCab) handbrake(); else if (onBus) heave(false); }, sig);
-  let callBtn: HTMLButtonElement | null = null;
-  function callButton(want: boolean) {
-    if (want && !callBtn) {
-      const host = document.getElementById("touch");
-      if (!host) return;
-      const b = (callBtn = document.createElement("button"));
-      b.className = "tbtn small";
-      b.style.cssText = "position:absolute;right:16px;top:38%";
-      b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); takeCall(); });
-      host.appendChild(b);
-    } else if (!want && callBtn) { callBtn.remove(); callBtn = null; }
-    if (callBtn) { const t = caller === w.selfId ? "Stop calling" : "Call"; if (callBtn.textContent !== t) callBtn.textContent = t; }
-  }
 
   // ---- the count on the screen: who's calling, the word, a sweep across a bar to the heave, and how you did.
   // The bar is what to time to: the pips are only a help, and come late through some headphones
@@ -616,16 +588,16 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     else if (v > 0) setText(cabSpeed, `&#9650; UP ${v.toFixed(1)} m/s`, "#8ef08e");
     else setText(cabSpeed, `&#9660; ROLLING BACK ${(-v).toFixed(1)} m/s`, v < GRIP * 0.6 ? "#ff5a4a" : "#ff9a8a");
     const slip = hb && heat > 0.7;
-    setText(cabBrake, hb ? (slip ? "Handbrake slipping, smoking: let it off!" : `Handbrake on: they get their breath back`) : `Handbrake off · ${keyLabel("Space")} to hold it`, slip ? "#ff5a4a" : hb ? "#ffe08a" : "#ccc");
+    setText(cabBrake, hb ? (slip ? "Handbrake slipping, smoking: let it off!" : `Handbrake on: they get their breath back`) : `Handbrake off · ${ctl("handbrake")} to hold it`, slip ? "#ff5a4a" : hb ? "#ffe08a" : "#ccc");
     cabHeatFill.style.width = `${Math.round(heat * 100)}%`;
     cabHeatFill.style.background = heat > 0.7 ? "#ff5a4a" : heat > 0.4 ? "#ffb21f" : "#8ef08e";
     const roof = lads.some((l) => l.kind === 1 && l.t > 3), front = lads.some((l) => l.kind === 2 && l.t > 3);
     const ahead: string[] = [];
-    if (carSt === 2) ahead.push(`A car's stuck nose to nose: pull in, ${keyLabel("KeyA")}`);
+    if (carSt === 2) ahead.push(`A car's stuck nose to nose: pull in, ${ctl("strafeleft")}`);
     else if (carSt === 1) ahead.push(`A car coming down, ${Math.max(0, Math.round(carS - s - hl))} m`);
     if (roof) ahead.push("A naughty boy on the roof");
     if (front) ahead.push("A naughty boy shoving at the front");
-    if (Math.abs(lat) >= latMax - 0.02) ahead.push(`Scraping the kerb: steer off, ${keyLabel(lat < 0 ? "KeyD" : "KeyA")}`);
+    if (Math.abs(lat) >= latMax - 0.02) ahead.push(`Scraping the kerb: steer off, ${ctl(lat < 0 ? "straferight" : "strafeleft")}`);
     setText(cabAhead, ahead.length ? ahead.join("<br>") : "Clear up ahead", ahead.length ? "#ffb21f" : "#ccc");
   }
 
@@ -725,6 +697,9 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     SFX.effort(0, 0, 1);
     flash(b.off < 0.1 ? "Perfect heave!" : "Good heave!", COLOUR);
   }
+
+  /** On the bus with enough of you to call the heaves, and nobody else calling: use takes the call (or puts it down). */
+  function canCall() { return mode <= 1 && w.players().length >= CALL_MIN && (!caller || caller === w.selfId); }
 
   function takeCall() {
     if (mode > 1) return;
@@ -1073,7 +1048,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       const wrapsBefore = wraps;
       tick(dt);
       drawBus(dt);
-      if (job.done) { drawBeat(dt, false); drawCab(false); callButton(false); return; }
+      if (job.done) { drawBeat(dt, false); drawCab(false); return; }
       // the beat: a count in, and the heave
       if (mode <= 1 && Math.hypot(me.x - bus.x, me.z - bus.z) < 45) {
         if (lastPh < period - 1.2 && ph >= period - 1.2) SFX.pip();
@@ -1103,7 +1078,6 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       drawBeat(dt, mode <= 1 && (inCab || onBus || (me.alive && Math.hypot(me.x - rr.x, me.z - rr.z) < 12)));
       drawCab(inCab && mode <= 1);
       if (!onBus || inCab || mode > 1 || !me.alive) hands.visible = false;
-      callButton(touchOn() && onBus && mode <= 1 && w.players().length >= CALL_MIN);
       // a handbrake held too long smokes at the back wheels as it slips
       if (mode === 1 && hb && heat > 0.7 && (smokeT -= dt) <= 0) {
         smokeT = 0.25;
@@ -1208,7 +1182,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       else if (d.k === "car") {
         const [dd, pan] = w.hear?.(carObj.position.x, carObj.position.y, carObj.position.z) ?? [0, 0];
         SFX.screech(dd, pan);
-        if (inCab) w.toast(`A car coming down. Pull in: ${keyLabel("KeyA")}`, 3);
+        if (inCab) w.toast("A car coming down. Pull in: {strafeleft}", 3);
       }
       else if (d.k === "ladoff") {
         const l = lads[d.i | 0];
@@ -1256,7 +1230,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     use() {
       if (mode >= 2) return false;
       if (inCab) { leaveCab(); setDriver(driver === w.selfId ? "" : driver); say({ k: "cab", on: 0 }); return true; }
-      if (onBus) { stepOff(); return true; }
+      if (onBus) { if (canCall()) takeCall(); else stepOff(); return true; }
       if (nearRear()) {
         if (v <= GRIP) { w.toast("Too fast: you can't hold it", 1.5); return true; }
         onBus = true; stickFree = false; freshAt = performance.now();
@@ -1269,20 +1243,20 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         bus.inside(true);
         say({ k: "cab", on: 1 });
         sendDrive();
-        w.toast(`In the cab: only you can see how fast it's going and what's coming, so call it out. ${keyLabel("KeyA")} ${keyLabel("KeyD")} steer, ${keyLabel("Space")} handbrake`, 5);
+        w.toast("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake", 5);
         return true;
       }
       return false;
     },
     hint() {
       if (mode >= 2) return "";
-      if (inCab) return `<b>E</b> Get out of the cab · <b>${keyLabel("Space")}</b> handbrake ${myHb ? "off, on a HEAVE!" : "on, so they get their breath"} · call out what's coming`;
+      if (inCab) return `<b>{use}</b> Get out of the cab · <b>{handbrake}</b> handbrake ${myHb ? "off, on a HEAVE!" : "on, so they get their breath"} · call out what's coming`;
       if (onBus) {
-        const call = w.players().length < CALL_MIN ? "" : caller === w.selfId ? ` · <b>${touchOn() ? "Stop calling" : "Q"}</b> Stop calling` : caller ? "" : ` · <b>${touchOn() ? "Call" : "Q"}</b> Take the call`;
-        return `<b>${heaveName()}</b> on every HEAVE!${caller === w.selfId ? " (you call it)" : ""} · <b>E</b> to let go${call}`;
+        const use = !canCall() ? "<b>{use}</b> to let go" : caller === w.selfId ? "<b>{use}</b> Stop calling · <b>{back}</b> to let go" : "<b>{use}</b> Take the call · <b>{back}</b> to let go";
+        return `<b>{heave}</b> on every HEAVE!${caller === w.selfId ? " (you call it)" : ""} · ${use}`;
       }
-      if (nearRear()) return v <= GRIP ? "It's rolling too fast to hold" : `<b>E</b> Get your shoulder to the bus`;
-      if (nearCab()) return driver && driver !== w.selfId ? `${esc(w.nameOf(driver))}'s in the cab` : `<b>E</b> Climb into the cab: steer, hold it, and see what's coming`;
+      if (nearRear()) return v <= GRIP ? "It's rolling too fast to hold" : "<b>{use}</b> Get your shoulder to the bus";
+      if (nearCab()) return driver && driver !== w.selfId ? `${esc(w.nameOf(driver))}'s in the cab` : "<b>{use}</b> Climb into the cab: steer, hold it, and see what's coming";
       return "";
     },
     // your feet go with the bus, your hands on it, and you look about as you like
@@ -1312,7 +1286,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       // the pushers can't see past the bus: with someone in the cab it's for them to say what's coming
       const blind = !!driver && driver !== w.selfId;
       return {
-        line: !onBus ? `${touchOn() ? "Use" : keyLabel("KeyE")} at the back to push, then ${heaveName()} on every HEAVE!`
+        line: !onBus ? "{use} at the back to push, then {heave} on every HEAVE!"
           : `${pushers} pushing${driver ? ` · ${w.nameOf(driver)} in the cab` : ""}${caller ? ` · ${caller === w.selfId ? "you call" : `${w.nameOf(caller)} calls`}` : ""}`,
         sub: !blind && carSt === 2 ? "There's a car stuck in front: someone get in the cab and pull in" : !blind && lads.some((l) => l.kind && l.t > 3) ? (lads.some((l) => l.kind === 2 && l.t > 3) ? "A naughty boy's shoving at the front: shoot him off" : "A naughty boy's on the roof: shoot him off")
           : onBus ? (hb ? "Handbrake's on: get your breath back" : "Time it to the bar. Miss the heaves and you'll tire, and it rolls back") : undefined,
@@ -1343,7 +1317,6 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       cabEl.remove();
       w.scene.remove(hands);
       armGeo.dispose(); handGeos.forEach((g) => g.dispose()); sleeve.dispose(); shade.dispose(); skin.dispose();
-      callButton(false);
       if (tjump && tjump.textContent === "Heave") tjump.textContent = "Jump";
       for (const id of posed) w.pose?.(id, 0, "");
       bus.inside(false);

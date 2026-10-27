@@ -1039,15 +1039,15 @@ registerChallenge({
         const m = me();
         if (!aboard) {
           if (phase === "result" || phase === "out") return "";
-          return Math.hypot(m.x - door.x, m.z - door.z) < GO_IN ? `<b>E</b> Go into the gallery${phase === "gather" ? "" : " and watch"}` : "";
+          return Math.hypot(m.x - door.x, m.z - door.z) < GO_IN ? `<b>{use}</b> Go into the gallery${phase === "gather" ? "" : " and watch"}` : "";
         }
         const lx = m.x - Cx, lz = m.z - Cz;
-        if (lx > HX - 1.8 && Math.abs(lz) < 1.4 && phase !== "paint") return "<b>E</b> Leave the gallery";
-        if (phase === "gather") return "<b>E</b> Start the painting";
-        if (phase === "paint" && myPainter() >= 0 && !hung && !easel.open) return "<b>E</b> Back to your easel";
+        if (lx > HX - 1.8 && Math.abs(lz) < 1.4 && phase !== "paint") return "<b>{use}</b> Leave the gallery";
+        if (phase === "gather") return "<b>{use}</b> Start the painting";
+        if (phase === "paint" && myPainter() >= 0 && !hung && !easel.open) return "<b>{use}</b> Back to your easel";
         if (phase === "show" && painters.length > 1) {
           const p = facing();
-          if (p >= 0 && painters[p] !== w.selfId) return myVote === p ? "Your vote's on this one" : `<b>E</b> Vote for ${esc(w.nameOf(painters[p]))}'s painting`;
+          if (p >= 0 && painters[p] !== w.selfId) return myVote === p ? "Your vote's on this one" : `<b>{use}</b> Vote for ${esc(w.nameOf(painters[p]))}'s painting`;
         }
         return "";
       },
@@ -1062,19 +1062,19 @@ registerChallenge({
         const ps = w.players();
         if (phase === "gather" && !aboard) {
           const m = me(), d = Math.hypot(m.x - door.x, m.z - door.z);
-          return { line: d > 30 ? `Go to ${gallery}` : "Go into the gallery (E by the curator)", progress: `${list.length} / ${ps.length} in`, stage };
+          return { line: d > 30 ? `Go to ${gallery}` : "Go into the gallery ({use} by the curator)", progress: `${list.length} / ${ps.length} in`, stage };
         }
-        if (phase === "gather") return { line: "Waiting in the gallery", sub: "Everyone in, or E to start", progress: `${list.length} / ${ps.length} in`, stage };
+        if (phase === "gather") return { line: "Waiting in the gallery", sub: "Everyone in, or {use} to start", progress: `${list.length} / ${ps.length} in`, stage };
         if (phase === "paint") {
           const left = Math.max(0, Math.ceil((paintEnd - performance.now()) / 1000));
           const timer = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-          if (myPainter() >= 0) return { line: `Paint: ${themeText}`, sub: hung ? "Hung. Waiting for the others" : easel.open ? "Esc to step back" : "E to go back to your easel", timer, stage };
+          if (myPainter() >= 0) return { line: `Paint: ${themeText}`, sub: hung ? "Hung. Waiting for the others" : easel.open ? "{easel.leave} to step back" : "{use} to go back to your easel", timer, stage };
           return { line: "The artists are painting", sub: `“${themeText}”`, timer, stage };
         }
         if (phase === "hang") return { line: "Hanging the show", stage };
         if (phase === "show" && show) {
           const t = (performance.now() - showT0) / 1000, said = show.remarks.filter((r) => r.at <= t).length;
-          return { line: "The private view", sub: painters.length > 1 ? "Walk round. E by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${show.remarks.length}`, bar: said / Math.max(1, show.remarks.length), stage };
+          return { line: "The private view", sub: painters.length > 1 ? "Walk round. {use} by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${show.remarks.length}`, bar: said / Math.max(1, show.remarks.length), stage };
         }
         if (result) return { line: result.won ? "A success!" : "Panned", sub: `${result.score.toFixed(1)} against ${result.bar.toFixed(1)}`, stage };
         return { line: "The Art Gallery", stage };

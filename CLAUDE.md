@@ -270,5 +270,11 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   in programming terms, in the same voice as the existing ones.
 - When you add or change something a player would notice, update `docs/playing.md` to match (and
   `README.md` only if it changes the short summary there).
+- Name actions with `ctl()`, never keys. Every control (its keys, mouse button, pad button in the
+  Warzone layout, and touch word) is in one table, `web/src/controls.ts`; prompts say `ctl("use")`
+  or `{use}` in a string that goes through `ctlText` (toasts, the use hint, mission cards and posters
+  already do), so they name the key, the pad button or the touch button, whichever is in use.
+  Anything you interact with in the world goes on use. `node tools/check_keys.mjs` lists prompts that
+  name raw keys: run it before merging.
 - Commit messages are a short plain sentence about what changed for the player, e.g. "Traffic
   pulls round parked cars, and you can stand on car and building roofs".

@@ -13,6 +13,9 @@
 // a long grind starts to tip, which a tap of the opposite direction puts right. And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
 // And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
+// Going prone mid-sprint (or crouching, down the mines) dives you forward instead, as Call of Duty's
+// dolphin dive does: a short low lunge with your sprint's speed, landing flat with a thud, and a
+// moment getting your breath before you can get up or shoot. A wall stops the dive dead.
 // Jumping is forgiving and exact: a press just before you land or just after you step off an edge
 // still jumps, letting go of Space early makes a smaller hop, you come down a little quicker than you
 // go up, and how high you get doesn't depend on the frame rate. Bumping into things slides you along
@@ -89,8 +92,31 @@ const TUMBLE = 1.4;       // seconds of coming off a ride before you're back on 
 const TRICK_TIME = 0.32;  // seconds a ride's air trick takes: land well before it's round and you're off
 const KERB = 0.08;        // a step in the street's surface at least this high is a kerb to grind
 const KERB_IN = 0.12;     // and you ride it this far in on the higher side
+const LEAN_DEAD = 0.2;    // a thumb pushing a stick forward leans it this far sideways without meaning to steer
+const AUTO_GRAB = 0.45;   // a grind you didn't ask for with Shift only catches an edge this near (radians) the way you're going
+
+/** How hard a stick held over this far steers: nothing till it's clearly over, then gently at first. */
+export function stickSteer(x: number): number {
+  const over = Math.max(0, Math.abs(x) - LEAN_DEAD) / (1 - LEAN_DEAD);
+  return Math.sign(x) * Math.min(1, over) ** 1.5;
+}
+
+/**
+ * Steering with keys, as a driving game does it: held, it builds up to full lock over a fifth of a
+ * second, slowly at first (rideUpdate turns by its square), so a quick tap turns only a few degrees;
+ * let go (or the other way) and it straightens up much quicker than that. A stick steers as far as
+ * it's held over, straight away.
+ */
+export function easeSteer(steer: number, want: number, stick: boolean, dt: number): number {
+  if (stick) return want;
+  const back = Math.abs(want) < Math.abs(steer) || want * steer < 0;
+  const step = (back ? 12 : 5) * dt;
+  return steer + Math.max(-step, Math.min(step, want - steer));
+}
 const CLIMB = 2.6;        // metres a second up or down a ladder
 const FLY = 12;           // metres a second flying, with wings on
+// a dive: up at this, your sprint's speed and a bit, about 2.5 m through the air, then this long winded
+const DIVE_UP = 3.6, DIVE_PUSH = 1.1, DIVE_REST = 0.6;
 const CEILING = 120;      // and flaps lose their lift towards this high off the ground
 
 /**
@@ -134,6 +160,17 @@ export class Player {
   proneLatch = false;
   /** Whether Z lies you down here (the streets, where other players see it). */
   canProne = false;
+  /** Crouching mid-sprint dives, where there's no lying down (the mines). */
+  diveOnCrouch = false;
+  /** In the air in a dive. */
+  diving = false;
+  /** Seconds after a dive lands before you can get up or shoot. */
+  diveRest = 0;
+  /** Set for a frame when a dive lands, for its thud. */
+  diveLanded = false;
+  /** Where a dive's ruled out: water, or a page's own reasons (a strange object in your arms). */
+  noDive: () => boolean = () => false;
+  private diveTilt = 0;
   bob = 0;
   landKick = 0;
   speed = 0;
@@ -216,7 +253,8 @@ export class Player {
     addEventListener("keydown", (e) => {
       this.keys.add(e.code);
       if (e.code === "Space") this.wantJump = true;
-      if (e.code === "KeyZ" && !e.repeat && this.canProne) this.proneLatch = !this.proneLatch;
+      if (e.code === "KeyZ" && !e.repeat && this.canProne && !this.dive() && !this.diveBusy) this.proneLatch = !this.proneLatch;
+      if (e.code === "KeyC" && !e.repeat && this.diveOnCrouch) this.dive();
     }, { signal });
     addEventListener("keyup", (e) => this.keys.delete(e.code), { signal });
     addEventListener("blur", () => this.keys.clear(), { signal });
@@ -245,6 +283,21 @@ export class Player {
     if (this.kickUp <= 0) { this.kickUp = 0; return; }   // you've made up for it already
     const b = Math.min(this.kickUp, dt * KICK_SETTLE);
     this.pitch -= b; this.kickUp -= b;
+  }
+
+  get diveBusy() { return this.diving || this.diveRest > 0; }
+
+  /** Going down mid-sprint: a dive forward instead, if you're sprinting and nothing rules it out. */
+  dive(): boolean {
+    if (!this.sprinting || this.ladder || this.wings || this.proneLatch || this.noDive()) return false;
+    const v = Math.hypot(this.vel.x, this.vel.z), s = Math.max(v, SPRINT * this.speedMul) * DIVE_PUSH;
+    const dx = v > 1 ? this.vel.x / v : -Math.sin(this.yaw), dz = v > 1 ? this.vel.z / v : -Math.cos(this.yaw);
+    this.vel.set(dx * s, DIVE_UP, dz * s);
+    this.onGround = false;
+    this.coyote = 0; this.jumpBuf = 0; this.jumpRise = false;
+    this.diving = true;
+    this.crouchLatch = false;
+    return true;
   }
 
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone + (this.ride ? this.ride.lift - this.dip : 0); }
@@ -288,6 +341,7 @@ export class Player {
     this.yaw = yaw; this.pitch = 0; this.kickUp = 0;
     this.stepUp = 0; this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
     this.proneLatch = false; this.prone = 0;
+    this.diving = false; this.diveRest = 0;
     this.ladder = null;
     this.wings = false;
   }
@@ -300,7 +354,11 @@ export class Player {
     this.crashed = 0;
     this.offLadder = "";
     this.flapped = false;
+    this.diveLanded = false;
+    this.diveRest = Math.max(0, this.diveRest - dt);
+    this.diveTilt += ((this.diving ? -0.3 : 0) - this.diveTilt) * Math.min(1, dt * 10);
     this.stepUp *= Math.exp(-dt * 14);
+    if (this.ride || this.ladder) this.diving = false;
     if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
     if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;
@@ -313,13 +371,16 @@ export class Player {
     }
     if (!this.canProne) this.proneLatch = false;
     // jumping gets you up off your front
+    if (this.diveBusy) this.wantJump = false;
     if (this.proneLatch && this.wantJump) { this.proneLatch = false; this.wantJump = false; }
     this.jumpBuf = this.wantJump ? JUMP_BUFFER : this.jumpBuf - dt;
     const held = active && (k.has("Space") || this.jumpHeld);
     const lying = active && this.proneLatch && this.onGround;
-    const crouching = !lying && active && (k.has("KeyC") || this.crouchLatch);   // not Ctrl: Ctrl+W would close the tab
+    // not Ctrl: Ctrl+W would close the tab
+    const crouching = !lying && active && (k.has("KeyC") || this.crouchLatch || (this.diveRest > 0 && !this.canProne));
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
-    this.prone += ((lying ? 1 : 0) - this.prone) * Math.min(1, dt * 5);
+    // diving, you're already most of the way down before you land
+    this.prone += ((lying ? 1 : this.diving ? 0.6 : 0) - this.prone) * Math.min(1, dt * (this.diving ? 9 : 5));
     const len = Math.hypot(fx, fz);
     const flying = this.wings && !this.onGround;
     const speed = flying ? FLY * Math.min(1, len) : (lying ? CRAWL : crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
@@ -337,8 +398,8 @@ export class Player {
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
-    if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
-    const accel = this.onGround ? 14 * this.grip : flying ? 3 : AIR_CONTROL;
+    if (len > 0 && active && !this.diving && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
+    const accel = this.diving ? 0 : this.onGround ? 14 * this.grip : flying ? 3 : AIR_CONTROL;
     const ease = 1 - Math.exp(-accel * dt);
     this.vel.x += (wx - this.vel.x) * ease;
     this.vel.z += (wz - this.vel.z) * ease;
@@ -370,8 +431,9 @@ export class Player {
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
     this.map.collide(p, this.pos.y, RADIUS);
     const hit = this.slideTo(p, dt);
+    if (hit && this.diving) this.vel.x = this.vel.z = 0;
     // only walking at something head on climbs it: brushing past a fence or a car doesn't
-    const into = hit && len > 0 ? -(hit.nx * wx + hit.nz * wz) / Math.max(1e-6, Math.hypot(wx, wz)) > 0.5 : false;
+    const into = hit && len > 0 && !this.diving ? -(hit.nx * wx + hit.nz * wz) / Math.max(1e-6, Math.hypot(wx, wz)) > 0.5 : false;
     // Auto-vault: walking into a wall, fence or hedge you could jump hops you over it, just clearing it.
     const blocked = this.map.lastBlock;
     if (into && blocked > 0 && blocked < 1.45 && this.onGround && active && this.crouch < 0.5 && this.prone < 0.1) {
@@ -399,6 +461,13 @@ export class Player {
       this.pos.y += this.vel.y * dt;
     } else this.fall(dt, FALL);
     this.land(y0);
+    if (this.diving && this.onGround) {
+      this.diving = false;
+      this.diveLanded = true;
+      this.diveRest = DIVE_REST;
+      this.landKick = Math.max(this.landKick, 0.16);
+      if (this.canProne) this.proneLatch = true;
+    }
     if (this.onGround) { this.vaulting = false; this.coyote = COYOTE; }
     else this.coyote -= dt;
     this.speed = Math.hypot(this.vel.x, this.vel.z);
@@ -552,17 +621,18 @@ export class Player {
       this.rideV = 0;
     }
     const control = active && this.tumble <= 0;
-    let fwd = 0, side = 0;
+    let fwd = 0, side = 0, stick = false;
     if (active) {
       if (k.has("KeyW") || k.has("ArrowUp")) fwd += 1;
       if (k.has("KeyS") || k.has("ArrowDown")) fwd -= 1;
       if (k.has("KeyA") || k.has("ArrowLeft")) side -= 1;
       if (k.has("KeyD") || k.has("ArrowRight")) side += 1;
-      if (!fwd && !side && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fwd = -this.joy.y; side = this.joy.x; }
+      if (!fwd && !side && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fwd = -this.joy.y; side = this.joy.x; stick = true; }
       if (!control) fwd = 0;
     }
     this.pushOn = fwd > 0;
-    this.steer += (side - this.steer) * Math.min(1, dt * 8);
+    this.steer = easeSteer(this.steer, stick ? stickSteer(side) : side, stick, dt);
+    const steering = stick ? this.steer : this.steer * Math.abs(this.steer);
     // Space (or the jump button): held, just pressed, just let go
     const held = control && (k.has("Space") || this.jumpHeld);
     const press = control && !this.prevHeld && (held || this.wantJump);
@@ -607,10 +677,14 @@ export class Player {
       if (this.grind) { this.rideDone(sx, sz, dt, s); return; }
     } else {
       const air = !this.onGround;
-      // A and D steer; in the air they spin it as fast as it'll go round
-      const turn = this.tumble > 0 ? s.turn * 0.6 : air ? s.spin : s.turn * Math.min(1, 0.35 + Math.abs(this.rideV) / 4) * (this.verbOn ? 0.6 : 1);
+      // A and D steer, a little less sharply flat out; in the air, held hard over, they spin it as
+      // fast as it'll go round (a small correction in the air only steers, so a hop doesn't send you
+      // off at an angle)
+      const hard = Math.min(1, Math.max(0, (Math.abs(this.steer) - 0.5) / 0.4));
+      const fast = 1 / (1 + Math.max(0, Math.abs(this.rideV) - 8) * 0.04);
+      const turn = this.tumble > 0 ? s.turn * 0.6 : air ? s.turn + (s.spin - s.turn) * hard : s.turn * Math.min(1, 0.35 + Math.abs(this.rideV) / 4) * fast * (this.verbOn ? 0.6 : 1);
       const before = this.heading;
-      this.heading -= side * turn * dt;
+      this.heading -= steering * turn * dt;
       if (air && this.tumble <= 0) this.airSpin += this.heading - before;
       // a trolley's wonky wheel (worse with you riding on the back), which you steer against
       if (s.wobble && !air) {
@@ -689,8 +763,10 @@ export class Player {
       } else {
         // the ride's trick: Space again in the air
         if (press && s.trick && !this.trick && this.air > 0.08 && this.tumble <= 0) this.trick = 1e-3;
-        // a kerb or a wall to come down on and grind
-        if (s.grind && this.tumble <= 0 && this.air > 0.06 && this.noGrab <= 0 && (this.autoGrab || shift || this.grabBuf > 0) && this.startGrind(true, s)) { this.rideDone(sx, sz, dt, s); return; }
+        // a kerb or a wall to come down on and grind: by itself only off a jump of your own, lined up
+        // with it (rolling off a step or hopping a kerb you're crossing doesn't snap you round on to it)
+        const asked = shift || this.grabBuf > 0;
+        if (s.grind && this.tumble <= 0 && this.air > 0.06 && this.noGrab <= 0 && (asked || (this.autoGrab && this.airBig)) && this.startGrind(true, s, !asked)) { this.rideDone(sx, sz, dt, s); return; }
       }
       if (this.trick && (this.trick += dt / TRICK_TIME) >= 1) {
         this.trick = 0;
@@ -813,13 +889,14 @@ export class Player {
   /**
    * Snap on to a grind if there's a low wall or a kerb close by running the way you're going: in
    * the air, coming down on to it (or near enough), or on the ground with Shift. Returns whether it did.
+   * auto: not asked for, so only an edge nearly the way you're going.
    */
-  private startGrind(air: boolean, s: RideSpec): boolean {
+  private startGrind(air: boolean, s: RideSpec, auto = false): boolean {
     const sp = Math.hypot(this.vel.x, this.vel.z), going = air ? sp : Math.abs(this.rideV);
     if (going < 2.5) return false;
     const dx = sp > 0.5 ? this.vel.x / sp : -Math.sin(this.heading), dz = sp > 0.5 ? this.vel.z / sp : -Math.cos(this.heading);
     const x = this.pos.x, z = this.pos.z, y = this.pos.y;
-    const minDot = Math.cos(s.kind === "blades" ? 0.7 : 0.55);
+    const minDot = Math.cos(auto ? AUTO_GRAB : s.kind === "blades" ? 0.7 : 0.55);
     // a wall: coming down on to its top in the air, or popping up on to it from beside it
     const e = this.map.grindEdge?.(x, z, y, s.snap, air ? 0.8 : 1.3, air ? 0.6 : -0.15, dx, dz, minDot);
     let g: Grind;
@@ -839,6 +916,7 @@ export class Player {
       let kx = dx - dz * (on.t - here.t), kz = dz + dx * (on.t - here.t);
       const kl = Math.hypot(kx, kz);
       kx /= kl; kz /= kl;
+      if (kx * dx + kz * dz < minDot) return false;
       g = { kerb: true, ax: 0, az: 0, dx: kx, dz: kz, len: 0, at: 0, side: here.side, hi: here.hi, dist: 0, ...GRIND_NEW() };
       const t = here.t + here.side * KERB_IN;
       this.pos.x = x - dz * t; this.pos.z = z + dx * t;
@@ -984,7 +1062,7 @@ export class Player {
     cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop - this.stepUp, this.pos.z);
     const g = this.grind, lean = g ? (g.style === 3 ? 0.05 : g.style === 4 ? -0.05 : 0) + g.bal * 0.07 : 0;
     this.grindLean += (lean - this.grindLean) * 0.15;
-    cam.rotation.set(this.pitch + nod, this.yaw, roll + this.grindLean, "YXZ");
+    cam.rotation.set(this.pitch + nod + this.diveTilt, this.yaw, roll + this.grindLean, "YXZ");
   }
 }
 
