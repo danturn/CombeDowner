@@ -1242,12 +1242,16 @@ same as main):
 - [ ] **A deck over a tunnel stretch is not hill** (`tunnels.rebore`, run once every way is known, in
   `structures.solve` and in `prep_map.py`): the survey keeps the decks over an underpass as ground, so
   the Bailbrook Underpass was bored. A tunnel point counts as under a deck where another way passes
-  within 5 m across at 4.6 to 10 m over its floor (or is a bridge in the data at any height), and so
+  within 5 m across at 2.5 to 10 m over its floor (or is a bridge in the data at any height), and so
   does the ground between two such points that stands no more than 1 m above them; a bore runs only
-  between points of real hill. The trade-offs: a real tunnel whose only cover is a street 4.6 to 10 m
-  up, with no hill either side of it, would lose its bore (none does today: the Two Tunnels keep
-  theirs, and the Devonshire Tunnel's mouth, which a path crosses, keeps its first point of hill); and
-  a deck more than 10 m over an underpass that is not marked as a bridge still counts as hill.
+  between points of real hill. 2.5 m, not a deck's 4.6 m headroom, because `prep_map.py` carries the
+  floor straight under the junction and leaves it 4 m high there, so the lane over it showed 3.5 m.
+  The trade-offs: a tunnel's bore can start later where a street crosses its shallow end on the hill
+  (in the squares' own builds the Two Tunnels are unchanged, but `prep_map.py`'s run for 2_0 moves the
+  Combe Down Tunnel's bore 24 m in where it reaches into 1_1, which only 1_1's own build draws); a real
+  tunnel whose only cover is a street 2.5 to 10 m up, with no hill either side, would lose its bore;
+  and a deck more than 10 m over an underpass that is not marked as a bridge still counts as hill.
+  The game's tunnels still come from `prep_map.py`'s squares (`tn`), not the partition's `bored`.
 
 ## A faster build, the same map (27 October)
 

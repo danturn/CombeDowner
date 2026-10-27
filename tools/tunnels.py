@@ -25,7 +25,8 @@ CUT = 3.0       # the cutting's floor reaches this far past each tunnel wall, as
 INTO = 5.0      # the cutting carries on this far into the bore, behind the portal, so the
                 # terrain's slope up onto the hill falls inside the tube, where the game hides it
 OVER = 5.0      # metres across from a tunnel's centre line that a way above it counts as passing over
-CLEAR = 4.6     # the least headroom under a deck carrying a road over another
+ABOVE = 2.5     # a way this far over the floor passes over it rather than meeting it: less than a
+                # deck's headroom, as a floor carried straight under a junction can sit metres high
 DECK = 10.0     # a way up to this far over the floor may stand on a deck; a hill's streets stand higher
 FILL = 1.0      # ground between two decks no more than this above them is the junction's own fill
 
@@ -72,7 +73,7 @@ def rebore(pending, elev):
 
 def decks_over(pending):
     """{run index: the points of its tunnel stretches with another way passing over at deck height}:
-    a bridge in the data, or any way between CLEAR and DECK above the floor."""
+    a bridge in the data, or any way between ABOVE and DECK over the floor."""
     tunnelled = [k for k, r in enumerate(pending) if r.get("tunnel_ranges") and len(r["run"]) > 1]
     if not tunnelled:
         return {}
@@ -94,7 +95,7 @@ def decks_over(pending):
                     if abs(q[0] - x) > OVER or abs(q[1] - y) > OVER or math.dist(q[:2], (x, y)) > OVER:
                         continue
                     up = o["z"][n] - r["z"][i]
-                    if up >= CLEAR and (up <= DECK or n in o["span"]):
+                    if up >= ABOVE and (up <= DECK or n in o["span"]):
                         decks.add(i)
                         break
         out[k] = decks
