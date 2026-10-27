@@ -2173,6 +2173,27 @@ def clear_portals(tile, gone):
     little behind the face, over the hill above the arch, out along the cutting as far as a wing wall
     may run (web/src/tunnels.ts WING), with its canopy's reach. An end cut at the square's edge, deep
     under the hill, is no portal."""
+    # nothing but the tunnel's own road and lining stands inside a bore, below its crown
+    inside = over_roof(tile.get("tn"), inside=True)
+    if inside is not None:
+        for key, xi, zi in (("tr", 0, 2), ("sb", 0, 2), ("fx", 1, 3)):
+            rows = tile.get(key) or []
+            kept = [q for q in rows if not (isinstance(q[xi], (int, float)) and inside(q[xi], q[xi + 1], q[zi]))]
+            if len(kept) < len(rows):
+                gone[key] = gone.get(key, 0) + len(rows) - len(kept)
+                tile[key] = kept
+        kept_br = []
+        for l in tile.get("br") or []:
+            st_ = stretches({i for i, q in enumerate(l["p"]) if not inside(*q[:3])})
+            if len(st_) == 1 and len(st_[0]) == len(l["p"]):
+                kept_br.append(l)
+                continue
+            gone["br"] = gone.get("br", 0) + 1
+            for st in st_:
+                piece = [l["p"][i] for i in st]
+                if len(piece) > 1 and LineString([q[:2] for q in piece]).length >= 2.0:
+                    kept_br.append(dict(l, p=piece))
+        tile["br"] = kept_br
     b = tile.get("b")
     zones = collections.defaultdict(list)
     for a, (fx, fy), dx, dy, g in portal_faces(tile.get("tn")):

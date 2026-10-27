@@ -357,3 +357,23 @@ function upperHull(pts: number[][]): number[][] {
   }
   return out;
 }
+
+/** The height (scene Y) of the arch's crown over (x, y) (data) where that is inside a bore, else
+ *  -Infinity: a stone face down from a lane over the roof, or along a headwall's foot, stops there
+ *  rather than hanging down inside the tube. */
+export function boreRoof(map: GameMap): (x: number, y: number) => number {
+  const tn = map.d.tn ?? [];
+  alignPortals(tn, map.d.b);
+  const reach = TUNNEL.half + 0.3;
+  return (x, y) => {
+    let top = -Infinity;
+    for (const t of tn) for (let i = 0; i + 1 < t.p.length; i++) {
+      const a = t.p[i], b = t.p[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy;
+      if (l2 < 1e-6) continue;
+      const f = ((x - a[0]) * vx + (y - a[1]) * vy) / l2;
+      if (f < 0 || f > 1 || Math.abs((x - a[0]) * vy - (y - a[1]) * vx) / Math.sqrt(l2) > reach) continue;
+      top = Math.max(top, a[2] + (b[2] - a[2]) * f + TUNNEL.crown - map.z0);
+    }
+    return top;
+  };
+}

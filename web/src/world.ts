@@ -14,7 +14,7 @@ import { buildVegetation } from "./trees";
 import { buildGrass, type Grass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
-import { buildTunnels, cuttings, mouths } from "./tunnels";
+import { boreRoof, buildTunnels, cuttings, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
@@ -1570,6 +1570,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const spot = new Int32Array(NP), spots = new Map<string, number>();
     for (let i = 0; i < NP; i++) { const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
     const key = (a: number, b: number) => spot[a] * NP + spot[b];
+    const roof = boreRoof(map);
     const owner = new Map<number, { kind: string; a: number; b: number }>();
     for (const [n, e] of sf.e.entries()) {
       if (n % 400 === 399) yield;
@@ -1591,9 +1592,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (Math.max(a[1] - stepA, b[1] - stepB) < 0.02) { along += l; continue; }
         }
         // (just past the square's edge the drawn ground has no height: the kerb's own depth is used there)
+        // (over a tunnel's bore, both ends of the face stop above its crown, or it hangs down inside the arch)
+        const over = Math.max(roof(a[0], -a[2]), roof(b[0], -b[2])) + 0.13;
         const foot = (q: number[], step: number) => {
           if (Number.isFinite(step)) return Math.min(step, q[1] - 0.02);
-          const dg = drawnGround(q[0], q[2]); return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity);
+          const dg = Math.max(drawnGround(q[0], q[2]), over);
+          return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity);
         };
         const fa = foot(a, stepA), fb = foot(b, stepB);
         const tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
