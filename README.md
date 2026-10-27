@@ -38,7 +38,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one stone headwall over the
   arches where two bores come out side by side: the A46 runs under Bailbrook Lane through the
-  Bailbrook Underpass.
+  Bailbrook Underpass. The road runs level into each arch along a cutting dug to its floor, with
+  stone wing walls holding up its sides where the hill beside it stands high. Out of town a dual
+  carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so
+  each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
+  wall rather than in one slope of road.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
   string of red and white bunting and the whole string flutters down for a bonus and rips the flags

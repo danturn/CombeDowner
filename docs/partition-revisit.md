@@ -1267,9 +1267,35 @@ same as main):
   raised deck) is not laid on as one. In the game, bores coming out side by
   side are run out to one line and share one headwall (`alignPortals`). Trade-offs: the hill face
   over a portal is a step on the 4 m grid beyond the headwall's width; the tube is still 4.8 m wide
-  per carriageway; a tunnel crossing a square's edge still gets a headwall at the seam, under the
-  hill; and the bores' ends now follow the hill face, so the Combe Down Tunnel is one 1,649 m bore
-  rather than ten pieces, and a footway tunnel at (-2777, -2466) grows from 16 m to 35 m.
+  per carriageway; and the bores' ends now follow the hill face, so the Combe Down Tunnel is one
+  1,649 m bore rather than ten pieces, and the footway culvert at (-2777, -2466) grows from 16 m to
+  27 m: it runs under a railway embankment (rails at 74.6 m, floor 66 m) whose crest is about 10 m
+  wide and whose footing about 30 m, so 27 m is the right order. A tunnel cut at a square's edge
+  has no headwall there (`tunnels.ts onSeam`, by the square's box `b`).
+- [ ] **A portal's cutting and wing walls are the game's** (`tunnels.ts walls`). A headwall reaches
+  sideways only as far as the hill stands 0.6 of an arch over the floor behind it, never less than a
+  pier past the arches; a wing wall runs out along each side of the cutting while the hill there
+  stands a metre over the floor (up to 12 m), and between them the ground is dug to the floor
+  (`world.ts`, from `cuttings`) and covered by a flat apron, with the grid's slope back up onto the
+  hill hidden like a mouth. A path in that cutting lies on its floor (`drawnGround`). Trade-offs: the
+  wing walls follow the survey, not the laid ground, and step by the metre; the apron is plain grass
+  colour; the terrain is hidden 40 m into each tube along its own bends (`MOUTH`), so a tube under
+  less than an arch of hill further in than that shows the hill inside it.
+- [ ] **Faces are cut where two streets' levels differ** (`write_tile.level_cuts`). Where two streets'
+  carriageways or pavements meet with their levels (the ground under each one's line) more than
+  1.5 m apart, the faces are cut along the line equally far from both, so each keeps its own level
+  and the game stands a kerb or stone face between them; and a portal's face line divides the road
+  going in from whatever lies on the hill over it (`portal_planes`). A street's level is its own
+  height, not the ground's, where the ground stands more than 1.5 m over it (a road's last metres
+  into a portal). No road, pavement or path face lies inside a tunnel's tube. Trade-off: a real
+  ramp between two streets whose middles differ by that much is cut into a step.
+- [ ] **Out-of-town trunk roads have verges** (`write_tile.verge_out_of_town`). A one-way trunk or
+  motorway, or any slip road, with fewer than 30% of its points within 25 m of a building has no
+  pavements (`pv` [0, 0]) and the partition's pavement faces beside it are left off. The 9.5 m given
+  to the Bailbrook roundabout's three lanes is OSM's lanes tag and right; the sheet of asphalt was
+  each carriageway's 2 m pavements meeting the next one's and filling the gaps between slips. A
+  pavement that really runs along such a road (OSM's sidewalk tag, or a footpath mapped beside it,
+  which is drawn as a path anyway) is not drawn as one.
 - [ ] **OSM's own bridge and tunnel tags** (`tools/osm.py` keeps `bridge`, `tunnel`, `layer` and
   `covered` on the streets; `structures.osm_structures` lays `bridge` and `tunnel` on the edges they
   cover, alongside Overture's flags, and a `covered` way stays on the ground). The packed
