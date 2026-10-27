@@ -133,15 +133,18 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     corridors_d = cache.sha("".join(f"{name(t)}{digest_of(cor[t])}" for t in sorted(cor)))
     log(f"  pass 1: {len(tasks)} squares, {R.ran['corridors']} fitted, {time.time() - t0:.0f}s so far")
 
+    # the bridges and road heights read only the graph, and nothing before the assembly reads them,
+    # so they are worked out in a process of their own beside the pools
     maps = os.path.join(ROOT, "web", "public", "maps")
     skey = cache.key_of("structures", cache.code_key((ONCE, "pass_structures")), R.lib, graph_d,
                         whole("water"), cache.file_digest(os.path.join(ROOT, "data", MAP, "terrain15.zip")),
                         *(cache.file_digest(os.path.join(maps, f"{MAP}-{k}.json")) for k in ("rail", "canal")))
-    s = R.stage("structures", skey, once, ["structures.json"],
-                lambda: O.pass_structures(once, raw, os.path.join(raw, "terrain15"), log=log))
-    structures_d = s["structures.json"]
-    log(f"  pass 1: bridges and road heights {'built' if R.ran['structures'] else 'kept'}, "
-        f"{time.time() - t0:.0f}s so far")
+    s = R.store.get("structures", skey, once)
+    side = None
+    if s is None:
+        from concurrent.futures import ProcessPoolExecutor
+        side = ProcessPoolExecutor(1)
+        beside = side.submit(structures_one, once, raw)
 
     # ---- pass 2: the worked pieces, then each square's division ----
     pkey = cache.key_of("pieces", cache.code_key((ONCE, "pass_pieces")), R.lib, corridors_d, whole("building"))
@@ -171,6 +174,15 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
         sys.exit(f"partition: pass 2 failed in {len(bad)} squares")
     log(f"  pass 2: {len(tasks)} squares, {R.ran['divide']} divided, {time.time() - t0:.0f}s so far")
 
+    if side is not None:
+        beside.result()
+        side.shutdown()
+        s = R.store.put("structures", skey, once, ["structures.json"])
+        R.ran["structures"] += 1
+    structures_d = s["structures.json"]
+    log(f"  pass 1: bridges and road heights {'built' if side is not None else 'kept'}, "
+        f"{time.time() - t0:.0f}s so far")
+
     # ---- each square's assembly ----
     from partition.city import squares
     ours = set(squares())
@@ -198,6 +210,10 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     return dict(assembled=[list(t) for t in sorted(done)], failed=[list(t) for t in sorted(bad)],
                 partition={name(t): done[t].get(f"{name(t)}/partition.json") for t in done},
                 upstream=cache.sha(corridors_d + structures_d + pieces_d), ran=dict(R.ran))
+
+
+def structures_one(once, raw):
+    O.pass_structures(once, raw, os.path.join(raw, "terrain15"))
 
 
 def assemble_one(ti, tj, city, raw, once):
