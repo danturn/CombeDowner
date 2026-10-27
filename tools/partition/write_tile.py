@@ -2188,7 +2188,7 @@ def clear_portals(tile, gone):
     if not polys:
         return
     zone = unary_union(polys)
-    for key, reach in (("tr", 1.5), ("sb", 0.6)):
+    for key, reach in (("tr", 2.8), ("sb", 0.7)):
         rows = tile.get(key) or []
         kept = [q for q in rows if zone.distance(Point(q[0], q[1])) >= q[3] * reach]
         if len(kept) < len(rows):
@@ -2848,6 +2848,7 @@ def _tube_floor(t, rd):
 
 
 PORTAL_BEHIND = 12.0   # metres behind a portal's face that the road going in has no say over the hill
+PORTAL_FRONT = 15.0    # metres out in front of a portal's face its cutting may run (web/src/tunnels.ts WING, and its end)
 
 
 def _portal_owner(planes, k, x, y, behind=PORTAL_BEHIND, front=8.0):
@@ -3018,6 +3019,13 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                         (px + dy * H + dx * D, py - dx * H + dy * D), (px - dy * H + dx * D, py + dx * H + dy * D)])
         others = [lines[k].buffer(reach_of[k]) for k in range(len(lines)) if k not in own and lines[k].intersects(back.buffer(10))]
         tubes.append(_minus(back, unary_union(others)) if others else back)
+        # and in front of it the cutting, between the wing walls, is the roads' going in: a path or
+        # paving on the bank reaching over its edge hung a stone face down to the floor inside it
+        F = PORTAL_FRONT
+        cutting = Polygon([(px - dy * H, py + dx * H), (px + dy * H, py - dx * H),
+                           (px + dy * H - dx * F, py - dx * H - dy * F), (px - dy * H - dx * F, py + dx * H - dy * F)])
+        going_in = [lines[k].buffer(reach_of[k]) for k in own]
+        tubes.append(_minus(cutting, unary_union(going_in)) if going_in else cutting)
     if tubes:
         # a road or path in a tunnel is the tube's floor (the game's): its face would lie on the hill
         # over the bore, standing up inside the tube from its mouth

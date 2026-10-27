@@ -316,10 +316,18 @@ function walls(map: GameMap): Headwall[] {
     // every metre gave a lumpy top, a step for each bump in the bank.
     const wing = (s: number, side: number) => {
       const run: number[][] = [];
-      for (let k = 0; k <= WING; k++) {
+      let low = false;
+      for (let k = 0; k <= WING && !low; k++) {
         const x = cx + nx * (s + side * 1.5) - dx * k, y = cy + ny * (s + side * 1.5) - dy * k, h = ground(x, y) - z;
-        if (h < HIGH) { if (run.length) run.push([k, HIGH * 0.5]); break; }
-        run.push([k, Math.min(top, Math.max(HIGH, h + 0.3))]);
+        low = h < HIGH;
+        if (low) { if (run.length) run.push([k, HIGH * 0.5]); }
+        else run.push([k, Math.min(top, Math.max(HIGH, h + 0.3))]);
+      }
+      // (one still holding up a high bank where it may run no further comes down into the side of the
+      // cutting there, not to a tall square end standing out over it)
+      if (!low && run.length) {
+        const k = WING + 3, x = cx + nx * s - dx * k, y = cy + ny * s - dy * k;
+        run.push([k, Math.max(HIGH * 0.5, Math.min(run[run.length - 1][1], ground(x, y) - z))]);
       }
       return upperHull(run).map(([k, h]) => [k, z + h]);
     };
