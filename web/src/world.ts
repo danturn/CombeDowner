@@ -925,8 +925,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   //    each end.
   // Each end has an abutment whose foot follows the bank under it, and the parapets run on along
   // the approach while the road stands above the ground beside it, so they meet the bank rather
-  // than ending in the air. No pier stands in what passes under (the map's `uo`: a road, a path or
-  // the railway) or in the canal. What the bridge crosses keeps its own ground underneath.
+  // than ending in the air. No pier or abutment stands in what passes under (the map's `uo`: a road,
+  // a path or the railway; and any road or path under the deck, its carriageway and pavements, across
+  // it or along it) or in the canal, and an arch over a road is flattened until it clears it. A street
+  // is one bridge through a junction on its deck, and where a deck runs on into another's in the air
+  // there is no abutment. What the bridge crosses keeps its own ground underneath.
   const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
   const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.3, 0.37, 0.38];
   const PARAPET = 1.05;       // above the pavement

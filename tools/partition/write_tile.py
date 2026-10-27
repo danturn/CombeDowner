@@ -2519,15 +2519,29 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
 
     # (a point is the street's whose carriageway and pavements reach it, if any does: beside a bridge
     # the street passing under it is often nearer the bridge's line than its own, and was levelled
-    # up to the bank the bridge's line crosses, in a spike out of the cutting)
+    # up to the bank the bridge's line crosses, in a spike out of the cutting; and a deck is not the
+    # ground, so the street under it, not the one across it, levels what lies under its edge)
     reach_of = [r.get("w", 4) / 2 + max(r.get("pv") or (0, 0)) + 0.5 for r in streets]
+
+    def in_air(k, p):
+        q = streets[k]["p"]
+        if not any(len(a) > 3 and a[3] in (1, 2) for a in q):
+            return False
+        d = lines[k].project(p)
+        for a, b in zip(q, q[1:]):
+            n = math.hypot(b[0] - a[0], b[1] - a[1])
+            if d <= n:
+                return all(len(e) > 3 and e[3] in (1, 2) for e in (a, b))
+            d -= n
+        return False
 
     def nearest(x, y):
         if tree is None:
             return None
         p = Point(x, y)
         near = sorted((lines[int(k)].distance(p), int(k)) for k in tree.query(p.buffer(40)))
-        return next((k for d, k in near if d <= reach_of[k]), near[0][1] if near else None)
+        reached = [k for d, k in near if d <= reach_of[k]]
+        return next((k for k in reached if not in_air(k, p)), reached[0] if reached else near[0][1] if near else None)
 
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
