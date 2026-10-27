@@ -272,7 +272,8 @@ def make_run(chain, elev):
 def split_back(r):
     """{edge id: dict(z, span, deck, bored, dip, tow, gone)} from a solved through-road, each in its
     edge's own direction: `tow` the points on the canal's towpath, `gone` those left out (in a canal
-    tunnel, or along on top of an underpass's road)."""
+    tunnel, or along on top of an underpass's road), `bank` those running along beside an
+    underpass's cutting, which no bridge reaches out along."""
     out = {}
     for eid, rev, s, e in r["parts"]:
         idx = list(range(s, e + 1))
@@ -294,7 +295,8 @@ def split_back(r):
                         deck=sorted(pos[i] for i in r["deck"] if i in pos), bored=bored,
                         dip=sorted(pos[i] for i in r.get("dipped", ()) if i in pos),
                         tow=sorted(pos[i] for i in r["tow"] if i in pos) if r.get("tow") else [],
-                        gone=sorted(pos[i] for i in r.get("gone", ()) if i in pos))
+                        gone=sorted(pos[i] for i in r.get("gone", ()) if i in pos),
+                        bank=sorted(pos[i] for i in r.get("bank", ()) if i in pos))
     return out
 
 
@@ -455,7 +457,9 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 crossed = TN.across(r["run"], over, road_lines[k], mid, max(TN.HALF + TN.CUT, RW.get(pending[under_k]["c"], 4) / 2 + 2.5) + 2.0)
                 r["span"] |= crossed
                 r.setdefault("overpass", set()).update(crossed)
-                r.setdefault("gone", set()).update(i for i in over - crossed if mid.distance(Point(r["run"][i][:2])) < TN.TOP)
+                gone = {i for i in over - crossed if mid.distance(Point(r["run"][i][:2])) < TN.TOP}
+                r.setdefault("gone", set()).update(gone)
+                r.setdefault("bank", set()).update(over - crossed - gone)
 
     def joined(k, j):
         """Do roads k and j meet: an end of one on the other, or a point of each at the same spot (a

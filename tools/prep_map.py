@@ -525,8 +525,38 @@ def towpath(run, z, snap=True, bridged=()):
 # every road run first, with its heights and what's marked on it; then the underpasses, so the
 # roads over them are spans; then the roads are written out and the ground flattened under them
 pending = []
-for g, p in L("segment"):
-    if p["subtype"] != "road": continue
+
+
+def off_tunnel_lids(segs):
+    """The road segments with every stretch the data draws along on top of a road in a tunnel laid
+    on the bank beside it (tunnels.beside_tunnels), as the partition's street graph lays them."""
+    tunnels = []
+    for g, p in segs:
+        if (p.get("class") or "unknown") in PATHS: continue
+        for f in p.get("road_flags") or []:
+            if "is_tunnel" not in (f.get("values") or []): continue
+            a, b = f.get("between") or (0.0, 1.0)
+            for part in getattr(transform(proj, g), "geoms", [transform(proj, g)]):
+                sub = substring(part, a * part.length, b * part.length)
+                if sub.geom_type == "LineString" and sub.length > 1.0: tunnels.append((sub, p.get("class") or "unknown"))
+    if not tunnels: return segs
+    houses = [transform(proj, g) for g, _ in L("building") if g.geom_type.endswith("Polygon")]
+    house_tree = shapely.STRtree(houses)
+    parts, owner = [], []
+    for n, (g, p) in enumerate(segs):
+        for part in getattr(transform(proj, g), "geoms", [transform(proj, g)]):
+            if part.geom_type == "LineString": parts.append((part, p.get("class") or "unknown")); owner.append(n)
+    moved = TN.beside_tunnels(parts, tunnels, lambda c: RW.get(c, 4), lambda poly: any(houses[int(k)].intersects(poly) for k in house_tree.query(poly)))
+    back = lambda x, y, z=None: (x / kx + lon0, y / ky + lat0)
+    out, changed = [[] for _ in segs], set()
+    for n, (part, _), line in zip(owner, parts, moved):
+        out[n].append(transform(back, line))
+        if list(line.coords) != list(part.coords): changed.add(n)
+    out = [o if n in changed else [] for n, o in enumerate(out)]
+    return [(g if not out[n] else out[n][0] if len(out[n]) == 1 else shapely.MultiLineString(out[n]), p) for n, (g, p) in enumerate(segs)]
+
+
+for g, p in off_tunnel_lids([(g, p) for g, p in L("segment") if p["subtype"] == "road"]):
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     # a street closed to motor vehicles (the pedestrianised streets in town, some only in the
     # daytime) is a pedestrian street here: drawn, but with no traffic, no parked cars and no

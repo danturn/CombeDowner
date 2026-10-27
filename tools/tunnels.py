@@ -326,7 +326,21 @@ def across(run, idx, line, mid, reach):
         return set()
     x = line.intersection(mid)
     at = [g for g in getattr(x, "geoms", [x]) if g.geom_type == "Point"]
-    return {i for i in idx if any(math.dist(run[i][:2], (g.x, g.y)) <= reach for g in at)}
+    near = {i for i in idx if any(math.dist(run[i][:2], (g.x, g.y)) <= reach for g in at)}
+    # (but not where it runs along beside the road on its way to the crossing)
+    for st in _runs(near):
+        for k in range(len(st) - 2):
+            if along(run, st[k:k + 3], mid):
+                near -= set(st[k:k + 3])
+    return near
+
+
+def _runs(idx):
+    out = []
+    for i in sorted(idx):
+        if out and i == out[-1][-1] + 1: out[-1].append(i)
+        else: out.append([i])
+    return out
 
 
 def along(run, st, line):
