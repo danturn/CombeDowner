@@ -862,16 +862,22 @@ def _twin_stretches(line, held, tree, ways_tree, ways):
         un = np.hypot(uv[:, 0], uv[:, 1])
         un[un < 1e-9] = 1.0
         uv = uv / un[:, None]
-        for m, p in enumerate(sp):
-            if abs(mine[p] @ uv[m]) < math.cos(TWIN_ANGLE):
-                continue
-            # a mapped footway between the two is a real passage, and both its sides stand
-            if ways_tree is not None:
-                gap = LineString([pts[p], qs[m]])
-                if gap.length > 0.2 and any(ways[int(w)].distance(gap.interpolate(0.5, normalized=True)) < 0.3
-                                            for w in ways_tree.query(gap)):
-                    continue
-            hit[p] = True
+        along = np.array([not abs(mine[p] @ uv[m]) < math.cos(TWIN_ANGLE) for m, p in enumerate(sp)], bool)
+        passage = np.zeros(len(sp), bool)
+        # a mapped footway between the two is a real passage, and both its sides stand
+        if ways_tree is not None and along.any():
+            ms = np.nonzero(along)[0]
+            gaps = shapely.linestrings(np.stack([shapely.get_coordinates(pts[sp[ms]]),
+                                                 shapely.get_coordinates(qs[ms])], axis=1))
+            gi, wi = ways_tree.query(gaps)
+            if len(gi):
+                warr = np.empty(len(ways), dtype=object)
+                warr[:] = ways
+                mids = shapely.line_interpolate_point(gaps, 0.5, normalized=True)
+                blocked = np.zeros(len(ms), bool)
+                np.logical_or.at(blocked, gi, shapely.distance(warr[wi], mids[gi]) < 0.3)
+                passage[ms] = blocked & (shapely.length(gaps) > 0.2)
+        hit[sp[along & ~passage]] = True
     runs, start = [], None
     for k in range(len(d)):
         if hit[k] and start is None:

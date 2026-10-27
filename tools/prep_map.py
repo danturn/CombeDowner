@@ -2568,6 +2568,7 @@ def _tidy_gardens(runs, others):
     hard = shapely.STRtree([c.buffer(0.2) for c in corridor] + [w.buffer(-0.2) for w in walls_]
                            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list])
     gate_pts = [shapely.Point(q[0], q[1]) for q in gate_list] + [shapely.Point(q[2], q[3]) for q in gate_list]
+    gtree = shapely.STRtree(gate_pts) if gate_pts else None
     fronts_ = [r["c"] not in PATHS for r in roads if len(r["p"]) > 1]
     off = unary_union([c.buffer(-0.5) if fronts_[k] else c for k, c in enumerate(corridor)])
     line_of = lambda b: shapely.LineString([q[:2] for q in b["p"]])
@@ -2575,7 +2576,8 @@ def _tidy_gardens(runs, others):
     lines = [line_of(b) for b in runs]
     fixed = [line_of(b) for b in others if len(b["p"]) > 1]
     # short steps
-    lt = shapely.STRtree(lines + fixed)
+    allx = lines + fixed
+    lt = shapely.STRtree(allx)
     steps = 0
     def dense(pts):
         ln = shapely.LineString(pts); n = max(1, int(math.ceil(ln.length / 2.5)))
@@ -2585,7 +2587,7 @@ def _tidy_gardens(runs, others):
         if b["c"] not in ("fence", "hedge"): continue      # (a front wall follows its street as it is)
         pts = [list(q) for q in lines[k].simplify(0.1).coords]     # (its corners, not the points every 2.5 m)
         before = len(pts)
-        joined = lambda q: any(int(j) != k and (lines + fixed)[int(j)].distance(shapely.Point(q[:2])) < 0.3 for j in lt.query(shapely.Point(q[:2]).buffer(0.3)))
+        joined = lambda q: any(int(j) != k and allx[int(j)].distance(shapely.Point(q[:2])) < 0.3 for j in lt.query(shapely.Point(q[:2]).buffer(0.3)))
         again = True
         while again:
             again = False
@@ -2611,11 +2613,14 @@ def _tidy_gardens(runs, others):
     # loose bits
     for _ in range(3):
         lines = [line_of(b) for b in runs]
-        lt = shapely.STRtree(lines + fixed)
+        allx = lines + fixed
+        lt = shapely.STRtree(allx)
         def held(k, e):
-            if any(int(j) != k and (lines + fixed)[int(j)].distance(e) < 0.3 for j in lt.query(e.buffer(0.3))): return True
+            if any(int(j) != k and allx[int(j)].distance(e) < 0.3 for j in lt.query(e.buffer(0.3))): return True
             if htree is not None and any(walls_[int(j)].distance(e) < 0.6 for j in htree.query(e.buffer(0.6))): return True
-            return any(g.distance(e) < 0.4 for g in gate_pts)
+            # the index only narrows the gates down: the test is the same
+            return gtree is not None and any(gate_pts[int(j)].distance(e) < 0.4
+                                             for j in gtree.query(e, predicate="dwithin", distance=0.5))
         keep = []
         for k, (b, ln) in enumerate(zip(runs, lines)):
             ends = held(k, shapely.Point(ln.coords[0])) + held(k, shapely.Point(ln.coords[-1]))
