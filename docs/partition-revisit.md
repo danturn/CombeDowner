@@ -1253,15 +1253,18 @@ same as main):
   carriageway gets its own 4.8 m tube (`TUNNEL` in `web/src/map.ts`), narrower than a two-lane trunk.
   The game's tunnels still come from `prep_map.py`'s squares (`tn`), not the partition's `bored`.
 - [ ] **A tunnel is a bore under whole ground** (Dan, after the Bailbrook shots). The ground over a
-  bore is the survey's, unbroken (`prep_map.py` puts it back after the roads' easing, and the writer
+  bore is the survey's, unbroken past the first 5 m inside each mouth (`tunnels.INTO`, dug so the
+  slope up onto the hill falls inside the tube, where the game hides it: `prep_map.py` puts the rest
+  back after the roads' easing, and the writer
   neither holds nor lays ground for a road inside the game's tube), with whatever is on it laid on it
   as anywhere else: no deck, no stacked bridge (rule 2g skips a bore), no underpass decks at a bored
   tunnel's ends, and a way running along the top of the approach cutting is laid on its bank rather
   than carried (`along_mouths`). The bore runs from the first point where the ground stands a whole
   arch over the floor to the last (`tunnels.bores`, stretches the data splits joined), its floor
   from the road just outside each mouth (`profiles.MOUTH`) and levelled over the whole tunnel, not
-  the square's clip (the Combe Down Tunnel stepped 34 m where 1_1 met 1_0). The ground in front of
-  each portal is cut to its road over the headwall's width. In the game, bores coming out side by
+  the square's clip (the Combe Down Tunnel stepped 34 m where 1_1 met 1_0). OSM's `tunnel=covered`
+  (Quarry Road under The Parade) is not a tunnel, and a closed way tagged bridge (the outline of a
+  raised deck) is not laid on as one. In the game, bores coming out side by
   side are run out to one line and share one headwall (`alignPortals`). Trade-offs: the hill face
   over a portal is a step on the 4 m grid beyond the headwall's width; the tube is still 4.8 m wide
   per carriageway; a tunnel crossing a square's edge still gets a headwall at the seam, under the
