@@ -8,7 +8,8 @@ source, so a function looked up by a name made at run time, an environment varia
 outside the layers the key covers can change what a stage gives without changing its key; the warm
 build then takes a stale entry, and only a build from an empty store shows it. The stages.json files
 (written by `stage.py` and `pipeline.py`) hold the digest of every stage's outputs, square by square.
-Prints "identical" or what differs, and exits 1 on any difference. It is all build-time.
+Prints "identical" or what differs, and exits 1 on any difference, in the map files or in a stage's
+outputs. It is all build-time.
 """
 import filecmp
 import json
@@ -17,6 +18,8 @@ import sys
 
 # the order the build runs them in: the first that differs is where a stale key starts
 ORDER = ("prep", "graph", "corridors", "structures", "pieces", "divide", "assemble", "write", "report")
+# a report's row holds how long it took, so it differs every run
+TIMED = ("row.json",)
 
 
 def files_under(root):
@@ -36,7 +39,7 @@ def compare_stages(warm, cold):
     out = []
     for stage in [s for s in ORDER if s in w or s in c] + sorted((set(w) | set(c)) - set(ORDER)):
         ws, cs = w.get(stage, {}), c.get(stage, {})
-        bad = sorted(f for f in set(ws) | set(cs) if ws.get(f) != cs.get(f))
+        bad = sorted(f for f in set(ws) | set(cs) if ws.get(f) != cs.get(f) and not f.endswith(TIMED))
         if bad:
             out.append((stage, bad))
     return out
@@ -48,7 +51,7 @@ def main(argv):
     stages = compare_stages(warm_st, cold_st)
     same = not (differ or only_warm or only_cold)
     lines = []
-    if same:
+    if same and not stages:
         n = len(files_under(warm))
         lines.append(f"identical: all {n} map files are the same, byte for byte, from the store and from an empty one")
     else:
@@ -61,7 +64,7 @@ def main(argv):
         first, files = stages[0]
         why = (" (outside the store: the build itself came out different)" if first == "prep" else
                " (only the reports, which never reach the map)" if first == "report" else
-               ": its key missed something it reads" if not same else "")
+               ": its key missed something it reads")
         lines.append(f"first stage whose outputs differ: {first}{why}")
         for stage, files in stages:
             shown = ", ".join(files[:8]) + (f" and {len(files) - 8} more" if len(files) > 8 else "")
@@ -69,7 +72,7 @@ def main(argv):
     elif not same:
         lines.append("no stage's outputs differ: the files that do are built outside the partition's store")
     print("\n".join(lines))
-    return 0 if same else 1
+    return 0 if same and not stages else 1
 
 
 if __name__ == "__main__":
