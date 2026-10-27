@@ -92,6 +92,17 @@ def main():
             return (H[j, i] * (1 - u) + H[j, i + 1] * u) * (1 - v) + (H[j + 1, i] * (1 - u) + H[j + 1, i + 1] * u) * v
 
         roads = [r for r in m["rd"] if len(r["p"]) > 1]
+        tubes = [(LineString([q[:2] for q in t["p"]]), t["p"]) for t in m.get("tn") or [] if len(t["p"]) > 1]
+
+        def in_tube(q):
+            """Inside a tunnel's tube, under the hill: its ground is the tunnel's floor, not the hill's."""
+            pt = shapely.Point(q[:2])
+            for line, tp in tubes:
+                s = line.project(pt)
+                if 0 < s < line.length and line.distance(pt) < 2.4:
+                    k = min(range(len(tp)), key=lambda i: math.dist(tp[i][:2], q[:2]))
+                    return abs(q[2] - tp[k][2]) < 1.0
+            return False
         lines = [LineString([q[:2] for q in r["p"]]) for r in roads]
         tree = shapely.STRtree(lines)
         marks = [[q[3] if len(q) > 3 else 0 for q in r["p"]] for r in roads]
@@ -109,7 +120,7 @@ def main():
                 k = abs((c[2] - b[2]) / d2 - (b[2] - a[2]) / d1)
                 if k > 0.25: note("1 road kinked", k, (tag, round(b[0]), round(b[1])), f"{r['c']} {r['n']!r} bend {k:.2f}")
             for i, q in enumerate(p):
-                if mk[i]: continue
+                if mk[i] or in_tube(q): continue
                 dz = q[2] - ground(q[0], q[1])
                 if abs(dz) > 0.5: note("1 road off its ground", abs(dz), (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} {dz:+.1f} m")
         # ---- 2. crossings ---------------------------------------------------------------------
