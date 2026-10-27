@@ -1814,7 +1814,7 @@ export class Game {
       } else if (mark === 2) on = this.follower(o, dir, len);   // someone: it goes after them, and bursts on them
       const at = on;
       this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED,
-        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body, at?.obj) : undefined, on ?? undefined);
+        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body, at?.obj) : undefined, on ?? undefined, sniper);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
       if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
@@ -2086,7 +2086,7 @@ export class Game {
       body.root.updateMatrixWorld(true);
       at = body.part.localToWorld(body.p.clone());
       const out = body.n.clone().transformDirection(body.part.matrixWorld);
-      this.effects.splash(at, out, colour, 7);
+      this.effects.splash(at, out, colour, heavy ? 5 : 7, heavy);
       this.blood.stick(body, colour);
       SFX.impact("barrier", ...this.hear(at.x, at.y, at.z), heavy, true);
       return;
@@ -2098,11 +2098,11 @@ export class Game {
       kind ??= h?.kind;
     }
     const out = n ?? dir.clone().negate();
-    this.effects.splash(at, out, colour, mark === 2 ? 10 : 7);
+    this.effects.splash(at, out, colour, (mark === 2 ? 10 : 7) - (heavy ? 3 : 0), heavy);
     // the splat stays on whoever it hit and goes where they go
     const sticks = mark === 2 && victim && onBody(victim, at.clone().addScaledVector(dir, -0.6), dir, 1.6);
     if (sticks) this.blood.stick(sticks, colour);
-    if (mark === 1) this.blood.mark(at, out, colour);
+    if (mark === 1) this.blood.mark(at, out, colour, heavy, dir);
     const sound = mark === 2 ? "body" : kind ?? (at.y - this.map.ground(at.x, at.z) < 0.2 ? "ground" : "building");
     SFX.impact(sound, ...this.hear(at.x, at.y, at.z), heavy, true);
   }
@@ -3821,7 +3821,7 @@ export class Game {
         SFX.impact(wall.kind, ...this.hear(end.x, end.y, end.z), kind === "sniper");
       }
     }
-    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands, chase);
+    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands, chase, heavy);
     if (melee) return;
     const q = (v: number) => Math.round(v * 100) / 100;
     this.net.send("shot", [q(muzzle.x), q(muzzle.y), q(muzzle.z), q(end.x), q(end.y), q(end.z), mark, kind === "sniper" ? 1 : 0]);

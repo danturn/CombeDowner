@@ -560,23 +560,42 @@ function sniperShot(distance: number, pan: number) {
 
 /**
  * A paintball marker going off: a hollow pneumatic thwop and a hiss of air, nothing like as loud
- * as a rifle and gone in a few streets. heavy is the long marker, a deeper thump.
+ * as a rifle and gone in a few streets. heavy is the long marker firing a First Strike round.
  */
 function paintShot(distance: number, pan: number, heavy: boolean) {
+  if (heavy) { firstStrikeShot(distance, pan); return; }
   if (distance > 220) return;
   const near = distance <= 1, j = vary(0.06);
   const t = now() + (near ? 0 : distance / 343);
   const vol = (near ? 1.3 : Math.min(0.6, 12 / (distance + 10))) * (heavy ? 1.25 : 1);
   const dest = out(vol, pan, distance, near ? 0.12 : Math.min(0.6, 0.2 + distance / 200));
-  const f = heavy ? 0.75 : 1;
+  const f = 1;
   // the pop of the air behind the ball
   tone(dest, t, 0.07, 0.9, 330 * j * f, 120 * f, "triangle");
   burst(dest, t, 0.05, 0.8, 900 * j * f, { q: 1.4, to: 500 * f });
   // the hollow body of the marker ringing for a moment
   tone(dest, t + 0.004, 0.05, 0.25, 760 * j * f, 690 * f);
   // the hiss of gas out of the barrel, and the bolt knocking back
-  burst(dest, t, heavy ? 0.16 : 0.11, 0.3, 5200 * j, { type: "highpass", q: 0.6, attack: 0.008 });
+  burst(dest, t, 0.11, 0.3, 5200 * j, { type: "highpass", q: 0.6, attack: 0.008 });
   if (near) clack(dest, t + 0.02, 0.18, 1800 * j);
+}
+
+/**
+ * The long marker sending a First Strike round on its way: not the rifle's hollow pop but a hard,
+ * dry crack of high-pressure air, the whip of the finned round leaving, and the action snapping
+ * shut. Carries further than the rifle.
+ */
+function firstStrikeShot(distance: number, pan: number) {
+  if (distance > 320) return;
+  const near = distance <= 1, j = vary(0.05);
+  const t = now() + (near ? 0 : distance / 343);
+  const vol = near ? 1.5 : Math.min(0.75, 18 / (distance + 10));
+  const dest = out(vol, pan, distance, near ? 0.15 : Math.min(0.7, 0.25 + distance / 200));
+  burst(dest, t, 0.008, 1.8, 5200 * j, { type: "highpass", q: 0.5 });            // the crack
+  burst(dest, t, 0.03, 0.9, 2600 * j, { q: 1.8, to: 1700 });
+  tone(dest, t, 0.035, 0.45, 640 * j, 300, "triangle");                           // a tight, high pop
+  burst(dest, t + 0.006, 0.09, 0.3, 7500 * j, { type: "highpass", q: 0.5, attack: 0.004 });   // the round whipping off
+  if (near) { clink(dest, t + 0.012, 0.35, 3800 * j); clack(dest, t + 0.016, 0.25, 2400 * j); }
 }
 
 /** A paintball bursting on something: a wet slap, flatter on the ground, and a smack on a person. */
@@ -616,7 +635,8 @@ export function dryFire() {
   clack(d, t + 0.014, 0.2, 800 * j);
 }
 
-/** Reloading. The rifle swaps its magazine and works the charging handle; the sniper opens its bolt for a fresh magazine. */
+/** Reloading. The rifle swaps its magazine and works the charging handle; the sniper opens its bolt
+ *  for a fresh magazine (the paintball one drops its magazine, slaps a full one in and works the bolt). */
 export function reload(kind: "rifle" | "sniper" = "rifle"): Playing {
   if (!ctx) return SILENT;
   const t = now();
@@ -630,6 +650,15 @@ export function reload(kind: "rifle" | "sniper" = "rifle"): Playing {
     slide(d, t + 1.38, 0.09, 0.4, 1600, 2800);          // charging handle back
     clink(d, t + 1.47, 0.25, 3500);
     clack(d, t + 1.6, 0.7, 1500); clink(d, t + 1.6, 0.4, 2400); tone(d, t + 1.6, 0.06, 0.3, 190, 120);   // bolt slams home
+  } else if (!gore()) {
+    // the paintball sniper: magazine out, a full one slapped home, then the bolt
+    clink(d, t + 0.18, 0.3, 2600); slide(d, t + 0.22, 0.1, 0.35, 1700, 1000);    // release, and out it drops
+    burst(d, t + 0.62, 0.25, 0.12, 900, { type: "lowpass", attack: 0.07 });       // hand to the pouch
+    slide(d, t + 1.2, 0.12, 0.35, 1000, 1700);                                     // new one up into the well
+    clack(d, t + 1.4, 0.8, 1100); tone(d, t + 1.4, 0.06, 0.35, 200, 120); clink(d, t + 1.405, 0.3, 2900);   // the slap
+    clink(d, t + 1.72, 0.3, 2400); slide(d, t + 1.78, 0.11, 0.45, 1500, 2600);   // bolt back
+    slide(d, t + 2.02, 0.1, 0.45, 2700, 1700); clack(d, t + 2.12, 0.4, 1300);     // and home
+    clink(d, t + 2.26, 0.4, 2800);
   } else {
     clink(d, t + 0.12, 0.3, 2400); slide(d, t + 0.22, 0.12, 0.45, 1500, 2600);   // bolt up and back
     clink(d, t + 0.34, 0.25, 3200);

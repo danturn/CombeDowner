@@ -108,7 +108,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
-  everyone else. Paint splats stay on whoever you hit, and go where they go.
+  everyone else. Paint splats stay on whoever you hit, and go where they go. The rifle's balls lob
+  out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
+  magazine, flat and fast, with a sharper crack and a tighter splat.
 - **Recent rooms.** The start screen lists the games you were last in (up to 8, newest first) with the map, how long ago and who was with you, and a "news" tag if that room has an unread Chronicle page. Tap one to go back to it; × forgets it. It's kept in your browser only, and can't say who is in a room now.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
