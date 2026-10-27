@@ -84,6 +84,7 @@ import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
+import { RecordPlayer } from "./recordplayer";
 import { Bonfire } from "./bonfire";
 import { Oddments } from "./oddments";
 import { bonfireKey } from "./saves";
@@ -428,6 +429,7 @@ export class Game {
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
+  private records: RecordPlayer;               // the record player on Solsbury Hill
   private bonfire: Bonfire;
   private oddments: Oddments;                  // the strange objects and the structure that wants them
   private zones: Zones;                        // the map opened up a zone at a time
@@ -639,6 +641,8 @@ export class Game {
     this.breakdown = new Breakdown(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
     this.dayBendy = new DayBendy(map, world.scene);
+    this.records = new RecordPlayer(map, world.scene);
+    this.records.hear = (x, y, z) => this.hear(x, y, z);
     this.bonfire = new Bonfire(map, world.scene, bonfireKey(this.mapId, this.room));
     this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
     this.bonfire.toast = (text, secs) => this.toast(text, secs);
@@ -3907,6 +3911,7 @@ export class Game {
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
+    this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.flash.update(dt);
     this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
     this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
@@ -4721,6 +4726,7 @@ export class Game {
   dispose(leave = true) {
     this.unEarn();
     this.wings.dispose();
+    this.records.dispose();
     this.reveal.dispose();
     this.zones.dispose();
     this.oddments.dispose();

@@ -284,7 +284,16 @@ export const musicMuted = () => musicVolume === 0;
 /** Music volume, 0 to 1. */
 export function setMusicVolume(v: number) {
   musicVolume = v;
-  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v * radioLevel, ctx.currentTime, 0.05); }
+  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v * radioLevel * hush, ctx.currentTime, 0.05); }
+}
+
+let hush = 1;
+/** Turn the soundtrack down while other music plays close by (the record player on Solsbury Hill,
+ *  recordplayer.ts): 1 is as it is, 0 is off. */
+export function hushMusic(level: number) {
+  if (level === hush || (Math.abs(level - hush) < 0.02 && level !== 1)) return;
+  hush = level;
+  setMusicVolume(musicVolume);
 }
 
 let radioLevel = 1;
@@ -1156,6 +1165,40 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
       g.gain.setTargetAtTime(0, c.currentTime, 0.2);
       src.stop(c.currentTime + 1.2);
       setTimeout(() => { unwatch(); p.disconnect(); }, 1500);
+    },
+  };
+}
+
+/**
+ * A way out for music that plays on in one place (the record player on Solsbury Hill,
+ * recordplayer.ts): whatever goes into node comes out from there, quieter and duller the further
+ * off it is, with a little of the hill's echo. Call set() every frame, and stop() out of earshot.
+ */
+export function placedOut(): { node: AudioNode; set(vol: number, distance: number, pan: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const c = ctx, node = c.createGain(), lp = c.createBiquadFilter(), g = c.createGain(), p = c.createStereoPanner(), w = c.createGain();
+  lp.type = "lowpass"; lp.frequency.value = 20000;
+  g.gain.value = 0;
+  w.gain.value = 0.2;
+  node.connect(lp).connect(g).connect(p).connect(master);
+  p.connect(w).connect(reverb);
+  let stopped = false;
+  const cut = () => { for (const n of [node, lp, g, p, w]) n.disconnect(); };
+  const unwatch = watch("the record player", p, () => { stopped = true; cut(); });
+  return {
+    node,
+    set(vol, distance, pan) {
+      if (stopped) return;
+      const t = c.currentTime;
+      glide(g.gain, vol * fall(distance, 8), t, 0.15);
+      glide(lp.frequency, distance > 12 ? Math.max(500, 20000 * Math.pow(12 / distance, 1.1)) : 20000, t, 0.15);
+      glide(p.pan, Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      g.gain.setTargetAtTime(0, c.currentTime, 0.1);
+      setTimeout(() => { unwatch(); cut(); }, 1000);
     },
   };
 }

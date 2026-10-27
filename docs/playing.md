@@ -713,6 +713,16 @@ wardrobe). Walk into them and jump off: you glide, glowing gold, Space flaps you
 down dives, for 45 seconds. The wings come with a heavenly guitar: look up for the high notes, down
 for the low ones, turn to shred, and everyone nearby hears your solo.
 
+### The record player on Solsbury Hill
+
+Up on the flat top of Little Solsbury Hill, over Batheaston, someone has left a portable record
+player going on a folding table, lid propped open and the record turning. It plays "Up the Hill", a
+jazz tune in seven-four (a nod to the song about this hill), on vibes, electric piano, upright bass
+and brushes, with all the crackle of an old record. You hear it from about 70 m off, louder as you
+come up to the table, and the soundtrack fades down while you're there. When the side ends, the
+needle sits in the run-out groove for a few turns, then the arm goes back and it starts again.
+Everyone up there hears the same bit at the same time.
+
 ### Ball games
 
 Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
