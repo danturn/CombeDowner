@@ -449,6 +449,9 @@ export class Weapon {
     return true;
   }
 
+  /** Sprinting cuts a reload short: no rounds go in, and it starts again from the top. */
+  cancelReload() { this.reloading = 0; }
+
   /** Back to how you spawn: the rifle, a full magazine, spare rounds, no sniper. */
   reset() {
     Object.assign(this, { kind: "rifle", ammo: MAG, reserve: RESERVE, hasSniper: false, sniperAmmo: 0, sniperReserve: 0, reloading: 0, cooldown: 0, sniperCool: 0, switching: 0, aim: 0 });
