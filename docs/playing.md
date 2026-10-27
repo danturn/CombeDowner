@@ -188,7 +188,7 @@ a button. While you play with the pad, the prompts show the pad's buttons instea
 | Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
 | Triangle | reload | |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
-| L3 | sprint while the stick's forward; aiming, shooting or reloading stops it (on a ride: grind or manual) | |
+| L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
 | R3, held | radio | radio |
 | D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
 | Create, held | the scores | the scores |
