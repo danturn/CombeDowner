@@ -120,6 +120,24 @@ class Structures(unittest.TestCase):
         self.assertEqual(out[9]["z"], [5, 4, 3])
         self.assertEqual(out[9]["span"], [1])
 
+    def test_a_roads_tunnel_does_not_mark_a_lane_drawn_along_it(self):
+        edges = [edge(0, [(0, 0), (100, 0)], "trunk"), edge(1, [(0, 1), (100, 1)], "service")]
+        seg = LineString([(0, 0), (100, 0)])
+        out = match_structures(edges, [(seg, {"class": "trunk",
+                                              "road_flags": [{"values": ["is_tunnel"], "between": [0.2, 0.8]}]})])
+        self.assertEqual(list(out), [0])
+
+    def test_a_lane_along_a_tunnels_lid_goes_to_the_bank_with_what_ends_on_it(self):
+        import tunnels as TN
+        tunnel = (LineString([(0, 0), (0, 70)]), "trunk")
+        ways = [(LineString([(0.8, -20), (0.8, 30), (0.8, 90)]), "service"),
+                (LineString([(-30, 30), (0.8, 30)]), "footway"),
+                (LineString([(-40, 0), (40, 0)]), "trunk")]
+        lane, path, road = TN.beside_tunnels(ways, [tunnel], lambda c: {"trunk": 12, "service": 3.5}.get(c, 1.6))
+        self.assertTrue(all(abs(x) > 8.5 for x, y in lane.coords if 5 < y < 65))
+        self.assertEqual(path.coords[-1], next(q for q in lane.coords if abs(q[1] - 30) < 0.01))
+        self.assertEqual(list(road.coords), [(-40.0, 0.0), (40.0, 0.0)])
+
 
 if __name__ == "__main__":
     unittest.main()

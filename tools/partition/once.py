@@ -40,7 +40,7 @@ import time
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Polygon, box
-from shapely.ops import unary_union
+from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from . import MARGIN, Q, evidence_of, lap, zone_at
@@ -48,7 +48,8 @@ from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
-from structures import match_structures
+from structures import RW, match_structures
+import tunnels as TN
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
                     classify_edges, front_normals, join_evidence, make_plots)
 
@@ -323,6 +324,8 @@ def build_graph(out, raw, log=print):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))
     log(f"  {len(roads)} road pieces over the whole map")
+    segments = [(g, p) for g, p in D.near(bb, "segment") if p.get("subtype") == "road" and p.get("road_flags")]
+    roads = off_tunnel_lids(roads, segments, D, log=log)
     edges = street_graph(roads, bb, log=log)
     # a stable id and order: sorted by the line's own bounding box, a geometric key, so the same
     # edge keeps the same id however the ways were read and however many processes ran
@@ -335,7 +338,6 @@ def build_graph(out, raw, log=print):
         e["id"] = i
     # the bridges and tunnels, which the OSM ways do not carry: laid on from Overture's flags now
     # the ids are fixed, so the profile pass and the writer find them on the edge they belong to
-    segments = [(g, p) for g, p in D.near(bb, "segment") if p.get("subtype") == "road" and p.get("road_flags")]
     marked = match_structures(edges, segments)
     for e in edges:
         e["struct"] = marked.get(e["id"], {})
@@ -347,6 +349,30 @@ def build_graph(out, raw, log=print):
     log(f"  {len(marked)} edges carry a bridge or a tunnel, from {len(segments)} flagged segments")
     log(f"  {len(edges)} street graph edges -> {os.path.basename(graph_path(out))}")
     return edges
+
+
+def off_tunnel_lids(roads, segments, D, log=print):
+    """The ways with every stretch the data draws along on top of a road in a tunnel laid on the
+    bank beside it (`tunnels.beside_tunnels`), before the ways are noded into the street graph, so
+    the streets are fitted, and everything after laid out, where they now run."""
+    tunnels = []
+    for g, p in segments:
+        c = p.get("class") or "unknown"
+        if c in PATHS:
+            continue
+        for a, b in [tuple(f.get("between") or (0.0, 1.0)) for f in p["road_flags"] if "is_tunnel" in (f.get("values") or [])]:
+            for part in (g.geoms if hasattr(g, "geoms") else [g]):
+                sub = substring(part, a * part.length, b * part.length)
+                if sub.geom_type == "LineString" and sub.length > 1.0:
+                    tunnels.append((sub, c))
+
+    def blocked(g):
+        return any(b.intersects(g) for b, _ in D.polys_near(g.bounds, "building"))
+    lines = TN.beside_tunnels([(l, p.get("highway") or "unknown") for l, p in roads], tunnels, lambda c: RW.get(c, 4), blocked)
+    moved = sum(1 for (l, _), m in zip(roads, lines) if list(l.coords) != list(m.coords))
+    if moved:
+        log(f"  {moved} ways off the top of a road's tunnel and onto the bank beside it, or meeting one that is")
+    return [(m, p) for m, (_, p) in zip(lines, roads)]
 
 
 def read_graph(out):

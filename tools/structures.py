@@ -70,14 +70,17 @@ def match_structures(edges, segments, reach=3.0, step=1.0, merge=3.0):
     The street graph comes from OSM, which has no bridge or tunnel tags, so each stretch Overture
     marks is laid onto the edges it runs along: the points of an edge within `reach` of the stretch
     and heading the same way. A footway that happens to run beside a street does not mark the
-    street, so a path only marks paths."""
+    street, so a path only marks paths; and a road only marks the same road (its class or its
+    name), so a lane the data draws along the top of an underpass is not in its tunnel."""
     tree = STRtree([e["line"] for e in edges])
     found = {}
     for g, p in segments:
         flags = overture_flags(p)
         if not flags:
             continue
-        is_path = (p.get("class") or "unknown") in PATHS
+        cls = p.get("class") or "unknown"
+        is_path = cls in PATHS
+        name = (p.get("names") or {}).get("primary")
         for part in (g.geoms if hasattr(g, "geoms") else [g]):
             if part.geom_type != "LineString" or part.length < 0.5:
                 continue
@@ -88,6 +91,8 @@ def match_structures(edges, segments, reach=3.0, step=1.0, merge=3.0):
                 for j in tree.query(sub.buffer(reach)):
                     e = edges[int(j)]
                     if (e["cls"] in PATHS) != is_path:
+                        continue
+                    if not is_path and e["cls"].replace("_link", "") != cls and not (name and e.get("name") == name):
                         continue
                     for m0, m1 in _covered(e["line"], sub, reach, step, merge):
                         found.setdefault(e["id"], {}).setdefault(kind, []).append([round(m0, 1), round(m1, 1)])
@@ -266,7 +271,8 @@ def make_run(chain, elev):
 
 def split_back(r):
     """{edge id: dict(z, span, deck, bored, dip, tow, gone)} from a solved through-road, each in its
-    edge's own direction: `tow` the points on the canal's towpath, `gone` those in a canal tunnel."""
+    edge's own direction: `tow` the points on the canal's towpath, `gone` those left out (in a canal
+    tunnel, or along on top of an underpass's road)."""
     out = {}
     for eid, rev, s, e in r["parts"]:
         idx = list(range(s, e + 1))
@@ -439,18 +445,17 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 over = {i for i, q in enumerate(r["run"]) if poly.contains(Point(q[:2]))}
                 if r["c"] not in PATHS:
                     over -= in_ranges(r["run"], r["tunnel_ranges"])
-                r["span"] |= over
-                # one crossing it is a bridge whatever the survey's ground there (2. keeps it), and so
-                # is one the data lays right on top of the road down in it, along it
                 if deep < 2.5:
+                    r["span"] |= over
                     continue
-                if road_lines[k].crosses(mid):
-                    r.setdefault("overpass", set()).update(over)
-                else:
-                    half = RW.get(pending[under_k]["c"], 4) / 2 + 0.5
-                    top = {i for i in over if mid.distance(Point(r["run"][i][:2])) < half}
-                    if len(top) >= 3:
-                        r.setdefault("overpass", set()).update(top)
+                # one crossing it is a bridge whatever the survey's ground there (2. keeps it), but
+                # only where it crosses: one running along the cutting is on its bank, and one the
+                # data still has along on top of the road down in it (no room on the bank:
+                # `tunnels.beside_tunnels`) has nowhere to stand there, and goes
+                crossed = TN.across(r["run"], over, road_lines[k], mid, max(TN.HALF + TN.CUT, RW.get(pending[under_k]["c"], 4) / 2 + 2.5) + 2.0)
+                r["span"] |= crossed
+                r.setdefault("overpass", set()).update(crossed)
+                r.setdefault("gone", set()).update(i for i in over - crossed if mid.distance(Point(r["run"][i][:2])) < TN.TOP)
 
     def joined(k, j):
         """Do roads k and j meet: an end of one on the other, or a point of each at the same spot (a
@@ -836,13 +841,21 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
             if int(j) == k or o["c"] in PATHS:
                 continue
             half, line = RW.get(o["c"], 4) / 2, road_lines[int(j)]
+            stacked = set()
             for i, q in enumerate(r["run"]):
                 if i in r["span"] or i in r["deck"] or i in r["tow"] or line.distance(Point(q[:2])) > half:
                     continue
                 m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
                 if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
-                    r["span"].add(i)
-                    r["solid"].add(i)
+                    stacked.add(i)
+            for st in stretches(stacked):
+                # (but one running along the road below for a few metres crosses nothing: along
+                # its bank it's on the ground, and along on top of the road it has nowhere to stand)
+                if len(st) >= 3 and TN.along(r["run"], st, line):
+                    r.setdefault("gone", set()).update(i for i in st if line.distance(Point(r["run"][i][:2])) < TN.TOP)
+                    continue
+                r["span"].update(st)
+                r["solid"].update(st)
         # (and its bridge doesn't touch down for a point or two between them)
         if r["span"] != before:
             on = set(r["span"])
@@ -989,6 +1002,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
             r["z"][i] = h
             r["span"].discard(i)
             r["deck"].discard(i)
+        r["span"] -= r.get("gone", set())
+        r["deck"] -= r.get("gone", set())
         # a path beside a road over the canal takes the road's final height
         for i, k in r["beside"].items():
             o = pending[k]

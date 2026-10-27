@@ -700,16 +700,18 @@ for k, r in enumerate(pending):
         if underpasses[int(j)][0] == k: continue
         poly = underpasses[int(j)][1]
         over = {i for i, q in enumerate(r["run"]) if poly.contains(shapely.Point(q[:2]))}
-        carried += len(over - r["span"])
-        r["span"] |= over
-        # (one that crosses it is a bridge, whatever the survey's ground there: 2. keeps it; and so
-        # is one the data lays right on top of the road down in it, along it)
-        mid, half_ = underpasses[int(j)][2], RW.get(pending[underpasses[int(j)][0]]["c"], 4) / 2 + 0.5
-        if underpasses[int(j)][3] < 2.5: continue
-        if line.crosses(mid): r.setdefault("overpass", set()).update(over)
-        else:
-            top = {i for i in over if mid.distance(shapely.Point(r["run"][i][:2])) < half_}
-            if len(top) >= 3: r.setdefault("overpass", set()).update(top)
+        mid = underpasses[int(j)][2]
+        if underpasses[int(j)][3] < 2.5:
+            carried += len(over - r["span"]); r["span"] |= over
+            continue
+        # (one that crosses it is a bridge, whatever the survey's ground there: 2. keeps it; but only
+        # where it crosses: one running along the cutting is on its bank, and one the data has along
+        # on top of the road down in it has nowhere to stand there, and goes)
+        crossed = TN.across(r["run"], over, line, mid, max(TN.HALF + TN.CUT, RW.get(pending[underpasses[int(j)][0]]["c"], 4) / 2 + 2.5) + 2.0)
+        carried += len(crossed - r["span"])
+        r["span"] |= crossed
+        r.setdefault("overpass", set()).update(crossed)
+        r.setdefault("gone", set()).update(i for i in over - crossed if mid.distance(shapely.Point(r["run"][i][:2])) < TN.TOP)
 if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points of other roads carried over them as bridges")
 # ---- bridges: what's really a bridge, what rides on one, what passes under one ---------------
 # Overture marks odd little "bridges" (a street over a vault, a few metres of a path) with nothing
@@ -1237,13 +1239,20 @@ for k, r in enumerate(pending):
         if int(j) == k or o["c"] in PATHS: continue
         half_ = RW.get(o["c"], 4) / 2
         line_ = road_lines[int(j)]
+        on_top = set()
         for i, q in enumerate(r["run"]):
             if i in r["span"] or i in r["deck"] or i in r["tow"]: continue
             pt = shapely.Point(q[:2])
             if line_.distance(pt) > half_: continue
             m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
-            if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
-                r["span"].add(i); r.setdefault("solid", set()).add(i); stacked += 1
+            if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]: on_top.add(i)
+        for st in stretches(on_top):
+            # (but one running along the road below crosses nothing: along its bank it's on the
+            # ground, and along on top of the road it has nowhere to stand)
+            if len(st) >= 3 and TN.along(r["run"], st, line_):
+                r.setdefault("gone", set()).update(i for i in st if line_.distance(shapely.Point(r["run"][i][:2])) < TN.TOP)
+                continue
+            r["span"].update(st); r.setdefault("solid", set()).update(st); stacked += len(st)
 if stacked: print(f"bridges: {stacked} road points lying over another road well below them carried as bridges")
 
 # the ground under every span is nobody's to flatten, except where a road dips under it; and
@@ -1324,7 +1333,7 @@ for r in pending:
     # the ground is flattened under the road, but not under a bridge's span: what it
     # crosses (the river, the railway, another road) keeps its own ground, and the game
     # builds the deck, its parapets and its abutments at the road's own height
-    open_pts = {i for i in range(len(run)) if i not in span and i not in deck}
+    open_pts = {i for i in range(len(run)) if i not in span and i not in deck and i not in r.get("gone", ())}
     if bored: open_pts &= {i for i0, i1 in TN.split(run, bored) for i in range(i0, i1 + 1)}
     flatten(run, z, RW.get(c, 4) / 2 + 2.5, None if len(open_pts) == len(run) else open_pts)
 # the railway (tools/railway.py, <map>-rail.json): the ground is flattened under the track where it
@@ -1405,8 +1414,10 @@ for r in pending:
     # a bridge's points carry a fourth value: 1 on a span the game builds the bridge for, 2 on
     # a deck beside a road's span (a path along a bridge), at the road's height, with nothing built
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
+    gone = r.get("gone", set())
     for i0, i1 in TN.split(run, bored):
-        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {})))
+        for st in stretches({i for i in range(i0, i1 + 1) if i not in gone}):
+            if len(st) > 1: roads.append(dict(c=c, n=r["n"], p=pts[st[0]:st[-1] + 1], **({"ow": r["ow"]} if r["ow"] else {})))
     for i0, i1 in bored:
         tunnel_list.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
 del pending

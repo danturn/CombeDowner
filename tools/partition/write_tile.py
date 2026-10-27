@@ -610,7 +610,8 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     if any(g is None for g in gs):
         return None
     if prof and prof.get("gone"):
-        # the stretches in one of the canal's tunnels are left out: the tunnel's ledge is the towpath
+        # the stretches left out: in one of the canal's tunnels (the tunnel's ledge is the towpath),
+        # or along on top of the road in an underpass, with nowhere to stand
         steps = len(prof["z"]) - 1
         gone = set(prof["gone"])
         keep = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) not in gone for x, y in seg]

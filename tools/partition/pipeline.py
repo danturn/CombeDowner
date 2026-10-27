@@ -131,7 +131,7 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
 
     # ---- pass 1: the graph, each square's corridors, the bridges and road heights ----
     gkey = cache.key_of("graph", cache.code_key((ONCE, "build_graph")), R.lib,
-                        whole("osm-roads"), whole("segment"))
+                        whole("osm-roads"), whole("segment"), whole("building"))
     g = R.stage("graph", gkey, once, ["graph.json"], lambda: O.build_graph(once, raw, log=log))
     graph_d = g["graph.json"]
     edges = O.read_graph(once)
