@@ -1,6 +1,7 @@
 // A record player on a folding table up on Little Solsbury Hill, the flat-topped hill fort over
-// Batheaston, playing "Up the Hill" (jazz.ts) to whoever climbs up. It's an old portable, the
-// suitcase kind, with its lid propped open, the record going round at 33⅓ and the arm on it. Come
+// Batheaston, playing "Up the Hill" (jazz.ts), an ode to the song about climbing it, to whoever
+// comes up. It's an old portable, the suitcase kind, with its lid propped open, the record going
+// round at 33⅓ and the arm on it. Come
 // within earshot and you hear it, quieter and duller the further off you are; the soundtrack goes
 // down as you get close, so it's the record you hear.
 //

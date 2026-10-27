@@ -1,67 +1,76 @@
-// The record on the folding table up on Little Solsbury Hill (recordplayer.ts): "Up the Hill", a
-// tune of our own in seven-four, with a nod to the song Peter Gabriel wrote about this hill, played
-// as a jazz quartet off a General MIDI sound card. That means vibes on the tune, an electric piano
-// comping, a walking upright bass and brushes, all synthesised with Web Audio like the rest of the
-// game's sound, then squeezed through a portable record player's little speaker, with crackle.
+// The record on the folding table up on Little Solsbury Hill (recordplayer.ts): "Up the Hill", an
+// ode to the song Peter Gabriel wrote about climbing this hill, played as a jazz combo off a
+// General MIDI sound card. It borrows the song's feel, not its tune: B major at about 102 beats a
+// minute, seven beats to the bar (felt 2 + 2 + 3) with a bar of four at the end of each chorus, a
+// bright strummed guitar that starts it off on its own, and plain folk chords over a held B. The
+// melody and the guitar's strumming are our own. Vibes play the tune, with an electric piano, an
+// upright bass and brushes, all synthesised with Web Audio like the rest of the game's sound, then
+// squeezed through a portable record player's little speaker, with crackle.
 //
-// The record goes: two bars of piano and bass, the tune (A A B A), a chorus of vibes making it up
-// (the same every time you play it, as a record is), the last A of the tune again, a held chord,
-// and then the needle sits in the run-out groove, click, click, until the arm goes back and it
-// starts again.
+// The record goes: the guitar on its own, the band coming in, a verse and a chorus, another verse
+// and chorus, a verse where the vibes make it up (the same every time you play it, as a record is),
+// a last chorus, a held chord, and then the needle sits in the run-out groove, click, click, until
+// the arm goes back and it starts again.
 //
 // Who decides what: nothing goes over the network. Where the record has got to comes from the clock
 // (the time since 1970, which every computer and phone agrees on), so everyone up on the hill hears
 // the same bar at the same moment.
 
-const BPM = 108;
+const BPM = 102;
 const BEAT = 60 / BPM;
-/** The swung eighth: the second of each pair comes this far through the beat. */
-const SWING = 0.63;
-/** A bar is seven beats, felt as 2 + 2 + 3. */
-const BAR = 7 * BEAT;
+/** The eighths are only lightly swung: the second of each pair comes this far through the beat. */
+const SWING = 0.58;
 /** The needle going round the run-out groove, four turns at 33⅓ before it starts again. */
 const GAP = 7.2;
 
 // ---- the tune ----------------------------------------------------------------------------------
-// Each bar of the tune is fourteen swung eighths: a note name (b is B, bb is B flat, f# F sharp)
-// starts a note, - holds it, . is a rest. A bar's chords are one for all seven beats, or two: the
-// first for four beats and the second for three.
+// A bar's chords are one for the whole bar or two, the first for four beats and the second for
+// three. A bar is seven beats unless its chord says :4. A chord over another bass note is written
+// E6/B, and the bass holds that note. Each bar of the tune is a swung eighth per step, fourteen to a
+// bar of seven: a note name (b is B, bb is B flat, f# F sharp) starts a note, - holds it, . is a rest.
 
-const A_CHORDS = ["Bbmaj7", "Gm7", "Cm7 F7", "Bbmaj7", "Ebmaj7", "Ab7", "Dm7 G7", "Cm7 F7"];
-const A_TUNE = [
-  "d5 - f5 - a5 - - - g5 f5 d5 - - .",
-  ". . g5 - bb5 - d6 - - - c6 bb5 a5 -",
-  "g5 - - - eb5 - c5 - a5 - - - f5 -",
-  "d5 - - - - - - - . . c5 d5 f5 -",
-  "g5 - - - bb5 - - d6 - - c6 - bb5 -",
-  "c6 - - - - - ab5 - gb5 - - - eb5 -",
-  "f5 - a5 - c6 - - - b5 - - - g5 -",
-  "eb5 - - - d5 c5 . . a4 - c5 - eb5 -",
+const VERSE_CHORDS = ["B6", "E6/B", "B6", "F#7sus/B", "B6", "E6/B", "G#m7", "F#7sus"];
+const VERSE = [
+  ". . f#5 - g#5 - b5 - - - g#5 - f#5 -",
+  "e5 - - - g#5 - - - c#6 - b5 - g#5 -",
+  "f#5 - - - d#5 - - - . . b4 - d#5 -",
+  "c#5 - - - - - - - . . e5 - f#5 -",
+  ". . b5 - c#6 - d#6 - - - c#6 - b5 -",
+  "g#5 - - - e5 - - - c#6 - - - b5 -",
+  "d#5 - f#5 - g#5 - - - f#5 - d#5 - b4 -",
+  "c#5 - - - - - - - - - . . . .",
 ];
-const B_CHORDS = ["Ebmaj7", "Edim7", "Bbmaj7", "G7", "Cm7", "F7", "Bbmaj7 G7", "Cm7 F7"];
-const B_TUNE = [
-  "bb5 - - - g5 - - - eb5 - - - d5 -",
-  ". . e5 - g5 - bb5 - - - db6 - - -",
-  "d6 - - - c6 - - - bb5 - - - a5 -",
-  "g5 - b5 - d6 - f6 - - - e6 - d6 -",
-  "eb6 - - - - - - - d6 - c6 - bb5 -",
-  "a5 - - - - - c6 - - - eb6 - - -",
-  "d6 - - - - - - - b5 - - - g5 -",
-  "c6 - - - bb5 - a5 - - - g5 - f5 -",
+const CHORUS_CHORDS = ["Emaj7", "B6", "Emaj7", "B6", "G#m7", "Emaj7", "F#7sus", "F#7", "F#7sus:4"];
+const CHORUS = [
+  "b5 - - - - - g#5 - b5 - - - d#6 -",
+  "d#6 - - - c#6 - b5 - - - g#5 - - -",
+  "b5 - - - - - g#5 - b5 - - - e6 -",
+  "d#6 - - - - - - - . . b5 - c#6 -",
+  "d#6 - - - b5 - - - f#5 - - - g#5 -",
+  "e5 - - - - - g#5 - b5 - - - c#6 -",
+  "b5 - - - - - - - . . c#6 - e6 -",
+  "c#6 - - - a#5 - - - f#5 - - - - -",
+  ". . . . . . . .",
 ];
 
-type Chord = { root: number; tones: number[]; beats: number };
-type Bar = { chords: Chord[]; tune?: string; solo?: boolean; drums: boolean; last?: boolean };
+type Chord = { root: number; tones: number[]; beats: number; pedal?: number };
+type Bar = {
+  chords: Chord[]; beats: number; tune?: string; solo?: boolean; last?: boolean;
+  guitar: boolean; piano: boolean; bass: boolean; drums: boolean;
+};
 
-const QUALITY: Record<string, number[]> = { maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], "7": [0, 4, 7, 10], dim7: [0, 3, 6, 9] };
+const QUALITY: Record<string, number[]> = {
+  maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], "7": [0, 4, 7, 10], "7sus": [0, 5, 7, 10], "6": [0, 4, 7, 9], dim7: [0, 3, 6, 9],
+};
 const LETTER: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+const pc = (letter: string, acc?: string) => (LETTER[letter.toLowerCase()] + (acc === "b" ? -1 : acc === "#" ? 1 : 0) + 12) % 12;
 
 function chords(spec: string): Chord[] {
   const names = spec.split(" ");
   return names.map((n, i) => {
-    const m = /^([A-G])(b|#)?(maj7|m7|7|dim7)$/.exec(n)!;
-    const root = (LETTER[m[1].toLowerCase()] + (m[2] === "b" ? -1 : m[2] === "#" ? 1 : 0) + 12) % 12;
-    return { root, tones: QUALITY[m[3]], beats: names.length === 1 ? 7 : i === 0 ? 4 : 3 };
+    const m = /^([A-G])(b|#)?(maj7|m7|7sus|7|6|dim7)(?:\/([A-G])(b|#)?)?(?::(\d))?$/.exec(n)!;
+    const beats = m[6] ? Number(m[6]) : names.length === 1 ? 7 : i === 0 ? 4 : 3;
+    return { root: pc(m[1], m[2]), tones: QUALITY[m[3]], beats, pedal: m[4] ? pc(m[4], m[5]) : undefined };
   });
 }
 
@@ -82,15 +91,31 @@ function notes(bar: string): [number, number, number][] {
   return out;
 }
 
+type Parts = Partial<Pick<Bar, "guitar" | "piano" | "bass" | "drums" | "solo">>;
+const ALL = { guitar: true, piano: false, bass: true, drums: true };
+function section(cs: string[], tune: string[] | null, parts: Parts = {}): Bar[] {
+  return cs.map((c, i) => {
+    const ch = chords(c);
+    return { ...ALL, ...parts, chords: ch, beats: ch.reduce((n, x) => n + x.beats, 0), tune: tune?.[i] };
+  });
+}
+
 const BARS: Bar[] = [
-  ...A_CHORDS.slice(6).map((c) => ({ chords: chords(c), drums: false })),
-  ...[A_TUNE, A_TUNE, B_TUNE, A_TUNE].flatMap((tune) => tune.map((t, i) => ({ chords: chords((tune === B_TUNE ? B_CHORDS : A_CHORDS)[i]), tune: t, drums: true }))),
-  ...[A_CHORDS, A_CHORDS, B_CHORDS, A_CHORDS].flatMap((cs) => cs.map((c) => ({ chords: chords(c), solo: true, drums: true }))),
-  ...A_TUNE.map((t, i) => ({ chords: chords(A_CHORDS[i]), tune: t, drums: true })),
-  { chords: chords("Bbmaj7"), tune: "bb5 - - - - - - - - - - - - -", drums: false, last: true },
+  // the guitar on its own, then the bass and the brushes come in under it
+  ...section(["B6", "E6/B"], null, { bass: false, drums: false }),
+  ...section(["B6", "E6/B"], null),
+  ...section(VERSE_CHORDS, VERSE),
+  ...section(CHORUS_CHORDS, CHORUS, { piano: true }),
+  ...section(VERSE_CHORDS, VERSE),
+  ...section(CHORUS_CHORDS, CHORUS, { piano: true }),
+  ...section(VERSE_CHORDS, null, { solo: true, piano: true }),
+  ...section(CHORUS_CHORDS, CHORUS, { piano: true }),
+  { ...section(["B6"], ["b5 - - - - - - - - - - - - -"], { piano: true, drums: false })[0], last: true },
 ];
-/** How long the record plays, and how long until it starts again. */
-const SONG = BARS.length * BAR;
+/** When each bar starts, from the top of the record, and how long the record plays and then sits in the run-out groove. */
+const STARTS: number[] = [];
+let SONG = 0;
+for (const b of BARS) { STARTS.push(SONG); SONG += b.beats * BEAT; }
 const CYCLE = SONG + GAP;
 
 /** Where eighth k of a bar falls, in beats from the bar's start (swung). */
@@ -107,13 +132,21 @@ function seeded(seed: number) {
 }
 
 // rootless voicings for the piano's left hand: the third and seventh with a ninth or thirteenth
-const VOICING: Record<string, number[]> = { "0,4,7,11": [4, 7, 11, 14], "0,3,7,10": [3, 7, 10, 14], "0,4,7,10": [4, 9, 10, 14], "0,3,6,9": [3, 6, 9, 12] };
+const VOICING: Record<string, number[]> = {
+  "0,4,7,11": [4, 7, 11, 14], "0,3,7,10": [3, 7, 10, 14], "0,4,7,10": [4, 9, 10, 14], "0,3,6,9": [3, 6, 9, 12],
+  "0,5,7,10": [5, 7, 10, 14], "0,4,7,9": [4, 7, 9, 14],
+};
 // where the piano comps in a chord's four or three beats: [eighth it starts on, eighths it lasts]
 const COMP4 = [[[0, 3], [3, 3]], [[1, 2], [5, 3]], [[0, 2], [4, 1], [5, 3]], [[0, 1], [3, 4]]];
 const COMP3 = [[[0, 2], [3, 3]], [[1, 4]], [[0, 1], [2, 4]], [[0, 3], [5, 1]]];
 // the vibes' rhythms when they make it up: 1 starts a note, 0 rests or holds
 const LICK4 = ["11011010", "10110111", "01111010", "11110000", "01101101", "10101110"];
 const LICK3 = ["110110", "011011", "101110", "111000", "011110"];
+// the guitar's strumming, an eighth a step: D a full strum down (an accent), d down, u up, . miss one
+const STRUM7 = "D u . u D u d u D u . u d u";
+const STRUM4 = "D u . u D u d u";
+/** The bass under a held note, a step per beat: up an octave and to the fifth now and then. */
+const PEDAL = [0, 0, 12, 0, 0, 7, 12];
 
 /** The record player's band: give it the audio clock to play up to, and it lays the music out ahead. */
 export class Band {
@@ -174,7 +207,7 @@ export class Band {
     while (this.at < t) {
       if (this.next >= BARS.length) { this.runOut(this.at); this.at += GAP; this.next = 0; continue; }
       this.bar(this.next, this.at);
-      this.at += BAR;
+      this.at += BARS[this.next].beats * BEAT;
       this.next++;
     }
   }
@@ -193,41 +226,58 @@ export class Band {
     const now = this.c.currentTime, pos = (((Date.now() / 1000) % CYCLE) + CYCLE) % CYCLE;
     this.from = now + 0.05;
     if (pos >= SONG) { this.next = BARS.length; this.at = now - (pos - SONG); return; }
-    this.next = Math.floor(pos / BAR);
-    this.at = now - (pos - this.next * BAR);
+    this.next = 0;
+    while (this.next + 1 < BARS.length && STARTS[this.next + 1] <= pos) this.next++;
+    this.at = now - (pos - STARTS[this.next]);
   }
 
   private bar(i: number, t0: number) {
-    const bar = BARS[i], rand = seeded(i + 1);
+    const bar = BARS[i], rand = seeded(i + 1), whole = bar.beats * BEAT;
     const at = (k: number) => t0 + eighth(k) * BEAT;
     const len = (k: number, n: number) => (eighth(k + n) - eighth(k)) * BEAT;
     let beat = 0;
     bar.chords.forEach((ch, ci) => {
       const following = bar.chords[ci + 1] ?? BARS[(i + 1) % BARS.length].chords[0];
       const k0 = beat * 2;
-      // the bass walks: the root on the chord's first beat, chord notes after, and a step into the next chord on its last
-      let low = 38 + ((ch.root - 2 + 12) % 12);
-      if (low > 47) low -= 12;
+      // the bass: held on the note under the chord, or walking (the root on the chord's first beat,
+      // chord notes after, and a step into the next chord on its last)
+      const lowOf = (p: number) => { const n = 38 + ((p - 2 + 12) % 12); return n > 47 ? n - 12 : n; };
+      const low = lowOf(ch.pedal ?? ch.root);
       const walk = [ch.tones[1], ch.tones[2], ch.tones[3], 12, 7, 2].map((s) => low + s);
-      for (let b = 0; b < ch.beats; b++) {
-        if (bar.last) { if (b === 0) this.bass(t0, BAR * 0.9, low); continue; }
-        const into = 38 + ((following.root - 2 + 12) % 12);
-        const n = b === 0 ? low : b === ch.beats - 1 ? (into > 47 ? into - 12 : into) + (rand() < 0.5 ? 1 : -1) : walk[Math.floor(rand() * walk.length)];
+      if (bar.bass) for (let b = 0; b < ch.beats; b++) {
+        if (bar.last) { if (b === 0) this.bass(t0, whole * 0.9, low); continue; }
+        const n = ch.pedal !== undefined ? low + PEDAL[(beat + b) % 7]
+          : b === 0 ? low : b === ch.beats - 1 ? lowOf(following.pedal ?? following.root) + (rand() < 0.5 ? 1 : -1) : walk[Math.floor(rand() * walk.length)];
         this.bass(t0 + (beat + b) * BEAT, BEAT * 0.92, n);
       }
-      // the electric piano comps on the chord
-      const v = VOICING[ch.tones.join(",")];
-      let base = ch.root + v[0];
-      while (base < 52) base += 12;
-      while (base >= 64) base -= 12;
-      const chord = v.map((s) => base - v[0] + s);
-      if (bar.last) this.piano(at(k0), BAR * 0.95, chord, 0.9);
-      else {
-        const pick = (a: number[][][]) => a[Math.floor(rand() * a.length)];
-        const pat = ch.beats === 4 ? pick(COMP4) : ch.beats === 3 ? pick(COMP3) : [...pick(COMP4), ...pick(COMP3).map(([k, n]) => [k + 8, n])];
-        for (const [k, n] of pat) this.piano(at(k0 + k), len(k0 + k, n) * 0.9, chord, k === 0 ? 0.8 : 0.65 + rand() * 0.2);
+      // the guitar strums the chord in its open shape, low strings first on the way down
+      if (bar.guitar) {
+        const g0 = 40 + ((ch.root - 4 + 12) % 12);
+        const shape = [0, 7, 12, 12 + ch.tones[1], 12 + ch.tones[3]].map((s) => g0 + s);
+        const steps = (bar.last ? "D" : ch.beats === 3 ? STRUM7.split(" ").slice(8).join(" ") : ch.beats === 4 ? STRUM4 : STRUM7).split(" ");
+        steps.forEach((st, k) => {
+          if (st === ".") return;
+          let n = 1;
+          while (k + n < steps.length && steps[k + n] === ".") n++;
+          const end = bar.last ? whole : len(k0 + k, n);
+          this.strum(at(k0 + k), end, shape, st !== "u", st === "D" ? 1 : 0.7);
+        });
       }
-      // and when it's the vibes' chorus, they make up a line over it
+      // the electric piano comps on the chord
+      if (bar.piano) {
+        const v = VOICING[ch.tones.join(",")];
+        let base = ch.root + v[0];
+        while (base < 52) base += 12;
+        while (base >= 64) base -= 12;
+        const chord = v.map((s) => base - v[0] + s);
+        if (bar.last) this.piano(at(k0), whole * 0.95, chord, 0.9);
+        else {
+          const pick = (a: number[][][]) => a[Math.floor(rand() * a.length)];
+          const pat = ch.beats === 4 ? pick(COMP4) : ch.beats === 3 ? pick(COMP3) : [...pick(COMP4), ...pick(COMP3).map(([k, n]) => [k + 8, n])];
+          for (const [k, n] of pat) this.piano(at(k0 + k), len(k0 + k, n) * 0.9, chord, k === 0 ? 0.7 : 0.55 + rand() * 0.2);
+        }
+      }
+      // and when it's the vibes' turn, they make up a line over it
       if (bar.solo) {
         const scale: number[] = [];
         for (let m = 62; m <= 88; m++) if ([...ch.tones, 2].some((s) => (m - ch.root - s + 120) % 12 === 0)) scale.push(m);
@@ -251,11 +301,11 @@ export class Band {
       beat += ch.beats;
     });
     // the tune itself
-    if (bar.tune) for (const [k, n, m] of notes(bar.tune)) this.vibe(at(k), bar.last ? BAR : len(k, n), m, 1);
+    if (bar.tune) for (const [k, n, m] of notes(bar.tune)) this.vibe(at(k), bar.last ? whole : len(k, n), m, 1);
     // the brushes: ride on every beat with the skip before each pair, the hi-hat's foot, a soft kick
     if (bar.last) { this.ride(t0, 1.6); return; }
     if (!bar.drums) return;
-    for (let b = 0; b < 7; b++) {
+    for (let b = 0; b < bar.beats; b++) {
       const t = t0 + b * BEAT, lead = b === 0 || b === 2 || b === 4;
       this.ride(t, lead ? 1 : 0.75);
       if (b === 1 || b === 3 || b === 5) this.ride(t + SWING * BEAT, 0.55);
@@ -263,7 +313,7 @@ export class Band {
       if (lead) this.kick(t, b === 0 ? 1 : 0.6);
       this.swish(t, lead ? 1 : 0.7);
     }
-    if (rand() < 0.35) this.snare(t0 + (6 + SWING) * BEAT, 0.7);
+    if (rand() < 0.35) this.snare(t0 + (bar.beats - 1 + SWING) * BEAT, 0.7);
   }
 
   /** The needle round the run-out groove, a soft click every turn, then the arm comes back and drops it in again. */
@@ -290,6 +340,28 @@ export class Band {
       o.start(t); o.stop(t + ring + 0.3);
       o.onended = () => { o.disconnect(); g.disconnect(); };
     }
+  }
+
+  /** A strum on a bright steel-string guitar: each string a plucked sawtooth that rings and dulls,
+   *  a few milliseconds apart (low to high going down, high to low coming up, and only the top three
+   *  strings on the way up), stopped by the next strum. */
+  private strum(t: number, dur: number, shape: number[], down: boolean, vel: number) {
+    if (t < this.from) return;
+    const c = this.c, strings = down ? shape : shape.slice(2).reverse();
+    strings.forEach((m, j) => {
+      const ts = t + j * (down ? 0.012 : 0.008), o = c.createOscillator(), lp = c.createBiquadFilter(), g = c.createGain();
+      o.type = "sawtooth"; o.frequency.value = hz(m) * (1 + (j - 2) * 0.0008);
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(4200, ts);
+      lp.frequency.setTargetAtTime(1100, ts, 0.09);
+      g.gain.setValueAtTime(0.0001, ts);
+      g.gain.linearRampToValueAtTime(0.05 * vel, ts + 0.003);
+      g.gain.setTargetAtTime(0, ts + 0.003, 0.35);
+      g.gain.setTargetAtTime(0, t + dur, 0.02);
+      o.connect(lp).connect(g).connect(this.bus);
+      o.start(ts); o.stop(t + dur + 0.15);
+      o.onended = () => { o.disconnect(); lp.disconnect(); g.disconnect(); };
+    });
   }
 
   /** An electric piano chord: each note a sine pushed by another at the same pitch, the push fading
