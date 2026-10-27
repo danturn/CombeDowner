@@ -77,7 +77,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { padInUse, padText, rumble } from "./gamepad";
-import { B as PAD, control, ctl, ctlText, input, isKey, strip, stripOf } from "./controls";
+import { B as PAD, control, ctl, ctlText, input, isKey, placeNow, strip, stripOf } from "./controls";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -130,7 +130,7 @@ import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
 import { drawCompass, ITEM_SIZE, markerMessage, Markers, playerColours } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
-import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
+import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate, stickSteer } from "./player";
 import { Quests, type Perch, type QuestWorld } from "./quests";
 import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
@@ -967,6 +967,8 @@ export class Game {
       if (isKey(e.code, "ride") && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (isKey(e.code, "torch") && !e.repeat && this.active) this.toggleTorch();
+      // the back seat's radio has J (and the pad's button) to itself
+      if (isKey(e.code, "job") && !e.repeat && this.active && placeNow() !== "back") this.quests.recall();
       if (isKey(e.code, "map") && !e.repeat) this.toggleMap();
       if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
@@ -2621,7 +2623,7 @@ export class Game {
     const key = (a: string, b: string) => (on && (k.has(a) || k.has(b)) ? 1 : 0);
     // (the left and right arrows are the indicators, see the keys above, and the up arrow the horn)
     let throttle = key("KeyW", "KeyW") - key("KeyS", "ArrowDown"), steer = key("KeyA", "KeyA") - key("KeyD", "KeyD");
-    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -p.joy.x; }
+    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -stickSteer(p.joy.x); }
     const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || k.has("ArrowUp") || this.firing);
     // the police car's siren and the ice cream van's chimes: H (or the up arrow) switches them on and off
     if (v.spec.siren && horn && !this.hornWas) {

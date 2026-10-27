@@ -804,6 +804,7 @@ padActions(STREETS, {
   ride: press("KeyX"),
   bino: press("KeyB"),
   mark: press("KeyG"),
+  job: press("KeyJ"),
   out: press("KeyE"),
   horn: hold("KeyH"),
   view: (down) => { if (down) game?.toggleView(); },
