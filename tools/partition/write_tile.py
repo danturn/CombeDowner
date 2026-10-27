@@ -2065,15 +2065,34 @@ def _side(line, pt):
     return 0 if (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x) > 0 else 1
 
 
-def bridge_decks(rd):
+def bridge_decks(rd, ground=None):
     """The ground each bridge's deck covers, with room for its parapets, or None. A bridge is drawn
-    as a strip with what holds it up, so the faces leave it out."""
+    as a strip with what holds it up, so the faces leave it out; given the ground, not where a street
+    at grade passes under it."""
     decks = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + (0.5 if r["c"] in GAME_PATHS else max(r.get("pv") or [0]) + 0.5),
                                                        cap_style="flat")
              for r in rd if len(r["p"]) > 1 and any(len(q) > 3 and q[3] in (1, 2) for q in r["p"])]
-    return unary_union(decks) if decks else None
+    if not decks:
+        return None
+    deck = unary_union(decks)
+    if ground is None:
+        return deck
+    # (a road at grade under a deck high enough to walk under keeps its faces there: cut out with the
+    # deck, the ground showed through in a grass strip across the carriageway with a step at each side)
+    def flying(a, b):
+        z = ground((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b)) and z is not None and min(a[2], b[2]) - z > HEADROOM
+    high = [LineString([a[:2], b[:2]]).buffer(r["w"] / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat")
+            for r in rd for a, b in zip(r["p"], r["p"][1:]) if flying(a, b)]
+    below = [LineString([a[:2], b[:2]]).buffer(r["w"] / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])), cap_style="flat")
+             for r in rd for a, b in zip(r["p"], r["p"][1:])
+             if not any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))]
+    if not high or not below:
+        return deck
+    return deck.difference(unary_union(below).intersection(unary_union(high)))
 
 
+HEADROOM = 2.5             # metres: a deck at least this far above the ground has room for a street under it
 FRONT_PATH_HALF = 0.55      # metres: half a front path's width, as the game drew its strip
 STREET_STEP = 4.0           # metres: the longest edge of a street's or pavement's outline, the spacing of its line's points
 PATH_STEP = 3.0             # metres: the longest edge of a path's outline, so it can follow the ground (a 4 m grid)
@@ -2515,7 +2534,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     streets = [r for r in rd if (r["c"] not in GAME_PATHS or r["c"] == "pedestrian") and len(r["p"]) > 1]
     lines = [LineString([q[:2] for q in r["p"]]) for r in streets]
     tree = STRtree(lines) if lines else None
-    deck = bridge_decks(rd)
+    deck = bridge_decks(rd, ground)
 
     # (a point is the street's whose carriageway and pavements reach it, if any does: beside a bridge
     # the street passing under it is often nearer the bridge's line than its own, and was levelled
