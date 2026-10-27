@@ -641,7 +641,8 @@ export function reload(kind: "rifle" | "sniper" = "rifle"): Playing {
   if (!ctx) return SILENT;
   const t = now();
   const [d, playing] = sequence(0.75);
-  if (kind === "rifle") {
+  if (kind === "rifle" && !gore()) podPour(d, t);
+  else if (kind === "rifle") {
     clink(d, t + 0.1, 0.3, 2900);                       // mag release
     slide(d, t + 0.16, 0.12, 0.4, 2000, 1100);          // old mag out
     burst(d, t + 0.3, 0.22, 0.12, 900, { type: "lowpass", attack: 0.06 });   // hand to the pouch
@@ -670,6 +671,43 @@ export function reload(kind: "rifle" | "sniper" = "rifle"): Playing {
     clink(d, t + 2.22, 0.45, 2800); clack(d, t + 2.23, 0.35, 900);   // and down
   }
   return playing;
+}
+
+/**
+ * The paintball rifle's reload, in step with what you see over its 1.9 s (weapon.ts, reloadMove):
+ * the pod's cap pops, the hopper lid flips open, a pod of balls rattles in, thick at first and
+ * then the last few trickling, the empty pod clatters away, and the lid snaps shut. Every ball
+ * is placed afresh each time, so no two pours sound the same.
+ */
+function podPour(d: AudioNode, t: number) {
+  const at = (u: number) => t + u * 1.9;
+  burst(d, at(0.05), 0.2, 0.1, 900, { type: "lowpass", attack: 0.06 });                  // hand to the pouch
+  // the cap: a little suck and a pop
+  burst(d, at(0.19), 0.02, 0.5, 2400 * vary(), { q: 2.5 });
+  tone(d, at(0.19), 0.05, 0.35, 900 * vary(), 520, "triangle");
+  // the lid: a light plastic flip and its knock against the stop
+  clack(d, at(0.22), 0.35, 2600 * vary());
+  clack(d, at(0.29), 0.25, 1900 * vary());
+  // the pour: a hiss of balls rolling over each other under a shower of hollow plastic clicks,
+  // densest at the start and thinning out to the last few
+  const from = at(0.38), len = 0.34 * 1.9;
+  burst(d, from, len, 0.16, 2200, { type: "bandpass", q: 0.8, to: 1500, attack: 0.04 });
+  for (let i = 0; i < 70; i++) {
+    const k = Math.pow(Math.random(), 1.8), when = from + k * len;   // bunched towards the start
+    const loud = (0.35 + Math.random() * 0.4) * (1 - k * 0.55);
+    const f = 1700 + Math.random() * 2600;
+    burst(d, when, 0.008 + Math.random() * 0.01, loud, f, { q: 4 });                        // ball on ball
+    if (Math.random() < 0.45) tone(d, when, 0.03, loud * 0.25, 600 + Math.random() * 500, 480, "triangle");   // on the hollow bowl
+  }
+  // let go: a swish, then the empty pod tumbling on the ground out of sight
+  burst(d, at(0.75), 0.12, 0.12, 1200, { q: 0.9, to: 600, attack: 0.03 });
+  for (const [u, v] of [[0.9, 0.16], [0.95, 0.1], [0.99, 0.06]]) {
+    burst(d, at(u) + Math.random() * 0.02, 0.025, v, 1300 * vary(0.15), { q: 2 });
+    tone(d, at(u), 0.05, v * 0.4, 420 * vary(0.1), 330, "triangle");
+  }
+  // the lid snapping shut
+  clack(d, at(0.87), 0.55, 2300 * vary());
+  tone(d, at(0.87), 0.04, 0.2, 760, 640, "triangle");
 }
 
 /** Bringing a weapon up: a rustle of sleeve, and the gun settling into your hands. */
