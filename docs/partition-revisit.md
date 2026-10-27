@@ -1276,3 +1276,27 @@ same as main):
   today; a new reader that does needs the reach raising.
 - [ ] **prep_map's squares aren't in the store yet**: a fresh worktree still spends about 110 s on
   them, and about 45 s on the seams, which run over every square that was taken from the store.
+
+## Bridges over roads (27 October)
+
+- [ ] **A minor way laid along the top of an underpass is a flat lid.** At the Bailbrook Underpass
+  the service road and footway mapped on the tunnel's roof become a 58 m deck along the top of the
+  A46's east carriageway, with no arches or piers (everything under it is road). Restoring the
+  70 m tunnel the data marks, or dropping a way that only runs along an underpass's top, would read
+  better; both need a rule in `structures.py`, not the game.
+- [ ] **Pavements in a dual carriageway's median keep its piers out.** A bridge over both
+  carriageways is now one flattened elliptical arch springing from the banks (Bailbrook Lane, Mill
+  Lane), where the real ones may have a pier in the middle. A pier allowed on a median wider than
+  its own footing would put it back.
+- [ ] **A deck end that falls steeply to the ground ends in the air.** A footbridge whose last point
+  is mapped down at road level (the west footway over the Bailbrook cutting) now stops at its last
+  point in the air, with no approach parapets there, rather than sloping 7 m down in under a metre.
+- [ ] **A face point is levelled by the street at the ground's level there.** Where several streets'
+  carriageways and pavements reach it, the writer prefers a street on the ground over a deck, and
+  where their levels differ by more than 1.5 m the one nearest the ground under the point. A real
+  ramp between two levels inside one pavement would be cut into a step.
+- [ ] **A road at grade under a deck 2.5 m or more up keeps its faces there** (`HEADROOM` in the
+  writer). A deck lower than that over a road still cuts the road's faces out, as before.
+- [ ] **Piers are searched for over the whole span**, deduped within 4 m, and kept out of every
+  road or path under it (across it, or along it within its reach): a long deck along a road can
+  end up with no piers at all.
