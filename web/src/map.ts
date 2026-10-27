@@ -485,7 +485,7 @@ export class GameMap {
 
     this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
-    alignPortals(d.tn ?? []);
+    alignPortals(d.tn ?? [], d.b);
     for (const t of d.tn ?? []) {
       if (this.spent(1)) yield;
       const p = t.p;

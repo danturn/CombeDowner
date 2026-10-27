@@ -2573,7 +2573,9 @@ def widen_to_paving(rd, pavement, paving, br=(), houses=()):
 
 
 def _level_at(line, x, y, ground, square, edge=0.1, back=3.0):
-    """The street's level square across from (x, y): the ground under its line there. Past an end of
+    """The street's level square across from (x, y): the ground under its line there, or the street's
+    own height where the ground stands well over it (its last metres into a tunnel's mouth, where the
+    hill's face is over its line). Past an end of
     the line on the square's edge, where the street runs on into the next square, the level carries
     on up or down the street's slope, so the two squares' surfaces meet at one height on an edge that
     crosses the street on the slant."""
@@ -2581,6 +2583,8 @@ def _level_at(line, x, y, ground, square, edge=0.1, back=3.0):
     s = line.project(p)
     c = line.interpolate(s)
     z = ground(c.x, c.y)
+    if z is not None and c.has_z and z > c.z + UNDER_HILL:
+        z = c.z
     L = line.length
     if z is None or L < back or 0.0 < s < L:
         return z
@@ -2596,8 +2600,115 @@ def _level_at(line, x, y, ground, square, edge=0.1, back=3.0):
     return z + (z - zi) / back * min(past, 2 * back)
 
 
+PORTAL_HALF = 6.4  # metres each side of a tunnel's middle its headwall reaches (web/src/map.ts TUNNEL.face)
+UNDER_HILL = 1.5   # metres the ground may stand over a street's own height before its level is the street's
+LEVEL_STEP = 1.5   # metres between two streets' levels where their surfaces meet that is a wall between them
+LEVEL_GAP = 0.15   # metres: the width of the cut along that wall, more than the outlines may move when simplified
+
+
+def level_cuts(lines, reach, level, surface, step=LEVEL_STEP, every=1.0):
+    """Where two streets' surfaces meet with their levels more than `step` apart (a lane on the hill
+    over a tunnel's portal and the road going into it, a junction's approach to its bridge and the
+    road in the cutting under it), the lines between them to cut the surfaces along. Joined, their faces were one sheet of road sloping metres from one to
+    the other. The line runs where the two streets are equally far, and only where no third street
+    is nearer and both reach."""
+    if len(lines) < 2 or surface.is_empty:
+        return []
+    tree = STRtree(lines)
+    kept = []
+    for j, lj in enumerate(lines):
+        for k in tree.query(lj, predicate="dwithin", distance=reach[j] + max(reach)):
+            k = int(k)
+            if k <= j:
+                continue
+            zone = lj.buffer(reach[j]).intersection(lines[k].buffer(reach[k])).intersection(surface)
+            if zone.is_empty or zone.area < 1.0:
+                continue
+            around = zone.buffer(max(reach[j], reach[k]))
+            pts, own = [], []
+            for n, l in ((j, lj), (k, lines[k])):
+                part_ = l.intersection(around)
+                if part_.is_empty:
+                    continue
+                for g in getattr(part_, "geoms", [part_]):
+                    if g.geom_type != "LineString" or g.length == 0:
+                        continue
+                    for d in np.linspace(0.0, g.length, max(2, int(g.length / every) + 1)):
+                        q = g.interpolate(d)
+                        pts.append((round(q.x, 3), round(q.y, 3)))
+                        own.append(n)
+            if len(set(own)) < 2:
+                continue
+            seen, P, O = set(), [], []
+            for q, n in zip(pts, own):
+                if q not in seen:
+                    seen.add(q)
+                    P.append(q)
+                    O.append(n)
+            cells = shapely.voronoi_polygons(shapely.multipoints(P), extend_to=around.buffer(5), ordered=True)
+            mine = unary_union([c for c, n in zip(cells.geoms, O) if n == j])
+            between = mine.boundary.intersection(zone)
+            for g in getattr(between, "geoms", [between]):
+                if g.geom_type != "LineString" or g.length == 0:
+                    continue
+                g = shapely.segmentize(g, every)
+                c = list(g.coords)
+                for a, b in zip(c, c[1:]):
+                    m = Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+                    dj, dk = lj.distance(m), lines[k].distance(m)
+                    if dj > reach[j] or dk > reach[k]:
+                        continue
+                    if any(lines[int(o)].distance(m) < min(dj, dk) - 0.05
+                           for o in tree.query(m, predicate="dwithin", distance=min(dj, dk)) if int(o) not in (j, k)):
+                        continue
+                    hj, hk = level(j, m.x, m.y), level(k, m.x, m.y)
+                    if hj is not None and hk is not None and abs(hj - hk) > step:
+                        kept.append(LineString([a, b]))
+    return kept
+
+
+def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
+    """Each tunnel portal's headwall as (the line across its face, the portal, the way in, the streets
+    that run into it there). In front of the face is the cutting, the street's; behind it is the hill
+    over the bore, whatever runs on top of it."""
+    out = []
+    for t in tunnels or []:
+        p = t.get("p") or []
+        if len(p) < 2:
+            continue
+        for a, b in ((p[0], p[1]), (p[-1], p[-2])):
+            n = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+            dx, dy = (b[0] - a[0]) / n, (b[1] - a[1]) / n
+            P = Point(a[0], a[1])
+            own = set()
+            for k, l in enumerate(lines):
+                if l.distance(P) > reach:
+                    continue
+                c = heights[k].interpolate(l.project(P))
+                if c.has_z and abs(c.z - a[2]) < rise:
+                    own.add(k)
+            if not own:
+                continue
+            face = LineString([(a[0] + dy * PORTAL_HALF, a[1] - dx * PORTAL_HALF),
+                               (a[0] - dy * PORTAL_HALF, a[1] + dx * PORTAL_HALF)])
+            out.append((face, (a[0], a[1]), (dx, dy), own))
+    return out
+
+
+def _portal_owner(planes, k, x, y, behind=12.0, front=8.0):
+    """False where street k may not lay its surface at (x, y) because of a portal: behind the face, a
+    street running into the tunnel; in front of it, any other."""
+    for _, (px, py), (dx, dy), own in planes:
+        a = (x - px) * dx + (y - py) * dy
+        if abs((x - px) * dy - (y - py) * dx) > PORTAL_HALF or not -front < a < behind:
+            continue
+        if (a > 0) == (k in own):
+            return False
+    return True
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
-                    standing=None, filled=None):
+                    standing=None, filled=None, tunnels=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -2618,7 +2729,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     square = box(*sq)
     streets = [r for r in rd if (r["c"] not in GAME_PATHS or r["c"] == "pedestrian") and len(r["p"]) > 1]
     lines = [LineString([q[:2] for q in r["p"]]) for r in streets]
+    heights = [LineString([q[:3] for q in r["p"]]) for r in streets]
     tree = STRtree(lines) if lines else None
+    planes = portal_planes(tunnels, lines, heights)
     deck = bridge_decks(rd, ground)
     over = bridge_decks(rd)
     if over is not None:
@@ -2629,6 +2742,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # up to the bank the bridge's line crosses, in a spike out of the cutting; and a deck is not the
     # ground, so the street under it, not the one across it, levels what lies under its edge)
     reach_of = [r.get("w", 4) / 2 + max(r.get("pv") or (0, 0)) + 0.5 for r in streets]
+    beside_cut = None
 
     def in_air(k, p):
         q = streets[k]["p"]
@@ -2651,10 +2765,15 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if not reached:
             return near[0][1] if near else None
         reached = [k for k in reached if not in_air(k, p)] or reached
+        if planes:
+            reached = [k for k in reached if _portal_owner(planes, k, x, y)] or reached
+        if beside_cut is not None and beside_cut.contains(p):
+            # (the cut between two streets at different levels runs where they are equally far)
+            return reached[0]
         # (where streets at different levels both reach it, as at the foot of a bridge's approach over
         # a cutting, it is the one whose level is the ground's here)
         z = ground(x, y)
-        levels = [(_level_at(lines[k], x, y, ground, square), k) for k in reached[:3]]
+        levels = [(_level_at(heights[k], x, y, ground, square), k) for k in reached[:3]]
         levels = [(h, k) for h, k in levels if h is not None]
         if z is None or len(levels) < 2 or max(h for h, _ in levels) - min(h for h, _ in levels) < 1.5:
             return reached[0]
@@ -2733,6 +2852,18 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
 
+    surface = unary_union([road, pave])
+    cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
+                     if _portal_owner(planes, k, x, y) else None, surface)
+    cut += [f.intersection(surface.buffer(0.5)) for f, *_ in planes]
+    cut = [g for g in cut if not g.is_empty]
+    cut = shapely.line_merge(unary_union(cut)).buffer(LEVEL_GAP / 2, cap_style="flat", join_style="mitre") if cut else None
+    beside_cut = None
+    if cut is not None:
+        road, pave = road.difference(cut), pave.difference(cut)
+        beside_cut = cut.buffer(LEVEL_GAP)
+        shapely.prepare(beside_cut)
+
     pieces = []
     for cls, g in (("carriageway", road), ("pavement", pave), ("path", path), ("front", front), ("drive", drive),
                    ("drive", plaza)):
@@ -2758,7 +2889,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)
             else:
-                z = _level_at(lines[k], x, y, ground, square)
+                z = _level_at(heights[k], x, y, ground, square)
             if z is None:
                 return None
             at[key] = len(v) // 3
@@ -4647,7 +4778,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     filled = []
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
-                                               canal_bores(canal), standing, filled),
+                                               canal_bores(canal), standing, filled, tile.get("tn")),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None

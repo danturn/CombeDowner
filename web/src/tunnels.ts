@@ -3,6 +3,9 @@
 // a tunnel is the hill's, whole; the terrain inside the tube's mouth is hidden (world.ts asks
 // mouths() where), so you can see in from the cutting, and further in the hill is over your head.
 // The two bores of a dual carriageway coming out side by side share one headwall, square to them.
+// Where the hill beside the cutting stands high, a wing wall holds it up, and the ground between
+// the wing walls is dug to the floor (world.ts, from cuttings()). A tunnel cut at its square's edge,
+// deep under the hill, has no portal there.
 //
 // The light inside is painted on: each vertex is as bright as its nearest lamp makes it, so it
 // costs nothing at run time, and the tube ignores the sun. world.ts turns the fog dark while
@@ -60,17 +63,24 @@ function light(s: number, h: number, o: number, len: number) {
 const sideBySide = () => 2 * TUNNEL.face + 4;
 
 interface Portal { t: Tunnel; end: 0 | 1; x: number; y: number; z: number; dx: number; dy: number }
+type Bounds = number[] | undefined;
+
+/** A tunnel crossing into the next square is cut at the square's edge, deep under the hill: that end
+ *  is no portal. b: the square's [west, south, east, north]. */
+function onSeam(x: number, y: number, b: Bounds) {
+  return !!b && Math.min(Math.abs(x - b[0]), Math.abs(y - b[1]), Math.abs(x - b[2]), Math.abs(y - b[3])) < 0.5;
+}
 
 /** Every portal, each with the tunnel it opens and which end. */
-function allPortals(tn: Tunnel[]): Portal[] {
+function allPortals(tn: Tunnel[], b: Bounds): Portal[] {
   const out: Portal[] = [];
-  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => out.push({ t, end: e as 0 | 1, ...m }));
+  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => { if (!onSeam(m.x, m.y, b)) out.push({ t, end: e as 0 | 1, ...m }); });
   return out;
 }
 
 /** The portals that open side by side, facing the same way, in groups (a lone portal is a group of one). */
-function headwalls(tn: Tunnel[]): Portal[][] {
-  const ps = allPortals(tn), group = ps.map((_, i) => i);
+function headwalls(tn: Tunnel[], b: Bounds): Portal[][] {
+  const ps = allPortals(tn, b), group = ps.map((_, i) => i);
   const root = (i: number): number => (group[i] === i ? i : (group[i] = root(group[i])));
   for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
     const a = ps[i], b = ps[j];
@@ -86,8 +96,8 @@ function headwalls(tn: Tunnel[]): Portal[][] {
 /** Bores coming out side by side are run out to the same line, square to them, so one headwall
  *  closes both: each one that stops short is carried on, level, to the outermost. Run before
  *  anything reads the tunnels; running it again changes nothing. */
-export function alignPortals(tn: Tunnel[]) {
-  for (const g of headwalls(tn)) {
+export function alignPortals(tn: Tunnel[], b?: Bounds) {
+  for (const g of headwalls(tn, b)) {
     if (g.length < 2) continue;
     let nx = 0, ny = 0;
     for (const m of g) { nx += m.dx; ny += m.dy; }
@@ -115,8 +125,9 @@ function portals(t: Tunnel) {
 /** The tube's mouths, for the terrain shader: (x, z, into x, into z) and (floor, arch, half width, depth), scene coords. */
 export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
-  alignPortals(map.d.tn ?? []);
+  alignPortals(map.d.tn ?? [], map.d.b);
   for (const t of map.d.tn ?? []) for (const m of portals(t)) {
+    if (onSeam(m.x, m.y, map.d.b)) continue;
     a.push(new THREE.Vector4(m.x, -m.y, m.dx, -m.dy));
     b.push(new THREE.Vector4(m.z - map.z0, TUNNEL.crown, TUNNEL.half, MOUTH));
   }
@@ -126,7 +137,7 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
 export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
   const tunnels = map.d.tn ?? [];
   if (!tunnels.length) return;
-  alignPortals(tunnels);
+  alignPortals(tunnels, map.d.b);
   const Z0 = map.z0, prof = profile();
   // distance round the profile, for the texture
   const round = [0];
@@ -189,21 +200,11 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
     scene.add(lamps);
   }
   // the headwalls: one round the arch of each portal, or across the arches of bores side by side,
-  // from below the floor to above the hill over them
-  for (const g of headwalls(tunnels)) {
-    let dx = 0, dy = 0;
-    for (const m of g) { dx += m.dx; dy += m.dy; }
-    const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
-    const nx = -dy, ny = dx, F = TUNNEL.face;
-    const at = g.map((m) => m.x * nx + m.y * ny), mid = (Math.min(...at) + Math.max(...at)) / 2;
-    const o = g[0], cx = o.x + nx * (mid - at[0]), cy = o.y + ny * (mid - at[0]), z = Math.min(...g.map((m) => m.z));
-    const left = Math.min(...at) - mid - F, right = Math.max(...at) - mid + F;
-    let top = Math.max(...g.map((m) => m.z)) - z + TUNNEL.crown + 1.2;
-    for (let s = left; s <= right; s += 1) for (const d of [0, FACE_DEPTH]) {
-      const x = cx + nx * s + dx * d, y = cy + ny * s + dy * d;
-      top = Math.max(top, map.ground(x, -y) + Z0 - z + 0.4);
-    }
-    top = Math.min(top, 16);
+  // from below the floor to above the hill over them, with a wing wall holding up each side of the
+  // cutting in front where the hill beside it is high
+  const wingMat = stone;
+  for (const w of walls(map)) {
+    const { g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top } = w;
     const shape = new THREE.Shape([[left, -1], [right, -1], [right, top], [left, top]].map(([x, y]) => new THREE.Vector2(x, y)));
     g.forEach((m, k) => {
       const off = at[k] - mid, lift = m.z - z;
@@ -219,5 +220,74 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
     const cope = new THREE.Mesh(new THREE.BoxGeometry(right - left + 0.4, 0.35, FACE_DEPTH + 0.3), stone);
     cope.position.set((left + right) / 2, top + 0.17, FACE_DEPTH / 2);
     face.add(cope);
+    for (const [end, side, run] of [[left, -1, w.wings[0]], [right, 1, w.wings[1]]] as const) {
+      if (run.length < 2) continue;
+      const pts = [new THREE.Vector2(0, -1), ...run.map(([o, h]) => new THREE.Vector2(o, h - z)), new THREE.Vector2(run[run.length - 1][0], -1)];
+      const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: WING_THICK, bevelEnabled: false });
+      // local x out of the tunnel along the cutting, y up, z across to the tunnel's left
+      const ox = -dx, oy = -dy, s0 = side < 0 ? end - WING_THICK : end;
+      geo.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(ox, 0, -oy), new THREE.Vector3(0, 1, 0), new THREE.Vector3(nx, 0, -ny))
+        .setPosition(cx + nx * s0, z - Z0, -(cy + ny * s0)));
+      const wing = new THREE.Mesh(geo, wingMat);
+      wing.castShadow = wing.receiveShadow = true;
+      scene.add(wing);
+    }
   }
+}
+
+const WING = 12;         // metres out along the cutting a wing wall may run
+const WING_THICK = 0.6;
+const HIGH = 1.0;        // metres over the floor the hill beside the cutting must stand to want a wall
+
+interface Headwall {
+  g: Portal[]; dx: number; dy: number; nx: number; ny: number; cx: number; cy: number; z: number;
+  at: number[]; mid: number; left: number; right: number; top: number;
+  /** each side's wing wall, left then right: [metres out from the face, top's height (data)] */
+  wings: [number[][], number[][]];
+  /** how far out in front of the face the cutting is dug to the floor */
+  reach: number;
+}
+
+/** Each headwall's place and size: across the arches of its portals, but only as far each way as
+ *  the hill stands over them (a wall reaching out over low ground beside the cutting is a bare panel),
+ *  and up to above the hill over them; and the wing walls along the cutting in front, as far out as
+ *  the hill beside it stands over the road. Ground is the survey's (trueGround), not as drawn. */
+function walls(map: GameMap): Headwall[] {
+  const out: Headwall[] = [], Z0 = map.z0, ground = (x: number, y: number) => map.trueGround(x, -y) + Z0;
+  for (const g of headwalls(map.d.tn ?? [], map.d.b)) {
+    let dx = 0, dy = 0;
+    for (const m of g) { dx += m.dx; dy += m.dy; }
+    const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    const nx = -dy, ny = dx, F = TUNNEL.face, H = TUNNEL.half;
+    const at = g.map((m) => m.x * nx + m.y * ny), mid = (Math.min(...at) + Math.max(...at)) / 2;
+    const o = g[0], cx = o.x + nx * (mid - at[0]), cy = o.y + ny * (mid - at[0]), z = Math.min(...g.map((m) => m.z));
+    const behind = (s: number) => ground(cx + nx * s + dx * (FACE_DEPTH + 1), cy + ny * s + dy * (FACE_DEPTH + 1)) - z;
+    let left = Math.min(...at) - mid - F, right = Math.max(...at) - mid + F;
+    const leftMost = Math.min(...at) - mid - H - 0.8, rightMost = Math.max(...at) - mid + H + 0.8;
+    while (left < leftMost && behind(left) < TUNNEL.crown * 0.6) left = Math.min(leftMost, left + 0.5);
+    while (right > rightMost && behind(right) < TUNNEL.crown * 0.6) right = Math.max(rightMost, right - 0.5);
+    let top = Math.max(...g.map((m) => m.z)) - z + TUNNEL.crown + 1.2;
+    for (let s = left; s <= right; s += 1) for (const d of [0, FACE_DEPTH]) top = Math.max(top, ground(cx + nx * s + dx * d, cy + ny * s + dy * d) - z + 0.4);
+    top = Math.min(top, 16);
+    const wing = (s: number, side: number) => {
+      const run: number[][] = [];
+      for (let k = 0; k <= WING; k++) {
+        const x = cx + nx * (s + side * 1.5) - dx * k, y = cy + ny * (s + side * 1.5) - dy * k, h = ground(x, y) - z;
+        if (h < HIGH) { if (run.length) run.push([k, z + HIGH * 0.5]); break; }
+        run.push([k, z + Math.min(top, Math.max(HIGH, h + 0.3))]);
+      }
+      return run;
+    };
+    const wings: [number[][], number[][]] = [wing(left, -1), wing(right, 1)];
+    const reach = Math.max(2, ...wings.map((w) => (w.length ? w[w.length - 1][0] : 0)));
+    out.push({ g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top, wings, reach });
+  }
+  return out;
+}
+
+/** The cuttings in front of the headwalls, for the ground (world.ts): dug down to the floor between
+ *  the wing walls, out as far as they run, so no slope of hillside stands in front of the arches.
+ *  Each is [face's middle x, y, way in x, y, left, right, how far out, floor], data coords. */
+export function cuttings(map: GameMap): number[][] {
+  return walls(map).map((w) => [w.cx, w.cy, w.dx, w.dy, w.left, w.right, w.reach, w.z]);
 }
