@@ -2124,8 +2124,9 @@ def deck_gaps(rd, ground, depth=0.9):
             outline = core.buffer(hl + 0.4, single_sided=True, cap_style="flat").union(
                 core.buffer(-(hr + 0.4), single_sided=True, cap_style="flat"))
             # (to its very ends, out beside the abutments where a wide deck overhangs the bank, but
-            # not on the abutments themselves)
-            whole = line.buffer(hl, single_sided=True, cap_style="flat").union(line.buffer(-hr, single_sided=True, cap_style="flat"))
+            # not on the abutments themselves; and a little past its parapets, as a bin or a lamp
+            # standing just outside one below the deck would stand inside its side)
+            whole = line.buffer(hl + 0.6, single_sided=True, cap_style="flat").union(line.buffer(-(hr + 0.6), single_sided=True, cap_style="flat"))
             whole = whole.difference(Point(xy[0]).buffer(ABUTMENT)).difference(Point(xy[-1]).buffer(ABUTMENT))
             out.append((outline, line, cum, under, whole))
     return out
