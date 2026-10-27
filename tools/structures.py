@@ -377,6 +377,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     road_lines = [LineString([q[:2] for q in r["run"]]) for r in pending]
     road_tree = STRtree(road_lines)
     chains = [[(k, i) for i in range(len(r["run"]))] for k, r in enumerate(pending) if len(r["run"]) >= 2]
+    TN.rebore(pending, elev)
     for r in pending:
         r["deck"] = set()
         r.setdefault("tow", {})

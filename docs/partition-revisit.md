@@ -1239,9 +1239,15 @@ same as main):
   paths on the ground below meet at the same point (`_join_spans`: the university walkways).
   A path whose record stops one point past its deck, still in the air with nothing going on, has the
   deck run on to that end (`decks_to_loose_ends`).
-- [ ] **Left**: the Bailbrook Underpass is now a 27 m bored tunnel: the survey keeps the decks over it
-  as ground, so `tunnels.bores` finds cover. Telling a crossing way's deck from a hill needs the
-  city-wide passes (`structures.py`), so it waits for the next pass over them.
+- [ ] **A deck over a tunnel stretch is not hill** (`tunnels.rebore`, run once every way is known, in
+  `structures.solve` and in `prep_map.py`): the survey keeps the decks over an underpass as ground, so
+  the Bailbrook Underpass was bored. A tunnel point counts as under a deck where another way passes
+  within 5 m across at 4.6 to 10 m over its floor (or is a bridge in the data at any height), and so
+  does the ground between two such points that stands no more than 1 m above them; a bore runs only
+  between points of real hill. The trade-offs: a real tunnel whose only cover is a street 4.6 to 10 m
+  up, with no hill either side of it, would lose its bore (none does today: the Two Tunnels keep
+  theirs, and the Devonshire Tunnel's mouth, which a path crosses, keeps its first point of hill); and
+  a deck more than 10 m over an underpass that is not marked as a bridge still counts as hill.
 
 ## A faster build, the same map (27 October)
 

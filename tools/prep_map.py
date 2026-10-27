@@ -556,6 +556,7 @@ for g, p in L("segment"):
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
                 bored = TN.bores(run, z, tr, elev)
                 pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow))
+TN.rebore(pending, elev)
 def chains():
     """The roads in pending joined up where one ends where another of the same kind begins, as
     lists of (road index, point index) along each."""
