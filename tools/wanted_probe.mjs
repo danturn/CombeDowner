@@ -125,6 +125,8 @@ try {
     await shot("02-poster", "the poster brought back with the job control");
     await named("the poster", ".tsc-card.wsc");
     await job();
+    await wait(800);
+    await shot("02b-far-minimap", "from the noticeboard, far from the circle: the minimap's rim arrow with how far to the circle");
 
     // ---- the circle: from inside, outside, above, and on the big map
     const toEdge = (inside) => page.evaluate((inside) => {

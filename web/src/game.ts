@@ -4491,7 +4491,11 @@ export class Game {
     }
     this.hushed = hush;
     this.calmed = calm;
-    show($("usehint"), hush ? "" : ctlText(text), !hush && !!text);
+    // a results card in the middle: the prompt waits, and a tip about a ride just won waits for it to go
+    const results = !!document.querySelector(".rsc-end:not(.out)");
+    if (results && this.rideTip > performance.now()) this.rideTip = performance.now() + TIP_MS;
+    const quietNow = hush || results;
+    show($("usehint"), quietNow ? "" : ctlText(text), !quietNow && !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
