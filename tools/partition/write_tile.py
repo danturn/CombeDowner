@@ -1765,7 +1765,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
     k = np.clip((flat_w - flat_f) / ease, 0, 1)
     k = k * k * (3 - 2 * k)
     k[np.isinf(flat_w)] = 1
-    grid = _unspiked(flat_z * (1 - k) + grid * k)
+    grid = _unspiked(flat_z * (1 - k) + grid * k, protect)
     keep = np.zeros(grid.shape, dtype=bool)
     keep[0, :] = keep[-1, :] = keep[:, 0] = keep[:, -1] = True
     for g in houses:
@@ -1786,15 +1786,17 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
 SPIKE = 2.0   # metres a grid point may stand over all eight of its neighbours
 
 
-def _unspiked(grid, rounds=2):
+def _unspiked(grid, under=None, rounds=2):
     """A point of the survey left standing between ways laid well below it on every side (a slip
     road and the cutting beside it) stood up as a spike of grass: it comes down to its highest
-    neighbour. Natural ground at the grid's spacing never stands that far over all round it."""
+    neighbour. Natural ground at the grid's spacing never stands that far over all round it. Not
+    beside the ground under a bridge (`under`), where it is the abutment."""
+    n, m = grid.shape
+    near = lambda a: [a[1 + i:1 + i + n, 1 + j:1 + j + m] for i in (-1, 0, 1) for j in (-1, 0, 1) if i or j]
+    held = np.zeros(grid.shape, bool) if under is None else np.any(near(np.pad(under, 1)), axis=0) | under
     for _ in range(rounds):
-        p = np.pad(grid, 1, mode="edge")
-        n, m = grid.shape
-        top = np.max([p[1 + a:1 + a + n, 1 + b:1 + b + m] for a in (-1, 0, 1) for b in (-1, 0, 1) if a or b], axis=0)
-        high = grid > top + SPIKE
+        top = np.max(near(np.pad(grid, 1, mode="edge")), axis=0)
+        high = (grid > top + SPIKE) & ~held
         if not high.any():
             break
         grid = np.where(high, top, grid)
@@ -2198,8 +2200,9 @@ def clear_portals(tile, gone):
             continue
         gone["br"] = gone.get("br", 0) + 1
         for st in stretches({i for i, v in enumerate(inside) if not v}):
-            if len(st) > 1:
-                kept_br.append(dict(l, p=[l["p"][i] for i in st]))
+            piece = [l["p"][i] for i in st]
+            if len(piece) > 1 and LineString([q[:2] for q in piece]).length >= 2.0:
+                kept_br.append(dict(l, p=piece))
     tile["br"] = kept_br
     tile["gt"] = [q for q in tile.get("gt") or [] if not cut.contains(Point((q[0] + q[2]) / 2, (q[1] + q[3]) / 2))]
     zone = unary_union(polys)
