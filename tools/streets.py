@@ -101,9 +101,13 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
             add("bus", px, py, ang, name, shelter)
             stops.append((px, py))
         elif kind in ("postbox", "bin", "phone") and near and near[0] < 12:
-            px, py, ang = place(x, y, near[1], PAVE - (0.7 if kind == "phone" else 0.4))
+            box = POST_BOX.get(tags_of(p).get("post_box:type"), 0) if kind == "postbox" else 0
+            # a wall box is set in the wall at the back of the pavement, its slot facing the people
+            # walking along it; the others stand out on the pavement
+            back = 0.25 if box == 1 else 0.7 if kind == "phone" else 0.4
+            px, py, ang = place(x, y, near[1], PAVE - back)
             if kind == "postbox":
-                add(kind, px, py, ang, POST_BOX.get(tags_of(p).get("post_box:type"), 0))
+                add(kind, px, py, ang, box)
             else:
                 add(kind, px, py, ang)
         else:

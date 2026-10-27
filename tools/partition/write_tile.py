@@ -4028,8 +4028,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     def indoors(x, y):
         return house_tree is not None and len(house_tree.query(Point(x, y), predicate="within")) > 0
 
-    def clear(x, y):
-        return (not in_road(x, y) and not near_wall(x, y, clearance) and not on_way(x, y)
+    def clear(x, y, room=clearance):
+        return (not in_road(x, y) and not near_wall(x, y, room) and not on_way(x, y)
                 and not on_strip(x, y) and not indoors(x, y))
 
     # what a nudge may not move a thing onto: the road at its full width, and for a plant also the
@@ -4042,22 +4042,22 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         return full_tree is not None and len(full_tree.query(Point(x, y), predicate="within")) > 0
 
 
-    def nudged(x, y, plant=False):
+    def nudged(x, y, plant=False, room=clearance):
         """(x, y) moved straight away from the nearest wall until it clears it, or None."""
         if wt is None:
             return None
         p = Point(x, y)
-        w = min((walls[int(k)] for k in np.atleast_1d(wt.query(p.buffer(clearance)))),
+        w = min((walls[int(k)] for k in np.atleast_1d(wt.query(p.buffer(room)))),
                 key=lambda g: g.distance(p), default=None)
         if w is None or w.distance(p) < 1e-6:
             return None
         d = w.distance(p)
         q = w.interpolate(w.project(p))
-        step = clearance - d + 0.05
+        step = room - d + 0.05
         if step > NUDGE_MAX:
             return None
         nx, ny = x + (x - q.x) / d * step, y + (y - q.y) / d * step
-        return (nx, ny) if clear(nx, ny) and kept_clear(nx, ny, plant) else None
+        return (nx, ny) if clear(nx, ny, room) and kept_clear(nx, ny, plant) else None
 
     def face_union(*classes):
         g = unary_union([face_shape(f).buffer(0) for f in part["faces"] if f["cls"] in classes and len(f["xy"]) > 2]
@@ -4146,20 +4146,21 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     keep = []
     for r in rows:
         x, y = float(r[1]), float(r[2])
+        room = item_room(r)
         # a street item, unlike a plant, is checked against the road at its full width: a lamp just
         # inside the kerb is in the road, and a car parks on it
-        if clear(x, y) and not in_full_road(x, y):
+        if clear(x, y, room) and not in_full_road(x, y):
             keep.append(r)
         elif in_road(x, y) or on_strip(x, y) or in_full_road(x, y):
             spot = reseat_on_pavement(r[0], x, y, rd) if rd else None
-            if spot is None or not clear(spot[0], spot[1]):
+            if spot is None or not clear(spot[0], spot[1], room):
                 spot = off_road(x, y)
             z = ground(spot[0], spot[1]) if spot is not None and ground else None
-            if spot is not None and clear(spot[0], spot[1]) and (z is not None or not ground):
+            if spot is not None and clear(spot[0], spot[1], room) and (z is not None or not ground):
                 z = round(z + 0.2, 2) if ground else r[3]
                 keep.append([r[0], round(spot[0], 2), round(spot[1], 2), z, round(spot[2], 2)] + list(r[5:]))
                 moved["fx"] += 1
-        elif not on_way(x, y) and not indoors(x, y) and (q := nudged(x, y)):
+        elif not on_way(x, y) and not indoors(x, y) and (q := nudged(x, y, room=room)):
             keep.append([r[0]] + at_ground(r[1:], q, 0.2))
             moved["fx"] += 1
     gone["fx"] = len(rows) - len(keep)
@@ -4170,6 +4171,18 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     tile["wr"] = string_wires([r for r in keep if r[0] == "pole"], tile.get("wr") or [],
                               {pid for w in tile.get("wr") or [] if len(w) > 7 for pid in w[6:8]} - here)
     return gone
+
+
+# How far a boundary must keep from a street item's middle: its own half-width and a little, so a
+# phone box or a pillar box doesn't stand with a fence running into it. A wall box is built into its
+# wall, so it keeps only the ordinary clearance.
+ITEM_ROOM = {"phone": 0.75, "postbox": 0.45}
+
+
+def item_room(r):
+    if r[0] == "postbox" and len(r) > 5 and r[5] == 1:
+        return DECOR_CLEAR
+    return max(DECOR_CLEAR, ITEM_ROOM.get(r[0], 0.0))
 
 
 NARROWEST_PARKING = 4.8    # below this carriageway width a street has no room to park and still pass
@@ -4395,6 +4408,39 @@ IN_A_BOUNDARY = {"gate": "gate", "stile": "stile", "kissing_gate": "kiss", "gate
 ON_THE_WAY = {"cycle_barrier": "cycle", "lift_gate": "lift", "cattle_grid": "grid", "block": "block"}
 NODE_REACH = 3.0         # metres a barrier's node may lie from its way, and from the boundary it stands in
 GAP_SIDE = 0.4           # metres either side of the way left open in the boundary, as a path is let through
+
+
+RAIL_WALL_NEAR = 0.7     # a wall this close to a flight's edge stands where its handrail would
+RAIL_WALL_ALONG = 0.4    # over this share of the flight's length
+
+
+def rails_off_walls(rd, br):
+    """Steps' handrails (`hr`) without the sides where a wall or fence already runs along the edge:
+    the game would stand the rail in or on top of it."""
+    lines = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    if not lines:
+        return rd
+    tree = STRtree(lines)
+    for r in rd:
+        if r["c"] != "steps" or not r.get("hr") or len(r["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        if line.length < 0.5:
+            continue
+        half = r.get("w", 1.8) / 2
+        near = [lines[int(k)] for k in tree.query(line.buffer(half + RAIL_WALL_NEAR))]
+        if not near:
+            continue
+        walls = unary_union(near).buffer(RAIL_WALL_NEAR)
+        for bit, off in ((1, half), (2, -half)):
+            if not r["hr"] & bit:
+                continue
+            edge = line.offset_curve(off)
+            if not edge.is_empty and edge.length > 0 and edge.intersection(walls).length > RAIL_WALL_ALONG * edge.length:
+                r["hr"] &= ~bit
+        if not r["hr"]:
+            del r["hr"]
+    return rd
 
 
 def path_barriers(sq, rd, br, ground, points, gt=()):
@@ -4772,6 +4818,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, _ = ends_off_pavements(br, rd)
     points = mapped_points(sq)
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
+    rd = rails_off_walls(rd, br)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt

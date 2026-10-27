@@ -906,7 +906,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
     pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
     // paths the map says are worn grass, bare earth or gravel
-    grass: flatMat("#7f8a55", 1, groundTex), dirt: flatMat("#86684a", 1, groundTex), gravel: flatMat("#b9b2a2", 1, groundTex),
+    grass: flatMat("#b3ad78", 1, groundTex), dirt: flatMat("#86684a", 1, groundTex), gravel: flatMat("#b9b2a2", 1, groundTex),
   };
   // ---- bridges ---------------------------------------------------------------------------
   // A road or path on a bridge is drawn at its own height by strips; this builds what holds it
