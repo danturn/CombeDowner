@@ -255,7 +255,7 @@ export function summary(o: Summary, again?: () => void) {
   const handle = { remove };
   card = handle;
   // Space or Enter carries on (and so does the pad's Cross, which presses Space); Backspace, or the
-  // pad's Triangle, which presses R, goes again. Taken here so the press doesn't jump or reload too.
+  // pad's reload button, which presses R, goes again. Taken here so the press doesn't jump or reload too.
   const onKey = (k: KeyboardEvent) => {
     if (k.repeat) return;
     if (k.code === "Space" || k.code === "Enter") { k.preventDefault(); k.stopImmediatePropagation(); remove(); }

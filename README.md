@@ -101,6 +101,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
   till 90% is covered. Bigger rooms get more to do: more ties, nests, gates, mounds and tag, and
   tougher guards. Put one right for a prize.
+- **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
+  flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
@@ -303,7 +305,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   rides are off both maps to start with (the key switches them back on). On a touch screen drag,
   pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
   R2/L2 or the right stick zoom, A marks and B closes.
-- **Map markers**: click the big map or press G at something to put your marker there; everyone sees
+- **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
   checkpoint, a minigame, the strange structure, a pub, a bus stop or a cable car station, and the
   marker goes exactly on it and says what it is ("Dan marked Push the Bus"); clicking a bunch of jobs
@@ -337,9 +339,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   door in the street.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
-  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; Cross
-  jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
-  L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
+  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; the
+  buttons follow Call of Duty: Warzone's defaults: Cross jumps, Square reloads on a tap and uses on a
+  hold (a tap uses when there's a prompt), Circle crouches on a tap and lies down on a hold,
+  Triangle switches weapon, L1 and R1 go back and forward through them. In a car R2 and L2 are the
+  pedals, the left stick steers, Triangle gets out and R1 is the horn. Options pauses, and on the menus the
   d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
   dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in

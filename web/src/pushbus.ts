@@ -518,20 +518,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   }
   const carLat = Math.max(0.9, hill.half - 1.1);
 
-  /** Whether (x, z) is in the water (a pond, the river, the canal), for where a runaway ends up. */
-  const inWater = (x: number, z: number) => {
-    for (const m of [w.map, ...w.map.tilesNear(x, z, 10)]) for (const wp of [...(m === w.map ? w.map.wide?.wp ?? [] : []), ...(m.d.wp ?? [])]) {
-      const ring = wp.r[0];
-      if (!ring) continue;
-      let inside = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [xi, yi] = ring[i], [xj, yj] = ring[j];
-        if (yi > -z !== yj > -z && x < ((xj - xi) * (-z - yi)) / (yj - yi) + xi) inside = !inside;
-      }
-      if (inside) return true;
-    }
-    return false;
-  };
+  const inWater = (x: number, z: number) => w.map.inWater(x, z);
 
   // ---- input: E at the back to get on and off, Space (or Heave) on the beat, A/D and Space in the cab, Q to take the call
   const ac = new AbortController(), sig = { signal: ac.signal };

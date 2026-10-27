@@ -411,6 +411,8 @@ export class Game {
   private deliveries = new Map<Vehicle, Delivery>();
   private busMenu = 0;                           // the bus menu's open at a stop till then (ms): 1 or 2 to call one
   get busMenuUp() { return this.busMenu > performance.now(); }
+  /** There's something to use, get in or take right here (the touch screen's Use button is up). */
+  get useOffered() { return !$("t-car").hidden; }
   private busStop: Stop | null = null;           // which stop
   private myBus = -1;                            // the bus on its way to us, for the map
   private callAt = new Map<string, number>();    // host: when each player last called a bus (ms)
@@ -574,6 +576,7 @@ export class Game {
     }
     this.player = new Player(map, this.listeners.signal);
     this.player.canProne = true;
+    this.player.noDive = () => !!this.car || !!this.ride || this.riding || this.oddments.carrying(this.net.selfId) || this.map.inWater(this.player.pos.x, this.player.pos.z);
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
@@ -915,8 +918,9 @@ export class Game {
     addEventListener("mousedown", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       // the full map open: a click puts your marker under the crosshair instead of shooting
-      if (!$("bigmap").hidden) { if (e.button === 0) this.markAtCursor(); return; }
+      if (!$("bigmap").hidden) { if (e.button === 0 || e.button === 1) this.markAtCursor(); return; }
       if (e.button === 0) this.firing = true;
+      if (e.button === 1) { e.preventDefault(); this.markLook(); }   // the middle button marks the spot, as G does
       if (e.button === 2) { this.aiming = !this.aiming; this.binoculars = false; }   // right click toggles aiming
     }, sig);
     addEventListener("mouseup", (e) => {
@@ -3972,7 +3976,7 @@ export class Game {
     this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
+    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
@@ -4198,7 +4202,8 @@ export class Game {
       else if (this.alive && p.onGround && p.speed > 1) SFX.step(hard, p.crouch > 0.5 ? 0.06 : p.sprinting ? 0.24 : 0.15);
     }
     if (this.alive && p.jumped) SFX.jump(hard);
-    if (this.alive && p.landed) SFX.land(hard, Math.min(1, (p.landed - 3) / 12));
+    if (this.alive && p.diveLanded) SFX.diveThud(hard);
+    else if (this.alive && p.landed) SFX.land(hard, Math.min(1, (p.landed - 3) / 12));
     for (const r of this.remotes.values()) {
       const a = r.avatar, moved = Math.hypot(a.x - r.px, a.z - r.pz);
       r.px = a.x; r.pz = a.z;

@@ -828,6 +828,21 @@ export class GameMap {
     return this.tiles.get(tileKey(Math.floor((x - I.x0) / S), Math.floor((-z - I.y0) / S)));
   }
 
+  /** Whether scene (x, z) is in the water (a pond, the river, the canal). */
+  inWater(x: number, z: number): boolean {
+    for (const m of [this as GameMap, ...this.tilesNear(x, z, 10)]) for (const wp of [...(m === this ? this.wide?.wp ?? [] : []), ...(m.d.wp ?? [])]) {
+      const ring = wp.r[0];
+      if (!ring) continue;
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if (yi > -z !== yj > -z && x < ((xj - xi) * (-z - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+
   /** The loaded squares within r of scene (x, z). */
   tilesNear(x: number, z: number, r: number): GameMap[] {
     const I = this.tileIndex, out: GameMap[] = [];
