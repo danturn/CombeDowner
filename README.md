@@ -113,7 +113,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   catches the next one, and a long grind wobbles: tap the opposite way to steady it. On every ride and in
   every vehicle A and D (or the left stick) steer and the mouse only looks about, swinging back to the
   way you're going as soon as you leave it be or speed up; come off and you're back on the way the ride
-  was pointing, never where you were looking. Grinds, jumps and
+  was pointing, never where you were looking. On a ride a tap of A or D is a nudge of a few degrees
+  and holding it builds to full lock; a stick pushed forward with a little lean goes straight, and
+  steers once it's clearly over. In the air only a hard turn spins you, and you snap on to a grind by
+  yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
