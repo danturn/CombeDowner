@@ -2646,7 +2646,22 @@ def level_cuts(lines, reach, level, surface, step=LEVEL_STEP, every=1.0):
             k = int(k)
             if k <= j:
                 continue
-            zone = lj.buffer(reach[j]).intersection(lines[k].buffer(reach[k])).intersection(surface)
+            lens = lj.buffer(reach[j]).intersection(lines[k].buffer(reach[k]))
+            if lens.is_empty:
+                continue
+            # (most streets that meet are level with each other where they do: only those whose
+            # levels part somewhere over their overlap are worth dividing)
+            probe = shapely.get_coordinates(lens.boundary.simplify(1.0))
+            probe = probe[:: max(1, len(probe) // 12)]
+            gaps = [abs(hj - hk) for x, y in list(probe) + [lens.representative_point().coords[0]]
+                    if (hj := level(j, x, y)) is not None and (hk := level(k, x, y)) is not None]
+            if not gaps or max(gaps) <= step - 0.5:
+                continue
+            try:
+                zone = lens.intersection(surface)
+            except shapely.errors.GEOSException:
+                # (the faces' union can be too fine for the overlay: the two streets' reach will do)
+                zone = lens
             if zone.is_empty or zone.area < 1.0:
                 continue
             around = zone.buffer(max(reach[j], reach[k]))
@@ -2671,8 +2686,11 @@ def level_cuts(lines, reach, level, surface, step=LEVEL_STEP, every=1.0):
                     P.append(q)
                     O.append(n)
             cells = shapely.voronoi_polygons(shapely.multipoints(P), extend_to=around.buffer(5), ordered=True)
-            mine = unary_union([c for c, n in zip(cells.geoms, O) if n == j])
-            between = mine.boundary.intersection(zone)
+            try:
+                mine = unary_union([c for c, n in zip(cells.geoms, O) if n == j])
+                between = mine.boundary.intersection(zone)
+            except shapely.errors.GEOSException:
+                continue
             for g in getattr(between, "geoms", [between]):
                 if g.geom_type != "LineString" or g.length == 0:
                     continue
@@ -2720,7 +2738,10 @@ def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
     return out
 
 
-def _portal_owner(planes, k, x, y, behind=12.0, front=8.0):
+PORTAL_BEHIND = 12.0   # metres behind a portal's face that the road going in has no say over the hill
+
+
+def _portal_owner(planes, k, x, y, behind=PORTAL_BEHIND, front=8.0):
     """False where street k may not lay its surface at (x, y) because of a portal: behind the face, a
     street running into the tunnel; in front of it, any other."""
     for _, (px, py), (dx, dy), own in planes:
@@ -2791,7 +2812,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             return near[0][1] if near else None
         reached = [k for k in reached if not in_air(k, p)] or reached
         if planes:
-            reached = [k for k in reached if _portal_owner(planes, k, x, y)] or reached
+            # (behind a portal's face, beside the bore, a road going in has no say: it is the hill's)
+            reached = [k for k in reached if _portal_owner(planes, k, x, y)]
+            if not reached:
+                return None
         if beside_cut is not None and beside_cut.contains(p):
             # (the cut between two streets at different levels runs where they are equally far)
             return reached[0]
@@ -2875,11 +2899,18 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         path = path.difference(bores)
     tubes = [LineString([q[:2] for q in t["p"]]).buffer(TN.HALF + 0.3, cap_style="flat")
              for t in tunnels or [] if len(t.get("p") or []) > 1]
+    for _, (px, py), (dx, dy), own in planes:
+        # and beside the bore behind its headwall the road going in is the hill (others on it stay)
+        H, D = PORTAL_HALF, PORTAL_BEHIND
+        back = Polygon([(px - dy * H, py + dx * H), (px + dy * H, py - dx * H),
+                        (px + dy * H + dx * D, py - dx * H + dy * D), (px - dy * H + dx * D, py + dx * H + dy * D)])
+        others = [lines[k].buffer(reach_of[k]) for k in range(len(lines)) if k not in own and lines[k].intersects(back.buffer(10))]
+        tubes.append(_minus(back, unary_union(others)) if others else back)
     if tubes:
         # a road or path in a tunnel is the tube's floor (the game's): its face would lie on the hill
         # over the bore, standing up inside the tube from its mouth
         tubes = unary_union(tubes)
-        road, pave, path, plaza = (g.difference(tubes) for g in (road, pave, path, plaza))
+        road, pave, path, plaza = (_minus(g, tubes) for g in (road, pave, path, plaza))
     taken = taken.union(path)
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
@@ -2889,18 +2920,18 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (PAVE_DRAWN,)) + 0.3, cap_style="flat")
                 for l, r in zip(lines, streets) if r["c"] in KERBED and any(r.get("pv") or (1,))]
         bare = unary_union([l.buffer(r["w"] / 2 + VERGE_REACH, cap_style="flat") for l, r in verged])
-        bare = bare.difference(unary_union(kept or [Polygon()]))
+        bare = _minus(bare, unary_union(kept or [Polygon()]))
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
-        pave, plaza = pave.difference(bare), plaza.difference(bare)
+        pave, plaza = _minus(pave, bare), _minus(plaza, bare)
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
-    cut += [f.intersection(surface.buffer(0.5)) for f, *_ in planes]
+    cut += [f.intersection(surface.buffer(0.5)) for f, *_ in planes] if planes else []
     cut = [g for g in cut if not g.is_empty]
     cut = shapely.line_merge(unary_union(cut)).buffer(LEVEL_GAP / 2, cap_style="flat", join_style="mitre") if cut else None
     beside_cut = None
     if cut is not None:
-        road, pave = road.difference(cut), pave.difference(cut)
+        road, pave = _minus(road, cut), _minus(pave, cut)
         beside_cut = cut.buffer(LEVEL_GAP)
         shapely.prepare(beside_cut)
 
