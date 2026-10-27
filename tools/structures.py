@@ -43,6 +43,7 @@ TOW_UP = 0.4      # the canal's banks stand this far above the water
 TOW_REACH = 6.0   # metres out from the water's edge that the towpath may run
 RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "living_street": 4,
         "unclassified": 5, "pedestrian": 5, "service": 6, "unknown": 6}
+VERGE = 1.5       # metres in from a road's full width that a path must be to lie on top of it
 SIGMA = 6.0       # metres: how far along a road its heights are evened out
 GRADE = 0.18      # the steepest a road is laid where the hill under it is gentler than that
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
@@ -431,10 +432,12 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     smooth_network(pending, chains, elev)
 
     # an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
-    # crosses over it is carried over as a bridge, with the cutting as wide as the road in it
+    # crosses over it is carried over as a bridge, with the cutting as wide as the road in it. Not
+    # the ends of a tunnel that is bored: those are its road coming out of the hill face, and what
+    # passes near them is on the ground over the tunnel (a bridge there is the data's own)
     underpasses = []
     for k, r in enumerate(pending):
-        if not r["tunnel_ranges"]:
+        if not r["tunnel_ranges"] or r["bored"]:
             continue
         shallow = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
         # (the cuttings at either end of a bored tunnel are two underpasses, not one through the hill)
@@ -845,7 +848,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     # cutting drawn over the road down in it, or a path whose bridge the data stops short of the
     # road it crosses), is on a bridge there: the ground is the lower road's. (`prep_map.py` finds
     # these after the dips; here they come before, so what passes under is dipped for headroom too).
-    # Over a bored tunnel the ground is the hill over its roof, and a way on it stays on the ground
+    # Over a bored tunnel the ground is the hill over its roof, and a way on it stays on the ground;
+    # and a path along the top of a cutting's side, over the road's verge, is beside it, not on it
     for k, r in enumerate(pending):
         if r["c"] in ("steps", "pedestrian"):
             continue
@@ -854,7 +858,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
             o = pending[int(j)]
             if int(j) == k or o["c"] in PATHS:
                 continue
-            half, line = RW.get(o["c"], 4) / 2, road_lines[int(j)]
+            half, line = RW.get(o["c"], 4) / 2 - (VERGE if r["c"] in PATHS else 0.0), road_lines[int(j)]
             for i, q in enumerate(r["run"]):
                 if i in r["span"] or i in r["deck"] or i in r["tow"] or line.distance(Point(q[:2])) > half:
                     continue

@@ -17,6 +17,7 @@ import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
+import { alignPortals } from "./tunnels";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -484,6 +485,7 @@ export class GameMap {
 
     this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
+    alignPortals(d.tn ?? []);
     for (const t of d.tn ?? []) {
       if (this.spent(1)) yield;
       const p = t.p;

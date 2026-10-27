@@ -1,7 +1,8 @@
 // Tunnels you can walk through (tools/tunnels.py): an arched brick tube along each tunnel's floor,
-// lit by lamps along the crown, with a stone face round the arch at each portal. The terrain inside
-// the tube's mouth is hidden (world.ts asks mouths() where), so you can see in from the cutting;
-// further in, the hill is over your head and its ground faces away from you.
+// lit by lamps along the crown, with a stone headwall round the arch at each portal. The ground over
+// a tunnel is the hill's, whole; the terrain inside the tube's mouth is hidden (world.ts asks
+// mouths() where), so you can see in from the cutting, and further in the hill is over your head.
+// The two bores of a dual carriageway coming out side by side share one headwall, square to them.
 //
 // The light inside is painted on: each vertex is as bright as its nearest lamp makes it, so it
 // costs nothing at run time, and the tube ignores the sun. world.ts turns the fog dark while
@@ -55,6 +56,52 @@ function light(s: number, h: number, o: number, len: number) {
   return 0.035 + 0.9 * Math.exp(-d2 / 10);
 }
 
+/** Metres apart that two bores' portals share one headwall (read when called: map.ts imports this module). */
+const sideBySide = () => 2 * TUNNEL.face + 4;
+
+interface Portal { t: Tunnel; end: 0 | 1; x: number; y: number; z: number; dx: number; dy: number }
+
+/** Every portal, each with the tunnel it opens and which end. */
+function allPortals(tn: Tunnel[]): Portal[] {
+  const out: Portal[] = [];
+  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => out.push({ t, end: e as 0 | 1, ...m }));
+  return out;
+}
+
+/** The portals that open side by side, facing the same way, in groups (a lone portal is a group of one). */
+function headwalls(tn: Tunnel[]): Portal[][] {
+  const ps = allPortals(tn), group = ps.map((_, i) => i);
+  const root = (i: number): number => (group[i] === i ? i : (group[i] = root(group[i])));
+  for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+    const a = ps[i], b = ps[j];
+    if (a.t === b.t || a.dx * b.dx + a.dy * b.dy < 0.9) continue;
+    const ox = b.x - a.x, oy = b.y - a.y;
+    if (Math.hypot(ox, oy) < sideBySide() && Math.abs(ox * a.dx + oy * a.dy) < 8) group[root(j)] = root(i);
+  }
+  const out = new Map<number, Portal[]>();
+  ps.forEach((p, i) => { const r = root(i); if (!out.has(r)) out.set(r, []); out.get(r)!.push(p); });
+  return [...out.values()];
+}
+
+/** Bores coming out side by side are run out to the same line, square to them, so one headwall
+ *  closes both: each one that stops short is carried on, level, to the outermost. Run before
+ *  anything reads the tunnels; running it again changes nothing. */
+export function alignPortals(tn: Tunnel[]) {
+  for (const g of headwalls(tn)) {
+    if (g.length < 2) continue;
+    let nx = 0, ny = 0;
+    for (const m of g) { nx += m.dx; ny += m.dy; }
+    const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    const out = Math.min(...g.map((m) => m.x * nx + m.y * ny));
+    for (const m of g) {
+      const by = (m.x * nx + m.y * ny - out) / Math.max(0.5, m.dx * nx + m.dy * ny);
+      if (by < 0.05) continue;
+      const q = [m.x - m.dx * by, m.y - m.dy * by, m.z];
+      if (m.end === 0) m.t.p.unshift(q); else m.t.p.push(q);
+    }
+  }
+}
+
 /** Where each portal is and which way the tunnel goes in from it, data coords. */
 function portals(t: Tunnel) {
   const p = t.p, out: { x: number; y: number; z: number; dx: number; dy: number }[] = [];
@@ -68,6 +115,7 @@ function portals(t: Tunnel) {
 /** The tube's mouths, for the terrain shader: (x, z, into x, into z) and (floor, arch, half width, depth), scene coords. */
 export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
+  alignPortals(map.d.tn ?? []);
   for (const t of map.d.tn ?? []) for (const m of portals(t)) {
     a.push(new THREE.Vector4(m.x, -m.y, m.dx, -m.dy));
     b.push(new THREE.Vector4(m.z - map.z0, TUNNEL.crown, TUNNEL.half, MOUTH));
@@ -78,6 +126,7 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
 export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
   const tunnels = map.d.tn ?? [];
   if (!tunnels.length) return;
+  alignPortals(tunnels);
   const Z0 = map.z0, prof = profile();
   // distance round the profile, for the texture
   const round = [0];
@@ -138,29 +187,37 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
     }
     lamps.computeBoundingSphere();
     scene.add(lamps);
-    // the portals' stone faces, from below the floor to above the hill over the arch
-    for (const p of portals(t)) {
-      const nx = -p.dy, ny = p.dx, F = TUNNEL.face;
-      let top = TUNNEL.crown + 1.2;
-      for (let o = -F; o <= F; o += 1) for (const d of [0, FACE_DEPTH]) {
-        const x = p.x + nx * o + p.dx * d, y = p.y + ny * o + p.dy * d;
-        top = Math.max(top, map.ground(x, -y) + Z0 - p.z + 0.4);
-      }
-      top = Math.min(top, 16);
-      const shape = new THREE.Shape([[-F, -1], [F, -1], [F, top], [-F, top]].map(([x, y]) => new THREE.Vector2(x, y)));
-      const hole = prof.map(([o, h]) => new THREE.Vector2(o, Math.max(-0.5, h === 0 ? -0.5 : h)));
-      shape.holes.push(new THREE.Path(hole));
-      const g = new THREE.ExtrudeGeometry(shape, { depth: FACE_DEPTH, bevelEnabled: false });
-      const face = new THREE.Mesh(g, stone);
-      face.position.set(p.x, p.z - Z0, -p.y);
-      // local +z goes into the tunnel; local +x is the tunnel's left, matching the profile
-      face.rotation.y = Math.atan2(p.dx, -p.dy);
-      face.castShadow = face.receiveShadow = true;
-      scene.add(face);
-      // a coping along the top
-      const cope = new THREE.Mesh(new THREE.BoxGeometry(2 * F + 0.4, 0.35, FACE_DEPTH + 0.3), stone);
-      cope.position.set(0, top + 0.17, FACE_DEPTH / 2);
-      face.add(cope);
+  }
+  // the headwalls: one round the arch of each portal, or across the arches of bores side by side,
+  // from below the floor to above the hill over them
+  for (const g of headwalls(tunnels)) {
+    let dx = 0, dy = 0;
+    for (const m of g) { dx += m.dx; dy += m.dy; }
+    const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    const nx = -dy, ny = dx, F = TUNNEL.face;
+    const at = g.map((m) => m.x * nx + m.y * ny), mid = (Math.min(...at) + Math.max(...at)) / 2;
+    const o = g[0], cx = o.x + nx * (mid - at[0]), cy = o.y + ny * (mid - at[0]), z = Math.min(...g.map((m) => m.z));
+    const left = Math.min(...at) - mid - F, right = Math.max(...at) - mid + F;
+    let top = Math.max(...g.map((m) => m.z)) - z + TUNNEL.crown + 1.2;
+    for (let s = left; s <= right; s += 1) for (const d of [0, FACE_DEPTH]) {
+      const x = cx + nx * s + dx * d, y = cy + ny * s + dy * d;
+      top = Math.max(top, map.ground(x, -y) + Z0 - z + 0.4);
     }
+    top = Math.min(top, 16);
+    const shape = new THREE.Shape([[left, -1], [right, -1], [right, top], [left, top]].map(([x, y]) => new THREE.Vector2(x, y)));
+    g.forEach((m, k) => {
+      const off = at[k] - mid, lift = m.z - z;
+      shape.holes.push(new THREE.Path(prof.map(([u, h]) => new THREE.Vector2(off + u, lift + Math.max(-0.5, h === 0 ? -0.5 : h)))));
+    });
+    const face = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: FACE_DEPTH, bevelEnabled: false }), stone);
+    face.position.set(cx, z - Z0, -cy);
+    // local +z goes into the tunnel; local +x is the tunnel's left, matching the profile
+    face.rotation.y = Math.atan2(dx, -dy);
+    face.castShadow = face.receiveShadow = true;
+    scene.add(face);
+    // a coping along the top
+    const cope = new THREE.Mesh(new THREE.BoxGeometry(right - left + 0.4, 0.35, FACE_DEPTH + 0.3), stone);
+    cope.position.set((left + right) / 2, top + 0.17, FACE_DEPTH / 2);
+    face.add(cope);
   }
 }

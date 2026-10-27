@@ -645,11 +645,16 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
     # (and a stretch inside the game's tunnel, whose bore can start a little further out than ours)
-    if roof and roof[1]:
-        deep |= {i for i, (x, y) in enumerate(seg) if roof[1](x, y, zs[i])}
+    tubed = {i for i, (x, y) in enumerate(seg) if roof[1](x, y, zs[i])} if roof and roof[1] else set()
+    deep |= tubed
     # (over the old build's cutting at a tunnel's mouth, left dug, a street well above it is carried across)
     if carried is not None:
-        spans |= {i for i, (x, y) in enumerate(seg) if i not in decks and zs[i] - gs[i] > 1.5 and carried(x, y)}
+        lifted = {i for i, (x, y) in enumerate(seg) if i not in decks and zs[i] - gs[i] > 1.5 and carried(x, y)}
+        # (but one running along the top of the cutting, beside the road coming out, is on its bank)
+        beside_mouth = {i for i in lifted if roof and roof[2] and roof[2](seg, i)}
+        spans |= lifted - beside_mouth
+    else:
+        beside_mouth = set()
     floors = level_footbridges(seg, zs, gs, spans, crossings) if crossings else {}
     # a path that passes under a bridge was dipped to leave headroom, below the ground the tile has
     # there: it keeps its dip instead of being held to the ground, and the ground is dug to it
@@ -674,7 +679,8 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     tow -= {j for i in spans | decks for j in (i - 1, i + 1)}
     # (over a tunnel's roof, where its mouth was dug, the way keeps its height and the ground is laid to it)
     roofed = {i for i, (x, y) in enumerate(seg) if i not in spans | decks and roof[0](x, y, zs[i])} if roof and roof[0] else set()
-    held = decks | tow | approach | roofed | (dipped - beside if others is not None else set())
+    roofed |= beside_mouth
+    held = decks | tow | approach | roofed | tubed | (dipped - beside if others is not None else set())
     # (a deck's last points may come down to the ground, except at an end whose approach keeps its height)
     ends = {i for i in deck_ends(spans | decks) if not any(abs(i - j) <= 4 for j in approach)}
     fitted = {(round(x, 1), round(y, 1)): z for (x, y), z in zip(seg, zs)}
@@ -1338,6 +1344,33 @@ def over_roof(tunnels, inside=False):
                 k = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (x, y)))
                 if (z < p[k][2] + TN.CROWN) if inside else (z >= p[k][2] + TN.CROWN):
                     return True
+        return False
+    return test
+
+
+def along_mouths(tunnels, reach=40.0, beside=10.0):
+    """A predicate (seg, i): does the way's point i lie beside a tunnel's road where it comes out
+    of the hill (within `reach` out from a portal, `beside` across), running along it?"""
+    ends = []
+    for t in tunnels or []:
+        p = t["p"]
+        if len(p) < 2:
+            continue
+        for a, b in ((p[0], p[1]), (p[-1], p[-2])):
+            l = math.dist(a[:2], b[:2]) or 1
+            ends.append((a[0], a[1], (a[0] - b[0]) / l, (a[1] - b[1]) / l))
+    if not ends:
+        return None
+
+    def test(seg, i):
+        x, y = seg[i]
+        u, v = seg[max(0, i - 1)], seg[min(len(seg) - 1, i + 1)]
+        l = math.dist(u, v) or 1
+        wx, wy = (v[0] - u[0]) / l, (v[1] - u[1]) / l
+        for ex, ey, ox, oy in ends:
+            out, across = (x - ex) * ox + (y - ey) * oy, abs(-(x - ex) * oy + (y - ey) * ox)
+            if -2.0 <= out <= reach and across <= beside and abs(wx * ox + wy * oy) >= 0.8:
+                return True
         return False
     return test
 
@@ -4509,7 +4542,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                               (water, rails + canal_lines,
                                [(Polygon(w["r"][0]), w["z"]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]),
                               lidar_tall(sq), carried,
-                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True)))
+                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))))
     hold_steep_streets(rd, T)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])

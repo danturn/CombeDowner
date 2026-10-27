@@ -1,10 +1,12 @@
 """Tunnels you can walk through: the bored part of any road or path the map data flags as a tunnel.
 
 Overture marks a stretch of a segment as a tunnel (road_flags is_tunnel, level -1). prep_map.py
-carries its floor in a straight line between the ground at either end. Here each tunnel stretch is
-split where the hill gets deep enough over it to need a bore: the ends, out in the open or in a
-cutting, stay roads (the terrain is cut down to them), and the bored middle becomes a tunnel the
-game builds as an arched tube with a stone portal at each end (web/src/tunnels.ts). Short
+carries its floor in a straight line between the road at either end. The ground over a tunnel is
+just ground: the survey's, unbroken over the bore, with whatever is on it laid on it as anywhere
+else. The bore is cut beneath it, from where the road meets the hill face (the ground a whole arch
+over the floor) to where it comes out; the ends of the data's stretch outside that, out in the open
+or in a cutting, stay roads (the terrain is cut down to them), and the game builds the bore as an
+arched tube with a stone headwall at each portal (web/src/tunnels.ts). Short
 underpasses with little ground over them never get deep enough and stay ordinary roads, and nor
 does one under bridges: the survey keeps the decks of the ways crossing over it as ground, but a
 deck is not cover (`rebore`). A lane or path crossing over a tunnel that the data does not call a
@@ -24,8 +26,8 @@ CROWN = 5.2     # floor to the top of the arch
 COVER = 1.0     # ground over the arch where the bore starts
 MIN_BORE = 15   # metres: anything shorter stays a road
 CUT = 3.0       # the cutting's floor reaches this far past each tunnel wall, as wide as the portal
-INTO = 5.0      # the cutting carries on this far into the bore, behind the portal, so the
-                # terrain's slope up onto the hill falls inside the tube, where the game hides it
+INTO = 0.0      # the cutting carries on this far into the bore, behind the portal: none, as the
+                # ground over a tunnel is left whole and the game hides it inside the tube's mouth
 OVER = 5.0      # metres across from a tunnel's centre line that a way above it counts as passing over
 ABOVE = 2.5     # a bridge this far over the floor passes over it rather than meeting it: less than
                 # a deck's headroom, as a floor carried straight under a junction can sit metres high
@@ -33,19 +35,36 @@ FILL = 1.0      # ground between two decks no more than this above them is the j
 
 
 def bores(run, z, ranges, elev, decks=()):
-    """Index ranges [i0, i1] of run (points [x, y, t]) that are bored: within a tunnel stretch and
-    with at least CROWN + COVER of hill over the floor z, from the first such point to the last.
-    `decks` are the points with another way's deck over them, which is not hill (`decked`)."""
+    """Index ranges [i0, i1] of run (points [x, y, t]) that are bored: within a tunnel stretch with
+    at least CROWN + COVER of hill over the floor z somewhere, from the first point where the ground
+    stands a whole arch over the floor (the hill face) to the last. `decks` are the points with
+    another way's deck over them, which is not hill (`decked`). Stretches that meet end to end (the
+    data's tunnel split where a way joins over it) are one tunnel."""
     out = []
-    for a, b in ranges:
-        inside = [i for i, (_, _, t) in enumerate(run) if a <= t <= b]
+    for inside in _joined(run, ranges):
         on_deck = decked(run, inside, decks, elev)
-        deep = [i for i in inside if i not in on_deck and elev(*run[i][:2]) - z[i] >= CROWN + COVER]
-        if not deep: continue
-        i0, i1 = deep[0], deep[-1]
+        hill = [i for i in inside if i not in on_deck]
+        if not any(elev(*run[i][:2]) - z[i] >= CROWN + COVER for i in hill):
+            continue
+        face = [i for i in hill if elev(*run[i][:2]) - z[i] >= CROWN]
+        i0, i1 = face[0], face[-1]
         if math.dist(run[i0][:2], run[i1][:2]) >= MIN_BORE:
             out.append((i0, i1))
     return out
+
+
+def _joined(run, ranges):
+    """The run's points in each tunnel stretch (as index lists), stretches that touch made one."""
+    groups = []
+    for a, b in sorted(ranges):
+        inside = [i for i, (_, _, t) in enumerate(run) if a <= t <= b]
+        if not inside:
+            continue
+        if groups and inside[0] <= groups[-1][-1] + 1:
+            groups[-1] = sorted(set(groups[-1]) | set(inside))
+        else:
+            groups.append(inside)
+    return groups
 
 
 def decked(run, inside, decks, elev):

@@ -331,6 +331,7 @@ import tunnels as TN
 roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
 flat_z = grid.copy()
+SURVEY = grid.copy()                   # the ground before any road is laid on it
 flat_in = np.zeros(grid.shape, dtype=bool)   # the vertex is inside a road's carriageway (not just its easing)
 flat_f = np.zeros(grid.shape)          # how far out from that road's centre line the ground is flat (the verge's edge)
 SLOPE = 1.5                            # the ground eases from a road's level to its own over this many metres per metre of difference
@@ -675,10 +676,11 @@ smooth_network()
 
 # an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
 # crosses over it is carried over as a bridge (Overture seldom marks the road on top), with the
-# cutting as wide as the road in it
+# cutting as wide as the road in it. Not the ends of a tunnel that is bored: those are its road
+# coming out of the hill face, and what passes near them is on the ground over the tunnel
 underpasses = []
 for k, r in enumerate(pending):
-    if not r["tunnel_ranges"]: continue
+    if not r["tunnel_ranges"] or r["bored"]: continue
     shallow = sorted(in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)})
     # (each unbroken stretch on its own: the cuttings at either end of a bored tunnel are two)
     runs_ = [[]]
@@ -1229,14 +1231,15 @@ if afloat: carry_spans(True)      # (the footbridges too)
 # a road the data lays right on top of another, well above it (a lane along the top of a cutting
 # drawn over the road down in it, or a path whose bridge the data stops short of the road it
 # crosses), is on a bridge there: the ground is the lower road's. Over a bored tunnel the ground is
-# the hill over its roof, and a way on it stays on the ground
+# the hill over its roof, and a way on it stays on the ground; and a path along the top of a
+# cutting's side, over the road's verge, is beside it, not on it
 stacked = 0
 for k, r in enumerate(pending):
     if r["c"] in PATHS and r["c"] in ("steps", "pedestrian"): continue
     for j in road_tree.query(road_lines[k].buffer(4.0)):
         o = pending[int(j)]
         if int(j) == k or o["c"] in PATHS: continue
-        half_ = RW.get(o["c"], 4) / 2
+        half_ = RW.get(o["c"], 4) / 2 - (1.5 if r["c"] in PATHS else 0.0)    # (structures.VERGE)
         line_ = road_lines[int(j)]
         for i, q in enumerate(r["run"]):
             if i in r["span"] or i in r["deck"] or i in r["tow"]: continue
@@ -1358,6 +1361,21 @@ k = np.clip((flat_w - flat_f) / ease, 0, 1)
 k = k * k * (3 - 2 * k)
 k[np.isinf(flat_w)] = 1
 grid = flat_z * (1 - k) + grid * k
+# the ground over a tunnel is the hill's, whole: the cut down to the road at each portal, and the
+# easing out from it, stop at the hill face, and the game hides the hill inside the tube's mouth
+for r in pending:
+    for i0, i1 in r["bored"]:
+        bore = shapely.LineString([q[:2] for q in r["run"][i0:i1 + 1]])
+        if bore.length < 4: continue
+        win, inn = cover_xy(bore.buffer(TN.HALF + TN.CUT + 1.0, cap_style=2))
+        gx, gy = GX[win][inn], GY[win][inn]
+        along = shapely.line_locate_point(bore, shapely.points(gx, gy))
+        under = (along > 1.0) & (along < bore.length - 1.0)
+        blk = grid[win]
+        sub = blk[inn]
+        dug = under & (sub < SURVEY[win][inn] - 0.5)
+        sub[dug] = SURVEY[win][inn][dug]
+        blk[inn] = sub
 
 
 def gelev0(x, y):
