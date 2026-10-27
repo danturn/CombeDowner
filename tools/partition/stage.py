@@ -202,7 +202,13 @@ def main(argv):
         jobs_ = [(a, b, out_dir, once, city, os.path.join(base, name((a, b)) + ".json")) for a, b in todo]
         done, missed = [], 0
         with ProcessPoolExecutor(jobs) as pool:
-            for r in pool.map(write, jobs_):
+            # the biggest squares start first; results are taken in square order, which the seams use
+            part = lambda j: os.path.join(city, name((j[0], j[1])), "partition.json")
+            size = lambda j: os.path.getsize(part(j)) if os.path.exists(part(j)) else 0
+            futures = {}
+            for k in sorted(range(len(jobs_)), key=lambda k: -size(jobs_[k])):
+                futures[k] = pool.submit(write, jobs_[k])
+            for r in (futures[k].result() for k in range(len(jobs_))):
                 t = tuple(r["square"])
                 if "failed" in r:
                     print(f"  {name(t)} FAILED ({r['failed']}): left as prep_map built it", flush=True)

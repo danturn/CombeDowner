@@ -125,11 +125,22 @@ def _undouble(runs, ground, gate_ends=()):
             if j == i or not _same_way(s, t):
                 continue
             c = seg_lines[n].intersection(near_c[m]).length
-            w = seg_lines[n].intersection(near_n[m]).length
+            band = seg_lines[n].intersection(near_n[m])
+            w = band.length
             st = stats.setdefault((i, j), [0.0, 0.0, []])
             st[0] += c
             st[1] += w - c
-            st[2].append(seg_lines[n].intersection(near_n[m]))
+            st[2].append(band)
+    ends = [Point(e) for e in gate_ends]
+    etree = STRtree(ends) if ends else None
+    by_gate = {}
+
+    def at_gate(i):
+        if i not in by_gate:
+            by_gate[i] = etree is not None and any(
+                lines[i].distance(ends[int(k)]) < 0.3
+                for k in etree.query(lines[i], predicate="dwithin", distance=1.0))
+        return by_gate[i]
     covers = {}
     for (i, j), (c, w, parts) in stats.items():
         if runs[j]["_k"] <= runs[i]["_k"]:
@@ -142,7 +153,7 @@ def _undouble(runs, ground, gate_ends=()):
         # a short run lying wholly along another is a double however short it is: boundaries that meet
         # at a junction in a cluster leave pairs of stubs, none of them 2 m long
         whole = (c + w >= WHOLLY * lines[i].length and c >= WHOLLY_LENGTH
-                 and not any(lines[i].distance(Point(e)) < 0.3 for e in gate_ends))
+                 and not at_gate(i))
         if c > DOUBLED_LENGTH or w > APART_LENGTH or whole:
             covers.setdefault(i, []).append((j, parts))
     if not covers:

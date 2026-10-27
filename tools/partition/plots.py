@@ -286,6 +286,7 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
         return []
     cos_tol = math.cos(math.radians(ang_tol))
     used = [False] * len(segs)
+    ends = np.array([[s[0], s[-1]] for s in segs])
     out = []
     for i in range(len(segs)):
         if used[i]:
@@ -297,7 +298,9 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
             changed = False
             a, b = pts[0], pts[-1]
             d = b - a; d = d / (np.hypot(*d) or 1)
-            for j in range(len(segs)):
+            # only a run with an end near one of ours can join; the test below decides, in order
+            reach = np.minimum(np.hypot(*(ends - a).T), np.hypot(*(ends - b).T)).min(axis=0)
+            for j in np.nonzero(reach <= gap + 0.01)[0]:
                 if used[j]:
                     continue
                 c, e = segs[j][0], segs[j][-1]
@@ -312,7 +315,7 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
     return out
 
 
-def _uncovered(block, line, parcel_lines, par_tree, start):
+def _uncovered(block, line, parcel_lines, par_tree, start, memo=None):
     """The part of a candidate division line that the registered boundaries do not already run
     along: the line with the buffer of every nearby title line subtracted, and only the pieces at
     least DIV_MIN long that start on the wall, so a division begins on the building it divides.
@@ -326,7 +329,19 @@ def _uncovered(block, line, parcel_lines, par_tree, start):
     near = [parcel_lines[int(k)] for k in np.atleast_1d(par_tree.query(line.buffer(PARCEL_ON * 2)))]
     if not near:
         return [line]
-    cut = line.difference(unary_union([l.buffer(PARCEL_ON) for l in near]))
+    if memo is None:
+        memo = {}
+    key = tuple(id(l) for l in near)
+    cover = memo.get(key)
+    if cover is None:
+        bufs = []
+        for l in near:
+            b = memo.get(id(l))
+            if b is None:
+                b = memo[id(l)] = l.buffer(PARCEL_ON)
+            bufs.append(b)
+        cover = memo[key] = unary_union(bufs)
+    cut = line.difference(cover)
     pieces = [cut] if cut.geom_type == "LineString" else \
         [x for x in getattr(cut, "geoms", []) if x.geom_type == "LineString"]
     out = []
@@ -335,7 +350,7 @@ def _uncovered(block, line, parcel_lines, par_tree, start):
             continue
         if min(Point(p.coords[0]).distance(start), Point(p.coords[-1]).distance(start)) > 1.0:
             continue                    # it does not begin on the wall, so it begins in mid-air
-        clipped = p.intersection(block.buffer(1.0))
+        clipped = p.intersection(_buffered(block, 1.0))
         if not clipped.is_empty and clipped.length > 0.1:
             out.append(clipped)
     return out
@@ -387,7 +402,7 @@ def side_wall_lines(geoms, fbt, parcel_of):
     return out
 
 
-def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None):
+def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None, memo=None):
     """Candidate division lines for a block. From each shared wall between two houses, and from each
     free side wall of a detached or end house, a line square to the house's front running back from
     the wall to the block's far side. Between houses that do not share a wall, the perpendicular
@@ -396,12 +411,15 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
     Every line is then trimmed by the registered boundaries' own coverage (`_uncovered`): a rule's
     division is not drawn along a line the survey already draws, but where the title stops the rule
     carries on, so a front split by a title line is split by the rule too."""
+    # keyed by object identity, so it must never outlive the parcel lines it was filled from
+    memo = {} if memo is None else memo
     tree = STRtree(geoms)
     lines = []
+    walls = []
     for i, m, back, shared in side_wall_lines(geoms, fbt, parcel_of):
         line = _back(block, m, back)
         if not line.is_empty:
-            lines += _uncovered(block, line, parcel_lines, par_tree, Point(m))
+            lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
         # in index order, not the index's order: `near` below breaks a distance tie by which house it
@@ -420,9 +438,11 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
             near = j if h.distance(Point(m)) < g.distance(Point(m)) else i
             f = fbt[near]
             b = f if abs(np.dot(gap, f)) < 0.7 else np.array([-f[1], f[0]])
-            line = _through(block, m, b, geoms)
+            if not walls:
+                walls.append(unary_union([g.boundary for g in geoms]).buffer(-0.05))
+            line = _through(block, m, b, geoms, walls[0])
             if not line.is_empty:
-                lines += _uncovered(block, line, parcel_lines, par_tree, Point(m))
+                lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
     return [l for l in lines if not l.is_empty and l.length > 1]
 
 
@@ -460,14 +480,15 @@ def _back(block, p, d):
     return min(pieces, key=lambda g: Point(g.coords[0]).distance(Point(p))) if pieces else LineString()
 
 
-def _through(block, p, d, geoms):
+def _through(block, p, d, geoms, inset=None):
     """The line through p in direction d, dropped where it meets a building, so a division between
     the houses starts on a wall rather than crossing the gap in mid-air. Both ways are taken."""
-    walls = unary_union([g.boundary for g in geoms])
+    if inset is None:
+        inset = unary_union([g.boundary for g in geoms]).buffer(-0.05)
     out = []
     for sgn in (1, -1):
         ln = LineString([tuple(p), tuple(p + d * _long(block) * sgn)])
-        cut = ln.intersection(block).difference(walls.buffer(-0.05))
+        cut = ln.intersection(block).difference(inset)
         pieces = [cut] if cut.geom_type == "LineString" else \
             [g for g in getattr(cut, "geoms", []) if g.geom_type == "LineString" and len(g.coords) > 1]
         pieces = [g for g in pieces if len(g.coords) > 1]
@@ -629,7 +650,8 @@ def ring_adjacency(faces, lines, log=None):
             cs = list(r.coords)
             for a, b in zip(cs, cs[1:]):
                 ring[_edge_key(a, b)].add(fi)
-    ftree = STRtree([f.boundary for f in faces]) if faces else None
+    bounds = [f.boundary for f in faces]
+    ftree = STRtree(bounds) if faces else None
 
     pieces, sa, sb = [], [], []
     fallback = 0
@@ -651,7 +673,7 @@ def ring_adjacency(faces, lines, log=None):
         fs = []
         for k in cand:
             try:
-                seg = piece.intersection(faces[k].boundary)
+                seg = piece.intersection(bounds[k])
             except Exception:
                 continue
             if not seg.is_empty and seg.length > 0.5 * piece.length:
@@ -711,7 +733,7 @@ def _inscribed_width(poly):
         return None
 
 
-def _frontage_parcels(par_lines, region, B=None, bunion=None):
+def _frontage_parcels(par_lines, region, B=None, bunion=None, street=None):
     """Registered boundaries with the stretches that run just inside the street taken off, and the
     ends left by that carried on to the street's edge.
 
@@ -727,12 +749,8 @@ def _frontage_parcels(par_lines, region, B=None, bunion=None):
     Only the street counts: the region's edge along a house or along the worked area's edge is not a
     frontage, and pulling a registered line onto the worked area's edge moved a garden 0.37 m off the
     square's edge, leaving a stub over the edge too short to walk."""
-    polys = region.geoms if region.geom_type == "MultiPolygon" else [region]
-    street = unary_union([p.exterior for p in polys])
-    if B is not None:
-        street = street.difference(B.boundary.buffer(0.01))
-    if bunion is not None and not bunion.is_empty:
-        street = street.difference(bunion.buffer(0.01))
+    if street is None:
+        street = _street_edge(region, B, bunion)
     if street.is_empty:
         return par_lines
     zone = street.buffer(SLIVER_WIDTH).intersection(region)
@@ -777,8 +795,22 @@ def _street_edge(region, B=None, bunion=None):
     if B is not None:
         street = street.difference(B.boundary.buffer(0.01))
     if bunion is not None and not bunion.is_empty:
-        street = street.difference(bunion.buffer(0.01))
+        street = street.difference(_buffered(bunion, 0.01))
     return street
+
+
+_BUFFERED = {}
+
+
+def _buffered(g, d):
+    """g.buffer(d), kept while g is the same object: a task divides every piece against one union of
+    its window's buildings, and buffering that union once per piece was a fifth of the work."""
+    hit = _BUFFERED.get((id(g), d))
+    if hit is None or hit[0] is not g:
+        if len(_BUFFERED) > 8:
+            _BUFFERED.clear()
+        hit = _BUFFERED[(id(g), d)] = (g, g.buffer(d))
+    return hit[1]
 
 
 def _directions(line, d):
@@ -799,25 +831,47 @@ def _twin_stretches(line, held, tree, ways_tree, ways):
         return []
     d = np.linspace(0.0, L, max(2, int(L / TWIN_STEP) + 1))
     pts = shapely.line_interpolate_point(line, d)
-    mine = _directions(line, d)
     hit = np.zeros(len(d), bool)
     pi, hi = tree.query(pts, predicate="dwithin", distance=TWIN)
-    for p, h in zip(pi, hi):
-        if hit[p]:
-            continue
-        other = held[int(h)]
-        t = other.project(pts[p])
-        q = other.interpolate(t)
-        u = _directions(other, np.array([t]))[0]
-        if abs(mine[p] @ u) < math.cos(TWIN_ANGLE):
-            continue
-        # a mapped footway between the two is a real passage, and both its sides stand
-        if ways_tree is not None:
-            gap = LineString([pts[p], q])
-            if gap.length > 0.2 and any(ways[int(w)].distance(gap.interpolate(0.5, normalized=True)) < 0.3
-                                        for w in ways_tree.query(gap)):
+    mine = np.zeros((len(d), 2))
+    near = np.unique(pi)
+    if len(near):
+        mine[near] = _directions(line, d[near])
+    others = np.empty(len(held), dtype=object)
+    others[:] = held
+    # A point stops at its first pair that holds, so the pairs are taken a round at a time - each
+    # point's first pair, then the second of those still open - and each round's GEOS calls are made
+    # together. Within a point the pairs keep the order the index gave them.
+    by_point = np.argsort(pi, kind="stable")
+    ps = pi[by_point]
+    first = np.r_[True, ps[1:] != ps[:-1]] if len(ps) else np.zeros(0, bool)
+    at = np.arange(len(ps))
+    rank = np.empty(len(pi), int)
+    rank[by_point] = at - np.maximum.accumulate(np.where(first, at, 0)) if len(ps) else at
+    for r in range(int(rank.max()) + 1 if len(rank) else 0):
+        sel = np.nonzero((rank == r) & ~hit[pi])[0]
+        if not len(sel):
+            break
+        sp, sh = pi[sel], others[hi[sel]]
+        ts = shapely.line_locate_point(sh, pts[sp])
+        qs = shapely.line_interpolate_point(sh, ts)
+        lens = shapely.length(sh)
+        ua = shapely.line_interpolate_point(sh, np.maximum(ts - 0.25, 0.0))
+        ub = shapely.line_interpolate_point(sh, np.minimum(ts + 0.25, lens))
+        uv = shapely.get_coordinates(ub) - shapely.get_coordinates(ua)
+        un = np.hypot(uv[:, 0], uv[:, 1])
+        un[un < 1e-9] = 1.0
+        uv = uv / un[:, None]
+        for m, p in enumerate(sp):
+            if abs(mine[p] @ uv[m]) < math.cos(TWIN_ANGLE):
                 continue
-        hit[p] = True
+            # a mapped footway between the two is a real passage, and both its sides stand
+            if ways_tree is not None:
+                gap = LineString([pts[p], qs[m]])
+                if gap.length > 0.2 and any(ways[int(w)].distance(gap.interpolate(0.5, normalized=True)) < 0.3
+                                            for w in ways_tree.query(gap)):
+                    continue
+            hit[p] = True
     runs, start = [], None
     for k in range(len(d)):
         if hit[k] and start is None:
@@ -1017,10 +1071,11 @@ def _merged_ground(recut, faces, face_label, floor=1.0, strip=2.0):
     return leaks
 
 
-def _recut(region, lines, faces, face_label):
+def _recut(region, lines, faces, face_label, recut=None):
     """The block cut again along `lines`, each new face keeping the label of the old face it mostly
     covers. Returns (faces, labels), or None when the cut came to nothing."""
-    recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]
+    if recut is None:
+        recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]
     if not recut:
         return None
     old = STRtree(faces)
@@ -1162,30 +1217,10 @@ def _absorb_slivers(faces, face_label, pieces, side_a, side_b):
     return face_label
 
 
-def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
-               parcels=None, parent=None, log=print, sliver_ways=()):
-    """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
-    then goes to the building it is nearest to by path, and is a plot's if the growing reached it
-    within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
-    [(polygon, 'plot' or 'open', building index or None)], and edges as every segment of the noded
-    network with a label either side, [(LineString, label, label)].
-
-    `parcels` (a Parcels, or None where a map has none) are the registered property extents. Their
-    boundaries join the cuts as evidence of the highest trust, and a face is a house's plot only
-    inside that house's own parcel: so a plot is the parcel the house stands in, divided among the
-    houses in it, and never spills next door. Where a house's title is not registered nothing
-    changes, and the stage 1 divisions divide the block as they always did."""
-    # The *region* is what is cut and polygonized: the parent block when the caller gives one, so the
-    # same lines and the same faces whichever worked piece or square is asking - which is the point
-    # of stage 3b. `block` is then only the worked piece, and it decides two things: which houses
-    # seed the growing, and which open ground this piece writes out.
-    #
-    # Cutting the *piece* instead puts its outline into the line network, so a big open face at the
-    # edge of the block is sliced by a line that is not a boundary in the ground, and the sliver
-    # nearest a house is swallowed into a plot: measured, stage 3's largest open face was 93,221 m²
-    # against 44,099 m² when the piece was cut, and 147 drawn edges lay along piece outlines where no
-    # real boundary runs.
-    region = parent if parent is not None else block
+def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion, B, parcels, log):
+    """Everything `make_plots` does to the region before it knows which piece is asking: the cuts,
+    the faces and their adjacency, and the front re-cut's lines. None of it reads the piece, so the
+    pieces of one parent block divided from one window share it."""
     shapely.prepare(region)
     btree0 = STRtree([b for _, b in buildings])
     # Sorted by global building index before anything uses it. An STRtree's `query` returns items in an
@@ -1198,16 +1233,6 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     inside = sorted((buildings[k] for k in btree0.query(region.buffer(0.5))
                      if buildings[k][1].distance(region) < 0.5),
                     key=lambda ib: ib[0])
-    # the piece's own houses: the only ones that may seed the growing. Two houses in different pieces
-    # of one block are at least 2 * REACH_GROW apart (a piece is the block within REACH_GROW of its
-    # houses), which is beyond any plot's reach, so they can never compete for a face.
-    # the piece's own houses, as *global building indices*. `btree0.query` returns positions in
-    # `buildings`, and a position is not a building index when the caller passes a window's subset
-    # (pass 2 does), so the position is mapped back through `buildings` - the seed test below
-    # compares against `inside[i][0]`, which is a global index.
-    mine = {buildings[k][0] for k in btree0.query(block.buffer(0.5))
-            if buildings[k][1].distance(block) < 0.5}
-
     # evidence runs near the block, carried EXTEND past each end so they close faces
     # Sorted by geometry: `ev_tree.query` returns them in an order that depends on how the tree was
     # built, and `unary_union` below nodes them differently when the order changes (measured: 46 plots
@@ -1252,7 +1277,8 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
 
     cuts, back_cuts, caps = [], [], []
     if inside:
-        cuts = house_divisions(region, geoms, fbt, parcel_of, par_lines, par_tree)
+        cuts = house_divisions(region, geoms, fbt, parcel_of, par_lines, par_tree,
+                               parcels.__dict__.setdefault("_memo", {}) if parcels is not None else None)
         if not cuts and not par_lines:
             pts = []
             for b in geoms:
@@ -1298,6 +1324,68 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
                     cost = CROSS
             adj[a].append((b, cost)); adj[b].append((a, cost))
     log(f"      {len(pieces)} pieces, {sum(len(v) for v in adj.values()) // 2} adjacency links")
+
+    street = _street_edge(region, B, bunion)
+    front_pl = _frontage_parcels(par_lines, region, B, bunion, street)
+    front_lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
+    recut = [f for f in polygonize(front_lines) if region.contains(f.representative_point())]
+    # A line can only give way to one that bounds ground here. A stronger line just outside the
+    # block, or the loose end of one inside it, divides nothing: the ground either side of the weaker
+    # line would merge (measured: a 25,000 m2 garden became open land with the field beside it).
+    net = unary_union([f.boundary for f in (recut or faces)]).buffer(0.02)
+    shapely.prepare(net)
+    return dict(btree0=btree0, inside=inside, ev=ev, geoms=geoms, gidx=gidx, fbt=fbt, par_lines=par_lines,
+                par_tree=par_tree, parcel_of=parcel_of, covered=covered, cuts=cuts, back_cuts=back_cuts,
+                caps=caps, backs=backs, lines=lines, faces=faces, pieces=pieces, side_a=side_a,
+                side_b=side_b, adj=adj, street=street, front_pl=front_pl, front_lines=front_lines,
+                recut=recut, net=net)
+
+
+def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
+               parcels=None, parent=None, log=print, sliver_ways=(), shared=None):
+    """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
+    then goes to the building it is nearest to by path, and is a plot's if the growing reached it
+    within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
+    [(polygon, 'plot' or 'open', building index or None)], and edges as every segment of the noded
+    network with a label either side, [(LineString, label, label)].
+
+    `parcels` (a Parcels, or None where a map has none) are the registered property extents. Their
+    boundaries join the cuts as evidence of the highest trust, and a face is a house's plot only
+    inside that house's own parcel: so a plot is the parcel the house stands in, divided among the
+    houses in it, and never spills next door. Where a house's title is not registered nothing
+    changes, and the stage 1 divisions divide the block as they always did."""
+    # The *region* is what is cut and polygonized: the parent block when the caller gives one, so the
+    # same lines and the same faces whichever worked piece or square is asking - which is the point
+    # of stage 3b. `block` is then only the worked piece, and it decides two things: which houses
+    # seed the growing, and which open ground this piece writes out.
+    #
+    # Cutting the *piece* instead puts its outline into the line network, so a big open face at the
+    # edge of the block is sliced by a line that is not a boundary in the ground, and the sliver
+    # nearest a house is swallowed into a plot: measured, stage 3's largest open face was 93,221 m²
+    # against 44,099 m² when the piece was cut, and 147 drawn edges lay along piece outlines where no
+    # real boundary runs.
+    region = parent if parent is not None else block
+    cut = shared.get("cut") if shared is not None else None
+    if cut is None:
+        cut = _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion, B, parcels, log)
+        if shared is not None:
+            shared["cut"] = cut
+    btree0, inside, ev, geoms, gidx = cut["btree0"], cut["inside"], cut["ev"], cut["geoms"], cut["gidx"]
+    fbt, par_lines, par_tree, parcel_of = cut["fbt"], cut["par_lines"], cut["par_tree"], cut["parcel_of"]
+    cuts, back_cuts, caps, backs = cut["cuts"], cut["back_cuts"], cut["caps"], cut["backs"]
+    lines, pieces, side_a, side_b, adj = cut["lines"], cut["pieces"], cut["side_a"], cut["side_b"], cut["adj"]
+    # `_absorb_plot_slivers` replaces faces in the list it is given
+    faces = list(cut["faces"])
+    # the piece's own houses: the only ones that may seed the growing. Two houses in different pieces
+    # of one block are at least 2 * REACH_GROW apart (a piece is the block within REACH_GROW of its
+    # houses), which is beyond any plot's reach, so they can never compete for a face.
+    # the piece's own houses, as *global building indices*. `btree0.query` returns positions in
+    # `buildings`, and a position is not a building index when the caller passes a window's subset
+    # (pass 2 does), so the position is mapped back through `buildings` - the seed test below
+    # compares against `inside[i][0]`, which is a global index.
+    mine = {buildings[k][0] for k in btree0.query(block.buffer(0.5))
+            if buildings[k][1].distance(block) < 0.5}
+
 
     # region growing: seeds are the faces a building stands in, then Dijkstra over face-centroid
     # distances, crossing an evidence line costing CROSS metres more. A face within SEED_REACH of two
@@ -1374,19 +1462,11 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # land and 13,000 m2 moved next door. Re-cut here, each face keeps the owner of the face it
     # mostly is, and the strip just joins whichever garden it lies in front of. The same then goes
     # for every pair of sources tracing one fence (`_one_boundary`), judged against these faces.
-    street = _street_edge(region, B, bunion)
-    front_pl = _frontage_parcels(par_lines, region, B, bunion)
-
-    front_lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
-    base = _recut(region, front_lines, faces, face_label)
+    street, front_pl, front_lines, net = cut["street"], cut["front_pl"], cut["front_lines"], cut["net"]
+    base = _recut(region, front_lines, faces, face_label, recut=list(cut["recut"]))
     if base:
         faces, face_label = base
         lines = front_lines
-    # A line can only give way to one that bounds ground here. A stronger line just outside the
-    # block, or the loose end of one inside it, divides nothing: the ground either side of the weaker
-    # line would merge (measured: a 25,000 m2 garden became open land with the field beside it).
-    net = unary_union([f.boundary for f in faces]).buffer(0.02)
-    shapely.prepare(net)
     twins = _one_boundary([[street], ev, front_pl, list(cuts), list(back_cuts), list(caps)],
                           ways=sliver_ways, net=net)
     # in the order the first cut used: the noding, and so the faces, depend on it

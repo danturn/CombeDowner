@@ -150,7 +150,8 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     # division rather than only this square's side of it
     prof, layers = {}, []
     for k, (e, car, pl, pr) in enumerate(corridors):
-        prof[k] = road_profile(e, T)
+        if not QUICK:
+            prof[k] = road_profile(e, T)
         cls = "carriageway" if e["cls"] not in PATHS else "path"
         for g, c in ((car, cls), (pl, "pavement"), (pr, "pavement")):
             layers.append((g, c, k))
@@ -188,7 +189,8 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     lap("edges"); print(f"  4. assembled: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, "
                         f"{len(pedges)} edges")
-    lap("triangulating"); tris, bad = surface(faces, T, prof)
+    # the triangles are only counted for the metrics, and the game's ground comes from the writer
+    lap("triangulating"); tris, bad = ([], 0) if QUICK else surface(faces, T, prof)
     covered = unary_union([g for g, _, _ in faces])
     holes = SQ.difference(covered)
     hole_area = holes.area
@@ -269,7 +271,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,
         held_out=held,
-        surface_triangles=len(tris), surface_uncovered_m2=round(hole_area, 1),
+        surface_triangles=None if QUICK else len(tris), surface_uncovered_m2=round(hole_area, 1),
         surface_uncovered_at=[[round(g.centroid.x, 1), round(g.centroid.y, 1), round(g.area, 2)]
                               for g in getattr(holes, "geoms", [holes]) if g.area > 0.005],
         surface_overlap_m2=round(overlap, 1),

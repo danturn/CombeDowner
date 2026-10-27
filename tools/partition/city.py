@@ -310,7 +310,17 @@ def main(argv=None):
     jobs = [(ti, tj, OUT, a.raw, terrain, a.once) for ti, tj in wanted]
     rows = []
     with ProcessPoolExecutor(a.jobs) as pool:
-        for n, r in enumerate(pool.map(one, jobs), 1):
+        # the busiest squares start first, so the pool doesn't end waiting on one; rows come back in
+        # square order whatever order they ran in
+        def load(job):
+            ti, tj = job[0], job[1]
+            return sum(os.path.getsize(p) for a_, b_ in neighbours(ti, tj)
+                       for p in (os.path.join(a.once, f"{a_}_{b_}", "blocks.json"),)
+                       if os.path.exists(p))
+        futures = {}
+        for k in sorted(range(len(jobs)), key=lambda k: -load(jobs[k])):
+            futures[k] = pool.submit(one, jobs[k])
+        for n, r in enumerate((futures[k].result() for k in range(len(jobs))), 1):
             rows.append(r)
             if "failed" in r:
                 print(f"[{n}/{len(jobs)}] {r['square'][0]}_{r['square'][1]} FAILED "

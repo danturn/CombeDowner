@@ -31,6 +31,7 @@ every list written is sorted by a geometric key, so the result does not depend o
 ran or in what order.
 """
 import collections
+import copy
 import glob
 import json
 import os
@@ -224,15 +225,39 @@ def write_parents(out, blocks):
     return blocks
 
 
+_READ = {}
+
+
+def _read_once(paths, parse):
+    """`parse()` of files a pass wrote, kept for the process while the files are unchanged: a pool
+    worker takes many tasks, and each used to parse the same city-wide files again."""
+    key = tuple((p, os.stat(p).st_mtime_ns, os.stat(p).st_size) for p in paths)
+    hit = _READ.get(key)
+    if hit is None:
+        for k in [k for k in _READ if [p for p, _m, _s in k] == list(paths)]:
+            del _READ[k]
+        hit = _READ[key] = parse()
+    return hit
+
+
+def read_pieces(out):
+    """The worked pieces pass 2 wrote, in file order."""
+    return list(_read_once([blocks_path(out)], lambda: [_poly_from(r["xy"]) for r in json.load(open(blocks_path(out)))]))
+
+
 def read_parents(out, win=None):
     """The parent blocks, all of them or only those touching a window."""
-    rows = json.load(open(parents_path(out)))
-    out_blocks = [_poly_from(r["xy"]) for r in rows]
+    rows, out_blocks = _read_once([parents_path(out)], lambda: _parse_parents(out))
     if win is None:
-        return out_blocks
+        return list(out_blocks)
     x0, y0, x1, y1 = win
     return [b for b, r in zip(out_blocks, rows)
             if r["k"][2] >= x0 and r["k"][0] <= x1 and r["k"][3] >= y0 and r["k"][1] <= y1]
+
+
+def _parse_parents(out):
+    rows = json.load(open(parents_path(out)))
+    return [dict(k=r["k"]) for r in rows], [_poly_from(r["xy"]) for r in rows]
 
 
 def cleaned_path(out):
@@ -262,12 +287,17 @@ def read_cleaned(out, win=None):
     building index - the same number in every process and every square. A plot carries one of these
     (pass 2 writes it, pass 3 reads it), and a house has to be the same house wherever it is read, so
     the index is into the file rather than into whatever window happens to be in hand."""
-    rows = json.load(open(cleaned_path(out)))
+    rows, polys = _read_once([cleaned_path(out)], lambda: _parse_cleaned(out))
     if win is None:
-        return [(i, _poly_from(r["xy"])) for i, r in enumerate(rows)]
+        return list(enumerate(polys))
     x0, y0, x1, y1 = win
-    return [(i, _poly_from(r["xy"])) for i, r in enumerate(rows)
-            if r["b"][2] >= x0 and r["b"][0] <= x1 and r["b"][3] >= y0 and r["b"][1] <= y1]
+    return [(i, g) for i, (r, g) in enumerate(zip(rows, polys))
+            if r[2] >= x0 and r[0] <= x1 and r[3] >= y0 and r[1] <= y1]
+
+
+def _parse_cleaned(out):
+    rows = json.load(open(cleaned_path(out)))
+    return [r["b"] for r in rows], [_poly_from(r["xy"]) for r in rows]
 
 
 # ---- pass 1: streets, once ----------------------------------------------------------------------
@@ -542,8 +572,16 @@ def read_corridors(out):
     corridor to know where the blocks are, and pass 3 reads them the same way. The polygons are
     made valid on the way in (a handful of offset polygons are not), because an invalid one makes the
     union of them all fail with a topology error."""
+    paths = sorted(glob.glob(os.path.join(out, "*", "corridors.json")))
+    # fresh containers each time, so nothing one task does to its rows reaches the next task's
+    return [(dict(e, sections=copy.deepcopy(e["sections"]), obs=copy.deepcopy(e["obs"]),
+                  struct=copy.deepcopy(e["struct"])), car, pl, pr)
+            for e, car, pl, pr in _read_once(paths, lambda: _parse_corridors(paths))]
+
+
+def _parse_corridors(paths):
     rows = []
-    for f in sorted(glob.glob(os.path.join(out, "*", "corridors.json"))):
+    for f in paths:
         for r in json.load(open(f)):
             e = dict(id=r["id"], cls=r["cls"], name=r["name"], path=r["path"],
                      line=LineString(r["line"]), struct=r.get("struct", {}),
@@ -570,7 +608,54 @@ def _parts(g):
     return list(g.geoms) if hasattr(g, "geoms") else [g]
 
 
-def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
+def _block_pieces(blk, buildings, btree, corner, ctree, cap):
+    """One block's worked pieces, as [(piece, over_cap)] (see `worked_pieces`)."""
+    out = []
+    # only the buildings that can reach this block, and the corridors that can carve it
+    near = blk.buffer(REACH_GROW)
+    # in index order: `bunion` is a unary_union of these, and a union's noding can depend on the
+    # order of its inputs (an STRtree's `query` order depends on how the index was built)
+    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near)))]
+    if not nb:
+        return []                           # no building near: no worked block, just open land
+    # The plan's definition, kept exactly: `block ∩ buffer(buildings, REACH_GROW)`, then the
+    # corridors and buildings taken out. The intersection with the block is the term that keeps
+    # each piece in its own block - without it every piece of ground is produced once per block
+    # whose buildings reach it, and the city comes out with 30 times the worked blocks it has
+    # (measured: 195,471 pieces and 420 km2 against 6,691 and 39.98 km2).
+    bunion = unary_union(nb)
+    grown = bunion.buffer(REACH_GROW).intersection(blk)
+    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown)))]
+    W = grown.difference(unary_union(nc) if nc else Polygon()).difference(bunion)
+    pieces = [p for p in _parts(W) if p.area > MIN_BLOCK]
+    for p in pieces:
+        # A worked block's outline must be a valid polygon before it is divided or written:
+        # GEOS's `difference` can leave a piece whose ring self-intersects, and rounding its
+        # coordinates to the file's precision can do the same (measured: 51 of 6,736 pieces,
+        # which failed 19 squares with "side location conflict"). `buffer(0)` is the repair GEOS
+        # itself recommends; it fixes the ring without moving the ground.
+        if not p.is_valid:
+            p = p.buffer(0)
+        for q in _parts(p):
+            if q.geom_type != "Polygon" or q.is_empty or q.area <= MIN_BLOCK:
+                continue
+            span = max(q.bounds[2] - q.bounds[0], q.bounds[3] - q.bounds[1])
+            out.append((q, span > cap))
+    return out
+
+
+_WP = {}
+
+
+def _wp_init(buildings, corner):
+    _WP.update(b=buildings, c=corner, bt=STRtree(buildings), ct=STRtree(corner))
+
+
+def _wp_block(blk, cap):
+    return _block_pieces(blk, _WP["b"], _WP["bt"], _WP["c"], _WP["ct"], cap)
+
+
+def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print, jobs=1):
     """The worked blocks of the whole map: the connected pieces of
     `block ∩ buffer(all buildings, REACH_GROW)`, where block is the complement of the corridors and
     the buildings. Returns [(piece, over_cap)] with `over_cap` set where a piece is wider than cap,
@@ -596,40 +681,20 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
     blocks = [p for p in _parts(W0) if p.area > MIN_BLOCK]
     log(f"  pass 2: {len(blocks)} blocks")
 
-    btree = STRtree(buildings)
-    ctree = STRtree(corner)
     out = []
-    for blk in blocks:
-        # only the buildings that can reach this block, and the corridors that can carve it
-        near = blk.buffer(REACH_GROW)
-        # in index order: `bunion` is a unary_union of these, and a union's noding can depend on the
-        # order of its inputs (an STRtree's `query` order depends on how the index was built)
-        nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near)))]
-        if not nb:
-            continue                            # no building near: no worked block, just open land
-        # The plan's definition, kept exactly: `block ∩ buffer(buildings, REACH_GROW)`, then the
-        # corridors and buildings taken out. The intersection with the block is the term that keeps
-        # each piece in its own block - without it every piece of ground is produced once per block
-        # whose buildings reach it, and the city comes out with 30 times the worked blocks it has
-        # (measured: 195,471 pieces and 420 km2 against 6,691 and 39.98 km2).
-        bunion = unary_union(nb)
-        grown = bunion.buffer(REACH_GROW).intersection(blk)
-        nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown)))]
-        W = grown.difference(unary_union(nc) if nc else Polygon()).difference(bunion)
-        pieces = [p for p in _parts(W) if p.area > MIN_BLOCK]
-        for p in pieces:
-            # A worked block's outline must be a valid polygon before it is divided or written:
-            # GEOS's `difference` can leave a piece whose ring self-intersects, and rounding its
-            # coordinates to the file's precision can do the same (measured: 51 of 6,736 pieces,
-            # which failed 19 squares with "side location conflict"). `buffer(0)` is the repair GEOS
-            # itself recommends; it fixes the ring without moving the ground.
-            if not p.is_valid:
-                p = p.buffer(0)
-            for q in _parts(p):
-                if q.geom_type != "Polygon" or q.is_empty or q.area <= MIN_BLOCK:
-                    continue
-                span = max(q.bounds[2] - q.bounds[0], q.bounds[3] - q.bounds[1])
-                out.append((q, span > cap))
+    if jobs > 1:
+        from concurrent.futures import ProcessPoolExecutor
+        # the blocks are independent, and their pieces are put back in block order
+        with ProcessPoolExecutor(jobs, initializer=_wp_init, initargs=(buildings, corner)) as pool:
+            order = sorted(range(len(blocks)), key=lambda k: -shapely.get_num_coordinates(blocks[k]))
+            futures = {k: pool.submit(_wp_block, blocks[k], cap) for k in order}
+            for k in range(len(blocks)):
+                out += futures[k].result()
+    else:
+        btree = STRtree(buildings)
+        ctree = STRtree(corner)
+        for blk in blocks:
+            out += _block_pieces(blk, buildings, btree, corner, ctree, cap)
     n_over = sum(1 for _p, over in out if over)
     if n_over:
         log(f"  pass 2: {n_over} worked blocks are over the {cap:.0f} m cap and are still built")
@@ -658,7 +723,7 @@ def pass_blocks(out, raw, jobs=4, log=print):
     del D
     t = time.time()
     clear_owned(out, "blocks.json")
-    pieces, blocks = worked_pieces(corridors, cleaned, bb, log=log)
+    pieces, blocks = worked_pieces(corridors, cleaned, bb, log=log, jobs=jobs)
     log(f"  pass 2: {len(pieces)} worked blocks in {time.time() - t:.0f}s")
     # the parent blocks are written once, so a task dividing a piece can cut the whole block it is a
     # fragment of: the region is then a real block, the same whichever piece is asking
@@ -682,7 +747,15 @@ def pass_blocks(out, raw, jobs=4, log=print):
         owned[square_of_point(p.representative_point())].append(n)
     tasks = [(ti, tj, sorted(ids), out, raw, bb) for (ti, tj), ids in sorted(owned.items())]
     log(f"  pass 2: {len(tasks)} squares own worked blocks")
-    return _run_pool(_fit_square_blocks, tasks, jobs, log, "pass 2")
+    # the biggest first, so the pool doesn't end waiting on one: a piece costs about as much as the
+    # parent block it cuts
+    ptree = STRtree(blocks)
+    def cost(p):
+        rp = p.representative_point()
+        return next((shapely.get_num_coordinates(blocks[int(k)]) for k in sorted(ptree.query(rp))
+                     if blocks[int(k)].contains(rp)), shapely.get_num_coordinates(p))
+    work = {(t[0], t[1]): sum(cost(pieces[n][0]) for n in t[2]) for t in tasks}
+    return _run_pool(_fit_square_blocks, tasks, jobs, log, "pass 2", order=lambda t: -work[(t[0], t[1])])
 
 
 def block_window_for(pieces, parents):
@@ -795,7 +868,7 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
             print(f"  pass 2: {ti}_{tj} already holds {written} rows, more than the {len(ids)} to "
                   f"write: leaving it (a partial task must not shrink a pass output)", flush=True)
             return ti, tj, written
-    whole = [_poly_from(r["xy"]) for r in json.load(open(blocks_path(out)))]
+    whole = read_pieces(out)
     mypieces = [whole[i] for i in ids]
     corridors = read_corridors(out)
     pieces_by_edge = {(e["id"]): (e, car, pl, pr) for e, car, pl, pr in corridors}
@@ -821,15 +894,25 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     # the same lines and faces come out whichever piece or square is dividing.
     parents = read_parents(out, win)
 
+    way_lines = [c[0]["line"] for c in corridors]
+    way_tree = STRtree(way_lines)
+    owner = [next((q for q in parents if q.contains(piece.representative_point())), None) for piece in mypieces]
+    left = collections.Counter(id(q) for q in owner if q is not None)
+    shared = {}
     rows = []
-    for n, piece in zip(ids, mypieces):
+    for n, piece, parent in zip(ids, mypieces, owner):
+        near_ways = sorted(int(k) for k in way_tree.query(piece, predicate="dwithin", distance=31))
         cx, cy = piece.representative_point().x, piece.representative_point().y
-        parent = next((q for q in parents if q.contains(piece.representative_point())), None)
         p, e = make_plots(piece, env["buildings"], env["ev_lines"], env["ev_tree"],
                           zone_at(cx, cy), env["axes"], env["fronts"], env["bunion"],
                           box(*bb), parcels=env["parcels"], parent=parent, log=lambda *_: None,
-                          sliver_ways=[c[0]["line"] for c in corridors
-                                       if c[0]["line"].distance(piece) < 30])
+                          sliver_ways=[way_lines[k] for k in near_ways
+                                       if way_lines[k].distance(piece) < 30],
+                          shared=None if parent is None else shared.setdefault(id(parent), {}))
+        if parent is not None:
+            left[id(parent)] -= 1
+            if not left[id(parent)]:
+                del shared[id(parent)]
         rows.append(dict(
             n=n, key=_geom_key(piece), xy=_poly_json(piece),
             # the plots are written with the same repair as the worked-block outlines, and for the
@@ -843,7 +926,7 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     return ti, tj, len(rows)
 
 
-def _run_pool(fn, tasks, jobs, log, what):
+def _run_pool(fn, tasks, jobs, log, what, order=None):
     """Run the pass's tasks in a process pool, printing each as it lands. A task that fails is
     reported and the pass carries on: one bad square should not lose the other 130.
 
@@ -854,8 +937,11 @@ def _run_pool(fn, tasks, jobs, log, what):
     from concurrent.futures import ProcessPoolExecutor
     done, failed = [], []
     with ProcessPoolExecutor(jobs) as pool:
-        futures = [pool.submit(fn, *t) for t in tasks]
-        for f, t in zip(futures, tasks):
+        # submitted in `order`, which only decides what starts first; results are read in task order
+        futures = {}
+        for k in sorted(range(len(tasks)), key=(lambda k: order(tasks[k])) if order else None):
+            futures[k] = pool.submit(fn, *tasks[k])
+        for f, t in zip((futures[k] for k in range(len(tasks))), tasks):
             try:
                 done.append(f.result())
             except Exception as exc:            # a failed task is reported, not fatal

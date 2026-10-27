@@ -39,14 +39,20 @@ def front_edges(plots, pedges, corridors=None, preferred=None):
     out, party = {}, {}
     ctree = STRtree(list(corridors)) if corridors else None
     ptree = STRtree([p for p, _, _ in plots])
+    bounds = {}
     for eid, pe in enumerate(pedges):
         edge, kind = pe[0], pe[1]
         if kind == "none":
             continue
-        for pi, (poly, pkind, bidx) in enumerate(plots):
+        # a polygon is never further from the edge than its own boundary is, so the index only
+        # narrows the plots down; the margin keeps rounding from losing one at exactly 0.5 m
+        for pi in sorted(int(k) for k in ptree.query(edge, predicate="dwithin", distance=1.5)):
+            poly, pkind, bidx = plots[pi]
             if pkind != "plot" or bidx is None:
                 continue
-            if poly.boundary.distance(edge) > 0.5:
+            if pi not in bounds:
+                bounds[pi] = poly.boundary
+            if bounds[pi].distance(edge) > 0.5:
                 continue
             if pe[3] == "front" or _open_beyond(poly, edge, plots, ptree, ctree, corridors):
                 out.setdefault(bidx, []).append(eid)
@@ -129,8 +135,10 @@ def find_openings(plots, pedges, houses, paths=(), corridors=None):
         t = edge.project(house.centroid)
         t = min(max(t, EDGE_STUB + GATE / 2), L - EDGE_STUB - GATE / 2)
         out.append(dict(edge=eid, t=t, width=GATE, kind="gate"))
+    etree = STRtree([pe[0] for pe in pedges]) if paths else None
     for line, width, cls in paths:
-        for eid, pe in enumerate(pedges):
+        for eid in sorted(int(k) for k in etree.query(line)):
+            pe = pedges[eid]
             edge, kind = pe[0], pe[1]
             if kind == "none" or not line.crosses(edge):
                 continue

@@ -1209,3 +1209,17 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   anywhere in Bath: a hedge or wall the lidar or the map shows stays.
 - [ ] **A back yard's fence or hedge is rolled on its parent block** (pass 2's, the same in every
   square), so every garden round a block shares one.
+
+## A faster build, the same map (27 October)
+
+- [ ] **A parent block is cut once per square, not once per city.** Pieces of one parent in one
+  square share its cut; a parent spread over several squares is still cut in each (255 parents, 2,956
+  of pass 2's 5,029 CPU seconds). Sharing across squares would cut it with one square's window, and
+  the cut reads the window: the union of every building in it, and evidence joined over it. That is
+  not provably the same bytes, so it waits until the cut reads only what is near the parent.
+- [ ] **`relabel`, `classify_edges` and `_without_specks` still go segment by segment.** On the
+  biggest square they are 5, 8.5 and under 2 seconds of 44; the vectorised form leans on the order
+  STRtree's bulk query returns, which shapely doesn't promise, and the sums depend on that order.
+- [ ] **The intermediates are still JSON.** Each pool worker now parses each city-wide file once
+  (about 5 s a worker) instead of once a task, which was most of the cost; WKB files would save
+  about 10 s of wall time in a full build.
