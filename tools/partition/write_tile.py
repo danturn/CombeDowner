@@ -2517,11 +2517,17 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     tree = STRtree(lines) if lines else None
     deck = bridge_decks(rd)
 
+    # (a point is the street's whose carriageway and pavements reach it, if any does: beside a bridge
+    # the street passing under it is often nearer the bridge's line than its own, and was levelled
+    # up to the bank the bridge's line crosses, in a spike out of the cutting)
+    reach_of = [r.get("w", 4) / 2 + max(r.get("pv") or (0, 0)) + 0.5 for r in streets]
+
     def nearest(x, y):
         if tree is None:
             return None
         p = Point(x, y)
-        return min((int(k) for k in tree.query(p.buffer(40))), key=lambda k: lines[k].distance(p), default=None)
+        near = sorted((lines[int(k)].distance(p), int(k)) for k in tree.query(p.buffer(40)))
+        return next((k for d, k in near if d <= reach_of[k]), near[0][1] if near else None)
 
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
