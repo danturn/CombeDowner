@@ -206,6 +206,10 @@ three of those a game day); keep it that way, so there are only twenty or forty 
   on the bus means a heavier bus or a longer hill, more climbers means more ledges that need two at
   once. It must still be possible alone, and better with four.
 - **Works everywhere.** On touch screens (the Use and Ride buttons, nothing else) and on a
-  controller (write key prompts with `keyLabel` from `gamepad.ts`, or `<b>E</b>` in a hint, which
-  the game swaps for the pad's button).
+  controller. Name controls, never keys, in every prompt, card, stage card and poster blurb:
+  `ctl("use")` from `controls.ts`, or `{use}` in a string that goes through `ctlText` (the toast,
+  the use hint, the mission cards and the poster already do). A hint that offers use says
+  `<b>{use}</b>`, which also puts up the touch screen's Use button. Interactions go on use; a
+  challenge whose play is quite different gets its own table in `PLACES` and shows it as a strip
+  (`strip`) while you're in it.
 - **Light.** Phones and iPads play this: instanced or merged meshes, built only when someone's near.

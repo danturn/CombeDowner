@@ -178,6 +178,15 @@ on a tap and uses on a hold (about a third of a second); when there's something 
 take right there (the prompt is up), a tap uses it instead. Circle crouches on a tap and lies you
 down on a hold, and either again stands you up.
 
+One button does everything you interact with: use (E on the keys, Square on a pad, Use on a touch
+screen) gets you in a car, opens a tin, takes the call on Push the Bus, goes again after a race,
+leans on a lock beam, cuffs, votes for a painting and the rest. Where two things are near, it does
+the one the prompt names. Minigames that play quite differently (the tin lock, the bell chamber, the
+Climb, the tightrope, the easel, the big map, the Driving Test's back seat) show their own controls
+along the bottom while you're in them. Every prompt names the control for whatever you're playing
+with: the key, the pad's button (as you've set it) or the touch button. They all come from one table
+in the game's code (`web/src/controls.ts`), which the lists here follow.
+
 You can move any button to another in Settings, Controller, Buttons: pick a row, then press the new
 button. Whatever was on that button swaps to the one you left, and getting out of a car always keeps
 a button. A button can carry one thing on a tap and another on a hold, as Square and Circle do.
@@ -192,20 +201,22 @@ show the pad's buttons instead of keys, and say "hold □" where a hold is neede
 | R2 | shoot (kick, bowl) | accelerate |
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
-| Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out |
+| Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out (let go of a tiller) |
 | Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | driver's seat or chase camera |
 | Triangle | switch weapon | get out |
-| L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
+| L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
 | R3, held | radio | radio |
-| D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
+| D-pad | up torch, down ride, left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
 | Create, held | the scores | the scores |
-| Touchpad | the map | the map |
+| Touchpad | the map (on it: Cross marks, Triangle finds you, Square is the pencil, Circle closes) | the map |
 | Options | pause | pause |
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
-A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Down the mines,
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. At a
+narrowboat's helm the pad works as at a car's wheel: the triggers are the throttle, R1 rings the bell
+and Triangle lets go. Down the mines,
 R2 swings or shoots, L2 is the healing light, Square uses (hold it to pump, wind or pick a friend
 up), Circle crouches (mid-sprint, dives), Triangle, L1 and R1 go through what you carry and the
 d-pad picks the first four. The browser still wants one click or key before it plays sound or
@@ -550,7 +561,7 @@ friend half the name (alternate letters) on their own screen; on your own, the o
 to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
 A sketch-map leg gives you a riddle to the place and a rough inked sketch of 250 m round it, with
 an X where the tin is and no names (on hard trails, no north arrow either, and it may be turned
-round). Hold J (the Sketch button on a touch screen) to study it full screen; you can't see the big
+round). Hold use (E or □; the Sketch button on a touch screen) to study it full screen, while a tap of it still asks a local; you can't see the big
 map while you do. With friends only the map-holder has it (one for every two of you, each with a
 torn strip of it), so they have to talk the others in.
 
@@ -618,15 +629,15 @@ shine on it (or DNF), your best on the route ("NEW BEST!" if you beat it), how f
 gold, and a few things from the run (top speed, boosts, slipstream, barges), with the podium and
 everyone's standings in a room race (anyone who didn't finish at the bottom), any prize, and a
 fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or for
-about 8 seconds; Again (Backspace, Triangle on a pad) goes again. On your own you get it as soon as
+about 8 seconds; Again (use: E or □, or Backspace) goes again. On your own you get it as soon as
 you're over the line or out. In a room race, over the line or out of it while others are still
 riding, you wait where you stopped, held still and safe from harm (killed, you come back once it's
-over), and watch the others from behind: Q and E or the arrow keys switch who (L1 and R1, or the
-d-pad, on a pad; the arrows either side on a touch screen), over a banner with the standings so far.
+over), and watch the others from behind: Q and E or the arrow keys switch who (d-pad ← and →
+on a pad; the arrows either side on a touch screen), over a banner with the standings so far.
 The race ends when everyone's over the line or out of it, or a minute after the winner, and everyone
 gets the results card together. There's gold, silver, bronze and a hidden author's time, and you
-race ghosts of your best run and the room's fastest. Backspace (Again, or Triangle on a pad) puts
-just you back on the line. There's a daily
+race ghosts of your best run and the room's fastest. Use (E or □; Again on a touch screen; Backspace too) puts
+just you back on the line, once you're over it or on your ride. There's a daily
 race round the village too, with a board of times and the local legend.
 
 ### Seagull Attack
@@ -882,7 +893,7 @@ when you press Play, and you can mute it from the pause menu.
 **Signals**, for when talking won't do: press L (Flare on a touch screen) to send up a red flare
 that hangs 60 m over you for half a minute, seen right across the town (one a minute, or one per
 clue on a treasure trail); H on foot (Whistle) for a two-fingered whistle anyone within 300 m hears
-from where you are; and with the big map open, P or its Pencil button to draw on the map with a
+from where you are; and with the big map open, P (□ on a pad) or its Pencil button to draw on the map with a
 finger or the mouse. Everyone in the room sees your lines in your colour, and Rub out takes yours
 off. On a trail they're wiped when the clue changes.
 

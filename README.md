@@ -70,7 +70,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   start lights, run through checkpoints along a route drawn on the map, and end with a results
   card: your place, time and medal, your best, how the run went and everyone's standings, with a
   fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
-  ride, you wait where you stopped, safe, and watch them (Q/E, L1/R1 or the arrows on a touch
+  ride, you wait where you stopped, safe, and watch them (Q/E, the d-pad or the arrows on a touch
   screen switch who); everyone gets the results together at the end. Every job,
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
@@ -86,7 +86,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
   look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
   pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up with J, and talks
+  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up by holding use, and talks
   the others in), bearings (two look-outs, each showing whoever's up there a gold line
   on the ground towards the tin; it's where they cross), clues split in two
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
@@ -192,7 +192,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
   handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
   smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
-  one pusher can take the call (Q, the Call button, or shout HEAVE three beats running): then the
+  one pusher can take the call (use, on the bus, or shout HEAVE three beats running; stepping back lets go): then the
   heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
   them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
   the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
@@ -267,7 +267,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
   the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
   back you can turn the radio up or down (K and J) or change the station (I), wind the window down
-  (U) or pull the handbrake (Space), or use the buttons on the screen: the handbrake skids the car,
+  (U) or pull the handbrake (Space); on a pad the d-pad does the radio, station and window; or use the buttons on the screen: the handbrake skids the car,
   and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din (the
   radio, or real noise on the back seats' mics) and he tells you to keep it down; the third
   telling-off is a minor fault for the driver. He hears the driver laughing or shouting too, and
@@ -314,7 +314,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   their own colour on the maps, never one the maps use for something else; click your marker, or the
   thing it's on, again to take it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
-  (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
+  (on foot) is a whistle heard 300 m off; and with the big map open, P (□ on a pad) is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
 - **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
   streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
