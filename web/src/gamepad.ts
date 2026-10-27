@@ -86,7 +86,7 @@ function showPadSettings() {
 }
 
 // the controls list's keys as the pad names them, for the ones the page's mapping doesn't
-const LIST_EXTRA: Record<string, string> = { Mouse: "Right stick", W: "Left stick", Shift: "Left stick, right over" };
+const LIST_EXTRA: Record<string, string> = { Mouse: "Right stick", W: "Left stick", Shift: "L3" };
 
 /** The controls list on the menu gets each key's button beside it, shown once a pad's been seen. */
 function padControlsList() {
@@ -488,8 +488,8 @@ export class GamepadControls {
         const r = val(B.r2), l = val(B.l2);
         if (r > TRIGGER_DEAD || l > TRIGGER_DEAD) my = l - r;
       }
-      if (mx || my) { p.joy.x = mx; p.joy.y = my; this.movedJoy = true; }
-      else if (this.movedJoy) { p.joy.x = p.joy.y = 0; this.movedJoy = false; }
+      if (mx || my) { p.joy.x = mx; p.joy.y = my; this.movedJoy = p.padStick = true; }
+      else if (this.movedJoy) { p.joy.x = p.joy.y = 0; this.movedJoy = p.padStick = p.sprintLatch = false; }
       const [lx, ly] = stick(ax[2] ?? 0, ax[3] ?? 0);
       const m = Math.hypot(lx, ly);
       this.fullT = m >= RAMP_NEAR_FULL ? this.fullT + dt : 0;
