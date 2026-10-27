@@ -34,6 +34,10 @@ export interface Building {
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
 export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean; bt?: string; uo?: number[][] }   // bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+/** What a street or path's ways say beyond its class (tools/osm.py's osm-detail): su, a path's surface (g grass, d dirt, v gravel; paved if left out);
+ *  sv, a service road's kind (d a drive, l an alley, a a car park's aisle, p private); and for steps sc, how many treads, hr, its handrails
+ *  (1 on the left looking along its points, 2 on the right, 4 down the middle), up, 1 where its points run uphill and -1 downhill. */
+export interface Road { su?: string; sv?: string; sc?: number; hr?: number; up?: number }
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -62,7 +66,7 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number };
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number };   // grass, dirt, gravel: paths the map says are made of that
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -72,6 +76,11 @@ export interface MapData {
   tn?: Tunnel[];                                  // tunnels you can walk through
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
+  // crossings and traffic lights: x, y, ground, the street's direction, kind (z a zebra, p a crossing with lights, s lights at a
+  // junction), the carriageway's width (furniture.ts draws them; the driving examiner can ask whether you stopped)
+  cx?: (number | string)[][];
+  // what stands across a path or road: kind (gate, stile, kiss, cycle, lift, grid, block), x, y, ground, angle, width
+  pb?: (number | string)[][];
 }
 
 /** What each kind of wall, fence, hedge and railing is made of, how thick it is and its colour: world.ts
@@ -592,6 +601,19 @@ export class GameMap {
       else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1);
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
+      else if (kind === "phone") this.addBox(x, y, a, 0, 0.48, 0.48, g + 2.5);
+    }
+    // the beacons and lights at crossings stand at each kerb
+    for (const c of d.cx ?? []) {
+      if (this.spent(16)) yield;
+      const [x, y, z, a, , w] = c as [number, number, number, number, string, number];
+      const off = w / 2 + 0.5, nx = -Math.sin(a) * off, ny = Math.cos(a) * off;
+      for (const s of [1, -1]) this.addPost(x + nx * s, y + ny * s, 0.12, z - this.z0 + 3);
+    }
+    // a concrete block across a path stops you; the rest you can get past or over
+    for (const f of d.pb ?? []) {
+      const [kind, x, y, z, a] = f as [string, number, number, number, number];
+      if (kind === "block") this.addBox(x, y, a, 0, 0.3, 0.6, z - this.z0 + 0.6);
     }
     this.phase = "landmark trees";
     // big landmark trees: their trunks are solid
