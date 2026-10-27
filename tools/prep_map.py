@@ -74,6 +74,7 @@ if TILE is None:
     X0, Y0 = proj(W, S)
     X1, Y1 = proj(E, N)
     ROAD_BOX = None          # roads are cut at the edge of the data like everything else
+    FLOOR_BOX = None
 else:
     # ---- the tile: a square of the map's grid (area.py), worked out over a margin round it ----
     G = A.squares
@@ -90,6 +91,7 @@ else:
     # roads are taken whole for 500 m past the margin, so a street's lamps, cars and bridges are
     # laid out from the same start in every tile that has it
     ROAD_BOX = (X0 - 500, Y0 - 500, X1 + 500, Y1 + 500)
+    FLOOR_BOX = (TX0 - 1200, TY0 - 1200, TX1 + 1200, TY1 + 1200)    # (within the ground the tile reads)
     TBOX = box(TX0, TY0, TX1, TY1)
     own = lambda x, y: TX0 <= x < TX1 and TY0 <= y < TY1     # the tile's own (each point is in one tile)
 BM = box(X0, Y0, X1, Y1)
@@ -547,11 +549,21 @@ for g, p in L("segment"):
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
     for coords in line_coords(g):
+        # a tunnel's floor runs between the road at its two ends, which a long one (the Combe Down
+        # Tunnel) can have well outside the tile's roads: so it is levelled over the whole of it
+        floors = []
+        if tunnel_ranges and FLOOR_BOX is not None:
+            for wide in densify_runs(coords, 4.0, FLOOR_BOX):
+                floors.append(([t for _, _, t in wide], level_structures(wide, [elev(x, y) for x, y, _ in wide], [], tunnel_ranges)))
         for run in densify_runs(coords, 4.0, ROAD_BOX):
             # the survey's heights, the structures carried straight between the road at their ends
             # (the roads are smoothed as a network once they're all in: smooth_network)
             z = [elev(x, y) for x, y, _ in run]
             z = level_structures(run, z, bridge_ranges, tunnel_ranges)
+            for i in in_ranges(run, tunnel_ranges):
+                for ts, zs_ in floors:
+                    if ts[0] <= run[i][2] <= ts[-1]:
+                        z[i] = float(np.interp(run[i][2], ts, zs_))
             pieces, through = (towpath(run, z, c != "steps", in_ranges(run, bridge_ranges)) if c in PATHS and CANAL else ([(run, z, {})], False))
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
