@@ -529,16 +529,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const to = underTo[v] < Infinity ? underTo[v] : roundTo[v];
     if (to < Infinity) sink[v] = Math.max(faced && underTo[v] === Infinity ? -KERB_RAISE : 0, T.h[v] / 10 - to);
   }
-  // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, and a grid
-  // step behind the face too, so the ground's slope up onto the hill lies behind the wall, not in
-  // front of the arches
+  // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
+  // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
   for (const [cx, cy, dx, dy, left, right, reach, floor] of cuttings(map)) {
     const nx = -dy, ny = dx, to = floor - Z0 - 0.05, pad = T.dx, r = Math.hypot(Math.max(-left, right) + pad, reach + pad);
     const i0 = Math.max(0, Math.floor((cx - r - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((cx + r - T.x0) / T.dx));
     const j0 = Math.max(0, Math.floor((cy - r - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((cy + r - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx - cx, y = T.y0 + j * T.dy - cy, out = -(x * dx + y * dy), s = x * nx + y * ny, v = j * T.nx + i;
-      if (out < -pad || out > reach || s < left - pad || s > right + pad) continue;
+      if (out < 0 || out > reach || s < left - pad || s > right + pad) continue;
       sink[v] = Math.max(sink[v], T.h[v] / 10 - to);
     }
   }

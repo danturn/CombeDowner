@@ -131,6 +131,13 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
     a.push(new THREE.Vector4(m.x, -m.y, m.dx, -m.dy));
     b.push(new THREE.Vector4(m.z - map.z0, TUNNEL.crown, TUNNEL.half, MOUTH));
   }
+  // and none of the hill's slope standing in the cutting in front of a headwall, between its wing
+  // walls, where the apron is the ground (the ground's grid is too coarse to rise straight up the wall)
+  for (const w of walls(map)) {
+    const c = (w.left + w.right) / 2, x = w.cx + w.nx * c - w.dx * w.reach, y = w.cy + w.ny * c - w.dy * w.reach;
+    a.push(new THREE.Vector4(x, -y, w.dx, -w.dy));
+    b.push(new THREE.Vector4(w.z - map.z0, 60, (w.right - w.left) / 2, w.reach + 0.3));
+  }
   return { a, b };
 }
 
@@ -202,7 +209,7 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
   // the headwalls: one round the arch of each portal, or across the arches of bores side by side,
   // from below the floor to above the hill over them, with a wing wall holding up each side of the
   // cutting in front where the hill beside it is high
-  const wingMat = stone;
+  const wingMat = stone, apronMat = new THREE.MeshLambertMaterial({ color: "#647347" });
   for (const w of walls(map)) {
     const { g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top } = w;
     const shape = new THREE.Shape([[left, -1], [right, -1], [right, top], [left, top]].map(([x, y]) => new THREE.Vector2(x, y)));
@@ -220,6 +227,26 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
     const cope = new THREE.Mesh(new THREE.BoxGeometry(right - left + 0.4, 0.35, FACE_DEPTH + 0.3), stone);
     cope.position.set((left + right) / 2, top + 0.17, FACE_DEPTH / 2);
     face.add(cope);
+    // the cutting's floor in front of the face, between the wing walls, just under the road on it
+    const ap: number[] = [], ai: number[] = [], cols = Math.max(1, Math.ceil(right - left)), rows = Math.max(1, Math.ceil(w.reach));
+    for (let r = 0; r <= rows; r++) {
+      const o = (w.reach * r) / rows, mx = cx - dx * o, my = cy - dy * o;
+      const h = Math.min(z, map.trueGround(mx + nx * (left + right) / 2, -(my + ny * (left + right) / 2)) + Z0) - 0.03;
+      for (let c = 0; c <= cols; c++) {
+        const sx = left + ((right - left) * c) / cols;
+        ap.push(mx + nx * sx, h - Z0, -(my + ny * sx));
+        if (r < rows && c < cols) { const k = r * (cols + 1) + c; ai.push(k, k + 1, k + cols + 1, k + 1, k + cols + 2, k + cols + 1); }
+      }
+    }
+    const apGeo = new THREE.BufferGeometry();
+    apGeo.setAttribute("position", new THREE.Float32BufferAttribute(ap, 3));
+    apGeo.setIndex(ai);
+    apGeo.computeVertexNormals();
+    if (apGeo.attributes.normal.getY(0) < 0) apGeo.setIndex(ai.map((_, i) => ai[i - (i % 3) + [0, 2, 1][i % 3]]));
+    apGeo.computeVertexNormals();
+    const apron = new THREE.Mesh(apGeo, apronMat);
+    apron.receiveShadow = true;
+    scene.add(apron);
     for (const [end, side, run] of [[left, -1, w.wings[0]], [right, 1, w.wings[1]]] as const) {
       if (run.length < 2) continue;
       const pts = [new THREE.Vector2(0, -1), ...run.map(([o, h]) => new THREE.Vector2(o, h - z)), new THREE.Vector2(run[run.length - 1][0], -1)];
