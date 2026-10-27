@@ -584,9 +584,13 @@ off leaves nothing.
 ### Races
 
 From the noticeboard to a real place 1 to 3 km away, on a ride that suits the land in between.
-Taking a race opens the entries for 15 seconds: anyone in the game, wherever they are in Bath,
-presses E to enter (whoever took it is in already). When they close, everyone who entered, and only
-them, is put on a starting grid across the street with the ride, for a countdown to GO. The start
+At its noticeboard, E (Square on a pad) starts the race; the Chronicle pinned there too is a smaller
+line underneath (N, or the pause menu on a pad). Taking a race opens the entries for 15 seconds:
+anyone in the game, wherever they are in Bath, presses E to enter (whoever took it is in already),
+and a big banner says who's in and counts down. On your own in the room there's nobody to wait for,
+so it goes straight to the start. When the entries close, everyone who entered, and only them, is
+put on a starting grid across the street with the ride, for a countdown to GO: a big 3, 2, 1, GO! in
+the middle of the screen under three start lights, each with a beep, and a higher one for GO. The start
 and the finish are always on a proper street, never on grass, and the route between them follows
 the streets: it's drawn on the minimap and the big map, with a ring for each checkpoint still to
 go. Checkpoints are gates across the road, and you have to ride through each one in order before
@@ -596,10 +600,24 @@ best, and the card shows where you're lying in the race. A clock counts down to 
 checkpoint, and what's left over carries on to the one after; it's set from bronze pace with time to
 spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
 getting short. Run out and you're out of the placings and the medals, but you can ride on to the
-line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Over the line you get a banner, confetti
-and a fanfare, with your place, your time and medal, whether it's a best, and everyone's times as
-they come in. There's gold, silver, bronze and a hidden author's time, and you race ghosts of your
-best run and the room's fastest. Backspace (Again) puts just you back on the line. There's a daily
+line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Boost pads lie
+along the road between checkpoints, two or three on most legs. Killed on the way, you're out of the
+race: no time and no medal.
+
+At the end comes a results card: your place in big podium colours, your time, your medal with a
+shine on it (or DNF), your best on the route ("NEW BEST!" if you beat it), how far you were off
+gold, and a few things from the run (top speed, boosts, slipstream, barges), with the podium and
+everyone's standings in a room race (anyone who didn't finish at the bottom), any prize, and a
+fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or for
+about 8 seconds; Again (Backspace, Triangle on a pad) goes again. On your own you get it as soon as
+you're over the line or out. In a room race, over the line or out of it while others are still
+riding, you wait where you stopped, held still and safe from harm (killed, you come back once it's
+over), and watch the others from behind: Q and E or the arrow keys switch who (L1 and R1, or the
+d-pad, on a pad; the arrows either side on a touch screen), over a banner with the standings so far.
+The race ends when everyone's over the line or out of it, or a minute after the winner, and everyone
+gets the results card together. There's gold, silver, bronze and a hidden author's time, and you
+race ghosts of your best run and the room's fastest. Backspace (Again, or Triangle on a pad) puts
+just you back on the line. There's a daily
 race round the village too, with a board of times and the local legend.
 
 ### Seagull Attack

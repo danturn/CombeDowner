@@ -191,6 +191,9 @@ function dropCard() {
   card = null;
 }
 
+/** Take down the card in the middle of the screen now (a race's countdown wants the middle). */
+export function missionCardDrop() { dropCard(); }
+
 function putCard(cls: string, html: string, life: number, colour: string) {
   style();
   dropCard();

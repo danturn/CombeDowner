@@ -65,12 +65,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
-  Races take entries, put the entrants on a grid in the street, run through checkpoints along a
-  route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every job,
+  Races take entries (a big banner says who's in and counts down; on your own in the room it goes
+  straight to the start), put the entrants on a grid in the street for a big 3, 2, 1, GO! under
+  start lights, run through checkpoints along a route drawn on the map, and end with a results
+  card: your place, time and medal, your best, how the run went and everyone's standings, with a
+  fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
+  ride, you wait where you stopped, safe, and watch them (Q/E, L1/R1 or the arrows on a touch
+  screen switch who); everyone gets the results together at the end. Every job,
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
- Every ride is faster in a race, boost pads lie along the route, and riding close behind
+ Every ride is faster in a race, boost pads lie along the route (two or three between checkpoints), and riding close behind
   someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard

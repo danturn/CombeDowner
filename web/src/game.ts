@@ -57,6 +57,8 @@
 //   score (ridetricks.ts) are yours alone.
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
+//   Someone over a race's line or out of it, waiting for the others (race.ts), says so in their position
+//   updates ("rw"), and the host lets nothing hurt them; killed out of it, they come back once it's over.
 // - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so,
 //   and everyone says when they're busy on a job, so the host can hold the Flag Lads off while all are.
@@ -289,6 +291,7 @@ interface Remote {
   torch?: boolean;                          // their torch is on
   inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
   smoking?: boolean;                        // smoking one of Jamie's cigarettes, by their own word: nothing hurts them
+  waiting?: boolean;                        // out of a race and waiting for it to end, by their own word: nothing hurts them
   carOff?: number;                          // seconds they've said they're out while our list has them in a seat (a stale seat)
 }
 
@@ -305,6 +308,7 @@ interface StateExtra {
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
+  rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
   vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
   ft?: number;         // the host's switches for the zones, the strange objects and the challenges (features.ts)
@@ -322,7 +326,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -1260,6 +1264,7 @@ export class Game {
 
   /** Next or previous weapon you can use. */
   cycleWeapon(way: number) {
+    if (this.quests.cycle(way)) return;   // watching a race: L1 and R1 switch racer
     const w = this.weapon;
     for (let i = 1; i < SLOTS.length; i++) {
       const k = SLOTS[(SLOTS.indexOf(w.kind) + way * i + SLOTS.length * 2) % SLOTS.length];
@@ -1771,6 +1776,7 @@ export class Game {
     if (from === this.hostId && (e?.host ?? true)) { this.setRoomPassive(!!e?.passive); this.setRoomFeatures(unpackFeatures(e?.ft) ?? myFeatures); }
     r.avatar.setWings(!!e?.wings, !!e?.glow);
     r.smoking = !!e?.smoke;
+    r.waiting = !!e?.rw;
     r.avatar.setRage(r.smoking);
     // whether they're in a vehicle, by their own word (undefined from pages that don't say)
     r.inCar = e?.car;
@@ -2210,6 +2216,7 @@ export class Game {
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
     if (GANG.includes(by) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
+    if (id === this.net.selfId ? this.quests.waiting() : this.remotes.get(id)?.waiting) return;   // out of a race, watching the others finish
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
       target.alive = false;
@@ -3842,7 +3849,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.quests.waiting(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -3938,6 +3945,9 @@ export class Game {
       this.camera.rotation.y += w.drift.x;
       this.camera.rotation.x += w.drift.y;
     }
+    // killed out of a race that's still on: watching from behind someone still riding
+    const watching = !this.alive ? this.quests.spectate() : null;
+    if (watching) { this.camera.position.set(watching.x, watching.y, watching.z); this.camera.lookAt(watching.lx, watching.ly, watching.lz); }
     this.footsteps(dt);
     p.assist = this.freeMode;
     const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket && !aloft;
@@ -4129,7 +4139,8 @@ export class Game {
 
     if (!this.alive) {
       this.deadFor += dt;
-      if (this.deadFor >= RESPAWN_SECONDS) this.respawn();
+      // out of a race the others are still riding: back once it's over
+      if (this.deadFor >= RESPAWN_SECONDS && !this.quests.waiting()) this.respawn();
     }
 
     this.sendT -= dt;
@@ -4335,8 +4346,9 @@ export class Game {
     const rage = this.smokeT > 0 && this.alive ? 0.28 + 0.12 * Math.sin(now / 1000 * 5) : 0;
     $("vignette").style.opacity = String(Math.max(0, this.hurtT * 2, this.hp < 35 && this.alive ? 0.35 : 0, rage));
     const death = $("death");
-    death.hidden = this.alive;
-    if (!this.alive) {
+    // out of a race and watching the others, the race's own banner says so instead
+    death.hidden = this.alive || this.quests.waiting();
+    if (!death.hidden) {
       $("deathby").textContent = this.killer;
       $("deathcount").textContent = `Respawn in ${Math.max(1, Math.ceil(RESPAWN_SECONDS - this.deadFor))}…`;
     }

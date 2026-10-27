@@ -5,7 +5,7 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
-import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
+import { B, GamepadControls, key, keyLabel, padActions, padInUse, padPress, padSettings, tap } from "./gamepad";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -717,9 +717,10 @@ function readPaper() {
 setInterval(() => {
   if ($("pause").hidden) closeChronicle();
   const at = !!game?.active && game.quests.atBoard();
-  if (paperHud.hidden === !at) return;
-  paperHud.hidden = !at;
-  if (at && game) paperHud.textContent = `Read the Chronicle${MOUSE ? " (N)" : ""}`;
+  if (paperHud.hidden !== !at) paperHud.hidden = !at;
+  // a pad has no N: the Chronicle's in the pause menu, which Options opens
+  const text = !at ? "" : padInUse() ? `Read the Chronicle: ${keyLabel("Escape")} menu` : `Read the Chronicle${MOUSE ? " (N)" : ""}`;
+  if (at && paperHud.textContent !== text) paperHud.textContent = text;
 }, 300);
 addEventListener("keydown", (e) => {
   if (!game || e.repeat || e.target instanceof HTMLInputElement) return;

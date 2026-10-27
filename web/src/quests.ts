@@ -44,6 +44,7 @@ import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
+import { padText } from "./gamepad";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
@@ -264,6 +265,13 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number; y?: number } | null;
+  /** You're waiting for the job's end (over a race's line while others ride on): nothing hurts you,
+   *  and if you're dead you come back once it's over. */
+  waiting?(): boolean;
+  /** Where to look from while you wait, dead: behind someone still going. */
+  spectate?(): { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null;
+  /** Switch who you're watching while you wait (by: 1 next, -1 last). True if that's what the press was for. */
+  cycle?(by: number): boolean;
   /** Anything of the job's standing in the road for the traffic to pull round (a broken-down bus). */
   obstacles?(): { x: number; z: number; r: number; parked?: boolean; a?: number }[];
   /** Where you're held up off the ground this frame, given which way you're pushing the keys or the
@@ -287,6 +295,8 @@ export interface JobKind {
   goal?(o: Offer): string;
   /** Can be done again the same day (a race, to beat your time). */
   again?: boolean;
+  /** What E at its noticeboard does, if not "Take the job" ("Start the race"). */
+  take?: string;
   /** Today's job of this kind on the noticeboard at spot, from r. Null if it can't make one there. */
   offer(r: Rng, spot: PostSpot, w: QuestWorld): Offer | null;
   /** local: a go of your own (Backspace after it's over), not the room's. */
@@ -678,7 +688,7 @@ export class Quests {
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
     if (this.job?.offer.seed === p.offer.seed) return "";
     if (this.job && !this.local) return "Finish or call off your job first";
-    return p.kind.challenge ? `<b>E</b> ${esc(p.offer.title)}` : `<b>E</b> Take the job`;
+    return p.kind.challenge ? `<b>E</b> ${esc(p.offer.title)}` : `<b>E</b> ${p.kind.take ?? "Take the job"}`;
   }
 
   /** E pressed. Returns true if it was for a job. */
@@ -825,6 +835,11 @@ export class Quests {
   /** The running job's boats and the like, to stand on. */
   movers(): Mover[] { return this.job && !this.job.done ? this.job.movers?.() ?? [] : []; }
 
+  /** Waiting for the job's end, out of harm's way (a race you're out of, while others ride on). */
+  waiting(): boolean { return !!this.job && !this.job.done && !!this.job.waiting?.(); }
+  spectate() { return this.job && !this.job.done ? this.job.spectate?.() ?? null : null; }
+  cycle(by: number): boolean { return !!this.job && !this.job.done && !!this.job.cycle?.(by); }
+
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
   /** The running job's things in the road, for the traffic. */
@@ -887,7 +902,7 @@ export class Quests {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "E to start it" : "E to take the job") : "Step up to take it"}</em>`;
+        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? padText(p.kind.challenge ? "E to start it" : `E to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
     }
     show($("jobposter"), poster, !!poster);
   }
