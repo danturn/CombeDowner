@@ -2078,18 +2078,24 @@ def bridge_decks(rd, ground=None):
     if ground is None:
         return deck
     # (a road at grade under a deck high enough to walk under keeps its faces there: cut out with the
-    # deck, the ground showed through in a grass strip across the carriageway with a step at each side)
+    # deck, the ground showed through in a grass strip across the carriageway with a step at each side.
+    # Only a road that far below the deck: one up on the bank beside it is still the deck's ground)
     def flying(a, b):
         z = ground((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
         return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b)) and z is not None and min(a[2], b[2]) - z > HEADROOM
-    high = [LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat")
+    high = [(LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat"),
+             min(a[2], b[2]))
             for r in rd for a, b in zip(r["p"], r["p"][1:]) if flying(a, b)]
-    below = [LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])), cap_style="flat")
+    below = [(LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])),
+                                                cap_style="flat"), max(a[2], b[2]))
              for r in rd for a, b in zip(r["p"], r["p"][1:])
              if not any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))]
     if not high or not below:
         return deck
-    return deck.difference(unary_union(below).intersection(unary_union(high)))
+    tree = STRtree([g for g, _ in below])
+    kept = [g.intersection(h) for h, top in high for g, z in (below[int(k)] for k in tree.query(h))
+            if z <= top - HEADROOM]
+    return deck.difference(unary_union(kept)) if kept else deck
 
 
 HEADROOM = 2.5             # metres: a deck at least this far above the ground has room for a street under it
@@ -2535,6 +2541,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     lines = [LineString([q[:2] for q in r["p"]]) for r in streets]
     tree = STRtree(lines) if lines else None
     deck = bridge_decks(rd, ground)
+    over = bridge_decks(rd)
+    if over is not None:
+        shapely.prepare(over)
 
     # (a point is the street's whose carriageway and pavements reach it, if any does: beside a bridge
     # the street passing under it is often nearer the bridge's line than its own, and was levelled
@@ -2570,6 +2579,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         levels = [(h, k) for h, k in levels if h is not None]
         if z is None or len(levels) < 2 or max(h for h, _ in levels) - min(h for h, _ in levels) < 1.5:
             return reached[0]
+        if over is not None and over.contains(p):
+            # (under a deck it is the road below, not one up on the bank beside it)
+            return min(levels)[1]
         return min(levels, key=lambda hk: abs(hk[0] - z))[1]
 
     def shapes(cls):
