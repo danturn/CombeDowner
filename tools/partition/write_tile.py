@@ -2560,7 +2560,17 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         p = Point(x, y)
         near = sorted((lines[int(k)].distance(p), int(k)) for k in tree.query(p.buffer(40)))
         reached = [k for d, k in near if d <= reach_of[k]]
-        return next((k for k in reached if not in_air(k, p)), reached[0] if reached else near[0][1] if near else None)
+        if not reached:
+            return near[0][1] if near else None
+        reached = [k for k in reached if not in_air(k, p)] or reached
+        # (where streets at different levels both reach it, as at the foot of a bridge's approach over
+        # a cutting, it is the one whose level is the ground's here)
+        z = ground(x, y)
+        levels = [(_level_at(lines[k], x, y, ground, square), k) for k in reached[:3]]
+        levels = [(h, k) for h, k in levels if h is not None]
+        if z is None or len(levels) < 2 or max(h for h, _ in levels) - min(h for h, _ in levels) < 1.5:
+            return reached[0]
+        return min(levels, key=lambda hk: abs(hk[0] - z))[1]
 
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]

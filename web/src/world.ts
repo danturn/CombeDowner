@@ -1158,7 +1158,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         // at an end on the edge of this square of Bath, where the bridge only carries on into the next)
         const seam = (q: { x: number; y: number }) => !core && (Math.abs(q.x - T.x0) < 0.5 || Math.abs(q.x - (T.x0 + (T.nx - 1) * T.dx)) < 0.5 || Math.abs(q.y - T.y0) < 0.5 || Math.abs(q.y - (T.y0 + (T.ny - 1) * T.dy)) < 0.5);
         // (nor where it runs on into another bridge's deck, in the air: a joint, not a bank)
-        const joint = (i: number) => flags[i] === 1 && (decked.get(spot(r.p[i])) ?? []).some((w) => !r.p.includes(w.p.find((q) => spot(q) === spot(r.p[i]))!));
+        // (a deck can run on into another's partway along it, between its points, as a track off a
+        // bridge does)
+        const onDeck = (q: number[]) => ways.some((w) => w !== r && w.p.filter((e) => r.p.includes(e)).length < 2 && w.p.some((A, k) => {
+          const B = w.p[k + 1];
+          if (!B || A[3] !== 1 || B[3] !== 1) return false;
+          const dx = B[0] - A[0], dy = B[1] - A[1], l2 = dx * dx + dy * dy || 1;
+          const t = Math.max(0, Math.min(1, ((q[0] - A[0]) * dx + (q[1] - A[1]) * dy) / l2));
+          return Math.hypot(q[0] - A[0] - dx * t, q[1] - A[1] - dy * t) < width(w) / 2 + 0.5;
+        }));
+        const joint = (i: number) => flags[i] === 1 && ((decked.get(spot(r.p[i])) ?? []).some((w) => !r.p.includes(w.p.find((q) => spot(q) === spot(r.p[i]))!)) || onDeck(r.p[i]));
         const inAir = (q: Pt) => (q === P[0] && (hangA || joint(a))) || (q === P[P.length - 1] && (hangB || joint(b)));
         const supports = [...(seam(P[0]) || inAir(P[0]) ? [] : [0]), ...(seam(P[P.length - 1]) || inAir(P[P.length - 1]) ? [] : [s])];
         // where it crosses the canal: the water and the towpath stay open under it all the way
