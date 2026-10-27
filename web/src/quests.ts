@@ -14,6 +14,9 @@
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
 // the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
+// The job control (J, a hold of the pad's touchpad, Poster on a touch screen) brings back the
+// running job's own poster, for a job that has one (a Wanted bounty: recall).
+//
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
@@ -44,7 +47,7 @@ import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
-import { ctlText } from "./controls";
+import { ctl, ctlText } from "./controls";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
@@ -259,6 +262,8 @@ export interface Job {
   shoot?(q: Quarry, power: number): void;
   /** A boss of the job's own for the boss bar (Big Lad): its name and how much fight is left, 0..1. */
   bossBar?(): { name: string; fill: number } | null;
+  /** The job's poster or clue brought back up (the job control); false if it has none. */
+  recall?(): boolean;
   /** Take down anything the job put up. */
   end(): void;
   /** Backspace: back on the start line for a go of your own. Returns false if it can't. */
@@ -493,6 +498,7 @@ export class Quests {
   private last: Offer | null = null;   // the last job that can be run again, and when it ended
   private lastT = 0;
   private again: HTMLButtonElement | null = null;
+  private posterBtn: HTMLButtonElement | null = null;
   private home: { x: number; z: number };
   private ready: () => boolean;
   /** A job's step or end, for the quips. */
@@ -631,6 +637,7 @@ export class Quests {
     if (this.ready()) for (const f of free) f.update(dt, this.w);
     this.hud(me);
     this.againButton();
+    this.recallButton();
   }
 
   /** A challenge's thing at its place: up while it's waiting to be taken and you're near, down while
@@ -856,6 +863,24 @@ export class Quests {
   aloft(): boolean { return !!this.job && !this.job.done && !!this.job.aloft?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
+  /** The job control: the running job's poster or clue again. */
+  recall(): boolean { return !!this.job && !this.job.done && !!this.job.recall?.(); }
+
+  /** On a touch screen, the Poster button, while the running job has one to bring back. */
+  private recallButton() {
+    const touch = document.getElementById("touch");
+    if (!touch) return;
+    if (!this.posterBtn) {
+      const b = (this.posterBtn = document.createElement("button"));
+      b.className = "tbtn small"; b.textContent = ctl("job", "touch"); b.hidden = true;
+      b.style.cssText = "position:absolute;right:16px;top:150px;pointer-events:auto";
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); this.recall(); });
+      touch.appendChild(b);
+    }
+    const show = !!this.job && !this.job.done && !!this.job.recall && this.w.me().alive;
+    if (this.posterBtn.hidden === show) this.posterBtn.hidden = !show;
+  }
+
   /** On a touch screen, the Again button, when there's a race to run again. */
   private againButton() {
     const touch = document.getElementById("touch");
@@ -914,6 +939,7 @@ export class Quests {
     this.clear();
     for (const f of free) f.dispose?.(this.w);
     this.again?.remove();
+    this.posterBtn?.remove();
     for (const p of this.posts) this.unbuild(p);
   }
 }

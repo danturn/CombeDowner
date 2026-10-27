@@ -77,7 +77,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { padInUse, padText, rumble } from "./gamepad";
-import { B as PAD, control, ctl, ctlText, input, isKey, strip, stripOf } from "./controls";
+import { B as PAD, control, ctl, ctlText, input, isKey, placeNow, strip, stripOf } from "./controls";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -109,6 +109,7 @@ import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } 
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
+import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
@@ -129,7 +130,7 @@ import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
 import { drawCompass, ITEM_SIZE, markerMessage, Markers, playerColours } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
-import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
+import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate, stickSteer } from "./player";
 import { Quests, type Perch, type QuestWorld } from "./quests";
 import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
@@ -966,6 +967,8 @@ export class Game {
       if (isKey(e.code, "ride") && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (isKey(e.code, "torch") && !e.repeat && this.active) this.toggleTorch();
+      // the back seat's radio has J (and the pad's button) to itself
+      if (isKey(e.code, "job") && !e.repeat && this.active && placeNow() !== "back") this.quests.recall();
       if (isKey(e.code, "map") && !e.repeat) this.toggleMap();
       if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
@@ -2620,7 +2623,7 @@ export class Game {
     const key = (a: string, b: string) => (on && (k.has(a) || k.has(b)) ? 1 : 0);
     // (the left and right arrows are the indicators, see the keys above, and the up arrow the horn)
     let throttle = key("KeyW", "KeyW") - key("KeyS", "ArrowDown"), steer = key("KeyA", "KeyA") - key("KeyD", "KeyD");
-    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -p.joy.x; }
+    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -stickSteer(p.joy.x); }
     const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || k.has("ArrowUp") || this.firing);
     // the police car's siren and the ice cream van's chimes: H (or the up arrow) switches them on and off
     if (v.spec.siren && horn && !this.hornWas) {
@@ -4405,6 +4408,7 @@ export class Game {
     $("drive").hidden = !car && !helm && !sky;
     $("ammo").hidden = !!car || !!helm || !!sky;
     $("drive").querySelector("small")!.textContent = sky ? "m up" : "mph";
+    if (!car) $("limit").hidden = true;
     if (sky) {
       const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
       $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
@@ -4423,6 +4427,8 @@ export class Game {
       const blink = performance.now() % 760 < 380;
       $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
+      const lim = limitShown(this.map, car.x, car.z, Math.cos(car.a), -Math.sin(car.a));
+      show($("limit"), lim ? String(lim) : "", !!lim);
       $("drivehint").innerHTML = car.tip ? stripOf([["out", "get out"]])
         : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]);
     }
@@ -4485,7 +4491,11 @@ export class Game {
     }
     this.hushed = hush;
     this.calmed = calm;
-    show($("usehint"), hush ? "" : ctlText(text), !hush && !!text);
+    // a results card in the middle: the prompt waits, and a tip about a ride just won waits for it to go
+    const results = !!document.querySelector(".rsc-end:not(.out)");
+    if (results && this.rideTip > performance.now()) this.rideTip = performance.now() + TIP_MS;
+    const quietNow = hush || results;
+    show($("usehint"), quietNow ? "" : ctlText(text), !quietNow && !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);

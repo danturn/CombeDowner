@@ -210,6 +210,7 @@ export function missionCardDrop() { dropCard(); }
 /** A title or stage card has the space over the crosshair: call-outs wait till it's gone, as they
  *  do for a race's countdown, rather than land on top of it. */
 export function missionCardUp() {
+  if (document.querySelector(".tsc-call:not([hidden]):not(.out)")) return true;   // a trail's or a bounty's call-out (trailscreens.ts)
   return !!card && !card.classList.contains("out") && (card.classList.contains("msc-start") || card.classList.contains("msc-stage"));
 }
 

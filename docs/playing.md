@@ -213,7 +213,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | R3, held | radio | radio |
 | D-pad | up torch, down ride, left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
 | Create, held | the scores | the scores |
-| Touchpad | the map (on it: Cross marks, Triangle finds you, Square is the pencil, Circle closes) | the map |
+| Touchpad | tap: the map (on it: Cross marks, Triangle finds you, Square is the pencil, Circle closes); hold: the job's poster again (a Wanted bounty) | the map |
 | Options | pause | pause |
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
@@ -510,14 +510,31 @@ the Crown in a hurry". The lads you left behind are still yours to clear for the
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says
 two things about how he looks, his routine (a pub, a park, a bus stop, round and round, but not
 where) and two quirks: slippery, lookouts or mob-handed. A hidden third is given away by the first
-clue. A search circle 300 m across goes on the map.
+clue. A search circle 600 m across goes on the map.
+
+It opens with a big splash: the WANTED poster with his features as pictures (a tick for the two the
+poster gives, a "?" for the one a witness will), his round of stops (where he's at now lit up), the
+clock, and three lines on how to catch him. The job control (J, a hold of the pad's touchpad, or the
+Poster button on a touch screen) brings the poster back any time, and it keeps up: a witness's word
+on the third feature goes on it, ticked once they swear to it, crossed once they back down. The
+job card names the features too, as little pictures, with how many clues you've found ("Clues 1/3")
+and how big the circle is.
+
+The circle is a red ring on the minimap and the big map, and in the streets a band of red light on
+the ground with a low wall of light standing on it, so you can see its edge from inside, from
+outside and from a roof. Outside it, the compass points to it. Clues stand under tall red beams with
+a "?" over them, and go on your compass once you're within 150 m. Each clue found is called out
+across the screen with the circle's new size and what was found.
 
 He is not alone in looking like that: four to six of his crew are dressed like him, each with a
 different mix of a hat, a coloured jacket, a bag, a dog and a limp (more of them the more of you
 there are, and more lookouts). The poster's two features fit him and one or two of the others, and a
 witness (E) gives a third feature that picks him out: but one witness in three is wrong, and owns up
-if you press them (E again). Leaflets and knocked-out lookouts still shrink the circle. Look through
-binoculars (B, from a roof or a hill if you can) to see who has what, then point him out with E. Point
+if you press them (E again). Leaflets and knocked-out lookouts still shrink the circle. The first time
+you see them, a call-out says how many men are dressed alike. Look at one (up close, or through
+binoculars, B, from a roof or a hill if you can) and a card beside the crosshair shows his features,
+each ticked or crossed against what's known, and what that adds up to ("Not him", "Fits the poster:
+so do two more", "That's him!"). Then point him out with E. Point
 at the wrong man and it costs you 15 seconds on the clock. Once he's pointed out, everyone gets a
 marker on him. Put him down for the prizes, or wear him down until he gives up, cuff him (E) and
 walk him to the police at the nearest bus stop or police box for more, while his mates try to
@@ -527,7 +544,9 @@ and the real one moves on.
 He does something at each stop for a minute (a pint, feeding the ducks, waiting for a bus). Work
 out where from the poster, wait for him there and catch him without a chase for a bonus prize. Each
 bounty is six to eight minutes, with one second chance if he slips the net. A Gaffer who got away
-from a takeover is a Wanted poster too, under his own name.
+from a takeover is a Wanted poster too, under his own name. It ends on a results card: how it went
+(taken in, put down, ambushed or got away), the time, the clues, the lookalikes, the time lost to
+wrong men, and with friends, who found what.
 
 ### Treasure trails
 

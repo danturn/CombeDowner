@@ -1392,6 +1392,6 @@ export class NaughtyBoys {
   /** Where naughty boy i is drawn, and his blood id. */
   at(i: number) {
     const c = this.list[i];
-    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice, kind: c.kind, kit: c.look & 7, boss: !!(c.look & BOSS), hp: c.hp, top: c.top, alive: c.state === ALIVE } : null;
+    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice, kind: c.kind, kit: c.look & 7, look: c.look, boss: !!(c.look & BOSS), hp: c.hp, top: c.top, alive: c.state === ALIVE } : null;
   }
 }

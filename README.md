@@ -66,7 +66,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
   point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
   something at each stop for a minute, so waiting for him at the right one catches him without a
-  chase, for a bonus. A Gaffer who got away is a Wanted poster too.
+  chase, for a bonus. A Gaffer who got away is a Wanted poster too. It opens with the poster as a big
+  splash (his features as pictures, his round of stops, the clock and how to catch him), and J (hold
+  the pad's touchpad, or Poster on a touch screen) brings it back, ticking off what the witnesses
+  have said. The search circle is a band and wall of red light in the streets, clues stand under red
+  beams with a "?", every shrink is called out with its new size, a card by the crosshair ticks off
+  which of his features the man you're looking at has, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
@@ -123,9 +128,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   catches the next one, and a long grind wobbles: tap the opposite way to steady it. On every ride and in
   every vehicle A and D (or the left stick) steer and the mouse only looks about, swinging back to the
   way you're going as soon as you leave it be or speed up; come off and you're back on the way the ride
-  was pointing, never where you were looking. Grinds, jumps and
+  was pointing, never where you were looking. On a ride a tap of A or D is a nudge of a few degrees
+  and holding it builds to full lock; a stick pushed forward with a little lean goes straight, and
+  steers once it's clearly over. In the air only a hard turn spins you, and you snap on to a grind by
+  yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
-  any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
+  any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
+  one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
@@ -274,7 +283,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   turn left", "Take the second road on the right"), and marks you as a real examiner would: fifteen
   minor faults is still a pass, and one serious or dangerous fault fails you on the spot (he stamps on
   his brake, says nothing for a moment, then "I'm afraid that's a fail"). He watches your signals at
-  every turn (← and →, or the arrow buttons), your speed against the limit, whether you stop at the
+  every turn (← and →, or the arrow buttons), your speed against each street's real limit (the one on
+  the sign by the speedo), whether you stop at the
   end of a road, the kerb, which side of the road you're on and whether you look round (the mouse or
   the stick) before you move off and before you turn. Hit anything and that's that. The same minor
   fault four times over is a serious one. He'll ask you to pull up on the left on the way round and
