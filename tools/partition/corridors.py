@@ -22,6 +22,10 @@ PRIOR = {
     "residential": (5.5, 3.5), "unclassified": (5.0, 3.5), "living_street": (4.8, 3.5),
     "service": (3.0, 2.5), "pedestrian": (4.0, 3.0),
 }
+# A service road's own kind (OpenStreetMap's `service`, and `access=private`): a drive to a house or
+# an alley between walls is one narrow lane, and an aisle through a car park is wide enough to pass
+# and turn into the bays.
+SERVICE_PRIOR = {"driveway": (2.7, 2.2), "alley": (2.8, 2.0), "parking_aisle": (5.5, 4.0)}
 PAVE = (2.0, 1.2)               # pavement (ideal, minimum)
 PATHS = {"footway", "path", "cycleway", "bridleway", "steps", "track"}
 # The room a path's corridor takes between the plots: the path and the verge either side of it.
@@ -31,6 +35,26 @@ PATHW = {"footway": 1.8, "path": 1.5, "cycleway": 2.5, "bridleway": 2.5, "steps"
 # tagged footways have a median of 1.0 to 1.1 m.
 PATH_DRAWN = {"footway": 1.5, "path": 1.5, "cycleway": 2.2, "bridleway": 2.0, "steps": 1.8, "track": 3.0}
 PATH_NARROWEST = 0.8
+
+
+def _longest(obs, key):
+    """The value of `key` over most of an edge's length, or None."""
+    seen = {}
+    for t0, t1, tags in obs or ():
+        if tags.get(key):
+            seen[tags[key]] = seen.get(tags[key], 0.0) + t1 - t0
+    return max(sorted(seen), key=seen.get) if seen else None
+
+
+def service_kind(cls, obs=()):
+    """What sort of service road an edge is: driveway, alley, parking_aisle, private (a service road
+    with no kind of its own that the public may not use, which in Bath is a drive) or None."""
+    if cls != "service":
+        return None
+    kind = _longest(obs, "service")
+    if kind in SERVICE_PRIOR:
+        return kind
+    return "private" if _longest(obs, "access") in ("private", "no") else None
 
 
 def path_width(cls, obs=()):
@@ -105,6 +129,9 @@ def fit_cross_section(edge, ts, L, R, hold_out=False, hard=None):
     hedge leaning out, a row of parked vans or a run a little out of place."""
     cls = edge["cls"]
     ideal, minimum = PRIOR.get(cls, (5.0, 3.5))
+    kind = service_kind(cls, edge.get("obs"))
+    if kind:
+        ideal, minimum = SERVICE_PRIOR.get(kind, SERVICE_PRIOR["driveway"])
 
     def obs_at(t, key):
         for t0, t1, tags in edge["obs"]:

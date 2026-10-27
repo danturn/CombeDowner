@@ -58,7 +58,7 @@ from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
-from partition.corridors import PATHW, path_width
+from partition.corridors import PATHW, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
 from partition.standing import Standing
@@ -73,12 +73,14 @@ BARRIER = {
     "garden_wall": "garden_wall", "stone_wall": "stone_wall", "brick_wall_low": "brick_wall_low",
     "hedge": "hedge", "hedge_low": "hedge_low", "fence": "fence", "wall": "wall",
     "railing": "railing", "retaining_wall": "retaining_wall", "brick_wall": "brick_wall",
+    "dry_stone": "dry_stone", "wire_fence": "wire_fence", "guard_rail": "guard_rail",
 }
 # The game's own heights, from `web/src/map.ts` BARRIER_HEIGHT. A barrier with no measured height uses
 # these, which is what the game would fall back to anyway - writing them makes the file explicit.
 HEIGHT = {
     "wall": 0.9, "retaining_wall": 0.9, "fence": 1.2, "hedge": 1.3, "garden_wall": 0.9,
     "brick_wall_low": 0.75, "hedge_low": 1.0, "railing": 1.0, "stone_wall": 1.1, "brick_wall": 1.2,
+    "dry_stone": 1.2, "wire_fence": 1.2, "guard_rail": 0.75,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
 SURFACE_TOLERANCE = 0.05   # metres the street surfaces' outlines may move when simplified
@@ -95,7 +97,7 @@ PROBE = 0.25
 BARRIER_WIDTH = {
     "wall": 0.45, "retaining_wall": 0.5, "stone_wall": 0.45, "garden_wall": 0.35,
     "brick_wall": 0.3, "brick_wall_low": 0.3, "fence": 0.08, "hedge": 0.9, "hedge_low": 0.7,
-    "railing": 0.05,
+    "railing": 0.05, "dry_stone": 0.6, "wire_fence": 0.05, "guard_rail": 0.1,
 }
 # Metres of clearance kept between copied decoration and a barrier. A tree or a bin standing in a wall
 # is the same kind of wrong as one standing in a road, and the plank says both are placed later.
@@ -507,6 +509,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                     for piece, deep, lay, tow in marked:
                         for part in (h for whole_part in _surface_pieces(piece, deep) for h in _opened(whole_part)):
                             rec = dict(c=r["cls"], n=r.get("name", ""), p=part, w=round(ww, 2))
+                            rec.update(way_marks(r, whole, part))
                             if lay:
                                 rec["_lay"] = lay
                             if tow:
@@ -515,6 +518,61 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                                 # always written: left out, the game gives a street 1.7 m of pavement each side
                                 rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
                             out.append(rec)
+    return out
+
+
+# A path's surface as the game draws it: g grass, d dirt, v gravel (paved is the default and not
+# written). A track with no surface tag is told by its grade.
+SURFACE = {**dict.fromkeys(("grass", "grass_paver"), "g"),
+           **dict.fromkeys(("dirt", "ground", "earth", "mud", "unpaved", "sand", "soil", "woodchips"), "d"),
+           **dict.fromkeys(("gravel", "fine_gravel", "compacted", "pebblestone", "rock", "shells"), "v")}
+TRACKTYPE = {"grade2": "v", "grade3": "d", "grade4": "d", "grade5": "g"}
+SERVICE_CODE = {"driveway": "d", "alley": "l", "parking_aisle": "a", "private": "p"}
+YES = ("yes", "both", "left", "right", "center")
+
+
+def way_marks(r, whole, pts):
+    """What a record carries from its ways' detail tags (tools/osm.py's osm-detail): `sv`, a service
+    road's kind; `su`, a path's surface; and for steps `sc`, how many treads, `hr`, its handrails (1
+    on the left looking along its points, 2 on the right, 4 down the middle) and `up`, 1 where the
+    map says its points run uphill and -1 downhill."""
+    out = {}
+    kind = service_kind(r["cls"], r.get("obs"))
+    if kind:
+        out["sv"] = SERVICE_CODE[kind]
+    if not r.get("path") or not r.get("obs") or len(pts) < 2:
+        return out
+    line = LineString([q[:2] for q in pts])
+    t = whole.project(line.interpolate(0.5, normalized=True))
+    tags = min(r["obs"], key=lambda o: 0 if o[0] <= t <= o[1] else min(abs(t - o[0]), abs(t - o[1])))[2]
+    su = SURFACE.get(tags.get("surface")) or (TRACKTYPE.get(tags.get("tracktype")) if "surface" not in tags else None)
+    if su and r["cls"] != "pedestrian":
+        out["su"] = su
+    if r["cls"] != "steps":
+        return out
+    try:
+        n = int(str(tags.get("step_count", "")).strip())
+        if 1 < n < 400:
+            out["sc"] = n
+    except ValueError:
+        pass
+    ends = tags.get("_ends")
+    along = None
+    if ends:
+        along = line.project(Point(ends[2], ends[3])) >= line.project(Point(ends[0], ends[1]))
+    hr = 0
+    if tags.get("handrail") in YES:
+        hr = {"left": 1, "right": 2, "center": 4}.get(tags["handrail"], 3)
+    side = {"handrail:left": 1, "handrail:right": 2}
+    for key, bit in side.items():
+        if tags.get(key) == "yes" and along is not None:
+            hr |= bit if along else 3 - bit
+    if tags.get("handrail:center") == "yes":
+        hr |= 4
+    if hr:
+        out["hr"] = hr
+    if along is not None and tags.get("incline") in ("up", "down"):
+        out["up"] = 1 if (tags["incline"] == "up") == along else -1
     return out
 
 
@@ -1630,7 +1688,8 @@ def follow_laid_ground(tile, change):
 
 
 # how far above its face the game draws each kind of street surface (web/src/world.ts FACE_LIFT)
-FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04}
+FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04,
+             "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
 
 
 def face_heights(sf, lifted=True):
@@ -1966,7 +2025,7 @@ def noded(pieces):
     return out
 
 
-SF_LISTS = ("road", "service", "pave", "path", "front", "drive")
+SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
 
 
 def pack_surfaces(sf, x0, y0):
@@ -2361,6 +2420,10 @@ def _level_at(line, x, y, ground, square, edge=0.1, back=3.0):
     return z + (z - zi) / back * min(past, 2 * back)
 
 
+PATH_FACE = {"g": "grass", "d": "dirt", "v": "gravel"}
+PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its surface
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
                     standing=None, filled=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
@@ -2494,7 +2557,26 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             v.extend([key[0], key[1], round(z, 2)])
         return at[key]
 
-    out = dict(v=v, road=[], service=[], pave=[], path=[], front=[], drive=[], e=[])
+    out = dict(v=v, road=[], service=[], pave=[], path=[], front=[], drive=[], grass=[], dirt=[], gravel=[], e=[])
+    # a path is drawn as what the map says it is made of (`su`): worn grass, bare earth or gravel
+    rough = [(LineString([q[:2] for q in r["p"]]), PATH_FACE[r["su"]]) for r in rd
+             if r.get("su") in PATH_FACE and r["c"] in GAME_PATHS and len(r["p"]) > 1]
+    smooth = [LineString([q[:2] for q in r["p"]]) for r in rd
+              if r["c"] in GAME_PATHS and r.get("su") not in PATH_FACE and len(r["p"]) > 1]
+    rough_tree = STRtree([l for l, _ in rough]) if rough else None
+    smooth_tree = STRtree(smooth) if smooth else None
+
+    def path_kind(x, y):
+        if rough_tree is None:
+            return "path"
+        p = Point(x, y)
+        best = min(((rough[int(k)][0].distance(p), rough[int(k)][1]) for k in rough_tree.query(p.buffer(PATH_FACE_REACH))),
+                   default=None)
+        if best is None or best[0] > PATH_FACE_REACH:
+            return "path"
+        if smooth_tree is not None and any(smooth[int(k)].distance(p) < best[0] for k in smooth_tree.query(p.buffer(best[0]))):
+            return "path"
+        return best[1]
     walk, kerbside = set(), set()
     for (cls, _), poly in zip(pieces, simple):
         flat = cls in ("path", "front", "drive")
@@ -2505,6 +2587,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":
                     kind = "pave"
+                elif cls == "path":
+                    kind = path_kind(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
                 elif flat:
                     kind = cls
                 else:
@@ -2530,7 +2614,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if g is not None:
             z = v[3 * k + 2]
             v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
-    return out if any(out[k] for k in ("road", "service", "pave", "path", "front", "drive")) else None
+    for k in PATH_FACE.values():
+        if not out[k]:
+            del out[k]
+    return out if any(out.get(k) for k in SF_LISTS) else None
 
 
 def drop_paths_along_streets(rd):
@@ -3205,6 +3292,65 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     out, gaps = clear_gates_of_junctions(out, gaps, ground)
     out = keep_clear_of(out, blocked, ground)
     return _without_lone_stubs(out, gaps, square), gaps, in_road
+
+
+# A drawn boundary standing along a mapped one whose make the map gives is built as that make: these
+# are the kinds each make may take over
+STYLE_TAKES = {**dict.fromkeys(("dry_stone", "stone_wall", "brick_wall"),
+                               {"wall", "stone_wall", "garden_wall", "brick_wall", "brick_wall_low"}),
+               **dict.fromkeys(("railing", "wire_fence"), {"fence", "railing"})}
+STYLE_ALONG = 0.6       # of a run's length within OPEN_CLEAR of the mapped barrier
+
+
+VERGE = 0.6            # metres a crash barrier stands off the carriageway's edge
+
+
+def verge_line(line, rd):
+    """A crash barrier's points, each one the map put on the carriageway moved out to stand just off
+    its edge: the map's line is often a metre or two off, and a barrier in the road reads as a mistake."""
+    roads = [(LineString([q[:2] for q in r["p"]]), r["w"] / 2) for r in rd
+             if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    tree = STRtree([l for l, _ in roads]) if roads else None
+    out = []
+    for x, y in (q[:2] for q in line.coords):
+        p = Point(x, y)
+        for k in tree.query(p.buffer(12)) if tree is not None else ():
+            l, half = roads[int(k)]
+            d = l.distance(p)
+            if d < half + VERGE:
+                c = l.interpolate(l.project(p))
+                if d < 1e-3:
+                    continue
+                f = (half + VERGE) / d
+                p = Point(c.x + (p.x - c.x) * f, c.y + (p.y - c.y) * f)
+        out.append([p.x, p.y])
+    return out
+
+
+def take_mapped_styles(runs, styled):
+    """Each run lying along a mapped wall or fence whose make the map gives (a dry-stone wall,
+    railings, a wire fence) takes that make, as the map's own copy of it would have been built."""
+    lines = [(l, st) for l, st in styled if st in STYLE_TAKES]
+    if not lines:
+        return runs
+    tree = STRtree([l for l, _ in lines])
+    for b in runs:
+        if len(b["p"]) < 2:
+            continue
+        ln = LineString([q[:2] for q in b["p"]])
+        best = None
+        for k in tree.query(ln.buffer(OPEN_CLEAR)):
+            l, st = lines[int(k)]
+            if b["c"] not in STYLE_TAKES[st]:
+                continue
+            share = ln.intersection(l.buffer(OPEN_CLEAR)).length / max(ln.length, 1e-6)
+            if share >= STYLE_ALONG and (best is None or share > best[0]):
+                best = (share, st)
+        if best and best[1] != b["c"]:
+            if b.get("h") == HEIGHT.get(b["c"]):
+                b["h"] = HEIGHT[best[1]]
+            b["c"] = best[1]
+    return runs
 
 
 OPEN_CLEAR = 1.5        # metres: a measured barrier this near a drawn one is the same boundary
@@ -4156,6 +4302,227 @@ def blocked_ground(rd, tile, rail_tracks, canal, sq):
     return blocked
 
 
+# ---- crossings, traffic lights and what stands across a path ----------------------------------
+
+def mapped_points(sq, pad=5.0):
+    """Overture's infrastructure points (OpenStreetMap's nodes, every tag kept) in and round a square,
+    as (x, y, class, tags)."""
+    from partition.data import Data
+    x0, y0, x1, y1 = sq
+    win = (x0 - pad, y0 - pad, x1 + pad, y1 + pad)
+    D = Data(os.path.join(ROOT, "data", "raw", MAP, "wide"), win, log=lambda *_: None)
+    return [(g.x, g.y, p.get("class"), dict(t for t in p.get("source_tags") or [] if len(t) == 2))
+            for g, p in D.near(win, "infrastructure") if g.geom_type == "Point"]
+
+
+CROSSING_REACH = 8.0     # metres a crossing's node may lie from the street it crosses
+SIGNAL_REFS = ("pelican", "puffin", "toucan", "pegasus")
+
+
+def crossing_kind(cls, tags):
+    """z: a zebra, with Belisha beacons; p: a crossing with lights (pelican, puffin, toucan); s: lights
+    at a junction with no crossing of their own; None for a crossing with nothing to show (a dropped
+    kerb)."""
+    ref, kind, marks = tags.get("crossing_ref"), tags.get("crossing"), tags.get("crossing:markings")
+    if ref in SIGNAL_REFS or kind == "traffic_signals" or tags.get("crossing:signals") == "yes":
+        return "p"
+    if ref in ("zebra", "tiger") or kind in ("zebra", "marked") or marks == "zebra" \
+            or (kind == "uncontrolled" and marks == "yes"):
+        return "z"
+    if cls == "traffic_signals":
+        return "s"
+    return None
+
+
+def crossings(sq, rd, ground, points):
+    """`cx`: the crossings and traffic lights on the square's streets, each [x, y, ground, angle,
+    kind, width]: the point on the street's middle line, the street's direction there (radians, as
+    street items are turned), `crossing_kind`'s letter, and the carriageway's width. The game paints
+    the stripes or studs across it and stands the beacons or lights at its kerbs, and the driving
+    examiner can ask whether you stopped at them."""
+    roads = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    if not roads:
+        return [], collections.Counter()
+    tree = STRtree([l for l, _ in roads])
+    x0, y0, x1, y1 = sq
+    out, count, seen = [], collections.Counter(), []
+    for x, y, cls, tags in points:
+        if cls not in ("crossing", "traffic_signals") or not (x0 <= x < x1 and y0 <= y < y1):
+            continue
+        kind = crossing_kind(cls, tags)
+        if kind is None:
+            count["plain"] += 1
+            continue
+        p = Point(x, y)
+        near = [(roads[int(k)][0].distance(p), int(k)) for k in tree.query(p.buffer(CROSSING_REACH))]
+        near = [n for n in near if n[0] <= CROSSING_REACH]
+        if not near:
+            count["no street"] += 1
+            continue
+        line, r = roads[min(near)[1]]
+        t = line.project(p)
+        c = line.interpolate(t)
+        a, b = line.interpolate(max(0.0, t - 1)), line.interpolate(min(line.length, t + 1))
+        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy in seen):
+            count["doubled"] += 1
+            continue
+        z = ground(c.x, c.y)
+        if z is None:
+            continue
+        seen.append((c.x, c.y))
+        out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(b.y - a.y, b.x - a.x), 3), kind, round(r["w"], 1)])
+        count[kind] += 1
+    return out, count
+
+
+# OpenStreetMap's barriers across a way, as the game's kinds. A gate, a stile or a kissing gate goes
+# only where its way crosses a wall, fence or hedge the map builds; the rest stand across the way itself.
+IN_A_BOUNDARY = {"gate": "gate", "stile": "stile", "kissing_gate": "kiss", "gate;stile": "stile",
+                 "kissing_gate;cattle_grid": "kiss"}
+ON_THE_WAY = {"cycle_barrier": "cycle", "lift_gate": "lift", "cattle_grid": "grid", "block": "block"}
+NODE_REACH = 3.0         # metres a barrier's node may lie from its way, and from the boundary it stands in
+GAP_SIDE = 0.4           # metres either side of the way left open in the boundary, as a path is let through
+
+
+def path_barriers(sq, rd, br, ground, points):
+    """`pb`: gates, stiles, kissing gates, cycle barriers, lift gates, cattle grids and blocks, each
+    [kind, x, y, ground, angle, width], with the boundaries they stand in opened for them; and a count
+    of those placed and left out, by why.
+
+    The map puts a gate on its path, usually at a node it shares with the fence, but the boundary the
+    build draws there was joined, straightened or guessed, so it can lie a metre or two off. A gate, a
+    stile or a kissing gate is stood where its way really crosses a built boundary within `NODE_REACH`
+    of the node, turned along that boundary, and the boundary is cut back to let the way through (or
+    the gap already cut for the path is used). With no built boundary in reach it is left out: a stile
+    alone in a field means nothing. The others need only their way: a cattle grid lies across the
+    road, a cycle barrier or a block stands on the path."""
+    ways = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if len(r["p"]) > 1]
+    count = collections.Counter()
+    if not ways:
+        return br, [], count
+    wtree = STRtree([l for l, _ in ways])
+    x0, y0, x1, y1 = sq
+    out = []
+    for x, y, cls, tags in points:
+        kind = IN_A_BOUNDARY.get(tags.get("barrier")) or ON_THE_WAY.get(tags.get("barrier"))
+        if not kind or not (x0 <= x < x1 and y0 <= y < y1):
+            continue
+        p = Point(x, y)
+        near = sorted((ways[int(k)][0].distance(p), int(k)) for k in wtree.query(p.buffer(NODE_REACH)))
+        near = [n for n in near if n[0] <= NODE_REACH]
+        if kind == "grid":
+            near = [n for n in near if ways[n[1]][1]["c"] not in GAME_PATHS or ways[n[1]][1]["c"] == "track"]
+        if not near:
+            count[f"{kind}: no way within {NODE_REACH:.0f} m"] += 1
+            continue
+        line, r = ways[near[0][1]]
+        width = r["w"]
+        t = line.project(p)
+        if kind not in IN_A_BOUNDARY.values():
+            c = line.interpolate(t)
+            a, b = line.interpolate(max(0.0, t - 1)), line.interpolate(min(line.length, t + 1))
+            z = ground(c.x, c.y)
+            if z is None:
+                continue
+            # (turned along the way: the game lays a grid and stands a barrier across it)
+            out.append([kind, round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(b.y - a.y, b.x - a.x), 3), round(width, 1)])
+            count[f"{kind}: placed"] += 1
+            continue
+        stretch = substring(line, max(0.0, t - NODE_REACH), min(line.length, t + NODE_REACH))
+        spot = _crossing_in(br, stretch, p, width / 2 + GAP_SIDE)
+        if spot is None:
+            count[f"{kind}: no built boundary within {NODE_REACH:.0f} m"] += 1
+            continue
+        (cx, cy), ang, gap, cut = spot
+        if cut is not None:
+            br = _open_boundary(br, cut, (cx, cy), gap, ground)
+        z = ground(cx, cy)
+        if z is None:
+            continue
+        out.append([kind, round(cx, 2), round(cy, 2), round(z, 2), round(ang, 3), round(gap, 2)])
+        count[f"{kind}: placed"] += 1
+    return br, out, count
+
+
+def _crossing_in(br, stretch, node, half):
+    """Where `stretch` (a way, either side of a barrier's node) goes through a built boundary:
+    ((x, y), the boundary's direction, the gap's width, the run to cut or None where the gap is
+    already there), nearest the node; None if it goes through none."""
+    best = None
+    for i, b in enumerate(br):
+        if len(b["p"]) < 2:
+            continue
+        ln = LineString([q[:2] for q in b["p"]])
+        if ln.distance(stretch) > half + 0.6:
+            continue
+        x = ln.intersection(stretch)
+        for h in getattr(x, "geoms", [x]):
+            if h.geom_type != "Point":
+                continue
+            s = ln.project(h)
+            a, c = ln.interpolate(max(0.0, s - 0.5)), ln.interpolate(min(ln.length, s + 0.5))
+            d = h.distance(node)
+            if best is None or d < best[0]:
+                best = (d, ((h.x, h.y), math.atan2(c.y - a.y, c.x - a.x), 2 * half, i))
+    if best is not None:
+        return best[1]
+    # a gap already cut for the path: the ends of the boundary either side of it
+    ends = []
+    for b in br:
+        if len(b["p"]) < 2:
+            continue
+        for e, n in ((b["p"][0], b["p"][1]), (b["p"][-1], b["p"][-2])):
+            pt = Point(e[:2])
+            if pt.distance(stretch) <= half + 0.6:
+                ends.append((pt, math.atan2(e[1] - n[1], e[0] - n[0])))
+    for (pa, aa), (pb, ab) in itertools.combinations(ends, 2):
+        mid = Point((pa.x + pb.x) / 2, (pa.y + pb.y) / 2)
+        gap = pa.distance(pb)
+        across = LineString([pa, pb])
+        # the two ends face each other across the way, and the way runs between them
+        if not (0.8 <= gap <= 2 * half + 1.6) or not across.intersects(stretch.buffer(0.3)):
+            continue
+        if math.cos(aa - ab) > -0.5:
+            continue
+        d = mid.distance(node)
+        if best is None or d < best[0]:
+            best = (d, ((mid.x, mid.y), math.atan2(pb.y - pa.y, pb.x - pa.x), gap, None))
+    if best is not None:
+        return best[1]
+    # the boundary on one side only (the other was never mapped, or was too short to stand): the gate
+    # hangs from its end, across the way
+    for pa, aa in ends:
+        ux, uy = math.cos(aa), math.sin(aa)
+        reach = LineString([pa, (pa.x + ux * 2 * half, pa.y + uy * 2 * half)])
+        if not reach.intersects(stretch):
+            continue
+        mid = Point(pa.x + ux * half, pa.y + uy * half)
+        d = mid.distance(node)
+        if best is None or d < best[0]:
+            best = (d, ((mid.x, mid.y), aa, 2 * half, None))
+    return best[1] if best is not None else None
+
+
+def _open_boundary(br, i, at, gap, ground):
+    """Run `i` with `gap` metres taken out of it round `at`, as a path is let through a wall."""
+    b = br[i]
+    ln = LineString([q[:2] for q in b["p"]])
+    s = ln.project(Point(at))
+    keep = [substring(ln, 0, s - gap / 2), substring(ln, s + gap / 2, ln.length)]
+    out = br[:i] + br[i + 1:]
+    for piece in keep:
+        if piece.geom_type != "LineString" or piece.length < 0.1:
+            continue
+        run = []
+        for px, py in piece.coords:
+            z = ground(px, py)
+            if z is not None:
+                run.append([round(px, 1), round(py, 1), round(z, 1)])
+        if len(run) >= 2:
+            out.append(dict(b, p=run))
+    return out
+
+
 BACK_HEDGE_SHARE = 0.1   # the share of back yards hedged rather than fenced, as `gardens.py` rolls it
 
 
@@ -4353,7 +4720,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     # the mapped walls and hedges, which main's tile keeps among its guesses, so they are taken from
     # the map itself: the partition draws only the ones that divide two of its faces
-    mapped = [dict(c=c, p=[list(q[:2]) for q in l.coords]) for l, c in evidence.mapped if l.length > 0]
+    style_of = {id(l): st for l, st in evidence.styled}
+    mapped = [dict(c=style_of.get(id(l), c), p=[list(q[:2]) for q in l.coords]) for l, c in evidence.mapped if l.length > 0]
+    mapped += [dict(c=st, p=verge_line(l, rd)) for l, st in evidence.styled if st == "guard_rail"]
     br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
                                          blocked=wall_blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
@@ -4361,6 +4730,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                                 if r["c"] in GAME_PATHS and len(r["p"]) > 1],
                                          guess_blocked=abutments)
 
+    br = take_mapped_styles(br, evidence.styled)
     fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
@@ -4380,7 +4750,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = widen_to_paving(rd, filled[0][0] if filled else None, paving, br, houses)
     tile["rd"] = rd
     br, _ = ends_off_pavements(br, rd)
+    points = mapped_points(sq)
+    br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points)
     tile["br"] = br
+    tile["pb"] = pb
     tile["gt"] = gt
     tile["fp"] = fp
     tile["dv"] = dv
@@ -4403,6 +4776,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, street_ground, dv,
                                       None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + [c[:3] + [round(street_ground(c[1], c[2]) + 0.07, 2)] + c[4:] for c in drive_cars]
+    tile["cx"], cx_count = crossings(sq, rd, street_ground, points)
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
@@ -4424,12 +4798,15 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         print(f"  cars: {len(cars)} parked of {car_count['placed']} placed; left out "
               f"{car_count['walls']} touching a wall or building, {car_count['gate']} across a gate, "
               f"{car_count['bank']} half up a bank, {car_count['off_street']} on a bridge, the railway or the water")
+        print(f"  crossings and lights: {dict(sorted(cx_count.items()))}")
+        print(f"  across paths: {dict(sorted(pb_count.items()))}")
         if any(gone.values()) or any(moved.values()):
             print(f"  decoration where the new layout contradicts it: dropped "
                   + (", ".join(f"{k} {v}" for k, v in gone.items() if v) or "none")
                   + "; moved " + (", ".join(f"{k} {v}" for k, v in moved.items() if v) or "none"))
     tile["_gone"] = gone
     tile["_moved"] = moved
+    tile["_counts"] = dict(cx=cx_count, pb=pb_count)
     return tile
 
 
@@ -4448,7 +4825,8 @@ def write_one(job):
     return dict(square=[ti, tj], runs=len(tile.get("br") or []),
                 gaps=len(tile.get("gt") or []), fp=len(tile.get("fp") or []),
                 dropped_tr=gone.get("tr", 0), dropped_sb=gone.get("sb", 0),
-                dropped_fx=gone.get("fx", 0), moved=dict(tile.get("_moved") or {}))
+                dropped_fx=gone.get("fx", 0), moved=dict(tile.get("_moved") or {}),
+                counts={k: dict(v) for k, v in (tile.get("_counts") or {}).items()})
 
 
 def write_city(argv):

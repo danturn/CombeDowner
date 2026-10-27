@@ -26,6 +26,7 @@ only one with the Land Registry's parcels and the lidar it needs kept, `measured
 other map `prep_tiles.py` builds straight into the game's folder and this stage doesn't run.
 Nothing here is decided over the network: it is all build-time.
 """
+import collections
 import hashlib
 import json
 import os
@@ -226,6 +227,7 @@ def main(argv):
         jobs_ = [(a, b, out_dir, once, city, os.path.join(base, name((a, b)) + ".json"))
                  for a, b in todo if (a, b) not in kept]
         missed = 0
+        placed = collections.defaultdict(collections.Counter)
         with ProcessPoolExecutor(jobs) as pool:
             # the biggest squares start first; results are taken in square order, which the seams use
             part = lambda j: os.path.join(city, name((j[0], j[1])), "partition.json")
@@ -246,8 +248,14 @@ def main(argv):
                     written.update(st.put("write", wkey(t), out_dir, [name(t) + ".json"]))
                     wrote.add(t)
                     missed += r["missed"]
+                    for k, c in (r.get("counts") or {}).items():
+                        for n, v in c.items():
+                            placed[k][n] += v
         if spans:
             print("  " + pool_use("writing", spans, time.time() - tp, jobs), flush=True)
+        for k, c in sorted(placed.items()):
+            print(f"partition: {'crossings and lights' if k == 'cx' else 'across paths'} in the squares written: "
+                  + ", ".join(f"{n} {v}" for n, v in sorted(c.items())), flush=True)
         done = [t for t in todo if t in kept or t in wrote]
         stubs = drop_edge_stubs(out_dir, done)
         loose_wires = string_city_wires(out_dir, done)

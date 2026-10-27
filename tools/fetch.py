@@ -145,6 +145,9 @@ def main():
     if want("osm") and not os.path.exists(os.path.join(raw, "osm-roads.geojson")):
         # the streets' widths, lanes and pavements, for fitting the streets (tools/roadwidth.py)
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-roads.geojson"), "wide", "roads")
+    if want("osm") and not os.path.exists(os.path.join(raw, "osm-detail.geojson")):
+        # paths' surfaces, service roads' kinds, steps' handrails and the crash barriers (the partition)
+        run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-detail.geojson"), "wide", "detail")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):

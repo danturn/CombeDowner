@@ -306,6 +306,25 @@ def graph_path(out):
     return os.path.join(out, "graph.json")
 
 
+# What the streets' own records leave out, from osm-detail (tools/osm.py): a path's surface, a
+# service road's kind and who may use it, and how a flight of steps is built.
+DETAIL_KEYS = ("surface", "tracktype", "service", "access", "handrail", "handrail:left", "handrail:right",
+               "handrail:center", "step_count", "incline")
+
+
+def way_detail(D, bb):
+    """osm id -> the detail tags of each street or path that has any."""
+    out = {}
+    for g, p in D.lines_near(bb, "osm-detail"):
+        tags = {k: p[k] for k in DETAIL_KEYS if k in p}
+        if tags and "highway" in p:
+            # which way the way was drawn, as a handrail's side and an incline are told along it
+            if g.geom_type == "LineString" and any(k in tags for k in ("incline", "handrail:left", "handrail:right")):
+                tags["_ends"] = [round(v, 1) for v in (*g.coords[0][:2], *g.coords[-1][:2])]
+            out[p["osm"]] = tags
+    return out
+
+
 def build_graph(out, raw, log=print):
     """The street graph, built once for the whole map and written to `<out>/graph.json`.
 
@@ -317,8 +336,10 @@ def build_graph(out, raw, log=print):
     bb = map_bbox()
     D = Data(raw, bb, log=log)
     roads = []
+    detail = way_detail(D, bb)
     for g, p in D.lines_near(bb, "osm-roads"):
         g = g.intersection(box(*bb))
+        p = {**p, **detail.get(p.get("osm"), {})}
         for l in (g.geoms if hasattr(g, "geoms") else [g]):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))

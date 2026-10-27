@@ -102,6 +102,7 @@ class Evidence:
         self.mapped_tree = STRtree([l for l, _ in self.mapped]) if self.mapped else None
         self.listed = list(listed)
         self.listed_tree = STRtree([p for p, _ in self.listed]) if self.listed else None
+        self.styled = []       # (line, game style) for the mapped barriers the map says the make of
 
     def listed_front(self, house, reach=LISTED_REACH):
         """The kind of a house's front boundary where Historic England lists railings or a wall
@@ -159,12 +160,38 @@ def load_evidence(sq, pad=50.0):
     x0, y0, x1, y1 = sq
     win = (x0 - pad, y0 - pad, x1 + pad, y1 + pad)
     D = Data(os.path.join(ROOT, "data", "raw", MAP, "wide"), win, log=lambda *_: None)
-    mapped = []
+    mapped, styled = [], []
     for g, p in D.near(win, "infrastructure"):
         if p.get("subtype") == "barrier" and p.get("class") in ("fence", "wall", "hedge", "retaining_wall"):
-            mapped += [(l, p["class"]) for l in barrier_lines(g)]
+            style = mapped_style(p)
+            for l in barrier_lines(g):
+                mapped.append((l, p["class"]))
+                if style:
+                    styled.append((l, style))
+    # a crash barrier divides no garden: it is only built where it is mapped
+    for g, p in D.near(win, "osm-detail"):
+        if p.get("barrier") == "guard_rail":
+            styled += [(l, "guard_rail") for l in barrier_lines(g)]
     listed = [(g, p["kind"]) for g, p in D.near(win, "listed") if g.geom_type == "Point"]
-    return Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
+    ev = Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
+    ev.styled = [(l, s) for l, s in styled if not l.is_empty and l.length > 0]
+    return ev
+
+
+# What a mapped wall or fence is made of, where OpenStreetMap says (`wall`, `material`, `fence_type`):
+# the game's style for it, or None to build it as its class
+WALL_STYLE = {"dry_stone": "dry_stone", "stone": "stone_wall", "brick": "brick_wall", "flint": "stone_wall"}
+FENCE_STYLE = {**dict.fromkeys(("railing", "railings", "metal_bars", "metal"), "railing"),
+               **dict.fromkeys(("wire", "wire_mesh", "chain_link", "barbed_wire", "electric", "pole"), "wire_fence")}
+
+
+def mapped_style(p):
+    tags = dict(t for t in p.get("source_tags") or [] if len(t) == 2)
+    if p.get("class") == "wall":
+        return WALL_STYLE.get(tags.get("wall")) or WALL_STYLE.get(tags.get("material"))
+    if p.get("class") == "fence":
+        return FENCE_STYLE.get(tags.get("fence_type"))
+    return None
 
 
 def town_fronts(tile_buildings, evidence):
