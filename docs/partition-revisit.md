@@ -1252,11 +1252,27 @@ same as main):
   changes today: run over the whole graph, Bailbrook is the only bore that differs); and each
   carriageway gets its own 4.8 m tube (`TUNNEL` in `web/src/map.ts`), narrower than a two-lane trunk.
   The game's tunnels still come from `prep_map.py`'s squares (`tn`), not the partition's `bored`.
+- [ ] **A tunnel is a bore under whole ground** (Dan, after the Bailbrook shots). The ground over a
+  bore is the survey's, unbroken (`prep_map.py` puts it back after the roads' easing, and the writer
+  neither holds nor lays ground for a road inside the game's tube), with whatever is on it laid on it
+  as anywhere else: no deck, no stacked bridge (rule 2g skips a bore), no underpass decks at a bored
+  tunnel's ends, and a way running along the top of the approach cutting is laid on its bank rather
+  than carried (`along_mouths`). The bore runs from the first point where the ground stands a whole
+  arch over the floor to the last (`tunnels.bores`, stretches the data splits joined), its floor
+  from the road just outside each mouth (`profiles.MOUTH`) and levelled over the whole tunnel, not
+  the square's clip (the Combe Down Tunnel stepped 34 m where 1_1 met 1_0). The ground in front of
+  each portal is cut to its road over the headwall's width. In the game, bores coming out side by
+  side are run out to one line and share one headwall (`alignPortals`). Trade-offs: the hill face
+  over a portal is a step on the 4 m grid beyond the headwall's width; the tube is still 4.8 m wide
+  per carriageway; a tunnel crossing a square's edge still gets a headwall at the seam, under the
+  hill; and the bores' ends now follow the hill face, so the Combe Down Tunnel is one 1,649 m bore
+  rather than ten pieces, and a footway tunnel at (-2777, -2466) grows from 16 m to 35 m.
 - [ ] **OSM's own bridge and tunnel tags** (`tools/osm.py` keeps `bridge`, `tunnel`, `layer` and
   `covered` on the streets; `structures.osm_structures` lays `bridge` and `tunnel` on the edges they
   cover, alongside Overture's flags, and a `covered` way stays on the ground). The packed
-  `data/combe-down/osm-roads` was fetched before these tags were kept, so nothing changes until it is
-  fetched again and measured; `layer` and `covered` are carried but no rule reads them yet.
+  `data/combe-down/osm-roads` now has them (fetched afresh on main for the speed limits), so the
+  graph's edges carry OSM's own bridges and tunnels alongside Overture's; `layer` and `covered` are
+  carried but no rule reads them yet.
 
 ## A faster build, the same map (27 October)
 

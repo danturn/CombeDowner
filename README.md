@@ -35,8 +35,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. A road the map
-  data puts in a tunnel goes through one, with the ground and the lanes over it left as they are:
-  the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
+  data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
+  face, with the ground and the lanes over it left as they are and one stone headwall over the
+  arches where two bores come out side by side: the A46 runs under Bailbrook Lane through the
+  Bailbrook Underpass.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
   string of red and white bunting and the whole string flutters down for a bonus and rips the flags
