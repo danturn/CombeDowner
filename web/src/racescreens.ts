@@ -34,6 +34,7 @@ function style() {
 .rsc-wait .dots::after{content:'';animation:rsc-dots 1.2s steps(4) infinite}
 .rsc-wait .count{font-weight:900;font-size:clamp(34px,8vmin,72px);line-height:1;color:#ffd84a;font-variant-numeric:tabular-nums}
 .rsc-count{top:0;bottom:0;justify-content:center}
+body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility:hidden}
 .rsc-count .num{font-weight:900;font-size:clamp(150px,42vmin,420px);line-height:.85;animation:rsc-punch .9s cubic-bezier(.15,1.5,.4,1) both}
 .rsc-count .num.go{color:${COLOUR};font-size:clamp(130px,36vmin,360px)}
 .rsc-count .lights{display:flex;gap:clamp(10px,2.4vmin,22px);margin-bottom:clamp(8px,2vmin,20px);padding:clamp(6px,1.4vmin,12px) clamp(10px,2.4vmin,20px);background:#111a;border:2px solid #000;border-radius:8px}

@@ -82,6 +82,7 @@ const COLOUR = "#3ec7e8";
 const ENTRY = 15;          // seconds the entries are open after it's taken
 const COUNTDOWN = 8;       // seconds on the grid from the entries closing to GO
 const RETRY = 3;           // and for a go of your own
+const GO_HUSH = 1.3;       // seconds after GO before the middle of the screen is anyone else's again
 const GRID_WAIT = 2.5;     // seconds after the entries close to wait for the host's grid
 const PASS = 12;           // metres from a checkpoint's middle that counts as through it, at least
 const TOP_SPEED = 48;      // metres a second: nobody's quicker over the whole route than this, boosts and all
@@ -844,6 +845,14 @@ class Race implements Job {
         small: many ? `Racing: ${names(this.grid!)}` : undefined,
       });
     } else RS.waiting(null);
+  }
+
+  /** From Get ready till GO has faded the middle of the screen is the countdown's alone: anything
+   *  else for it (a ride's intro, its keys) waits till after. */
+  quiet(): boolean {
+    if (!this.racing || this.over || this.dnf || this.done) return false;
+    const t = this.now;
+    return t < GO_HUSH && (t > -COUNTDOWN || this.own);
   }
 
   /** Over the line or out of the race while others are still going, in the room's race: I wait,

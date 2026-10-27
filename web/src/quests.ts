@@ -272,6 +272,8 @@ export interface Job {
   spectate?(): { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null;
   /** Switch who you're watching while you wait (by: 1 next, -1 last). True if that's what the press was for. */
   cycle?(by: number): boolean;
+  /** The middle of the screen is the job's (a race's countdown): toasts and prompts wait. */
+  quiet?(): boolean;
   /** Anything of the job's standing in the road for the traffic to pull round (a broken-down bus). */
   obstacles?(): { x: number; z: number; r: number; parked?: boolean; a?: number }[];
   /** Where you're held up off the ground this frame, given which way you're pushing the keys or the
@@ -839,6 +841,7 @@ export class Quests {
   waiting(): boolean { return !!this.job && !this.job.done && !!this.job.waiting?.(); }
   spectate() { return this.job && !this.job.done ? this.job.spectate?.() ?? null : null; }
   cycle(by: number): boolean { return !!this.job && !this.job.done && !!this.job.cycle?.(by); }
+  quiet(): boolean { return !!this.job && !this.job.done && !!this.job.quiet?.(); }
 
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }

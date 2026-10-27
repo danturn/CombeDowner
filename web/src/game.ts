@@ -540,6 +540,8 @@ export class Game {
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private swapAt: Item | null = null;              // a ride or a ladder at your feet while your hands are full: E swaps for it
   private riding = false;
+  private heldToast: { text: string; secs: number } | null = null;   // a call-out kept back till a race's countdown is over
+  private hushed = false;                          // a race's countdown had the middle of the screen last frame
   private rideTip = 0;                             // till when the middle of the screen says what to do with what you've just got, or just got on
   private tipSlot: string | null = null;           // what was in your hands last frame, to start that tip when it changes
   private basket = "";                             // whose trolley you're riding in, if anyone's
@@ -4458,7 +4460,17 @@ export class Game {
       : this.held && performance.now() < this.rideTip ? `<b>${this.k("KeyX", "Ride")}</b> Get on ${esc(rideSpecs[this.held].name)}`
       : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : padText(wood))
       : ladder || wait;
-    show($("usehint"), text, !!text);
+    // in a race's countdown the prompt waits too, and what to do with the ride is said once it's over
+    const hush = this.quests.quiet();
+    if (this.hushed && !hush) {
+      if (this.riding) this.rideTip = performance.now() + TIP_MS;
+      const held = this.heldToast;
+      this.heldToast = null;
+      if (held) this.toast(held.text, held.secs);
+    }
+    if (hush && !this.hushed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
+    this.hushed = hush;
+    show($("usehint"), hush ? "" : text, !hush && !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
@@ -4607,6 +4619,8 @@ export class Game {
   private k(code: string, touch: string) { return this.freeMode ? touch : keyLabel(code); }
 
   toast(text: string, secs = 2) {
+    // a race's countdown has the middle of the screen: the call-out comes once GO has gone
+    if (this.quests.quiet()) { this.heldToast = { text, secs }; return; }
     if (!this.freeMode) text = padText(text);
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
