@@ -38,7 +38,7 @@ const page = await context.newPage();
 page.on("pageerror", (e) => console.log("pageerror", e.message));
 const silent = [];
 const RAW = /<b>[A-Z]<\/b>|\b(?:Press|press|Hold|hold) [A-Z]\b|\b[A-Z] to |\bW\/S\b|\bA\/D\b|\bSpace\b|\bEsc\b/;
-const text = (id) => page.evaluate((id) => document.getElementById(id)?.innerText ?? "", id);
+const text = (id) => page.evaluate((id) => document.getElementById(id)?.textContent ?? "", id);
 const tapPad = async (b) => { await page.evaluate((b) => { window.__pad.buttons[b].pressed = true; window.__pad.buttons[b].value = 1; }, b); await wait(150); await page.evaluate((b) => { window.__pad.buttons[b].pressed = false; window.__pad.buttons[b].value = 0; }, b); await wait(300); };
 
 async function enter(mode) {
@@ -50,6 +50,7 @@ async function enter(mode) {
   await page.evaluate((mode) => {
     const g = window.__game(), u = g.update.bind(g);
     g.update = (dt) => { g.active = true; document.getElementById("pause").hidden = true; u(dt); };
+    window.__startAt = [g.player.pos.x, g.player.pos.z];
     if (mode === "touch") { g.freeMode = true; document.getElementById("touch").hidden = false; }
   }, mode);
   await page.addStyleTag({ content: "#menu,#debug,#micask,#chronicle,#scoreboard{display:none!important}" });
@@ -77,15 +78,17 @@ try {
         const g = window.__game(), q = g.quests, w = q.w, real = w.players.bind(w);
         w.players = () => { const r = real(); return [...r, { ...r[0], id: "zz1", name: "Ann" }, { ...r[0], id: "zz2", name: "Bob" }]; };
       });
-      for (let i = 0; i < 40 && !(await text("usehint")).includes("shoulder"); i++) {
-        await page.evaluate((i) => {
-          const g = window.__game(), o = g.quests.job?.obstacles?.()[0], bx = o?.x, bz = o?.z;
-          const pts = []; for (let a = 0; a < 16; a++) for (const r of [3, 4.5, 6, 7.5]) pts.push([Math.cos(a / 16 * 6.283) * r, Math.sin(a / 16 * 6.283) * r]);
-          const p = pts[i % pts.length];
-          if (bx !== undefined) g.player.spawn(bx + p[0], bz + p[1], 0);
-        }, i);
-        await wait(250);
-      }
+      const found = await page.evaluate(() => {
+        const g = window.__game(), q = g.quests, o = q.job?.obstacles?.()[0];
+        if (!o) return "no bus";
+        for (let r = 2; r <= 8; r += 0.5) for (let a = 0; a < 32; a++) {
+          g.player.spawn(o.x + Math.cos(a / 32 * 6.283) * r, o.z + Math.sin(a / 32 * 6.283) * r, 0);
+          if (/shoulder/.test(q.job.hint())) return "ok";
+        }
+        return "never near its back: " + q.job.hint();
+      });
+      console.log("bus back:", found);
+      await wait(800);
       const atBack = await text("usehint");
       check(`${mode}: at the bus's back the prompt names use`, named(mode, atBack) && /shoulder/.test(atBack), atBack);
       await page.screenshot({ path: `${OUT}/${mode}-pushbus-back.png` });
@@ -100,16 +103,19 @@ try {
     }
 
     // ---- a balloon: the basket's prompt, then flying it ----
+    // the basket's prompt is what's checked, so the basket's taken as next to you rather than you sent across Bath to it
     const b = await page.evaluate(() => {
       const g = window.__game(), list = g.balloons?.list ?? [], b = list.find((x) => x.home) ?? list[0];
       if (!b) return null;
-      g.player.spawn(b.x + 1.6, b.z, 0);
+      const p = g.player.pos;
+      g.player.spawn(window.__startAt[0], window.__startAt[1], 0);
+      g.balloons.near = () => ({ b, why: "" });
       return [b.x, b.z, b.name];
     });
     if (b) {
       await wait(1200);
       const bh = await text("usehint");
-      check(`${mode}: by a balloon the prompt names use`, named(mode, bh), bh);
+      check(`${mode}: by a balloon the prompt names use`, named(mode, bh) && /basket|filling|dawn/.test(bh), bh);
       await page.screenshot({ path: `${OUT}/${mode}-balloon.png` });
     } else check(`${mode}: found a balloon`, false, "none on the map");
 
