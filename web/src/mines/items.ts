@@ -6,11 +6,11 @@ export type ClassId = "quarryman" | "archer" | "mage";
 export interface ClassDef { name: string; blurb: string; hp: number; how: string }
 export const CLASSES: Record<ClassId, ClassDef> = {
   quarryman: { name: "Quarryman", hp: 130, blurb: "A pick and a strong back. Tough, and hits hard up close.",
-    how: "Click to swing. Chests can turn up a sledgehammer or a freestone saw." },
+    how: "{fire} to swing. Chests can turn up a sledgehammer or a freestone saw." },
   archer: { name: "Poacher", hp: 90, blurb: "A longbow from the Prior Park woods. Deadly at range, fragile up close.",
-    how: "Hold the mouse button to draw, let go to loose. A full draw hits much harder. Carries a pick too: 1, 2 or the mouse wheel to switch." },
+    how: "Hold {fire} to draw, let go to loose. A full draw hits much harder. Carries a pick too: {slot1}, {slot2} or {swap} to switch." },
   mage: { name: "Bladud's heir", hp: 80, blurb: "Hot-spring magic from Bath's legendary king. Fire for monsters, light that heals friends.",
-    how: "Click for a fire bolt. Right click for a healing light on everyone near you. Both use mana. Carries a pick too: 1, 2 or the mouse wheel to switch." },
+    how: "{fire} for a fire bolt. {heal} for a healing light on everyone near you. Both use mana. Carries a pick too: {slot1}, {slot2} or {swap} to switch." },
 };
 export const CLASS_IDS = Object.keys(CLASSES) as ClassId[];
 

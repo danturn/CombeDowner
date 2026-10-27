@@ -17,6 +17,7 @@ own docstring.
 Shared here: where the map is, how the layers and the terrain tiles are read, and the timing
 trace every stage prints.
 """
+import copy
 import json
 import lzma
 import math
@@ -70,6 +71,21 @@ def to_m(geom):
     return shapely.transform(geom, lambda a: np.c_[(a[:, 0] - LON0) * KX, (a[:, 1] - LAT0) * KY])
 
 
+_LAYERS = {}
+LONLAT_PAD = 1e-4       # degrees, about 7 m: far more than rounding can move an envelope
+
+
+def _layer(src):
+    """A layer file's features and each one's lon/lat envelope, parsed once per process."""
+    from .data import _lonlat_bounds
+    st = os.stat(src)
+    key = (src, st.st_mtime_ns, st.st_size)
+    if key not in _LAYERS:
+        feats = json.load(lzma.open(src) if src.endswith(".xz") else open(src))["features"]
+        _LAYERS[key] = (feats, [_lonlat_bounds(f["geometry"]) for f in feats])
+    return _LAYERS[key]
+
+
 def load_layer(raw, name, bbox):
     """Overture features of one layer that touch bbox, in map metres."""
     path = os.path.join(raw, name + ".geojson")
@@ -77,12 +93,17 @@ def load_layer(raw, name, bbox):
         xz = os.path.join(ROOT, "data", MAP, name + ".geojson.xz")
         if name == "parcels" and not os.path.exists(xz):
             return []                       # the plots then follow the evidence alone
-        feats = json.load(lzma.open(xz))["features"]
-    else:
-        feats = json.load(open(path))["features"]
+        path = xz
+    feats, envelopes = _layer(path)
+    lon0, lat0 = bbox[0] / KX + LON0 - LONLAT_PAD, bbox[1] / KY + LAT0 - LONLAT_PAD
+    lon1, lat1 = bbox[2] / KX + LON0 + LONLAT_PAD, bbox[3] / KY + LAT0 + LONLAT_PAD
     out = []
     B = box(*bbox)
-    for f in feats:
+    for f, (fx0, fy0, fx1, fy1) in zip(feats, envelopes):
+        # projecting is linear, and repairing a ring never takes it outside its own envelope, so a
+        # feature whose envelope misses the box can't touch it
+        if fx1 < lon0 or fx0 > lon1 or fy1 < lat0 or fy0 > lat1:
+            continue
         try:
             g = to_m(shape(f["geometry"]))
         except Exception:
@@ -91,7 +112,7 @@ def load_layer(raw, name, bbox):
             g = g.buffer(0)
         if g.is_empty or not g.intersects(B):
             continue
-        out.append((g, f["properties"]))
+        out.append((g, copy.deepcopy(f["properties"])))
     return out
 
 

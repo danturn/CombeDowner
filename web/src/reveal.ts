@@ -10,7 +10,7 @@
 // room sees it at once.
 import * as THREE from "three";
 import type { GameMap } from "./map";
-import { keyLabel } from "./gamepad";
+import { ctl } from "./controls";
 import * as SFX from "./audio";
 import { view } from "./view";
 
@@ -97,7 +97,7 @@ export class Reveal {
     if (!hud) return;
     const el = document.createElement("div");
     el.id = "reveal";
-    const skip = this.touch() ? "Tap to skip" : `${keyLabel("KeyE")} to skip`;
+    const skip = this.touch() ? "Tap to skip" : `${ctl("use")} to skip`;
     el.innerHTML = `<div class="rvcard"><small></small><h2></h2><p></p></div><button type="button" class="rvskip"></button>`;
     el.querySelector("small")!.textContent = s.kicker;
     el.querySelector("h2")!.textContent = s.title;

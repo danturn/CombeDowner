@@ -174,9 +174,21 @@ def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False, walls=()):
     return paths, drv, fx
 
 
-def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False):
+POLE_TOP = 7.6           # metres above a pole's foot that the span to the next pole hangs from
+POLE_DROP = 7.3          # and the drop to a house
+POLE_SLIDE = (0, 1, -1, 2, -2, 3, -3, 4, -4, 6, -6)    # metres along the street a pole may stand off its spot
+
+
+def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y: True, widths=None):
     """Wooden telegraph poles along residential streets (about every 40 m, on one side), wires
-    sagging between them and drop wires to nearby houses. Mulberry Park's cables are buried."""
+    sagging between them and drop wires to nearby houses. Mulberry Park's cables are buried.
+
+    A pole stands at the back of the street's own pavement (its width and pavements as fitted: `w`
+    and `pv`, else `widths` by kind and a 1.7 m pavement), on a side that has one, where it is `clear`
+    (off every wall and out of every building), slid along the street to the nearest spot that is, or
+    not at all: then the run of wire stops there. Each pole carries its own number ["pole", x, y, z, angle, id], and each wire the
+    numbers of the poles it hangs from [x0, y0, z0, x1, y1, z1, a, b] (b is -1 for a drop to a house),
+    so whatever later moves or removes a pole moves or removes its wires with it (`string_wires`)."""
     poles, wires = [], []
     door_pts = [Point(d[0], d[1]) for d in doors]
     dtree = shapely.STRtree(door_pts) if door_pts else None
@@ -185,23 +197,46 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False):
         if r["c"] not in ("residential", "unclassified") or len(r["p"]) < 2: continue
         line = LineString([(a, b) for a, b, *_ in r["p"]])
         if line.length < 50: continue
-        rnd_ = random.Random(spot(*r["p"][0][:2]) + spot(*r["p"][-1][:2])) if keyed else rnd
+        key = spot(*r["p"][0][:2]) + spot(*r["p"][-1][:2])
+        rnd_ = random.Random(key) if keyed else rnd
+        # (a pole's number: its street, by both ends in order and its length, and its place along it)
+        street = zlib.crc32(f"{round(r['p'][0][0], 1)},{round(r['p'][0][1], 1)}|{round(r['p'][-1][0], 1)},"
+                            f"{round(r['p'][-1][1], 1)}|{round(line.length)}".encode())
         side = 1 if rnd_.random() < 0.5 else -1
+        half = r.get("w", (widths or {}).get(r["c"], 6.0)) / 2
+        pv = r.get("pv") or [1.7, 1.7]
+        if pv[0 if side > 0 else 1] <= 0 and pv[1 if side > 0 else 0] > 0:
+            side = -side
+        own = pv[0 if side > 0 else 1]
+        off = half + (own - 0.25 if own > 0.5 else own + 0.4)    # the back of the pavement, or the verge
         prev = None
-        s = 12.0
+        s, n = 12.0, 0
         while s < line.length - 6:
             c = line.interpolate(s)
             if zone_at(c.x, c.y) == "mulberry": prev = None; s += 40; continue
-            p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
-            ex, ey = p1.x - p0.x, p1.y - p0.y
-            l = math.hypot(ex, ey) or 1
-            off = 3.0 + 1.7 + 0.25          # back of the pavement
-            px, py = c.x - ey / l * off * side, c.y + ex / l * off * side
+            n += 1
+            at = None
+            for d in POLE_SLIDE:
+                t = min(max(s + d, 0.0), line.length)
+                c = line.interpolate(t)
+                p0, p1 = line.interpolate(max(0, t - 1)), line.interpolate(min(line.length, t + 1))
+                ex, ey = p1.x - p0.x, p1.y - p0.y
+                l = math.hypot(ex, ey) or 1
+                px, py = c.x - ey / l * off * side, c.y + ex / l * off * side
+                if clear(px, py):
+                    at = (px, py, ex, ey)
+                    break
+            if at is None:
+                prev = None
+                s += 38 + rnd_.random() * 6
+                continue
+            px, py, ex, ey = at
             z = gelev(px, py)
-            poles.append(["pole", r2(px), r2(py), r2(z), r2(math.atan2(ey, ex))])
-            top = (px, py, z + 7.6)
-            if prev: wires.append([r2(prev[0]), r2(prev[1]), r2(prev[2]), r2(top[0]), r2(top[1]), r2(top[2])])
-            prev = top
+            pid = street * 1000 + n
+            poles.append(["pole", r2(px), r2(py), r2(z), r2(math.atan2(ey, ex)), pid])
+            top = (px, py, z + POLE_TOP)
+            if prev: wires.append([r2(prev[0]), r2(prev[1]), r2(prev[2]), r2(top[0]), r2(top[1]), r2(top[2]), prev[3], pid])
+            prev = (*top, pid)
             # drops to a couple of nearby houses
             if dtree is not None:
                 near = [int(k) for k in dtree.query(Point(px, py).buffer(28))]
@@ -209,6 +244,34 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False):
                 for k in near[:3]:
                     d = doors[k]
                     if rnd_.random() < 0.5: continue
-                    wires.append([r2(px), r2(py), r2(z + 7.3), r2(d[0]), r2(d[1]), r2(d[2] + 5.2)])
+                    wires.append([r2(px), r2(py), r2(z + POLE_DROP), r2(d[0]), r2(d[1]), r2(d[2] + 5.2), pid, -1])
             s += 38 + rnd_.random() * 6
     return poles, wires
+
+
+def string_wires(poles, wires, elsewhere=()):
+    """`wires` hung from where their poles stand now, by the poles' numbers: `poles` is every pole row
+    there is. A wire whose pole has gone goes with it. A pole number in `elsewhere` stands in another
+    square, so that end is left as it is for the city's last pass to string. Wires from before poles
+    carried numbers are left as they are."""
+    at = {p[5]: p for p in poles if len(p) > 5}
+    out = []
+    for w in wires:
+        if len(w) < 8:
+            out.append(w); continue
+        a, b = w[6], w[7]
+        ends = []
+        for pid, xyz, lift in ((a, w[0:3], POLE_DROP if b == -1 else POLE_TOP), (b, w[3:6], POLE_TOP)):
+            if pid == -1:
+                ends.append(list(xyz))
+            elif pid in at:
+                p = at[pid]
+                ends.append([p[1], p[2], round(p[3] + lift, 2)])
+            elif pid in elsewhere:
+                ends.append(list(xyz))
+            else:
+                ends = None
+                break
+        if ends:
+            out.append(ends[0] + ends[1] + [a, b])
+    return out

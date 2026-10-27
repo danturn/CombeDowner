@@ -1035,7 +1035,7 @@ registerChallenge({
         const t = R.stern(i);
         if (p.y < t.y - 1.6 || p.y > t.y + 2.4) return;
         const next = b.eng ? "Stop the engine" : b.last > 0 ? "Astern" : "Ahead";
-        offer2({ a: "eng", b: i }, Math.hypot(p.x - t.x, p.z - t.z), 2.6, `<b>E</b> ${next}`);
+        offer2({ a: "eng", b: i }, Math.hypot(p.x - t.x, p.z - t.z), 2.6, `<b>{use}</b> ${next}`);
       });
       for (let k = 0; k < R.n; k++) for (let e = 0; e < 2; e++) for (let d = 0; d < 2; d++) {
         const [x, z] = R.post(k, e, d);
@@ -1043,8 +1043,8 @@ registerChallenge({
         if (dd < 1.8) {
           const on = R.onSpindle(k, e, d) >= 0, up = st.p[k][e][d], mine = R.holding(w.selfId) >= 0;
           const notches = `${Math.round(up * 8)}/8`;
-          const h = on ? (up < 1 ? `<b>E</b> Wind the ${endName(e)} paddle up (${notches})` : mine ? "Paddle's right up: leave the windlass and it'll slip" : `<b>E</b> Take the windlass off`)
-            : up > 0 ? `<b>E</b> Drop the ${endName(e)} paddle (${notches})` : mine ? `<b>E</b> Put your windlass on the ${endName(e)} paddle` : "You need a windlass to wind this paddle";
+          const h = on ? (up < 1 ? `<b>{use}</b> Wind the ${endName(e)} paddle up (${notches})` : mine ? "Paddle's right up: leave the windlass and it'll slip" : `<b>{use}</b> Take the windlass off`)
+            : up > 0 ? `<b>{use}</b> Drop the ${endName(e)} paddle (${notches})` : mine ? `<b>{use}</b> Put your windlass on the ${endName(e)} paddle` : "You need a windlass to wind this paddle";
           offer2({ a: "pad", l: k, e, d }, dd, 1.8, h);
         }
         const [bx, bz] = R.beamEnd(k, e, d, R.D.g[k][e]);
@@ -1053,15 +1053,15 @@ registerChallenge({
           const pushing = st.push.some((q) => q[0] === w.selfId && q[1] === k && q[2] === e);
           const others = st.push.filter((q) => q[1] === k && q[2] === e && q[0] !== w.selfId).length;
           const opening = st.g[k][e] < 0.5, out = R.mismatch(k, e);
-          const h = pushing ? `Leaning on the beam: walk it round${others ? "" : " (it's slow on your own)"}. <b>E</b> to let go`
+          const h = pushing ? `Leaning on the beam: walk it round${others ? "" : " (it's slow on your own)"}. <b>{use}</b> to let go`
             : opening && out > 0.06 ? `It won't budge: the water's ${out.toFixed(1)} m ${e ? (st.c[k] < R.pound(k) ? "higher above" : "lower above") : (st.c[k] > R.pound(k + 1) ? "higher in the lock" : "lower in the lock")}`
-            : `<b>E</b> Lean on the beam: ${opening ? "open" : "shut"} the ${endName(e)} gates${others ? ` (${others} on it already)` : ""}`;
+            : `<b>{use}</b> Lean on the beam: ${opening ? "open" : "shut"} the ${endName(e)} gates${others ? ` (${others} on it already)` : ""}`;
           offer2({ a: "push", l: k, e, d }, db, 2.2, h);
         }
       }
       st.wl.forEach((q, i) => {
         if (q[0] !== 3 || R.holding(w.selfId) >= 0) return;
-        offer2({ a: "pick", i }, Math.hypot(p.x - q[1], p.z - q[2]), 1.9, "<b>E</b> Pick up the windlass");
+        offer2({ a: "pick", i }, Math.hypot(p.x - q[1], p.z - q[2]), 1.9, "<b>{use}</b> Pick up the windlass");
       });
       return best;
     };
@@ -1094,8 +1094,8 @@ registerChallenge({
       use() {
         const c = choose();
         if (!c) return false;
-        if (c.a.a === "pad" && !c.hint.includes("<b>E</b>")) { w.toast(c.hint, 2); return true; }
-        if (c.a.a === "push" && !c.hint.includes("<b>E</b>")) { w.toast(c.hint, 2.5); SFX.grind(0, 0, 0.3); return true; }
+        if (c.a.a === "pad" && !c.hint.includes("<b>{use}</b>")) { w.toast(c.hint, 2); return true; }
+        if (c.a.a === "push" && !c.hint.includes("<b>{use}</b>")) { w.toast(c.hint, 2.5); SFX.grind(0, 0, 0.3); return true; }
         if (c.a.a === "push") SFX.grind(0, 0, 0.5);
         ask(c.a);
         return true;

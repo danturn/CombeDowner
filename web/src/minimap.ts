@@ -50,6 +50,37 @@ export interface Spot { x: number; z: number; name?: string }
 /** The colour of the marker and of the beacon's light. */
 export const POI = "#38e6ff";
 
+const sprites = new Map<string, { c: HTMLCanvasElement; n: number }>();
+if (typeof document !== "undefined") document.fonts?.addEventListener("loadingdone", () => sprites.clear());
+
+/** A glowing icon drawn once onto a little canvas of its own, then copied wherever it goes: the
+ *  glow (shadowBlur) is slow to draw, and the minimap and compass draw the same icons every frame.
+ *  Copied only where the canvas is moved, not turned or scaled, and kept for each quarter-pixel offset,
+ *  so the copy lands on the same pixels the icon would have. half: how far the icon and its glow
+ *  reach from (x, y). ownAlpha: the icon sets its own opacity, whatever the caller's. */
+function sprite(g: CanvasRenderingContext2D, x: number, y: number, half: number, key: string, ownAlpha: boolean, draw: (s: CanvasRenderingContext2D, x: number, y: number) => void) {
+  const m = g.getTransform();
+  if (Math.abs(m.a - 1) > 1e-6 || Math.abs(m.b) > 1e-6 || Math.abs(m.c) > 1e-6 || Math.abs(m.d - 1) > 1e-6) return draw(g, x, y);
+  const px = Math.round((m.e + x) * 4) / 4, py = Math.round((m.f + y) * 4) / 4;
+  const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy;
+  const id = `${key}|${half.toFixed(2)}|${fx}|${fy}`;
+  let s = sprites.get(id);
+  if (!s) {
+    if (sprites.size > 1000) sprites.clear();
+    const n = Math.ceil(half), c = document.createElement("canvas");
+    c.width = c.height = 2 * n;
+    draw(c.getContext("2d")!, n + fx, n + fy);
+    sprites.set(id, (s = { c, n }));
+  }
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (ownAlpha) g.globalAlpha = 1;
+  g.shadowColor = "transparent";
+  g.drawImage(s.c, ix - s.n, iy - s.n);
+  g.restore();
+}
+
+
 /** Somewhere a job is on offer today (quests.ts): a round badge in the job's colour with its
  *  letter in it, and what it is (label) written under it on the big map. done: already finished
  *  today, drawn faded. trap: a speed trap (stunts.ts), drawn as a speed camera instead. layer: the
@@ -119,6 +150,9 @@ interface Cluster { x0: number; y0: number; sx: number; sy: number; m: JobSpot[]
 
 /** A job's badge, centred on (x, y), k pixels to the unit (about 13 units across). */
 export function jobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, glyph: string, done = false) {
+  sprite(g, x, y, 14 * k + 2, `job|${k}|${colour}|${glyph}|${done}`, true, (s, x, y) => drawJobIcon(s, x, y, k, colour, glyph, done));
+}
+function drawJobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, glyph: string, done = false) {
   g.save();
   g.translate(x, y);
   g.globalAlpha = done ? 0.45 : 1;
@@ -148,6 +182,9 @@ function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s
 /** The speed camera badge, centred on (x, y), k pixels to the unit (about 12 units across): a
  *  yellow box with a dark lens in it, the way the speed traps look in the street. */
 export function trapIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
+  sprite(g, x, y, 13 * k + 2, `trap|${k}`, false, (s, x, y) => drawTrapIcon(s, x, y, k));
+}
+function drawTrapIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
   g.save();
   g.translate(x, y);
   g.shadowColor = "#f5c400"; g.shadowBlur = 3 * k;
@@ -168,6 +205,9 @@ export function trapIcon(g: CanvasRenderingContext2D, x: number, y: number, k: n
  *  ringed in purple with the lamp in his forehead glowing yellow, and his long arms hanging down.
  *  after: he's locked on to someone, so the lamp and the ring go red. */
 export function bendyIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, after = false) {
+  sprite(g, x, y, 16 * k + 2, `bendy|${k}|${after}`, false, (s, x, y) => drawBendyIcon(s, x, y, k, after));
+}
+function drawBendyIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, after = false) {
   const ring = after ? "#ff3b30" : "#b06be0";
   g.save();
   g.translate(x, y);
@@ -198,7 +238,10 @@ function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number,
 /** A team challenge: a round badge bigger than a job's, a dark question mark on it, and a glow
  *  that swells and fades so it catches the eye among everything else. */
 export function challengeIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, done = false) {
-  const beat = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+  const beat = done ? 0 : Math.round(16 * (0.5 + 0.5 * Math.sin(performance.now() / 260))) / 16;
+  sprite(g, x, y, 34 * k + 2, `challenge|${k}|${colour}|${done}|${beat}`, true, (s, x, y) => drawChallengeIcon(s, x, y, k, colour, done, beat));
+}
+function drawChallengeIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, done: boolean, beat: number) {
   g.save();
   g.translate(x, y);
   g.globalAlpha = done ? 0.45 : 1;
@@ -317,6 +360,9 @@ function drawPencil(g: CanvasRenderingContext2D, lines: PencilLine[], P: (x: num
 }
 
 export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
+  sprite(g, x, y, 13 * k + 2, `spot|${k}`, false, (s, x, y) => drawSpotIcon(s, x, y, k));
+}
+function drawSpotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
   g.save();
   g.translate(x, y);
   g.shadowColor = POI; g.shadowBlur = 3 * k;
@@ -337,6 +383,9 @@ export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: n
 /** A map pin with its point on (x, y), k pixels to the unit (about 17 units tall), in colour c.
  *  Your own has a white dot in it, everyone else's a dark one. */
 export function pinIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, c: string, mine = false) {
+  sprite(g, x, y, 25 * k + 2, `pin|${k}|${c}|${mine}`, false, (s, x, y) => drawPinIcon(s, x, y, k, c, mine));
+}
+function drawPinIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, c: string, mine = false) {
   g.save();
   g.translate(x, y);
   g.beginPath();

@@ -5,11 +5,10 @@
 //
 // Nothing here goes over the network: going to a pub just moves you (Game.goTo), and everyone else
 // sees you turn up there in your next position update.
+import { ctl } from "./controls";
 import type { Game, MapPicker } from "./game";
 
 const $ = (id: string) => document.getElementById(id)!;
-const HELP_MOUSE = "Click a pub to go there · wheel, +/− or pinch to zoom";
-const HELP_TOUCH = "Tap a pub to go there · pinch to zoom";
 const PICK = 16;            // CSS pixels from a pint that still count as pointing at it
 const CROWD_ZOOM = 3;       // how far a click on a crowd of pubs zooms in
 
@@ -31,7 +30,7 @@ export class PubMap implements MapPicker {
 
   get isOpen() { return this.opened; }
   private get game() { return this.current()!; }
-  private hintText() { return matchMedia("(pointer: coarse)").matches ? HELP_TOUCH : HELP_MOUSE; }
+  private hintText() { return `${ctl("map.mark")} a pub to go there · ${ctl("map.zoom")} to zoom`; }
 
   open() {
     if (!this.current()) return;

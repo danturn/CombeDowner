@@ -65,23 +65,32 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
-  Races take entries, put the entrants on a grid in the street, run through checkpoints along a
-  route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every job,
+  Races take entries (a big banner says who's in and counts down; on your own in the room it goes
+  straight to the start), put the entrants on a grid in the street for a big 3, 2, 1, GO! under
+  start lights, run through checkpoints along a route drawn on the map, and end with a results
+  card: your place, time and medal, your best, how the run went and everyone's standings, with a
+  fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
+  ride, you wait where you stopped, safe, and watch them (Q/E, the d-pad or the arrows on a touch
+  screen switch who); everyone gets the results together at the end. Every job,
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
- Every ride is faster in a race, boost pads lie along the route, and riding close behind
+ Every ride is faster in a race, boost pads lie along the route (two or three between checkpoints), and riding close behind
   someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
-  Treasure trails don't give the answer away (no distances or compass from two stars, and no search
-  circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
-  and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
+  Treasure trails open with a big splash saying what you're after, any clock, how the search circle
+  works and the first clue, large (the big map, or the Clue button on a touch screen, brings the clue back), and end
+  on a results card like a race's. They don't give the answer away (no distances or compass from two
+  stars, and no search circle unless you ask a local: E shows what the hint gives and costs, and only
+  a second E pays; three hints a tin, each circle smaller and always with the tin well inside, and it
+  never shrinks by itself, with a countdown on your card to the next) and, together, have no clock:
+  each leg is worth three brass stars, and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
   you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
   look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
   pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up with J, and talks
+  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up by holding use or the Clue button, and talks
   the others in), bearings (two look-outs, each showing whoever's up there a gold line
   on the ground towards the tin; it's where they cross), clues split in two
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
@@ -96,6 +105,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
   till 90% is covered. Bigger rooms get more to do: more ties, nests, gates, mounds and tag, and
   tougher guards. Put one right for a prize.
+- **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
+  flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
@@ -112,6 +123,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
   magazine, flat and fast, with a sharper crack and a tighter splat.
 - **Recent rooms.** The start screen lists the games you were last in (up to 8, newest first) with the map, how long ago and who was with you, and a "news" tag if that room has an unread Chronicle page. Tap one to go back to it; × forgets it. It's kept in your browser only, and can't say who is in a room now.
+- **A room is a save.** The strange objects, the sockets filled (so the zones and challenges open), the challenges won and the bonfire pile belong to the room you play them in. A new room name starts from nothing; go back to an old one and it carries on, from whoever in it has got furthest. Each room on the recent list says how far it's got ("3 of 6 zones open, 10 sockets filled, 1 challenge done"), and Practice solo is a save of its own on each map, listed there too once you've played it. Your name, look, settings, bests, trophies and the daily jobs are yours in every room.
+- **Link a device** (on the start screen) carries all of that to another phone or computer: show a code on one, type it on the other, say yes on both, and each ends up with everything either had (each room keeps whichever got furthest), with the name, look and settings of the one that showed the code. If the two can't both be online, Copy save as text on one and Paste a save on the other.
+- **Build label.** The foot of the start screen (and the note that comes up if the map stops loading) says which build the page is, so you can tell if you're on an old one.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe.
@@ -130,8 +144,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
   anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
-  spawns) is put down right by it. Filled sockets glow. There's no counter: the structures are
-  the only record, and the room carries on from whoever has got furthest.
+  spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
+  structures are the record, and the room carries on from whoever has got furthest in that room.
 - **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
   (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
   field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
@@ -182,7 +196,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
   handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
   smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
-  one pusher can take the call (Q, the Call button, or shout HEAVE three beats running): then the
+  one pusher can take the call (use, on the bus, or shout HEAVE three beats running; stepping back lets go): then the
   heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
   them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
   the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
@@ -198,7 +212,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   beside the walker (E to watch from the basket instead). A and D (or the stick) lean you against a
   sway that builds as you go, gusts shove you (you hear them coming), W edges you forward, and
   standing still steadies you a bit. Lean too far and you're off: a long, screaming tumble into the
-  grass, unhurt but out, and since everyone has to get across, that's it lost. One player flies
+  grass, unhurt. The team shares its lives, hearts on the card (three, and one more for every two
+  walkers past the first): a fall costs one, with a sad trombone for everyone, and the faller goes
+  back to the first basket to try again after the others. Lose the last one and the balloons come
+  down and it all starts again from scratch. One player flies
   each balloon with W and S (pull in, let out) to keep the rope just right: too far apart and it
   snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
   hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
@@ -208,21 +225,26 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Hospital in Bath and in Bradford-on-Avon), with a big orange flag on top, a rope hanging down one
   side and crash mats and a bucket of chalk at the foot. Take it on there and everyone by the foot
   is lifted up to a crag of its own, a great buttress of honey-coloured limestone standing out of a
-  sea of cloud, the same on every map; E at the foot on the street takes anyone else up later, and
+  drifting sea of cloud, with heaps of cumulus all round, the same on every map (the street's place
+  names and minimap are put away while you're up there); E at the foot on the street takes anyone else up later, and
   the stile in the wall at the front of the grass under it (E) is the way back down. Its way up is
   made for a team: an easy slab to a ledge big enough for everyone, a blank wall whose first hold
   is out of reach alone, a little ledge out to the left, a traverse across to the right, out under
   an overhang and over its lip, up a chimney to a terrace, and the headwall to the top, where the
   whole team has to stand together to win (the team is whoever's up at the crag, so nobody left in
   town holds it up). Walk into the face (or E) to grab a hold; then the keys or the stick reach for
-  the next hold that way, Space lunges for one further off and C lets go. Your grip drains as you
-  hang and climb and comes back on a ledge. The big orange holds are out of reach from their
+  the next hold that way, Space lunges for one further off and C lets go. The holds are laid out
+  as routes, a reach apart, with a hard bit of longer reaches on each stretch. Your grip drains as
+  you hang and climb (more on a long reach) and comes back on a ledge, or hanging off one of the
+  big white jugs partway up the long stretches. The big orange holds are out of reach from their
   ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
   mate below, and the first one up drops a rope for the rest. A short fall hurts your grip till
   you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
   (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
-  a rope from the next ledge. If everyone's down, it's back to the bottom. Alone there are more
-  holds and none needs a boost; with more of you there are fewer, and more that do. Win it and
+  a rope from the next ledge. The team shares its lives, hearts on the card (three, and one more
+  for every two climbers past the first), and every fall that hurts costs one. Run out, or all be
+  down at once, and it's back to the bottom with a fail card. Alone there are more holds and jugs,
+  shorter hard bits and none needs a boost; with more of you there are fewer, and more that do. Win it and
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
@@ -249,13 +271,34 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
   the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
   back you can turn the radio up or down (K and J) or change the station (I), wind the window down
-  (U) or pull the handbrake (Space), or use the buttons on the screen: the handbrake skids the car,
+  (U) or pull the handbrake (Space); on a pad the d-pad does the radio, station and window; or use the buttons on the screen: the handbrake skids the car,
   and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din (the
   radio, or real noise on the back seats' mics) and he tells you to keep it down; the third
   telling-off is a minor fault for the driver. He hears the driver laughing or shouting too, and
   notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
+- **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
+  Holburne, or failing that a big public building near a pedestrian street): an easel on the
+  pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
+  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
+  bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
+  first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
+  program for a minute and a half: pencil, brush, airbrush, fill, line, rectangle, ellipse, eraser and
+  colour picker, four sizes, sixteen colours (left click for the first, right click for the second),
+  Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
+  easel. The paintings go up in gilt frames with a card each, and in come the critics and a crowd of
+  the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
+  Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
+  with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
+  covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
+  subject at all and how much effort went in, and each has their likes: one critic loves a blank
+  canvas, another wants every square inch working. The critics' marks count double. Walk round while
+  they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
+  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
+  if the show averages enough it's a success and one of the strange objects turns up at the door. The
+  more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel
@@ -266,7 +309,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   rides are off both maps to start with (the key switches them back on). On a touch screen drag,
   pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
   R2/L2 or the right stick zoom, A marks and B closes.
-- **Map markers**: click the big map or press G at something to put your marker there; everyone sees
+- **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
   checkpoint, a minigame, the strange structure, a pub, a bus stop or a cable car station, and the
   marker goes exactly on it and says what it is ("Dan marked Push the Bus"); clicking a bunch of jobs
@@ -275,7 +318,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   their own colour on the maps, never one the maps use for something else; click your marker, or the
   thing it's on, again to take it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
-  (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
+  (on foot) is a whistle heard 300 m off; and with the big map open, P (□ on a pad) is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
 - **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
   streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
@@ -300,9 +343,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   door in the street.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
-  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; Cross
-  jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
-  L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
+  knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; the
+  buttons follow Call of Duty: Warzone's defaults: Cross jumps, Square reloads on a tap and uses on a
+  hold (a tap uses when there's a prompt), Circle crouches on a tap and lies down on a hold,
+  Triangle switches weapon, L1 and R1 go back and forward through them. In a car R2 and L2 are the
+  pedals, the left stick steers, Triangle gets out and R1 is the horn. Options pauses, and on the menus the
   d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
   dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
@@ -311,6 +356,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
   square that fails to load is tried again a little later, and Play never waits on it. Phones and
   tablets load one square at a time, to stay inside their memory.
+- **Smooth on any machine**: the game picks how far you see, the resolution and shadows for your
+  device (a quick check of its processor and graphics chip as it loads, then the menu's backdrop),
+  and if frames get slow for a few seconds it eases back gently: shadows redrawn less often, then a
+  few fewer lines, then a shorter view (never under 500 m), then no shadows. It steps back up when
+  there's room, and never thins out trees, buildings or grass. Choosing a draw distance, resolution
+  or shadows yourself (or L in the debug panel) turns this off; tick Automatic in Settings to turn
+  it back on.
 - **If your phone crashes starting a game**: the next time you open the page it starts in safe
   graphics (no shadows, no retro look, fewer lines, a shorter view) and says so; turn things back up
   in Settings. Phones draw simpler shadows, and ones with a graphics chip the game doesn't know

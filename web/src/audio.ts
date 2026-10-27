@@ -1790,6 +1790,17 @@ export function land(hard: boolean, force: number) {
   if (force > 0.65) say(out(0.3, 0, 0, 0.04), t + 0.02, 0.13, ["u", "u"], [120, 95], 1, YOU, 0.4);
 }
 
+/** Landing flat on your front at the end of a dive: a body's thump, and the breath knocked out of you. */
+export function diveThud(hard: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.05);
+  step(hard, 0.45);
+  tone(d, t, 0.2, 0.8, 72, 32);
+  burst(d, t, 0.22, 0.55, hard ? 520 : 320, { type: "lowpass" });
+  kit(d, t + 0.02, 0.35);
+  say(out(0.3, 0, 0, 0.04), t + 0.03, 0.14, ["u", "u"], [130, 95], 1, YOU, 0.45);
+}
+
 // ---- voices ----------------------------------------------------------------------------------
 // Shouts and grunts are a buzz (the vocal cords) and a hiss (breath) shaped by three resonances
 // (formants) that glide from vowel to vowel, the way a mouth does.
@@ -2156,6 +2167,14 @@ export function jobStep() {
   [784, 988, 1175].forEach((f, k) => tone(d, t + k * 0.07, 0.35, 0.16, f, f, "triangle"));
 }
 
+/** A team life lost: a sad trombone, three notes sliding down. */
+export function lifeLost() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.25);
+  [[466, 0], [440, 0.22], [415, 0.44]].forEach(([f, at]) => tone(d, t + at, 0.2, 0.14, f, f * 0.99, "sawtooth", 0.02));
+  tone(d, t + 0.66, 0.7, 0.15, 392, 370, "sawtooth", 0.02);
+}
+
 /** A job done: a brass-band flourish. Or failed (won false): two flat notes going down. */
 export function jobDone(won: boolean) {
   if (!ctx) return;
@@ -2180,6 +2199,18 @@ export function warmer(up: boolean, shrink = false) {
   const t = now(), d = out(0.6, 0, 0, 0.25);
   const notes = up ? (shrink ? [659, 880, 1047] : [659, 880]) : [523, 392];
   notes.forEach((f, k) => tone(d, t + k * 0.11, 0.4, 0.1, f, f, up ? "sine" : "triangle", 0.01));
+}
+
+/** A treasure trail's search circle drawing in: a breath of air sweeping down, and two notes a fifth
+ *  apart sliding together, then a bright ping as they meet. */
+export function searchShrink() {
+  if (!ctx) return;
+  const t = now(), d = out(0.6, 0, 0, 0.3);
+  burst(d, t, 0.55, 0.12, 3200, { to: 500, q: 2.5, attack: 0.08 });
+  tone(d, t + 0.05, 0.5, 0.08, 523, 698, "triangle", 0.03);
+  tone(d, t + 0.05, 0.5, 0.08, 1047, 698, "triangle", 0.03);
+  tone(d, t + 0.52, 0.6, 0.11, 1397, 1397, "sine", 0.005);
+  tone(d, t + 0.52, 0.35, 0.04, 2794, 2794, "sine", 0.005);
 }
 
 /** A biscuit tin with something loose in it, rattling on its post: a clink and a couple of small knocks. */
@@ -2229,11 +2260,13 @@ export function chest() {
   for (let k = 0; k < 14; k++) clink(d, t + 0.35 + k * 0.06 + Math.random() * 0.04, 0.12, 3800 + Math.random() * 2600);
 }
 
-/** A countdown pip; go: the long one on GO. */
+/** A countdown pip, like the start lights at a race track; go: the long, higher one on GO. */
 export function pip(go = false) {
   if (!ctx) return;
-  const t = now(), d = out(0.8, 0, 0, 0.05);
-  tone(d, t, go ? 0.6 : 0.15, 0.3, go ? 1320 : 660, go ? 1320 : 660, "square");
+  const t = now(), d = out(0.8, 0, 0, 0.05), f = go ? 1320 : 660, dur = go ? 0.7 : 0.2;
+  tone(d, t, dur, 0.26, f, f, "square", 0.004);
+  tone(d, t, dur, 0.14, f * 2, f * 2, "triangle", 0.004);
+  tone(d, t, dur * 0.6, 0.12, f / 2, f / 2, "sine", 0.004);
 }
 
 /** Through a race's checkpoint: a quick bright two-note chime. */
@@ -2287,6 +2320,53 @@ export function fanfare(place: number) {
   const end = notes[notes.length - 1][1];
   burst(d, t + end, win ? 1.4 : 0.9, 0.14, 7000, { type: "highpass", attack: 0.01 });
   if (win) for (let k = 0; k < 4; k++) tone(d, t + end + 0.2 + k * 0.12, 0.25, 0.05, 1568 + k * 200, 1568 + k * 200, "triangle", 0.005);
+}
+
+/** The end of a race, on the results card: a brass fanfare with cymbals and sparkle for gold (or
+ *  the author's time), a shorter one for silver or bronze, three plain notes for no medal, and a
+ *  falling "wah-wah" on a muted trombone for coming off and out of the race. */
+export function raceEnd(kind: "gold" | "medal" | "none" | "dnf") {
+  if (!ctx) return;
+  const t = now(), d = out(1, 0, 0, 0.3);
+  if (kind === "dnf") {
+    [[392, 370], [370, 349], [349, 330], [330, 220]].forEach(([a, b], k) => {
+      const len = k === 3 ? 1.1 : 0.42;
+      tone(d, t + k * 0.45, len, 0.12, a, b, "sawtooth", 0.04);
+      tone(d, t + k * 0.45, len, 0.07, a / 2, b / 2, "square", 0.04);
+    });
+    return;
+  }
+  const notes: [number, number, number][] = kind === "gold"
+    ? [[392, 0, 0.12], [523, 0.13, 0.12], [659, 0.26, 0.12], [784, 0.39, 0.3], [659, 0.72, 0.12], [784, 0.85, 0.12], [1047, 1.0, 1.3]]
+    : kind === "medal" ? [[523, 0, 0.14], [659, 0.16, 0.14], [784, 0.32, 0.14], [1047, 0.5, 0.9]]
+    : [[523, 0, 0.14], [659, 0.16, 0.14], [784, 0.34, 0.8]];
+  for (const [f, at, dur] of notes) {
+    tone(d, t + at, dur, 0.12, f, f, "sawtooth", 0.02);
+    tone(d, t + at, dur, 0.08, f * 1.5, f * 1.5, "triangle", 0.02);
+    tone(d, t + at, dur, 0.06, f / 2, f / 2, "square", 0.02);
+  }
+  const end = notes[notes.length - 1][1];
+  if (kind !== "none") burst(d, t + end, kind === "gold" ? 1.6 : 0.9, 0.14, 7000, { type: "highpass", attack: 0.01 });
+  if (kind === "gold") for (let k = 0; k < 8; k++) tone(d, t + end + 0.15 + k * 0.09, 0.3, 0.05, 1568 * 2 ** (k / 12 * 2), 1568 * 2 ** (k / 12 * 2), "triangle", 0.005);
+}
+
+/** Some sounds played into a context of their own that renders to a buffer instead of the
+ *  speakers, so a tool can check how they come out without anyone hearing them. */
+export async function renderOffline(play: () => void, secs: number): Promise<AudioBuffer> {
+  const was = { ctx, master, noise, reverb };
+  const c = new OfflineAudioContext(2, Math.ceil(48000 * secs), 48000);
+  ctx = c as unknown as AudioContext;
+  master = c.createGain();
+  master.gain.value = 0.5;
+  master.connect(c.destination);
+  noise = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+  const d = noise.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  reverb = c.createConvolver();
+  reverb.buffer = streetEcho(c);
+  reverb.connect(master);
+  try { play(); } finally { ({ ctx, master, noise, reverb } = was as typeof was & { ctx: AudioContext | null }); }
+  return c.startRendering();
 }
 
 /** An old phone ringing in your pocket: two bursts of the bell. */

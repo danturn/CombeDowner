@@ -36,7 +36,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
-import { keyLabel, padInUse } from "./gamepad";
+import { controlsHere, ctl, isKey, stripOf } from "./controls";
 import { type GameMap, type Road, roadHalf } from "./map";
 import { missionSheet } from "./missionscreens";
 import { openGround } from "./oddments";
@@ -590,17 +590,17 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
   const ask = (a: string) => { if (mySeat() >= 2) say({ k: "pr", a }); };
   addEventListener("keydown", (e) => {
     if (e.repeat || mySeat() < 2) return;
-    const a = e.code === "KeyK" ? "up" : e.code === "KeyJ" ? "down" : e.code === "KeyI" ? "stn" : e.code === "KeyU" ? "win" : e.code === "Space" ? "hb" : "";
+    const a = isKey(e.code, "radioup") ? "up" : isKey(e.code, "radiodown") ? "down" : isKey(e.code, "station") ? "stn" : isKey(e.code, "window") ? "win" : isKey(e.code, "handbrake") ? "hb" : "";
     if (a) ask(a);
   }, sig);
   const panel = document.createElement("div");
   panel.style.cssText = "position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;pointer-events:auto";
   panel.hidden = true;
-  for (const [a, label, key] of [["up", "Radio up", "KeyK"], ["down", "Radio down", "KeyJ"], ["stn", "Change station", "KeyI"], ["win", "Window", "KeyU"], ["hb", "Handbrake!", "Space"]]) {
+  for (const [a, label, id] of [["up", "Radio up", "radioup"], ["down", "Radio down", "radiodown"], ["stn", "Change station", "station"], ["win", "Window", "window"], ["hb", "Handbrake!", "handbrake"]]) {
     const b = document.createElement("button");
     b.className = "tbtn small";
     b.style.cssText = "width:auto;height:auto;padding:6px 10px;font-size:14px;border-radius:8px";
-    b.innerHTML = `${label} <small>${esc(keyLabel(key))}</small>`;
+    b.innerHTML = `${label} <small>${esc(ctl(id, "keys"))}</small>`;
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); ask(a); }, sig);
     panel.appendChild(b);
   }
@@ -845,6 +845,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
       } else if (inCar) { inCar = false; SFX.carRadio(1); w.windows?.(false); lastRadio = -1; }
       lastStation = station;
       panel.hidden = seat < 2 || !!job.done;
+      controlsHere("back", !panel.hidden);
       // from the back seat your eyes are up by the roof, and the roof sign would fill the view
       kit.visible = seat < 2;
       if ((markT -= dt) <= 0) {
@@ -967,8 +968,8 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
           progress,
         };
       }
-      const sub = seat === 0 ? `Look round before moving off and turning · ${padInUse() ? `${keyLabel("ArrowLeft")} ${keyLabel("ArrowRight")}` : "← →"} to indicate`
-        : seat >= 2 ? `In the back: ${keyLabel("KeyK")} ${keyLabel("KeyJ")} radio · ${keyLabel("KeyI")} station · ${keyLabel("KeyU")} window · ${keyLabel("Space")} handbrake`
+      const sub = seat === 0 ? `Look round before moving off and turning · ${ctl("left")} ${ctl("right")} to indicate`
+        : seat >= 2 ? `In the back: ${stripOf([["radioup", "radio up"], ["radiodown", "down"], ["station", "station"], ["window", "window"], ["handbrake", "handbrake"]])}`
         : `${w.nameOf(driver)} is driving`;
       const last = faults[faults.length - 1];
       const stage = last ? { key: `t${test}f${faults.length}`, title: ["", "Minor fault", "Serious fault", "Dangerous fault"][last.g] ?? "Fault", sub: last.x, colour: last.g > 1 ? COLOUR : "#ffd84a", life: last.g > 1 ? 3.5 : 2.2 } : undefined;
@@ -981,6 +982,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
     end() {
       ac.abort();
       panel.remove();
+      controlsHere("back", false);
       car.assist = null;
       if (inCar) { SFX.carRadio(1); w.windows?.(false); }
       w.mark("@challenge", null);

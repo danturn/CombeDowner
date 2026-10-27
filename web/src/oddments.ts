@@ -17,8 +17,9 @@
 // are full and which feats have already brought one today. Picking one up, setting one down,
 // filling a socket and asking for one to be made are asks to the host ("odq"); the host sends
 // the lot ("od") when anything changes, every few seconds and to anyone who joins. Every player
-// keeps the last word in localStorage for this map, and when a room comes together the furthest
-// anyone has got (the most sockets full) is what the room takes on, so it never goes backwards.
+// keeps the last word in localStorage for this room and map (saves.ts: a room is a save), and when
+// a room comes together the furthest anyone has got there (the most sockets full) is what the room
+// takes on, so it never goes backwards. The host also counts the room's challenges won.
 // Where the structures stand comes from the map alone, so everyone works out the same spots. The
 // host also says whether it's playing with no zones at all (free play), and the room follows it.
 // With the strange objects switched off (features.ts, the host's say) none turns up, no structure
@@ -33,6 +34,7 @@ import { feature } from "./features";
 import type { Zone, Zones } from "./zones";
 import type { Job, Offer } from "./quests";
 import type { Shot } from "./reveal";
+import { oddKey } from "./saves";
 
 /** At most this many objects a game day from feats; challenges won always bring one. */
 const FEATS_A_DAY = 3;
@@ -46,11 +48,11 @@ const GLOW = "#ff5a7a", BODY = "#ffc4cf";
 
 export interface Holder { id: string; x: number; y: number; z: number; yaw: number; alive: boolean }
 
-/** The host's word: sockets full, objects made so far, the objects [id, x, y, z, carried by], feat keys used, a socket just filled, and free play (every zone open). */
-export interface OddState { f: number; n: number; o: [number, number, number, number, string][]; k: string[]; e?: { f: number; by: string }; a?: boolean }
+/** The host's word: sockets full, objects made so far, the objects [id, x, y, z, carried by], feat keys used, a socket just filled, free play (every zone open), and challenges won. */
+export interface OddState { f: number; n: number; o: [number, number, number, number, string][]; k: string[]; e?: { f: number; by: string }; a?: boolean; w?: number }
 
 const empty = (): OddState => ({ f: 0, n: 0, o: [], k: [] });
-const further = (a: OddState, b: OddState) => a.f > b.f || (a.f === b.f && a.o.length > b.o.length);
+const further = (a: OddState, b: OddState) => a.f > b.f || (a.f === b.f && ((a.w ?? 0) > (b.w ?? 0) || ((a.w ?? 0) === (b.w ?? 0) && a.o.length > b.o.length)));
 
 const MOST = 64;
 
@@ -60,7 +62,7 @@ function clean(d: any): OddState | null {
     .map((q: any) => [q[0] | 0, +q[1], +q[2], +q[3], typeof q[4] === "string" ? q[4] : ""] as [number, number, number, number, string]);
   const k = Array.isArray(d.k) ? d.k.filter((s: any) => typeof s === "string").slice(-40) : [];
   const e = d.e && Number.isFinite(d.e.f) ? { f: d.e.f | 0, by: String(d.e.by ?? "") } : undefined;
-  return { f: Math.max(0, Math.min(MOST, d.f | 0)), n: Math.max(0, d.n | 0), o: o.slice(0, MOST), k, e, a: d.a === true };
+  return { f: Math.max(0, Math.min(MOST, d.f | 0)), n: Math.max(0, d.n | 0), o: o.slice(0, MOST), k, e, a: d.a === true, w: Math.max(0, Number(d.w) | 0) };
 }
 
 // ---- where the structure stands ----------------------------------------------------------------
@@ -262,7 +264,7 @@ export class Oddments {
   onOpen: () => void = () => {};
 
   /** free: this player would play with no zones, which counts for the room if they're its host. */
-  constructor(private map: GameMap, scene: THREE.Scene, private mapId: string, private zones: Zones, private free: boolean) {
+  constructor(private map: GameMap, scene: THREE.Scene, private mapId: string, private room: string, private zones: Zones, private free: boolean) {
     scene.add(this.group);
     this.group.visible = this.on;
     try {
@@ -340,7 +342,7 @@ export class Oddments {
   private ray: GameMap["rays"][number] = () => null;
   private kept: GameMap["keepClear"] = [];
 
-  private get key() { return `cd-oddments:${this.mapId}`; }
+  private get key() { return oddKey(this.mapId, this.room); }
 
   /** How many sockets are full. */
   get filled() { return this.s.f; }
@@ -422,7 +424,7 @@ export class Oddments {
       const r = clean(d.r);
       if (r && further(r, s)) {
         // the room takes on whoever's furthest; anything in someone's hands is put down where it was
-        this.s = { f: r.f, n: Math.max(s.n, r.n), o: r.o.map((q) => [q[0], q[1], q[2], q[3], ""] as OddState["o"][number]), k: [...new Set([...s.k, ...r.k])].slice(-40) };
+        this.s = { f: r.f, n: Math.max(s.n, r.n), o: r.o.map((q) => [q[0], q[1], q[2], q[3], ""] as OddState["o"][number]), k: [...new Set([...s.k, ...r.k])].slice(-40), w: Math.max(s.w ?? 0, r.w ?? 0) };
         changed = true;
       }
     }
@@ -434,9 +436,11 @@ export class Oddments {
   private earnHere(key: string, x: number, z: number, challenge: boolean): boolean {
     const s = this.s, day = dayNumber(), k = `${day}:${key}`;
     s.k = s.k.filter((q) => q.startsWith(`${day}:`));
-    if (s.k.includes(k) || s.f + s.o.length >= this.total) return false;
+    if (s.k.includes(k)) return false;
+    if (challenge) { s.k.push(k); s.w = (s.w ?? 0) + 1; }
+    if (s.f + s.o.length >= this.total) return challenge;
     if (!challenge && s.k.filter((q) => !q.startsWith(`${day}:c:`)).length >= FEATS_A_DAY) return false;
-    s.k.push(k);
+    if (!challenge) s.k.push(k);
     this.make(x, z);
     return true;
   }
@@ -518,8 +522,10 @@ export class Oddments {
       const p = q[4] ? (q[4] === this.me?.id ? this.me : this.others.find((r) => r.id === q[4])) : null;
       return [q[0], p?.x ?? q[1], p?.y ?? q[2], p?.z ?? q[3], ""] as OddState["o"][number];
     });
-    this.saved = { f: d.f, n: d.n, o, k: d.k };
-    try { localStorage.setItem(this.key, JSON.stringify(this.saved)); } catch { /* fine */ }
+    // a host on an older page doesn't count challenges, so the room's count is only ever raised here
+    this.saved = { f: d.f, n: d.n, o, k: d.k, w: Math.max(this.saved.w ?? 0, d.w ?? 0) };
+    const menu = { z: this.zones.openFor(d.f), zc: this.zones.count, at: Date.now() };
+    try { localStorage.setItem(this.key, JSON.stringify({ ...this.saved, ...menu })); } catch { /* fine */ }
   }
 
   // ---- what earns one ----
@@ -600,11 +606,11 @@ export class Oddments {
   hint(me: Holder): string {
     if (!me.alive || !this.on) return "";
     if (this.carrying(me.id)) {
-      if (this.atStructure(me) && this.s.f < this.total) return "<b>E</b> Set it in the structure";
+      if (this.atStructure(me) && this.s.f < this.total) return "<b>{use}</b> Set it in the structure";
       if (this.atFull(me)) return "This one's full. The next structure wants it";
       return "";
     }
-    return this.nearest(me) ? "<b>E</b> Pick it up" : "";
+    return this.nearest(me) ? "<b>{use}</b> Pick it up" : "";
   }
 
   // ---- every frame ----

@@ -26,9 +26,9 @@ import type { LinkStats } from "./net";
 import { soundState } from "./audio";
 import { padReport } from "./gamepad";
 import { clockKind, clockText, dayText, skipHours } from "./daylight";
+import { quality } from "./quality";
 import { VIEW_STEPS, setView, view } from "./view";
-
-declare const __BUILD__: number;
+import { BUILT, COMMIT } from "./version";
 
 /** The ?at= spot in the address, if there is one: where to stand and which way to look. An optional
  *  fifth number lifts the menu's backdrop that many metres above the ground (for views from the
@@ -96,7 +96,7 @@ export function osGrid(lat: number, lon: number): { e: number; n: number; ref: s
   if (l1 > 7) l1++;
   if (l2 > 7) l2++;
   const pad = (v: number) => String(Math.floor(v) % 100000).padStart(5, "0");
-  const ref = l1 >= 0 && l1 < 26 && l2 >= 0 && l2 < 26 ? `${String.fromCharCode(65 + l1, 65 + l2)} ${pad(E)} ${pad(N)}` : "off the grid";
+  const ref = l1 >= 0 && l1 < 26 && l2 >= 0 && l2 < 26 ? `${String.fromCharCode(65 + l1, 65 + l2)} ${pad(E)} ${pad(N)}` : "off the grid"; // keys-ok
   return { e: Math.round(E), n: Math.round(N), ref };
 }
 
@@ -130,7 +130,7 @@ export class DebugPanel {
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="go">Go to (O)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="day">+1 day (Y)</button><button type="button" data-k="bonfire">Bonfire night (N)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
+    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="go">Go to (O)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="day">+1 day (Y)</button><button type="button" data-k="bonfire">Bonfire night (N)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`; // keys-ok
     document.body.append(this.el);
     this.body = this.el.querySelector("pre")!;
     this.copyBtn = this.el.querySelector('[data-k="copy"]')!;
@@ -169,13 +169,14 @@ export class DebugPanel {
 
   /** See further, or round to the nearest again (view.ts). */
   private nextView() {
+    quality.manual();
     setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0], true);
     this.showView();
     this.game()?.toast(`Draw distance ${view.fogFar} m`, 1.5);
   }
 
   /** Show the draw distance on the button (Settings changes it too). */
-  showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
+  showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; } // keys-ok
 
   toggle(on = !this.open) {
     this.open = on;
@@ -273,7 +274,7 @@ export class DebugPanel {
     const g = this.game(), r = this.renderer, info = r.info, rows: string[] = [];
     const ms = (v: number | null) => (v === null ? "–" : `${Math.round(v)} ms`);
     const mem = (performance as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
-    const built = new Date(__BUILD__);
+    const built = new Date(BUILT);
     const buf = r.getDrawingBufferSize(new THREE.Vector2());
     rows.push(`<b>${this.fps.toFixed(this.fps < 10 ? 1 : 0)} fps</b>  ${this.avgMs.toFixed(1)} ms a frame, worst ${this.worstMs.toFixed(0)} ms  draw calls ${info.render.calls}`);
     if (g) {
@@ -284,13 +285,13 @@ export class DebugPanel {
       const [bx0, by0, bx1, by1] = m.d.b;
       const I = m.tileIndex;
       const village = p.x >= bx0 && p.x <= bx1 && north >= by0 && north <= by1;
-      let square = village ? esc(m.d.name ?? "the village") : "out past the squares";
+      let square = village ? esc(m.d.vn ?? m.d.name ?? "the village") : "out past the squares";
       if (I) {
         const S = I.cells * I.dx, ti = Math.floor((p.x - I.x0) / S), tj = Math.floor((north - I.y0) / S);
         // the village is squares 0..2 each way, whether or not the header still says so (d.b is
         // [0,0,0,0] once the village is loaded as squares, so the box alone won't do)
         const inVillage = (village || (ti >= 0 && ti <= 2 && tj >= 0 && tj <= 2));
-        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
+        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.vn ?? m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
       }
       rows.push("");
       rows.push(`<b>Position</b>`);
@@ -349,7 +350,7 @@ export class DebugPanel {
     rows.push(`${(info.render.triangles / 1000).toFixed(0)}k triangles; in memory ${info.memory.geometries} geometries, ${info.memory.textures} textures${mem ? `, JS ${(mem.usedJSHeapSize / 1048576).toFixed(0)} of ${(mem.jsHeapSizeLimit / 1048576).toFixed(0)} MB` : ""}`);
     rows.push(`screen ${innerWidth}×${innerHeight}, drawing ${buf.x}×${buf.y} (×${r.getPixelRatio().toFixed(2)})`);
     if (this.gpu) rows.push(`GPU ${esc(this.gpu.slice(0, 60))}`);
-    rows.push(`version ${built.toISOString().slice(0, 16).replace("T", " ")} UTC`);
+    rows.push(`version ${built.toISOString().slice(0, 16).replace("T", " ")} UTC${COMMIT ? ` (${COMMIT})` : ""}`);
     this.body.innerHTML = rows.join("\n");
   }
 }

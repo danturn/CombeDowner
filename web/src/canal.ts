@@ -1282,8 +1282,8 @@ export class Canal {
   lockHint(i: number): string {
     const lk = this.locks[i];
     const name = `${lk.d.n} (No. ${lk.d.no})`;
-    if (lk.flow > 0) return `${name} is filling: E to empty it instead`;
-    if (lk.flow < 0) return `${name} is emptying: E to fill it instead`;
+    if (lk.flow > 0) return `${name} is filling: {use} to empty it instead`;
+    if (lk.flow < 0) return `${name} is emptying: {use} to fill it instead`;
     if (lk.settled === 0) return `Work ${name}: fill it`;
     if (lk.settled === 1) return `Work ${name}: empty it`;
     return `Work ${name}: the gates are swinging`;

@@ -1,21 +1,21 @@
 // Bell Ringing, a team challenge (challenges.ts): English change ringing up a church tower. The
 // challenge stands at the biggest church in reach of where everyone starts, found from the map's
 // own buildings, so every map with a church has one. Outside it a sandwich board says to try bell
-// ringing today, with the vicar stood by it beckoning you over. Climb the tower (E by the vicar) and
+// ringing today, with the vicar stood by it beckoning you over. Climb the tower (use, by the vicar) and
 // you're in the ringing chamber, a room of our own built high over the street, each player holding
 // one bell's rope. The touch starts in rounds (1-2-3-4...), then the method moves the bells about,
 // pairs swapping places every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one,
 // and the more of you there are, the more bells and the longer the touch. Rows come at a steady
 // beat, handstroke and backstroke, with the open gap before each handstroke, and each player pulls
-// (Space, Cross, or Pull on a touch screen) at their own bell's moment in every row. A bell sounds
-// a moment after its rope is pulled, as a real one does, so you have to pull ahead of the beat:
-// the blue line on the right shows where your bell comes in each row, and the sally gauge under it
-// when to pull. Pull early or late and the bell clashes with its neighbour; late enough and the
-// rope hauls you up off the floor. Two bad rows in a row and the whole lot collapses into a jangle,
-// and too many bad rows over the touch and the conductor calls Stand: lost either way. Ring it
-// through clean enough and the strange object turns up at the church door. With fewer than three
-// players, steady old ringers who never miss make up three bells; anyone who climbs up late
-// stands by the wall and watches.
+// (jump, or Pull on a touch screen: the bells' table in controls.ts) at their own bell's moment in
+// every row. A bell sounds a moment after its rope is pulled, as a real one does, so you have to
+// pull ahead of the beat: the blue line on the right shows where your bell comes in each row, and
+// the sally gauge under it when to pull. Pull early or late and the bell clashes with its
+// neighbour; late enough and the rope hauls you up off the floor. Two bad rows in a row and the
+// whole lot collapses into a jangle, and too many bad rows over the touch and the conductor calls
+// Stand: lost either way. Ring it through clean enough and the strange object turns up at the
+// church door. With fewer than three players, steady old ringers who never miss make up three
+// bells; anyone who climbs up late stands by the wall and watches.
 //
 // Who decides what: the host keeps the time and runs the band. Each screen syncs its clock to the
 // host's ("tq"/"ta" inside "qe"), so the rows are laid out on one shared clock from the moment the
@@ -34,7 +34,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import * as SFX from "./audio";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { dayNumber } from "./daylight";
-import { keyLabel } from "./gamepad";
+import { ctl } from "./controls";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
 import { speak } from "./posh";
@@ -765,7 +765,7 @@ registerChallenge({
         x.fillText(`${n()} bells${list.length < 3 ? ` (${3 - Math.min(3, list.length)} steady old hands)` : ""}`, 12, 66);
         x.fillStyle = "#aab"; x.font = "12px sans-serif";
         x.fillText("Starts when everyone's up,", 12, 96);
-        x.fillText(`or ${keyLabel("KeyE")} to look to now`, 12, 112);
+        x.fillText(`or ${ctl("bells.look")} to look to now`, 12, 112);
         return;
       }
       x.fillText(methodName.toUpperCase(), 12, 20);
@@ -831,7 +831,7 @@ registerChallenge({
         x.fillText(`${next % 2 ? "Backstroke" : "Handstroke"} · ${ordinal(placeOf[next][b] + 1)} place`, tx, gy + 32);
       }
       x.textAlign = "left"; x.fillStyle = "#99a"; x.font = "11px sans-serif";
-      x.fillText(`${touch && !touch.hidden ? "Pull" : keyLabel("Space")} to pull when the dot's on the line`, tx, gy + 47);
+      x.fillText(`${ctl("bells.pull")} to pull when the dot's on the line`, tx, gy + 47);
       if (flash && performance.now() - flash.t < 700) {
         x.globalAlpha = 1 - (performance.now() - flash.t) / 700;
         x.textAlign = "center"; x.fillStyle = flash.colour; x.font = "700 18px 'Barlow Condensed', sans-serif";
@@ -858,6 +858,7 @@ registerChallenge({
 
     const job: Job = {
       offer, done: null,
+      aloft: inside,
       update(dt) {
         welcome.update(dt);
         const t = nowS();
@@ -1048,12 +1049,11 @@ registerChallenge({
         if (!aboard) {
           if (phase !== "gather" && phase !== "ring") return "";
           return Math.hypot(me.x - board.x, me.z - board.z) < CLIMB || Math.hypot(me.x - C.x, me.z - C.z) < CLIMB
-            ? `<b>E</b> Climb the tower${go ? " and watch" : ""}` : "";
+            ? `<b>{use}</b> Climb the tower${go ? " and watch" : ""}` : "";
         }
-        if (phase === "gather") return `<b>E</b> Look to! Start the ringing`;
+        if (phase === "gather") return `<b>{use}</b> Look to! Start the ringing`;
         if (phase === "ring" && go && myBell() >= 0 && rowAt(nowS()) < changesFrom) {
-          const key = touch && !touch.hidden ? "Tap <b>Pull</b>" : "<b>Space</b>";
-          return `${key} to pull ${bellName(myBell(), go.n)}'s rope when the sally gauge says`;
+          return `<b>{bells.pull}</b> to pull ${bellName(myBell(), go.n)}'s rope when the sally gauge says`;
         }
         return "";
       },
@@ -1079,9 +1079,9 @@ registerChallenge({
         const ps = w.players();
         if (phase === "gather" && !aboard) {
           const me = w.me(), d = Math.hypot(me.x - board.x, me.z - board.z);
-          return { line: d > 30 ? `Go to ${church}` : "Climb the tower (E by the vicar)", progress: `${list.length} / ${ps.length} up`, stage };
+          return { line: d > 30 ? `Go to ${church}` : "Climb the tower ({use} by the vicar)", progress: `${list.length} / ${ps.length} up`, stage };
         }
-        if (phase === "gather") return { line: "Waiting in the ringing chamber", sub: "Everyone up, or E to look to", progress: `${list.length} / ${ps.length} up`, stage };
+        if (phase === "gather") return { line: "Waiting in the ringing chamber", sub: "Everyone up, or {bells.look} to look to", progress: `${list.length} / ${ps.length} up`, stage };
         if (!go) return { line: "Ringing", stage };
         const cur = ending ? judged + 1 : Math.max(0, Math.min(R, rowAt(nowS()) + 1)), b = myBell();
         return {

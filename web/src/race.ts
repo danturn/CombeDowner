@@ -2,15 +2,25 @@
 // opens the entries: for a few seconds anyone in the game, wherever they are, can press E to enter
 // (whoever took it is in already). When the entries close, everyone who entered, and nobody else,
 // is put on a starting grid across the street with the ride, facing the way, held still by a
-// countdown (the same for everyone, as it comes from the clock) till GO.
+// countdown (the same for everyone, as it comes from the clock) till GO: a big banner while the
+// racers gather and line up, then 3, 2, 1, GO! in the middle of the screen under start lights
+// (racescreens.ts). With nobody else in the room there's nobody to wait for, so it goes straight to
+// the countdown.
 //
 // The start and the finish are on the nearest proper street to the noticeboard and to the place,
 // since most of the rides are hopeless on grass, and the route between them follows the streets
 // (raceroute.ts). Checkpoints stand across the road along it, a gate at a time, and have to be
 // ridden through in order before the finish counts; between them it's any way you like. The route
 // and its checkpoints are drawn on the maps, and an arrow over the crosshair points at the next
-// one. Over the line, a big banner, confetti and a fanfare say where you came and in what time,
-// with everyone else's times as they come in (missionscreens.ts).
+// one. At the end comes a results card: your place, time and medal, your best, how the run went,
+// everyone's standings, and a fanfare for how you did.
+//
+// Killed on the way, you're out of the race: no time and no medal. Out of the room's race, or over
+// its line, while others are still riding, you wait for the end where you stopped, held still and
+// out of harm's way (you come back to life only once it's over), and watch the others from behind
+// whoever you choose. The race ends when everyone's over the line or out of it, or a minute after
+// the first one home, and everyone gets the results card together. On your own, it ends there and
+// then.
 //
 // A race is quicker than riding about: it lifts every ride's top speed and push (player.ts's
 // rideMul, said every frame through the quest world), boost pads lie across the road between
@@ -35,7 +45,7 @@
 // tenth of a second, and you race a see-through rider of it; finishing with a best sends your run
 // round, so everyone else in the room races your ghost too, alongside the real riders.
 //
-// Backspace (Again on a touch screen) puts just you back on the line with a quick 3-2-1 of your own
+// Use (E, □, or Again on a touch screen; Backspace too) puts just you back on the line with a quick 3-2-1 of your own
 // and your own clock: a time trial for you, while the room's race and its results stand. It works
 // for two minutes after a race is over too.
 //
@@ -49,33 +59,39 @@
 // cross the line ("fin"), with their run ("gh") if it's a best. Everyone keeps the results from
 // those, counting a finish only from someone who's been through every checkpoint in order; the
 // host checks the time against its own clock as well, and sends the results that stand ("res"),
-// or says a finish doesn't count ("dq"). A racer out of time says "out", which the room counts like a finish when deciding the race is
-// over; riding on, they send no more checkpoints and no finish. A go of your own sends "pb" with its time, and the daily
+// or says a finish doesn't count ("dq"). A racer out of time says "out"; riding on, they send no more checkpoints and
+// no finish, but say "home" over the line. Killed (or given up riding on), they say "out" with dnf.
+// The host calls the race over ("end", with the results and who's out), and anyone else calls it
+// themselves a few seconds after they'd have expected to hear (an older host never says). While
+// someone waits they say so in their position updates ("rw", game.ts), and the host lets nothing
+// hurt them. A go of your own sends "pb" with its time, and the daily
 // race's board is everyone saying their best and how many goes they've had ("brd").
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
+import { ctl } from "./controls";
+import * as RS from "./racescreens";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import { type RideKind, TROLLEY_AHEAD, rideModel, rideSpecs } from "./rides";
 import type { RouteLine } from "./minimap";
-import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng } from "./quests";
-import { type EndHandle, type EndRow, missionEnd, placeWord } from "./missionscreens";
+import { type Card, type Job, type Offer, type Perch, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng } from "./quests";
 import { type PathPoint, type RacePath, along, gatesOf, racePath } from "./raceroute";
 
 const COLOUR = "#3ec7e8";
 const ENTRY = 15;          // seconds the entries are open after it's taken
 const COUNTDOWN = 8;       // seconds on the grid from the entries closing to GO
 const RETRY = 3;           // and for a go of your own
+const GO_HUSH = 1.3;       // seconds after GO before the middle of the screen is anyone else's again
 const GRID_WAIT = 2.5;     // seconds after the entries close to wait for the host's grid
 const PASS = 12;           // metres from a checkpoint's middle that counts as through it, at least
 const TOP_SPEED = 48;      // metres a second: nobody's quicker over the whole route than this, boosts and all
 const LATE = 30;           // seconds a finish's time may be quicker than the host's clock says it can be
 const GATE_SEEN = 450;     // metres from the next checkpoint that its gate stands up
 const GHOST_EVERY = 0.1;   // seconds between the points of a ghost run
-const AFTER = 90;          // seconds after the first one's over the line that the others get
+const AFTER = 60;          // seconds after the first one's over the line that the others get
+const END_WAIT = 4;        // seconds anyone but the host waits for the host to call the race over, past when they'd have called it
 const MAX_RACE = 900;      // seconds after GO that a race nobody's finished is over
-const LINGER = 30;         // seconds a go of your own stays up after you're over the line
 const GHOSTS = 4;          // the most ghosts out at once
 const RACE_MUL = 1.3;      // a race lifts every ride's top speed and push by this
 const PAD_MUL = 1.3;       // and a boost pad by this on top, for PAD_SECS
@@ -280,7 +296,7 @@ function poster(o: Offer, rt: Route) {
 let world: QuestWorld | null = null;   // for the daily race's poster
 
 registerJob({
-  id: "race", glyph: "R", colour: COLOUR, label: "Race", again: true,
+  id: "race", glyph: "R", colour: COLOUR, label: "Race", again: true, take: "Start the race",
   goal: (o) => (o.mode === DAILY ? "Race to the finish and get your time on today's board" : "Race through every checkpoint and over the line first"),
   offer(r, spot: PostSpot, w) {
     const o: Offer = { kind: "race", seed: hash("race", r() * 1e9), stars: 1, title: "", blurb: "", reward: "", x: spot.x, z: spot.z, where: spot.name };
@@ -319,6 +335,9 @@ registerJob({
   },
   start: (o, w, started, by, local) => new Race(o, w, started, by, !!local),
 });
+
+/** What a prompt calls going again: use (E, □), or the touch screen's Again button. */
+const againKey = () => ctl("again");
 
 /** "1:23.4". */
 function clock(s: number, tenths = false) {
@@ -506,7 +525,6 @@ class Race implements Job {
   private racing = false;                   // I'm on the grid or on the way
   private own = false;                      // on a go of my own (Backspace), not the room's
   private over = false;                     // I'm over the line
-  private overT = 0;                        // when, ms since 1970
   private roomOver = false;                 // everyone's in, or out of time
   private results: { id: string; t: number }[] = [];
   private pipped = 4;
@@ -518,7 +536,21 @@ class Race implements Job {
   private arch: THREE.Group | null = null;
   private marked = "";
   private routeLine: RouteLine;
-  private party: EndHandle | null = null;
+  private shown = false;                    // my results card is up, or has been, for this go
+  private dnf = false;                      // I came off (or gave up) and am out of the race
+  private dnfAt = 0;                        // on my clock, when
+  private myT = 0;                          // my time over the line
+  private holdAt: { x: number; y: number; z: number } | null = null;   // where I wait for the others, held still
+  private dnfs = new Set<string>();         // who's out of the race, by their own word
+  private homes = new Set<string>();        // who's over the line after running out of time
+  private overAt = 0;                       // when I'd have called the race over, waiting on the host's word
+  private watchId = "";                     // the racer I'm watching
+  private eye: { x: number; y: number; z: number; lx: number; ly: number; lz: number } | null = null;
+  private heads = new Map<string, { x: number; z: number; h: number }>();   // where each racer was and which way they're going, for the camera behind them
+  private keys: ((e: KeyboardEvent) => void) | null = null;
+  private lastMe: { x: number; z: number } | null = null;
+
+  private stats = { top: 0, v: 0, boosts: 0, slip: 0, barged: 0, knocked: 0 };
   private arrow = hudBit("top:calc(50% - 96px);width:48px;margin-left:-24px;color:" + COLOUR);
   private flash = hudBit("top:calc(50% + 48px);width:260px;margin-left:-130px");
   private flashT = 0;
@@ -546,8 +578,10 @@ class Race implements Job {
     this.rt = routeOf(offer, w)!;
     this.medal = medals(this.rt.author);
     this.daily = offer.mode === DAILY;
-    this.close = local ? started : started + ENTRY * 1000;
-    this.go = local ? started + RETRY * 1000 : this.close + COUNTDOWN * 1000;
+    // on your own in the room there's nobody to wait for: straight to the countdown
+    const lone = !local && w.players().length <= 1;
+    this.close = local || lone ? started : started + ENTRY * 1000;
+    this.go = local ? started + RETRY * 1000 : lone ? started + (RETRY + 1) * 1000 : this.close + COUNTDOWN * 1000;
     this.myGo = this.go;
     this.best = bestOf(offer.seed);
     this.path = this.rt.path;
@@ -589,9 +623,10 @@ class Race implements Job {
     }
     this.enter(by);
     const left = Math.ceil((this.close - Date.now()) / 1000);
-    if (left <= 0) w.toast("A race is on: you're watching this one. Backspace to have a go of your own", 3);
-    else if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press E and enter`, 3);
-    else w.toast(`A race is taking entries: E to enter (${left} s)`, 4);
+    if (lone) return;
+    if (left <= 0) w.toast(`A race is on: you're watching this one. ${againKey()} to have a go of your own`, 3);
+    else if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press {use} and enter`, 3);
+    else w.toast(`A race is taking entries: {use} to enter (${left} s)`, 4);
   }
 
   /** Each leg's time limit and gold pace at each gate, and where the boost pads lie. */
@@ -605,10 +640,12 @@ class Race implements Job {
     stops.forEach((s, k) => {
       const a = k ? stops[k - 1] : start, len = Math.max(40, s - a);
       if (!p || len < 120) return;
-      for (const f of len > 500 ? [0.3, 0.65] : [0.3 + pad() * 0.4]) {
-        const at = along(p, a + len * f), off = (pad() * 2 - 1) * Math.max(0, at.half - 2) * 0.5;
+      // spread along the leg, clear of the gates at either end and a good way apart, to either side in turn
+      const fs = len < 220 ? [0.3 + pad() * 0.4] : len < 520 ? [0.24 + pad() * 0.12, 0.6 + pad() * 0.12] : [0.2, 0.46, 0.72].map((f) => f + pad() * 0.06);
+      fs.forEach((f, i) => {
+        const at = along(p, a + len * f), off = (i % 2 ? -1 : 1) * (0.3 + pad() * 0.7) * Math.max(0, at.half - 2) * 0.5;
         this.pads.push({ x: at.x - at.dz * off, z: at.z + at.dx * off, dx: at.dx, dz: at.dz });
-      }
+      });
     });
   }
 
@@ -644,14 +681,23 @@ class Race implements Job {
   }
   private here(id: string) { return this.w.players().some((p) => p.id === id); }
 
-  hint() { return this.canEnter() ? `<b>E</b> Enter the race (${Math.ceil((this.close - Date.now()) / 1000)} s)` : ""; }
+  hint() {
+    if (this.canEnter()) return `<b>{use}</b> Enter the race (${Math.ceil((this.close - Date.now()) / 1000)} s)`;
+    return this.againOk() ? "<b>{again}</b> Go again" : "";
+  }
+
+  /** Use goes again on a ride, or in a race once you're not racing flat out: not mid-race, nor waiting for the end. */
+  private againOk() {
+    if (this.done || !this.w.me().alive || this.waiting()) return false;
+    return (this.racing || this.w.riding()) && !(this.racing && !this.over && !this.out && !this.dnf);
+  }
 
   use(): boolean {
+    if (this.againOk() && !this.canEnter()) return this.restart();
     if (!this.canEnter()) return false;
     this.enter(this.w.selfId);
     this.w.send("qe", { k: "ent", s: this.offer.seed });
     SFX.tick();
-    this.w.toast("You're in! You'll be put on the grid when the entries close", 3);
     return true;
   }
 
@@ -683,18 +729,20 @@ class Race implements Job {
       this.racing = true;
       this.w.moveTo(this.start.x, this.start.z, this.start.yaw);
       this.w.ride(this.rt.ride);
-      if (this.grid.length > 1) this.w.toast(`On the grid: ${nth(k + 1)} of ${this.grid.length}`, 2.5);
     }
   }
 
   /** Back on the line, on my own clock. */
   restart(): boolean {
-    if (!this.w.me().alive) return false;
+    if (!this.w.me().alive || this.waiting()) return false;
     this.own = true; this.racing = true; this.over = false;
     this.splits = []; this.run = []; this.runT = 0; this.pipped = 4; this.next = 0;
     this.out = false; this.outT = 0; this.warned = false; this.deadline = 0; this.padUntil = 0; this.padHit.clear(); this.beeped = 6;
+    this.dnf = false; this.dnfAt = 0; this.myT = 0; this.holdAt = null; this.shown = false; this.eye = null;
+    this.stats = { top: 0, v: 0, boosts: 0, slip: 0, barged: 0, knocked: 0 };
     this.myGo = Date.now() + RETRY * 1000;
-    this.party?.remove(); this.party = null;
+    RS.dropSummary();
+    this.unwatch();
     this.lineGates();
     this.w.moveTo(this.start.x, this.start.z, this.start.yaw);
     this.w.ride(this.rt.ride);
@@ -702,32 +750,31 @@ class Race implements Job {
     return true;
   }
 
-  held() { return this.racing && this.now < 0 ? { x: this.start.x, z: this.start.z } : null; }
+  held() { return this.racing && this.now < 0 && !this.dnf ? { x: this.start.x, z: this.start.z } : null; }
 
   update(dt: number) {
     const t = this.now, me = this.w.me();
     if (!this.local && !this.grid && Date.now() >= this.close + GRID_WAIT * 1000) this.onGrid([...this.entries].sort().filter((id) => this.here(id)), false);
-    // the countdown: a pip a second and a long one on GO
-    if (this.racing && !this.over) {
+    // coming off for good (killed) on the way: out of the race
+    if (this.racing && !this.over && !this.dnf && !this.done && !me.alive) this.dropOut(t);
+    // the countdown: a pip a second and a long one on GO, each number big in the middle with the start lights
+    if (this.racing && !this.over && !this.dnf) {
       if (t < 0) {
         const n = Math.ceil(-t);
-        if (n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); this.show(`<span style="font-size:54px;color:#fff">${n}</span>`, 0.9); }
-      } else if (this.pipped > 0) { this.pipped = 0; SFX.pip(true); this.show(`<span style="font-size:54px;color:${COLOUR}">GO!</span>`, 1); }
+        if (n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); RS.countdown(n); }
+      } else if (this.pipped > 0) { this.pipped = 0; SFX.pip(true); RS.countdown(0); }
     }
-    if (!this.roomOver && !this.local) {
-      const racers = this.grid?.length ?? Infinity, since = (Date.now() - this.go) / 1000;
-      if (this.results.length && (Date.now() - this.firstT) / 1000 > AFTER) this.roomOver = true;
-      else if (since > 0 && this.results.length + this.outs.size >= racers) this.roomOver = true;
-      else if (since > MAX_RACE) this.roomOver = true;
-    }
-    // the room's race is over once I'm not in the middle of a go of my own; a go of my own, a while after it
+    if (!this.roomOver && !this.local) this.judgeRoom();
     if (!this.done) {
-      const gaveUp = this.out && !this.over && Date.now() - this.outT > LATE_MAX * 1000;
-      const busy = this.racing && !this.over && !gaveUp;
-      if (this.local ? (this.over && Date.now() - this.overT > LINGER * 1000) || gaveUp : this.roomOver && !busy) this.finish();
+      const gaveUp = this.out && !this.over && !this.dnf && Date.now() - this.outT > LATE_MAX * 1000;
+      if (gaveUp) this.dropOut(t);
+      const mine = this.own && this.racing && !this.over && !this.dnf;
+      if (this.local ? this.over || this.dnf : this.roomOver && !mine) this.finish();
     }
     if (this.done) { this.hideHud(); return; }
-    const live = this.racing && !this.over;
+    this.drawWait(t);
+    this.watch(dt);
+    const live = this.racing && !this.over && !this.dnf;
     const target = live ? this.gates[this.next] : this.gates[this.gates.length - 1];
     const d = Math.hypot(target.x - me.x, target.z - me.z);
     if (live && t >= 0) {
@@ -735,7 +782,14 @@ class Race implements Job {
       if ((this.runT -= dt) <= 0) { this.runT += GHOST_EVERY; if (this.runT < 0) this.runT = 0; this.run.push(me.x, me.z); }
       if (d < Math.max(PASS, target.half + 6) && me.alive) this.through(t);
       if (live) this.pace(t, me);
+      const st = this.stats, was = this.lastMe;
+      if (was && dt > 0) {
+        const v = Math.hypot(me.x - was.x, me.z - was.z) / dt;
+        if (v < 70) { st.v += (v - st.v) * Math.min(1, dt * 5); st.top = Math.max(st.top, st.v); }   // (not a jump back to the line)
+      }
+      if (this.slip) st.slip += dt;
     }
+    this.lastMe = { x: me.x, z: me.z };
     if (!live || t < 0) this.rideNormally();
     this.watchRacers(dt);
     this.drawTimer(live && t >= 0, t);
@@ -754,6 +808,139 @@ class Race implements Job {
     }
   }
 
+  /** Is the room's race over: everyone on the grid over the line, out of it or gone, or the others'
+   *  time after the first one home is up? The host says so ("end") with the results; anyone else
+   *  waits a moment for that before calling it themselves (an older host never says). */
+  private judgeRoom() {
+    const now = Date.now(), since = (now - this.go) / 1000;
+    // (someone out of time may still be riding on: they say when they're home or give up)
+    const still = this.grid ? this.grid.filter((id) => this.here(id) && !this.results.some((r) => r.id === id) && !this.dnfs.has(id) && !this.homes.has(id)) : null;
+    const over = (this.results.length > 0 && (now - this.firstT) / 1000 > AFTER) || (since > 0 && still !== null && still.length === 0) || since > MAX_RACE;
+    if (!over) { this.overAt = 0; return; }
+    if (!this.w.isHost && !(since > MAX_RACE)) {
+      this.overAt ||= now;
+      if (now - this.overAt < END_WAIT * 1000) return;
+    }
+    this.roomOver = true;
+    if (this.w.isHost) this.w.send("qe", { k: "end", s: this.offer.seed, r: this.results, o: [...this.outs], d: [...this.dnfs], h: [...this.homes] });
+  }
+
+  /** The banner while the entries are open and the racers line up, till the 3, 2, 1. */
+  private drawWait(t: number) {
+    const nowMs = Date.now(), names = (ids: string[]) => ids.slice(0, 6).map((id) => esc(this.who(id))).join(", ") + (ids.length > 6 ? ` and ${ids.length - 6} more` : "");
+    if (!this.local && !this.grid && nowMs < this.close) {
+      const inIt = this.entries.includes(this.w.selfId);
+      RS.waiting({
+        kind: this.offer.title,
+        head: `Waiting for racers<span class="dots"></span>`, count: Math.ceil((this.close - nowMs) / 1000),
+        sub: `${this.entries.length} in: ${names(this.entries)}`,
+        small: inIt ? `You're in · ${esc(rideSpecs[this.rt.ride].name)}` : this.w.me().alive ? `<b>${esc(RS.control("use"))}</b> to enter` : "",
+      });
+    } else if (!this.local && !this.grid) {
+      RS.waiting({ kind: this.offer.title, head: `Lining up<span class="dots"></span>`, sub: `${this.entries.length} in: ${names(this.entries)}` });
+    } else if (this.racing && !this.dnf && !this.over && t < 0 && Math.ceil(-t) > 3) {
+      const many = !this.own && (this.grid?.length ?? 1) > 1;
+      RS.waiting({
+        kind: this.offer.title, head: "Get ready", count: Math.ceil(-t),
+        sub: many ? `On the grid: ${nth(this.mySlot + 1)} of ${this.grid!.length}` : `${esc(rideSpecs[this.rt.ride].name)} to <b>${esc(this.rt.to.n)}</b>`,
+        small: many ? `Racing: ${names(this.grid!)}` : undefined,
+      });
+    } else RS.waiting(null);
+  }
+
+  /** From Get ready till GO has faded the middle of the screen is the countdown's alone: anything
+   *  else for it (a ride's intro, its keys) waits till after. */
+  quiet(): boolean {
+    if (!this.racing || this.over || this.dnf || this.done) return false;
+    const t = this.now;
+    return t < GO_HUSH && (t > -COUNTDOWN || this.own);
+  }
+
+  /** Over the line or out of the race while others are still going, in the room's race: I wait,
+   *  held still, and watch them. */
+  waiting(): boolean {
+    return !this.local && !this.own && this.racing && (this.over || this.dnf) && !this.roomOver && !this.done && (this.grid?.length ?? 1) > 1;
+  }
+
+  /** Who I can watch: those on the grid still on the way. */
+  private targets(): string[] {
+    const here = new Map(this.w.players().map((p) => [p.id, p]));
+    return (this.grid ?? []).filter((id) => id !== this.w.selfId && here.get(id)?.alive && !this.results.some((r) => r.id === id) && !this.dnfs.has(id) && !this.homes.has(id));
+  }
+
+  /** Watch the next (by 1) or the last (by -1) racer still going. True if that's what the press was for. */
+  cycle(by: number): boolean {
+    if (!this.waiting()) return false;
+    const ids = this.targets();
+    if (!ids.length) return true;
+    const k = ids.indexOf(this.watchId);
+    this.watchId = ids[((k < 0 ? 0 : k + by) + ids.length) % ids.length];
+    SFX.tick();
+    return true;
+  }
+
+  /** While I wait: the camera behind the racer I'm watching, smoothed from where they've said they
+   *  are, and the banner with the standings so far. */
+  private watch(dt: number) {
+    if (!this.waiting()) { this.unwatch(); return; }
+    if (!this.keys) {
+      // Q and E (or the arrows) switch who you watch, and so does the pad's d-pad, which presses B
+      // and G; taken here so they don't fire, get in a car or mark the map while you watch
+      this.keys = (e: KeyboardEvent) => {
+        if (e.repeat || e.target instanceof HTMLInputElement) return;
+        const by = e.code === "KeyQ" || e.code === "ArrowLeft" || (e.code === "KeyB" && !e.isTrusted) ? -1
+          : (e.code === "KeyE" && e.isTrusted) || e.code === "ArrowRight" || (e.code === "KeyG" && !e.isTrusted) ? 1 : 0;
+        if (!by || !this.cycle(by)) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+      };
+      addEventListener("keydown", this.keys, true);
+    }
+    const ids = this.targets();
+    if (!ids.includes(this.watchId)) this.watchId = ids[0] ?? "";
+    const them = this.watchId ? this.w.players().find((p) => p.id === this.watchId) : undefined;
+    if (them) {
+      const was = this.heads.get(them.id) ?? { x: them.x, z: them.z, h: this.start.yaw };
+      const mx = them.x - was.x, mz = them.z - was.z;
+      let h = was.h;
+      if (Math.hypot(mx, mz) > 0.05) { const want = Math.atan2(-mx, -mz); h += Math.atan2(Math.sin(want - h), Math.cos(want - h)) * Math.min(1, dt * 3); }
+      this.heads.set(them.id, { x: them.x, z: them.z, h });
+      const fx = -Math.sin(h), fz = -Math.cos(h);
+      const want = { x: them.x - fx * 8, y: Math.max(them.y, this.w.map.ground(them.x - fx * 8, them.z - fz * 8)) + 3.6, z: them.z - fz * 8 };
+      const e = this.eye, k = e ? Math.min(1, dt * 5) : 1;
+      this.eye = {
+        x: e ? e.x + (want.x - e.x) * k : want.x, y: e ? e.y + (want.y - e.y) * k : want.y, z: e ? e.z + (want.z - e.z) * k : want.z,
+        lx: them.x + fx * 4, ly: them.y + 1.2, lz: them.z + fz * 4,
+      };
+    } else this.eye = null;
+    const mine = this.results.findIndex((r) => r.id === this.w.selfId);
+    const head = this.dnf ? "Out of the race" : `Finished${mine >= 0 ? ` — ${nth(mine + 1)}` : ""}, ${clock(this.myT, true)}`;
+    const sw = ctl("watch");
+    const left = this.results.length ? Math.max(0, Math.ceil(AFTER - (Date.now() - this.firstT) / 1000)) : 0;
+    RS.spectating({
+      head,
+      sub: them ? `Watching <b>${esc(them.name)}</b>${ids.length > 1 ? ` · ${esc(sw)} to switch` : ""}` : "Waiting for the others",
+      small: `${ids.length} still racing${left ? ` · results in ${left} s at most` : ""}`,
+      rows: this.standings(false).map((r) => ({ name: r.name, time: r.time, me: r.me, watch: r.id === this.watchId })),
+      many: ids.length > 1,
+    }, (by) => this.cycle(by));
+  }
+
+  private unwatch() {
+    if (this.keys) { removeEventListener("keydown", this.keys, true); this.keys = null; }
+    this.eye = null;
+    RS.spectating(null);
+  }
+
+  /** Waiting for the others, alive: held still where I stopped, looking on from behind whoever I'm watching. */
+  perch(): Perch | null {
+    if (!this.waiting() || !this.holdAt) return null;
+    const h = this.holdAt;
+    return this.eye ? { ...h, bare: true, eye: this.eye } : { ...h };
+  }
+
+  /** Waiting for the others, killed: the view from behind whoever I'm watching. */
+  spectate() { return this.waiting() && !this.w.me().alive ? this.eye : null; }
+
   private rideNormally() { if (this.boosting) { this.boosting = false; this.w.rideBoost?.(1); } }
   private boosting = false;
 
@@ -763,7 +950,7 @@ class Race implements Job {
     for (let k = 0; k < this.pads.length; k++) {
       const p = this.pads[k];
       if (t > (this.padHit.get(k) ?? -9) + 2 && Math.hypot(p.x - me.x, p.z - me.z) < PAD_R) {
-        this.padHit.set(k, t); this.padUntil = t + PAD_SECS;
+        this.padHit.set(k, t); this.padUntil = t + PAD_SECS; this.stats.boosts++;
         this.w.rideBoost?.(RACE_MUL * PAD_MUL, 3);
         SFX.whoosh();
         this.show(`<span style="font-size:40px;color:#ffd23a">BOOST!</span>`, 0.8);
@@ -789,7 +976,7 @@ class Race implements Job {
   private timeUp() {
     this.out = true; this.outT = Date.now();
     SFX.urgent(0);
-    this.show(`<span style="font-size:40px;color:#ff5a4e">OUT OF TIME</span><div style="font-size:16px;color:#ddd">Ride on to the finish for your time (no medal), or Backspace to go again</div>`, 4);
+    this.show(`<span style="font-size:40px;color:#ff5a4e">OUT OF TIME</span><div style="font-size:16px;color:#ddd">Ride on to the finish for your time (no medal), or ${esc(againKey())} to go again</div>`, 4);
     if (!this.own) {
       const msg = { k: "out", s: this.offer.seed };
       this.w.send("qe", msg);
@@ -817,7 +1004,7 @@ class Race implements Job {
     const vel = (id: string, x: number, z: number) => { const q = this.prevPos.get(id); return q && dt > 0 ? { x: (x - q.x) / dt, z: (z - q.z) / dt } : { x: 0, z: 0 }; };
     const mv = prev ? vel(this.w.selfId, me.x, me.z) : { x: 0, z: 0 };
     const t = this.now;
-    const can = this.racing && !this.over && !this.out && t >= 1 && !this.own && !this.w.passive && me.alive && this.grid;
+    const can = this.racing && !this.over && !this.out && !this.dnf && t >= 1 && !this.own && !this.w.passive && me.alive && this.grid;
     for (const o of ids) {
       if (o.id === this.w.selfId) continue;
       if (can && this.grid!.includes(o.id) && o.alive && Date.now() > (this.knockedAt.get(o.id) ?? 0)) {
@@ -826,6 +1013,7 @@ class Race implements Job {
           const ov = vel(o.id, o.x, o.z), closing = ((mv.x - ov.x) * dx + (mv.z - ov.z) * dz) / d;
           if (closing > KNOCK_SPEED && Math.hypot(mv.x, mv.z) > Math.hypot(ov.x, ov.z)) {
             this.knockedAt.set(o.id, Date.now() + KNOCK_COOL * 1000);
+            this.stats.barged++;
             this.w.send("qe", { k: "knk", s: this.offer.seed }, o.id);
             this.w.rideBoost?.(RACE_MUL, -Math.min(3, closing * 0.35));
             SFX.thump();
@@ -841,7 +1029,7 @@ class Race implements Job {
   /** Pads for the maps' sake are only drawn near: one mesh, laid on the ground and redone now and then as the squares load. */
   private drawPads(me: { x: number; z: number }) {
     const near: number[] = [];
-    if (this.racing && !this.over) this.pads.forEach((p, k) => { if (Math.hypot(p.x - me.x, p.z - me.z) < PAD_SEEN) near.push(k); });
+    if (this.racing && !this.over && !this.dnf) this.pads.forEach((p, k) => { if (Math.hypot(p.x - me.x, p.z - me.z) < PAD_SEEN) near.push(k); });
     const key = near.join(",") + (near.length ? `/${Math.floor(Date.now() / 2000)}` : "");
     if (key === this.padKey) return;
     this.padKey = key;
@@ -916,14 +1104,16 @@ class Race implements Job {
 
   /** Over the line, at t on my clock. */
   private crossed(t: number) {
-    this.over = true; this.overT = Date.now();
+    this.over = true;
     this.lineGates();
     t = Math.round(t * 10) / 10;
+    this.myT = t;
+    this.hold();
+    this.flash.hidden = true;
     if (this.out) {
       // over the line after the clock ran out: a time to know, but no place, medal or best
-      this.flash.hidden = true;
-      this.party?.remove();
-      this.party = missionEnd({ result: "failed", colour: COLOUR, title: "Out of time", lines: [clock(t, true), "Over the line, but too late for a medal", "Backspace to go again"], rows: this.rows() });
+      if (!this.own && !this.local) { this.w.send("qe", { k: "home", s: this.offer.seed }); this.homes.add(this.w.selfId); }
+      else this.showSummary();
       return;
     }
     const s = this.offer.seed;
@@ -940,6 +1130,7 @@ class Race implements Job {
       this.event(msg, this.w.selfId);
     } else this.w.send("qe", { k: "pb", s, t, n });
     const was = this.best, beat = !was || t < was.t;
+    this.newBest = { beat, was };
     // a best: keep it, and send it round as a ghost for everyone else
     if (beat) {
       const b: Best = { t, sp: this.splits.slice(), g: pack(this.run), e: GHOST_EVERY, cp: this.gates.length - 1 };
@@ -948,32 +1139,114 @@ class Race implements Job {
       this.addGhost(this.w.selfId, "Your best", COLOUR, b);
       this.w.send("qe", { k: "gh", s, b });
     }
+    // with others still on the way the card waits for the end of the race, so everyone's is the same
+    if (this.own || this.local) this.showSummary();
+    else SFX.checkpoint();
+  }
+  private newBest: { beat: boolean; was: Best | null } | null = null;
+
+  /** Out of the race on the way: killed, or out of time and given up riding on. */
+  private dropOut(t: number) {
+    this.dnf = true;
+    this.dnfAt = Math.max(0, Math.round(t * 10) / 10);
+    this.hold();
     this.flash.hidden = true;
-    this.celebrate(t, beat, was);
+    this.timer.hidden = true;
+    this.arrow.hidden = true;
+    this.rideNormally();
+    this.lineGates();
+    if (this.own || this.local) { this.showSummary(); return; }
+    this.w.send("qe", { k: "out", s: this.offer.seed, dnf: 1 });
+    this.outs.add(this.w.selfId);
+    this.dnfs.add(this.w.selfId);
+    SFX.urgent(0);
   }
 
-  /** The banner, the confetti and the fanfare. */
-  private celebrate(t: number, beat: boolean, was: Best | null) {
-    this.party?.remove();
+  /** Stay put where I stopped racing, till the race is over. */
+  private hold() { const me = this.w.me(); this.holdAt = { x: me.x, y: me.y, z: me.z }; }
+
+  /** How far along the route I got, 0..1. */
+  private howFar(): number {
+    const p = this.path, at = this.holdAt ?? this.w.me();
+    if (!p) return Math.max(0, Math.min(1, 1 - Math.hypot(this.fin.x - at.x, this.fin.z - at.z) / Math.max(1, this.rt.d)));
+    // the nearest point of the route at or past the last checkpoint I went through, so a bend back on itself can't count twice
+    const from = this.next > 0 ? gatesOf(p)[this.next - 1] ?? 0 : 0;
+    let best = Infinity, s = 0;
+    for (let k = 0; k < p.cum.length; k++) {
+      if (p.cum[k] < from - 1) continue;
+      const d = Math.hypot(p.pts[k * 2] - at.x, p.pts[k * 2 + 1] - at.z);
+      if (d < best) { best = d; s = p.cum[k]; }
+    }
+    return Math.max(0, Math.min(1, (s - this.lineAt) / Math.max(1, p.len - this.lineAt)));
+  }
+
+  private who(id: string) { return id === this.w.selfId ? "You" : this.w.nameOf(id); }
+
+  /** Everyone on the grid in order: over the line by time, then those still going by how far
+   *  they've got, then out of time, then out of the race. done: the race is over, so anyone not
+   *  over the line didn't finish. */
+  private standings(done: boolean): { name: string; time: string; me?: boolean; dnf?: boolean; id: string }[] {
+    const ids = this.grid ?? [], last = this.gates.length - 1;
+    const rows: { name: string; time: string; me?: boolean; dnf?: boolean; id: string }[] = this.results.map((r) => ({ id: r.id, name: this.who(r.id), time: clock(r.t, true), me: r.id === this.w.selfId }));
+    const pos = new Map(this.w.players().map((p) => [p.id, p]));
+    const going = ids.filter((id) => !this.results.some((r) => r.id === id) && !this.dnfs.has(id) && !this.homes.has(id) && (done || !this.outs.has(id)) && this.here(id));
+    const ahead = (id: string) => { const n = this.cps.get(id) ?? 0, g = this.gates[Math.min(n, last)], p = pos.get(id); return n * 1e5 - (p ? Math.hypot(g.x - p.x, g.z - p.z) : 9e4); };
+    going.sort((a, b) => ahead(b) - ahead(a));
+    for (const id of going) rows.push({ id, name: this.who(id), time: done ? (this.outs.has(id) ? "Out of time" : "DNF") : this.outs.has(id) ? "Out of time" : `CP ${Math.min(this.cps.get(id) ?? 0, last)}/${last}`, me: id === this.w.selfId, ...(done ? { dnf: true } : {}) });
+    for (const id of ids) if (!rows.some((r) => r.id === id) && (this.homes.has(id) || this.outs.has(id)) && !this.dnfs.has(id)) rows.push({ id, name: this.who(id), time: "Out of time", me: id === this.w.selfId, dnf: true });
+    for (const id of ids) if (!rows.some((r) => r.id === id) && this.dnfs.has(id)) rows.push({ id, name: this.who(id), time: "DNF", me: id === this.w.selfId, dnf: true });
+    for (const id of ids) if (!rows.some((r) => r.id === id)) rows.push({ id, name: this.who(id), time: "Left", me: false, dnf: true });
+    return rows;
+  }
+
+  /** The results card: for a go of my own straight away, for the room's race once it's over. */
+  private showSummary() {
+    if (this.shown) return;
+    this.shown = true;
+    this.unwatch();
+    const n = this.gates.length - 1, multi = !this.own && !this.local && (this.grid?.length ?? 1) > 1;
+    const finished = this.over && !this.out && !this.dnf;
     const mine = this.results.findIndex((r) => r.id === this.w.selfId);
-    const place = this.own ? 0 : mine + 1, of = this.own ? 0 : this.grid?.length ?? 1;
-    const m = this.medalOf(t);
-    const won = place === 1 && of > 1;
-    this.party = missionEnd({
-      result: "complete", colour: COLOUR,
-      title: place === 0 ? "Time trial" : won ? "Winner!" : of === 1 ? "Finished!" : "Over the line!",
-      big: place > 0 && of > 1 ? placeWord(place) : undefined, gold: place === 1, lead: true,
-      lines: [clock(t, true)],
-      medal: `${m[0].toUpperCase()}${m.slice(1)}${!beat && was ? ` · your best ${clock(was.t, true)}` : ""}`,
-      best: beat ? (was ? `New best! ${(was.t - t).toFixed(1)} s quicker` : "Your first time here: a best to beat") : "",
-      rows: this.rows(),
-    });
-    SFX.fanfare(place > 0 ? place : 0);
+    const place = multi && finished && mine >= 0 ? mine + 1 : 0;
+    const t = this.over ? this.myT : this.dnf ? this.dnfAt : Math.max(0, Math.round(this.now * 10) / 10);
+    const word = finished ? this.medalOf(t) : "no medal";
+    const medal = word === "beat the author!" ? "author" : word === "no medal" ? "" : word;
+    const lines: string[] = [];
+    let best = "";
+    if (finished) {
+      const g = t - this.medal.gold;
+      lines.push(g <= 0 ? `${Math.abs(g).toFixed(1)} s inside gold` : `${g.toFixed(1)} s off gold`);
+      const nb = this.newBest;
+      if (nb?.beat) best = nb.was ? `NEW BEST! ${(nb.was.t - t).toFixed(1)} s quicker` : "NEW BEST! Your first time here";
+      else if (nb?.was) lines.push(`Your best ${clock(nb.was.t, true)} (+${(t - nb.was.t).toFixed(1)} s)`);
+    } else {
+      lines.push(this.over ? "Over the line, but out of time" : `Checkpoint ${Math.min(this.next, n)} of ${n} · ${Math.round(100 * this.howFar())}% of the route`);
+      if (this.best) lines.push(`Your best ${clock(this.best.t, true)}`);
+    }
+    const st = this.stats;
+    const stats = [{ k: "Top speed", v: `${Math.round(st.top * 2.237)} mph` }, { k: "Boosts", v: String(st.boosts) }, { k: "Checkpoints", v: `${Math.min(this.next, n)}/${n}` }];
+    if (multi) stats.push({ k: "Slipstream", v: `${Math.round(st.slip)} s` }, { k: "Barged off", v: String(st.barged) });
+    if (st.knocked) stats.push({ k: "Knocked off", v: String(st.knocked) });
+    const reward = finished && !this.own && !this.local
+      ? [place === 1 ? "A traffic cone for your head" : "", `${this.offer.stars} prize${this.offer.stars > 1 ? "s" : ""} at the finish`, medal ? `${medal === "author" ? "Gold" : medal[0].toUpperCase() + medal.slice(1)} in your trophy cabinet` : ""].filter(Boolean).join(" · ")
+      : "";
+    RS.summary({
+      kind: this.offer.title,
+      title: this.dnf ? "Out of the race" : this.out ? "Out of time" : place === 1 ? "Winner!" : place ? "Over the line!"
+        : medal === "author" ? "Beat the author!" : medal ? `${medal[0].toUpperCase()}${medal.slice(1)}!` : "Finished!",
+      dnf: this.dnf || this.out, place, time: clock(t, true), medal, medalWord: medal === "author" ? "Author" : this.dnf ? "DNF" : this.out ? "No medal" : undefined,
+      lines, best, stats,
+      podium: multi ? this.results.slice(0, 3).map((r) => ({ name: this.who(r.id), time: clock(r.t, true) })) : undefined,
+      rows: multi ? this.standings(true) : undefined,
+      reward,
+    }, this.w.me().alive ? () => this.again() : undefined);
+    SFX.raceEnd(this.dnf ? "dnf" : medal === "gold" || medal === "author" ? "gold" : medal ? "medal" : "none");
   }
 
-  private rows(): EndRow[] {
-    if (this.own) return [];
-    return this.results.map((r) => ({ name: r.id === this.w.selfId ? "You" : this.w.nameOf(r.id), time: clock(r.t, true), colour: this.w.colourOf(r.id), me: r.id === this.w.selfId }));
+  /** Again, from the results card: back on the line, as Backspace. */
+  private again() {
+    if (!this.done) { this.restart(); return; }
+    dispatchEvent(new KeyboardEvent("keydown", { code: "Backspace", bubbles: true }));
   }
 
   private addGhost(id: string, name: string, colour: string, b: Best) {
@@ -984,7 +1257,7 @@ class Race implements Job {
 
   /** The best runs, see-through, racing you on your clock: yours and the fastest few from the room. */
   private drawGhosts(t: number) {
-    const live = this.racing && !this.over && t >= 0;
+    const live = this.racing && !this.over && !this.dnf && t >= 0;
     const mine = this.ghosts.get(this.w.selfId);
     const shown = [...this.ghosts.values()].filter((g) => g !== mine).sort((a, b) => a.b.t - b.b.t).slice(0, GHOSTS - (mine ? 1 : 0));
     if (mine) shown.push(mine);
@@ -1017,6 +1290,7 @@ class Race implements Job {
 
   private hideHud() {
     this.arrow.hidden = true; this.flash.hidden = true; this.timer.hidden = true;
+    RS.waiting(null); this.unwatch();
     this.rideNormally(); this.dropPads(); this.padKey = "";
     for (const g of this.ghosts.values()) if (g.view) g.view.visible = false;
     this.dropGate(); this.dropArch();
@@ -1076,7 +1350,6 @@ class Race implements Job {
     const who = id === this.w.selfId ? "You" : this.w.nameOf(id);
     if (id !== this.w.selfId) SFX.jobStep();
     this.w.feed(`<b style="color:${this.w.colourOf(id)}">${esc(who)}</b> crossed the line ${nth(place)} in ${clock(t, true)} (${this.medalOf(t)})`);
-    this.party?.rows(this.rows());
   }
 
   event(d: any, from: string) {
@@ -1108,11 +1381,19 @@ class Race implements Job {
     } else if (d.k === "grid" && Array.isArray(d.ids)) {
       this.onGrid(d.ids.map(String), true);
     } else if (d.k === "out") {
-      if (!self) this.outs.add(from);
+      if (!self) { this.outs.add(from); if (d.dnf) this.dnfs.add(from); }
+    } else if (d.k === "home") {
+      if (!self) { this.outs.add(from); this.homes.add(from); }
+    } else if (d.k === "end" && !self) {
+      // the host calls the race over, with the results that stand, so everyone's card is the same
+      if (Array.isArray(d.r)) for (const o of d.r.slice(0, 64)) { const t = Number(o?.t), id = String(o?.id); if (Number.isFinite(t) && !this.results.some((x) => x.id === id)) this.addResult(id, t); }
+      for (const [k, set] of [["o", this.outs], ["d", this.dnfs], ["h", this.homes]] as const) if (Array.isArray(d[k])) for (const id of d[k].slice(0, 64)) if (String(id) !== this.w.selfId) set.add(String(id));
+      this.roomOver = true;
     } else if (d.k === "knk") {
       const t = this.now;
-      if (self || this.w.passive || !this.grid?.includes(from) || !this.racing || this.over || this.out || t < 0 || Date.now() < this.immune || !this.w.me().alive) return;
+      if (self || this.w.passive || !this.grid?.includes(from) || !this.racing || this.over || this.out || this.dnf || t < 0 || Date.now() < this.immune || !this.w.me().alive) return;
       this.immune = Date.now() + KNOCK_COOL * 1000 + 1400;
+      this.stats.knocked++;
       this.w.knock?.();
       SFX.thump();
       this.show(`<span style="font-size:34px;color:#ff5a4e">KNOCKED OFF!</span>`, 1.5);
@@ -1133,7 +1414,7 @@ class Race implements Job {
       if (this.w.isHost) this.w.send("qe", { k: "res", s, r: this.results });
     } else if (d.k === "dq" && typeof d.id === "string") {
       const k = this.results.findIndex((r) => r.id === d.id);
-      if (k >= 0) { this.results.splice(k, 1); this.party?.rows(this.rows()); }
+      if (k >= 0) this.results.splice(k, 1);
       if (d.id === this.w.selfId) this.w.toast("The host didn't count your finish", 3);
     } else if (d.k === "res" && Array.isArray(d.r)) {
       const r = d.r.slice(0, 64).map((o: any) => ({ id: String(o?.id), t: Number(o?.t) })).filter((o: { t: number }) => Number.isFinite(o.t));
@@ -1149,8 +1430,14 @@ class Race implements Job {
 
   private finish() {
     if (this.done) return;
+    if (this.racing && !this.own && !this.local && !this.over && !this.dnf) {
+      // still on the way when the race was called: didn't finish
+      this.dnf = true; this.dnfAt = Math.max(0, Math.round(this.now * 10) / 10); this.hold();
+    }
+    if (this.racing && (this.local || this.own || this.grid?.includes(this.w.selfId))) this.showSummary();
+    this.unwatch();
     if (!this.results.length) {
-      this.done = this.local ? { won: false, text: "Time trial over" } : { won: false, text: this.grid && !this.grid.length ? "Nobody entered the race" : "Nobody made it over the line" };
+      this.done = this.local ? { won: false, text: "Time trial over", screen: this.shown } : { won: false, screen: this.shown, text: this.grid && !this.grid.length ? "Nobody entered the race" : "Nobody made it over the line" };
       return;
     }
     const top = this.results.slice(0, 3).map((r, k) => `${k + 1}. ${r.id === this.w.selfId ? "You" : this.w.nameOf(r.id)} ${clock(r.t, true)}`).join(" · ");
@@ -1158,12 +1445,12 @@ class Race implements Job {
     const mine = this.results.find((r) => r.id === this.w.selfId), first = !this.local && this.results[0].id === this.w.selfId;
     const tier = mine ? (this.medalOf(mine.t) === "silver" ? 2 : this.medalOf(mine.t) === "bronze" || this.medalOf(mine.t) === "no medal" ? 1 : 3) : 0;
     this.done = {
-      won: true, screen: !!this.party, text: top, x: this.fin.x, z: this.fin.z, wear: first ? ["cone"] : undefined,
+      won: true, screen: this.shown, text: top, x: this.fin.x, z: this.fin.z, wear: first ? ["cone"] : undefined,
       grade: mine ? { tier: tier as 1 | 2 | 3, best: { v: tier * 1e5 - mine.t, text: ["", "bronze", "silver", "gold"][tier] }, also: first && (this.grid?.length ?? 1) > 1 ? ["rawin"] : undefined } : undefined,
     };
   }
 
-  progress() { return { r: this.results, e: this.entries, g: this.gridFromHost ? this.grid : null, c: [...this.cps] }; }
+  progress() { return { r: this.results, e: this.entries, g: this.gridFromHost ? this.grid : null, c: [...this.cps], o: [...this.outs], d: [...this.dnfs], h: [...this.homes] }; }
   restore(p: any) {
     if (!p || typeof p !== "object") return;
     if (Array.isArray(p.r)) for (const r of p.r) {
@@ -1175,6 +1462,7 @@ class Race implements Job {
     if (Array.isArray(p.e)) for (const id of p.e.slice(0, 64)) this.enter(String(id));
     if (Array.isArray(p.c)) for (const c of p.c.slice(0, 64)) if (Array.isArray(c)) this.cps.set(String(c[0]), Math.max(this.cps.get(String(c[0])) ?? 0, Number(c[1]) || 0));
     if (Array.isArray(p.g)) this.onGrid(p.g.map(String), true);
+    for (const [k, set] of [["o", this.outs], ["d", this.dnfs], ["h", this.homes]] as const) if (Array.isArray(p[k])) for (const id of p[k].slice(0, 64)) set.add(String(id));
   }
 
   /** Where I am in the room's race: finished ones by their times, then by checkpoints, then by
@@ -1197,7 +1485,8 @@ class Race implements Job {
     const last = this.gates.length - 1, k = this.next;
     return {
       ...c, progress: k < last ? `${k} / ${last}` : "Finish", timer: clock(Math.max(0, this.now), true),
-      stage: { key: `cp${k}`, title: k === 0 ? "Go!" : k < last ? `Checkpoint ${k} of ${last}` : "Head for the finish", sub: k < last ? undefined : this.rt.to.n, life: k === 0 ? 1.5 : 1.8 },
+      // (no banner for GO: the countdown has its own)
+      stage: k === 0 ? undefined : { key: `cp${k}`, title: k < last ? `Checkpoint ${k} of ${last}` : "Head for the finish", sub: k < last ? undefined : this.rt.to.n, life: k === 0 ? 1.5 : 1.8 },
     };
   }
 
@@ -1209,7 +1498,7 @@ class Race implements Job {
     if (!this.local && !this.grid) {
       const left = Math.max(0, Math.ceil((this.close - nowMs) / 1000)), inIt = this.entries.includes(this.w.selfId);
       return {
-        line: left <= 0 ? "Entries closed: lining up" : inIt ? `<b class="clue">You're in</b> · the grid in ${left} s` : `<b class="clue">Entries open</b>: <b>E</b> to enter · ${left} s`,
+        line: left <= 0 ? "Entries closed: lining up" : inIt ? `<b class="clue">You're in</b> · the grid in ${left} s` : `<b class="clue">Entries open</b>: <b>${esc(RS.control("use"))}</b> to enter · ${left} s`,
         sub: `${this.entries.length} in: ${names(this.entries)}<br>${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}`,
         bar: 1 - Math.min(1, Math.max(0, (this.close - nowMs) / (ENTRY * 1000))),
       };
@@ -1218,7 +1507,7 @@ class Race implements Job {
       return { line: `<b class="clue">${Math.ceil(-t) <= 3 ? Math.ceil(-t) : "Get ready"}</b>`, sub: `${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}${this.best ? ` · best ${clock(this.best.t, true)}` : ""}${this.grid && !this.own ? `<br>Racing: ${names(this.grid)}` : ""}` };
     }
     if (this.out && !this.over) {
-      return { line: `<b class="clue">Out of time</b>: ride on to <b>${esc(this.rt.to.n)}</b> for your time, no medal`, sub: `<b>Backspace</b> to go again${!this.own && this.results.length ? `<br>Leader ${clock(this.results[0].t, true)}` : ""}` };
+      return { line: `<b class="clue">Out of time</b>: ride on to <b>${esc(this.rt.to.n)}</b> for your time, no medal`, sub: `<b>${esc(againKey())}</b> to go again${!this.own && this.results.length ? `<br>Leader ${clock(this.results[0].t, true)}` : ""}` };
     }
     const roomMine = this.results.find((r) => r.id === this.w.selfId);
     const last = this.gates.length - 1;
@@ -1228,7 +1517,7 @@ class Race implements Job {
       const board = !this.own && this.results.length ? `<br>${this.results.slice(0, 5).map((r, k) => `${k + 1}. ${esc(r.id === this.w.selfId ? "You" : this.w.nameOf(r.id))} ${clock(r.t, true)}`).join(" · ")}` : "";
       return {
         line: roomMine ? `Over the line ${nth(this.results.indexOf(roomMine) + 1)} in ${clock(roomMine.t, true)}: ${this.medalOf(roomMine.t)}` : mine ? `Your best: ${clock(mine.t, true)} (${this.medalOf(mine.t)})` : `Watching: ${far(d)} to <b>${esc(this.rt.to.n)}</b>`,
-        sub: `<b>Backspace</b> to go again${board}${legend}`,
+        sub: `<b>${esc(againKey())}</b> to go again${board}${legend}`,
       };
     }
     const g = this.gates[this.next], d = Math.hypot(g.x - me.x, g.z - me.z);
@@ -1257,6 +1546,7 @@ class Race implements Job {
     this.arrow.remove();
     this.flash.remove();
     this.timer.remove();
+    RS.waiting(null); this.unwatch();
     this.rideNormally();
     this.dropPads();
   }

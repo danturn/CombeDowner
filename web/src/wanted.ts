@@ -435,10 +435,10 @@ class Wanted implements Job {
   }
 
   hint() {
-    if (this.canCuff()) return "<b>E</b> Cuff him";
+    if (this.canCuff()) return "<b>{use}</b> Cuff him";
     const c = this.clueHere();
-    if (c && c.q < 2) return c.t === 0 ? "<b>E</b> Pick up the leaflet" : c.q === 0 ? "<b>E</b> Ask the witness" : "<b>E</b> Press the witness: are they sure?";
-    return this.aim && !this.spotted ? "<b>E</b> That's him!" : "";
+    if (c && c.q < 2) return c.t === 0 ? "<b>{use}</b> Pick up the leaflet" : c.q === 0 ? "<b>{use}</b> Ask the witness" : "<b>{use}</b> Press the witness: are they sure?";
+    return this.aim && !this.spotted ? "<b>{use}</b> That's him!" : "";
   }
 
   use() {
@@ -881,7 +881,7 @@ class Wanted implements Job {
       case "slip":
         this.led = null;
         this.w.mark("@wanted-in", null);
-        this.w.toast("He's slipped off! Hands still up: cuff him again (E)", 3);
+        this.w.toast("He's slipped off! Hands still up: cuff him again ({use})", 3);
         this.hands();
         break;
       case "say":
@@ -929,7 +929,7 @@ class Wanted implements Job {
     const phase = this.led ? "led" : this.gaveUp ? "up" : this.spotted ? "spot" : this.running ? "run" : "search";
     const stage = {
       led: { title: "Cuffed!", sub: `Lead him to ${this.led?.n ?? "the police"}` },
-      up: { title: "He's given up!", sub: "Get up close and cuff him (E)" },
+      up: { title: "He's given up!", sub: "Get up close and cuff him ({use})" },
       spot: { title: "Spotted!", sub: "Put him down, or wear him down" },
       run: { title: "He's legged it!", sub: "Follow the marker" },
       search: { title: "", sub: "" },
@@ -955,7 +955,7 @@ class Wanted implements Job {
     }
     if (this.gaveUp) {
       const at = this.seen ?? me;
-      return { line: `He's given up, ${where(at.x, at.z)}! Get up close and cuff him (E) to take him in`, sub: `${clock} left`, bar };
+      return { line: `He's given up, ${where(at.x, at.z)}! Get up close and cuff him ({use}) to take him in`, sub: `${clock} left`, bar };
     }
     if (this.spotted && this.seen) {
       const take = this.d.hidden === "stubborn" && this.found ? "Put him down" : "Put him down, or wear him down up close and he'll give up";
@@ -966,7 +966,7 @@ class Wanted implements Job {
       return { line: `He's legged it! He's ${where(this.seen.x, this.seen.z)}, making for <b>${esc(hh.label)}</b>. Follow the marker, and corner him before you shoot`, sub: `${clock} left · ${traits}`, bar };
     }
     return {
-      line: `Somewhere in the circle round <b>${esc(hh.label)}</b>, ${where(this.zone.x, this.zone.z)}. Look for the man the poster describes among his lookalikes, through binoculars (B) if you can, and ask a witness for one more thing about him`,
+      line: `Somewhere in the circle round <b>${esc(hh.label)}</b>, ${where(this.zone.x, this.zone.z)}. Look for the man the poster describes among his lookalikes, through binoculars ({bino}) if you can, and ask a witness for one more thing about him`,
       sub: `${clock} left · then ${esc(next.label)} · ${traits}`, bar,
     };
   }

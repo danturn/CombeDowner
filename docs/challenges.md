@@ -1,7 +1,7 @@
 # Writing a team challenge
 
 Team challenges are the big things to do on a map: the lock run, the balloon tightrope, the co-op
-climb, the bell ringing, pushing the bus. The map opens a zone at a time (`web/src/zones.ts`), each
+climb, the bell ringing, pushing the bus, the art gallery. The map opens a zone at a time (`web/src/zones.ts`), each
 zone has one or two challenges, and they stay shut until their zone is open; each one won leaves
 one of the strange objects (`web/src/oddments.ts`) where it finished, which is how the next zone
 gets opened. This page is for whoever writes the next.
@@ -105,9 +105,9 @@ combe-down cape-town` (from `web/`, after a build) prints every map's zones and 
 ## A space of its own
 
 When the map hasn't got the right place for the play (a ringing chamber, a proper crag), build one
-and take the players there. Two do: `bells.ts` puts its ringing chamber 50 m over the street by the
-church, and `theclimb.ts` its crag (`crag.ts`) 1000 m over the foot of the tallest face on the map.
-The pattern:
+and take the players there. Three do: `bells.ts` puts its ringing chamber 50 m over the street by the
+church, `theclimb.ts` its crag (`crag.ts`) 1000 m over the foot of the tallest face on the map, and
+`gallery.ts` its gallery room 50 m over the street outside a museum. The pattern:
 
 - What waits stays on the map, where `place` put it, and taking it on (or E there later) moves you
   into the space with `w.moveTo` (then your feet's height, on `w.body()`). Leaving, and the job's
@@ -121,6 +121,14 @@ The pattern:
   the space itself goes over the network.
 - Let the host know who's up there (the Climb's "cs" says so), so someone who's gone back down
   doesn't hold up the win.
+- Return true from the job's `aloft()` while you're up there, and the street's HUD (the place
+  name, the force field warning, the minimap and compass) is put away until you're back down.
+- A space can hold a screen of its own too: the Art Gallery (`gallery.ts`) puts up a paint program
+  (`easel.ts`) while you're at your easel. While it's up the mouse is let go (main.ts asks
+  `easelUp()` before treating that as a pause) and keys are caught before the game sees them; the
+  job's `perch` holds you at the easel meanwhile. Anything big that has to go round (a painting, the
+  whole show's script) goes in pieces of a few kilobytes inside "qe" and is put back together on
+  arrival.
 
 ## A car of your own
 
@@ -184,6 +192,12 @@ three of those a game day); keep it that way, so there are only twenty or forty 
 - **Hard.** It should take a few goes. A team that walks it first time is a team that won't remember it.
 - **Real stakes.** Failing costs something you can see: the boat sinks back down the flight, the
   bus rolls back to the bottom, the climb starts again from the last ledge someone held.
+- **Shared lives.** Where one player's mistake could end it for everyone, give the team lives
+  instead, kept by the host and shown as hearts on the card (`hearts` in `missionscreens.ts`):
+  The Climb and the Balloon Tightrope give three, and one more for every two players past the
+  first, and a fall costs one (`SFX.lifeLost`, and a line in the feed). Out of lives, put up a fail
+  card with `missionEnd` and start again from scratch, rather than ending the job: a challenge
+  lost is done for the day.
 - **Mistakes are funny.** A wrong move should be a pratfall, a splash, a bell clanging out of turn,
   something people laugh about, not a red screen.
 - **No timers where tension does the job.** If the danger is someone letting go of the rope, you
@@ -192,6 +206,10 @@ three of those a game day); keep it that way, so there are only twenty or forty 
   on the bus means a heavier bus or a longer hill, more climbers means more ledges that need two at
   once. It must still be possible alone, and better with four.
 - **Works everywhere.** On touch screens (the Use and Ride buttons, nothing else) and on a
-  controller (write key prompts with `keyLabel` from `gamepad.ts`, or `<b>E</b>` in a hint, which
-  the game swaps for the pad's button).
+  controller. Name controls, never keys, in every prompt, card, stage card and poster blurb:
+  `ctl("use")` from `controls.ts`, or `{use}` in a string that goes through `ctlText` (the toast,
+  the use hint, the mission cards and the poster already do). A hint that offers use says
+  `<b>{use}</b>`, which also puts up the touch screen's Use button. Interactions go on use; a
+  challenge whose play is quite different gets its own table in `PLACES` and shows it as a strip
+  (`strip`) while you're in it.
 - **Light.** Phones and iPads play this: instanced or merged meshes, built only when someone's near.

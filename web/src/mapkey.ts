@@ -6,11 +6,13 @@
 //
 // The big map lets the mouse go, so the key's rows are clicked like any others. With a controller
 // there's no pointer, so the map's cursor works the key too: the row under it lights up, and a press
-// switches it (game.ts asks clickAt before putting a marker down). Some layers start off (DEFAULT_OFF):
-// each is switched off once, the first time this browser sees it, and then it's the player's choice.
+// switches it (game.ts asks clickAt before putting a marker down). Notes name controls as {id}, for
+// the input in use when they show (controls.ts). Some layers start off (DEFAULT_OFF): each is
+// switched off once, the first time this browser sees it, and then it's the player's choice.
 //
 // Who decides what: all your own. Nothing here goes over the network. A section for something
 // switched off in this game (features.ts) is hidden.
+import { ctlText } from "./controls";
 import { feature, type Feature } from "./features";
 import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
 import { PLAYER_COLOURS } from "./markers";
@@ -49,7 +51,7 @@ function sections(): [string, Row[]][] {
     icon: (g, s) => jobIcon(g, s / 2, s / 2, s / 15, k.colour, k.glyph),
   }));
   jobs.push({
-    label: "Several jobs together", note: "click it to tell them apart",
+    label: "Several jobs together", note: "{map.mark} it to tell them apart",
     icon: (g, s) => clusterIcon(g, s / 2, s / 2, s / 17, 3, "#e0a526"),
   }, {
     layer: "search", label: "Where to search", note: "a job's clue or last sighting",
@@ -68,7 +70,7 @@ function sections(): [string, Row[]][] {
       { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
       { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
-      { layer: "stops", label: "Bus stops", note: "E at one to call a bus", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
+      { layer: "stops", label: "Bus stops", note: "{use} at one to call a bus", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
       { layer: "route", label: "Your bus route", note: "the 2 or the 4, when you drive a bus", icon: (g, s) => {
         g.strokeStyle = ROUTE; g.lineWidth = s / 6; g.lineCap = "round";
         g.beginPath(); g.moveTo(s * 0.1, s * 0.75); g.lineTo(s * 0.45, s * 0.35); g.lineTo(s * 0.9, s * 0.45); g.stroke();
@@ -78,7 +80,7 @@ function sections(): [string, Row[]][] {
     ["People and things", [
       { label: "You", icon: (g, s) => { g.translate(s / 2, s / 2); g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = s / 14; arrow(g, s / 22); g.fill(); g.stroke(); } },
       { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = PLAYER_COLOURS[1]; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
-      { layer: "markers", label: "Map markers", note: "click the map, or press G: click anything on the map and it goes right on it and says what it is. Each player's are in their colour", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, PLAYER_COLOURS[0]) },
+      { layer: "markers", label: "Map markers", note: "{map.mark} anything on the map and a marker goes right on it and says what it is. Each player's are in their colour", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, PLAYER_COLOURS[0]) },
       { layer: "pickups", label: "Pickups and rides", note: "off to start with", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
         [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
         [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],
@@ -137,7 +139,7 @@ export class MapKey {
     el.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
     const head = document.createElement("button");
     head.type = "button"; head.className = "keyhead";
-    head.innerHTML = `<span>Key</span><small>click to hide</small><b aria-hidden="true"></b>`;
+    head.innerHTML = `<span>Key</span><small>hide</small><b aria-hidden="true"></b>`;
     head.addEventListener("click", () => this.fold(!el.classList.contains("folded")));
     const body = document.createElement("div");
     body.className = "keybody";
@@ -236,7 +238,7 @@ export class MapKey {
   private showTip(row: HTMLElement | null) {
     const text = row?.dataset.tip;
     if (!row || !text || !row.offsetParent) { this.tip.hidden = true; return; }
-    this.tip.textContent = text;
+    this.tip.textContent = ctlText(text);
     this.tip.hidden = false;
     const k = this.el.getBoundingClientRect(), r = row.getBoundingClientRect();
     this.tip.style.left = `${Math.min(k.right + 6, innerWidth - this.tip.offsetWidth - 4)}px`;

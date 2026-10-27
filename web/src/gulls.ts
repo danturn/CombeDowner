@@ -83,7 +83,7 @@ const B_ARRIVE = 0, B_PERCH = 1, B_RUN = 2, B_PASS = 3, B_BACK = 4, B_DIVE = 5, 
 // the upgrades in the crates
 const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4;
 const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings"];
-const UP_SAY = ["throw it down (E) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here"];
+const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here"];
 
 // each day's twist
 const MODS = ["", "Bank holiday", "Chip Tuesday", "Hen do", "Bin day", ""];
@@ -137,7 +137,7 @@ registerJob({
       kind: "gulls", seed: hash("gulls", r() * 1e9), stars, x: spot.x, z: spot.z, where: spot.name, mode: mod,
       title: MODS[mod] ? `Seagull Attack: ${MODS[mod]}` : spot.pub ? "Seagull Attack in the beer garden" : "Seagull Attack",
       blurb: `Tourists on the benches with their sandwiches, and the gulls of Bath want them. Five waves, then Big Lad himself. `
-        + `Shoot them, stare them out, shout (E) at a gang, and save a stolen bite by shooting the thief before it reaches the roofs. `
+        + `Shoot them, stare them out, shout ({use}) at a gang, and save a stolen bite by shooting the thief before it reaches the roofs. `
         + (MOD_SAY[mod] ? `Today: ${MOD_SAY[mod]} ` : ""),
       reward: `${stars} prize${stars > 1 ? "s" : ""}, and a seagull for your head for three stars`,
     };
@@ -1265,11 +1265,11 @@ class Seagulls implements Job {
     if (Math.hypot(S.cx - me.x, S.cz - me.z) > NEAR) return "";
     if (S.ph === 0) {
       const k = this.nearCrate();
-      return k >= 0 ? `<b>E</b> Take: ${esc(UP_NAME[S.up[k]])}` : "";
+      return k >= 0 ? `<b>{use}</b> Take: ${esc(UP_NAME[S.up[k]])}` : "";
     }
     if (S.ph !== 1) return "";
-    if (S.ch > 0 && !S.chip) return "<b>E</b> Throw the chips down";
-    return this.shoutT > 0 ? "" : "<b>E</b> Shout at the gulls";
+    if (S.ch > 0 && !S.chip) return "<b>{use}</b> Throw the chips down";
+    return this.shoutT > 0 ? "" : "<b>{use}</b> Shout at the gulls";
   }
 
   private nearCrate(): number {

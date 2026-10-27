@@ -247,14 +247,21 @@ def main():
             failed.append(t)
             print(f"[{len(done) + len(failed)}/{len(todo)}] {t[0]}_{t[1]} FAILED after {secs:.0f}s, see {log}", flush=True)
 
+    # the busiest squares start first, so the pool doesn't end waiting on one
+    size = lambda t: sum(os.path.getsize(os.path.join(split_of(t), n)) for n in os.listdir(split_of(t))
+                         if n.endswith(".geojson")) if os.path.isdir(split_of(t)) else 0
     with ThreadPoolExecutor(jobs) as pool:
-        list(pool.map(build, todo))
+        list(pool.map(build, sorted(todo, key=lambda t: -size(t))))
 
     # ---- across the seams: a shrub one square planted where its neighbour's gate, front path or
     # drive comes in goes, so the way through stays clear from square to square
     if done:
         changed = clear_seams([t for t, _ in done], set(tiles), out_of)
         if changed: print(f"shrubs cleared from gateways across the seams in {changed} squares")
+        # a span of wire crosses a square's edge: each hangs from its poles wherever they were put up
+        from partition.write_tile import string_city_wires
+        loose = string_city_wires(os.path.dirname(out_of(done[0][0])), [t for t, _ in done])
+        if loose: print(f"{loose} wires with no pole at an end left out across the seams")
 
     # ---- the map as a whole: what isn't any one square's -----------------------------------------
     write_header(area(map_id), G, os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json"),
@@ -271,7 +278,8 @@ def main():
     index()
     built = [list(t) for t in tiles if os.path.exists(out_of(t))]
     raw = sum(os.path.getsize(out_of(t)) for t in built)
-    zipped = sum(len(gzip.compress(open(out_of(t), "rb").read(), 6)) for t in built)    # about what the server sends
+    with ThreadPoolExecutor(jobs) as pool:      # about what the server sends
+        zipped = sum(pool.map(lambda t: len(gzip.compress(open(out_of(t), "rb").read(), 6)), built))
     print(f"{len(built)} of {len(tiles)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
           + (f"; {len(failed)} failed: {' '.join(f'{a}_{b}' for a, b in failed)}" if failed else ""))
     if done: print(f"this run: {len(done)} tiles in {time.time() - start:.0f}s, {sum(s for _, s in done) / len(done):.0f}s each on average")
@@ -334,7 +342,8 @@ def write_header(A, G, path, village):
     if not parts: return
     spawn = next((p["spawn"] for p in parts if p.get("spawn")), None)
     d = dict(id=A.id, name=A.name, release=parts[0]["release"], centre=A.centre, field=A.field, fc=list(A.field_centre),
-             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn)
+             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn,
+             vn=getattr(A, "village", None))
     json.dump({k: v for k, v in d.items() if v is not None}, open(path, "w"), separators=(",", ":"))
     print(f"{A.id}: the map as a whole in {path}, {os.path.getsize(path)} bytes")
 

@@ -6,6 +6,7 @@ import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
+import { STREETS, controlsPage, ctl, ctlText, placeNow } from "./controls";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -27,10 +28,18 @@ import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
 import { watchLoading } from "./loadnote";
-import { checkGraphics, playing, starting } from "./safegfx";
+import { MOBILE, checkGraphics, playing, starting } from "./safegfx";
+import { quality } from "./quality";
+import { buildLabel } from "./version";
+import * as Saves from "./saves";
+import { mine } from "./features";
+import { openLink } from "./link";
+import { easelUp, onEaselRelock } from "./easel";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+$("buildlabel").textContent = buildLabel();
+Saves.migrate();
 const LOCAL = params.get("net") === "local";   // link tabs in one browser instead of WebRTC (for testing)
 const UP = params.get("up") === "1";   // just climbed back up from the mines (or out of the deli)
 const UP_TOAST = params.get("from") === "deli" ? "Shift over, back out on the street by the Darling Deli" : "Back up out of the mines, at the door of 1 The Firs";
@@ -335,8 +344,8 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
     : `Game: ${code}, on ${mapName(id)}. Tell your friends the name, or send them the link below.`;
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
-    : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot. "
-      + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
+    : ctlText("Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot. "
+      + "Players near you hear your mic; hold {radio} to talk to everyone. Headphones stop your speakers echoing into your mic.");
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
   touchControls = new TouchControls(game, canvas, showPause);
@@ -387,6 +396,7 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+onEaselRelock(lock);
 /** The pause menu's Trophies button says how much of Bath you've done. */
 function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
@@ -417,7 +427,7 @@ document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
   // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
-  if (!locked && game.mapOpen) { $("clickhint").hidden = true; return; }
+  if (!locked && (game.mapOpen || easelUp())) { $("clickhint").hidden = true; return; }
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -430,7 +440,7 @@ document.addEventListener("pointerlockchange", () => {
 // the window. That click doesn't do anything else.
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
-  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen) return;
+  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen || easelUp()) return;
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
@@ -601,7 +611,7 @@ async function play(code: string) {
       if (!(await waitForMic(ctrl.signal))) return;
       start(code, LOCAL, net);
       if (UP) game!.toast(UP_TOAST, 4);
-      else game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press Esc for the invite link.`, 6);
+      else game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press {pause} for the invite link.`, 6);
       return;
     }
     if (!mapInfo(found.map) || !valid(found.map)) {
@@ -659,10 +669,13 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
     try { if (!(await showMap(r.map))) return; }
     catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
   }
-  $("play").click();
-});
+  if (r.code === Saves.SOLO) { $<HTMLInputElement>("code").value = ""; start(Saves.SOLO, true); }
+  else $("play").click();
+}, (r) => Saves.progressText(Saves.progress(r.map, r.code), { zones: mine.zones, objects: mine.strange, challenges: mine.challenges }),
+() => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
 $("solo").onclick = () => start("SOLO", true);
+$("linkbtn").onclick = () => openLink(() => location.reload());
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
 codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
@@ -705,9 +718,10 @@ function readPaper() {
 setInterval(() => {
   if ($("pause").hidden) closeChronicle();
   const at = !!game?.active && game.quests.atBoard();
-  if (paperHud.hidden === !at) return;
-  paperHud.hidden = !at;
-  if (at && game) paperHud.textContent = `Read the Chronicle${MOUSE ? " (N)" : ""}`;
+  if (paperHud.hidden !== !at) paperHud.hidden = !at;
+  // N reads it too, but a pad and a touch screen have no N: the pause menu has it for everyone
+  const text = !at ? "" : `Read the Chronicle: ${ctl("pause")} menu`;
+  if (at && paperHud.textContent !== text) paperHud.textContent = text;
 }, 300);
 addEventListener("keydown", (e) => {
   if (!game || e.repeat || e.target instanceof HTMLInputElement) return;
@@ -729,19 +743,26 @@ $("copy").onclick = async () => {
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
-settingsPage({
+const pictureHooks = settingsPage({
   post, debug, renderer, scene: () => current.world.scene,
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
 });
+{
+  // the pixels drawn at Normal (about 540 lines) on this screen, as post.ts sizes them
+  const r = Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75), bx = innerWidth * r, by = innerHeight * r, f = Math.max(1, Math.round(by / 540));
+  quality.start({ gpu: gfx.gpu, mobile: MOBILE, risky: gfx.risky, crashed: gfx.crashed,
+    memGB: (navigator as { deviceMemory?: number }).deviceMemory ?? 0, px: Math.ceil(bx / f) * Math.ceil(by / f) }, pictureHooks);
+  Telemetry.quality(() => [quality.chosenView, quality.deepest]);
+}
 
-// A game controller: what each button does here, mostly the key that does it (gamepad.ts). Each row
-// can be moved to another button in Settings; the rows "at the wheel" take over their button while
-// you drive.
+// A game controller: what each button does here, mostly the key that does it (gamepad.ts), laid out
+// as Warzone's defaults. Each row can be moved to another button in Settings; the rows "at the wheel"
+// take over their button while you drive.
 const pad = new GamepadControls(() => game && {
   playing: () => !!game?.active && $("pause").hidden,
   player: () => game!.player,
   look: (dx, dy) => game!.look(dx, dy),
-  driving: () => game!.driving,
+  driving: () => game!.atWheel,
   button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
 }, (text) => game?.toast(text, 4));
 const hold = (code: string) => (down: boolean) => key(code, down);
@@ -752,39 +773,47 @@ const weapon = (by: 1 | -1) => (down: boolean) => {
   if (game.busMenuUp) game.callBus(by < 0 ? "minibus" : "bus");
   else game.cycleWeapon(by);
 };
-padActions([
-  { id: "fire", name: "Shoot", button: B.r2, keys: ["Mouse0"], foot: true,
-    run: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } } },
-  { id: "aim", name: "Aim", button: B.l2, keys: ["Mouse2"], foot: true,
-    run: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } } },
-  { id: "jump", name: "Jump, or the handbrake", button: B.cross, keys: ["Space"], run: hold("Space") },
-  { id: "use", name: "Use, get in or out", button: B.square, keys: ["KeyE"], live: true, run: hold("KeyE") },
-  { id: "reload", name: "Reload", button: B.triangle, keys: ["KeyR"], run: press("KeyR") },
-  { id: "crouch", name: "Crouch, then lie down", button: B.circle, keys: ["KeyC"], foot: true,
-    run: (down) => {
-      const p = game?.player;
-      if (!down || !p) return;
-      // crouch, then down on your front, then up again, as the touch Crouch button does
-      if (p.proneLatch) p.proneLatch = false;
-      else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
-      else p.crouchLatch = !p.crouchLatch;
-    } },
-  { id: "prev", name: "Previous weapon (or a minibus)", button: B.l1, keys: ["Digit1", "Wheel"], foot: true, run: weapon(-1) },
-  { id: "next", name: "Next weapon (or a double-decker)", button: B.r1, keys: ["Digit2", "Digit3", "KeyQ", "Wheel"], foot: true, run: weapon(1) },
-  { id: "trick", name: "Sprint, or trick or grind on a ride", button: B.l3, keys: ["ShiftLeft"],
-    run: (down) => { if (!game) return; game.player.trickHeld = down; if (down) game.player.padSprint(); } },
-  { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], live: true, run: hold("KeyV") },
-  { id: "scores", name: "Scores", button: B.create, keys: ["Tab"], live: true, run: hold("Tab") },
-  { id: "map", name: "Full map", button: B.touchpad, keys: ["KeyM"], live: true, run: press("KeyM") },
-  { id: "torch", name: "Torch", button: B.up, keys: ["KeyF"], run: press("KeyF") },
-  { id: "ride", name: "On or off a ride, put up a ladder", button: B.down, keys: ["KeyX"], run: press("KeyX") },
-  { id: "bino", name: "Binoculars", button: B.left, keys: ["KeyB"], foot: true, run: press("KeyB") },
-  { id: "mark", name: "Mark the spot", button: B.right, keys: ["KeyG"], foot: true, run: press("KeyG") },
-  { id: "horn", name: "Horn, siren or chimes", button: B.r1, keys: ["KeyH"], wheel: true, run: hold("KeyH") },
-  { id: "view", name: "Inside or chase camera", button: B.circle, keys: ["KeyC"], wheel: true, run: (down) => { if (down) game?.toggleView(); } },
-  { id: "left", name: "Indicate left", button: B.left, keys: ["ArrowLeft"], wheel: true, run: press("ArrowLeft") },
-  { id: "right", name: "Indicate right", button: B.right, keys: ["ArrowRight"], wheel: true, run: press("ArrowRight") },
-], "cd-padbuttons", () => !!game?.driving);
+controlsPage(STREETS);
+padActions(STREETS, {
+  fire: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } },
+  aim: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } },
+  jump: hold("Space"),
+  reload: press("KeyR"),
+  use: { now: () => !!game?.active && !!game.useOffered, run: hold("KeyE") },
+  crouch: (down) => {
+    const p = game?.player;
+    if (!down || !p || p.diveBusy) return;
+    if (p.proneLatch || p.crouchLatch) p.proneLatch = p.crouchLatch = false;
+    else p.crouchLatch = true;
+  },
+  prone: (down) => {
+    const p = game?.player;
+    if (!down || !p || p.diveBusy) return;
+    if (p.proneLatch) p.proneLatch = false;
+    else if (p.canProne) { if (!p.dive()) { p.crouchLatch = false; p.proneLatch = true; } }
+    else p.crouchLatch = true;
+  },
+  swap: (down) => { if (down) game?.cycleWeapon(1); },
+  prev: weapon(-1),
+  next: weapon(1),
+  trick: (down) => { if (!game) return; game.player.trickHeld = down; if (down) game.player.padSprint(); },
+  radio: hold("KeyV"),
+  scores: hold("Tab"),
+  map: press("KeyM"),
+  torch: press("KeyF"),
+  ride: press("KeyX"),
+  bino: press("KeyB"),
+  mark: press("KeyG"),
+  out: press("KeyE"),
+  horn: hold("KeyH"),
+  view: (down) => { if (down) game?.toggleView(); },
+  left: press("ArrowLeft"),
+  right: press("ArrowRight"),
+  radioup: press("KeyK"),
+  radiodown: press("KeyJ"),
+  station: press("KeyI"),
+  window: press("KeyU"),
+}, "cd-padbuttons", () => placeNow() === "back" ? "back" : game?.atWheel ? "wheel" : "foot", { reload: B.triangle });
 padSettings();
 
 let last = performance.now();
@@ -795,6 +824,7 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  const js0 = performance.now();
   pad.poll(dt);
   try {
     if (game) { game.update(dt); playing(raw); } else attract(now);
@@ -803,11 +833,12 @@ function frame(now: number) {
     if (!told.has(what)) { told.add(what); console.error("a frame went wrong, carrying on:", e); }
   }
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
-  // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
-  // moving shadow a frame behind can't be seen
+  // shadows are drawn afresh every other frame (or less often, if the automatic settings ease back,
+  // quality.ts): they're a good share of a frame's work, and a moving shadow a frame behind can't be seen
   renderer.shadowMap.autoUpdate = false;
-  if ((shadowTick ^= 1)) renderer.shadowMap.needsUpdate = true;
+  if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
   post.render(current.world.scene, game ? game.weapon.scene : null);
+  quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }

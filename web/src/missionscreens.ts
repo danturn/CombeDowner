@@ -9,6 +9,7 @@
 // written only when its words change, and the cards run on timers, not frames (only the confetti
 // has a frame loop, and only while it is falling).
 import { show } from "./show";
+import { ctlText } from "./controls";
 
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
 const ACCENT = "#3ec7e8";
@@ -140,6 +141,12 @@ let flashKey = "";
 /** The mission whose panel is up, if any. */
 export const missionActive = () => (panel && !panel.hidden ? panelId : "");
 
+/** A team's lives as hearts for a card line (html): full ones red, lost ones faint. */
+export function hearts(left: number, of: number) {
+  const n = Math.max(0, Math.min(of, left));
+  return `<span style="color:#ff4a5a;letter-spacing:2px" aria-label="${n} of ${of} lives">${"\u2665".repeat(n)}<span style="opacity:.3">${"\u2665".repeat(of - n)}</span></span>`;
+}
+
 /** The panel with the goal and how far you've got: call it as often as you like, it only writes when something changed. */
 export function missionProgress(o: MissionProgress) {
   style();
@@ -153,11 +160,11 @@ export function missionProgress(o: MissionProgress) {
   const count = typeof o.progress === "string" ? o.progress : "";
   const col = o.colour ?? ACCENT;
   const html = (o.label ? `<div class="label" style="color:${col}">${o.label}</div>` : "")
-    + `<div class="head"><div class="jobtitle">${esc(o.goal)}</div>${count ? `<div class="count" style="color:${col}">${esc(count)}</div>` : ""}</div>`
+    + `<div class="head"><div class="jobtitle">${esc(ctlText(o.goal))}</div>${count ? `<div class="count" style="color:${col}">${esc(count)}</div>` : ""}</div>`
     + (o.timer ? `<div class="timer">${esc(o.timer)}</div>` : "")
-    + (o.hint ? `<div class="jobline">${o.hint}</div>` : "")
+    + (o.hint ? `<div class="jobline">${ctlText(o.hint)}</div>` : "")
     + (frac !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%;background:${col}"></div></div>` : "")
-    + (o.sub ? `<em>${o.sub}</em>` : "");
+    + (o.sub ? `<em>${ctlText(o.sub)}</em>` : "");
   const key = o.flash ?? "";
   if (key !== flashKey) {
     if (flashKey && key) { panel.classList.remove("fresh"); void panel.offsetWidth; panel.classList.add("fresh"); }
@@ -185,6 +192,9 @@ function dropCard() {
   card = null;
 }
 
+/** Take down the card in the middle of the screen now (a race's countdown wants the middle). */
+export function missionCardDrop() { dropCard(); }
+
 function putCard(cls: string, html: string, life: number, colour: string) {
   style();
   dropCard();
@@ -205,8 +215,8 @@ const paperUp = () => { const b = document.getElementById("scoreboard"); return 
 export function missionStart(o: MissionStart) {
   const col = o.colour ?? ACCENT;
   const html = (o.label ? `<div class="kind" style="color:${col}">${esc(o.label)}</div>` : "")
-    + `<div class="title">${esc(o.title)}</div><div class="goal">${esc(o.goal)}</div>`
-    + (o.detail ? `<div class="detail">${esc(o.detail)}</div>` : "")
+    + `<div class="title">${esc(o.title)}</div><div class="goal">${esc(ctlText(o.goal))}</div>`
+    + (o.detail ? `<div class="detail">${esc(ctlText(o.detail))}</div>` : "")
     + (o.best ? `<div class="detail best">Your best: ${esc(o.best)} \u2014 beat it</div>` : "");
   dropCard();
   if (!paperUp()) { putCard("msc-start", html, 5, col); return; }
@@ -221,7 +231,7 @@ export function missionStart(o: MissionStart) {
 /** A banner between stages, levels, rounds or laps. */
 export function missionStage(o: MissionStage) {
   const col = o.colour ?? ACCENT;
-  putCard("msc-stage", `<div class="title" style="color:${col}">${esc(o.title)}</div>` + (o.sub ? `<div class="goal">${esc(o.sub)}</div>` : ""), o.life ?? 3, col);
+  putCard("msc-stage", `<div class="title" style="color:${col}">${esc(ctlText(o.title))}</div>` + (o.sub ? `<div class="goal">${esc(ctlText(o.sub))}</div>` : ""), o.life ?? 3, col);
 }
 
 // ---- the end ---------------------------------------------------------------------------------------
