@@ -38,8 +38,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   each kerb, and traffic lights at junctions; bus shelters only at the stops that have one; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
-  gravel where the map says so, not paving; drives and alleys are a single narrow lane and car
-  park aisles wide; flights of steps have a nosing on every tread and their handrails. Mapped
+  gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
+  pavement or parked cars; flights of steps have a nosing on every tread and their handrails. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.
