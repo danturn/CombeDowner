@@ -4115,7 +4115,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
                 if q := off_paved(x, y, plant=True):
                     keep.append(at_ground(r, q))
                     moved[field] += 1
-                elif field == "tr" and clear(x, y) and not path_faces.contains(Point(x, y)):
+                elif field == "tr" and clear(x, y) and not path_faces.contains(Point(x, y)) and not in_full_road(x, y):
                     keep.append(r)
                 continue
             # (a lane moved off a building can bring its edge up to a tree that stood clear of it)
@@ -4508,7 +4508,9 @@ def _open_boundary(br, i, at, gap, ground):
     b = br[i]
     ln = LineString([q[:2] for q in b["p"]])
     s = ln.project(Point(at))
-    keep = [substring(ln, 0, s - gap / 2), substring(ln, s + gap / 2, ln.length)]
+    # (substring counts a negative distance from the far end, so a cut near an end is clamped)
+    keep = [substring(ln, 0, s - gap / 2)] if s - gap / 2 > 0.1 else []
+    keep += [substring(ln, s + gap / 2, ln.length)] if s + gap / 2 < ln.length - 0.1 else []
     out = br[:i] + br[i + 1:]
     for piece in keep:
         if piece.geom_type != "LineString" or piece.length < 0.1:
