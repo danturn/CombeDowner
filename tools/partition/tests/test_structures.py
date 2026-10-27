@@ -132,6 +132,8 @@ class Structures(unittest.TestCase):
         from structures import osm_structures
         edges = [dict(id=0, obs=[(0, 30, {"highway": "trunk"}), (30, 100, {"highway": "trunk", "tunnel": "yes", "layer": "-1"})]),
                  dict(id=1, obs=[(0, 20, {"highway": "footway", "covered": "yes"})])]
+        edges.append(dict(id=2, obs=[(0, 40, {"highway": "service", "tunnel": "covered"})]))
+        edges.append(dict(id=3, obs=[(0, 40, {"highway": "pedestrian", "bridge": "yes", "_ring": True})]))
         out = osm_structures(edges, {0: {"tunnel": [[28.0, 90.0]]}})
         self.assertEqual(out, {0: {"tunnel": [[28.0, 100.0]]}})
 

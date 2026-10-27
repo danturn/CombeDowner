@@ -26,8 +26,9 @@ CROWN = 5.2     # floor to the top of the arch
 COVER = 1.0     # ground over the arch where the bore starts
 MIN_BORE = 15   # metres: anything shorter stays a road
 CUT = 3.0       # the cutting's floor reaches this far past each tunnel wall, as wide as the portal
-INTO = 0.0      # the cutting carries on this far into the bore, behind the portal: none, as the
-                # ground over a tunnel is left whole and the game hides it inside the tube's mouth
+INTO = 5.0      # the cutting carries on this far into the bore, behind the portal, so the
+                # terrain's slope up onto the hill falls inside the tube, where the game hides it;
+                # further in, the ground over the bore is left whole (prep_map.py)
 OVER = 5.0      # metres across from a tunnel's centre line that a way above it counts as passing over
 ABOVE = 2.5     # a bridge this far over the floor passes over it rather than meeting it: less than
                 # a deck's headroom, as a floor carried straight under a junction can sit metres high

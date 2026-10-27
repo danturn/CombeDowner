@@ -135,12 +135,16 @@ def _covered(line, sub, reach, step, merge):
 def osm_structures(edges, found=None, merge=3.0):
     """`found` ({edge id: {kind: ranges}}, as from `match_structures`) with each edge's own OSM ways
     tagged bridge or tunnel added, over the stretch of the edge each way covers. A covered way (an
-    arcade, a canopy over a path) is neither: it stays on the ground with its roof over it."""
+    arcade, a canopy over a path, `tunnel=covered` under a deck) is neither: it stays on the ground
+    with its roof over it. Nor is a closed way (`_ring`): drawn round the edge of a raised deck or
+    plaza, it outlines the deck rather than crossing anything."""
     out = {i: {k: [list(r) for r in v] for k, v in d.items()} for i, d in (found or {}).items()}
     for e in edges:
         for t0, t1, tags in e.get("obs", ()):
-            for kind in ("bridge", "tunnel"):
-                if tags.get(kind, "no") != "no":
+            if tags.get("_ring"):
+                continue
+            for kind, yes in (("bridge", lambda v: v != "no"), ("tunnel", lambda v: v in ("yes", "culvert"))):
+                if yes(tags.get(kind, "no")):
                     out.setdefault(e["id"], {}).setdefault(kind, []).append([round(t0, 1), round(t1, 1)])
     return {i: {k: _merged(v, merge) for k, v in d.items()} for i, d in out.items()}
 

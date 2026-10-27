@@ -319,6 +319,8 @@ def build_graph(out, raw, log=print):
     D = Data(raw, bb, log=log)
     roads = []
     for g, p in D.lines_near(bb, "osm-roads"):
+        if g.geom_type == "LineString" and g.is_ring:
+            p = dict(p, _ring=True)
         g = g.intersection(box(*bb))
         for l in (g.geoms if hasattr(g, "geoms") else [g]):
             if l.geom_type == "LineString" and l.length > 0.5:

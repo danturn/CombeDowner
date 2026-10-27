@@ -1373,9 +1373,8 @@ k = np.clip((flat_w - flat_f) / ease, 0, 1)
 k = k * k * (3 - 2 * k)
 k[np.isinf(flat_w)] = 1
 grid = flat_z * (1 - k) + grid * k
-APRON, APRON_W = 6.0, 6.4      # metres out from a portal, and either side (web/src/map.ts TUNNEL.face), cut to its road
 # the ground over a tunnel is the hill's, whole: the cut down to the road at each portal, and the
-# easing out from it, stop at the hill face, and the game hides the hill inside the tube's mouth
+# easing out from it, stop a few metres in, inside the tube's mouth, where the game hides them
 for r in pending:
     for i0, i1 in r["bored"]:
         bore = shapely.LineString([q[:2] for q in r["run"][i0:i1 + 1]])
@@ -1383,24 +1382,12 @@ for r in pending:
         win, inn = cover_xy(bore.buffer(TN.HALF + TN.CUT + 1.0, cap_style=2))
         gx, gy = GX[win][inn], GY[win][inn]
         along = shapely.line_locate_point(bore, shapely.points(gx, gy))
-        under = (along > 1.0) & (along < bore.length - 1.0)
+        under = (along > TN.INTO + 1.0) & (along < bore.length - TN.INTO - 1.0)
         blk = grid[win]
         sub = blk[inn]
         dug = under & (sub < SURVEY[win][inn] - 0.5)
         sub[dug] = SURVEY[win][inn][dug]
         blk[inn] = sub
-        # and in front of each portal, as wide as its headwall, the ground is cut down to the road
-        # coming out, so the mouth stands open in its cutting
-        for e, nxt in ((i0, i0 + 1), (i1, i1 - 1)):
-            ex, ey = r["run"][e][:2]
-            l = math.dist(r["run"][nxt][:2], (ex, ey)) or 1
-            ox, oy = (ex - r["run"][nxt][0]) / l, (ey - r["run"][nxt][1]) / l
-            apron = shapely.Polygon([(ex + px * ox + qx * -oy, ey + px * oy + qx * ox) for px, qx in
-                                     ((0, -APRON_W), (APRON, -APRON_W), (APRON, APRON_W), (0, APRON_W))])
-            win, inn = cover_xy(apron, edge=True)
-            blk = grid[win]
-            sub = blk[inn]
-            blk[inn] = np.minimum(sub, r["z"][e])
 
 
 def gelev0(x, y):
