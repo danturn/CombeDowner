@@ -4397,7 +4397,7 @@ NODE_REACH = 3.0         # metres a barrier's node may lie from its way, and fro
 GAP_SIDE = 0.4           # metres either side of the way left open in the boundary, as a path is let through
 
 
-def path_barriers(sq, rd, br, ground, points):
+def path_barriers(sq, rd, br, ground, points, gt=()):
     """`pb`: gates, stiles, kissing gates, cycle barriers, lift gates, cattle grids and blocks, each
     [kind, x, y, ground, angle, width], with the boundaries they stand in opened for them; and a count
     of those placed and left out, by why.
@@ -4447,6 +4447,11 @@ def path_barriers(sq, rd, br, ground, points):
             count[f"{kind}: no built boundary within {NODE_REACH:.0f} m"] += 1
             continue
         (cx, cy), ang, gap, cut = spot
+        # the garden's own gate already stands where the path goes through: cutting round it would
+        # leave that gate hanging with no wall at one side
+        if any(LineString([g[:2], g[2:4]]).distance(Point(cx, cy)) < gap / 2 + 1.0 for g in gt or ()):
+            count[f"{kind}: the boundary's own gate is there"] += 1
+            continue
         if cut is not None:
             br = _open_boundary(br, cut, (cx, cy), gap, ground)
         z = ground(cx, cy)
@@ -4766,7 +4771,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["rd"] = rd
     br, _ = ends_off_pavements(br, rd)
     points = mapped_points(sq)
-    br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points)
+    br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt

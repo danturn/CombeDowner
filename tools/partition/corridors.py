@@ -24,8 +24,8 @@ PRIOR = {
 }
 # A service road's own kind (OpenStreetMap's `service`, and `access=private`): a drive to a house or
 # an alley between walls is one narrow lane, and an aisle through a car park is wide enough to pass
-# and turn into the bays.
-SERVICE_PRIOR = {"driveway": (2.7, 2.2), "alley": (2.8, 2.0), "parking_aisle": (5.5, 4.0)}
+# and turn into the bays, though where buildings close in it narrows as far as any service road.
+SERVICE_PRIOR = {"driveway": (2.7, 2.2), "alley": (2.8, 2.0), "parking_aisle": (5.5, 2.5)}
 PAVE = (2.0, 1.2)               # pavement (ideal, minimum)
 PATHS = {"footway", "path", "cycleway", "bridleway", "steps", "track"}
 # The room a path's corridor takes between the plots: the path and the verge either side of it.
