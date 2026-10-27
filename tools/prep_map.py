@@ -1228,7 +1228,8 @@ if afloat: carry_spans(True)      # (the footbridges too)
 
 # a road the data lays right on top of another, well above it (a lane along the top of a cutting
 # drawn over the road down in it, or a path whose bridge the data stops short of the road it
-# crosses), is on a bridge there: the ground is the lower road's
+# crosses), is on a bridge there: the ground is the lower road's. Over a bored tunnel the ground is
+# the hill over its roof, and a way on it stays on the ground
 stacked = 0
 for k, r in enumerate(pending):
     if r["c"] in PATHS and r["c"] in ("steps", "pedestrian"): continue
@@ -1242,6 +1243,7 @@ for k, r in enumerate(pending):
             pt = shapely.Point(q[:2])
             if line_.distance(pt) > half_: continue
             m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
+            if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]): continue
             if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                 r["span"].add(i); r.setdefault("solid", set()).add(i); stacked += 1
 if stacked: print(f"bridges: {stacked} road points lying over another road well below them carried as bridges")

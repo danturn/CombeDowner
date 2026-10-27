@@ -844,7 +844,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     # 2g. a road the data lays right on top of another, well above it (a lane along the top of a
     # cutting drawn over the road down in it, or a path whose bridge the data stops short of the
     # road it crosses), is on a bridge there: the ground is the lower road's. (`prep_map.py` finds
-    # these after the dips; here they come before, so what passes under is dipped for headroom too)
+    # these after the dips; here they come before, so what passes under is dipped for headroom too).
+    # Over a bored tunnel the ground is the hill over its roof, and a way on it stays on the ground
     for k, r in enumerate(pending):
         if r["c"] in ("steps", "pedestrian"):
             continue
@@ -858,6 +859,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 if i in r["span"] or i in r["deck"] or i in r["tow"] or line.distance(Point(q[:2])) > half:
                     continue
                 m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
+                if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]):
+                    continue
                 if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                     r["span"].add(i)
                     r["solid"].add(i)
