@@ -223,7 +223,7 @@ function installDriver() {
         const at = posAt(rt, s);
         if (at) put(car, at.x, at.z, at.fx, at.fz, D.v ?? 0);
       },
-      result: () => ({ faults: faultsAt, hud, s, len: rt.len, phase: T.phase() }),
+      result: () => ({ faults: [...faultsAt, ...window.__faults.splice(0).map((f) => ({ ...f, s, stage: "end", mph: 0, lim: posAt(rt, s)?.pt.ms ?? 0 }))], hud, s, len: rt.len, phase: T.phase() }),
     };
   };
 }
