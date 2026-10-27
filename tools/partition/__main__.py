@@ -51,6 +51,11 @@ def load_ridges(raw, ti, tj):
 
 
 def build(ti, tj, out, raw, terrain, log=print, once=None):
+    """Assemble one square and report on it."""
+    return report_square(assemble_square(ti, tj, out, raw, terrain, log, once))
+
+
+def assemble_square(ti, tj, out, raw, terrain, log=print, once=None):
     """Assemble one square's partition from the corridors and worked blocks built once.
 
     `once` is the folder the passes wrote (`out/once-p1`): pass 1's `corridors.json` and pass 2's
@@ -189,6 +194,46 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     lap("edges"); print(f"  4. assembled: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, "
                         f"{len(pedges)} edges")
+    # openings: gates and drives in the fronts, and where a path crosses a plot edge, with the
+    # checks the plan names (a gate on its edge with the edge continuing either side, nothing wider
+    # than its edge, no building facing a street with neither)
+    houses = {i: b for i, b in buildings}
+    path_corr = [(e["line"], PATHW.get(e["cls"], 1.8), e["cls"]) for e in paths]
+    # the built street/pavement/path polygons, for the checks and for deciding which plot edges are
+    # fronts: an edge whose far side is open ground reaching a corridor is a front too
+    cor_faces = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
+    openings = find_openings(plots, pedges, houses, path_corr, cor_faces)
+    json.dump(dict(square=[ti, tj],
+                   faces=[dict(cls=c, xy=list(map(list, (g.exterior.coords if g.geom_type == "Polygon" else []))),
+                               **({"holes": [list(map(list, h.coords)) for h in g.interiors]}
+                                  if g.geom_type == "Polygon" and g.interiors else {}))
+                          for g, c, _ in faces][:20000],
+                   edges=[dict(kind=e[1], support=round(e[2], 2), source=e[3],
+                                sides=[list(e[4][0]), list(e[4][1])],
+                                xy=list(map(list, e[0].coords)))
+                          for e in pedges],
+                   openings=openings),
+              open(os.path.join(out, "partition.json"), "w"))
+    # what the reports read, so they can run on their own after the map is written
+    return dict(ti=ti, tj=tj, out=out, sq=sq, B=B, SQ=SQ, terrain=terrain, once=once, bpolys=bpolys,
+                closed=closed, streets=streets, paths=paths, roads=roads, ridges=ridges,
+                barriers=barriers, plots=plots, pedges=pedges, parcel_share=parcel_share, faces=faces,
+                whole=whole, buildings=buildings, bunion=bunion, cor_union=cor_union,
+                corridors=corridors, held=held, houses=houses, cor_faces=cor_faces, openings=openings,
+                prof=prof)
+
+
+def report_square(ctx):
+    """The square's metrics, data checks, deferred fragments and edge profile for the neighbour
+    check, from what `assemble_square` built. Nothing here reaches the map."""
+    (ti, tj, out, sq, B, SQ, terrain, once, bpolys, closed, streets, paths, roads, ridges, barriers,
+     plots, pedges, parcel_share, faces, whole, buildings, bunion, cor_union, corridors, held,
+     houses, cor_faces, openings, prof) = (ctx[k] for k in (
+        "ti", "tj", "out", "sq", "B", "SQ", "terrain", "once", "bpolys", "closed", "streets",
+        "paths", "roads", "ridges", "barriers", "plots", "pedges", "parcel_share", "faces",
+        "whole", "buildings", "bunion", "cor_union", "corridors", "held", "houses", "cor_faces",
+        "openings", "prof"))
+    T = Terrain(terrain)
     # the triangles are only counted for the metrics, and the game's ground comes from the writer
     lap("triangulating"); tris, bad = ([], 0) if QUICK else surface(faces, T, prof)
     covered = unary_union([g for g, _, _ in faces])
@@ -205,15 +250,6 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     # (the plan counts its "nearly all on the square's edge" this way, and the proof of concept does)
     n_edge_new, n_loose_new, _ = loose_ends(drawn, bunion.union(cor_union.boundary), B)
     n_free_old, pts_old = free_ends([g for g, _, _ in ridges], bunion)
-    # openings: gates and drives in the fronts, and where a path crosses a plot edge, with the
-    # checks the plan names (a gate on its edge with the edge continuing either side, nothing wider
-    # than its edge, no building facing a street with neither)
-    houses = {i: b for i, b in buildings}
-    path_corr = [(e["line"], PATHW.get(e["cls"], 1.8), e["cls"]) for e in paths]
-    # the built street/pavement/path polygons, for the checks and for deciding which plot edges are
-    # fronts: an edge whose far side is open ground reaching a corridor is a front too
-    cor_faces = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
-    openings = find_openings(plots, pedges, houses, path_corr, cor_faces)
     plot_edges_len = {i: e[0].length for i, e in enumerate(pedges) if e[1] != "none"}
     # a building whose plot has a front on a street must have a gate or drive in it
     fronts = front_edges(plots, pedges, cor_faces)
@@ -285,17 +321,6 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         judged_plot_area_m2=round(judged_plot_area, 3),
     )
     json.dump(metrics, open(os.path.join(out, "metrics.json"), "w"), indent=1)
-    json.dump(dict(square=[ti, tj],
-                   faces=[dict(cls=c, xy=list(map(list, (g.exterior.coords if g.geom_type == "Polygon" else []))),
-                               **({"holes": [list(map(list, h.coords)) for h in g.interiors]}
-                                  if g.geom_type == "Polygon" and g.interiors else {}))
-                          for g, c, _ in faces][:20000],
-                   edges=[dict(kind=e[1], support=round(e[2], 2), source=e[3],
-                                sides=[list(e[4][0]), list(e[4][1])],
-                                xy=list(map(list, e[0].coords)))
-                          for e in pedges],
-                   openings=openings),
-              open(os.path.join(out, "partition.json"), "w"))
     lap("metrics")
 
     layers = [("poly", [(g, c) for g, c, _ in faces if c in ("open", "plot")]),

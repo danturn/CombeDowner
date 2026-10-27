@@ -1223,3 +1223,13 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - [ ] **The intermediates are still JSON.** Each pool worker now parses each city-wide file once
   (about 5 s a worker) instead of once a task, which was most of the cost; WKB files would save
   about 10 s of wall time in a full build.
+- [ ] **Each stage of the partition is kept under its own key** (`partition/cache.py`,
+  `partition/pipeline.py`). A key's code is the functions the stage runs, found by reading the
+  source and following the names they use; a function called by a name made at run time would be
+  missed, so a periodic build from an empty store (`CD_PARTITION_CACHE` pointed at a new folder) is
+  the check, and `cache.VERSION` is raised by hand when a stage's files change shape.
+- [ ] **A square is written again when the map's layers change within 1 km of it**
+  (`stage.WRITER_REACH`), or any other data file at all. The writer reads nothing further out
+  today; a new reader that does needs the reach raising.
+- [ ] **prep_map's squares aren't in the store yet**: a fresh worktree still spends about 110 s on
+  them, and about 45 s on the seams, which run over every square that was taken from the store.

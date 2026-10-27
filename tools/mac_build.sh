@@ -19,7 +19,8 @@
 #  - waits its turn: only one of these runs at a time (a lock in ~/.combedowner-build.lock);
 #  - checks the commit out into a throwaway worktree, never touching /Users/dan/CombeDowner's own files;
 #  - if that commit's map was built here before with the same options, it says so and reuses it;
-#  - shares node_modules between worktrees with the same package-lock.json;
+#  - shares node_modules between worktrees with the same package-lock.json, and the partition's
+#    stages in $CACHE/partition, so a fresh worktree builds only what its commit changed;
 #  - writes build.log, check.txt (with --check), changed.txt (which map files changed), the shots
 #    and timings.txt to the report folder, and removes the worktree at the end, even if it fails.
 set -euo pipefail
@@ -95,6 +96,8 @@ if [ -n "$do_map" ] && [ -d "$done_mark" ]; then
 fi
 if [ -n "$do_map" ]; then
   t=$(date +%s)
+  # the partition's stages, kept between builds and worktrees (tools/partition/pipeline.py)
+  export CD_PARTITION_CACHE=$CACHE/partition/$MAP
   {
     python3 -I tools/mapdata.py unpack $MAP
     python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json

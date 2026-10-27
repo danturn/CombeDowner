@@ -713,6 +713,16 @@ def pass_blocks(out, raw, jobs=4, log=print):
     corridors and the whole building set, so the outline is the same whichever square divides it -
     which is what `test_a_worked_blocks_outline_is_the_same_from_two_windows` holds. What is pooled
     is the dividing, one task per owning square, each with a window sized to its own pieces."""
+    clear_owned(out, "blocks.json")
+    pass_pieces(out, raw, jobs, log)
+    tasks, work = block_tasks(out, raw)
+    log(f"  pass 2: {len(tasks)} squares own worked blocks")
+    return _run_pool(_fit_square_blocks, tasks, jobs, log, "pass 2", order=lambda t: -work[(t[0], t[1])])
+
+
+def pass_pieces(out, raw, jobs=4, log=print):
+    """The cleaned footprints, the parent blocks and the worked pieces of the whole map, written
+    once for every square's division to read."""
     corridors = read_corridors(out)
     bb = map_bbox()
     D = Data(raw, bb, log=lambda *_: None)
@@ -722,7 +732,6 @@ def pass_blocks(out, raw, jobs=4, log=print):
     log(f"  pass 2: {len(cleaned)} cleaned footprints ({closed} sliver gaps closed)")
     del D
     t = time.time()
-    clear_owned(out, "blocks.json")
     pieces, blocks = worked_pieces(corridors, cleaned, bb, log=log, jobs=jobs)
     log(f"  pass 2: {len(pieces)} worked blocks in {time.time() - t:.0f}s")
     # the parent blocks are written once, so a task dividing a piece can cut the whole block it is a
@@ -739,6 +748,12 @@ def pass_blocks(out, raw, jobs=4, log=print):
     json.dump([dict(key=_geom_key(p), over=over, xy=xy) for (p, over), (xy, _) in zip(pieces, rows)],
               open(blocks_path(out), "w"))
 
+
+def block_tasks(out, raw):
+    """Pass 2's tasks, one per square owning worked pieces, and how much work each is."""
+    bb = map_bbox()
+    pieces = [(p, None) for p in read_pieces(out)]
+    blocks = read_parents(out, None)
     # Ownership by the piece's representative point, as the plan says. Not its bounding box's
     # midpoint: an L-shaped worked block's midpoint can fall in the notch, in another piece or even
     # outside the block, so the two are not interchangeable.
@@ -746,7 +761,6 @@ def pass_blocks(out, raw, jobs=4, log=print):
     for n, (p, over) in enumerate(pieces):
         owned[square_of_point(p.representative_point())].append(n)
     tasks = [(ti, tj, sorted(ids), out, raw, bb) for (ti, tj), ids in sorted(owned.items())]
-    log(f"  pass 2: {len(tasks)} squares own worked blocks")
     # the biggest first, so the pool doesn't end waiting on one: a piece costs about as much as the
     # parent block it cuts
     ptree = STRtree(blocks)
@@ -755,7 +769,7 @@ def pass_blocks(out, raw, jobs=4, log=print):
         return next((shapely.get_num_coordinates(blocks[int(k)]) for k in sorted(ptree.query(rp))
                      if blocks[int(k)].contains(rp)), shapely.get_num_coordinates(p))
     work = {(t[0], t[1]): sum(cost(pieces[n][0]) for n in t[2]) for t in tasks}
-    return _run_pool(_fit_square_blocks, tasks, jobs, log, "pass 2", order=lambda t: -work[(t[0], t[1])])
+    return tasks, work
 
 
 def block_window_for(pieces, parents):
@@ -935,17 +949,42 @@ def _run_pool(fn, tasks, jobs, log, what, order=None):
     start at all (and running a pass from `python3 -` fails outright, because the child tries to
     re-run `<stdin>`, which does not exist). Both are why a pass is launched from a real file."""
     from concurrent.futures import ProcessPoolExecutor
-    done, failed = [], []
+    done, failed, spans = [], [], []
+    t0 = time.time()
     with ProcessPoolExecutor(jobs) as pool:
         # submitted in `order`, which only decides what starts first; results are read in task order
         futures = {}
         for k in sorted(range(len(tasks)), key=(lambda k: order(tasks[k])) if order else None):
-            futures[k] = pool.submit(fn, *tasks[k])
+            futures[k] = pool.submit(_timed, fn, *tasks[k])
         for f, t in zip((futures[k] for k in range(len(tasks))), tasks):
             try:
-                done.append(f.result())
+                r, pid, a, b = f.result()
+                done.append(r)
+                spans.append((pid, a - t0, b - t0, f"{t[0]}_{t[1]}"))
             except Exception as exc:            # a failed task is reported, not fatal
                 failed.append((t[0], t[1], exc))
                 log(f"  {what}: {t[0]}_{t[1]} FAILED ({type(exc).__name__}: {exc})")
     log(f"  {what}: {len(done)} tasks done, {len(failed)} failed")
+    if spans:
+        log("  " + pool_use(what, spans, time.time() - t0, jobs))
     return done, failed
+
+
+def _timed(fn, *a):
+    t = time.time()
+    r = fn(*a)
+    return r, os.getpid(), t, time.time()
+
+
+def pool_use(what, spans, wall, jobs):
+    """How busy a pool kept the cores: the work in it, the core-seconds left idle after each worker's
+    last task, and the tasks that ran last."""
+    work = sum(b - a for _p, a, b, _n in spans)
+    last = {}
+    for p, a, b, n in spans:
+        last[p] = max(last.get(p, 0.0), b)
+    idle = sum(wall - e for e in last.values()) + wall * max(0, jobs - len(last))
+    tail = sorted(spans, key=lambda s: -s[2])[:4]
+    return (f"{what}: {wall:.0f}s wall, {work:.0f} CPU-s of tasks, {idle:.0f} core-s idle at the end; "
+            f"longest {max(b - a for _p, a, b, _n in spans):.0f}s; last to finish: "
+            + ", ".join(f"{n} ({b - a:.0f}s, ended {b:.0f}s)" for _p, a, b, n in tail))
