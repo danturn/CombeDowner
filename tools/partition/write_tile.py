@@ -524,6 +524,28 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     return out
 
 
+VERGED = {"motorway", "motorway_link", "trunk", "trunk_link"}
+OUT_OF_TOWN = 25.0
+PAVE_DRAWN = 2.0     # metres: a kerbed street's pavement where its record gives none
+VERGE_REACH = 2.6    # metres past a verged road's carriageway that the partition's pavement faces may reach   # metres from the nearest building a road must keep to be out of town
+
+
+def verge_out_of_town(rd, houses):
+    """A dual carriageway, its slip roads and the roundabout they meet out of town have grass verges,
+    not pavements: walkers there have their own paths, mapped as such. Drawn with a pavement each
+    side, the two carriageways and the slips between them were one sheet of paving and road. Each
+    such record's `pv` becomes [0, 0]; one with a building near it is a street in town, and keeps
+    its pavements (`street_surfaces` leaves the partition's pavement faces off the others)."""
+    tree = STRtree(houses) if houses else None
+    for r in rd:
+        if r["c"] not in VERGED or len(r["p"]) < 2 or not (r["c"].endswith("_link") or r.get("ow")):
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        if tree is not None and len(tree.query(line, predicate="dwithin", distance=OUT_OF_TOWN)):
+            continue
+        r["pv"] = [0.0, 0.0]
+
+
 def hold_steep_streets(rd, T, edge=8.0, tol=0.05):
     """A street held to the tile's ground where that makes it steeper than its kind may be keeps its
     own fitted levels there instead, and the ground is laid to it (lay_ground). The tile's ground was
@@ -2852,6 +2874,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
 
+    verged = [(l, r) for l, r in zip(lines, streets) if r["c"] in VERGED and not any(r.get("pv") or (1,))]
+    if verged:
+        kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (PAVE_DRAWN,)) + 0.3, cap_style="flat")
+                for l, r in zip(lines, streets) if r["c"] in KERBED and any(r.get("pv") or (1,))]
+        bare = unary_union([l.buffer(r["w"] / 2 + VERGE_REACH, cap_style="flat") for l, r in verged])
+        pave = pave.difference(bare.difference(unary_union(kept or [Polygon()])))
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
@@ -4689,6 +4717,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                               lidar_tall(sq), carried,
                               (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))))
     hold_steep_streets(rd, T)
+    verge_out_of_town(rd, houses)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
