@@ -2071,8 +2071,8 @@ for (poly, p), b, f in zip(cand, info, fresh):
     if k in FACES:
         # into the map's frame as the eaves were: the survey's heights over its ground at the walls
         # (where the survey gave no eaves here, its ground as the roofs were fitted)
-        lift = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - FACES[k]["base"]
-        out["r"], out["rm"] = roof_faces.for_game(FACES[k], lift)
+        up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - FACES[k]["base"]
+        out["r"], out["rm"] = roof_faces.for_game(FACES[k], up)
         faced += 1
     if b["chim"]:
         out["ch"] = [[r1(x), r1(y)] for x, y in b["chim"]]
