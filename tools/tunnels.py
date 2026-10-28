@@ -18,7 +18,9 @@ a road's carriageway with its pavements, a footway in a road tunnel staying a fo
 floor beside a carriageway with none; a path's width with room to pass at each side. The width
 follows the way's from one portal to the other, and everything that knows where a bore is (the
 game, the writer's clearances, the clash check) reads it from the tunnel's own `hw` (`half_at`).
-The arch is 5.2 m high whatever the width, headroom for a bus or a lorry.
+A bore starts where the hill stands 5.2 m over its floor whatever it carries (CROWN, a lorry's
+headroom); the game draws a path's lower and a railway's higher (web/src/map.ts boreCrown), the
+headwall covering the difference.
 """
 import math
 

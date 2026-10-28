@@ -36,12 +36,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
-  face, with the ground and the lanes over it left as they are and one stone headwall over the
-  arches where two bores come out side by side: the A46 runs under Bailbrook Lane through the
-  Bailbrook Underpass. Each bore is as wide as the road or path going in, wall to wall, with its
-  pavements carried through where it has them. The road runs level into each arch along a cutting dug to its floor, with
-  stone wing walls holding up its sides where the hill beside it stands high, their copings
-  sloping down the bank, with no tree overhanging them. Out of town a dual
+  face, with the ground and the lanes over it left as they are and one headwall over the
+  openings where two bores come out side by side. A tunnel cars drive through is a modern
+  concrete box, with square openings under a flat lintel, a pier between the bores and concrete
+  wing walls, lorry-high inside: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
+  A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
+  Bath stone face, about 3.6 m to the top. Each bore is as wide as the road or path going in, wall
+  to wall, with its pavements carried through where it has them. The road runs level into each
+  opening along a cutting dug to its floor, with wing walls holding up its sides where the hill
+  beside it stands high, their copings sloping down the bank, with no tree or wood overhanging
+  the portal or the way out in front of it, and a stream through a culvert goes in under the hill. Out of town a dual
   carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so
   each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
   wall rather than in one slope of road.

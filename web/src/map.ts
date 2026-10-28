@@ -188,11 +188,19 @@ const CELL = 8;
 const TRUNK_DRAWN = 0.8;
 
 /** A tunnel's cross-section (tools/tunnels.py): half the floor's width where its map doesn't say
- *  (boreHalf), floor to the top of the arch, and how far each portal's stone face reaches past the
- *  bore's side (to the cutting's sides). */
-export const TUNNEL = { half: 2.4, crown: 5.2, past: 4.0 };
+ *  (boreHalf), floor to the top of the bore (boreCrown) under a road, a railway and a path, and how
+ *  far each portal's face reaches past the bore's side (to the cutting's sides). */
+export const TUNNEL = { half: 2.4, crown: 5.2, rail: 6.0, path: 3.6, past: 4.0 };
 /** Half a bore's width at its point i. */
 export const boreHalf = (t: Tunnel, i: number) => t.hw?.[i] ?? TUNNEL.half;
+const MOTOR = new Set(["motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street", "service"]);
+const RAIL = new Set(["rail", "railway", "standard_gauge", "narrow_gauge", "light_rail", "subway", "tram"]);
+/** A tunnel cars drive through: cut in concrete in our time, where a railway's, a canal's or a
+ *  path's (often an old railway's) is Victorian stone. */
+export const carriesTraffic = (t: Tunnel) => MOTOR.has(t.c.replace(/_link$/, ""));
+/** Floor to the top of a bore: a lorry's headroom under a road, a train's under a railway, and a
+ *  walker's or a cyclist's under a path, so a footway isn't a tall narrow slot. */
+export const boreCrown = (t: Tunnel) => (carriesTraffic(t) ? TUNNEL.crown : RAIL.has(t.c) ? TUNNEL.rail : TUNNEL.path);
 
 /** mover: the vehicle it hit, if it was one. */
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
@@ -496,7 +504,7 @@ export class GameMap {
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
         const half = Math.max(boreHalf(t, i), boreHalf(t, i + 1));
-        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half, boreCrown(t)]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
         const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
         const seen = new Set<number>();
         for (let s = 0; s <= n; s++) {
@@ -509,13 +517,13 @@ export class GameMap {
         const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
         for (const side of [1, -1]) {
           const s0 = h * side, s1 = (h + TUNNEL.past) * side;
-          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + TUNNEL.crown + 1.5, 0);
+          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + boreCrown(t) + 1.5, 0);
         }
       }
       for (const side of [1, -1]) {
         const w = offsetLine(p, (i) => boreHalf(t, i) * side);
         for (let i = 0; i < w.length - 1; i++) {
-          const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + TUNNEL.crown;
+          const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + boreCrown(t);
           this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, 0);
         }
       }
@@ -1111,20 +1119,25 @@ export class GameMap {
   /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
    *  map's own tunnels, or those of the square loaded there. */
   tunnelFloor(x: number, z: number): number | null {
-    let best: number | null = null, bd = Infinity;
+    return this.boreAt(x, z)?.[0] ?? null;
+  }
+
+  /** The tunnel's floor (scene Y) and its height to the top of the bore at scene (x, z), if there's one under it. */
+  private boreAt(x: number, z: number): [number, number] | null {
+    let best: [number, number] | null = null, bd = Infinity;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const a = this.tA[k], b = this.tB[k], vx = b[0] - a[0], vz = b[1] - a[1];
       const s = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz || 1)));
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
-      if (d < a[3] + 0.2 && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
+      if (d < a[3] + 0.2 && d < bd) { bd = d; best = [a[2] + (b[2] - a[2]) * s, a[4]]; }
     }
-    return best ?? this.tileAt(x, z)?.tunnelFloor(x, z) ?? null;
+    return best ?? this.tileAt(x, z)?.boreAt(x, z) ?? null;
   }
 
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
   inTunnel(x: number, z: number, y: number): number | null {
-    const f = this.tunnelFloor(x, z);
-    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : this.canalBore(x, z, y);
+    const b = this.boreAt(x, z);
+    return b && y < b[0] + b[1] - 0.4 ? b[0] : this.canalBore(x, z, y);
   }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
@@ -1363,8 +1376,8 @@ export class GameMap {
     // march, then bisect
     const lim = best ? best.dist : maxDist;
     const solid = (f: number) => {
-      const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.tunnelFloor(x, z);
-      return t !== null && y < t + TUNNEL.crown ? y < t : y < this.ground(x, z);
+      const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.boreAt(x, z);
+      return t && y < t[0] + t[1] ? y < t[0] : y < this.ground(x, z);
     };
     let prev = 0;
     for (let f = 0.5; f <= lim + 0.5; f += 0.5) {
@@ -1376,8 +1389,8 @@ export class GameMap {
           if (solid(m)) hi = m; else lo = m;
         }
         const hx = ox + dx * hi, hz = oz + dz * hi;
-        const tf = this.tunnelFloor(hx, hz);
-        if (tf !== null && oy + dy * hi < tf + TUNNEL.crown) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
+        const tf = this.boreAt(hx, hz);
+        if (tf && oy + dy * hi < tf[0] + tf[1]) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
         const gx = this.ground(hx + 0.5, hz) - this.ground(hx - 0.5, hz), gz = this.ground(hx, hz + 0.5) - this.ground(hx, hz - 0.5);
         const nl = Math.hypot(gx, 1, gz);
         return { dist: hi, kind: "ground", nx: -gx / nl, ny: 1 / nl, nz: -gz / nl };

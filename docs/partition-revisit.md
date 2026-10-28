@@ -1388,3 +1388,36 @@ same as main):
   the writer's first passes (before `rd` is written) use pass 1's corridor width, a few centimetres
   off the final one. The Two Tunnels go from 4.8 m to 4.2 m (cycleway 2.2 m), the Bailbrook bores
   from 4.8 m to 7.3 m (carriageway 6.3 m), the footway culvert to 3.5 m.
+
+## A tunnel's look and height follow what goes through it (28 October)
+
+- [ ] **Concrete for cars, stone for everything else, from the tunnel's own class** (Dan: style B
+  for the Bailbrook Underpass and as the rule). `map.ts carriesTraffic` reads the record's `c`:
+  motorway, trunk, primary, secondary, tertiary, unclassified, residential, living street, service
+  and their links are drawn as a concrete box (`tunnels.ts portalStyle` "b"); anything else (a
+  railway, a path, a cycleway on an old railway) as a brick arch in a Bath stone face ("a").
+  `?portal=a|b[,east,north]` still forces one to compare. The grassed-bank, trough and bare-face
+  trial styles (c, d, e) are gone. No map rebuild: the class was already in every record.
+- [ ] **A bore's height follows its class** (`map.ts boreCrown`): 5.2 m under a road, 6.0 m under a
+  railway (none in `tn` today: rail tunnels are the railway's), 3.6 m under a path. The arch
+  springs from `crown - min(half, 0.45 crown)`, so a low path bore is a flattish arch on short
+  walls. The collision, rays, lamps, the hidden ground in its mouths and the bore's roof for faces
+  over it all read the same height. Trade-off: `tools/tunnels.py` still starts a bore where the
+  hill stands 5.2 m (`CROWN`) over its floor whatever its class, so a path's headwall carries 2 m or
+  more of stone over its arch; changing it moves where every path tunnel starts (a rebuild).
+- [ ] **No wood canopy over a portal or the way out in front of it** (`tunnels.ts aroundPortals`,
+  `world.ts`): the canopy grid is laid over the ground, so over a deep cutting it came down its
+  sides in sheets and filled the Combe Down tunnel's cuttings, and over the dug floor just inside
+  the bore it hung in the tube. Cleared across the headwall and 4 m each side, 10 m behind the
+  face and 40 m out along the way. The game does it, as it does for the canal; the writer's
+  `clear_portals` already keeps single trees off. Trade-off: elsewhere on very steep wooded
+  slopes the canopy still comes down in sheets (the cutting's sides past the cleared strip).
+- [ ] **A cutting is dug at least 6 m out** (`tunnels.ts REACH`), more than one grid square: with
+  no wing walls (the Combe Down tunnel's south end) it was 2 m, and the ground made up behind the
+  headwall ran down to the next grid point in front as a mound on the path. The light apron shows
+  in patches there from the air where the ground's grid meets it.
+- [ ] **A headwall reaches at least 1.8 m past its openings** (`MIN_PAST`, was 0.8), so where the
+  hill beside is low it is still a face, not two jambs (the Combe Down tunnel's north end).
+- [ ] **A stream through a tunnel is left out inside its bore** (`world.ts outsideBores`): the
+  footway culvert at -2781,-2464 carries one, and draped on the ground it climbed into the arch
+  and over the headwall. Trade-off: no water is drawn on the tube's floor.

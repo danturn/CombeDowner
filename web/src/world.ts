@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, TUNNEL, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -14,7 +14,7 @@ import { buildVegetation } from "./trees";
 import { buildGrass, type Grass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
-import { boreRoof, buildTunnels, cuttings, mouths } from "./tunnels";
+import { aroundPortals, boreRoof, buildTunnels, cuttings, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
@@ -535,7 +535,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // Behind the headwall the hill is made up to just under its top for a grid square or so, where it
   // stands lower and no street lies on it: the grid's triangles from the dug floor in front dipped
   // behind the wall and left the top of the tube standing out of the ground.
-  for (const [cx, cy, dx, dy, left, right, reach, floor, top] of cuts) {
+  for (const [cx, cy, dx, dy, left, right, reach, floor, top, crown] of cuts) {
     const nx = -dy, ny = dx, to = floor - Z0 - 0.05, fill = top - Z0 - 0.3, pad = T.dx, back = T.dx * 1.5;
     const r = Math.hypot(Math.max(-left, right) + pad, Math.max(reach, back) + pad);
     const i0 = Math.max(0, Math.floor((cx - r - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((cx + r - T.x0) / T.dx));
@@ -544,7 +544,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const x = T.x0 + i * T.dx - cx, y = T.y0 + j * T.dy - cy, out = -(x * dx + y * dy), s = x * nx + y * ny, v = j * T.nx + i;
       if (out < 0 && out > -back && s > left && s < right && !covered[v]) {
         // (never above a street beside it, but the tunnel's own road, ending at the portal, doesn't count)
-        const by = roundTo[v] < to + TUNNEL.crown ? Infinity : roundTo[v];
+        const by = roundTo[v] < to + crown ? Infinity : roundTo[v];
         sink[v] = Math.min(sink[v], T.h[v] / 10 - Math.min(fill, by));
         continue;
       }
@@ -1660,7 +1660,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const backdrop = core ? buildBackdrop(map, scene as THREE.Scene, GROUND, earth, shell!.sun, shell!.hemi) : null;
-  const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;
+  const streams = outsideBores(map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl, boreRoof(map));
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false));
   S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
@@ -2061,6 +2061,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (D.cn) {
     const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
     for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+    const portal = aroundPortals(map), r = C.step / 2;
+    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+      const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
+      if (H[j * C.nx + i] && [[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v))) H[j * C.nx + i] = 0;
+    }
     const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
     // corner heights: the average of the canopy cells around each corner (edges taper down)
     const corner = (i: number, j: number) => {
@@ -2465,4 +2470,24 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       sun.dispose();
     },
   } satisfies World;
+}
+
+/** Streams with the stretches inside a tunnel's bore left out: one running through a culvert
+ *  under a path was laid over the ground, so it climbed the face and ran over the headwall. */
+function outsideBores(lines: Line[], roof: (x: number, y: number) => number): Line[] {
+  const out: Line[] = [];
+  for (const l of lines) {
+    let run: number[][] = [], cut = false;
+    const flush = () => { if (run.length > 1) out.push({ ...l, p: run }); run = []; };
+    for (let i = 0; i < l.p.length; i++) {
+      const a = l.p[i], b = l.p[i + 1], n = b ? Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]))) : 1;
+      for (let k = 0; k < n; k++) {
+        const q = k ? a.map((v, j) => v + ((b[j] ?? v) - v) * (k / n)) : a;
+        if (roof(q[0], q[1]) > -Infinity) { cut = true; flush(); } else run.push(q);
+      }
+    }
+    if (!cut) { out.push(l); continue; }
+    flush();
+  }
+  return out;
 }
