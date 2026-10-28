@@ -21,9 +21,10 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
-- **Lidar roofs in faces (prototype, branch `claude/lidar-roofs`, not merged):** `tools/roofs/`, a few lines in
-  `tools/prep_map.py` and `tools/prep_tiles.py`, `RoofMesh` in `web/src/map.ts` and `roofFaces` in `web/src/world.ts`;
-  faces kept for 11 squares in `data/combe-down/measured/faces/`. Waiting on Dan's look.
+- **Lidar roofs, plain shapes (prototype, branch `claude/lidar-roofs-2` off `claude/lidar-roofs`, not merged):**
+  `tools/roofs/` (`shapes.py` fits plain roofs per wing and per row; `mesh.py`), a few lines in `tools/prep_map.py`
+  and `tools/prep_tiles.py`, `RoofMesh` in `web/src/map.ts` and `roofFaces` in `web/src/world.ts`; roofs kept for 11
+  squares in `data/combe-down/measured/faces/`. Waiting on Dan's look.
 - **The partition is now part of the map build (both sides, please read):** `tools/prep_tiles.py`
   runs the partition (`tools/partition/stage.py`) after `prep_map.py`, so the squares in
   `web/public/maps/combe-down/` are the partition's; `prep_map.py`'s own go to

@@ -2,7 +2,7 @@
 
 Usage: python3 -I tools/roofs/apply.py <ti,tj> ... [--map combe-down]
 
-Each building whose outline has faces kept (tools/roofs/faces.py) gets them, lifted into the map's
+Each building whose outline has faces kept (tools/roofs/shapes.py) gets them, lifted into the map's
 frame by the two grounds' offset round it, as prep_map.py lifts the survey's eaves. The map build
 does this itself (prep_map.py); this only rewrites the square files in web/public/maps, so put
 them back (git checkout) before building the map.
@@ -11,7 +11,7 @@ import json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import open_lidar, square, footprint, ground_offsets, ROOT     # noqa: E402
-import faces     # noqa: E402
+import mesh as faces     # noqa: E402
 
 
 def main():

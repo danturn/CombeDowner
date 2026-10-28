@@ -2035,8 +2035,8 @@ def ground_offset(poly):
     return float(np.median(lift[near])) if len(near) >= OFFSET_MIN else 0.0
 
 
-# roofs as the lidar shows them, in faces (tools/roofs/faces.py), by each building's outline as built
-from roofs import faces as roof_faces
+# roofs fitted to the lidar (tools/roofs/shapes.py), kept as faces by each building's outline as built
+from roofs import mesh as roof_faces
 FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {}
 blds, footprints, bld_props, bld_fresh = [], [], [], []
 at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
