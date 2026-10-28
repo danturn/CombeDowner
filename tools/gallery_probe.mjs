@@ -5,10 +5,17 @@
 // show with the crowd and their speech bubbles, the verdict and the strange object; and a round in
 // two tabs of one ?net=local room, with both paintings going across. Shots along the way.
 //
+// Each painting's time-lapse is checked too: recorded as it's painted, sent round with it, and
+// played on its canvas as the doors open (a shot half way through, replay-mid.png).
+//
 // The ending is checked too: the verdict card stays up until it's put away, you can stay and look
 // round after it, and leaving (or the gallery closing) puts you back on the pavement facing the door.
 //
 //   node tools/gallery_probe.mjs --out gallery [--map combe-down] [--only solo|duo|critics] [--time 22:30] [--eye slow|block]
+//     [--scene <scenes.json>#<name>]
+//
+// --scene paints one of the whole paintings from tools/critics_probe.mjs --out (its scenes.json)
+// in the solo round instead of painting by hand, a layer a stroke, so its time-lapse is the scene's.
 //
 // --eye tries the critics' eye (eye.ts) the hard way in the solo round: slow throttles the host's
 // connection once the game's loaded, so the model is still downloading when the paintings are
@@ -22,7 +29,7 @@ import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = createRequire(WEB + "package.json")("playwright");
-const argv = process.argv.slice(2), opt = { out: "gallery", map: "combe-down", port: "5193", only: "", time: "11:00", eye: "" };
+const argv = process.argv.slice(2), opt = { out: "gallery", map: "combe-down", port: "5193", only: "", time: "11:00", eye: "", scene: "" };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 fs.mkdirSync(opt.out, { recursive: true });
 
@@ -124,6 +131,7 @@ async function cameraOn(page, which) {
   const G = await page.evaluate(() => ({ top: window.__gallery.top, C: window.__gallery.C, n: window.__gallery.painters().length }));
   const y = G.top + 1.75;
   if (which === "wall") await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 1.5, y + 0.6, G.C.z + 3.2, G.C.x - 0.5, y - 0.1, G.C.z - 6.5]]);
+  else if (which === "close") await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 0.5, G.top + 2.1, G.C.z - 6.5 + 2.7, G.C.x, G.top + 2.05, G.C.z - 6.5]]);
   else if (which === "door") await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 4, y + 0.3, G.C.z + 1.5, G.C.x + 10.3, y - 0.5, G.C.z - 2.2]]);
   else await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 9.5, y + 2.6, G.C.z + 5.5, G.C.x - 3, y - 0.6, G.C.z - 3]]);
 }
@@ -238,7 +246,15 @@ try {
     report.push(`eye while painting: ${JSON.stringify(await ada.evaluate(async () => (await import("/src/eye.ts")).eyeState()))}`);
     await ada.evaluate(() => window.__gallery.start());
     await wait(500);
-    await paintByHand(ada);
+    if (opt.scene) {
+      const [file, name] = opt.scene.split("#"), sc = JSON.parse(fs.readFileSync(file, "utf8"))[name];
+      await ada.evaluate(async ([frames]) => {
+        const { decode } = await import("/src/easel.ts"), e = window.__gallery.easel;
+        for (const f of frames) { e.px.set(decode(f)); e.strokes += 6; e.film(); }
+        e.render();
+      }, [sc.frames]);
+      report.push(`painted the scene "${name}" (${sc.frames.length} layers, meant for ${sc.theme})`);
+    } else await paintByHand(ada);
     await ada.screenshot({ path: `${opt.out}/easel-painted.png` });
     const strokes = await ada.evaluate(() => window.__gallery.easel.strokes);
     check("solo: the painter's strokes landed", strokes >= 15, `${strokes} strokes`);
@@ -250,7 +266,17 @@ try {
     report.push(`eye at the show: ${JSON.stringify(eyed)}`);
     console.log("eye at the show:", JSON.stringify(eyed).slice(0, 400));
     check("solo: hanging it opens the private view", show.phase === "show", JSON.stringify(show));
-    await wait(5500);
+    // the time-lapse plays on the canvas as the doors open, then settles on the painting
+    await cameraOn(ada, "close");
+    await ada.waitForFunction(() => window.__gallery.replay() >= 0.2, null, { timeout: 15000 }).catch(() => {});
+    await ada.screenshot({ path: `${opt.out}/replay-early.png` });
+    await ada.waitForFunction(() => window.__gallery.replay() >= 0.5, null, { timeout: 15000 }).catch(() => {});
+    const mid = await ada.evaluate(() => ({ u: window.__gallery.replay(), tapes: window.__gallery.tapes() }));
+    await ada.screenshot({ path: `${opt.out}/replay-mid.png` });
+    check("solo: the painting's time-lapse was recorded and plays as the doors open", mid.tapes[0]?.frames >= 5 && mid.u > 0 && mid.u < 1, JSON.stringify(mid));
+    report.push(`time-lapse: ${JSON.stringify(mid)}`);
+    await ada.waitForFunction(() => window.__gallery.replay() >= 1.05, null, { timeout: 15000 }).catch(() => {});
+    await ada.screenshot({ path: `${opt.out}/replay-done.png` });
     await cameraOn(ada, "wall");
     await wait(1200);
     await ada.screenshot({ path: `${opt.out}/wall-critic.png` });
@@ -342,6 +368,8 @@ try {
     await a.click("#easel button.hang");
     const both = await Promise.all([a, b].map((t) => until(t, 30, (s) => s.phase === "show")));
     check("duo: both paintings hung on both screens and the show starts", both.every((s) => s.phase === "show" && s.works === 2), JSON.stringify(both.map((s) => [s.phase, s.works])));
+    const tapes = await Promise.all([a, b].map((t) => t.evaluate(() => window.__gallery.tapes())));
+    check("duo: both time-lapses reached both screens", tapes.every((ts) => ts.length === 2 && ts.every((x) => x.frames >= 2)), JSON.stringify(tapes));
     // each votes for the other's painting
     for (const [t, mine] of [[a, "Ada"], [b, "Bea"]]) {
       await t.evaluate(([mine]) => {

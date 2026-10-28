@@ -7,9 +7,13 @@
 // landscape, on the subject or off it...) and each visitor has a taste for some of them and a bank
 // of lines for each. sight.ts looks closer, at the shapes (a sun, a bus, a cat, a rude doodle...),
 // the layout, the colour and the line, and the easel says how it was painted; those become traits
-// too, with more lines in critics-lines.ts. Paintings are also set against each other, for the
-// two that look alike and the odd one out. Two or three real critics come to every show, and their marks count double;
-// the rest are ordinary people with opinions.
+// too, with more lines in critics-lines.ts. The painting's time-lapse is looked at as well, for one
+// that started as one thing and ended as another, or had something rude painted out. Paintings are
+// also set against each other, for the two that look alike and the odd one out. Two or three real
+// critics come to every show, and their marks count double; the rest are ordinary people with
+// opinions. Whatever their taste, everyone's mark leans towards the plain craft of it (the whole
+// canvas, plenty in it, the subject in its colours, time taken carefully), so a careful painting of
+// the subject gets 8s and 9s and a lazy one 2s to 4s; tools/critics_probe.mjs checks that.
 //
 // Who decides what: the host. Everything here is worked out on the host's screen from the
 // paintings and the show's seed, and the lines and marks go round as text (gallery.ts), so nobody's
@@ -156,7 +160,7 @@ export type Trait = "blank" | "sparse" | "flood" | "mono" | "rainbow" | "scribbl
   | "complement" | "analogous" | "warmcool" | "contrast" | "flat" | "muddy"
   | "outlined" | "hatched" | "ruled" | "wobbly" | "sure"
   | "slow" | "quick" | "fiddly" | "nerve" | "bigBrush" | "fineBrush" | "ground"
-  | "twin" | "oddOne" | "seen";
+  | "twin" | "oddOne" | "seen" | "changed" | "covered";
 
 export const RUDE: Rude[] = ["finale", "penis", "boobs", "bum", "phallic"];
 const THINGS: Thing[] = ["bus", "cat", "face", "house", "sun", "tree", "birds", "figure", "writing"];
@@ -164,6 +168,12 @@ const THINGS: Thing[] = ["bus", "cat", "face", "house", "sun", "tree", "birds", 
 export const THING_WORDS: Record<Thing | Rude, string> = {
   sun: "the sun", bus: "the bus", cat: "the cat", face: "the face", birds: "the gulls", house: "the house", tree: "the tree",
   figure: "the little man", writing: "the writing", penis: "the rocket", boobs: "the pair", bum: "the bottom", finale: "the fireworks", phallic: "the rocket",
+};
+
+/** The same, for something that was there once: "it started as a cat". */
+const ONCE_WORDS: Record<Thing | Rude, string> = {
+  sun: "a sun", bus: "a bus", cat: "a cat", face: "a face", birds: "some gulls", house: "a house", tree: "a tree",
+  figure: "a little man", writing: "some writing", penis: "a rocket", boobs: "a pair of something", bum: "a bottom", finale: "fireworks", phallic: "a rocket",
 };
 
 const ITEM_WORDS: Record<Thing, string> = {
@@ -249,10 +259,15 @@ export interface Dress { coat: string; hair?: string; wear?: string; small?: boo
 interface Feat {
   l: Look; t: Set<Trait>;
   cov: number; colourful: number; detail: number; theme: number; effort: number; scrib: number;
+  /** How well made it is, whatever anyone's taste, 0..1: the whole canvas used, plenty in it, on the
+   *  subject, the time taken and taken carefully. */
+  craft: number;
   /** What they'd call the thing they recognised in it, and whose painting it looks like. */
   thing: string; item: string; other: string;
   /** Something the critics' eye (eye.ts) made out that the shape tests have no word for. */
   seen: string;
+  /** What it showed early in its time-lapse and doesn't now, and what it shows instead. */
+  was: string; became: string;
 }
 const has = (f: Feat, ...t: Trait[]) => t.some((k) => f.t.has(k));
 
@@ -273,22 +288,48 @@ export interface Visitor {
  *  way and roughly cancel out over a room, so they're a laugh rather than a way past the bar. */
 const LIKES: Record<string, Partial<Record<Trait, number>>> = {
   "Sir Jeremy Plinth": { penis: -1.2, boobs: -0.8, bum: -0.8, finale: -0.5, face: 0.8, house: 0.6, tree: 0.5, sun: 0.3, cat: 0.4, bus: 0.4, birds: 0.3, figure: 0.2, writing: -0.3,
-    spotted: 0.8, thirds: 0.6, horizon: 0.4, hatched: 0.4, muddy: -0.8, wobbly: -0.6, sure: 0.5, slow: 0.5, quick: -0.8, twin: -0.8, outlined: -0.3, fineBrush: 0.4 },
+    spotted: 0.8, thirds: 0.6, horizon: 0.4, hatched: 0.4, muddy: -0.8, wobbly: -0.6, sure: 0.5, slow: 0.5, quick: -0.8, twin: -0.8, outlined: -0.3, fineBrush: 0.4, changed: -0.3, covered: 0.3 },
   "Octavia Vane": { penis: 0.6, boobs: 0.3, finale: 0.2, space: 1, subject: 0.6, lopsided: 0.6, centred: -0.6, thirds: -0.5, flat: 0.5, writing: 0.6, house: -0.8, sun: -0.8,
-    twin: -1.2, oddOne: 1.2, quick: 0.6, slow: -0.4, bigBrush: 0.5, fiddly: 0.3, wobbly: 0.3, outlined: -0.4, face: -0.4, spotted: -0.4 },
+    twin: -1.2, oddOne: 1.2, quick: 0.6, slow: -0.4, bigBrush: 0.5, fiddly: 0.3, wobbly: 0.3, outlined: -0.4, face: -0.4, spotted: -0.4, changed: 0.8, covered: 0.4 },
   "Dr Rupert Varnish": { complement: 1, analogous: 0.6, warmcool: 0.8, contrast: 0.6, flat: -0.8, muddy: -1.5, sun: 0.5, bus: 0.3, outlined: -0.4, ground: 0.4, boobs: 0.2, twin: -0.5, oddOne: 0.4 },
   "Lady Fenella Gouache": { penis: -1.2, boobs: -0.6, bum: -0.5, finale: -0.8, centred: 0.6, lopsided: -0.6, house: 0.6, cat: 0.5, space: 0.4, muddy: -0.6, twin: -0.6, oddOne: 0.6, subject: 0.5 },
   "Pauline (a nan)": { cat: 0.8, face: 0.6, sun: 0.5, house: 0.5, birds: 0.2, slow: 0.4, spotted: 0.3 },
-  "Dave (a builder)": { penis: 0.6, boobs: 0.3, bum: 0.4, finale: -0.2, house: 1, ruled: 0.8, wobbly: -0.8, bus: 0.4, horizon: 0.4, bigBrush: 0.3, ground: 0.5, quick: -0.3 },
+  "Dave (a builder)": { penis: 0.6, boobs: 0.3, bum: 0.4, finale: -0.2, house: 1, ruled: 0.8, wobbly: -0.8, bus: 0.4, horizon: 0.4, bigBrush: 0.3, ground: 0.5, quick: -0.3, changed: -0.4 },
   "Jasper (an art student)": { penis: 1.2, boobs: 0.8, bum: 0.8, finale: 0.6, phallic: 0.3, writing: 0.8, outlined: -0.6, hatched: -0.4, wobbly: 0.6, quick: 0.6, slow: -0.4,
-    twin: -0.6, oddOne: 1, centred: -0.5, space: 0.6, spotted: -0.5 },
+    twin: -0.6, oddOne: 1, centred: -0.5, space: 0.6, spotted: -0.5, changed: 0.8, covered: -0.6 },
   "Gloria (on a coach trip)": { penis: -0.6, boobs: -0.4, finale: -0.3, house: 0.8, bus: 0.6, sun: 0.6, birds: 0.3, horizon: 0.4, spotted: 0.6 },
-  "Alfie (aged 7)": { penis: 1.5, bum: 1.5, boobs: 0.5, finale: 1, phallic: 1.5, cat: 1.2, sun: 0.6, figure: 0.8, bus: 0.8, house: 0.4, tree: 0.4, quick: 0.3 },
-  "Kyle (a Flag Lad)": { penis: 1.5, boobs: 1.2, bum: 0.6, finale: 1, bus: 0.8, writing: 0.3 },
-  "Gareth (from the Council)": { penis: -1.5, boobs: -1, bum: -1, finale: -1, phallic: -0.3, house: -0.5, writing: -0.8, ruled: 0.8, twin: -0.4, space: -0.4, muddy: 0.4 },
+  "Alfie (aged 7)": { penis: 1.5, bum: 1.5, boobs: 0.5, finale: 1, phallic: 1.5, cat: 1.2, sun: 0.6, figure: 0.8, bus: 0.8, house: 0.4, tree: 0.4, quick: 0.3, changed: 0.6, covered: -0.5 },
+  "Kyle (a Flag Lad)": { penis: 1.5, boobs: 1.2, bum: 0.6, finale: 1, bus: 0.8, writing: 0.3, covered: -0.8 },
+  "Gareth (from the Council)": { penis: -1.5, boobs: -1, bum: -1, finale: -1, phallic: -0.3, house: -0.5, writing: -0.8, ruled: 0.8, twin: -0.4, space: -0.4, muddy: 0.4, changed: -0.4, covered: 0.6 },
   "Marcus (a Roman re-enactor)": { penis: 1.5, boobs: 0.6, bum: 0.8, finale: 1, phallic: 0.8, face: 0.6, house: 0.4, figure: 0.4, writing: 0.6, ruled: 0.6 },
   "A seagull": { birds: 2, sun: 0.4 },
 };
+/** How far each visitor's mark follows the craft in it rather than their own taste. Everyone knows
+ *  a careful, finished painting of the subject when they see one, even the ones who'd sooner not. */
+const RESPECT: Record<string, number> = {
+  "Sir Jeremy Plinth": 0.55, "Octavia Vane": 0.5, "Dr Rupert Varnish": 0.55, "Lady Fenella Gouache": 0.55,
+  "Pauline (a nan)": 0.6, "Dave (a builder)": 0.6, "Jasper (an art student)": 0.5, "Gloria (on a coach trip)": 0.6,
+  "Alfie (aged 7)": 0.5, "Kyle (a Flag Lad)": 0.55, "Gareth (from the Council)": 0.55, "Marcus (a Roman re-enactor)": 0.6, "A seagull": 0.3,
+};
+const markOf = (v: Visitor, f: Feat) => {
+  const a = RESPECT[v.name] ?? 0.5;
+  return (1 - a) * v.mark(f) + a * (1.2 + 8.8 * f.craft) + liking(v, f);
+};
+
+/** Craft, as anyone would see it (Feat.craft). */
+function craftOf(l: Look, t: Set<Trait>, theme: number, palette: number, colourful: number, detail: number): number {
+  if (t.has("blank")) return 0;
+  const h = l.how;
+  const effort = h ? 0.5 * Math.min(1, h.secs / 85) + 0.5 * Math.min(1, l.strokes / 60) : Math.min(1, l.strokes / 60);
+  const care = h ? (h.ground ? 0.35 : 0) + 0.35 * Math.min(1, h.fine / 50) + (h.wobble > 0 && h.wobble <= 8 ? 0.3 : h.wobble === 0 ? 0.1 : 0) : 0.4;
+  // the subject's own colours count apart from the subject: a sunrise in greens and purples isn't one
+  let q = 0.22 * Math.min(1, l.cover / 0.92) + 0.18 * detail + 0.12 * theme + 0.12 * palette + 0.18 * effort + 0.08 * care + 0.1 * colourful;
+  if (t.has("scribble")) q *= 0.7;
+  if (t.has("offTheme")) q *= 0.75;
+  else if (palette < 0.3 && l.cover > 0.3) q *= 0.85;
+  return Math.max(0, Math.min(1, q));
+}
+
 const liking = (v: Visitor, f: Feat) => {
   const l = LIKES[v.name];
   if (!l) return 0;
@@ -554,7 +595,11 @@ export const visitorIndex = (v: Visitor) => ALL.indexOf(v);
 
 // ---- a show -------------------------------------------------------------------------------------
 
-export interface Painting { id: string; name: string; px: Uint8Array; strokes: number; how?: How; eye?: Eye }
+export interface Painting {
+  id: string; name: string; px: Uint8Array; strokes: number; how?: How; eye?: Eye;
+  /** A few snapshots from its time-lapse, earliest first, if the painter's page sent one. */
+  early?: Uint8Array[];
+}
 export interface Remark { at: number; v: number; p: number; text: string; mark: number }
 export interface Show {
   /** Who comes, as numbers into the cast (visitor()); the critics first. */
@@ -602,18 +647,22 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
     const eye = paintings[i].eye, odd = eye?.seen.find((s) => !s.k);
     if (odd) t.add("seen");
     if (eye && eye.subject >= 0.7 && l.cover > 0.03) { t.add("onTheme"); t.delete("offTheme"); }
+    const turn = turnOf(paintings[i].early, l.s);
+    if (turn) t.add(turn.k);
     const byColour = 0.6 * l.theme + 0.4 * (l.themeHits / Math.max(1, Math.min(4, theme.c.length)));
     const mine = theme.k?.find((k) => l.s.things[k as Thing] || l.s.rude[k as Rude]);
     const any = mine ?? THINGS.find((k) => l.s.things[k]);
+    const colourful = Math.min(1, Math.max(0, l.colours - 1) / 6), detail = Math.min(1, l.blobs / 26);
+    const fit = Math.min(1, (eye ? 0.4 * byColour + 0.6 * eye.subject : byColour) * Math.min(1, l.cover * 4) + (mine ? 0.35 : 0));
     return {
       thing: any ? THING_WORDS[any] : odd?.word ?? "that", seen: odd?.word ?? "that", item: ITEM_WORDS[THINGS.find((k) => l.s.things[k]) ?? "house"], other: kin.twin[i] >= 0 ? paintings[kin.twin[i]].name : "the next one",
+      was: turn?.was ?? "something else", became: turn?.became ?? "this",
       l, t,
       cov: l.cover < 0.6 ? l.cover / 0.6 : 1,
-      colourful: Math.min(1, Math.max(0, l.colours - 1) / 6),
-      detail: Math.min(1, l.blobs / 26),
-      theme: Math.min(1, (eye ? 0.4 * byColour + 0.6 * eye.subject : byColour) * Math.min(1, l.cover * 4) + (mine ? 0.35 : 0)),
+      colourful, detail, theme: fit,
       effort: Math.min(1, l.strokes / 40),
       scrib: t.has("scribble") ? 1 : 0,
+      craft: craftOf(l, t, fit, Math.min(1, byColour * 1.3) * Math.min(1, l.cover * 4), colourful, detail),
     };
   });
   // who sees which paintings: every critic sees all of them; each painting gets a few punters, in turn
@@ -642,9 +691,9 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
     free[k] = at + SPEAK + 0.4;
     where[k] = [wx, wz];
     const v = ALL[cast[k]], f = feats[p], pr = rng(seed ^ (k * 7919 + p * 104729));
-    const mark = Math.round(clamp(v.mark(f) + liking(v, f) + (pr() - 0.5) * 1.2) * 2) / 2;
+    const mark = Math.round(clamp(markOf(v, f) + (pr() - 0.5) * 1.2) * 2) / 2;
     const text = say(v, f, mark, pr, used, {
-      name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other, seen: f.seen,
+      name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other, seen: f.seen, was: f.was, became: f.became,
     });
     remarks.push({ at, v: cast[k], p, text, mark });
     (v.critic ? critic : punter)[p].push(mark);
@@ -665,6 +714,29 @@ function withEye(l: Look, eye?: Eye): Look {
     to[s.k] = Math.max(to[s.k] ?? 0, 1);
   }
   return l;
+}
+
+/** The snapshots from a time-lapse worth checking for a change of mind: a third, half and two thirds
+ *  of the way through (never the finished painting itself). */
+export const earlyFrom = (frames: Uint8Array[]) =>
+  frames.length < 3 ? [] : [0.3, 0.5, 0.7].map((u) => frames[Math.min(frames.length - 2, Math.floor(u * frames.length))]);
+
+/** Did it change its mind on the way: something seen in an early snapshot that's gone from the
+ *  finished painting, with something new in its place ("changed"), or a rude one painted out
+ *  ("covered")? Writing and near-misses come and go too easily to count. */
+function turnOf(early: Uint8Array[] | undefined, end: Sight): { k: "changed" | "covered"; was: string; became: string } | null {
+  if (!early?.length) return null;
+  const keys = (s: Sight) => [...THINGS.filter((k) => s.things[k]), ...RUDE.filter((k) => s.rude[k])].filter((k) => k !== "writing" && k !== "phallic") as (Thing | Rude)[];
+  const now = keys(end), rudeNow = RUDE.some((k) => end.rude[k]);
+  for (const px of early.slice(0, 3)) {
+    const then = keys(see(px)), gone = then.filter((k) => !now.includes(k));
+    if (!gone.length) continue;
+    const rude = gone.find((k) => (RUDE as string[]).includes(k));
+    if (rude && !rudeNow) return { k: "covered", was: ONCE_WORDS[rude], became: "" };
+    const fresh = now.find((k) => !then.includes(k) && !(RUDE as string[]).includes(k));
+    if (fresh) return { k: "changed", was: ONCE_WORDS[gone[0]], became: ONCE_WORDS[fresh] };
+  }
+  return null;
 }
 
 /** Which paintings look like each other (the dominant colour of each patch of a coarse grid, and the
@@ -723,6 +795,12 @@ function say(v: Visitor, f: Feat, mark: number, r: Rng, used: Set<string>, o: Re
   if (rude.length) {
     const k = rude[Math.floor(r() * Math.min(2, rude.length))];
     const s = pickFrom(k, v.lines[k]);
+    if (s) return s;
+  }
+  // a painting that changed its mind is the talk of the room, for those who caught it
+  const turn = (["changed", "covered"] as Trait[]).find((t) => f.t.has(t) && v.lines[t]?.some((s) => !used.has(`${v.name}:${s}`)));
+  if (turn && r() < 0.55) {
+    const s = pickFrom(turn, v.lines[turn]);
     if (s) return s;
   }
   // otherwise one of the first few things they'd notice, and never the same kind of remark twice
