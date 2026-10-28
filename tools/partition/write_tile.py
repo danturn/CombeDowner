@@ -5058,7 +5058,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
     bore_widths(tile.get("tn"), rd, roads)
-    end_at_portals(rd, tile.get("tn"))
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"))
     settle_on_laid_ground(rd, laid, road_ground)
@@ -5121,6 +5120,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
+    # (once the ground is laid: the hill over a portal is laid to the ways crossing it, not to these)
+    end_at_portals(rd, tile.get("tn"))
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
