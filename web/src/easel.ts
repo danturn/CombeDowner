@@ -12,7 +12,8 @@
 // (it has no pointer), but it goes round the buttons as it does a menu. A strip under the colours
 // names the controls for the input in use, from the easel's table in controls.ts.
 //
-// Who decides what: nobody. The painting is yours until you hang it; encode() is what goes round.
+// Who decides what: nobody. The painting is yours until you hang it; encode() is what goes round,
+// with howText() in front of it, the easel's note of how it was painted, for the host's critics.
 import * as SFX from "./audio";
 import { ctl, strip } from "./controls";
 
@@ -79,6 +80,24 @@ export function decode(s: string): Uint8Array {
     p = end;
   }
   return px;
+}
+
+// ---- how it was painted, for the critics ------------------------------------------------------------
+
+/** What the easel noticed while you worked: seconds from first stroke to hanging, undos, the share
+ *  of strokes with a big brush, with a fine one, and with the line and shape tools (0..100), whether
+ *  the ground went down first, and how much freehand lines wobbled (degrees of back-and-forth). */
+export interface How { secs: number; undos: number; big: number; fine: number; ruled: number; ground: boolean; wobble: number }
+
+/** Goes in front of a painting's run-length text: the stroke count first, as it always was, so an
+ *  older page reading only that number still gets it. */
+export const howText = (strokes: number, h: How) =>
+  [strokes, h.secs, h.undos, h.big, h.fine, h.ruled, h.ground ? 1 : 0, h.wobble].map((v) => Math.round(v)).join(":");
+/** The other way; nothing if the painter's page didn't send it. */
+export function readHow(head: string): How | undefined {
+  const v = head.split(":").map((x) => Math.max(0, Math.min(999, parseInt(x) || 0)));
+  if (v.length < 8) return undefined;
+  return { secs: v[1], undos: v[2], big: Math.min(100, v[3]), fine: Math.min(100, v[4]), ruled: Math.min(100, v[5]), ground: v[6] === 1, wobble: v[7] };
 }
 
 // ---- the mouse and keys while the easel's up --------------------------------------------------
@@ -194,6 +213,9 @@ export class Easel {
   /** How many times the brush has gone to the canvas: the critics notice effort, or the lack of it. */
   strokes = 0;
   private undo: Uint8Array[] = [];
+  private kept = { t0: 0, undos: 0, big: 0, fine: 0, ruled: 0, ground: false, turn: 0, turns: 0 };
+  /** A freehand stroke as it goes: the last point that counted, and the way it was heading. */
+  private path: { x: number; y: number; a: number | null } | null = null;
   private el: HTMLDivElement | null = null;
   private art: HTMLCanvasElement | null = null;
   private img: ImageData | null = null;
@@ -333,6 +355,7 @@ export class Easel {
     }
     this.save();
     this.strokes++;
+    this.noteStroke(x, y);
     this.drag = { c, x0: x, y0: y, x, y, base: this.px.slice(), id: e.pointerId };
     if (this.tool === "fill") { this.fill(x, y, c); this.drag = null; }
     else if (this.tool === "pencil" || this.tool === "brush" || this.tool === "eraser") this.stroke(x, y, x, y);
@@ -347,7 +370,7 @@ export class Easel {
     if (!d || e.pointerId !== d.id) return;
     const pts = (e.getCoalescedEvents?.() ?? [e]).map((q) => this.at(q));
     for (const [px, py] of pts) {
-      if (this.tool === "pencil" || this.tool === "brush" || this.tool === "eraser") this.stroke(d.x, d.y, px, py);
+      if (this.tool === "pencil" || this.tool === "brush" || this.tool === "eraser") { this.stroke(d.x, d.y, px, py); this.notePath(px, py); }
       d.x = px; d.y = py;
     }
     if (this.tool === "line" || this.tool === "rect" || this.tool === "ellipse") { this.px.set(d.base); this.shape(d.x0, d.y0, d.x, d.y, d.c); }
@@ -358,7 +381,41 @@ export class Easel {
     const d = this.drag;
     if (!d || e.pointerId !== d.id) return;
     this.drag = null;
+    if (this.tool === "rect" || this.tool === "ellipse") this.kept.ground ||= this.strokes === 1 && Math.abs(d.x - d.x0) * Math.abs(d.y - d.y0) > 0.3 * W * H && this.solid;
+    this.path = null;
     this.render();
+  }
+
+  private noteStroke(x: number, y: number) {
+    const k = this.kept, t = this.tool;
+    if (this.strokes === 1) { k.t0 = performance.now(); k.ground = t === "fill"; }
+    if (t === "line" || t === "rect" || t === "ellipse") k.ruled++;
+    else if (t === "pencil" || this.size === 1) k.fine++;
+    else if (this.size >= 6 || t === "fill") k.big++;
+    this.path = { x, y, a: null };
+  }
+  /** Freehand lines are judged in steps of a few pixels, so the pixel grid's own zigzag isn't taken
+   *  for a shaky hand; a smooth curve turns the same way each step, a wobble back and forth. */
+  private notePath(x: number, y: number) {
+    const p = this.path;
+    if (!p || Math.hypot(x - p.x, y - p.y) < 5) return;
+    const a = Math.atan2(y - p.y, x - p.x);
+    if (p.a !== null) {
+      let d = a - p.a;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      this.kept.turn += Math.abs(d); this.kept.turns++;
+    }
+    this.path = { x, y, a };
+  }
+  /** How it went, up to now. */
+  how(): How {
+    const k = this.kept, n = Math.max(1, this.strokes), pc = (v: number) => (100 * v) / n;
+    return {
+      secs: this.strokes ? (performance.now() - k.t0) / 1000 : 0, undos: k.undos,
+      big: pc(k.big), fine: pc(k.fine), ruled: pc(k.ruled), ground: k.ground,
+      wobble: k.turns >= 12 ? (k.turn / k.turns) * (180 / Math.PI) : 0,
+    };
   }
 
   /** What the program's state is, in one go: for a test to paint with, not the player. */
@@ -471,7 +528,7 @@ export class Easel {
   }
   private back() {
     const u = this.undo.pop();
-    if (u) { this.px.set(u); this.render(); }
+    if (u) { this.px.set(u); this.kept.undos++; this.render(); }
   }
   private clear() {
     this.save();
