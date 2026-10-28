@@ -80,6 +80,9 @@ CHANGE = 0.5                    # metres: a fitted value differing by this much 
 SHORT = 25.0                    # metres: a shorter stretch is merged into its neighbour
 TAPER = 4.0                     # metres each side a cross-section blends into the next
 CORNER_TURN = 10.0              # degrees a way turns at one of its points for that point to be a corner
+# Streets laid along their own corners as well as the paths: the lanes, yards and pedestrian streets
+# that turn tightly between buildings and walls.
+CORNERED = {"service", "living_street", "pedestrian"}
 
 
 def line_corners(line, cls):

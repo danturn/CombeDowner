@@ -58,7 +58,7 @@ from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
-from partition.corridors import PATHW, line_corners, path_width, service_kind
+from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
 from partition.standing import Standing
@@ -114,9 +114,8 @@ KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassif
 PEDESTRIAN_STREET_NEAR = 15.0  # metres: main draws a wide pedestrian street on its middle line, so a street's edge can lie this far off it
 PEDESTRIAN_NEAR = 3.0    # metres: how near an old pedestrian street a new street must lie along to be one
 GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
-# Ways written along their own corners, not only sampled along: the paths, and the lanes and yards
-# that turn tightly between buildings and walls.
-KEEP_CORNERS = GAME_PATHS | {"service", "living_street"}
+# Ways written along their own corners, not only sampled along, as their corridors were laid
+KEEP_CORNERS = GAME_PATHS | CORNERED
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8

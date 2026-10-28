@@ -45,7 +45,7 @@ from shapely.strtree import STRtree
 
 from . import MARGIN, Q, evidence_of, lap, zone_at
 from .buildings import clean_buildings
-from .corridors import PATHS, PATHW, REACH, fit_cross_section, line_corners, offset_poly, side_reach
+from .corridors import CORNERED, PATHS, PATHW, REACH, fit_cross_section, line_corners, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
 from structures import match_structures, osm_structures
@@ -523,6 +523,13 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None, hard=None):
     if ts is None:
         ts, L, R = side_reach(e["line"], otree, obstacles)
     stretches, sec = fit_cross_section(e, ts, L, R, hard=hard)
+    if e["cls"] in CORNERED:
+        # its corners too, with the cross-section there taken from the samples either side
+        cs = [t for t in line_corners(e["line"], e["cls"]) if np.abs(ts - t).min() > 0.05]
+        if cs:
+            at = np.array(sorted(set(np.asarray(ts).tolist()) | set(cs)))
+            sec = np.column_stack([np.interp(at, ts, sec[:, j]) for j in range(sec.shape[1])])
+            ts = at
     car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
     pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
     pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
