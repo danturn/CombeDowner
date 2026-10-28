@@ -326,7 +326,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   program for a minute and a half: pencil, brush, airbrush, fill, line, rectangle, ellipse, eraser and
   colour picker, four sizes, sixteen colours (left click for the first, right click for the second),
   Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
-  easel. The paintings go up in gilt frames with a card each, and in come the critics and a crowd of
+  easel. The paintings go up in gilt frames with a card each, under wraps until the doors open, when
+  each one plays back how it was painted, a time-lapse of about eight seconds on its own canvas, before
+  it settles. In come the critics and a crowd of
   the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
   Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
   with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
@@ -345,7 +347,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   critics wait for it a few seconds ("still arriving"), then go round without it, and a browser that
   can't run it never notices. Add `?critics=plain` to the address to leave it at home. Each has their
   likes: one critic loves a blank
-  canvas, another wants every square inch working. The critics' marks count double. Walk round while
+  canvas, another wants every square inch working, but everyone knows good work when they see it: a
+  careful painting of the subject that fills the canvas, ground first, with the time taken, gets 8s
+  and 9s and a 10 from someone, a half-done or wrongly coloured one about 6, and a blob or a scribble
+  2 to 4. They watch the time-lapse too, and a painting that started as a cat and ended as a bus, or
+  had something rude painted out, gets talked about. The critics' marks count double. Walk round while
   they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
   (with a couple more for anything cheeky, none of them for restraint), and
