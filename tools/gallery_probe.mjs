@@ -8,7 +8,11 @@
 // The ending is checked too: the verdict card stays up until it's put away, you can stay and look
 // round after it, and leaving (or the gallery closing) puts you back on the pavement facing the door.
 //
-//   node tools/gallery_probe.mjs --out gallery [--map combe-down] [--only solo|duo|critics] [--time 22:30]
+//   node tools/gallery_probe.mjs --out gallery [--map combe-down] [--only solo|duo|critics] [--time 22:30] [--eye slow|block]
+//
+// --eye tries the critics' eye (eye.ts) the hard way in the solo round: slow throttles the host's
+// connection once the game's loaded, so the model is still downloading when the paintings are
+// hung; block stops it downloading at all. Either way the show must go on without it.
 //
 // Writes <out>/report.txt and <out>/*.png; exits 1 if a check fails.
 import { createRequire } from "module";
@@ -18,7 +22,7 @@ import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = createRequire(WEB + "package.json")("playwright");
-const argv = process.argv.slice(2), opt = { out: "gallery", map: "combe-down", port: "5193", only: "", time: "11:00" };
+const argv = process.argv.slice(2), opt = { out: "gallery", map: "combe-down", port: "5193", only: "", time: "11:00", eye: "" };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 fs.mkdirSync(opt.out, { recursive: true });
 
@@ -205,6 +209,11 @@ try {
   report.push(`spots: ${JSON.stringify(spots)}`);
 
   if (opt.only !== "duo") {
+    if (opt.eye === "block") await ada.route(/huggingface\.co|hf\.co/, (r) => r.abort());
+    if (opt.eye === "slow") {
+      const cdp = await ada.context().newCDPSession(ada);
+      await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 20, downloadThroughput: 250000, uploadThroughput: -1 });
+    }
     await ada.evaluate(([x, z]) => window.__game().player.spawn(x - 3, z - 3, Math.atan2(3, 3)), [spots[0].x, spots[0].z]);
     await settle(ada);
     await ada.screenshot({ path: `${opt.out}/outside-curator.png` });
@@ -222,12 +231,24 @@ try {
     check("solo: in the gallery, the painting starts and the easel comes up", painting.phase === "paint" && painting.easel, JSON.stringify(painting));
     await wait(500);
     await ada.screenshot({ path: `${opt.out}/easel-empty.png` });
+    // a step back from the easel shows the room's panel, and on the host's screen how the critics' eye is getting on
+    await ada.evaluate(() => window.__gallery.easel.hideAndRelock());
+    await wait(2500);
+    await ada.screenshot({ path: `${opt.out}/eye-loading.png` });
+    report.push(`eye while painting: ${JSON.stringify(await ada.evaluate(async () => (await import("/src/eye.ts")).eyeState()))}`);
+    await ada.evaluate(() => window.__gallery.start());
+    await wait(500);
     await paintByHand(ada);
     await ada.screenshot({ path: `${opt.out}/easel-painted.png` });
     const strokes = await ada.evaluate(() => window.__gallery.easel.strokes);
     check("solo: the painter's strokes landed", strokes >= 15, `${strokes} strokes`);
     await ada.click("#easel button.hang");
-    const show = await until(ada, 30, (s) => s.phase === "show");
+    await wait(2500);
+    await ada.screenshot({ path: `${opt.out}/eye-hanging.png` });
+    const show = await until(ada, 40, (s) => s.phase === "show");
+    const eyed = await ada.evaluate(async () => ({ ...(await import("/src/eye.ts")).eyeState(), eyes: window.__gallery.eyes() }));
+    report.push(`eye at the show: ${JSON.stringify(eyed)}`);
+    console.log("eye at the show:", JSON.stringify(eyed).slice(0, 400));
     check("solo: hanging it opens the private view", show.phase === "show", JSON.stringify(show));
     await wait(5500);
     await cameraOn(ada, "wall");

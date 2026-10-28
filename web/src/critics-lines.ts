@@ -6,7 +6,8 @@
 // leaves room for it really having been a rocket, a mushroom or a marrow all along, because
 // sometimes it was. {name} is the painter, {theme} the subject, {colour} and {second} the two main
 // colours, {thing} what they recognised (the subject's own thing, if it's there), {item} the
-// harmless thing next to a rude one, and {other} the painter whose picture this one looks like.
+// harmless thing next to a rude one, {other} the painter whose picture this one looks like, and
+// {seen} something the critics' eye made out (SEEN, at the bottom).
 //
 // Who decides what: the host picks the lines (critics.ts); this is only the words.
 export const MORE: Record<string, Record<string, string[]>> = {
@@ -415,4 +416,61 @@ export const MORE: Record<string, Record<string, string[]>> = {
     writing: ["Kek. (It pecks at the writing, letter by letter.)"],
     twin: ["Skraw. (It looks from this one to {other}'s and back. It can't tell either.)"],
   },
+};
+
+/** About something the critics' eye (eye.ts) made out that the shape tests have no word for: {seen}
+ *  is what it is, "the dog", "the castle", "the pint". Only said when the eye is sure. */
+export const SEEN: Record<string, string[]> = {
+  "Sir Jeremy Plinth": [
+    "{seen}. Recognisably {seen}. In this room that is practically a miracle.",
+    "One sees {seen}, and one sees that {name} has looked at {seen}. Looking is half of it.",
+  ],
+  "Octavia Vane": [
+    "{seen}. Just {seen}. Where's the idea? Where's the danger?",
+    "Painting {seen} because {seen} was there. The death of art in four strokes.",
+  ],
+  "Dr Rupert Varnish": [
+    "{seen} in {colour}! Nobody has ever seen {seen} in {colour}, and they're all poorer for it.",
+    "Look at {seen}. Now look at the colour of it. That's where the feeling is.",
+  ],
+  "Lady Fenella Gouache": [
+    "Is that {seen}? I've a cousin who'd buy anything with {seen} in it.",
+    "{seen}, how charming. It would look marvellous over the Aga.",
+  ],
+  "Pauline (a nan)": [
+    "Oh, it's {seen}! Isn't that lovely. I'll tell our Sandra.",
+    "{seen}, bless. Mine never sit still long enough to draw.",
+  ],
+  "Dave (a builder)": [
+    "That's {seen}, that is. Knew it straight off.",
+    "{seen}. Fair play. I couldn't do {seen}.",
+  ],
+  "Jasper (an art student)": [
+    "{seen}, but like, as a signifier? Of {seen}ness?",
+    "Doing {seen} is so post-ironic right now. I think. Is it?",
+  ],
+  "Gloria (on a coach trip)": [
+    "Ron! It's {seen}! Ron, come and look at {seen}!",
+    "Oh, {seen}. We saw {seen} in Weston last year.",
+  ],
+  "Alfie (aged 7)": [
+    "IT'S {seen}! I can do {seen}! I do {seen} better though.",
+    "Is {seen} the main one? I like {seen}.",
+  ],
+  "Kyle (a Flag Lad)": [
+    "{seen}! Get in! Proper {seen}, that.",
+    "Lads. LADS. It's {seen}.",
+  ],
+  "Gareth (from the Council)": [
+    "{seen}. I'll need to check whether {seen} needs a licence.",
+    "There's {seen} in it. Noted.",
+  ],
+  "Marcus (a Roman re-enactor)": [
+    "{seen}! We had {seen} in Aquae Sulis. Well. Probably.",
+    "Ah, {seen}. Very classical, {seen}, if you squint.",
+  ],
+  "A seagull": [
+    "Skraw? (It eyes {seen}, in case {seen} is edible.)",
+    "KEK. (It has seen {seen}. It is not impressed by {seen}.)",
+  ],
 };

@@ -336,7 +336,14 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   before, your nan hasn't got her glasses on, and the Roman approves. They notice where the picture's
   weight sits, a horizon, empty space, clashing or calm colours, mud, black outlines, hatching, ruled
   or wobbly lines, how long you took and how often you pressed Undo, and two paintings that look
-  suspiciously alike. Each has their likes: one critic loves a blank
+  suspiciously alike. The critics also bring their glasses: a picture-recognising model that runs on
+  the host's own screen and can make out hundreds of things (dogs, castles, pints, the Abbey, the
+  Royal Crescent, a snowman...) and how well each painting fits the subject. It downloads (about
+  70 MB, once; the browser keeps it) while you paint, and the host's panel says how far it's got
+  ("The critics are finding their glasses: 40%"). If it isn't there when the paintings are hung the
+  critics wait for it a few seconds ("still arriving"), then go round without it, and a browser that
+  can't run it never notices. Add `?critics=plain` to the address to leave it at home. Each has their
+  likes: one critic loves a blank
   canvas, another wants every square inch working. The critics' marks count double. Walk round while
   they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive

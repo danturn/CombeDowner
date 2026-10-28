@@ -40,6 +40,7 @@ import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { ctlText } from "./controls";
 import { CRITICS, THEMES, criticsFor, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
+import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
@@ -57,7 +58,8 @@ const GO_IN = 6;                     // how close to the curator to go in
 const CHUNK = 9000;
 const SPEAK = 4.6;
 const BEAT_MS = 3200;                // the critics confer before the verdict's read out
-const CLOSE_MS = 90000;              // and the gallery closes this long after it
+const CLOSE_MS = 90000;
+const EYE_WAIT_MS = 20000;           // how long the show waits for the critics' eye before going on without it              // and the gallery closes this long after it
 const LINGER_MS = 30000;             // but never sooner than this after you've put the verdict away
 const CURATOR_REACH = 2.4;
 const PATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track", "service"]);
@@ -597,6 +599,8 @@ registerChallenge({
     const works = new Map<string, { px: Uint8Array; strokes: number; how?: How }>();
     let show: { cast: number[]; remarks: Remark[]; dur: number } | null = null;
     let full: ReturnType<typeof stageShow> | null = null;
+    const eyes = new Map<string, Eye>();
+    let staging = false;
     let showT0 = 0;
     let result: Verdict | null = null;
     let resultT = 0, closeAt = 0, revealed = false, carded = false, warned = false;
@@ -721,20 +725,44 @@ registerChallenge({
     }
     /** Host: everything's in (or the wait's over): hang the lot and stage the show. */
     function stageIt() {
-      if (!w.isHost || show || full || !painters.length) return;
+      if (!w.isHost || show || full || staging || !painters.length) return;
       if (phase === "paint") tell({ k: "hang" });
-      full = staged();
-      const s = { cast: full.cast, remarks: full.remarks, dur: full.dur };
-      setTimeout(() => {
-        if (phase === "out" || job.done) return;
-        sendBig("show", JSON.stringify({ ...s, el: 0 }));
-        startShow(s, 0);
-      }, 2200);
+      staging = true;
+      if (eyeState().state === "loading") stage = { key: "arriving", title: "The critics are still arriving", sub: "Mr Pettigrew pours the wine", colour: COLOUR, life: 3 };
+      lookAtThem().finally(() => {
+        if (phase === "out" || job.done || show || full) return;
+        full = staged();
+        const s = { cast: full.cast, remarks: full.remarks, dur: full.dur };
+        setTimeout(() => {
+          if (phase === "out" || job.done) return;
+          sendBig("show", JSON.stringify({ ...s, el: 0 }));
+          startShow(s, 0);
+        }, 2200);
+      });
+    }
+    /** Host: the critics' eye looks at each painting, if it's arrived in time; otherwise the show goes on without it. */
+    async function lookAtThem() {
+      const late = (ms: number) => new Promise<false>((ok) => setTimeout(() => ok(false), ms));
+      const until = performance.now() + EYE_WAIT_MS;
+      if (eyeState().state === "off" || !(await Promise.race([wakeEye(), late(EYE_WAIT_MS)]))) return;
+      // one at a time, so the frame rate only stutters, never stops
+      for (const id of painters) {
+        const px = works.get(id)?.px;
+        if (!px || eyes.has(id)) continue;
+        const e = await Promise.race([eyeJudge([px], THEMES[themeIndex()].t).catch(() => null), late(Math.max(2000, until - performance.now()))]);
+        if (!e) return;
+        eyes.set(id, e[0]);
+      }
     }
 
     const themeIndex = () => hash("theme", offer.seed) % THEMES.length;
+    /** On the host's screen, how far the critics' eye has got with loading. */
+    const glasses = () => {
+      const e = eyeState();
+      return w.isHost && e.state === "loading" ? ` · The critics are finding their glasses: ${Math.round(e.progress * 100)}%` : "";
+    };
     /** The paintings as hung, a blank canvas for anyone whose painting never came. */
-    const hungUp = (): Painting[] => painters.map((id) => ({ id, name: w.nameOf(id), px: works.get(id)?.px ?? new Uint8Array(W * H), strokes: works.get(id)?.strokes ?? 0, how: works.get(id)?.how }));
+    const hungUp = (): Painting[] => painters.map((id) => ({ id, name: w.nameOf(id), px: works.get(id)?.px ?? new Uint8Array(W * H), strokes: works.get(id)?.strokes ?? 0, how: works.get(id)?.how, eye: eyes.get(id) }));
     const staged = () => {
       const S = slots(painters.length);
       return stageShow(hungUp(), THEMES[themeIndex()], themeText, hash("show", offer.seed, painters.join(",")), (p) => [S[p].x, S[p].z + S[p].nz * 2.3], [HX - 1.2, 0]);
@@ -1004,6 +1032,7 @@ registerChallenge({
         }
       },
       host() {
+        if (aboard) wakeEye();
         if (phase === "gather") {
           if (list.length && !gatherSince) gatherSince = performance.now();
           const all = w.players().every((p) => list.includes(p.id));
@@ -1161,10 +1190,10 @@ registerChallenge({
         if (phase === "paint") {
           const left = Math.max(0, Math.ceil((paintEnd - performance.now()) / 1000));
           const timer = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-          if (myPainter() >= 0) return { line: `Paint: ${themeText}`, sub: hung ? "Hung. Waiting for the others" : easel.open ? "{easel.leave} to step back" : "{use} to go back to your easel", timer, stage };
-          return { line: "The artists are painting", sub: `“${themeText}”`, timer, stage };
+          if (myPainter() >= 0) return { line: `Paint: ${themeText}`, sub: (hung ? "Hung. Waiting for the others" : easel.open ? "{easel.leave} to step back" : "{use} to go back to your easel") + glasses(), timer, stage };
+          return { line: "The artists are painting", sub: `“${themeText}”${glasses()}`, timer, stage };
         }
-        if (phase === "hang") return { line: "Hanging the show", stage };
+        if (phase === "hang") return { line: staging && eyeState().state === "loading" ? "The critics are still arriving" : "Hanging the show", sub: glasses().slice(3) || undefined, stage };
         if (phase === "show" && show) {
           const t = (performance.now() - showT0) / 1000, said = show.remarks.filter((r) => r.at <= t).length;
           return { line: "The private view", sub: painters.length > 1 ? "Walk round. {use} by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${show.remarks.length}`, bar: said / Math.max(1, show.remarks.length), stage };
@@ -1213,7 +1242,7 @@ registerChallenge({
     }
 
     if (TESTING) (window as unknown as Record<string, unknown>).__gallery = {
-      easel, phase: () => phase, painters: () => painters, theme: () => themeText, show: () => show, result: () => result,
+      easel, eyes: () => [...eyes.values()], phase: () => phase, painters: () => painters, theme: () => themeText, show: () => show, result: () => result,
       works: () => works.size, aboard: () => aboard, top, C: { x: Cx, z: Cz }, door, hang: () => hangMine(), start: () => job.use!(),
       hint: () => job.hint!(), card: () => job.card(), pettigrew: PETTIGREW, closeIn: (ms?: number) => { if (ms !== undefined) closeAt = performance.now() + ms; return closeAt - performance.now(); },
     };

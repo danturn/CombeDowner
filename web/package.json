@@ -11,13 +11,14 @@
     "shoot": "vite build --logLevel error && node ../tools/shoot.mjs"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.3.1",
     "three": "^0.180.0",
     "trystero": "^0.25.4"
   },
   "devDependencies": {
     "@types/three": "^0.180.0",
+    "playwright": "1.56.1",
     "typescript": "5.9",
-    "vite": "^7.3.7",
-    "playwright": "1.56.1"
+    "vite": "^7.3.7"
   }
 }

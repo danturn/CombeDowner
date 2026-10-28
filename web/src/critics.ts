@@ -14,9 +14,10 @@
 // Who decides what: the host. Everything here is worked out on the host's screen from the
 // paintings and the show's seed, and the lines and marks go round as text (gallery.ts), so nobody's
 // rounding can make two screens disagree.
-import { MORE } from "./critics-lines";
+import { MORE, SEEN } from "./critics-lines";
 import { C, COLOUR_NAMES, H, W, type How } from "./easel";
 import { rng, shuffled, type Rng } from "./quests";
+import type { Eye } from "./eye";
 import { see, type Rude, type Sight, type Thing } from "./sight";
 
 // ---- the subjects ------------------------------------------------------------------------------
@@ -155,7 +156,7 @@ export type Trait = "blank" | "sparse" | "flood" | "mono" | "rainbow" | "scribbl
   | "complement" | "analogous" | "warmcool" | "contrast" | "flat" | "muddy"
   | "outlined" | "hatched" | "ruled" | "wobbly" | "sure"
   | "slow" | "quick" | "fiddly" | "nerve" | "bigBrush" | "fineBrush" | "ground"
-  | "twin" | "oddOne";
+  | "twin" | "oddOne" | "seen";
 
 export const RUDE: Rude[] = ["finale", "penis", "boobs", "bum", "phallic"];
 const THINGS: Thing[] = ["bus", "cat", "face", "house", "sun", "tree", "birds", "figure", "writing"];
@@ -250,6 +251,8 @@ interface Feat {
   cov: number; colourful: number; detail: number; theme: number; effort: number; scrib: number;
   /** What they'd call the thing they recognised in it, and whose painting it looks like. */
   thing: string; item: string; other: string;
+  /** Something the critics' eye (eye.ts) made out that the shape tests have no word for. */
+  seen: string;
 }
 const has = (f: Feat, ...t: Trait[]) => t.some((k) => f.t.has(k));
 
@@ -542,7 +545,7 @@ export const PUNTERS: Visitor[] = [
 ];
 
 const ALL = [...CRITICS, ...PUNTERS];
-for (const v of ALL) for (const [k, more] of Object.entries(MORE[v.name] ?? {})) {
+for (const v of ALL) for (const [k, more] of Object.entries({ ...MORE[v.name], seen: SEEN[v.name] ?? [] })) {
   const key = k as keyof Visitor["lines"];
   v.lines[key] = [...(v.lines[key] ?? []), ...more];
 }
@@ -551,7 +554,7 @@ export const visitorIndex = (v: Visitor) => ALL.indexOf(v);
 
 // ---- a show -------------------------------------------------------------------------------------
 
-export interface Painting { id: string; name: string; px: Uint8Array; strokes: number; how?: How }
+export interface Painting { id: string; name: string; px: Uint8Array; strokes: number; how?: How; eye?: Eye }
 export interface Remark { at: number; v: number; p: number; text: string; mark: number }
 export interface Show {
   /** Who comes, as numbers into the cast (visitor()); the critics first. */
@@ -590,21 +593,25 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
   const punterCount = Math.min(PUNTERS.length, 3 + n);
   const punters = shuffled(r, PUNTERS.map((_, i) => CRITICS.length + i)).slice(0, punterCount);
   const cast = [...critics, ...punters];
-  const looks = paintings.map((p) => analyse(p.px, p.strokes, theme, p.how));
+  const looks = paintings.map((p) => withEye(analyse(p.px, p.strokes, theme, p.how), p.eye));
   const kin = alike(paintings.map((p) => p.px));
   const feats: Feat[] = looks.map((l, i) => {
     const t = new Set(traits(l, theme));
     if (kin.twin[i] >= 0) t.add("twin");
     if (kin.odd === i) t.add("oddOne");
+    const eye = paintings[i].eye, odd = eye?.seen.find((s) => !s.k);
+    if (odd) t.add("seen");
+    if (eye && eye.subject >= 0.7 && l.cover > 0.03) { t.add("onTheme"); t.delete("offTheme"); }
+    const byColour = 0.6 * l.theme + 0.4 * (l.themeHits / Math.max(1, Math.min(4, theme.c.length)));
     const mine = theme.k?.find((k) => l.s.things[k as Thing] || l.s.rude[k as Rude]);
     const any = mine ?? THINGS.find((k) => l.s.things[k]);
     return {
-      thing: any ? THING_WORDS[any] : "that", item: ITEM_WORDS[THINGS.find((k) => l.s.things[k]) ?? "house"], other: kin.twin[i] >= 0 ? paintings[kin.twin[i]].name : "the next one",
+      thing: any ? THING_WORDS[any] : odd?.word ?? "that", seen: odd?.word ?? "that", item: ITEM_WORDS[THINGS.find((k) => l.s.things[k]) ?? "house"], other: kin.twin[i] >= 0 ? paintings[kin.twin[i]].name : "the next one",
       l, t,
       cov: l.cover < 0.6 ? l.cover / 0.6 : 1,
       colourful: Math.min(1, Math.max(0, l.colours - 1) / 6),
       detail: Math.min(1, l.blobs / 26),
-      theme: Math.min(1, (0.6 * l.theme + 0.4 * (l.themeHits / Math.max(1, Math.min(4, theme.c.length)))) * Math.min(1, l.cover * 4) + (mine ? 0.35 : 0)),
+      theme: Math.min(1, (eye ? 0.4 * byColour + 0.6 * eye.subject : byColour) * Math.min(1, l.cover * 4) + (mine ? 0.35 : 0)),
       effort: Math.min(1, l.strokes / 40),
       scrib: t.has("scribble") ? 1 : 0,
     };
@@ -637,7 +644,7 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
     const v = ALL[cast[k]], f = feats[p], pr = rng(seed ^ (k * 7919 + p * 104729));
     const mark = Math.round(clamp(v.mark(f) + liking(v, f) + (pr() - 0.5) * 1.2) * 2) / 2;
     const text = say(v, f, mark, pr, used, {
-      name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other,
+      name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other, seen: f.seen,
     });
     remarks.push({ at, v: cast[k], p, text, mark });
     (v.critic ? critic : punter)[p].push(mark);
@@ -648,6 +655,16 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
   const mean = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
   const dur = Math.max(...free, ...busy) + 1.5;
   return { cast, remarks, dur, marks: marks.map(mean), critics: critic.map(mean), punters: punter.map(mean), spread, rude: looks.map((l) => RUDE.filter((k) => l.s.rude[k])) };
+}
+
+/** What the critics' eye was sure of counts as if the shape tests had found it too. */
+function withEye(l: Look, eye?: Eye): Look {
+  for (const s of eye?.seen ?? []) {
+    if (!s.k) continue;
+    const to = (RUDE as string[]).includes(s.k) ? l.s.rude as Record<string, number> : l.s.things as Record<string, number>;
+    to[s.k] = Math.max(to[s.k] ?? 0, 1);
+  }
+  return l;
 }
 
 /** Which paintings look like each other (the dominant colour of each patch of a coarse grid, and the
