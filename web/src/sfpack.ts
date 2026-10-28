@@ -5,7 +5,7 @@
 // less memory while the square is kept.
 // Nothing here goes over the network.
 
-const LISTS = ["road", "service", "pave", "path", "front", "drive"] as const;
+const LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
 
 const unstep = (a: number[]) => {
   const out = new Int32Array(a.length);

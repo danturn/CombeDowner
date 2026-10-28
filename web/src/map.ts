@@ -17,6 +17,7 @@ import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
+import { alignPortals } from "./tunnels";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -33,12 +34,17 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean; bt?: string; uo?: number[][] }   // bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean; bt?: string; uo?: number[][]; ms?: number }   // ms: its speed limit in mph (tools/maxspeed.py); bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+/** What a street or path's ways say beyond its class (tools/osm.py's osm-detail): su, a path's surface (g grass, d dirt, v gravel; paved if left out);
+ *  sv, a service road's kind (d a drive, l an alley, a a car park's aisle, p private); and for steps sc, how many treads, hr, its handrails
+ *  (1 on the left looking along its points, 2 on the right, 4 down the middle), up, 1 where its points run uphill and -1 downhill. */
+export interface Road { su?: string; sv?: string; sc?: number; hr?: number; up?: number }
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
-/** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
-export interface Tunnel { c: string; n: string; p: number[][] }
+/** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z];
+ *  hw: half the bore's width at each point, as wide as its way going in; pv: the pavement each side at each point, where it has one. */
+export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv?: number[] }
 /** A football pitch ["f", x, y, length, width, angle], a rugby pitch ["r", x, y, length, width, angle],
  *  or a cricket field ["c", x, y, angle, boundary rope ring, sightscreens [[x, y], ...]]. The angle
  *  is the long axis (the wicket, for cricket). */
@@ -62,7 +68,7 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number };
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number };   // grass, dirt, gravel: paths the map says are made of that
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -72,11 +78,16 @@ export interface MapData {
   tn?: Tunnel[];                                  // tunnels you can walk through
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
+  // crossings and traffic lights: x, y, ground, the street's direction, kind (z a zebra, p a crossing with lights, s lights at a
+  // junction), the carriageway's width (furniture.ts draws them; the driving examiner can ask whether you stopped)
+  cx?: (number | string)[][];
+  // what stands across a path or road: kind (gate, stile, kiss, cycle, lift, grid, block), x, y, ground, angle, width
+  pb?: (number | string)[][];
 }
 
 /** What each kind of wall, fence, hedge and railing is made of, how thick it is and its colour: world.ts
  *  draws them so, and the walls you hit are that thick. */
-export type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
+export type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron" | "steel";
 export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[] }> = {
   wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
   stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
@@ -84,6 +95,8 @@ export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[
   fence: { mat: "wood", t: 0.08, col: [0.55, 0.42, 0.3] },
   hedge: { mat: "leaf", t: 0.9, col: [0.42, 0.58, 0.3] }, hedge_low: { mat: "leaf", t: 0.7, col: [0.46, 0.62, 0.32] },
   railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
+  dry_stone: { mat: "stone", t: 0.6, col: [0.7, 0.68, 0.6] }, wire_fence: { mat: "iron", t: 0.05, col: [0.42, 0.44, 0.42] },
+  guard_rail: { mat: "steel", t: 0.1, col: [0.7, 0.72, 0.74] },
 };
 export const barrierLook = (c: string) => BARRIER_LOOK[c] ?? BARRIER_LOOK.wall;
 
@@ -118,6 +131,7 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   wall: 0.9, retaining_wall: 0.9, fence: 1.2, hedge: 1.3,
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
+  dry_stone: 1.2, wire_fence: 1.2, guard_rail: 0.75,                   // as OpenStreetMap names them
 };
 /** The full-detail squares round a map (built by tools/prep_tiles.py into public/maps/<id>/):
  *  each is cells x cells of the terrain grid that starts at (x0, y0), dx apart. */
@@ -185,9 +199,20 @@ const CELL = 8;
 /** How much of a tree's collision trunk is drawn trunk: rays (shots) go by the drawn one, a little thinner than you bump into. */
 const TRUNK_DRAWN = 0.8;
 
-/** A tunnel's cross-section (tools/tunnels.py): half the floor's width, floor to the top of the arch,
- *  and half the width of the stone face round each portal (as wide as the cutting it stands in). */
-export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
+/** A tunnel's cross-section (tools/tunnels.py): half the floor's width where its map doesn't say
+ *  (boreHalf), floor to the top of the bore (boreCrown) under a road, a railway and a path, and how
+ *  far each portal's face reaches past the bore's side (to the cutting's sides). */
+export const TUNNEL = { half: 2.4, crown: 5.2, rail: 6.0, path: 3.6, past: 4.0 };
+/** Half a bore's width at its point i. */
+export const boreHalf = (t: Tunnel, i: number) => t.hw?.[i] ?? TUNNEL.half;
+const MOTOR = new Set(["motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street", "service"]);
+const RAIL = new Set(["rail", "railway", "standard_gauge", "narrow_gauge", "light_rail", "subway", "tram"]);
+/** A tunnel cars drive through: cut in concrete in our time, where a railway's, a canal's or a
+ *  path's (often an old railway's) is Victorian stone. */
+export const carriesTraffic = (t: Tunnel) => MOTOR.has(t.c.replace(/_link$/, ""));
+/** Floor to the top of a bore: a lorry's headroom under a road, a train's under a railway, and a
+ *  walker's or a cyclist's under a path, so a footway isn't a tall narrow slot. */
+export const boreCrown = (t: Tunnel) => (carriesTraffic(t) ? TUNNEL.crown : RAIL.has(t.c) ? TUNNEL.rail : TUNNEL.path);
 
 /** mover: the vehicle it hit, if it was one. */
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
@@ -484,31 +509,33 @@ export class GameMap {
 
     this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
+    alignPortals(d.tn ?? [], d.b);
     for (const t of d.tn ?? []) {
       if (this.spent(1)) yield;
       const p = t.p;
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
-        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        const half = Math.max(boreHalf(t, i), boreHalf(t, i + 1));
+        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half, boreCrown(t)]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
         const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
         const seen = new Set<number>();
         for (let s = 0; s <= n; s++) {
           const x = p[i][0] + ((p[i + 1][0] - p[i][0]) * s) / n, z = -(p[i][1] + ((p[i + 1][1] - p[i][1]) * s) / n);
-          for (const c of this.cellsAround(x, z, TUNNEL.half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
+          for (const c of this.cellsAround(x, z, half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
         }
       }
       // the portals' stone faces, either side of the arch
-      for (const [a, b] of [[p[0], p[1]], [p[p.length - 1], p[p.length - 2]]]) {
+      for (const [a, b, h] of [[p[0], p[1], boreHalf(t, 0)], [p[p.length - 1], p[p.length - 2], boreHalf(t, p.length - 1)]] as const) {
         const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
         for (const side of [1, -1]) {
-          const s0 = TUNNEL.half * side, s1 = TUNNEL.face * side;
-          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + TUNNEL.crown + 1.5, 0);
+          const s0 = h * side, s1 = (h + TUNNEL.past) * side;
+          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + boreCrown(t) + 1.5, 0);
         }
       }
       for (const side of [1, -1]) {
-        const w = offsetLine(p, TUNNEL.half * side);
+        const w = offsetLine(p, (i) => boreHalf(t, i) * side);
         for (let i = 0; i < w.length - 1; i++) {
-          const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + TUNNEL.crown;
+          const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + boreCrown(t);
           this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, 0);
         }
       }
@@ -592,6 +619,19 @@ export class GameMap {
       else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1);
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
+      else if (kind === "phone") this.addBox(x, y, a, 0, 0.48, 0.48, g + 2.5);
+    }
+    // the beacons and lights at crossings stand at each kerb
+    for (const c of d.cx ?? []) {
+      if (this.spent(16)) yield;
+      const [x, y, z, a, , w] = c as [number, number, number, number, string, number];
+      const off = w / 2 + 0.5, nx = -Math.sin(a) * off, ny = Math.cos(a) * off;
+      for (const s of [1, -1]) this.addPost(x + nx * s, y + ny * s, 0.12, z - this.z0 + 3);
+    }
+    // a concrete block across a path stops you; the rest you can get past or over
+    for (const f of d.pb ?? []) {
+      const [kind, x, y, z, a] = f as [string, number, number, number, number];
+      if (kind === "block") this.addBox(x, y, a, 0, 0.3, 0.6, z - this.z0 + 0.6);
     }
     this.phase = "landmark trees";
     // big landmark trees: their trunks are solid
@@ -1104,20 +1144,25 @@ export class GameMap {
   /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
    *  map's own tunnels, or those of the square loaded there. */
   tunnelFloor(x: number, z: number): number | null {
-    let best: number | null = null, bd = TUNNEL.half + 0.2;
+    return this.boreAt(x, z)?.[0] ?? null;
+  }
+
+  /** The tunnel's floor (scene Y) and its height to the top of the bore at scene (x, z), if there's one under it. */
+  private boreAt(x: number, z: number): [number, number] | null {
+    let best: [number, number] | null = null, bd = Infinity;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const a = this.tA[k], b = this.tB[k], vx = b[0] - a[0], vz = b[1] - a[1];
       const s = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz || 1)));
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
-      if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
+      if (d < a[3] + 0.2 && d < bd) { bd = d; best = [a[2] + (b[2] - a[2]) * s, a[4]]; }
     }
-    return best ?? this.tileAt(x, z)?.tunnelFloor(x, z) ?? null;
+    return best ?? this.tileAt(x, z)?.boreAt(x, z) ?? null;
   }
 
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
   inTunnel(x: number, z: number, y: number): number | null {
-    const f = this.tunnelFloor(x, z);
-    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : this.canalBore(x, z, y);
+    const b = this.boreAt(x, z);
+    return b && y < b[0] + b[1] - 0.4 ? b[0] : this.canalBore(x, z, y);
   }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
@@ -1356,8 +1401,8 @@ export class GameMap {
     // march, then bisect
     const lim = best ? best.dist : maxDist;
     const solid = (f: number) => {
-      const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.tunnelFloor(x, z);
-      return t !== null && y < t + TUNNEL.crown ? y < t : y < this.ground(x, z);
+      const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.boreAt(x, z);
+      return t && y < t[0] + t[1] ? y < t[0] : y < this.ground(x, z);
     };
     let prev = 0;
     for (let f = 0.5; f <= lim + 0.5; f += 0.5) {
@@ -1369,8 +1414,8 @@ export class GameMap {
           if (solid(m)) hi = m; else lo = m;
         }
         const hx = ox + dx * hi, hz = oz + dz * hi;
-        const tf = this.tunnelFloor(hx, hz);
-        if (tf !== null && oy + dy * hi < tf + TUNNEL.crown) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
+        const tf = this.boreAt(hx, hz);
+        if (tf && oy + dy * hi < tf[0] + tf[1]) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
         const gx = this.ground(hx + 0.5, hz) - this.ground(hx - 0.5, hz), gz = this.ground(hx, hz + 0.5) - this.ground(hx, hz - 0.5);
         const nl = Math.hypot(gx, 1, gz);
         return { dist: hi, kind: "ground", nx: -gx / nl, ny: 1 / nl, nz: -gz / nl };
@@ -1692,7 +1737,7 @@ function inRing(ring: number[][], x: number, y: number): boolean {
 }
 
 /** A line (data coords) moved sideways by o metres (left is positive), with mitred corners. */
-export function offsetLine(p: number[][], o: number): number[][] {
+export function offsetLine(p: number[][], by: number | ((i: number) => number)): number[][] {
   const out: number[][] = [];
   for (let i = 0; i < p.length; i++) {
     const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)], c = p[i];
@@ -1701,7 +1746,7 @@ export function offsetLine(p: number[][], o: number): number[][] {
       const dx = v[0] - u[0], dy = v[1] - u[1], l = Math.hypot(dx, dy);
       if (l > 1e-6) { nx += -dy / l; ny += dx / l; }
     }
-    const nl = Math.hypot(nx, ny) || 1;
+    const nl = Math.hypot(nx, ny) || 1, o = typeof by === "number" ? by : by(i);
     out.push([c[0] + (nx / nl) * o, c[1] + (ny / nl) * o]);
   }
   return out;
