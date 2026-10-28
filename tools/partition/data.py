@@ -32,7 +32,7 @@ _FEATURES = {}
 
 
 # layers the passes can run without: the plots then follow the evidence alone
-OPTIONAL = ("parcels", "listed")
+OPTIONAL = ("parcels", "listed", "osm-detail")
 
 
 def _lonlat_bounds(g):

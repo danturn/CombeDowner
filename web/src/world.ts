@@ -423,7 +423,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
   // fall short in others, which showed as grass and hillside through the street
   const faced = !!D.sf && SURFACES;
-  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04];
+  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04];
   const nFaces = faced ? FACE_KINDS.reduce((t, kind) => t + Math.floor((D.sf![kind]?.length ?? 0) / 3), 0) : 0;
   const faceXYZ = new Float64Array(nFaces * 9), faceKind = new Uint8Array(nFaces);
   if (faced) {
@@ -960,6 +960,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const roadMats: Record<string, THREE.Material> = S.roadMats ??= {
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
     pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
+    // paths the map says are worn grass, bare earth or gravel
+    grass: flatMat("#b3ad78", 1, groundTex), dirt: flatMat("#86684a", 1, groundTex), gravel: flatMat("#b9b2a2", 1, groundTex),
   };
   // ---- bridges ---------------------------------------------------------------------------
   // A road or path on a bridge is drawn at its own height by strips; this builds what holds it
@@ -1500,7 +1502,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  own picks out roads that carry their own heights (bridges). */
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean, sf?: MapData["sf"]): Generator<void, THREE.Mesh[]> {
-    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), steel: new Geo(), front: new Geo(), drive: new Geo() };
+    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), steel: new Geo(), front: new Geo(), drive: new Geo(), grass: new Geo(), dirt: new Geo(), gravel: new Geo() };
     faceGeo = geo.bridge;
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
@@ -1510,10 +1512,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const part = rd.slice(k, k + 15).filter((r) => !faced || own?.(r)), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
       // follow it instead of standing out as a slab with a tall side
-      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
+      for (const [su, g] of [[undefined, geo.path], ["g", geo.grass], ["d", geo.dirt], ["v", geo.gravel]] as const)
+        strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian" && r.su === su), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, g, drawnGround);
       // a pedestrianised street is paved from wall to wall, like a pavement
       strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
-      strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
+      strips(veh.filter((r) => !KERBED.has(r.c)), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
       strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
@@ -1531,7 +1534,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (thin) mesh.userData.thin = true;
     };
     // (thin: footpaths and pavements, with their kerbs, which a square seen from far off leaves out)
-    for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k], false, k === "path" || k === "pave"); yield; }
+    for (const k of ["path", "service", "road", "pave", "grass", "dirt", "gravel"] as const) { add(geo[k].build(), roadMats[k], false, k !== "service" && k !== "road"); yield; }
     add(geo.bridge.build(), bridgeMat, true);
     add(geo.steel.build(), steelMat, true);
     add(geo.front.build(), S.pathMat!, false, true);
@@ -1543,10 +1546,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** A square's street and path faces: carriageways and pavements raised by their kerbs, and round
    *  each piece a face down to the ground beside it, a kerb or, where tall, Bath stone. Paths, front
    *  paths and drives lie on the ground as it's drawn, a hair above it, as their strips did. */
-  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge", Geo>) {
+  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "grass" | "dirt" | "gravel", Geo>) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
-    const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04 };
-    const onGround = (k: string) => k === "path" || k === "front" || k === "drive";
+    const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04 };
+    const onGround = (k: string) => LIFT[k] === 0.04;
     // (a point is in several triangles and outlines: the drawn ground under it is found once)
     const groundAt = new Float64Array(V.length / 3).fill(NaN);
     const at = (i: number, kind: string) => {
@@ -1558,7 +1561,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       return [x, V[3 * i + 2] - Z0 + LIFT[kind], z];
     };
-    for (const kind of ["road", "service", "pave", "path", "front", "drive"] as const) {
+    for (const kind of ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const) {
       const T = sf[kind] ?? [], g = geo[kind];
       for (let k = 0; k + 2 < T.length; k += 3) {
         if (k % 1200 === 1197) yield;
@@ -1951,6 +1954,31 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (!g) barGeos.set(k, (g = new Geo()));
     return g;
   };
+  // A crash barrier is a corrugated steel beam on posts, with air under it, not a slab.
+  const BEAM_PROFILE = [[0, 0], [0.07, 0.045], [0.155, 0], [0.24, 0.045], [0.31, 0]];
+  const crashBarrier = (l: Line, g: Geo, col: number[]) => {
+    const p = l.p, top = (i: number) => barrierTop(l, i, Z0);
+    let carried = 0;
+    for (let i = 0; i < p.length - 1; i++) {
+      const a = p[i], q = p[i + 1], ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
+      const ux = ex / len, uy = ey / len, nx = uy, ny = -ux;
+      const ta = top(i), tq = top(i + 1);
+      const at = (s: number, k: number, side: number) => {
+        const f = s / len, [h, d] = BEAM_PROFILE[k], z = ta + (tq - ta) * f - 0.31 + h;
+        return [a[0] + ex * f + nx * d * side, z, -(a[1] + ey * f + ny * d * side)];
+      };
+      for (let k = 0; k < BEAM_PROFILE.length - 1; k++) {
+        const shade = col.map((c) => c * (k % 2 ? 0.78 : 1.0)), out = [nx, 0, -ny];
+        facing(g, at(0, k, 1), at(len, k, 1), at(len, k + 1, 1), at(0, k + 1, 1), out, [0, 0], [1, 0], [1, 1], [0, 1], shade);
+      }
+      for (let s = (2 - carried) % 2; s <= len; s += 2) {
+        const f = s / len, x = a[0] + ex * f, y = a[1] + ey * f, foot = drawnGround(x, -y);
+        const hi = ta + (tq - ta) * f - 0.05;
+        if (Number.isFinite(foot) && hi > foot) boxAt(g, x, y, [ux, uy], 0.04, 0.04, foot - 0.1, hi, col.map((c) => c * 0.7));
+      }
+      carried = (carried + len) % 2;
+    }
+  };
   const barrierRun = (run: Line) => {
     // a point on top of the one before would leave the run's end open, a hollow shell showing as a flap
     const p: number[][] = [];
@@ -1959,6 +1987,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const l = { ...run, p };
     const spec = barrierLook(l.c), hh = barrierHeight(l), t = spec.t / 2;
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
+    if (spec.mat === "steel") { crashBarrier(l, g, spec.col); return; }
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);
     // each corner of the run is mitred, so the faces of one stretch meet the next's with no gap or seam
@@ -1986,7 +2015,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // wall or hedge there doesn't hang above the grass with a gap under it
       const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.1 : Infinity); });
       const tops = [barrierTop(l, i, Z0), barrierTop(l, i + 1, Z0)];
-      const P = (k: number, top: boolean) => [c4[k][0], top ? tops[k === 0 || k === 3 ? 0 : 1] : foot[k], -c4[k][1]];
+      const P = (k: number, top: boolean) => {
+        const tp = tops[k === 0 || k === 3 ? 0 : 1];
+        return [c4[k][0], top ? tp : foot[k], -c4[k][1]];
+      };
       const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
@@ -2026,6 +2058,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
     wood: new THREE.MeshLambertMaterial({ map: TX.boards(), vertexColors: true, side: THREE.DoubleSide }),
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),
+    steel: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
   };
   for (const [k, geo] of barGeos) {
     const g = geo.build();
@@ -2213,7 +2246,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
-    if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
     if (faced && !path && !r.bridge && ownRoads.has(r)) continue;            // drawn as faces
     const half = width(r) / 2, lift = path ? 0.04 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {

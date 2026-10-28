@@ -1,6 +1,7 @@
 """Street furniture and markings.
 
-From the map data: bus stops (with their real names), benches, bins, post boxes, bollards and
+From the map data: bus stops (with their real names, and a shelter where the map says there is one),
+benches, bins, post boxes (pillar, wall or lamp boxes, as mapped), red telephone boxes, bollards and
 information boards, each moved onto the pavement and turned to face the street.
 
 Generated: street name signs where streets meet, lamp posts, white centre lines, give-way lines
@@ -21,6 +22,27 @@ KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 RANK = {"primary": 5, "secondary": 4, "tertiary": 3, "unclassified": 2, "residential": 2, "living_street": 1}   # which gives way to which
 PAVE = 1.7
 CAR_COLOURS = 10   # the renderer picks from this many paints
+
+
+# Royal Mail's boxes as the game draws them: a pillar box (and any the map doesn't say), a box set in
+# a wall, and a small box on a post
+POST_BOX = {"wall": 1, "lamp": 2}
+# The red kiosks; the modern KX booths aren't drawn
+RED_BOOTHS = ("K2", "K6", "K8")
+
+
+def phone_boxes(osm):
+    """The red telephone boxes in OpenStreetMap's features (osm.geojson), as infrastructure-like
+    points. A kiosk kept as a book swap or a defibrillator's case still stands."""
+    out = []
+    for g, p in osm:
+        if p.get("booth") in RED_BOOTHS:
+            out.append((g if g.geom_type == "Point" else g.representative_point(), {"class": "telephone_box"}))
+    return out
+
+
+def tags_of(p):
+    return dict(t for t in p.get("source_tags") or [] if len(t) == 2)
 
 
 def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.Random, keyed=False):
@@ -65,18 +87,29 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         if not inside(x, y): continue
         c = p.get("class")
         kind = {"bus_stop": "bus", "bench": "bench", "waste_basket": "bin", "post_box": "postbox",
-                "bollard": "bollard", "information": "info"}.get(c)
+                "bollard": "bollard", "information": "info", "telephone_box": "phone"}.get(c)
         if not kind: continue
         near = nearest_street(x, y)
         if kind == "bus" and near and near[0] < 25:
             px, py, ang = place(x, y, near[1], 0.9)
             name = (p.get("names") or {}).get("primary") or "Bus stop"
-            shelter = 1 if (random.Random(zlib.crc32(f"{x:.1f},{y:.1f}".encode())) if keyed else rnd).random() < 0.5 else 0
+            said = tags_of(p).get("shelter")
+            if said in ("yes", "no"):
+                shelter = 1 if said == "yes" else 0
+            else:
+                shelter = 1 if (random.Random(zlib.crc32(f"{x:.1f},{y:.1f}".encode())) if keyed else rnd).random() < 0.5 else 0
             add("bus", px, py, ang, name, shelter)
             stops.append((px, py))
-        elif kind in ("postbox", "bin") and near and near[0] < 12:
-            px, py, ang = place(x, y, near[1], PAVE - 0.4)
-            add(kind, px, py, ang)
+        elif kind in ("postbox", "bin", "phone") and near and near[0] < 12:
+            box = POST_BOX.get(tags_of(p).get("post_box:type"), 0) if kind == "postbox" else 0
+            # a wall box is set in the wall at the back of the pavement, its slot facing the people
+            # walking along it; the others stand out on the pavement
+            back = 0.25 if box == 1 else 0.7 if kind == "phone" else 0.4
+            px, py, ang = place(x, y, near[1], PAVE - back)
+            if kind == "postbox":
+                add(kind, px, py, ang, box)
+            else:
+                add(kind, px, py, ang)
         else:
             if near and near[0] < 30:
                 dx, dy = _dir(lines[near[1]], x, y)

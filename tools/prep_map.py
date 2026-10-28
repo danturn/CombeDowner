@@ -2470,8 +2470,9 @@ else:
     if garden is not None and not garden.is_empty: scatter(garden, 22.0)
 
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
-from streets import street_furniture
-fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=True)
+from streets import phone_boxes, street_furniture
+phones = phone_boxes(L("osm")) if os.path.exists(f"{src_dir}/osm.geojson") else []
+fx, marks = street_furniture(roads, L("infrastructure") + phones, gate_list, RW, gelev, proj, inside, rnd, keyed=True)
 
 # ---- shop signs ----------------------------------------------------------------
 from shops import businesses, shop_signs
