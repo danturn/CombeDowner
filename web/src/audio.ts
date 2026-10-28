@@ -2532,14 +2532,6 @@ export function gullMuck(distance = 0, pan = 0, big = false) {
   for (let i = 0; i < 3; i++) burst(d, t + 0.04 + Math.random() * 0.08, 0.03, 0.15, 1500 + Math.random() * 1500, { q: 2 });
 }
 
-/** A two-fingered whistle to call friends over (signals.ts): up, then down, carrying a long way. */
-export function callWhistle(distance = 0, pan = 0) {
-  if (!ctx || distance > 300) return;
-  const t = now(), d = out(0.5 * fall(distance, 60), pan, distance, 0.3);
-  tone(d, t, 0.32, 0.4, 1900, 2900, "sine", 0.02);
-  tone(d, t + 0.4, 0.5, 0.4, 2900, 1700, "sine", 0.02);
-}
-
 /** The strange objects (oddments.ts): a low hum that bends out of tune, picking one up (up) or a socket taking it (set). */
 export function oddment(how: "up" | "set" | "drop", dist = 0, pan = 0) {
   if (!ctx) return;

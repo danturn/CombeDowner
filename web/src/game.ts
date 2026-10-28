@@ -135,7 +135,6 @@ import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate, stickSteer } from "./pl
 import { Quests, type Perch, type QuestWorld } from "./quests";
 import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
-import { Signals } from "./signals";
 import "./wanted";
 import { myRosettes } from "./trail";
 import "./race";
@@ -539,7 +538,7 @@ export class Game {
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   readonly night: NightOut;                        // jobs that lead into each other, and last orders
   readonly scars: Scars;                           // what losing has left about the town today
-  readonly signals: Signals;                       // flares, whistles and pencil lines on the map
+  private trailLines = new Map<string, number[]>();   // the treasure trail's bearing lines, on your own map alone
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
   private announcer = new Announcer();             // the station announcements (announce.ts)
   private joinNews = false;                         // the once-a-day showing of the Chronicle on joining stays up longer
@@ -706,22 +705,6 @@ export class Game {
     this.rideTricks = new RideTricks((text, secs) => this.toast(text, secs));
     this.player.paved = (x, z) => world.paved(x, z);
     this.player.lift = (x, z) => world.surface(x, z) - map.trueGround(x, z);
-    const net0 = this.net;
-    this.signals = new Signals({
-      scene: this.world.scene,
-      get selfId() { return net0.selfId; },
-      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive, driving: !!this.car }),
-      send: (data, to) => this.net.send("sg", data, to),
-      hear: (x, y, z) => this.hear(x, y, z),
-      nameOf: (id) => this.questWorld().nameOf(id),
-      colourOf: (id) => this.questWorld().colourOf(id),
-      feed: (html) => this.feed(html),
-      toast: (text, secs) => this.toast(text, secs),
-      flash: (x, y, z, colour, peak) => this.flash.go(x, y, z, colour, peak, { reach: 260 }),
-      fromMap: (cx, cy) => this.minimap.fromFull(cx, cy),
-      cursor: () => { const c = this.minimap.cursor; return c ? this.minimap.fromFullAt(c[0], c[1]) : undefined; },
-      mapOpen: () => !$("bigmap").hidden,
-    });
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
     const self = this;
     this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
@@ -878,7 +861,6 @@ export class Game {
     this.listen("bv", here((d, from) => this.invasion.onMessage(d, from)));
     this.listen("no", here((d, from) => this.night.onMessage(d, from)));
     this.listen("scr", here((d, from) => this.scars.onMessage(d, from)));
-    this.listen("sg", here((d, from) => this.signals.onMessage(d, from)));
     // the Chronicle's news day log for this room: everyone's merged, and the host shares what's new
     this.listen("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
     this.listen("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
@@ -896,7 +878,6 @@ export class Game {
       this.invasion.joined(id);
       this.night.joined(id);
       this.scars.joined(id);
-      this.signals.joined(id);
       const pl = Paper.outgoing();
       if (pl) this.net.send("pl", pl, id);
       if (this.isHost) { this.bonfire.joined(id); this.oddments.joined(id); }
@@ -913,7 +894,6 @@ export class Game {
       else if (away) this.notice(`<b>${esc(away.name)}</b> left the game, from ${esc(mapName(away.map))}`, false);
       delete this.scores[id];
       this.voice.drop(id);
-      this.signals.left(id);
       // whatever they were driving is left where it is
       const was = this.vehicles.of(id);
       if (was) { this.seatPerson(was.v, was.seat, ""); if (this.isHost) this.sendVehicles(); }
@@ -1514,6 +1494,13 @@ export class Game {
     if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").innerHTML = text; }
   }
 
+  private setTrailLine(key: string | null, pts: number[] | null) {
+    if (!key) this.trailLines.clear();
+    else if (pts) this.trailLines.set(key, pts);
+    else this.trailLines.delete(key);
+    this.minimap.pencil = [...this.trailLines.values()].map((p) => ({ pts: p, colour: "#ffd84a", dash: true }));
+  }
+
   /** A pad's button while the map's up: true if the map took it. */
   mapPad(b: number, down: boolean): boolean {
     if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
@@ -1522,7 +1509,6 @@ export class Game {
     if (is("map.mark")) { this.markUnderPointer(); return true; }
     if (is("map.close")) { this.toggleMap(); return true; }
     if (is("map.find")) { this.minimap.centreFull(this.player.pos.x, this.player.pos.z); return true; }
-    if (is("map.pencil")) { this.signals.togglePencil(); return true; }
     return false;
   }
 
@@ -3938,7 +3924,6 @@ export class Game {
     if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); this.showMine(); }
     Paper.photo(this.world.scene);
     this.scars.update(dt);
-    this.signals.update(dt);
     this.updateDaily();
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
@@ -4302,7 +4287,6 @@ export class Game {
     this.minimap.bus = this.busDriver.route();
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
-    this.minimap.pencil = this.signals.lines;
     this.minimap.routes = this.quests.routes();
     this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markerList();
@@ -4717,9 +4701,8 @@ export class Game {
       hear: (x, y, z) => this.hear(x, y, z),
       dust: (x, y, z, nx, nz) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 80) this.effects.dust(new THREE.Vector3(x, y, z), new THREE.Vector3(nx, 0, nz)); },
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
-      pencil: (key, pts) => this.signals.pencil(key, pts),
-      wipe: () => this.signals.wipe(),
-      flares: (n) => this.signals.allow(n),
+      pencil: (key, pts) => this.setTrailLine(key, pts),
+      wipe: () => this.setTrailLine(null, null),
       body: () => this.player,
       stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
       pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },
@@ -4759,7 +4742,6 @@ export class Game {
     this.balloons.dispose();
     this.quests.dispose();
     this.scars.dispose();
-    this.signals.dispose();
     this.invasion.dispose();
     this.night.dispose();
     this.daily.dispose();

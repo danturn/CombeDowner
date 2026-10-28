@@ -19,7 +19,6 @@
 // inside it already points there), so the minimap alone says which way to go.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
-import type { PencilLine } from "./signals";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
 import { drawMinePubs, drawMineUnder, type Mine } from "./yours";
@@ -381,6 +380,9 @@ function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: numb
 
 /** The point-of-interest marker, centred on (x, y), k pixels to the unit (about 11 units across):
  *  a dark disc ringed in bright cyan with a white star in it. */
+/** A line on the big map (scene x, z pairs); dashed: one the game pencilled in. */
+export interface PencilLine { pts: number[]; colour: string; dash?: boolean }
+
 /** Pencil lines, a little rough, as if drawn on the map by hand. */
 function drawPencil(g: CanvasRenderingContext2D, lines: PencilLine[], P: (x: number, z: number) => number[], dpr: number) {
   g.lineCap = g.lineJoin = "round";
@@ -540,7 +542,7 @@ export class Minimap {
   routes: RouteLine[] = [];
   /** The zones not open yet, the wall round the ones that are, and each zone's name (zones.ts), scene coordinates. */
   zones: ZoneView | null = null;
-  /** Lines drawn on the big map with the pencil (signals.ts). */
+  /** The trail's bearing lines on the big map. */
   pencil: PencilLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];

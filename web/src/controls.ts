@@ -14,7 +14,7 @@
 // weapons, the horn (at a car's wheel or a narrowboat's helm, where it's the bell), the map, the
 // radio, marking, the torch, binoculars and getting on or off a ride. Minigames whose play is quite
 // different (the tin lock, the easel, the bell chamber, the Climb, the tightrope, the Driving Test's
-// back seat, the big map and its pencil) have their own table here, and show it as a strip while
+// back seat, the big map) have their own table here, and show it as a strip while
 // you're in them (strip).
 //
 // Who decides what: nobody. It's only names and buttons; what a control does stays where it always was.
@@ -96,9 +96,6 @@ export const STREETS: Control[] = [
   { id: "job", name: "See the job's poster again", keys: ["KeyJ"], pad: B.touchpad, hold: true, touch: "Poster" },
   { id: "mark", name: "Mark the spot", keys: ["KeyG"], mouse: 1, pad: B.right, where: "foot" },
   { id: "pause", name: "Pause", keys: ["Escape"], pad: B.options, touch: "II" },
-  // held, as a tap of these d-pad buttons is the torch and the ride
-  { id: "flare", name: "Send up a flare", keys: ["KeyL"], pad: B.up, hold: true, touch: "Flare" },
-  { id: "whistle", name: "Whistle", keys: ["KeyH"], pad: B.down, hold: true, touch: "Whistle", where: "foot" },
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },
   // purposes that are another control's in their own place
   { id: "heave", name: "Heave (Push the Bus)", keys: ["Space"], via: "jump", say: { touch: "Heave" } },
@@ -159,7 +156,6 @@ export const PLACES: Record<string, Control[]> = {
     { id: "map.pan", name: "move", keys: ["KeyW", "KeyA", "KeyS", "KeyD"], say: STICK("Drag or WASD", "", "Drag") },
     { id: "map.zoom", name: "zoom", say: STICK("Wheel or +/−", `${PAD_NAME[B.r2]}/${PAD_NAME[B.l2]} or right stick`, "Pinch") },
     { id: "map.find", name: "find yourself", keys: ["Space", "KeyC"], pad: B.triangle },
-    { id: "map.pencil", name: "pencil", keys: ["KeyP"], pad: B.square, touch: "Pencil" },
     { id: "map.close", name: "close", keys: ["KeyM", "Escape"], pad: B.circle, say: { keys: "M or Esc", touch: "Close map" } },
   ],
   // a tin's combination lock: it has the keyboard to itself, and a pad drives it through the menu
