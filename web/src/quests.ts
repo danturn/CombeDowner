@@ -149,16 +149,14 @@ export interface QuestWorld {
   hear?(x: number, y: number, z: number): [number, number];
   /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
   dust?(x: number, y: number, z: number, nx: number, nz: number): void;
-  /** A line pencilled onto your own big map (scene x, z pairs), by key, or null to rub it out (signals.ts). */
+  /** A line pencilled onto your own big map (scene x, z pairs), by key, or null to rub it out. */
   pencil?(key: string, pts: number[] | null): void;
-  /** Rub out every pencil line on the map, everyone's. */
+  /** Rub out every pencil line on the map. */
   wipe?(): void;
   /** Your own body, for a job that moves you itself (The Climb's holds: theclimb.ts). */
   body?(): Player;
   /** Where the stick (a pad's or the touch screen's) is pushed, -1..1 each way, x to the right. */
   stick?(): { x: number; y: number };
-  /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
-  flares?(n: number | null): void;
   /** How someone else's body is drawn: leaning over sideways (radians), and holding a pole out, flailing or pushing. */
   pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push" | "shove" | "rope"): void;
   /** A vehicle of the job's own that anyone can get in and drive like any other (a learner car), added
