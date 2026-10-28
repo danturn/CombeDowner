@@ -55,7 +55,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
-  pavement or parked cars; flights of steps have a nosing on every tread and their handrails. Mapped
+  pavement or parked cars; flights of steps are solid treads climbing between the ground at each
+  end, turning at their landings, with handrails along them where the map has them. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.
@@ -317,7 +318,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
   Holburne, or failing that a big public building near a pedestrian street): an easel on the
   pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
-  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  starts it and takes you straight up into the gallery (anyone else goes in with E by him when they
+  get there), a long white room, lit the same day or night, with an easel each; once everyone's in (or E to get
   on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
   bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
   first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
@@ -329,12 +331,23 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
   with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
   covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
-  subject at all and how much effort went in, and each has their likes: one critic loves a blank
+  subject at all and how much effort went in. They also recognise what you drew: a sun, a bus,
+  a cat, a face, gulls, houses, trees, a stick figure, writing (draw the subject's own thing and it
+  counts towards being on the subject). And yes, the rude doodles: the critics have seen it all
+  before, your nan hasn't got her glasses on, and the Roman approves. They notice where the picture's
+  weight sits, a horizon, empty space, clashing or calm colours, mud, black outlines, hatching, ruled
+  or wobbly lines, how long you took and how often you pressed Undo, and two paintings that look
+  suspiciously alike. Each has their likes: one critic loves a blank
   canvas, another wants every square inch working. The critics' marks count double. Walk round while
   they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
-  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
+  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
+  (with a couple more for anything cheeky, none of them for restraint), and
   if the show averages enough it's a success and one of the strange objects turns up at the door. The
-  more of you there are, the more paintings there are to carry and the higher the bar.
+  critics confer for a moment, then the verdict comes up on a card: put it away (E, Esc, a click or a
+  tap) and stay to look round, with the marks and rosettes on the cards by the paintings. Leave by the
+  exit or with E by Mr Pettigrew, the curator, inside it, or stay until the gallery closes (a minute
+  and a half, counted down on your card), and you're back on the pavement outside, looking at the
+  door. The more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel

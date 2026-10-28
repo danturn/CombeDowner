@@ -626,44 +626,56 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
 /** A Belisha beacon's globe: amber, and bright enough to read at dusk. */
 const S_BEACON = new THREE.MeshBasicMaterial({ vertexColors: true, color: "#ffb02a" });
 
+/** Steepest a flight climbs (rise per metre along it), about a stair's usual pitch. */
+const STAIR_PITCH = 0.7;
+/** How far a handrail stands above the treads. */
+const RAIL_HEIGHT = 0.9;
+
 /**
- * Steps where the map says how they're built: a nosing across each tread (as many as it says, else
- * one for every 16 cm of rise), and handrails on posts along the sides it names. One merged mesh for
- * the square's steps.
+ * Steps where the map says how they're built: solid treads (as many as it says, else one for every
+ * 16 cm of rise) with a dark nosing, and handrails on posts along the sides it names. The flight
+ * climbs evenly between the ground at its two ends, but never dips into the ground on the way and
+ * never rises steeper than a stair, so where it meets a retaining wall it starts climbing early to
+ * reach the top rather than leaving its rails hanging off the wall. One merged mesh for the
+ * square's steps.
  */
 function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler, mat: THREE.Material): Generator<void> {
   const parts: Part[] = [];
-  const at = (x: number, y: number, lift: number) => new THREE.Vector3(x, map.ground(x, -y) + lift, -y);
+  const ground = (x: number, y: number) => map.ground(x, -y);
+  const v3 = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
   let n = 0;
   for (const r of map.d.rd) {
-    if (r.c !== "steps" || r.p.length < 2) continue;
+    // a flight on a span is the bridge's to draw, with its parapets
+    if (r.c !== "steps" || r.p.length < 2 || r.bridge) continue;
     if (++n % 20 === 0) yield;
-    const pts = r.p, len: number[] = [0];
-    for (let k = 1; k < pts.length; k++) len.push(len[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
-    const L = len[len.length - 1];
-    if (L < 1) continue;
-    const along = (s: number): [number, number, number, number] => {
-      let k = 1;
-      while (k < len.length - 1 && len[k] < s) k++;
-      const f = (s - len[k - 1]) / ((len[k] - len[k - 1]) || 1), a = pts[k - 1], b = pts[k];
-      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
-      return [a[0] + dx * f, a[1] + dy * f, dx / l, dy / l];
-    };
-    const w = r.w ?? 1.8, rise = Math.abs(map.ground(pts[0][0], -pts[0][1]) - map.ground(pts[pts.length - 1][0], -pts[pts.length - 1][1]));
-    const treads = r.sc ?? (rise > 0.3 ? Math.round(rise / 0.16) : 0);
-    for (let k = 0; k < Math.min(treads, 240); k++) {
-      const [x, y, ux, uy] = along(L * (k + 0.5) / treads), nx = -uy * w / 2 * 0.95, ny = ux * w / 2 * 0.95;
-      parts.push([beam(at(x + nx, y + ny, 0.06), at(x - nx, y - ny, 0.06), 0.05), "#3f3d38", 0, 0, 0]);
+    const lay = stairLayout(r, ground);
+    if (!lay) continue;
+    const { L, w, along, height } = lay;
+    const treads = r.sc ?? (lay.rise > 0.3 ? Math.round(lay.rise / 0.16) : 0);
+    const count = Math.min(treads, 240, Math.floor(L / 0.2));
+    for (let k = 0; k < count; k++) {
+      const s0 = L * k / count, s1 = L * (k + 1) / count, [x, y, ux, uy] = along((s0 + s1) / 2);
+      const top = Math.max(height(s0), height(s1)), nx = -uy * w / 2, ny = ux * w / 2;
+      const bottom = Math.min(ground(x, y), ground(x + nx, y + ny), ground(x - nx, y - ny), height(s0), height(s1)) - 0.15;
+      const turn = Math.atan2(ux, -uy), depth = s1 - s0 + 0.02;
+      parts.push([box(w * 0.95, top - bottom, depth).rotateY(turn), "#9b968b", x, (top + bottom) / 2, -y]);
+      // the nosing, on the tread's leading edge whichever way the flight climbs
+      const lead = height(s1) >= height(s0) ? s0 : s1, [ex, ey] = along(lead);
+      parts.push([box(w * 0.95, 0.05, 0.06).rotateY(turn), "#3f3d38", ex, top, -ey]);
     }
     const sides = (r.hr ?? 0) & 7;
     for (const [bit, off] of [[1, w / 2 - 0.08], [2, -w / 2 + 0.08], [4, 0]] as const) {
       if (!(sides & bit)) continue;
-      const posts = Math.max(2, Math.ceil(L / 2) + 1);
+      const posts = Math.max(2, Math.ceil(L / 1.5) + 1);
       let last: THREE.Vector3 | null = null;
       for (let k = 0; k < posts; k++) {
-        const [x, y, ux, uy] = along(0.15 + (L - 0.3) * k / (posts - 1)), px = x - uy * off, py = y + ux * off;
-        const foot = at(px, py, 0), top = at(px, py, 0.95);
-        parts.push([beam(foot, top, 0.045), "#2b2e31", 0, 0, 0]);
+        const s = 0.15 + (L - 0.3) * k / (posts - 1), [x, y, ux, uy] = along(s), px = x - uy * off, py = y + ux * off;
+        const foot = height(s);
+        // no rail inside the flight where it turns back on itself, nor where a bank or wall
+        // already stands higher than the rail beside the treads
+        if (off && (lay.inside(px, py, Math.abs(off) - 0.25) || ground(px, py) > foot + 0.5)) { last = null; continue; }
+        const top = v3(px, py, foot + RAIL_HEIGHT);
+        parts.push([beam(v3(px, py, foot), top, 0.045), "#2b2e31", 0, 0, 0]);
         if (last) parts.push([beam(last, top, 0.05), "#2b2e31", 0, 0, 0]);
         last = top;
       }
@@ -674,6 +686,48 @@ function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler, mat: 
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m);
   culler.add(m, 200);
+}
+
+/**
+ * A flight's line and heights: `along(s)` the point and heading s metres along it, `height(s)` the
+ * treads' level there, `inside(x, y, d)` whether a point is within d of the flight's own line.
+ */
+function stairLayout(r: { p: number[][]; w?: number }, ground: (x: number, y: number) => number) {
+  const pts = r.p, len: number[] = [0];
+  for (let k = 1; k < pts.length; k++) len.push(len[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const L = len[len.length - 1];
+  if (L < 1) return null;
+  const along = (s: number): [number, number, number, number] => {
+    let k = 1;
+    while (k < len.length - 1 && len[k] < s) k++;
+    const f = (s - len[k - 1]) / ((len[k] - len[k - 1]) || 1), a = pts[k - 1], b = pts[k];
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+    return [a[0] + dx * f, a[1] + dy * f, dx / l, dy / l];
+  };
+  const STEP = 0.25, N = Math.max(2, Math.ceil(L / STEP)), h: number[] = [];
+  const g0 = ground(pts[0][0], pts[0][1]), g1 = ground(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+  for (let i = 0; i <= N; i++) {
+    const s = L * i / N, [x, y] = along(s);
+    h.push(Math.max(g0 + (g1 - g0) * s / L, ground(x, y)));
+  }
+  // no steeper than a stair either way: a sudden rise (a wall's top under the line) is climbed to
+  // over the treads before it
+  const most = STAIR_PITCH * L / N;
+  for (let i = N - 1; i >= 0; i--) h[i] = Math.max(h[i], h[i + 1] - most);
+  for (let i = 1; i <= N; i++) h[i] = Math.max(h[i], h[i - 1] - most);
+  const height = (s: number) => {
+    const f = Math.min(N, Math.max(0, s / L * N)), i = Math.min(N - 1, Math.floor(f));
+    return h[i] + (h[i + 1] - h[i]) * (f - i);
+  };
+  const inside = (x: number, y: number, d: number) => {
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.min(1, Math.max(0, ((x - a[0]) * dx + (y - a[1]) * dy) / l2));
+      if (Math.hypot(a[0] + dx * t - x, a[1] + dy * t - y) < d) return true;
+    }
+    return false;
+  };
+  return { L, w: r.w ?? 1.8, along, height, inside, rise: Math.abs(g1 - g0) };
 }
 
 // ---- shop signs and landmarks -------------------------------------------------------------

@@ -286,6 +286,8 @@ export interface Job {
   perch?(dt: number, move: { x: number; y: number }): Perch | null;
   /** You're up in a space of the job's own (a crag in the sky), away from the streets, so the street's own HUD (the place name, the minimap) goes. */
   aloft?(): boolean;
+  /** You're in a room of the job's own, lit from within, so the daylight outside doesn't reach it (world.ts). */
+  indoors?(): boolean;
   /** Where losing or giving up the job leaves its mark on the town (scars.ts), if not its noticeboard. */
   scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
@@ -861,6 +863,7 @@ export class Quests {
   }
   /** Where the running job is holding you up, if it is. */
   aloft(): boolean { return !!this.job && !this.job.done && !!this.job.aloft?.(); }
+  indoors(): boolean { return !!this.job && !!this.job.indoors?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
   /** The job control: the running job's poster or clue again. */

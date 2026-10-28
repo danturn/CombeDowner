@@ -5,45 +5,50 @@
 // there, sky at the top and grass at the bottom, how many strokes went into it), that's boiled down
 // to a handful of traits (blank, a flood of one colour, a scribble, a rainbow, very detailed, a
 // landscape, on the subject or off it...) and each visitor has a taste for some of them and a bank
-// of lines for each. Two or three real critics come to every show, and their marks count double;
+// of lines for each. sight.ts looks closer, at the shapes (a sun, a bus, a cat, a rude doodle...),
+// the layout, the colour and the line, and the easel says how it was painted; those become traits
+// too, with more lines in critics-lines.ts. Paintings are also set against each other, for the
+// two that look alike and the odd one out. Two or three real critics come to every show, and their marks count double;
 // the rest are ordinary people with opinions.
 //
 // Who decides what: the host. Everything here is worked out on the host's screen from the
 // paintings and the show's seed, and the lines and marks go round as text (gallery.ts), so nobody's
 // rounding can make two screens disagree.
-import { C, COLOUR_NAMES, H, W } from "./easel";
+import { MORE } from "./critics-lines";
+import { C, COLOUR_NAMES, H, W, type How } from "./easel";
 import { rng, shuffled, type Rng } from "./quests";
+import { see, type Rude, type Sight, type Thing } from "./sight";
 
 // ---- the subjects ------------------------------------------------------------------------------
 
-/** A subject for the evening, with the colours anyone painting it would need. {place}, {pub} and
- *  {street} are filled in from the map. */
-export interface Theme { t: string; c: number[] }
+/** A subject for the evening, with the colours anyone painting it would need, and the things anyone
+ *  would expect to see in it. {place}, {pub} and {street} are filled in from the map. */
+export interface Theme { t: string; c: number[]; k?: (Thing | Rude)[] }
 export const THEMES: Theme[] = [
-  { t: "A seagull's revenge", c: [C.pale, C.grey, C.yellow, C.sky, C.black] },
-  { t: "Self-portrait as a Roman", c: [C.red, C.yellow, C.stone, C.pink, C.brown] },
-  { t: "{place} on a Tuesday", c: [C.green, C.sky, C.grey, C.stone, C.dkgreen] },
-  { t: "Sunrise over the rooftops", c: [C.orange, C.yellow, C.pink, C.red, C.stone, C.sky] },
-  { t: "Last orders at {pub}", c: [C.brown, C.yellow, C.black, C.orange, C.navy] },
-  { t: "The night bus home", c: [C.navy, C.black, C.yellow, C.red] },
+  { t: "A seagull's revenge", c: [C.pale, C.grey, C.yellow, C.sky, C.black], k: ["birds"] },
+  { t: "Self-portrait as a Roman", c: [C.red, C.yellow, C.stone, C.pink, C.brown], k: ["face", "figure"] },
+  { t: "{place} on a Tuesday", c: [C.green, C.sky, C.grey, C.stone, C.dkgreen], k: ["house", "tree", "bus"] },
+  { t: "Sunrise over the rooftops", c: [C.orange, C.yellow, C.pink, C.red, C.stone, C.sky], k: ["sun", "house"] },
+  { t: "Last orders at {pub}", c: [C.brown, C.yellow, C.black, C.orange, C.navy], k: ["writing", "figure", "face"] },
+  { t: "The night bus home", c: [C.navy, C.black, C.yellow, C.red], k: ["bus"] },
   { t: "Still life with chips", c: [C.yellow, C.brown, C.stone, C.red, C.pale] },
-  { t: "A cat who owns the street", c: [C.black, C.orange, C.grey, C.green, C.stone] },
+  { t: "A cat who owns the street", c: [C.black, C.orange, C.grey, C.green, C.stone], k: ["cat"] },
   { t: "The bin lorry, seven in the morning", c: [C.green, C.grey, C.orange, C.black, C.yellow] },
-  { t: "Rush hour on {street}", c: [C.red, C.grey, C.black, C.yellow, C.blue] },
+  { t: "Rush hour on {street}", c: [C.red, C.grey, C.black, C.yellow, C.blue], k: ["bus", "figure"] },
   { t: "The strange structure", c: [C.black, C.purple, C.navy, C.grey] },
-  { t: "A naughty boy legging it", c: [C.red, C.blue, C.grey, C.black, C.pink] },
-  { t: "Heatwave", c: [C.yellow, C.orange, C.red, C.sky] },
-  { t: "Rain. Again.", c: [C.grey, C.pale, C.navy, C.blue] },
-  { t: "Your nan's front room", c: [C.pink, C.brown, C.purple, C.stone, C.orange] },
-  { t: "The bus that never came", c: [C.red, C.grey, C.sky, C.black] },
-  { t: "Pigeons plotting something", c: [C.grey, C.pale, C.purple, C.black] },
-  { t: "A Roman in the bath", c: [C.sky, C.blue, C.stone, C.pink, C.red] },
+  { t: "A naughty boy legging it", c: [C.red, C.blue, C.grey, C.black, C.pink], k: ["figure"] },
+  { t: "Heatwave", c: [C.yellow, C.orange, C.red, C.sky], k: ["sun"] },
+  { t: "Rain. Again.", c: [C.grey, C.pale, C.navy, C.blue], k: ["figure", "house"] },
+  { t: "Your nan's front room", c: [C.pink, C.brown, C.purple, C.stone, C.orange], k: ["face", "cat"] },
+  { t: "The bus that never came", c: [C.red, C.grey, C.sky, C.black], k: ["bus", "figure"] },
+  { t: "Pigeons plotting something", c: [C.grey, C.pale, C.purple, C.black], k: ["birds"] },
+  { t: "A Roman in the bath", c: [C.sky, C.blue, C.stone, C.pink, C.red], k: ["face", "figure"] },
   { t: "Fireworks over {place}", c: [C.navy, C.black, C.red, C.yellow, C.pink, C.green] },
-  { t: "The prize marrow", c: [C.green, C.dkgreen, C.brown, C.yellow] },
-  { t: "Portrait of whoever's on your left", c: [C.pink, C.stone, C.brown, C.black] },
+  { t: "The prize marrow", c: [C.green, C.dkgreen, C.brown, C.yellow], k: ["phallic", "penis"] },
+  { t: "Portrait of whoever's on your left", c: [C.pink, C.stone, C.brown, C.black], k: ["face", "figure"] },
   { t: "The last biscuit in the tin", c: [C.brown, C.stone, C.blue, C.red] },
-  { t: "Swans having a row", c: [C.pale, C.blue, C.sky, C.orange, C.black] },
-  { t: "Hot air balloons at breakfast", c: [C.sky, C.red, C.yellow, C.blue, C.green] },
+  { t: "Swans having a row", c: [C.pale, C.blue, C.sky, C.orange, C.black], k: ["birds"] },
+  { t: "Hot air balloons at breakfast", c: [C.sky, C.red, C.yellow, C.blue, C.green], k: ["sun"] },
 ];
 
 // ---- looking at a painting ----------------------------------------------------------------------
@@ -71,13 +76,17 @@ export interface Look {
   /** Warm colours less cool ones, as a share of what's painted, -1..1. */
   warm: number;
   strokes: number;
+  /** The shapes, layout and line in it (sight.ts). */
+  s: Sight;
+  /** How it was painted, if the painter's easel said. */
+  how?: How;
 }
 
 const WARM = [C.red, C.orange, C.yellow, C.stone, C.brown, C.pink];
 const COOL = [C.blue, C.sky, C.navy, C.green, C.dkgreen, C.purple];
 const LUM = [1, 0, 0.5, 0.77, 0.55, 0.68, 0.88, 0.75, 0.35, 0.35, 0.7, 0.82, 0.5, 0.15, 0.4, 0.78];
 
-export function analyse(px: Uint8Array, strokes: number, theme: Theme): Look {
+export function analyse(px: Uint8Array, strokes: number, theme: Theme, how?: How): Look {
   const N = W * H, count = new Array(16).fill(0);
   let lum = 0;
   for (let i = 0; i < N; i++) { count[px[i]]++; lum += LUM[px[i]]; }
@@ -135,17 +144,40 @@ export function analyse(px: Uint8Array, strokes: number, theme: Theme): Look {
   return {
     cover, hist, colours, dom, domShare, second, edges, blobs, specks, big, sym,
     theme: painted ? inTheme / painted : 0, themeHits, sky, ground,
-    dark: 1 - lum / N, warm: painted ? (warmN - coolN) / painted : 0, strokes,
+    dark: 1 - lum / N, warm: painted ? (warmN - coolN) / painted : 0, strokes, s: see(px), how,
   };
 }
 
 export type Trait = "blank" | "sparse" | "flood" | "mono" | "rainbow" | "scribble" | "speckled" | "detailed" | "landscape"
-  | "symmetric" | "dark" | "onTheme" | "offTheme" | "bold" | "warm" | "cool" | "flag" | "stone" | "grey" | "lazy" | "busy" | "corner";
+  | "symmetric" | "dark" | "onTheme" | "offTheme" | "bold" | "warm" | "cool" | "flag" | "stone" | "grey" | "lazy" | "busy" | "corner"
+  | Thing | Rude | "spotted" | "rudeWith"
+  | "centred" | "thirds" | "lopsided" | "space" | "horizon" | "subject"
+  | "complement" | "analogous" | "warmcool" | "contrast" | "flat" | "muddy"
+  | "outlined" | "hatched" | "ruled" | "wobbly" | "sure"
+  | "slow" | "quick" | "fiddly" | "nerve" | "bigBrush" | "fineBrush" | "ground"
+  | "twin" | "oddOne";
+
+export const RUDE: Rude[] = ["finale", "penis", "boobs", "bum", "phallic"];
+const THINGS: Thing[] = ["bus", "cat", "face", "house", "sun", "tree", "birds", "figure", "writing"];
+/** How the visitors refer to each thing they recognise. */
+export const THING_WORDS: Record<Thing | Rude, string> = {
+  sun: "the sun", bus: "the bus", cat: "the cat", face: "the face", birds: "the gulls", house: "the house", tree: "the tree",
+  figure: "the little man", writing: "the writing", penis: "the rocket", boobs: "the pair", bum: "the bottom", finale: "the fireworks", phallic: "the rocket",
+};
+
+const ITEM_WORDS: Record<Thing, string> = {
+  sun: "sun", bus: "bus", cat: "cat", face: "face", birds: "gulls", house: "house", tree: "tree", figure: "little man", writing: "writing",
+};
 
 /** What anyone would notice about it, most striking first. */
 export function traits(l: Look, theme: Theme): Trait[] {
-  const t: Trait[] = [];
-  if (l.cover < 0.012) return ["blank"];
+  const t: Trait[] = [], s = l.s;
+  const seen = THINGS.filter((k) => s.things[k]), rude = RUDE.filter((k) => s.rude[k]);
+  if (l.cover < 0.012 && !seen.length && !rude.length) return ["blank"];
+  t.push(...rude);
+  if (rude.some((k) => k !== "phallic") && seen.length) t.push("rudeWith");
+  if (theme.k?.some((k) => s.things[k as Thing] || s.rude[k as Rude])) t.push("spotted");
+  t.push(...seen);
   if (l.cover > 0.85 && l.domShare > 0.9) t.push("flood");
   if (l.cover < 0.08) t.push("sparse");
   if (l.cover < 0.2 && l.blobs <= 3) t.push("corner");
@@ -157,7 +189,7 @@ export function traits(l: Look, theme: Theme): Trait[] {
   if (l.specks > 260) t.push("speckled");
   if (l.blobs >= 22 && l.colours >= 5 && l.cover > 0.4) t.push("detailed");
   if (l.sky && l.ground) t.push("landscape");
-  if (l.theme > 0.55 && l.themeHits >= Math.min(3, theme.c.length - 1) && l.cover > 0.15) t.push("onTheme");
+  if (t.includes("spotted") || l.theme > 0.55 && l.themeHits >= Math.min(3, theme.c.length - 1) && l.cover > 0.15) t.push("onTheme");
   else if (l.theme < 0.2 && l.cover > 0.1) t.push("offTheme");
   if (l.sym > 0.82 && l.cover > 0.1) t.push("symmetric");
   if (l.big > 0.35 && !t.includes("flood")) t.push("bold");
@@ -166,8 +198,45 @@ export function traits(l: Look, theme: Theme): Trait[] {
   if ((l.hist[C.grey] + l.hist[C.pale] + l.hist[C.black]) / Math.max(0.01, l.cover) > 0.7 && l.cover > 0.1 && !t.includes("dark")) t.push("grey");
   if (l.warm > 0.6 && l.cover > 0.2) t.push("warm");
   else if (l.warm < -0.6 && l.cover > 0.2) t.push("cool");
+  // the layout
+  const near = (a: number, b: number, d: number) => Math.abs(a - b) <= d;
+  const [sx, sy] = s.subject ?? [s.wx, s.wy];
+  if (l.cover > 0.03 && !t.includes("flood")) {
+    if (s.subject) t.push("subject");
+    if ((near(sx, 1 / 3, 0.07) || near(sx, 2 / 3, 0.07)) && (near(sy, 1 / 3, 0.08) || near(sy, 2 / 3, 0.08))) t.push("thirds");
+    else if (near(s.wx, 0.5, 0.07) && near(s.wy, 0.5, 0.09)) t.push("centred");
+    else if (!near(s.wx, 0.5, 0.2) || !near(s.wy, 0.5, 0.24)) t.push("lopsided");
+    if (l.cover > 0.1 && l.cover < 0.6 && s.space >= 0.35) t.push("space");
+  }
+  if (s.horizon >= 0.2 && s.horizon <= 0.8) t.push("horizon");
+  // the colour
+  if (!t.includes("flood")) {
+    if (s.complement) t.push("complement");
+    else if (s.analogous) t.push("analogous");
+    if (s.warmcool && !s.complement) t.push("warmcool");
+    if (s.muddy) t.push("muddy");
+    else if (s.range >= 0.8 && l.cover > 0.1) t.push("contrast");
+    else if (s.range <= 0.25 && l.cover > 0.3) t.push("flat");
+  }
+  // the line
+  if (s.outlined) t.push("outlined");
+  if (s.hatched) t.push("hatched");
+  const h = l.how;
+  if (s.straight >= 3 || (h && h.ruled >= 40 && l.strokes >= 5)) t.push("ruled");
+  if (h && h.wobble >= 14) t.push("wobbly");
+  else if (h && h.wobble > 0 && h.wobble <= 5) t.push("sure");
+  // how it was painted
   if (l.strokes <= 5) t.push("lazy");
   if (l.strokes >= 90) t.push("busy");
+  if (h) {
+    if (h.secs >= 80) t.push("slow");
+    else if (h.secs > 0 && h.secs <= 25 && l.strokes <= 15) t.push("quick");
+    if (h.undos >= 10) t.push("fiddly");
+    else if (h.undos === 0 && l.strokes >= 25) t.push("nerve");
+    if (h.big >= 60 && l.strokes >= 4) t.push("bigBrush");
+    else if (h.fine >= 60 && l.strokes >= 15) t.push("fineBrush");
+    if (h.ground) t.push("ground");
+  }
   return t;
 }
 
@@ -179,6 +248,8 @@ export interface Dress { coat: string; hair?: string; wear?: string; small?: boo
 interface Feat {
   l: Look; t: Set<Trait>;
   cov: number; colourful: number; detail: number; theme: number; effort: number; scrib: number;
+  /** What they'd call the thing they recognised in it, and whose painting it looks like. */
+  thing: string; item: string; other: string;
 }
 const has = (f: Feat, ...t: Trait[]) => t.some((k) => f.t.has(k));
 
@@ -194,6 +265,34 @@ export interface Visitor {
   notice: Trait[];
   lines: Partial<Record<Trait | "love" | "meh" | "hate", string[]>>;
 }
+
+/** How much each visitor's mark moves for what they notice. Rude doodles move it a little either
+ *  way and roughly cancel out over a room, so they're a laugh rather than a way past the bar. */
+const LIKES: Record<string, Partial<Record<Trait, number>>> = {
+  "Sir Jeremy Plinth": { penis: -1.2, boobs: -0.8, bum: -0.8, finale: -0.5, face: 0.8, house: 0.6, tree: 0.5, sun: 0.3, cat: 0.4, bus: 0.4, birds: 0.3, figure: 0.2, writing: -0.3,
+    spotted: 0.8, thirds: 0.6, horizon: 0.4, hatched: 0.4, muddy: -0.8, wobbly: -0.6, sure: 0.5, slow: 0.5, quick: -0.8, twin: -0.8, outlined: -0.3, fineBrush: 0.4 },
+  "Octavia Vane": { penis: 0.6, boobs: 0.3, finale: 0.2, space: 1, subject: 0.6, lopsided: 0.6, centred: -0.6, thirds: -0.5, flat: 0.5, writing: 0.6, house: -0.8, sun: -0.8,
+    twin: -1.2, oddOne: 1.2, quick: 0.6, slow: -0.4, bigBrush: 0.5, fiddly: 0.3, wobbly: 0.3, outlined: -0.4, face: -0.4, spotted: -0.4 },
+  "Dr Rupert Varnish": { complement: 1, analogous: 0.6, warmcool: 0.8, contrast: 0.6, flat: -0.8, muddy: -1.5, sun: 0.5, bus: 0.3, outlined: -0.4, ground: 0.4, boobs: 0.2, twin: -0.5, oddOne: 0.4 },
+  "Lady Fenella Gouache": { penis: -1.2, boobs: -0.6, bum: -0.5, finale: -0.8, centred: 0.6, lopsided: -0.6, house: 0.6, cat: 0.5, space: 0.4, muddy: -0.6, twin: -0.6, oddOne: 0.6, subject: 0.5 },
+  "Pauline (a nan)": { cat: 0.8, face: 0.6, sun: 0.5, house: 0.5, birds: 0.2, slow: 0.4, spotted: 0.3 },
+  "Dave (a builder)": { penis: 0.6, boobs: 0.3, bum: 0.4, finale: -0.2, house: 1, ruled: 0.8, wobbly: -0.8, bus: 0.4, horizon: 0.4, bigBrush: 0.3, ground: 0.5, quick: -0.3 },
+  "Jasper (an art student)": { penis: 1.2, boobs: 0.8, bum: 0.8, finale: 0.6, phallic: 0.3, writing: 0.8, outlined: -0.6, hatched: -0.4, wobbly: 0.6, quick: 0.6, slow: -0.4,
+    twin: -0.6, oddOne: 1, centred: -0.5, space: 0.6, spotted: -0.5 },
+  "Gloria (on a coach trip)": { penis: -0.6, boobs: -0.4, finale: -0.3, house: 0.8, bus: 0.6, sun: 0.6, birds: 0.3, horizon: 0.4, spotted: 0.6 },
+  "Alfie (aged 7)": { penis: 1.5, bum: 1.5, boobs: 0.5, finale: 1, phallic: 1.5, cat: 1.2, sun: 0.6, figure: 0.8, bus: 0.8, house: 0.4, tree: 0.4, quick: 0.3 },
+  "Kyle (a Flag Lad)": { penis: 1.5, boobs: 1.2, bum: 0.6, finale: 1, bus: 0.8, writing: 0.3 },
+  "Gareth (from the Council)": { penis: -1.5, boobs: -1, bum: -1, finale: -1, phallic: -0.3, house: -0.5, writing: -0.8, ruled: 0.8, twin: -0.4, space: -0.4, muddy: 0.4 },
+  "Marcus (a Roman re-enactor)": { penis: 1.5, boobs: 0.6, bum: 0.8, finale: 1, phallic: 0.8, face: 0.6, house: 0.4, figure: 0.4, writing: 0.6, ruled: 0.6 },
+  "A seagull": { birds: 2, sun: 0.4 },
+};
+const liking = (v: Visitor, f: Feat) => {
+  const l = LIKES[v.name];
+  if (!l) return 0;
+  let d = 0;
+  for (const t of f.t) d += l[t] ?? 0;
+  return Math.max(-2.5, Math.min(2.5, d));
+};
 
 /** The art critics: two come to every show, three to a big one. */
 export const CRITICS: Visitor[] = [
@@ -443,12 +542,16 @@ export const PUNTERS: Visitor[] = [
 ];
 
 const ALL = [...CRITICS, ...PUNTERS];
+for (const v of ALL) for (const [k, more] of Object.entries(MORE[v.name] ?? {})) {
+  const key = k as keyof Visitor["lines"];
+  v.lines[key] = [...(v.lines[key] ?? []), ...more];
+}
 export const visitor = (i: number) => ALL[i];
 export const visitorIndex = (v: Visitor) => ALL.indexOf(v);
 
 // ---- a show -------------------------------------------------------------------------------------
 
-export interface Painting { id: string; name: string; px: Uint8Array; strokes: number }
+export interface Painting { id: string; name: string; px: Uint8Array; strokes: number; how?: How }
 export interface Remark { at: number; v: number; p: number; text: string; mark: number }
 export interface Show {
   /** Who comes, as numbers into the cast (visitor()); the critics first. */
@@ -460,6 +563,8 @@ export interface Show {
   marks: number[]; critics: number[]; punters: number[];
   /** Each painting's marks from everyone, for the prizes. */
   spread: number[][];
+  /** The rude doodles each painting was found to have, for the prizes. */
+  rude: Rude[][];
 }
 
 /** Which critics come tonight, from the show's seed and how many are painting. */
@@ -485,15 +590,21 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
   const punterCount = Math.min(PUNTERS.length, 3 + n);
   const punters = shuffled(r, PUNTERS.map((_, i) => CRITICS.length + i)).slice(0, punterCount);
   const cast = [...critics, ...punters];
-  const looks = paintings.map((p) => analyse(p.px, p.strokes, theme));
-  const feats: Feat[] = looks.map((l) => {
+  const looks = paintings.map((p) => analyse(p.px, p.strokes, theme, p.how));
+  const kin = alike(paintings.map((p) => p.px));
+  const feats: Feat[] = looks.map((l, i) => {
     const t = new Set(traits(l, theme));
+    if (kin.twin[i] >= 0) t.add("twin");
+    if (kin.odd === i) t.add("oddOne");
+    const mine = theme.k?.find((k) => l.s.things[k as Thing] || l.s.rude[k as Rude]);
+    const any = mine ?? THINGS.find((k) => l.s.things[k]);
     return {
+      thing: any ? THING_WORDS[any] : "that", item: ITEM_WORDS[THINGS.find((k) => l.s.things[k]) ?? "house"], other: kin.twin[i] >= 0 ? paintings[kin.twin[i]].name : "the next one",
       l, t,
       cov: l.cover < 0.6 ? l.cover / 0.6 : 1,
       colourful: Math.min(1, Math.max(0, l.colours - 1) / 6),
       detail: Math.min(1, l.blobs / 26),
-      theme: Math.min(1, 0.6 * l.theme + 0.4 * (l.themeHits / Math.max(1, Math.min(4, theme.c.length)))) * Math.min(1, l.cover * 4),
+      theme: Math.min(1, (0.6 * l.theme + 0.4 * (l.themeHits / Math.max(1, Math.min(4, theme.c.length)))) * Math.min(1, l.cover * 4) + (mine ? 0.35 : 0)),
       effort: Math.min(1, l.strokes / 40),
       scrib: t.has("scribble") ? 1 : 0,
     };
@@ -524,9 +635,9 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
     free[k] = at + SPEAK + 0.4;
     where[k] = [wx, wz];
     const v = ALL[cast[k]], f = feats[p], pr = rng(seed ^ (k * 7919 + p * 104729));
-    const mark = Math.round(clamp(v.mark(f) + (pr() - 0.5) * 1.2) * 2) / 2;
+    const mark = Math.round(clamp(v.mark(f) + liking(v, f) + (pr() - 0.5) * 1.2) * 2) / 2;
     const text = say(v, f, mark, pr, used, {
-      name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second],
+      name: paintings[p].name, theme: themeText, colour: COLOUR_NAMES[f.l.dom], second: COLOUR_NAMES[f.l.second], thing: f.thing, item: f.item, other: f.other,
     });
     remarks.push({ at, v: cast[k], p, text, mark });
     (v.critic ? critic : punter)[p].push(mark);
@@ -536,7 +647,46 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
   remarks.sort((a, b) => a.at - b.at);
   const mean = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
   const dur = Math.max(...free, ...busy) + 1.5;
-  return { cast, remarks, dur, marks: marks.map(mean), critics: critic.map(mean), punters: punter.map(mean), spread };
+  return { cast, remarks, dur, marks: marks.map(mean), critics: critic.map(mean), punters: punter.map(mean), spread, rude: looks.map((l) => RUDE.filter((k) => l.s.rude[k])) };
+}
+
+/** Which paintings look like each other (the dominant colour of each patch of a coarse grid, and the
+ *  mix of colours), and which one looks least like any of the rest. */
+export function alike(pxs: Uint8Array[]): { twin: number[]; odd: number } {
+  const GX = 12, GY = 9;
+  const sig = pxs.map((px) => {
+    const cells: number[] = [], hist = new Array(16).fill(0);
+    for (let gy = 0; gy < GY; gy++) for (let gx = 0; gx < GX; gx++) {
+      const c = new Array(16).fill(0);
+      for (let y = Math.floor((gy * H) / GY); y < Math.floor(((gy + 1) * H) / GY); y += 2)
+        for (let x = Math.floor((gx * W) / GX); x < Math.floor(((gx + 1) * W) / GX); x += 2) c[px[y * W + x]]++;
+      cells.push(c.indexOf(Math.max(...c)));
+      c.forEach((n, k) => (hist[k] += n));
+    }
+    const tot = hist.reduce((a, b) => a + b, 0);
+    return { cells, hist: hist.map((n) => n / tot), blank: hist[C.white] / tot > 0.985 };
+  });
+  const sim = (a: typeof sig[0], b: typeof sig[0]) => {
+    let same = 0, both = 0;
+    a.cells.forEach((c, i) => { if (c !== C.white || b.cells[i] !== C.white) { both++; if (c === b.cells[i]) same++; } });
+    const h = a.hist.reduce((s, v, k) => s + Math.min(v, b.hist[k]), 0);
+    return 0.5 * (both ? same / both : 1) + 0.5 * h;
+  };
+  const n = pxs.length, twin = new Array(n).fill(-1), S = pxs.map(() => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (i !== j) S[i][j] = sim(sig[i], sig[j]);
+  for (let i = 0; i < n; i++) {
+    if (sig[i].blank) continue;
+    let best = -1;
+    for (let j = 0; j < n; j++) if (j !== i && !sig[j].blank && S[i][j] >= 0.78 && (best < 0 || S[i][j] > S[i][best])) best = j;
+    twin[i] = best;
+  }
+  let odd = -1;
+  if (n >= 3) {
+    const far = S.map((row, i) => row.reduce((s, v, j) => s + (j === i ? 0 : 1 - v), 0) / (n - 1));
+    const order = far.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+    if (order[0][0] >= 0.55 && order[0][0] >= 1.25 * order[1][0] && !sig[order[0][1]].blank) odd = order[0][1];
+  }
+  return { twin, odd };
 }
 
 /** What a visitor says about a painting: the first thing they'd notice that they've a line for and
@@ -544,14 +694,30 @@ export function stageShow(paintings: Painting[], theme: Theme, themeText: string
 function say(v: Visitor, f: Feat, mark: number, r: Rng, used: Set<string>, o: Record<string, string>): string {
   const pickFrom = (key: string, list: string[] | undefined) => {
     if (!list?.length) return null;
-    const fresh = list.map((s, i) => [s, `${v.name}:${key}:${i}`] as const).filter(([, id]) => !used.has(id));
+    const fresh = list.filter((s) => !used.has(`${v.name}:${s}`));
     if (!fresh.length) return null;
-    const [s, id] = fresh[Math.floor(r() * fresh.length)];
-    used.add(id);
+    const s = fresh[Math.floor(r() * fresh.length)];
+    used.add(`${v.name}:${s}`);
+    used.add(`${v.name}#${key}`);
     return fmt(s, o);
   };
-  // now and then they skip the trait and just say what they think
-  if (r() > 0.25) for (const t of v.notice) if (f.t.has(t)) { const s = pickFrom(t, v.lines[t]); if (s) return s; }
+  // a rude doodle always gets a reaction, whatever else they'd have said
+  const rude = [...RUDE, "rudeWith" as Trait].filter((t) => f.t.has(t) && v.lines[t]?.some((s) => !used.has(`${v.name}:${s}`)));
+  if (rude.length) {
+    const k = rude[Math.floor(r() * Math.min(2, rude.length))];
+    const s = pickFrom(k, v.lines[k]);
+    if (s) return s;
+  }
+  // otherwise one of the first few things they'd notice, and never the same kind of remark twice
+  if (r() > 0.15) {
+    const rank = (t: Trait) => { const i = v.notice.indexOf(t); return i >= 0 ? i : 20 + [...f.t].indexOf(t); };
+    const can = [...f.t].filter((t) => !RUDE.includes(t as Rude) && v.lines[t] && !used.has(`${v.name}#${t}`)).sort((a, b) => rank(a) - rank(b));
+    for (let tries = 0; tries < 3 && can.length; tries++) {
+      const i = Math.floor(r() ** 1.5 * Math.min(3, can.length)), t = can.splice(i, 1)[0];
+      const s = pickFrom(t, v.lines[t]);
+      if (s) return s;
+    }
+  }
   const mood = mark >= 7 ? "love" : mark >= 4.5 ? "meh" : "hate";
   return pickFrom(mood, v.lines[mood]) ?? pickFrom("meh", v.lines.meh) ?? fmt(v.lines[mood]?.[0] ?? "Hmm.", o);
 }
@@ -568,7 +734,9 @@ export const barFor = (painters: number) => Math.min(6.5, 5.5 + 0.15 * (painters
 export function verdict(show: Show, paintings: Painting[], votes: number[], seed: number): Verdict {
   const n = paintings.length, r = rng(seed ^ 0xbeef);
   const top = Math.max(0, ...votes);
-  const final = show.marks.map((m, p) => Math.min(10, m + (top > 0 && votes[p] === top ? 0.5 : 0)));
+  const rude = (p: number) => show.rude?.[p] ?? [];
+  // the flourish earns a little something, for the nerve
+  const final = show.marks.map((m, p) => Math.min(10, m + (top > 0 && votes[p] === top ? 0.5 : 0) + (rude(p).includes("finale") ? 0.3 : 0)));
   const best = (a: number[]) => a.reduce((b, x, i) => (x > a[b] ? i : b), 0);
   const prizes: Prize[] = [];
   const bis = best(final);
@@ -582,10 +750,19 @@ export function verdict(show: Show, paintings: Painting[], votes: number[], seed
     const sp = show.spread.map((a) => (a.length ? Math.max(...a) - Math.min(...a) : 0)), d = best(sp);
     if (sp[d] >= 5) prizes.push({ title: "Most Divisive", p: d, why: `marks from ${Math.min(...show.spread[d])} to ${Math.max(...show.spread[d])}` });
   }
+  const cheeky = paintings.map((_, p) => p).filter((p) => rude(p).some((k) => k !== "phallic"));
+  if (cheeky.length) {
+    const p = cheeky[Math.floor(r() * cheeky.length)];
+    prizes.push({ title: "The Banksy Award for Restraint", p, why: "not awarded" });
+    const fin = cheeky.find((q) => rude(q).includes("finale"));
+    if (fin !== undefined) prizes.push({ title: "The Grand Finale Award", p: fin, why: "a third of a mark for the flourish, reluctantly" });
+    else prizes.push({ title: "The Donald McGill Medal for Seaside Postcards", p: cheeky[cheeky.length - 1], why: "the committee is not discussing it" });
+  }
   const score = final.reduce((s, x) => s + x, 0) / Math.max(1, n);
   const bar = barFor(n), won = score >= bar;
   const lines = won
     ? score >= bar + 1.5 ? ["A TRIUMPH ON CANVAS", "CRITICS SPEECHLESS, THEN VERY MUCH NOT", "THE ART WORLD HAS A NEW SENSATION"] : ["CRITICS GRUDGINGLY IMPRESSED", "NOT BAD AT ALL, SAYS EVERYONE, SURPRISED", "LOCAL ARTISTS DO FINE, ACTUALLY"]
     : score < bar - 2 ? ["GALLERY APOLOGISES", "EXHIBITION CLOSED, CURATOR LIES DOWN", "\"MY EYES,\" SAYS CRITIC"] : ["SO CLOSE, SAY CRITICS, KINDLY", "NEARLY ART, SAYS ROW OF CRITICS", "SHOW FALLS JUST SHORT OF THE WALL"];
+  if (cheeky.length) lines.push("CRITIC SEES ROCKET, INSISTS IT IS A ROCKET", "COUNCIL TAKES NOTES AT PRIVATE VIEW", "NAN 'DIDN'T HAVE HER GLASSES ON'");
   return { final, votes, prizes, score, bar, won, headline: lines[Math.floor(r() * lines.length)] };
 }
