@@ -29,10 +29,26 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
   saw it. Every deck is solid from parapet to parapet, however narrow the path along it, and the
   parapets run unbroken round its bends and where its pieces join, stopping only where another
-  deck runs right alongside. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
+  deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
+  pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the
+  road runs on under it unbroken; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
-  under it. A short bridge is all one or the other, and no pier stands in the way.
+  under it. A short bridge is all one or the other, and no pier stands in the way. A road the map
+  data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
+  face, with the ground and the lanes over it left as they are and one headwall over the
+  openings where two bores come out side by side. A tunnel cars drive through is a modern
+  concrete box, with square openings under a flat lintel, a pier between the bores and concrete
+  wing walls, lorry-high inside: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
+  A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
+  Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. Each bore is as wide as the road or path going in, wall
+  to wall, with its pavements carried through where it has them. The road runs level into each
+  opening along a cutting dug to its floor, with wing walls holding up its sides where the hill
+  beside it stands high or rises steeply, their copings sloping down the bank, with no tree or
+  wood overhanging the portal, the way out in front of it or the cutting's steep sides, and a stream through a culvert goes in under the hill. Out of town a dual
+  carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so
+  each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
+  wall rather than in one slope of road.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions; bus shelters only at the stops that have one; post
@@ -301,7 +317,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
   Holburne, or failing that a big public building near a pedestrian street): an easel on the
   pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
-  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  starts it and takes you straight up into the gallery (anyone else goes in with E by him when they
+  get there), a long white room, lit the same day or night, with an easel each; once everyone's in (or E to get
   on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
   bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
   first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
@@ -325,7 +342,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
   (with a couple more for anything cheeky, none of them for restraint), and
   if the show averages enough it's a success and one of the strange objects turns up at the door. The
-  more of you there are, the more paintings there are to carry and the higher the bar.
+  critics confer for a moment, then the verdict comes up on a card: put it away (E, Esc, a click or a
+  tap) and stay to look round, with the marks and rosettes on the cards by the paintings. Leave by the
+  exit or with E by Mr Pettigrew, the curator, inside it, or stay until the gallery closes (a minute
+  and a half, counted down on your card), and you're back on the pavement outside, looking at the
+  door. The more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel
@@ -488,6 +509,7 @@ steps, then pack it back:
 ```sh
 pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
+python3 -I tools/lidar_ground.py $MAP           # the terrain tiles take the lidar's ground wherever it covers them
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide     # also the partition's lidar, from the build's passes
 ```
@@ -529,7 +551,8 @@ it follows the `new-area` skill.
 
 Map data © OpenStreetMap contributors (Open Database Licence), Overture Maps Foundation,
 Microsoft. Elevation and building heights contain Environment Agency data © Crown copyright (Open
-Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles). Tree canopy from Meta and
+Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles), with the Environment Agency's lidar ground laid over
+them wherever it covers them. Tree canopy from Meta and
 World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards

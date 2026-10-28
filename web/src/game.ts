@@ -84,6 +84,7 @@ import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
+import { RecordPlayer } from "./recordplayer";
 import { Bonfire } from "./bonfire";
 import { Oddments } from "./oddments";
 import { bonfireKey } from "./saves";
@@ -429,6 +430,7 @@ export class Game {
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
+  private records: RecordPlayer;               // the record player on Solsbury Hill
   private bonfire: Bonfire;
   private oddments: Oddments;                  // the strange objects and the structure that wants them
   private zones: Zones;                        // the map opened up a zone at a time
@@ -641,6 +643,8 @@ export class Game {
     this.breakdown = new Breakdown(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
     this.dayBendy = new DayBendy(map, world.scene);
+    this.records = new RecordPlayer(map, world.scene);
+    this.records.hear = (x, y, z) => this.hear(x, y, z);
     this.bonfire = new Bonfire(map, world.scene, bonfireKey(this.mapId, this.room));
     this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
     this.bonfire.toast = (text, secs) => this.toast(text, secs);
@@ -3922,6 +3926,7 @@ export class Game {
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
+    this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.flash.update(dt);
     this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
     this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
@@ -4016,6 +4021,7 @@ export class Game {
     this.idleT = idle ? this.idleT + dt : 0;
     if (this.idleT > IDLE_LINE) { Quips.idle(); this.idleT = IDLE_LINE - 60; }
     w.paint(paintFor(colourFor(this.net.selfId)));
+    w.indoors = this.world.indoors;
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
@@ -4147,6 +4153,7 @@ export class Game {
     // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
     const focus = this.reveal.on ? this.reveal.look : tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
+    this.world.indoors = this.quests.indoors();
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
     // after dark (or in a tunnel), the traffic and anything being driven have their lights on
     this.lit.length = 0;
@@ -4745,6 +4752,7 @@ export class Game {
   dispose(leave = true) {
     this.unEarn();
     this.wings.dispose();
+    this.records.dispose();
     this.reveal.dispose();
     this.zones.dispose();
     this.oddments.dispose();
