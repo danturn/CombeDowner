@@ -464,7 +464,15 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             chain.clear()
 
         last = None     # the sample before, and whether it was inside
+        prof = (profiles or {}).get(r.get("id"))
         corners = line_corners(whole, r["cls"]) if r["cls"] in KEEP_CORNERS else []
+        if prof and corners:
+            # (not beside a bridge, whose heights the profile gives only every 4 m: a corner by a
+            # deck's end was held part way down the drop to the ground instead of at either end)
+            steps = len(prof["z"]) - 1
+            marks = set(prof["span"]) | set(prof["deck"])
+            corners = [t for t in corners
+                       if not marks & {round(t / (whole.length or 1) * steps) + d for d in (-1, 0, 1)}]
         for t0, t1, sec in r["sections"]:
             if t1 - t0 < 0.5:
                 continue
@@ -492,7 +500,6 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             if not fit:
                 flush()
         flush()
-        prof = (profiles or {}).get(r.get("id"))
 
         def no_closer(piece, pts, ww=None, vv=None):
             """Whether a street run on to the square's edge (`pts`) reaches no further over a house
