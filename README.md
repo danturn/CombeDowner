@@ -23,7 +23,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Bath, all of it**: streamed in around you in squares about a kilometre across, at the same
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
-  and more. Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
+  and more. Every other church has its tower where it really has one, as tall as the lidar
+  saw it, with battlements, and pinnacles and a spire where the lidar shows those too (St Stephen's
+  on Lansdown, St Mary's Bathwick, St Michael's on Broad Street, St John's on South Parade). Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
@@ -31,7 +33,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   parapets run unbroken round its bends and where its pieces join, stopping only where another
   deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
   pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the
-  road runs on under it unbroken; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
+  road runs on under it unbroken, for walking or driving under; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. A road the map
@@ -39,7 +41,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern
   concrete box, with square openings under a flat lintel, a pier between the bores and concrete
-  wing walls, lorry-high inside: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
+  wing walls, lorry-high inside, and nothing on the hill over it gets in the way of the traffic: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
   Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
@@ -503,6 +505,8 @@ streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
+The churches' towers and spires are measured from the lidar by `tools/towers.py` and kept in
+`data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks
