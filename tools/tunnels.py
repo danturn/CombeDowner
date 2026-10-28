@@ -76,6 +76,35 @@ def bores(run, z, ranges, elev, c, decks=()):
     return out
 
 
+def faces(run, z, bored, elev, c):
+    """For each bored range, where its two portals truly stand: the run is a point every 4 m, so on
+    a steep hill face the first point with the hill high enough over it can be metres into the
+    hill, under a tall headwall. Each end is moved out towards the point before it, to where the
+    hill stands just its arch and FACE_COVER over the floor there (or left where it is). Gives
+    [(start, end)], each None or (x, y, floor)."""
+    start = crown(c) + FACE_COVER
+    out = []
+    for i0, i1 in bored:
+        ends = []
+        for i, j in ((i0, i0 - 1), (i1, i1 + 1)):
+            if not 0 <= j < len(run):
+                ends.append(None)
+                continue
+            a, b, za, zb = run[i], run[j], z[i], z[j]
+            def over(f):
+                return elev(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f) - (za + (zb - za) * f)
+            if over(1.0) >= start:
+                ends.append(None)
+                continue
+            lo, hi = 0.0, 1.0       # (the hill is high enough at lo, not at hi)
+            for _ in range(8):
+                f = (lo + hi) / 2
+                lo, hi = (f, hi) if over(f) >= start else (lo, f)
+            ends.append(None if lo < 0.05 else (a[0] + (b[0] - a[0]) * lo, a[1] + (b[1] - a[1]) * lo, za + (zb - za) * lo))
+        out.append(tuple(ends))
+    return out
+
+
 def _joined(run, ranges):
     """The run's points in each tunnel stretch (as index lists), stretches that touch made one."""
     groups = []

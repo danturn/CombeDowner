@@ -1461,8 +1461,9 @@ for r in pending:
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
     for i0, i1 in TN.split(run, bored):
         roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {})))
-    for i0, i1 in bored:
-        tunnel_list.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
+    for (i0, i1), (head, tail) in zip(bored, TN.faces(run, z, bored, elev, c)):
+        tp = pts[i0:i1 + 1]
+        tunnel_list.append(dict(c=c, n=r["n"], p=([[r1(v) for v in head]] if head else []) + tp + ([[r1(v) for v in tail]] if tail else [])))
 del pending
 z0 = math.floor(grid.min()) if TILE is None else A.squares.z0     # every tile measures from the same height
 
