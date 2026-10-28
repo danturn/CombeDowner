@@ -1948,7 +1948,8 @@ try:
         import lidar as LD
         if STORE.record: surveyed = STORE.put_buildings([c[0] for c in cand], each(lambda poly: lidar.survey(poly, canopy.at if canopy is not None else None), [c[0] for c in cand]))
         else: surveyed = STORE.get_buildings([c[0] for c in cand])
-        measured = [LD.decide(c[0], got) for c, got in zip(cand, surveyed)]
+        import towers
+        measured = towers.judge([c[0] for c in cand], [c[1] for c in cand], surveyed, proj, towers.load(A.id))
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
@@ -1985,7 +1986,7 @@ if STORE is not None:
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
 from types import SimpleNamespace
-pack = landmarks.load(A.landmarks)
+pack = landmarks.load(A.landmarks, A.id)
 ctx = SimpleNamespace(
     buildings=[dict(poly=c[0], whole=c[1].get("_whole_geom", c[0]), name=name(c[1]), props=c[1], eaves=b["eaves"], ridge=b["eaves"] + (b["roof"]["rise"] if b["roof"] else 0))
                for c, b in zip(cand, info)],

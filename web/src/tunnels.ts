@@ -139,6 +139,26 @@ export function alignPortals(tn: Tunnel[], b?: Bounds) {
   }
 }
 
+/** The solid parts of each headwall, for collision, as [x0, y0, x1, y1, top] (data coords): out
+ *  past the outer bores, and the piers between bores side by side. A face reaching TUNNEL.past
+ *  past each bore's own sides would stand across the mouth of the bore beside it. */
+export function portalFaces(tn: Tunnel[], b?: Bounds): number[][] {
+  const out: number[][] = [];
+  for (const g of headwalls(tn, b)) {
+    let dx = 0, dy = 0;
+    for (const m of g) { dx += m.dx; dy += m.dy; }
+    const l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, o = g[0], at0 = o.x * nx + o.y * ny;
+    const open = g.map((m) => { const s = m.x * nx + m.y * ny - at0; return [s - m.h, s + m.h]; }).sort((p, q) => p[0] - q[0]);
+    const top = Math.max(...g.map((m) => m.z + boreCrown(m.t))) + 1.5;
+    const solid = [[open[0][0] - TUNNEL.past, open[0][0]]];
+    let reach = open[0][1];
+    for (const [s0, s1] of open.slice(1)) { if (s0 > reach) solid.push([reach, s0]); reach = Math.max(reach, s1); }
+    solid.push([reach, reach + TUNNEL.past]);
+    for (const [s0, s1] of solid) out.push([o.x + nx * s0, o.y + ny * s0, o.x + nx * s1, o.y + ny * s1, top]);
+  }
+  return out;
+}
+
 /** Where each portal is and which way the tunnel goes in from it, data coords. */
 function portals(t: Tunnel) {
   const p = t.p, out: { x: number; y: number; z: number; dx: number; dy: number; h: number }[] = [];

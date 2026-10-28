@@ -85,6 +85,7 @@ const ENTRIES: Entry[] = [
   { tab: "land", group: "Landmarks", name: "Holy Trinity's spire", blurb: "Combe Down's church spire, over the rooftops of the village.", lm: { kind: "spire", square: [1, 0] } },
   { tab: "land", group: "Landmarks", name: "The Palladian Bridge", blurb: "The covered bridge over the lake below Prior Park.", lm: { kind: "bridge", square: [1, 1] } },
   { tab: "land", group: "Landmarks", name: "Twerton Park", blurb: "Bath City's ground on the High Street in Twerton, its stands built round the pitch.", lm: { kind: "twerton", square: [-2, 3] } },
+  { tab: "land", group: "Landmarks", name: "A church tower", blurb: "Every church in Bath with a tower has it, as tall as the lidar saw it, with its pinnacles and spire: this is St Michael's on Broad Street.", lm: { kind: "tower", square: [0, 3] } },
   { tab: "land", group: "Landmarks", name: "Eric's oak", blurb: "On Bathampton Down, planted in memory of Eric Benjamin Holmes, with the plaque on a post at its foot. In the game it has grown into a mighty oak.", lm: { kind: "oak", square: [2, 3] } },
   ...DRIVE.map((k): Entry => ({ tab: "veh", group: "You can drive", name: SPECS[k].name, blurb: "Get in with E.", paints: () => SPECS[k].paint, build: (p) => vehicle(k, p) })),
   { tab: "veh", group: "Everyday cars", name: "Everyday car", blurb: "Parked all over Bath and running in the traffic. Every one of them can be driven off.", makes: MAKES, paints: carPaints,
