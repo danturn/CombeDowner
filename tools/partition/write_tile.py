@@ -2900,6 +2900,48 @@ def bore_widths(tunnels, rd, rows):
         TN.widen(t, [e or (known[0] if known else (TN.HALF, 0.0)) for e in ends])
 
 
+def end_at_portals(rd, tunnels):
+    """A way going into a bore along it ends at the portal, on the bore's floor: the points the record
+    carried on inside rose up the hill face over the arch, and its surface stood up in the opening
+    as a slab. Returns how many records were cut."""
+    cut = 0
+    for t in tunnels or []:
+        p = t.get("p") or []
+        if len(p) < 2:
+            continue
+        for k, (a, b) in ((0, (p[0], p[1])), (len(p) - 1, (p[-1], p[-2]))):
+            n = math.dist(a[:2], b[:2]) or 1.0
+            dx, dy, h = (b[0] - a[0]) / n, (b[1] - a[1]) / n, TN.half_at(t, k)
+
+            def inside(q):
+                ox, oy = q[0] - a[0], q[1] - a[1]
+                return ox * dx + oy * dy > 0.05 and abs(-ox * dy + oy * dx) < h
+
+            for r in rd:
+                q = r["p"]
+                if len(q) < 3 or r.get("uo"):
+                    continue
+                for back in (False, True):
+                    run = q[::-1] if back else q
+                    m = 0
+                    while m < len(run) - 2 and inside(run[m]) and len(run[m]) < 4:
+                        m += 1
+                    if not m:
+                        continue
+                    u, v = run[m], run[m - 1]
+                    seg = math.dist(u[:2], v[:2]) or 1.0
+                    if abs((v[0] - u[0]) * dx + (v[1] - u[1]) * dy) / seg < 0.8:
+                        continue
+                    ou, ov = (u[0] - a[0]) * dx + (u[1] - a[1]) * dy, (v[0] - a[0]) * dx + (v[1] - a[1]) * dy
+                    f = ou / (ou - ov) if ou != ov else 0.0
+                    face = [round(u[0] + (v[0] - u[0]) * f, 1), round(u[1] + (v[1] - u[1]) * f, 1), a[2]]
+                    run = [face] + run[m:]
+                    r["p"] = run[::-1] if back else run
+                    q = r["p"]
+                    cut += 1
+    return cut
+
+
 def portal_faces(tunnels):
     """Each tunnel's ends as (the end, where its headwall's face is, the way in, its headwall, how far
     each side of the bore's middle the face reaches: TN.FACE_PAST past its wall). Bores coming out
@@ -5016,6 +5058,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
     bore_widths(tile.get("tn"), rd, roads)
+    end_at_portals(rd, tile.get("tn"))
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"))
     settle_on_laid_ground(rd, laid, road_ground)

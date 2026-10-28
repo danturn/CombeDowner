@@ -1369,3 +1369,22 @@ same as main):
 - [ ] **Piers are searched for over the whole span**, deduped within 4 m, and kept out of every
   road or path under it (across it, or along it within its reach): a long deck along a road can
   end up with no piers at all.
+
+## A tunnel's bore as wide as its way (28 October)
+
+- [ ] **A bore is as wide as the way going in** (Dan: "tunnel bore should be same width as road").
+  The writer gives each tunnel `hw`, half its width at every point (`write_tile.bore_widths`,
+  `tunnels.bore_half`): the carriageway's `w` plus its pavements, or 0.5 m of floor each side where
+  it has none; a path's width plus 1 m each side. It comes from the record meeting each portal, or
+  at an end cut at the square's edge from pass 1's corridor there, so both halves of a tunnel meet
+  at one width, and changes evenly between the ends. The game's tube, its floor, the headwall's
+  openings and reach (`TUNNEL.past` past the bore's side), the hidden ground in its mouths, the
+  collision and the tunnel floor, and the writer's tube, portal faces and clearances and the clash
+  check's `in_tube` all read it. Trade-offs: a trunk road or motorway in a tunnel has no pavements
+  inside even where the record at its portal has them (the Bailbrook Underpass's south end, which
+  `verge_out_of_town` counts as in town); the arch stays 5.2 m high at every width, so a footway
+  subway is a tall narrow slot; a bore with pavements raises them a kerb over the carriageway, but
+  the tunnel's floor for walking is still the carriageway's level (none in Bath has one today); and
+  the writer's first passes (before `rd` is written) use pass 1's corridor width, a few centimetres
+  off the final one. The Two Tunnels go from 4.8 m to 4.2 m (cycleway 2.2 m), the Bailbrook bores
+  from 4.8 m to 7.3 m (carriageway 6.3 m), the footway culvert to 3.5 m.
