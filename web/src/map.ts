@@ -27,7 +27,17 @@ export interface Building {
   ch?: number[][];                                // chimney stacks
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
+  rm?: RoofMesh;                                  // the roof as the lidar shows it, in place of rr, rp and hp
 }
+/** ?roofs=simple: every roof the shape it was before the lidar's faces (flat, gabled or hipped), to
+ *  compare, or for a machine that can't spare the triangles. */
+const SIMPLE_ROOFS = new URLSearchParams(location.search).get("roofs") === "simple";
+/** A roof as the lidar shows it, in faces (tools/roofs/faces.py): v the points (x, y, height above
+ *  sea level, three numbers each), t its triangles (three point numbers each, anticlockwise from
+ *  above), w the walls standing in its steps (x0, y0, foot, top, x1, y1, foot, top each), and z, for
+ *  each of the building's outlines in turn, the roof's height at the start and end of each wall
+ *  (b.r has a point wherever a face meets the walls), which the walls rise to. */
+export interface RoofMesh { v: number[]; t: number[]; w?: number[]; z: number[][] }
 /** A street or path: its class, name and points [x, y, z], or [x, y, z, 1] on a bridge's span,
  *  or [x, y, z, 2] on the deck of a bridge beside it (a bridge's pavement, mapped as a path of its
  *  own: it rides at the road's height and builds nothing) (tools/prep_map.py). bridge: it stands
@@ -363,6 +373,7 @@ export class GameMap {
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
   constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null, cableData: CableData | null = null) {
+    if (SIMPLE_ROOFS) for (const b of d.bl ?? []) delete b.rm;
     // A map whose ground all comes in squares (tiles.ts) has no terrain or scenery of its own: it
     // gets an empty grid, which nothing is ever inside, so the ground, collision and scenery
     // everywhere are the squares' (or the wider map's, where no square is loaded).
@@ -546,7 +557,7 @@ export class GameMap {
     for (let bi = 0; bi < d.bl.length; bi++) {
       const b = d.bl[bi];
       if (this.spent(4)) yield;
-      const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
+      const top = b.rm ? roofMeshTop(b) - this.z0 : b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
       for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
       // and which squares it covers, for standing on its roof
@@ -926,6 +937,7 @@ export class GameMap {
   private roofAt(b: Building, x: number, y: number): number {
     if (!inRing(b.r[0], x, y) || b.r.slice(1).some((ring) => inRing(ring, x, y))) return -Infinity;
     const eave = b.g - this.z0 + b.h;
+    if (b.rm) return (roofMeshAt(b, x, y) ?? b.g + b.h) - this.z0;
     let top = eave;
     for (const roof of roofsFit(b)) {
       const q = roof.q;
@@ -1449,7 +1461,7 @@ export function roofsFit(b: Building): Roof[] {
   const known = fits.get(b);
   if (known !== undefined) return known;
   const out: Roof[] = [];
-  if (b.rr && b.rp) {
+  if (b.rr && b.rp && !b.rm) {
     const q = b.rr, ring = b.r[0];
     const on = (x: number, y: number) => inRing(ring, x, y) && !b.r.slice(1).some((h) => inRing(h, x, y));
     const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
@@ -1574,6 +1586,29 @@ export function roofsFit(b: Building): Roof[] {
   }
   fits.set(b, out);
   return out;
+}
+/** The height above sea level of building b's roof faces over (x, y), or null off them. */
+export function roofMeshAt(b: Building, x: number, y: number): number | null {
+  const m = b.rm;
+  if (!m) return null;
+  const v = m.v, t = m.t;
+  for (let i = 0; i < t.length; i += 3) {
+    const a = 3 * t[i], c = 3 * t[i + 1], e = 3 * t[i + 2];
+    const d = (v[c + 1] - v[e + 1]) * (v[a] - v[e]) + (v[e] - v[c]) * (v[a + 1] - v[e + 1]);
+    if (Math.abs(d) < 1e-9) continue;
+    const l1 = ((v[c + 1] - v[e + 1]) * (x - v[e]) + (v[e] - v[c]) * (y - v[e + 1])) / d;
+    const l2 = ((v[e + 1] - v[a + 1]) * (x - v[e]) + (v[a] - v[e]) * (y - v[e + 1])) / d;
+    const l3 = 1 - l1 - l2;
+    if (l1 >= -1e-4 && l2 >= -1e-4 && l3 >= -1e-4) return l1 * v[a + 2] + l2 * v[c + 2] + l3 * v[e + 2];
+  }
+  return null;
+}
+/** The highest point of building b's roof faces, above sea level. */
+export function roofMeshTop(b: Building): number {
+  let top = b.g + b.h;
+  const v = b.rm?.v ?? [];
+  for (let i = 2; i < v.length; i += 3) top = Math.max(top, v[i]);
+  return top;
 }
 /** Building b's main pitched roof, or null for a flat one. */
 export function roofFit(b: Building): Roof | null {

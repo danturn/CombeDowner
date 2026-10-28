@@ -214,7 +214,8 @@ def main():
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
     # and, built from the repository's measurements, its own measurements file
-    kept = lambda t: [] if measure else [p for p in [os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")] if os.path.exists(p)]
+    kept = lambda t: [p for p in [os.path.join(measured_dir(map_id), "faces", f"{t[0]}_{t[1]}.json")] if os.path.exists(p)] + (
+        [] if measure else [p for p in [os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")] if os.path.exists(p)])
     key_of = lambda t: digest([p for p in files(split_of(t)) if p.endswith(".geojson") and os.path.dirname(p) == split_of(t)] + lines + kept(t),
                               (tools, shared, keep, measure, t))
     built_of = lambda t: os.path.join(split_of(t), ".built")

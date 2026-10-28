@@ -26,7 +26,7 @@
 // installed where node can find it; CHROME=<a Chrome or Chromium> to use that one.
 //
 // Writes <out>/<name>[-<tag>].png for each view, and <out>/shots.json with how long each took,
-// the frame rate and anything the page complained about.
+// the frame rate, what the last frame drew and anything the page complained about.
 import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
@@ -114,8 +114,10 @@ for (const v of views) {
   const file = path.join(opt.out, `${v.name}${opt.tag ? "-" + opt.tag : ""}.png`);
   await page.screenshot({ path: file });
   const fps = await page.evaluate(() => window.__fps);
+  // what the frame cost: triangles and draw calls drawn, models held, and the page's memory
+  const drawn = await page.evaluate(() => window.__gl && { triangles: window.__gl.render.triangles, calls: window.__gl.render.calls, geometries: window.__gl.memory.geometries, heapMB: Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1048576) });
   const secs = (Date.now() - s0) / 1000;
-  log.shots.push({ name: v.name, at: v.at, look: v.look, time, file, seconds: secs, ready, fps });
+  log.shots.push({ name: v.name, at: v.at, look: v.look, time, file, seconds: secs, ready, fps, drawn });
   console.log(`shot ${v.name} in ${secs.toFixed(1)}s${ready ? "" : " (NOT fully loaded: timed out)"}`);
 }
 log.seconds = (Date.now() - t0) / 1000;
