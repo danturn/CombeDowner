@@ -14,7 +14,7 @@
 // weapons, the horn (at a car's wheel or a narrowboat's helm, where it's the bell), the map, the
 // radio, marking, the torch, binoculars and getting on or off a ride. Minigames whose play is quite
 // different (the tin lock, the easel, the bell chamber, the Climb, the tightrope, the Driving Test's
-// back seat, the big map and its pencil) have their own table here, and show it as a strip while
+// back seat, the big map) have their own table here, and show it as a strip while
 // you're in them (strip).
 //
 // Who decides what: nobody. It's only names and buttons; what a control does stays where it always was.
@@ -110,8 +110,8 @@ export const STREETS: Control[] = [
   { id: "again", name: "Go again (a race)", keys: ["KeyE", "Backspace"], via: "use", say: { touch: "Again" } },
   { id: "watch", name: "Watch someone else (out of a race)", keys: ["KeyQ", "KeyE"], say: { keys: "Q / E", pad: "d-pad ← →", touch: "◀ ▶" } },
   // at a car's wheel, or a narrowboat's helm
-  { id: "drive", name: "Drive", keys: ["KeyW"], say: STICK("W", "R2", "stick ↑") },
-  { id: "brake", name: "Brake and reverse", keys: ["KeyS"], say: STICK("S", "L2", "stick ↓") },
+  { id: "drive", name: "Drive", keys: ["KeyW"], say: STICK("W", PAD_NAME[B.r2], "stick ↑") },
+  { id: "brake", name: "Brake and reverse", keys: ["KeyS"], say: STICK("S", PAD_NAME[B.l2], "stick ↓") },
   { id: "handbrake", name: "Handbrake", keys: ["Space"], via: "jump", say: { touch: "Jump" } },
   { id: "out", name: "Get out", keys: ["KeyE"], pad: B.triangle, touch: "Get out", where: "wheel" },
   { id: "horn", name: "Horn, bell, siren or chimes", keys: ["KeyH"], pad: B.r1, touch: "Fire", where: "wheel" },
@@ -154,9 +154,8 @@ export const PLACES: Record<string, Control[]> = {
     { id: "map.mark", name: "mark", mouse: 0, keys: ["KeyG"], pad: B.cross, say: { keys: "Click", touch: "Tap" } },
     { id: "map.cursor", name: "move the cursor", say: { pad: "Left stick" } },
     { id: "map.pan", name: "move", keys: ["KeyW", "KeyA", "KeyS", "KeyD"], say: STICK("Drag or WASD", "", "Drag") },
-    { id: "map.zoom", name: "zoom", say: STICK("Wheel or +/−", "R2/L2 or right stick", "Pinch") },
+    { id: "map.zoom", name: "zoom", say: STICK("Wheel or +/−", `${PAD_NAME[B.r2]}/${PAD_NAME[B.l2]} or right stick`, "Pinch") },
     { id: "map.find", name: "find yourself", keys: ["Space", "KeyC"], pad: B.triangle },
-    { id: "map.pencil", name: "pencil", keys: ["KeyP"], pad: B.square, touch: "Pencil" },
     { id: "map.close", name: "close", keys: ["KeyM", "Escape"], pad: B.circle, say: { keys: "M or Esc", touch: "Close map" } },
   ],
   // a tin's combination lock: it has the keyboard to itself, and a pad drives it through the menu
@@ -264,7 +263,9 @@ export function stripOf(rows: [string, string][]): string {
   let out = "";
   rows.forEach(([id, what], i) => {
     const k = ctl(id);
-    out += k.toLowerCase() === what.toLowerCase() ? `<b>${k}</b>` : what ? `<b>${k}</b> ${what}` : `<b>${k}</b> `;
+    // a touch word that already says it ("Get out") isn't followed by it again
+    const kl = k.toLowerCase(), wl = what.toLowerCase();
+    out += kl === wl || kl.endsWith(` ${wl}`) ? `<b>${k}</b>` : what ? `<b>${k}</b> ${what}` : `<b>${k}</b> `;
     if (what && i < rows.length - 1) out += " · ";
   });
   return out;
