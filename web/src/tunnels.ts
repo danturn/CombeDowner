@@ -1,4 +1,5 @@
-// Tunnels you can walk through (tools/tunnels.py): an arched brick tube along each tunnel's floor,
+// Tunnels you can walk through (tools/tunnels.py): an arched brick tube along each tunnel's floor, as
+// wide as the road or path going in (boreHalf), with its pavements carried through where it has them,
 // lit by lamps along the crown, with a stone headwall round the arch at each portal. The ground over
 // a tunnel is the hill's, whole; the terrain inside the tube's mouth is hidden (world.ts asks
 // mouths() where), so you can see in from the cutting, and further in the hill is over your head.
@@ -15,7 +16,7 @@
 // costs nothing at run time, and the tube ignores the sun. world.ts turns the fog dark while
 // you're in one. Nothing here goes over the network: every player draws the same from the map.
 import * as THREE from "three";
-import { GameMap, TUNNEL, Tunnel } from "./map";
+import { GameMap, TUNNEL, Tunnel, boreHalf } from "./map";
 import * as TX from "./textures";
 
 const WALL = 3.0;        // floor to where the arch springs
@@ -37,10 +38,10 @@ const STYLES = new Set<string>(["a", "b", "c", "d", "e"]);
 /** The styles whose tube is a square concrete box rather than a brick arch. */
 const BOXED = new Set<PortalStyle>(["b", "c", "d"]);
 
-/** The tube's cross-section from one wall's foot over the top to the other's, [across, up], grown
- *  by e all round: an arch, or a box. */
-function profile(box: boolean, e = 0): number[][] {
-  const H = TUNNEL.half + e;
+/** The tube's cross-section from one wall's foot over the top to the other's, [across, up], for a
+ *  bore `half` wide each side, grown by e all round: an arch, or a box. */
+function profile(box: boolean, half: number, e = 0): number[][] {
+  const H = half + e;
   if (box) {
     const out = [[H, 0], [H, WALL * 0.5], [H, WALL]], top = TUNNEL.crown + e;
     for (let k = 0; k <= 10; k++) out.push([H - (2 * H * k) / 10, top]);
@@ -53,20 +54,24 @@ function profile(box: boolean, e = 0): number[][] {
   return out;
 }
 
-/** Points every STEP metres along a tunnel's floor (data coords [x, y, z]), with distance along and the sideways unit normal. */
-function resample(p: number[][]) {
-  const pts: { x: number; y: number; z: number; s: number; nx: number; ny: number }[] = [];
+/** Points every STEP metres along a tunnel's floor (data coords [x, y, z]), with distance along, the
+ *  sideways unit normal, half the bore's width and the pavement each side. */
+function resample(t: Tunnel) {
+  const p = t.p, pv = (i: number) => t.pv?.[i] ?? 0;
+  const pts: { x: number; y: number; z: number; s: number; nx: number; ny: number; h: number; pv: number }[] = [];
   let s = 0;
   for (let i = 0; i < p.length - 1; i++) {
     const a = p[i], b = p[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(l / STEP));
+    const h0 = boreHalf(t, i), h1 = boreHalf(t, i + 1);
     for (let k = 0; k < n; k++) {
       const f = k / n;
-      pts.push({ x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, z: a[2] + (b[2] - a[2]) * f, s: s + l * f, nx: 0, ny: 0 });
+      pts.push({ x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, z: a[2] + (b[2] - a[2]) * f, s: s + l * f, nx: 0, ny: 0,
+        h: h0 + (h1 - h0) * f, pv: pv(i) + (pv(i + 1) - pv(i)) * f });
     }
     s += l;
   }
   const e = p[p.length - 1];
-  pts.push({ x: e[0], y: e[1], z: e[2], s, nx: 0, ny: 0 });
+  pts.push({ x: e[0], y: e[1], z: e[2], s, nx: 0, ny: 0, h: boreHalf(t, p.length - 1), pv: pv(p.length - 1) });
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     pts[i].nx = -(b.y - a.y) / l; pts[i].ny = (b.x - a.x) / l;
@@ -83,9 +88,10 @@ function light(s: number, h: number, o: number, len: number) {
 }
 
 /** Metres apart that two bores' portals share one headwall (read when called: map.ts imports this module). */
-const sideBySide = () => 2 * TUNNEL.face + 4;
+const sideBySide = (a: Portal, b: Portal) => a.h + b.h + 2 * TUNNEL.past + 4;
 
-interface Portal { t: Tunnel; end: 0 | 1; x: number; y: number; z: number; dx: number; dy: number }
+/** h: half the bore's width there. */
+interface Portal { t: Tunnel; end: 0 | 1; x: number; y: number; z: number; dx: number; dy: number; h: number }
 type Bounds = number[] | undefined;
 
 /** A tunnel crossing into the next square is cut at the square's edge, deep under the hill: that end
@@ -109,7 +115,7 @@ function headwalls(tn: Tunnel[], b: Bounds): Portal[][] {
     const a = ps[i], b = ps[j];
     if (a.t === b.t || a.dx * b.dx + a.dy * b.dy < 0.9) continue;
     const ox = b.x - a.x, oy = b.y - a.y;
-    if (Math.hypot(ox, oy) < sideBySide() && Math.abs(ox * a.dx + oy * a.dy) < 8) group[root(j)] = root(i);
+    if (Math.hypot(ox, oy) < sideBySide(a, b) && Math.abs(ox * a.dx + oy * a.dy) < 8) group[root(j)] = root(i);
   }
   const out = new Map<number, Portal[]>();
   ps.forEach((p, i) => { const r = root(i); if (!out.has(r)) out.set(r, []); out.get(r)!.push(p); });
@@ -129,18 +135,20 @@ export function alignPortals(tn: Tunnel[], b?: Bounds) {
     for (const m of g) {
       const by = (m.x * nx + m.y * ny - out) / Math.max(0.5, m.dx * nx + m.dy * ny);
       if (by < 0.05) continue;
-      const q = [m.x - m.dx * by, m.y - m.dy * by, m.z];
-      if (m.end === 0) m.t.p.unshift(q); else m.t.p.push(q);
+      const q = [m.x - m.dx * by, m.y - m.dy * by, m.z], t = m.t;
+      // (the bore's width carried out with it)
+      if (m.end === 0) { t.p.unshift(q); t.hw?.unshift(t.hw[0]); t.pv?.unshift(t.pv[0]); }
+      else { t.p.push(q); t.hw?.push(t.hw[t.hw.length - 1]); t.pv?.push(t.pv[t.pv.length - 1]); }
     }
   }
 }
 
 /** Where each portal is and which way the tunnel goes in from it, data coords. */
 function portals(t: Tunnel) {
-  const p = t.p, out: { x: number; y: number; z: number; dx: number; dy: number }[] = [];
-  for (const [a, b] of [[p[0], p[1]], [p[p.length - 1], p[p.length - 2]]]) {
+  const p = t.p, out: { x: number; y: number; z: number; dx: number; dy: number; h: number }[] = [];
+  for (const [a, b, h] of [[p[0], p[1], boreHalf(t, 0)], [p[p.length - 1], p[p.length - 2], boreHalf(t, p.length - 1)]] as const) {
     const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    out.push({ x: a[0], y: a[1], z: a[2], dx: (b[0] - a[0]) / l, dy: (b[1] - a[1]) / l });
+    out.push({ x: a[0], y: a[1], z: a[2], dx: (b[0] - a[0]) / l, dy: (b[1] - a[1]) / l, h });
   }
   return out;
 }
@@ -172,14 +180,15 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
   // (piece by piece along the tube, which bends: a straight cut from the portal left the hillside
   // standing in the tube a few metres round a bend; and no further than its far portal; each piece
   // to the top of its higher end, as the floor climbs along it, or a sliver of hill shows in the crown)
-  for (const t of map.d.tn ?? []) for (const p of [t.p, [...t.p].reverse()]) {
+  for (const t of map.d.tn ?? []) for (const back of [false, true]) {
+    const p = back ? [...t.p].reverse() : t.p, half = (i: number) => boreHalf(t, back ? p.length - 1 - i : i);
     if (p.length < 2 || onSeam(p[0][0], p[0][1], map.d.b)) continue;
     for (let i = 0, s = 0; i < p.length - 1 && s < MOUTH; i++) {
       const l = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
       if (l < 1e-3) continue;
       const dx = (p[i + 1][0] - p[i][0]) / l, dy = (p[i + 1][1] - p[i][1]) / l;
       a.push(new THREE.Vector4(p[i][0], -p[i][1], dx, -dy));
-      b.push(new THREE.Vector4(Math.min(p[i][2], p[i + 1][2]) - map.z0, TUNNEL.crown + Math.abs(p[i + 1][2] - p[i][2]) + 0.05, TUNNEL.half, l + 0.3));
+      b.push(new THREE.Vector4(Math.min(p[i][2], p[i + 1][2]) - map.z0, TUNNEL.crown + Math.abs(p[i + 1][2] - p[i][2]) + 0.05, Math.max(half(i), half(i + 1)), l + 0.3));
       s += l;
     }
   }
@@ -238,32 +247,34 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
   const lampMat = new THREE.MeshBasicMaterial({ color: "#ffe2a0" });
 
   for (const t of tunnels) {
-    const box = BOXED.has(portalStyle(tunnels, t)), prof = profile(box);
-    const round = [0];
-    for (let i = 1; i < prof.length; i++) round.push(round[i - 1] + Math.hypot(prof[i][0] - prof[i - 1][0], prof[i][1] - prof[i - 1][1]));
-    const pts = resample(t.p), len = pts[pts.length - 1].s;
+    const box = BOXED.has(portalStyle(tunnels, t));
+    const pts = resample(t), len = pts[pts.length - 1].s;
+    const P = profile(box, TUNNEL.half).length;
     for (let c0 = 0; c0 < pts.length - 1; c0 += CHUNK) {
       const ring = pts.slice(c0, Math.min(pts.length, c0 + CHUNK + 1));
       const pos: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = [];
       const fpos: number[] = [], fuv: number[] = [], fcol: number[] = [], fidx: number[] = [];
       for (const q of ring) {
+        const prof = profile(box, q.h);
+        let round = 0;
         prof.forEach(([o, h], k) => {
+          if (k) round += Math.hypot(o - prof[k - 1][0], h - prof[k - 1][1]);
           pos.push(q.x + q.nx * o, q.z - Z0 + h, -(q.y + q.ny * o));
-          uv.push(q.s / 3.4, round[k] / 3.4);
+          uv.push(q.s / 3.4, round / 3.4);
           const l = light(q.s, h, o, len);
           col.push(l, l * 0.93, l * 0.82);
         });
-        for (const o of [TUNNEL.half, -TUNNEL.half]) {
-          fpos.push(q.x + q.nx * o, q.z - Z0 + 0.02, -(q.y + q.ny * o));
-          fuv.push(o / 4, q.s / 4);
+        for (const [o, h] of floorAcross(t, q)) {
+          fpos.push(q.x + q.nx * o, q.z - Z0 + h, -(q.y + q.ny * o));
+          fuv.push(o / 4, q.s / 4 + h);
           const l = light(q.s, 0, o, len);
           fcol.push(l, l * 0.93, l * 0.82);
         }
       }
-      const P = prof.length;
+      const F = t.pv ? 6 : 2;
       for (let i = 0; i < ring.length - 1; i++) {
         for (let k = 0; k < P - 1; k++) { const a = i * P + k, b = a + P; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-        const a = i * 2; fidx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+        for (let k = 0; k < F - 1; k++) { const a = i * F + k, b = a + F; fidx.push(a, b, a + 1, a + 1, b, b + 1); }
       }
       for (const [p, u, c, ix, mats] of [[pos, uv, col, idx, [box ? boxMat : tubeMat, skinMat]], [fpos, fuv, fcol, fidx, [floorMat]]] as const) {
         const g = new THREE.BufferGeometry();
@@ -295,12 +306,22 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
   for (const w of walls(map)) buildPortal(w, scene, Z0, drawn, { stone, concrete, grass, earth, apronGrass, slab });
 }
 
+const KERB = 0.15;       // a pavement's height over the carriageway, through the tunnel as outside it
+
+/** Across the tube's floor at one ring, [across, up] from its left wall to its right: the
+ *  carriageway, and up a kerb to a pavement each side where the bore has them. */
+function floorAcross(t: Tunnel, q: { h: number; pv: number }): number[][] {
+  if (!t.pv) return [[q.h, 0.02], [-q.h, 0.02]];
+  const c = Math.max(0, q.h - q.pv), k = q.pv > 0.05 ? KERB : 0.02;
+  return [[q.h, k], [c, k], [c, 0.02], [-c, 0.02], [-c, k], [-q.h, k]];
+}
+
 interface Mats { stone: THREE.Material; concrete: THREE.Material; grass: THREE.Material; earth: THREE.Material; apronGrass: THREE.Material; slab: THREE.Material }
 
 /** One headwall's portal in its style: the face, what lines the cutting in front, and the cutting's floor. */
 function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: number, y: number) => number, M: Mats) {
   const { g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top, style } = w;
-  const box = BOXED.has(style), H = TUNNEL.half;
+  const box = BOXED.has(style);
   /** scene coords of the spot s across (to the tunnel's left), out metres out from the face, at data height h */
   const P = (s: number, out: number, h: number) => [cx + nx * s - dx * out, h - Z0, -(cy + ny * s - dy * out)];
   const ground = (s: number, out: number) => drawn(cx + nx * s - dx * out, cy + ny * s - dy * out) + Z0;
@@ -317,7 +338,7 @@ function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: 
       rise = Math.max(rise, ((p[i][2] - m.z) * Math.min(1, (FACE_DEPTH + 0.1) / (s || 1))));
     }
     const skew = Math.abs(m.dx * dy - m.dy * dx) * FACE_DEPTH;
-    return new THREE.Path(profile(box, e + skew).map(([u, h]) => new THREE.Vector2(off + u, lift + (h === 0 ? foot : h + rise))));
+    return new THREE.Path(profile(box, m.h, e + skew).map(([u, h]) => new THREE.Vector2(off + u, lift + (h === 0 ? foot : h + rise))));
   });
   const slabMesh = (outline: number[][], holes: THREE.Path[], depth: number, m: THREE.Material, from = 0) => {
     const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -327,7 +348,7 @@ function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: 
     return mesh;
   };
   const lifts = g.map((m) => m.z - z), crown = Math.max(...lifts) + TUNNEL.crown + HOLE;
-  const sideL = Math.min(...at) - mid - H - HOLE, sideR = Math.max(...at) - mid + H + HOLE;
+  const sideL = Math.min(...g.map((m, k) => at[k] - m.h)) - mid - HOLE, sideR = Math.max(...g.map((m, k) => at[k] + m.h)) - mid + HOLE;
 
   if (style === "a" || style === "b" || style === "d") {
     const m = style === "a" ? M.stone : M.concrete;
@@ -428,7 +449,7 @@ function bankLandform(w: Headwall, P: (s: number, out: number, h: number) => num
   band: number, m: THREE.Material, add: (m: THREE.Mesh | null) => void) {
   const { left, right, reach, bank: W, slope: L, z } = w;
   const sheet = new Sheet();
-  const sideL = Math.min(...w.at) - w.mid - TUNNEL.half - HOLE - 0.4, sideR = Math.max(...w.at) - w.mid + TUNNEL.half + HOLE + 0.4;
+  const sideL = Math.min(...w.g.map((m, k) => w.at[k] - m.h)) - w.mid - HOLE - 0.4, sideR = Math.max(...w.g.map((m, k) => w.at[k] + m.h)) - w.mid + HOLE + 0.4;
   // the face's top line, where the bank behind it starts (data height)
   const faceTop = (s: number) => z + (s <= sideL ? band * Math.max(0, (s - left) / (sideL - left || 1)) : s >= sideR ? band * Math.max(0, (right - s) / (right - sideR || 1)) : band);
   /** height at (s, out) on the banks: from the inner edge (the floor's side, or the face's top) out to the drawn ground */
@@ -512,12 +533,13 @@ function walls(map: GameMap): Headwall[] {
     let dx = 0, dy = 0;
     for (const m of g) { dx += m.dx; dy += m.dy; }
     const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
-    const nx = -dy, ny = dx, F = TUNNEL.face, H = TUNNEL.half;
+    const nx = -dy, ny = dx, F = TUNNEL.past;
     const at = g.map((m) => m.x * nx + m.y * ny), mid = (Math.min(...at) + Math.max(...at)) / 2;
     const o = g[0], cx = o.x + nx * (mid - at[0]), cy = o.y + ny * (mid - at[0]), z = Math.min(...g.map((m) => m.z));
     const behind = (s: number) => ground(cx + nx * s + dx * (FACE_DEPTH + 1), cy + ny * s + dy * (FACE_DEPTH + 1)) - z;
-    let left = Math.min(...at) - mid - F, right = Math.max(...at) - mid + F;
-    const leftMost = Math.min(...at) - mid - H - 0.8, rightMost = Math.max(...at) - mid + H + 0.8;
+    const sideL = Math.min(...g.map((m, k) => at[k] - m.h)) - mid, sideR = Math.max(...g.map((m, k) => at[k] + m.h)) - mid;
+    let left = sideL - F, right = sideR + F;
+    const leftMost = sideL - 0.8, rightMost = sideR + 0.8;
     while (left < leftMost && behind(left) < TUNNEL.crown * 0.6) left = Math.min(leftMost, left + 0.5);
     while (right > rightMost && behind(right) < TUNNEL.crown * 0.6) right = Math.max(rightMost, right - 0.5);
     let top = Math.max(...g.map((m) => m.z)) - z + TUNNEL.crown + 1.2;
@@ -578,11 +600,11 @@ function upperHull(pts: number[][]): number[][] {
 export function boreRoof(map: GameMap): (x: number, y: number) => number {
   const tn = map.d.tn ?? [];
   alignPortals(tn, map.d.b);
-  const reach = TUNNEL.half + 0.3;
   return (x, y) => {
     let top = -Infinity;
     for (const t of tn) for (let i = 0; i + 1 < t.p.length; i++) {
       const a = t.p[i], b = t.p[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy;
+      const reach = Math.max(boreHalf(t, i), boreHalf(t, i + 1)) + 0.3;
       if (l2 < 1e-6) continue;
       const f = ((x - a[0]) * vx + (y - a[1]) * vy) / l2;
       if (f < 0 || f > 1 || Math.abs((x - a[0]) * vy - (y - a[1]) * vx) / Math.sqrt(l2) > reach) continue;

@@ -13,15 +13,22 @@ deck is not cover (`rebore`). A lane or path crossing over a tunnel that the dat
 bridge is on the ground over its roof, which is cover, so the tunnel keeps its bore and they stay
 on the ground.
 
-The game's cross-section (web/src/map.ts, TUNNEL) is a 4.8 m wide floor with an arch 5.2 m high,
-about the size of the old single-track railway tunnels on the Two Tunnels Greenway.
+A bore is as wide as the way it carries, as the game lays that way where it goes in (`bore_half`):
+a road's carriageway with its pavements, a footway in a road tunnel staying a footway, or a little
+floor beside a carriageway with none; a path's width with room to pass at each side. The width
+follows the way's from one portal to the other, and everything that knows where a bore is (the
+game, the writer's clearances, the clash check) reads it from the tunnel's own `hw` (`half_at`).
+The arch is 5.2 m high whatever the width, headroom for a bus or a lorry.
 """
 import math
 
 from shapely.geometry import LineString, Point
 from shapely.strtree import STRtree
 
-HALF = 2.4      # half the floor width
+HALF = 2.4      # half the floor width of a tunnel whose way's width isn't known
+ROAD_EDGE = 0.5  # metres of floor each side of a carriageway that has no pavement
+PATH_EDGE = 1.0  # metres of floor each side of a path, to pass someone coming the other way
+FACE_PAST = 4.0  # metres a headwall reaches past each side of its bore (web/src/tunnels.ts)
 CROWN = 5.2     # floor to the top of the arch
 COVER = 1.0     # ground over the arch where the bore starts
 MIN_BORE = 15   # metres: anything shorter stays a road
@@ -145,3 +152,45 @@ def split(run, bored):
         start = i1
     if start < len(run) - 1: pieces.append((start, len(run) - 1))
     return pieces
+
+
+def bore_half(w, pv, path):
+    """Half a bore's inside width for a way `w` wide with pavements `pv` wide (0 for none)."""
+    return w / 2 + (PATH_EDGE if path else pv if pv > 0 else ROAD_EDGE)
+
+
+def half_at(t, k):
+    """Half the bore's width at the tunnel's point k."""
+    hw = t.get("hw")
+    return hw[k] if hw and k < len(hw) else HALF
+
+
+def widen(t, ends):
+    """Set the tunnel's `hw` (and `pv` where it has pavements) at each point, from (half width,
+    pavement) at its first and last points, changing evenly along it."""
+    p = t["p"]
+    along = [0.0]
+    for a, b in zip(p, p[1:]):
+        along.append(along[-1] + math.dist(a[:2], b[:2]))
+    total = along[-1] or 1.0
+    (h0, v0), (h1, v1) = ends
+    t["hw"] = [round(h0 + (h1 - h0) * s / total, 2) for s in along]
+    if v0 > 0 or v1 > 0:
+        t["pv"] = [round(v0 + (v1 - v0) * s / total, 2) for s in along]
+    else:
+        t.pop("pv", None)
+
+
+def outline(t, extra=0.0):
+    """The ground a bore takes, its walls `extra` further out each side, square at its ends."""
+    from shapely.geometry import Polygon
+    p, n = t["p"], len(t["p"])
+    left, right = [], []
+    for k in range(n):
+        a, b = p[max(0, k - 1)], p[min(n - 1, k + 1)]
+        l = math.dist(a[:2], b[:2]) or 1.0
+        nx, ny = -(b[1] - a[1]) / l, (b[0] - a[0]) / l
+        h = half_at(t, k) + extra
+        left.append((p[k][0] + nx * h, p[k][1] + ny * h))
+        right.append((p[k][0] - nx * h, p[k][1] - ny * h))
+    return Polygon(left + right[::-1]).buffer(0)

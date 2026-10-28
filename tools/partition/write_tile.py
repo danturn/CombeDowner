@@ -1371,17 +1371,19 @@ def over_roof(tunnels, inside=False):
     width of the bore, between its mouths, a crown's height or more over its floor)? The base tile
     digs the ground over the first metres of a bore, which a lane over it would otherwise fall into.
     With `inside`, is it in the tube instead (below the crown), where the game hides it?"""
-    tubes = [(LineString([q[:2] for q in t["p"]]), t["p"]) for t in tunnels or [] if len(t["p"]) > 1]
+    tubes = [(LineString([q[:2] for q in t["p"]]), t) for t in tunnels or [] if len(t["p"]) > 1]
     if not tubes:
         return None
-    reach = TN.HALF + (0 if inside else TN.CUT)
+    out = 0 if inside else TN.CUT
 
     def test(x, y, z):
         pt = Point(x, y)
-        for line, p in tubes:
-            s = line.project(pt)
-            if 0 < s < line.length and line.distance(pt) <= reach:
+        for line, t in tubes:
+            s, p, d = line.project(pt), t["p"], line.distance(pt)
+            if 0 < s < line.length and d <= max(t.get("hw") or [TN.HALF]) + out:
                 k = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (x, y)))
+                if d > TN.half_at(t, k) + out:
+                    continue
                 if (z < p[k][2] + TN.CROWN) if inside else (z >= p[k][2] + TN.CROWN):
                     return True
         return False
@@ -2206,16 +2208,16 @@ def clear_portals(tile, gone):
         tile["br"] = kept_br
     b = tile.get("b")
     zones = collections.defaultdict(list)
-    for a, (fx, fy), dx, dy, g in portal_faces(tile.get("tn")):
+    for a, (fx, fy), dx, dy, g, half in portal_faces(tile.get("tn")):
         if b and min(abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[0] - b[2]), abs(a[1] - b[3])) < 0.5:
             continue
-        zones[g].append((fx, fy, dx, dy))
+        zones[g].append((fx, fy, dx, dy, half))
     behind, front, past = PORTAL_CLEAR
     polys, cuts = [], []
     for g in zones.values():
-        fx, fy, dx, dy = g[0]
-        at = [(x - fx) * -dy + (y - fy) * dx for x, y, _, _ in g]
-        lo, hi = min(at) - PORTAL_HALF, max(at) + PORTAL_HALF
+        fx, fy, dx, dy, _ = g[0]
+        at = [(x - fx) * -dy + (y - fy) * dx for x, y, _, _, _ in g]
+        lo, hi = min(s - h for s, (*_, h) in zip(at, g)), max(s + h for s, (*_, h) in zip(at, g))
         corner = lambda s, o: (fx - dy * s + dx * o, fy + dx * s + dy * o)
         polys.append(Polygon([corner(lo - past, behind), corner(hi + past, behind), corner(hi + past, -front), corner(lo - past, -front)]))
         cuts.append(Polygon([corner(lo, 0), corner(hi, 0), corner(hi, -PORTAL_FRONT), corner(lo, -PORTAL_FRONT)]))
@@ -2725,7 +2727,6 @@ def _level_at(line, x, y, ground, square, edge=0.1, back=3.0):
     return z + (z - zi) / back * min(past, 2 * back)
 
 
-PORTAL_HALF = 6.4  # metres each side of a tunnel's middle its headwall reaches (web/src/map.ts TUNNEL.face)
 UNDER_HILL = 1.5   # metres the ground may stand over a street's own height before its level is the street's
 LEVEL_STEP = 1.5   # metres between two streets' levels where their surfaces meet that is a wall between them
 LEVEL_GAP = 0.15   # metres: the width of the cut along that wall, more than the outlines may move when simplified
@@ -2816,7 +2817,7 @@ def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
     over the bore, whatever runs on top of it."""
     faces, shared = portal_faces(tunnels), collections.defaultdict(set)
     owners = []
-    for a, _, _, _, g in faces:
+    for a, _, _, _, g, _ in faces:
         P = Point(a[0], a[1])
         own = set()
         for k, l in enumerate(lines):
@@ -2829,17 +2830,79 @@ def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
         # (the roads into bores side by side are each the cutting's, in front of the one headwall)
         shared[g] |= own
     out = []
-    for (_, (fx, fy), dx, dy, g), own in zip(faces, owners):
+    for (_, (fx, fy), dx, dy, g, half), own in zip(faces, owners):
         if not own:
             continue
-        face = LineString([(fx + dy * PORTAL_HALF, fy - dx * PORTAL_HALF),
-                           (fx - dy * PORTAL_HALF, fy + dx * PORTAL_HALF)])
-        out.append((face, (fx, fy), (dx, dy), shared[g]))
+        face = LineString([(fx + dy * half, fy - dx * half), (fx - dy * half, fy + dx * half)])
+        out.append((face, (fx, fy), (dx, dy), shared[g], half))
     return out
 
 
+def bore_widths(tunnels, rd, rows):
+    """Each tunnel's bore as wide as its way going in at each portal (TN.bore_half, TN.widen): the
+    record of `rd` that comes up to the portal, or with none (`rd` not yet written, or an end cut at
+    the square's edge) pass 1's corridor there, which the next square reads too, so the bore meets
+    its own other half there at one width. A footway along a road goes on into its tunnel, but a
+    dual carriageway out of town has its verges, not pavements, and inside a hill nothing is in
+    town."""
+    def figures(c, w, pv):
+        path = c in GAME_PATHS
+        side = 0.0 if path or c not in KERBED or c in VERGED else min(pv)
+        return round(TN.bore_half(w, side, path), 2), round(side, 2)
+
+    def from_rd(a, d, path):
+        best = None
+        for r in rd or []:
+            p = r["p"]
+            if len(p) < 2 or (r["c"] in GAME_PATHS) != path:
+                continue
+            for q, o in ((p[0], p[1]), (p[-1], p[-2])):
+                gap = math.dist(q[:2], a[:2])
+                n = math.dist(o[:2], q[:2]) or 1.0
+                if gap > 4.5 or abs(q[2] - a[2]) > 1.5 or abs((o[0] - q[0]) * d[0] + (o[1] - q[1]) * d[1]) / n < 0.8:
+                    continue
+                if best is None or gap < best[0]:
+                    best = (gap, r)
+        if best is None:
+            return None
+        r = best[1]
+        return figures(r["c"], r.get("w", RW.get(r["c"], 4)), r.get("pv") or [LAY_KERB, LAY_KERB])
+
+    def from_rows(a, path):
+        pt, best = Point(a[:2]), None
+        for e in rows or []:
+            if (e["cls"] in GAME_PATHS) != path:
+                continue
+            line = e["line"] if isinstance(e["line"], LineString) else LineString(e["line"])
+            gap = line.distance(pt)
+            if gap < 6.0 and (best is None or gap < best[0]):
+                best = (gap, e, line)
+        if best is None:
+            return None
+        _, e, line = best
+        if path:
+            return figures(e["cls"], path_width(e["cls"], e.get("obs")), (0.0, 0.0))
+        t = line.project(pt)
+        sec = min(e["sections"], key=lambda c: 0 if c[0] <= t <= c[1] else min(abs(t - c[0]), abs(t - c[1])))[2]
+        return figures(e["cls"], sec[0], (sec[1], sec[2]))
+
+    for t in tunnels or []:
+        p = t.get("p") or []
+        if len(p) < 2:
+            continue
+        path = t["c"] in GAME_PATHS
+        ends = []
+        for a, b in ((p[0], p[1]), (p[-1], p[-2])):
+            n = math.dist(a[:2], b[:2]) or 1.0
+            got = from_rd(a, ((b[0] - a[0]) / n, (b[1] - a[1]) / n), path) or from_rows(a, path)
+            ends.append(got)
+        known = [e for e in ends if e]
+        TN.widen(t, [e or (known[0] if known else (TN.HALF, 0.0)) for e in ends])
+
+
 def portal_faces(tunnels):
-    """Each tunnel's ends as (the end, where its headwall's face is, the way in, its headwall). Bores coming out
+    """Each tunnel's ends as (the end, where its headwall's face is, the way in, its headwall, how far
+    each side of the bore's middle the face reaches: TN.FACE_PAST past its wall). Bores coming out
     side by side share one headwall, square to them, at the outermost one's mouth: the game carries
     each bore that stops short on to it (web/src/tunnels.ts alignPortals), and a face left where
     the data's bore stopped had the median kerb between them climbing the wall."""
@@ -2848,32 +2911,32 @@ def portal_faces(tunnels):
         p = t.get("p") or []
         if len(p) < 2:
             continue
-        for a, b in ((p[0], p[1]), (p[-1], p[-2])):
+        for k, (a, b) in ((0, (p[0], p[1])), (len(p) - 1, (p[-1], p[-2]))):
             n = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
-            ends.append((id(t), a, (b[0] - a[0]) / n, (b[1] - a[1]) / n))
+            ends.append((id(t), a, (b[0] - a[0]) / n, (b[1] - a[1]) / n, TN.half_at(t, k) + TN.FACE_PAST))
     group = list(range(len(ends)))
 
     def root(i):
         while group[i] != i:
             i = group[i]
         return i
-    for i, (ti, a, dx, dy) in enumerate(ends):
+    for i, (ti, a, dx, dy, fa) in enumerate(ends):
         for j in range(i + 1, len(ends)):
-            tj, b, ex, ey = ends[j]
+            tj, b, ex, ey, fb = ends[j]
             if ti == tj or dx * ex + dy * ey < 0.9:
                 continue
             ox, oy = b[0] - a[0], b[1] - a[1]
-            if math.hypot(ox, oy) < 2 * PORTAL_HALF + 4 and abs(ox * dx + oy * dy) < 8:
+            if math.hypot(ox, oy) < fa + fb + 4 and abs(ox * dx + oy * dy) < 8:
                 group[root(j)] = root(i)
     out = []
-    for i, (_, a, dx, dy) in enumerate(ends):
+    for i, (_, a, dx, dy, half) in enumerate(ends):
         mates = [ends[j] for j in range(len(ends)) if root(j) == root(i)]
         mx, my = sum(m[2] for m in mates), sum(m[3] for m in mates)
         n = math.hypot(mx, my) or 1.0
         mx, my = mx / n, my / n
         line = min(m[1][0] * mx + m[1][1] * my for m in mates)
         by = (a[0] * mx + a[1] * my - line) / max(0.5, dx * mx + dy * my)
-        out.append((a, (a[0] - dx * by, a[1] - dy * by), dx, dy, root(i)))
+        out.append((a, (a[0] - dx * by, a[1] - dy * by), dx, dy, root(i), half))
     return out
 
 
@@ -2882,7 +2945,7 @@ def _tube_floor(t, rd):
     (a lane or path over the roof keeps its faces)."""
     tl = LineString([q[:3] for q in t["p"]])
     flat = LineString([q[:2] for q in t["p"]])
-    tube = flat.buffer(TN.HALF + 0.3, cap_style="flat")
+    tube = TN.outline(t, 0.3)
     over = []
     for r in rd:
         if len(r["p"]) < 2:
@@ -2903,9 +2966,9 @@ PORTAL_FRONT = 15.0    # metres out in front of a portal's face its cutting may 
 def _portal_owner(planes, k, x, y, behind=PORTAL_BEHIND, front=8.0):
     """False where street k may not lay its surface at (x, y) because of a portal: behind the face, a
     street running into the tunnel; in front of it, any other."""
-    for _, (px, py), (dx, dy), own in planes:
+    for _, (px, py), (dx, dy), own, half in planes:
         a = (x - px) * dx + (y - py) * dy
-        if abs((x - px) * dy - (y - py) * dx) > PORTAL_HALF or not -front < a < behind:
+        if abs((x - px) * dy - (y - py) * dx) > half or not -front < a < behind:
             continue
         if (a > 0) == (k in own):
             return False
@@ -3061,9 +3124,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)
     tubes = [_tube_floor(t, rd) for t in tunnels or [] if len(t.get("p") or []) > 1]
-    for _, (px, py), (dx, dy), own in planes:
+    for _, (px, py), (dx, dy), own, H in planes:
         # and beside the bore behind its headwall the road going in is the hill (others on it stay)
-        H, D = PORTAL_HALF, PORTAL_BEHIND
+        D = PORTAL_BEHIND
         back = Polygon([(px - dy * H, py + dx * H), (px + dy * H, py - dx * H),
                         (px + dy * H + dx * D, py - dx * H + dy * D), (px - dy * H + dx * D, py + dx * H + dy * D)])
         others = [lines[k].buffer(reach_of[k]) for k in range(len(lines)) if k not in own and lines[k].intersects(back.buffer(10))]
@@ -4924,6 +4987,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         pt = Point(x, y)
         return wet_tree is not None and any(wet_tree.geometries[int(k)].contains(pt) for k in wet_tree.query(pt))
     profiles = once.read_structures(once_dir)
+    bore_widths(tile.get("tn"), None, roads)
     as_based = dict(T, h=list(T["h"]))
     carried = fill_dug_ground(T, tile.get("rd") or [], tile.get("tn") or [], roads, profiles, houses, rail_tracks)
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, profiles,
@@ -4951,6 +5015,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     deck_reach(rd)
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
+    bore_widths(tile.get("tn"), rd, roads)
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"))
     settle_on_laid_ground(rd, laid, road_ground)

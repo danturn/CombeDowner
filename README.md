@@ -38,7 +38,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one stone headwall over the
   arches where two bores come out side by side: the A46 runs under Bailbrook Lane through the
-  Bailbrook Underpass. The road runs level into each arch along a cutting dug to its floor, with
+  Bailbrook Underpass. Each bore is as wide as the road or path going in, wall to wall, with its
+  pavements carried through where it has them. The road runs level into each arch along a cutting dug to its floor, with
   stone wing walls holding up its sides where the hill beside it stands high, their copings
   sloping down the bank, with no tree overhanging them. Out of town a dual
   carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so

@@ -92,15 +92,16 @@ def main():
             return (H[j, i] * (1 - u) + H[j, i + 1] * u) * (1 - v) + (H[j + 1, i] * (1 - u) + H[j + 1, i + 1] * u) * v
 
         roads = [r for r in m["rd"] if len(r["p"]) > 1]
-        tubes = [(LineString([q[:2] for q in t["p"]]), t["p"]) for t in m.get("tn") or [] if len(t["p"]) > 1]
+        tubes = [(LineString([q[:2] for q in t["p"]]), t) for t in m.get("tn") or [] if len(t["p"]) > 1]
 
         def in_tube(q):
             """Inside a tunnel's tube, under the hill: its ground is the tunnel's floor, not the hill's."""
             pt = shapely.Point(q[:2])
-            for line, tp in tubes:
-                s = line.project(pt)
-                if 0 < s < line.length and line.distance(pt) < 2.4:
+            for line, t in tubes:
+                s, tp = line.project(pt), t["p"]
+                if 0 < s < line.length:
                     k = min(range(len(tp)), key=lambda i: math.dist(tp[i][:2], q[:2]))
+                    if line.distance(pt) >= (t["hw"][k] if t.get("hw") else 2.4): continue
                     return abs(q[2] - tp[k][2]) < 1.0
             return False
         lines = [LineString([q[:2] for q in r["p"]]) for r in roads]

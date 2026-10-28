@@ -3,7 +3,7 @@
 // The ground is split into cells; cells that come into range are filled, cells left behind are
 // reused. A coarse mask keeps grass off buildings, roads, paths, driveways and water.
 import * as THREE from "three";
-import { TUNNEL, type MapData } from "./map";
+import { boreHalf, type MapData } from "./map";
 
 function hash2(i: number, j: number, k: number) {
   let x = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(k + 0x1b873593, 0x27d4eb2f);
@@ -108,7 +108,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   for (const r of D.rd) { line(r.p, roadWidth(r) + (kerbed.has(r.c) ? 2 * Math.max(...(r.pv ?? [pavement])) + 0.6 : paths.has(r.c) ? 0.5 : 0.8)); if (++rdk % 300 === 299) yield; }
   for (const w of D.wl) line(w.p, 2.2);
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
-  for (const t of D.tn ?? []) for (const end of [t.p.slice(0, 6), t.p.slice(-6)]) line(end, 2 * TUNNEL.half + 1);
+  for (const t of D.tn ?? []) for (const [end, k] of [[t.p.slice(0, 6), 0], [t.p.slice(-6), t.p.length - 1]] as const) line(end, 2 * boreHalf(t, k) + 1);
   // nor on a square's street and path faces, kerbs and all: their outlines here, their insides below
   const faced = !!D.sf && (typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips");
   if (faced) { const V = D.sf!.v; for (const e of D.sf!.e) line(Array.from(e.i, (i) => [V[3 * i], V[3 * i + 1]]), 0.8); }

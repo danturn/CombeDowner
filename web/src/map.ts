@@ -38,8 +38,9 @@ export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; m
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
-/** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
-export interface Tunnel { c: string; n: string; p: number[][] }
+/** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z];
+ *  hw: half the bore's width at each point, as wide as its way going in; pv: the pavement each side at each point, where it has one. */
+export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv?: number[] }
 /** A football pitch ["f", x, y, length, width, angle], a rugby pitch ["r", x, y, length, width, angle],
  *  or a cricket field ["c", x, y, angle, boundary rope ring, sightscreens [[x, y], ...]]. The angle
  *  is the long axis (the wicket, for cricket). */
@@ -186,9 +187,12 @@ const CELL = 8;
 /** How much of a tree's collision trunk is drawn trunk: rays (shots) go by the drawn one, a little thinner than you bump into. */
 const TRUNK_DRAWN = 0.8;
 
-/** A tunnel's cross-section (tools/tunnels.py): half the floor's width, floor to the top of the arch,
- *  and half the width of the stone face round each portal (as wide as the cutting it stands in). */
-export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
+/** A tunnel's cross-section (tools/tunnels.py): half the floor's width where its map doesn't say
+ *  (boreHalf), floor to the top of the arch, and how far each portal's stone face reaches past the
+ *  bore's side (to the cutting's sides). */
+export const TUNNEL = { half: 2.4, crown: 5.2, past: 4.0 };
+/** Half a bore's width at its point i. */
+export const boreHalf = (t: Tunnel, i: number) => t.hw?.[i] ?? TUNNEL.half;
 
 /** mover: the vehicle it hit, if it was one. */
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
@@ -491,24 +495,25 @@ export class GameMap {
       const p = t.p;
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
-        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        const half = Math.max(boreHalf(t, i), boreHalf(t, i + 1));
+        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
         const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
         const seen = new Set<number>();
         for (let s = 0; s <= n; s++) {
           const x = p[i][0] + ((p[i + 1][0] - p[i][0]) * s) / n, z = -(p[i][1] + ((p[i + 1][1] - p[i][1]) * s) / n);
-          for (const c of this.cellsAround(x, z, TUNNEL.half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
+          for (const c of this.cellsAround(x, z, half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
         }
       }
       // the portals' stone faces, either side of the arch
-      for (const [a, b] of [[p[0], p[1]], [p[p.length - 1], p[p.length - 2]]]) {
+      for (const [a, b, h] of [[p[0], p[1], boreHalf(t, 0)], [p[p.length - 1], p[p.length - 2], boreHalf(t, p.length - 1)]] as const) {
         const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
         for (const side of [1, -1]) {
-          const s0 = TUNNEL.half * side, s1 = TUNNEL.face * side;
+          const s0 = h * side, s1 = (h + TUNNEL.past) * side;
           this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + TUNNEL.crown + 1.5, 0);
         }
       }
       for (const side of [1, -1]) {
-        const w = offsetLine(p, TUNNEL.half * side);
+        const w = offsetLine(p, (i) => boreHalf(t, i) * side);
         for (let i = 0; i < w.length - 1; i++) {
           const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + TUNNEL.crown;
           this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, 0);
@@ -1106,12 +1111,12 @@ export class GameMap {
   /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
    *  map's own tunnels, or those of the square loaded there. */
   tunnelFloor(x: number, z: number): number | null {
-    let best: number | null = null, bd = TUNNEL.half + 0.2;
+    let best: number | null = null, bd = Infinity;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const a = this.tA[k], b = this.tB[k], vx = b[0] - a[0], vz = b[1] - a[1];
       const s = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz || 1)));
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
-      if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
+      if (d < a[3] + 0.2 && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
     }
     return best ?? this.tileAt(x, z)?.tunnelFloor(x, z) ?? null;
   }
@@ -1694,7 +1699,7 @@ function inRing(ring: number[][], x: number, y: number): boolean {
 }
 
 /** A line (data coords) moved sideways by o metres (left is positive), with mitred corners. */
-export function offsetLine(p: number[][], o: number): number[][] {
+export function offsetLine(p: number[][], by: number | ((i: number) => number)): number[][] {
   const out: number[][] = [];
   for (let i = 0; i < p.length; i++) {
     const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)], c = p[i];
@@ -1703,7 +1708,7 @@ export function offsetLine(p: number[][], o: number): number[][] {
       const dx = v[0] - u[0], dy = v[1] - u[1], l = Math.hypot(dx, dy);
       if (l > 1e-6) { nx += -dy / l; ny += dx / l; }
     }
-    const nl = Math.hypot(nx, ny) || 1;
+    const nl = Math.hypot(nx, ny) || 1, o = typeof by === "number" ? by : by(i);
     out.push([c[0] + (nx / nl) * o, c[1] + (ny / nl) * o]);
   }
   return out;
