@@ -3424,6 +3424,9 @@ def drop_paths_along_streets(rd):
         line = LineString([tuple(q[:3]) for q in r["p"]])
         drop = []
         for k in tree.query(line):
+            # a flight beside a pavement climbs from it or to it, which the pavement can't stand for
+            if r["c"] == "steps" and ratios[int(k)] == ALONG_PAVEMENT:
+                continue
             inside = areas[int(k)].intersection(line)
             for part in getattr(inside, "geoms", [inside]):
                 if part.geom_type != "LineString" or part.length < 3:
