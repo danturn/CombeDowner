@@ -14,7 +14,7 @@ import { buildVegetation } from "./trees";
 import { buildGrass, type Grass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
-import { aroundPortals, boreRoof, buildTunnels, cuttings, mouths } from "./tunnels";
+import { REPOSE, aroundPortals, boreRoof, buildTunnels, cuttings, mouths, portalBanks, wingTop } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
@@ -535,7 +535,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // Behind the headwall the hill is made up to just under its top for a grid square or so, where it
   // stands lower and no street lies on it: the grid's triangles from the dug floor in front dipped
   // behind the wall and left the top of the tube standing out of the ground.
-  for (const [cx, cy, dx, dy, left, right, reach, floor, top, crown] of cuts) {
+  // Behind a wing wall holding a steep bank that stands back from it, the ground is made up to just
+  // under its top in the same way, rather than dug to the floor with the cutting, which left a
+  // trench along the back of the wall.
+  for (const { cx, cy, dx, dy, left, right, reach, floor, top, crown, wings, steep } of cuts) {
     const nx = -dy, ny = dx, to = floor - Z0 - 0.05, fill = top - Z0 - 0.3, pad = T.dx, back = T.dx * 1.5;
     const r = Math.hypot(Math.max(-left, right) + pad, Math.max(reach, back) + pad);
     const i0 = Math.max(0, Math.floor((cx - r - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((cx + r - T.x0) / T.dx));
@@ -549,6 +552,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         continue;
       }
       if (out < 0 || out > reach || s < left - pad || s > right + pad) continue;
+      const side = s < left ? 0 : 1, held = (s < left || s > right) && steep[side] ? wingTop(wings[side], out) : -Infinity;
+      if (held > -Infinity) {
+        if (!covered[v] && roundTo[v] === Infinity) sink[v] = Math.min(sink[v], T.h[v] / 10 - (held - Z0 - 0.3));
+        continue;
+      }
       sink[v] = Math.max(sink[v], T.h[v] / 10 - to);
     }
   }
@@ -581,7 +589,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // (a path into a tunnel lies on the cutting's floor up to the tube's, not up the grid's slope onto the hill)
   const cutFloor = (x: number, y: number) => {
     let low = Infinity;
-    for (const [cx, cy, dx, dy, left, right, reach, floor] of cuts) {
+    for (const { cx, cy, dx, dy, left, right, reach, floor } of cuts) {
       const ox = x - cx, oy = y - cy, out = -(ox * dx + oy * dy), s = ox * -dy + oy * dx;
       if (out > -2 && out < reach && s > left && s < right) low = Math.min(low, floor - Z0);
     }
@@ -590,7 +598,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // (round a cutting, where the ground is dug a grid square past its walls, a street or path on the
   // bank above stands on the bank, not on the dug floor: its side face would hang down the wall)
   const cutBank = (x: number, y: number) => {
-    for (const [cx, cy, dx, dy, left, right, reach] of cuts) {
+    for (const { cx, cy, dx, dy, left, right, reach } of cuts) {
       const ox = x - cx, oy = y - cy, out = -(ox * dx + oy * dy), s = ox * -dy + oy * dx;
       if (out > -2 && out < reach + T.dx && s > left - T.dx && s < right + T.dx) return map.trueGround(x, -y);
     }
@@ -2061,10 +2069,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (D.cn) {
     const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
     for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
-    const portal = aroundPortals(map), r = C.step / 2;
+    const portal = aroundPortals(map), banks = portalBanks(map), r = C.step / 2;
+    // (laid over a cutting's side the wood came down it in a tilted sheet)
+    const steep = (x: number, y: number) => {
+      const g = [[-r, -r], [r, -r], [r, r], [-r, r]].map(([u, v]) => map.trueGround(x + u, -(y + v)));
+      return Math.max(...g) - Math.min(...g) > REPOSE * C.step;
+    };
     for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
       const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
-      if (H[j * C.nx + i] && [[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v))) H[j * C.nx + i] = 0;
+      if (!H[j * C.nx + i]) continue;
+      if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v)) || (banks(x, y) && steep(x, y))) H[j * C.nx + i] = 0;
     }
     const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
     // corner heights: the average of the canopy cells around each corner (edges taper down)
@@ -2176,7 +2190,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   buildLandmarks(map, scene);
   // the wider map's (where its full-detail squares aren't built yet: those carry their own)
   if (core && map.wide?.d.lm && !map.tileIndex) buildLandmarks(map, scene, map.wide.d.lm);
-  buildTunnels(map, scene, (x, y) => drawnGround(x, -y));
+  // (the ground's colour at a spot, as its four grid points blend it)
+  const groundTint = (x: number, y: number) => {
+    const fi = Math.min(T.nx - 1.001, Math.max(0, (x - T.x0) / T.dx)), fj = Math.min(T.ny - 1.001, Math.max(0, (y - T.y0) / T.dy));
+    const i = Math.floor(fi), j = Math.floor(fj), u = fi - i, v = fj - j, out = new THREE.Color(0, 0, 0);
+    for (const [a, b, f] of [[0, 0, (1 - u) * (1 - v)], [1, 0, u * (1 - v)], [0, 1, (1 - u) * v], [1, 1, u * v]]) {
+      const k = ((j + b) * T.nx + i + a) * 3;
+      out.r += tCol[k] * f; out.g += tCol[k + 1] * f; out.b += tCol[k + 2] * f;
+    }
+    return out;
+  };
+  buildTunnels(map, scene, (x, y) => drawnGround(x, -y), groundTint);
   mark("landmarks-tunnels");
   yield* buildFurniture(map, scene, culler);
   mark("furniture");

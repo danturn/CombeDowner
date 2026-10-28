@@ -18,9 +18,10 @@ a road's carriageway with its pavements, a footway in a road tunnel staying a fo
 floor beside a carriageway with none; a path's width with room to pass at each side. The width
 follows the way's from one portal to the other, and everything that knows where a bore is (the
 game, the writer's clearances, the clash check) reads it from the tunnel's own `hw` (`half_at`).
-A bore starts where the hill stands 5.2 m over its floor whatever it carries (CROWN, a lorry's
-headroom); the game draws a path's lower and a railway's higher (web/src/map.ts boreCrown), the
-headwall covering the difference.
+A bore is as high as what it carries needs (`crown`, as web/src/map.ts boreCrown draws it): a lorry's
+headroom under a road, a train's under a railway, a walker's under a path. It starts where the hill
+stands FACE_COVER over that arch, so the headwall is a modest band of stone over a path's low arch,
+not the same height of wall as a road's with a little arch at its foot.
 """
 import math
 
@@ -31,8 +32,12 @@ HALF = 2.4      # half the floor width of a tunnel whose way's width isn't known
 ROAD_EDGE = 0.5  # metres of floor each side of a carriageway that has no pavement
 PATH_EDGE = 1.0  # metres of floor each side of a path, to pass someone coming the other way
 FACE_PAST = 4.0  # metres a headwall reaches past each side of its bore (web/src/tunnels.ts)
-CROWN = 5.2     # floor to the top of the arch
-COVER = 1.0     # ground over the arch where the bore starts
+CROWN = 5.2     # floor to the top of a road's bore
+COVER = 1.0     # ground over a road's arch somewhere along it for there to be a tunnel at all
+FACE_COVER = 0.8  # hill over the arch where the bore starts: the headwall stands 1.2 m over the arch
+                  # and 0.4 m over the hill at its face (web/src/tunnels.ts), so it just covers it
+MOTOR = {"motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street", "service"}
+RAIL = {"rail", "railway", "standard_gauge", "narrow_gauge", "light_rail", "subway", "tram"}
 MIN_BORE = 15   # metres: anything shorter stays a road
 CUT = 3.0       # the cutting's floor reaches this far past each tunnel wall, as wide as the portal
 INTO = 5.0      # the cutting carries on this far into the bore, behind the portal, so the
@@ -44,19 +49,27 @@ ABOVE = 2.5     # a bridge this far over the floor passes over it rather than me
 FILL = 1.0      # ground between two decks no more than this above them is the junction's own fill
 
 
-def bores(run, z, ranges, elev, decks=()):
+def crown(c):
+    """Floor to the top of the bore of a way of class c (web/src/map.ts boreCrown)."""
+    if c.removesuffix("_link") in MOTOR: return CROWN
+    return 6.0 if c in RAIL else 3.6
+
+
+def bores(run, z, ranges, elev, c, decks=()):
     """Index ranges [i0, i1] of run (points [x, y, t]) that are bored: within a tunnel stretch with
-    at least CROWN + COVER of hill over the floor z somewhere, from the first point where the ground
-    stands a whole arch over the floor (the hill face) to the last. `decks` are the points with
+    at least CROWN + COVER of hill over the floor z somewhere (and enough for the face of a way of
+    class c), from the first point where the ground stands its arch and FACE_COVER over the floor
+    (the hill face) to the last. `decks` are the points with
     another way's deck over them, which is not hill (`decked`). Stretches that meet end to end (the
     data's tunnel split where a way joins over it) are one tunnel."""
     out = []
     for inside in _joined(run, ranges):
         on_deck = decked(run, inside, decks, elev)
         hill = [i for i in inside if i not in on_deck]
-        if not any(elev(*run[i][:2]) - z[i] >= CROWN + COVER for i in hill):
+        start = crown(c) + FACE_COVER
+        if not any(elev(*run[i][:2]) - z[i] >= max(CROWN + COVER, start) for i in hill):
             continue
-        face = [i for i in hill if elev(*run[i][:2]) - z[i] >= CROWN]
+        face = [i for i in hill if elev(*run[i][:2]) - z[i] >= start]
         i0, i1 = face[0], face[-1]
         if math.dist(run[i0][:2], run[i1][:2]) >= MIN_BORE:
             out.append((i0, i1))
@@ -98,7 +111,7 @@ def rebore(pending, elev):
     with ground over it keeps its bore, however near its roof the ways crossing it run."""
     for k, decks in decks_over(pending).items():
         r = pending[k]
-        r["bored"] = bores(r["run"], r["z"], r["tunnel_ranges"], elev, decks)
+        r["bored"] = bores(r["run"], r["z"], r["tunnel_ranges"], elev, r["c"], decks)
 
 
 def decks_over(pending):

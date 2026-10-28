@@ -203,12 +203,21 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
 let brickTex: THREE.Texture | null = null, groundTex: THREE.Texture | null = null;
 const STONE = "#cdbb93", CONCRETE = "#b4b1a9", GRASS = "#6e7f4c";
 
-/** Triangles gathered for one mesh, in scene coords, with the ground's texture laid on them from above. */
+/** The ground's own colour at data (x, y), as the terrain is drawn there. */
+export type Tint = (x: number, y: number) => THREE.Color;
+
+/** Triangles gathered for one mesh, in scene coords, with the ground's texture laid on them from
+ *  above, coloured as the ground under them is (tint) so the cutting's floor doesn't show as a
+ *  patch of other grass where it and the ground meet. */
 class Sheet {
-  pos: number[] = []; uv: number[] = []; idx: number[] = [];
+  pos: number[] = []; uv: number[] = []; col: number[] = []; idx: number[] = [];
+  constructor(private tint?: Tint) {}
   quad(a: number[], b: number[], c: number[], d: number[]) {
     const k = this.pos.length / 3;
-    for (const q of [a, b, c, d]) { this.pos.push(q[0], q[1], q[2]); this.uv.push(q[0] / 7, q[2] / 7 + q[1] / 7); }
+    for (const q of [a, b, c, d]) {
+      this.pos.push(q[0], q[1], q[2]); this.uv.push(q[0] / 7, q[2] / 7 + q[1] / 7);
+      if (this.tint) { const t = this.tint(q[0], -q[2]); this.col.push(t.r, t.g, t.b); }
+    }
     this.idx.push(k, k + 1, k + 2, k, k + 2, k + 3);
   }
   mesh(mat: THREE.Material) {
@@ -216,6 +225,7 @@ class Sheet {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
+    if (this.col.length) g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
     g.setIndex(this.idx);
     g.computeVertexNormals();
     const m = new THREE.Mesh(g, mat);
@@ -226,7 +236,7 @@ class Sheet {
 
 /** drawn: the ground's height as it's drawn at data (x, y), scene Y, so what's laid round a portal
  *  meets it with no gap. */
-export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: number, y: number) => number = (x, y) => map.trueGround(x, -y)) {
+export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: number, y: number) => number = (x, y) => map.trueGround(x, -y), tint?: Tint) {
   const tunnels = map.d.tn ?? [];
   if (!tunnels.length) return;
   alignPortals(tunnels, map.d.b);
@@ -297,8 +307,9 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
     scene.add(lamps);
   }
   const mat = (color: string, map?: THREE.Texture) => new THREE.MeshLambertMaterial({ color, map: map ?? null, side: THREE.DoubleSide });
-  const stone = mat(STONE), concrete = mat(CONCRETE), apronGrass = mat("#647347");
-  for (const w of walls(map)) buildPortal(w, scene, Z0, drawn, { stone, concrete, apronGrass });
+  const stone = mat(STONE), concrete = mat(CONCRETE);
+  const apronGrass = tint ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide }) : mat("#647347");
+  for (const w of walls(map)) buildPortal(w, scene, Z0, drawn, { stone, concrete, apronGrass }, tint);
 }
 
 const KERB = 0.15;       // a pavement's height over the carriageway, through the tunnel as outside it
@@ -314,7 +325,7 @@ function floorAcross(t: Tunnel, q: { h: number; pv: number }): number[][] {
 interface Mats { stone: THREE.Material; concrete: THREE.Material; apronGrass: THREE.Material }
 
 /** One headwall's portal in its style: the face, what lines the cutting in front, and the cutting's floor. */
-function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: number, y: number) => number, M: Mats) {
+function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: number, y: number) => number, M: Mats, tint?: Tint) {
   const { g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top, style } = w;
   const box = style === "b";
   /** scene coords of the spot s across (to the tunnel's left), out metres out from the face, at data height h */
@@ -384,11 +395,12 @@ function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: 
 
   // the cutting's floor in front of the face, just under the road on it, and where the ground beside
   // or beyond it stands higher than the floor, a bank face up to it, so there's no gap to see through
-  const floor = new Sheet(), cols = Math.max(1, Math.ceil(right - left)), rows = Math.max(1, Math.ceil(w.reach));
+  const floor = new Sheet(tint), cols = Math.max(1, Math.ceil(right - left)), rows = Math.max(1, Math.ceil(w.reach));
   const fh: number[] = [];
   for (let r = 0; r <= rows; r++) {
     const o = (w.reach * r) / rows;
-    fh.push(Math.min(z, ground((left + right) / 2, o)) - 0.03);
+    // (never under the dug ground it lies on, or that shows through it in patches)
+    fh.push(Math.min(z - 0.03, ground((left + right) / 2, o) + 0.02));
   }
   for (let r = 0; r < rows; r++) {
     const o0 = (w.reach * r) / rows, o1 = (w.reach * (r + 1)) / rows;
@@ -398,14 +410,16 @@ function buildPortal(w: Headwall, scene: THREE.Object3D, Z0: number, drawn: (x: 
     }
   }
   // (the ground just past the end, as the floor's own height runs up to it)
-  const bank = new Sheet(), up = (s: number, o: number, h: number) => Math.max(h, ground(s, o >= w.reach ? o + 0.02 : o));
+  const bank = new Sheet(tint), up = (s: number, o: number, h: number) => Math.max(h, ground(s, o >= w.reach ? o + 0.02 : o));
   for (let c = 0; c < cols; c++) {
     const s0 = left + ((right - left) * c) / cols, s1 = left + ((right - left) * (c + 1)) / cols, o = w.reach, h = fh[rows];
     bank.quad(P(s0, o, h), P(s1, o, h), P(s1, o, up(s1, o, h)), P(s0, o, up(s0, o, h)));
   }
-  for (const s of [left - 0.05, right + 0.05]) for (let r = 0; r < rows; r++) {
-    const o0 = (w.reach * r) / rows, o1 = (w.reach * (r + 1)) / rows;
-    bank.quad(P(s, o0, fh[r]), P(s, o1, fh[r + 1]), P(s, o1, up(s, o1, fh[r + 1])), P(s, o0, up(s, o0, fh[r])));
+  // (each side's from behind the face's front and down past the floor's edge: stopping flush with
+  // them left a slit at the corner that the sky showed through as a pale line)
+  for (const s of [left - 0.05, right + 0.05]) for (let r = -1; r < rows; r++) {
+    const o0 = r < 0 ? -FACE_DEPTH : (w.reach * r) / rows, o1 = (w.reach * (r + 1)) / rows, f0 = fh[Math.max(0, r)];
+    bank.quad(P(s, o0, f0 - 0.3), P(s, o1, fh[r + 1] - 0.3), P(s, o1, up(s, o1, fh[r + 1])), P(s, o0, up(s, o0, f0)));
   }
   add(floor.mesh(M.apronGrass));
   add(bank.mesh(M.apronGrass));
@@ -419,6 +433,9 @@ const COPING = 0.3;
 const REACH = 6;
 const MIN_PAST = 1.8;    // metres of face each side of the openings however low the hill beside, so it reads as a headwall, not a pair of jambs
 const HIGH = 1.0;        // metres over the floor the hill beside the cutting must stand to want a wall
+const BANK = 6;          // metres back from a wing wall that a steep bank behind it counts
+const RAKE = 1.0;        // the fall over each metre of the raked end of a wall holding a steep bank
+export const REPOSE = 0.7;      // the slope a grassed bank lies at by itself: anything steeper is held up by a wall
 
 interface Headwall {
   g: Portal[]; dx: number; dy: number; nx: number; ny: number; cx: number; cy: number; z: number;
@@ -427,6 +444,8 @@ interface Headwall {
   crown: number;
   /** each side's wing wall, left then right: [metres out from the face, top's height (data)] */
   wings: [number[][], number[][]];
+  /** whether each side's wall holds a steep bank standing back from it, with a dug strip between */
+  steep: [boolean, boolean];
   /** how far out in front of the face the cutting is dug to the floor */
   reach: number;
   style: PortalStyle;
@@ -457,36 +476,61 @@ function walls(map: GameMap): Headwall[] {
     top = Math.min(top, 16);
     // The wall's top runs in straight slopes over the bank it holds, never below it: the survey's
     // every metre gave a lumpy top, a step for each bump in the bank.
+    const bank = (s: number, side: number, k: number, o: number) => ground(cx + nx * (s + side * o) - dx * k, cy + ny * (s + side * o) - dy * k) - z;
+    // (where the cutting is dug so wide that there's no bank just off the face, but one rises steeply
+    // beyond, the wall holds that: what stands over a slope the bank could lie at, within BANK)
+    const held = (s: number, side: number, k: number, steep: boolean) => {
+      let h = bank(s, side, k, 1.5);
+      if (steep) for (let o = 2.5; o <= 1.5 + BANK; o += 1) h = Math.max(h, bank(s, side, k, o) - (o - 1.5) * REPOSE);
+      return h;
+    };
     const wing = (s: number, side: number) => {
-      const run: number[][] = [];
+      const run: number[][] = [], steep = bank(s, side, 0, 1.5) < HIGH;
       let low = false;
       for (let k = 0; k <= WING && !low; k++) {
-        const x = cx + nx * (s + side * 1.5) - dx * k, y = cy + ny * (s + side * 1.5) - dy * k, h = ground(x, y) - z;
+        const h = held(s, side, k, steep);
         low = h < HIGH;
-        if (low) { if (run.length) run.push([k, HIGH * 0.5]); }
-        else run.push([k, Math.min(top, Math.max(HIGH, h + 0.3))]);
+        if (low && !steep) { if (run.length) run.push([k, HIGH * 0.5]); }
+        else if (!low) run.push([k, Math.min(top, Math.max(HIGH, h + 0.3))]);
       }
+      // (one holding up a steep bank is raked down at its end to the cutting's side, as the bank
+      // would lie, not left a tall square end)
+      if (steep && run.length) { const [k, h] = run[run.length - 1]; run.push([k + (h - HIGH * 0.5) / RAKE, HIGH * 0.5]); }
       // (one still holding up a high bank where it may run no further comes down into the side of the
       // cutting there, not to a tall square end standing out over it)
-      if (!low && run.length) {
+      else if (!low && run.length) {
         const k = WING + 3, x = cx + nx * s - dx * k, y = cy + ny * s - dy * k;
         run.push([k, Math.max(HIGH * 0.5, Math.min(run[run.length - 1][1], ground(x, y) - z))]);
       }
       return upperHull(run).map(([k, h]) => [k, z + h]);
     };
     const wings: [number[][], number[][]] = [wing(left, -1), wing(right, 1)];
+    const steep: [boolean, boolean] = [bank(left, -1, 0, 1.5) < HIGH, bank(right, 1, 0, 1.5) < HIGH];
     const reach = Math.max(REACH, ...wings.map((w) => (w.length ? w[w.length - 1][0] : 0)));
-    out.push({ g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top, wings, reach, style: portalStyle(tn, g[0].t), crown });
+    out.push({ g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top, wings, steep, reach, style: portalStyle(tn, g[0].t), crown });
   }
   return out;
 }
 
 /** The cuttings in front of the headwalls, for the ground (world.ts): dug down to the floor between
  *  the wing walls, out as far as they run, so no slope of hillside stands in front of the arches.
- *  Each is [face's middle x, y, way in x, y, left, right, how far out, floor, headwall's top (data),
- *  the bores' height]. */
-export function cuttings(map: GameMap): number[][] {
-  return walls(map).map((w) => [w.cx, w.cy, w.dx, w.dy, w.left, w.right, w.reach, w.z, w.z + w.top, w.crown]);
+ *  wings: each side's wing wall, left then right, as [metres out from the face, top's height (data)],
+ *  and steep, whether it holds a steep bank standing back from it. */
+export interface Cutting {
+  cx: number; cy: number; dx: number; dy: number; left: number; right: number; reach: number;
+  floor: number; top: number; crown: number; wings: [number[][], number[][]]; steep: [boolean, boolean];
+}
+export function cuttings(map: GameMap): Cutting[] {
+  return walls(map).map((w) => ({ cx: w.cx, cy: w.cy, dx: w.dx, dy: w.dy, left: w.left, right: w.right, reach: w.reach, floor: w.z, top: w.z + w.top, crown: w.crown, wings: w.wings, steep: w.steep }));
+}
+
+/** A wing wall's top (data height) where it is k metres out from the face, or -Infinity past its ends. */
+export function wingTop(wing: number[][], k: number): number {
+  if (wing.length < 2 || k < wing[0][0] || k > wing[wing.length - 1][0]) return -Infinity;
+  let i = 0;
+  while (i < wing.length - 2 && wing[i + 1][0] < k) i++;
+  const [k0, h0] = wing[i], [k1, h1] = wing[i + 1];
+  return h0 + ((h1 - h0) * (k - k0)) / ((k1 - k0) || 1);
 }
 
 /** Whether data (x, y) is on or over a portal: its headwall and wing walls with a margin round
@@ -499,6 +543,16 @@ export function aroundPortals(map: GameMap): (x: number, y: number) => boolean {
   return (x, y) => ws.some((w) => {
     const rx = x - w.cx, ry = y - w.cy, out = -(rx * w.dx + ry * w.dy), s = rx * w.nx + ry * w.ny;
     return s > w.left - M && s < w.right + M && out > -BEHIND && out < Math.max(w.reach + M, APPROACH);
+  });
+}
+
+/** Whether data (x, y) is on a cutting's banks, out to either side of a portal: wood there over
+ *  ground steeper than a bank lies at by itself is over the cutting's side, and is left off. */
+export function portalBanks(map: GameMap): (x: number, y: number) => boolean {
+  const ws = walls(map), SIDE = 30, APPROACH = 40, BEHIND = 10;
+  return (x, y) => ws.some((w) => {
+    const rx = x - w.cx, ry = y - w.cy, out = -(rx * w.dx + ry * w.dy), s = rx * w.nx + ry * w.ny;
+    return s > w.left - SIDE && s < w.right + SIDE && out > -BEHIND && out < Math.max(w.reach + SIDE, APPROACH);
   });
 }
 

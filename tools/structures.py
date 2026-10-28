@@ -282,7 +282,7 @@ def make_run(chain, elev):
         base += L
     c = chain[0][0]["cls"]
     z = level_structures(run, [elev(x, y) for x, y, _ in run], bridge, tunnel)
-    bored = TN.bores(run, z, tunnel, elev)
+    bored = TN.bores(run, z, tunnel, elev, c)
     return dict(parts=parts, c=c, run=run, z=z, span=in_ranges(run, bridge), bored=bored,
                 tunnel_ranges=tunnel)
 

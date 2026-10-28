@@ -567,7 +567,7 @@ for g, p in L("segment"):
             pieces, through = (towpath(run, z, c != "steps", in_ranges(run, bridge_ranges)) if c in PATHS and CANAL else ([(run, z, {})], False))
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
-                bored = TN.bores(run, z, tr, elev)
+                bored = TN.bores(run, z, tr, elev, c)
                 pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow))
 TN.rebore(pending, elev)
 def chains():

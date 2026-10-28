@@ -41,11 +41,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   concrete box, with square openings under a flat lintel, a pier between the bores and concrete
   wing walls, lorry-high inside: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
-  Bath stone face, about 3.6 m to the top. Each bore is as wide as the road or path going in, wall
+  Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
   opening along a cutting dug to its floor, with wing walls holding up its sides where the hill
-  beside it stands high, their copings sloping down the bank, with no tree or wood overhanging
-  the portal or the way out in front of it, and a stream through a culvert goes in under the hill. Out of town a dual
+  beside it stands high or rises steeply, their copings sloping down the bank, with no tree or
+  wood overhanging the portal, the way out in front of it or the cutting's steep sides, and a stream through a culvert goes in under the hill. Out of town a dual
   carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so
   each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
   wall rather than in one slope of road.
