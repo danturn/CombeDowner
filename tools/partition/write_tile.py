@@ -58,7 +58,7 @@ from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
-from partition.corridors import PATHW, path_width, service_kind
+from partition.corridors import PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
 from partition.standing import Standing
@@ -84,6 +84,7 @@ HEIGHT = {
     "dry_stone": 1.2, "wire_fence": 1.2, "guard_rail": 0.75,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
+CORNER_GAP = 0.3    # metres: corners closer than this to the last point kept are one corner
 SURFACE_TOLERANCE = 0.05   # metres the street surfaces' outlines may move when simplified
 # Metres the road surface is shrunk before a barrier is tested against it: the road's interior, not
 # its boundary. A wall standing on the boundary is a front wall, and must survive.
@@ -111,6 +112,9 @@ KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassif
 PEDESTRIAN_STREET_NEAR = 15.0  # metres: main draws a wide pedestrian street on its middle line, so a street's edge can lie this far off it
 PEDESTRIAN_NEAR = 3.0    # metres: how near an old pedestrian street a new street must lie along to be one
 GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+# Ways written along their own corners, not only sampled along: the paths, and the lanes and yards
+# that turn tightly between buildings and walls.
+KEEP_CORNERS = GAME_PATHS | {"service", "living_street"}
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8
@@ -391,6 +395,24 @@ def lidar_tall(sq):
     return tall
 
 
+def stretch_samples(t0, t1, corners):
+    """Distances along a line to sample the stretch t0..t1 at: its corners, and evenly between them
+    no more than SEGMENT metres apart, for the heights and widths the later steps read along it."""
+    inner = [t for t in corners if t0 + CORNER_GAP < t < t1 - CORNER_GAP]
+    if not inner:
+        n = max(2, int((t1 - t0) / SEGMENT) + 1)
+        return [t0 + (t1 - t0) * k / n for k in range(n + 1)]
+    marks = [t0]
+    for t in inner + [t1]:
+        if t - marks[-1] >= CORNER_GAP or t == t1:
+            marks.append(t)
+    ts = [t0]
+    for a, b in zip(marks, marks[1:]):
+        n = max(1, math.ceil((b - a) / SEGMENT))
+        ts += [a + (b - a) * k / n for k in range(1, n + 1)]
+    return ts
+
+
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
@@ -440,20 +462,13 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             chain.clear()
 
         last = None     # the sample before, and whether it was inside
-        # a flight of steps keeps its own corners: it is only a few metres long and turns at its
-        # landings, so sampled every SEGMENT metres a dog-leg folds into a V
-        corners = []
-        if r["cls"] == "steps":
-            cs = list(whole.coords)
-            corners = list(itertools.accumulate(math.dist(a[:2], b[:2]) for a, b in zip(cs, cs[1:])))[:-1]
+        corners = line_corners(whole, r["cls"]) if r["cls"] in KEEP_CORNERS else []
         for t0, t1, sec in r["sections"]:
             if t1 - t0 < 0.5:
                 continue
             # the stretch, as the points along it that are inside the square. Sampling by length and
             # then dropping the outside points keeps the record's own geometry as the corridor's.
-            n = max(2, int((t1 - t0) / SEGMENT) + 1)
-            ts = sorted({t0 + (t1 - t0) * k / n for k in range(n + 1)} | {t for t in corners if t0 + 0.05 < t < t1 - 0.05})
-            for k, t in enumerate(ts):
+            for k, t in enumerate(stretch_samples(t0, t1, corners)):
                 p = whole.interpolate(t)
                 inside = has_ground(p.x, p.y)
                 # A street leaving the square runs on to its edge: stopped at the last sample inside,
