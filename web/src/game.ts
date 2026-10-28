@@ -1553,7 +1553,7 @@ export class Game {
     this.minimap.pins = picker?.pins ?? [];
     $("bigmap").hidden = !picker;
     $("hud").classList.toggle("pubmode", !!picker);
-    $("bigmapclose").textContent = picker ? "Back" : `Close map (${ctl("map.close", input() === "touch" ? "keys" : input())})`;
+    $("bigmapclose").textContent = picker ? "Back" : input() === "touch" ? "Close map" : `Close map (${ctl("map.close")})`;
     $("bigmapme").hidden = !!picker;
     this.minimap.cursor = null;
     this.minimap.resetFull();

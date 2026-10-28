@@ -373,8 +373,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   thing, so you can see what was picked when you get there. Each player's markers and arrow are in
   their own colour on the maps, never one the maps use for something else; click your marker, or the
   thing it's on, again to take it down.
-- **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
-  (on foot) is a whistle heard 300 m off; and with the big map open, P (□ on a pad) is a pencil to draw on it for
+- **Signals**: L (hold d-pad ↑ on a pad) sends up a red flare that hangs over you for half a minute, seen across the town; H
+  (on foot, or hold d-pad ↓) is a whistle heard 300 m off; and with the big map open, P (□ on a pad) is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
 - **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
   streets, with a small pint on each pub you've won back and a thin amber ring where a scar's

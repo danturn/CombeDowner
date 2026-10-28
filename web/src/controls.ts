@@ -96,6 +96,9 @@ export const STREETS: Control[] = [
   { id: "job", name: "See the job's poster again", keys: ["KeyJ"], pad: B.touchpad, hold: true, touch: "Poster" },
   { id: "mark", name: "Mark the spot", keys: ["KeyG"], mouse: 1, pad: B.right, where: "foot" },
   { id: "pause", name: "Pause", keys: ["Escape"], pad: B.options, touch: "II" },
+  // held, as a tap of these d-pad buttons is the torch and the ride
+  { id: "flare", name: "Send up a flare", keys: ["KeyL"], pad: B.up, hold: true, touch: "Flare" },
+  { id: "whistle", name: "Whistle", keys: ["KeyH"], pad: B.down, hold: true, touch: "Whistle", where: "foot" },
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },
   // purposes that are another control's in their own place
   { id: "heave", name: "Heave (Push the Bus)", keys: ["Space"], via: "jump", say: { touch: "Heave" } },
@@ -110,8 +113,8 @@ export const STREETS: Control[] = [
   { id: "again", name: "Go again (a race)", keys: ["KeyE", "Backspace"], via: "use", say: { touch: "Again" } },
   { id: "watch", name: "Watch someone else (out of a race)", keys: ["KeyQ", "KeyE"], say: { keys: "Q / E", pad: "d-pad ← →", touch: "◀ ▶" } },
   // at a car's wheel, or a narrowboat's helm
-  { id: "drive", name: "Drive", keys: ["KeyW"], say: STICK("W", "R2", "stick ↑") },
-  { id: "brake", name: "Brake and reverse", keys: ["KeyS"], say: STICK("S", "L2", "stick ↓") },
+  { id: "drive", name: "Drive", keys: ["KeyW"], say: STICK("W", PAD_NAME[B.r2], "stick ↑") },
+  { id: "brake", name: "Brake and reverse", keys: ["KeyS"], say: STICK("S", PAD_NAME[B.l2], "stick ↓") },
   { id: "handbrake", name: "Handbrake", keys: ["Space"], via: "jump", say: { touch: "Jump" } },
   { id: "out", name: "Get out", keys: ["KeyE"], pad: B.triangle, touch: "Get out", where: "wheel" },
   { id: "horn", name: "Horn, bell, siren or chimes", keys: ["KeyH"], pad: B.r1, touch: "Fire", where: "wheel" },
@@ -154,7 +157,7 @@ export const PLACES: Record<string, Control[]> = {
     { id: "map.mark", name: "mark", mouse: 0, keys: ["KeyG"], pad: B.cross, say: { keys: "Click", touch: "Tap" } },
     { id: "map.cursor", name: "move the cursor", say: { pad: "Left stick" } },
     { id: "map.pan", name: "move", keys: ["KeyW", "KeyA", "KeyS", "KeyD"], say: STICK("Drag or WASD", "", "Drag") },
-    { id: "map.zoom", name: "zoom", say: STICK("Wheel or +/−", "R2/L2 or right stick", "Pinch") },
+    { id: "map.zoom", name: "zoom", say: STICK("Wheel or +/−", `${PAD_NAME[B.r2]}/${PAD_NAME[B.l2]} or right stick`, "Pinch") },
     { id: "map.find", name: "find yourself", keys: ["Space", "KeyC"], pad: B.triangle },
     { id: "map.pencil", name: "pencil", keys: ["KeyP"], pad: B.square, touch: "Pencil" },
     { id: "map.close", name: "close", keys: ["KeyM", "Escape"], pad: B.circle, say: { keys: "M or Esc", touch: "Close map" } },

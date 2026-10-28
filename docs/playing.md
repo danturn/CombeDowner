@@ -211,7 +211,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
 | R3, held | radio | radio |
-| D-pad | up torch, down ride, left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
+| D-pad | up: tap the torch, hold a flare; down: tap ride, hold whistle; left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
 | Create, held | the scores | the scores |
 | Touchpad | tap: the map (on it: Cross marks, Triangle finds you, Square is the pencil, Circle closes); hold: the job's poster again (a Wanted bounty) | the map |
 | Options | pause | pause |
@@ -946,9 +946,9 @@ you're told to wait while they do, and they get a banner saying so.
 (Radio) to talk to the whole room through a crackly walkie-talkie. The browser asks for the mic
 when you press Play, and you can mute it from the pause menu.
 
-**Signals**, for when talking won't do: press L (Flare on a touch screen) to send up a red flare
+**Signals**, for when talking won't do: press L (a hold of d-pad ↑ on a pad, Flare on a touch screen) to send up a red flare
 that hangs 60 m over you for half a minute, seen right across the town (one a minute, or one per
-clue on a treasure trail); H on foot (Whistle) for a two-fingered whistle anyone within 300 m hears
+clue on a treasure trail); H on foot (a hold of d-pad ↓, or Whistle) for a two-fingered whistle anyone within 300 m hears
 from where you are; and with the big map open, P (□ on a pad) or its Pencil button to draw on the map with a
 finger or the mouse. Everyone in the room sees your lines in your colour, and Rub out takes yours
 off. On a trail they're wiped when the clue changes.

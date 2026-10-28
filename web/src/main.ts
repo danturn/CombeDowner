@@ -805,6 +805,8 @@ padActions(STREETS, {
   map: press("KeyM"),
   torch: press("KeyF"),
   ride: press("KeyX"),
+  flare: press("KeyL"),
+  whistle: press("KeyH"),
   bino: press("KeyB"),
   mark: press("KeyG"),
   job: press("KeyJ"),
