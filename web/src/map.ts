@@ -17,7 +17,7 @@ import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
-import { alignPortals } from "./tunnels";
+import { alignPortals, portalFaces } from "./tunnels";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -196,6 +196,10 @@ export function footballPosts(p: Oblong): number[][] {
 }
 
 const CELL = 8;
+/** The deepest a bridge's deck is drawn, top to underside (world.ts KINDS). */
+const DECK_DEPTH = 1.1;
+/** Feet so far down that blocked() finds every trunk and post, wherever it stands. */
+const ANY_HEIGHT = -1e9;
 /** How much of a tree's collision trunk is drawn trunk: rays (shots) go by the drawn one, a little thinner than you bump into. */
 const TRUNK_DRAWN = 0.8;
 
@@ -290,7 +294,7 @@ export class GameMap {
   private pieceCells = new Map<number, number[]>();
   private bCells = new Map<number, number[]>();
   // tree trunks
-  private cX: number[] = []; private cZ: number[] = []; private cR: number[] = []; private cTop: number[] = [];
+  private cX: number[] = []; private cZ: number[] = []; private cR: number[] = []; private cTop: number[] = []; private cFoot: number[] = [];
   private segCells = new Map<number, number[]>();
   private treeCells = new Map<number, number[]>();
   private stamp: Uint32Array = new Uint32Array(0);
@@ -437,7 +441,8 @@ export class GameMap {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
-          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, -Infinity, tops[i + 1] + 1.25);
+          // (down only to the deck's underside, so a road or path passing under has no wall across it)
+          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, Math.min(tops[i], tops[i + 1]) - DECK_DEPTH, tops[i + 1] + 1.25);
         }
       }
     }
@@ -524,14 +529,6 @@ export class GameMap {
           for (const c of this.cellsAround(x, z, half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
         }
       }
-      // the portals' stone faces, either side of the arch
-      for (const [a, b, h] of [[p[0], p[1], boreHalf(t, 0)], [p[p.length - 1], p[p.length - 2], boreHalf(t, p.length - 1)]] as const) {
-        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
-        for (const side of [1, -1]) {
-          const s0 = h * side, s1 = (h + TUNNEL.past) * side;
-          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + boreCrown(t) + 1.5, 0);
-        }
-      }
       for (const side of [1, -1]) {
         const w = offsetLine(p, (i) => boreHalf(t, i) * side);
         for (let i = 0; i < w.length - 1; i++) {
@@ -540,6 +537,8 @@ export class GameMap {
         }
       }
     }
+    // the portals' faces, either side of the openings
+    for (const [ax, ay, bx, by, top] of portalFaces(d.tn ?? [], d.b)) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0);
 
     yield;
     this.beginSlice();
@@ -584,7 +583,7 @@ export class GameMap {
     for (const [x, y, z, s] of d.tr) {
       if (this.spent(16)) yield;
       const i = this.cX.length;
-      this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
+      this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s); this.cFoot.push(z - this.z0);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
     }
     // the cable car's platforms to stand on, and its stations' pillars and towers' legs
@@ -614,11 +613,11 @@ export class GameMap {
         this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45);
       }
       else if (kind === "bus" && f[6]) this.addBox(x, y, a, -0.75, 1.55, 0.6, g + 2.4);
-      else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4);
-      else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25);
-      else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1);
-      else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
-      else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
+      else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4, g);
+      else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25, g);
+      else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1, g);
+      else if (kind === "pole") this.addPost(x, y, 0.15, g + 8, g);
+      else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9, g);
       else if (kind === "phone") this.addBox(x, y, a, 0, 0.48, 0.48, g + 2.5);
     }
     // the beacons and lights at crossings stand at each kerb
@@ -626,7 +625,7 @@ export class GameMap {
       if (this.spent(16)) yield;
       const [x, y, z, a, , w] = c as [number, number, number, number, string, number];
       const off = w / 2 + 0.5, nx = -Math.sin(a) * off, ny = Math.cos(a) * off;
-      for (const s of [1, -1]) this.addPost(x + nx * s, y + ny * s, 0.12, z - this.z0 + 3);
+      for (const s of [1, -1]) this.addPost(x + nx * s, y + ny * s, 0.12, z - this.z0 + 3, z - this.z0);
     }
     // a concrete block across a path stops you; the rest you can get past or over
     for (const f of d.pb ?? []) {
@@ -637,7 +636,7 @@ export class GameMap {
     // big landmark trees: their trunks are solid
     for (const [kind, x, y, z, ang, ...rest] of [...d.lm ?? [], ...wide?.d.lm ?? []]) {
       const g = +z - this.z0;
-      if (kind === "oak") this.addPost(+x, +y, 1.1, g + 6);
+      if (kind === "oak") this.addPost(+x, +y, 1.1, g + 6, g);
       else if (kind === "spire") this.addBox(+x, +y, +ang, 0, +rest[0] / 2, +rest[0] / 2, g + +rest[1]);   // the tower
       else if (kind === "bridge") this.addBox(+x, +y, +ang, 0, 9, 3.2, g + 3);                           // the arched base
       else if (kind === "portico") {
@@ -646,7 +645,7 @@ export class GameMap {
         this.addBox(+x, +y, +ang, 3, (w + 2) / 2, 3, g + 1.6);
         for (let k = 0; k < 6; k++) {
           const lx = -w / 2 + 0.8 + k * (w - 1.6) / 5, lz = 4.8;
-          this.addPost(+x + ux * lx + Math.sin(+ang) * lz, +y + uy * lx - Math.cos(+ang) * lz, 0.5, g + h);
+          this.addPost(+x + ux * lx + Math.sin(+ang) * lz, +y + uy * lx - Math.cos(+ang) * lz, 0.5, g + h, g);
         }
       }
     }
@@ -664,7 +663,7 @@ export class GameMap {
         this.addBox(cx, cy, +a, 0, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
         this.addBlock(cx, cy, +a, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
       }
-      for (const p of posts) { if (this.spent(8)) yield; const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
+      for (const p of posts) { if (this.spent(8)) yield; const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top, g); }
     }
     this.phase = "landmarks";
     // set pieces' solid shapes, from their own models (landmarks/shape.ts), in each one's frame:
@@ -693,8 +692,8 @@ export class GameMap {
     this.phase = "pitches";
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
-      if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
-      else if (p[0] === "f") for (const [x, y] of footballPosts(p)) this.addPost(x, y, 0.12, this.ground(x, -y) + footballLayout(p).goal.h + 0.1);
+      if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT, this.ground(x, -y));
+      else if (p[0] === "f") for (const [x, y] of footballPosts(p)) this.addPost(x, y, 0.12, this.ground(x, -y) + footballLayout(p).goal.h + 0.1, this.ground(x, -y));
       else for (const [x, y] of p[5]) this.addBox(x, y, p[3] + Math.PI / 2, 0, SCREEN[0] / 2, 0.2, this.ground(x, -y) + SCREEN[1]);
     }
     this.phase = "";
@@ -968,9 +967,10 @@ export class GameMap {
     }
   }
 
-  private addPost(x: number, y: number, r: number, top: number) {
+  /** foot: where it stands, so one on the hill over a tunnel or on a bridge is clear of anyone under it. */
+  private addPost(x: number, y: number, r: number, top: number, foot: number) {
     const i = this.cX.length;
-    this.cX.push(x); this.cZ.push(-y); this.cR.push(r); this.cTop.push(top);
+    this.cX.push(x); this.cZ.push(-y); this.cR.push(r); this.cTop.push(top); this.cFoot.push(foot);
     this.cellsAround(x, -y, r).forEach((k) => push(this.treeCells, k, i));
   }
 
@@ -1256,6 +1256,7 @@ export class GameMap {
           if (this.treeStamp[i] === t) continue;
           this.treeStamp[i] = t;
           if (this.cTop[i] < y + 0.45) continue;   // over the top of it (a balloon over the trees, someone on a roof)
+          if (this.cFoot[i] > y + 1.7 && y !== ANY_HEIGHT) continue;
           const ex = pos.x - this.cX[i], ez = pos.z - this.cZ[i], d = Math.hypot(ex, ez), m = r + this.cR[i];
           if (d >= m || d < 1e-6) continue;
           pos.x = this.cX[i] + (ex / d) * m; pos.z = this.cZ[i] + (ez / d) * m;
@@ -1323,7 +1324,7 @@ export class GameMap {
   blocked(x: number, z: number, r: number): boolean {
     if (this.keepClear.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + r)) return true;
     const p = { x, z };
-    this.collide(p, -1e9, r);
+    this.collide(p, ANY_HEIGHT, r);
     return Math.hypot(p.x - x, p.z - z) > 1e-3;
   }
 
@@ -1385,7 +1386,7 @@ export class GameMap {
             this.treeStamp[i] = t;
             const hit = rayCircle(ox, oz, dx, dz, this.cX[i], this.cZ[i], this.cR[i] * TRUNK_DRAWN);
             if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
-            if (oy + dy * hit > this.cTop[i]) continue;
+            if (oy + dy * hit > this.cTop[i] || oy + dy * hit < this.cFoot[i]) continue;
             const hx = ox + dx * hit - this.cX[i], hz = oz + dz * hit - this.cZ[i], hl2 = Math.hypot(hx, hz) || 1;
             best = { dist: hit, kind: "tree", nx: hx / hl2, ny: 0, nz: hz / hl2 };
           }
