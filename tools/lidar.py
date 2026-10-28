@@ -231,8 +231,8 @@ class Lidar:
         return out
 
 
-def decide(poly, got):
-    """measure() from what survey() found."""
+def decide(poly, got, max_rise=MAX_RISE):
+    """measure() from what survey() found; max_rise: the steepest roof to believe (a church's nave rises further)."""
     if got is None: return None
     # the canopy map takes some buildings for trees (the Abbey's tower, tall stone blocks in town),
     # so where it has trees over a roof the survey has the last word: a tree there lets some of
@@ -248,7 +248,7 @@ def decide(poly, got):
     eaves, ridge = got["p12"] - base, got["p95"] - base
     # low back extensions and porches inside the footprint drag the eaves down: no roof here
     # rises more than MAX_RISE above its eaves
-    eaves = max(eaves, ridge - MAX_RISE)
+    eaves = max(eaves, ridge - max_rise)
     mid = got["p50"] - base
     if eaves > 4 + poly.area / 10 and got["rough"] > ROUGH:
         return None     # far too tall for its size and lumpy all over: a tree over it, not a roof
