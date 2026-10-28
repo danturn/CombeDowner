@@ -424,6 +424,52 @@ function plateTexture(text: string, w: number, h: number, sub?: string): THREE.C
   return t;
 }
 
+// A plate is painted only when someone comes near enough to see it, and one painting serves every
+// sign with that name in every square; one nobody has been near for a while is let go. A town
+// square has dozens of names, and painting them all up front was a good part of its memory.
+const painted = new Map<string, { tex: THREE.CanvasTexture; used: number; mats: Set<THREE.MeshLambertMaterial> }>();
+let blank: THREE.CanvasTexture | null = null;
+let sweptAt = 0;
+const PLATE_IDLE = 20000;
+
+function blankPlate(): THREE.CanvasTexture {
+  if (blank) return blank;
+  const c = document.createElement("canvas");
+  c.width = c.height = 4;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f7f6f1"; g.fillRect(0, 0, 4, 4);
+  blank = new THREE.CanvasTexture(c);
+  blank.colorSpace = THREE.SRGBColorSpace;
+  blank.userData.lent = true;
+  return blank;
+}
+
+function showPlate(mat: THREE.MeshLambertMaterial, text: string, sub?: string) {
+  const now = performance.now(), key = text + "|" + (sub ?? "");
+  let e = painted.get(key);
+  if (!e) {
+    const tex = plateTexture(text, sub ? 384 : 512, sub ? 128 : 96, sub);
+    tex.userData.lent = true;
+    painted.set(key, (e = { tex, used: now, mats: new Set() }));
+  }
+  e.used = now;
+  if (mat.map !== e.tex) { mat.map = e.tex; e.mats.add(mat); }
+  if (now - sweptAt < 5000) return;
+  sweptAt = now;
+  for (const [k, p] of painted) if (now - p.used > PLATE_IDLE) {
+    for (const m of p.mats) if (m.map === p.tex) m.map = blankPlate();
+    p.tex.dispose();
+    painted.delete(k);
+  }
+}
+
+// (one function for every sign, reading what it says from the sign itself: a closure made while
+// building a square would hold on to the whole square after it's gone)
+function plateShown(this: THREE.Object3D, _r: THREE.WebGLRenderer, _s: THREE.Scene, _c: THREE.Camera, _g: THREE.BufferGeometry, mat: THREE.Material) {
+  const [text, sub] = this.userData.plate as [string, string | undefined];
+  if (mat instanceof THREE.MeshLambertMaterial && mat.userData.plate) showPlate(mat, text, sub);
+}
+
 /** Street furniture, wires, bus stops, street name signs and road markings, built a kind at a time (yields between). */
 export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
@@ -528,17 +574,20 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   const sheltered = stops.filter((f) => f[6]);
   yield* instanced(MODELS.shelter(), sheltered);
   yield* instanced(MODELS.shelterglass(), sheltered, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.28, depthWrite: false }));
-  const plates = new Map<string, THREE.Material>();
+  const plates = new Map<string, THREE.MeshLambertMaterial>();
   const plateFor = (text: string, sub?: string) => {
     const key = text + "|" + (sub ?? "");
     let m = plates.get(key);
-    if (!m) plates.set(key, (m = new THREE.MeshLambertMaterial({ map: plateTexture(text, sub ? 384 : 512, sub ? 128 : 96, sub) })));
+    if (!m) { plates.set(key, (m = new THREE.MeshLambertMaterial({ map: blankPlate() }))); m.userData.plate = true; }
     return m;
   };
+  const shows = (mesh: THREE.Mesh, text: string, sub?: string) => { mesh.userData.plate = [text, sub]; mesh.onBeforeRender = plateShown; };
   const edge = new THREE.MeshLambertMaterial({ color: "#151515" });
   for (const [k, f] of stops.entries()) {
     if (k % 16 === 15) yield;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.04), [edge, edge, edge, edge, plateFor(f[5] as string, "Bus stop"), plateFor(f[5] as string, "Bus stop")]);
+    const plate = plateFor(f[5] as string, "Bus stop");
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.04), [edge, edge, edge, edge, plate, plate]);
+    shows(mesh, f[5] as string, "Bus stop");
     mesh.applyMatrix4(place(f));
     mesh.position.y += 2.1;
     scene.add(mesh);
@@ -553,6 +602,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     if (k % 16 === 15) yield;
     const plate = plateFor(f[5] as string);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 0.035), [edge, edge, edge, edge, plate, plate]);
+    shows(mesh, f[5] as string);
     mesh.applyMatrix4(place(f));
     mesh.position.y += 1.2;
     mesh.castShadow = true;
@@ -790,6 +840,15 @@ function paintBoard(g: CanvasRenderingContext2D, n: number, text: string) {
 }
 
 /** Shop window: glazing bars over dark glass, with a stall riser below. */
+let shopWindow: THREE.CanvasTexture | null = null;
+const lend = (t: THREE.CanvasTexture) => { t.userData.lent = true; return t; };
+
+/** Once a square's own painted sheet is up on the graphics card, the page's copy of the painting
+ *  goes: the square is built afresh if it comes back, so it's never sent up again. */
+function letGoOnceSent(t: THREE.CanvasTexture) {
+  t.onUpdate = () => { const c = t.image as HTMLCanvasElement; c.width = c.height = 0; t.onUpdate = null; };
+}
+
 function shopWindowTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
   c.width = 256; c.height = 128;
@@ -815,7 +874,7 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
   const D = map.d, Z0 = map.z0;
   const signs = (D.sh ?? []).filter((s) => !s[7]);   // (a pub that's a set piece hangs its own: landmarks/setpieces.ts)
   if (!signs.length) return;
-  const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
+  const shopWin = new THREE.MeshLambertMaterial({ map: (shopWindow ??= lend(shopWindowTexture())) });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });
   // neighbours together, so each sheet's signs stand close and its meshes can be skipped when far off
   const patch = (f: (string | number)[]) => Math.floor(+f[0] / 200) * 10007 + Math.floor(+f[1] / 200);
@@ -872,10 +931,12 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
     const tex = new THREE.CanvasTexture(sheet);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
+    letGoOnceSent(tex);
     const sheetMat = new THREE.MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
     const btex = new THREE.CanvasTexture(bsheet);
     btex.colorSpace = THREE.SRGBColorSpace;
     btex.anisotropy = 4;
+    letGoOnceSent(btex);
     const boardMat = new THREE.MeshLambertMaterial({ map: btex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
     for (const [list, mat] of [[faces, sheetMat], [boards, boardMat], [darks, dark], [wins, shopWin]] as const) {
       if (!list.length) continue;

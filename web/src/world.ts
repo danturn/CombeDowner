@@ -179,26 +179,66 @@ export type Shared = Record<string, any>;
 
 /** Build a square's scenery a slice at a time (each next() does a few milliseconds' work), with
  *  the main world's materials, into the group given (which can already be in the scene). */
-export function tileWorld(map: GameMap, shared: Shared, into: THREE.Group): Generator<void, TileWorld> {
-  return worldGen(map, shared, into) as Generator<void, TileWorld>;
+export function* tileWorld(map: GameMap, shared: Shared, into: THREE.Group): Generator<void, TileWorld> {
+  const since = { geo: new THREE.BufferGeometry().id, attr: new THREE.BufferAttribute(new Float32Array(0), 1).id };
+  const w = (yield* worldGen(map, shared, into)) as TileWorld;
+  shedArrays(into, shared, since);
+  return w;
+}
+
+function sharedThings(shared: Shared) {
+  const out = new Set<unknown>();
+  const collect = (v: unknown) => {
+    if (v instanceof THREE.Material || v instanceof THREE.Texture || v instanceof THREE.BufferGeometry) out.add(v);
+    else if (v && typeof v === "object") for (const w of Object.values(v)) collect(w);
+  };
+  collect(shared);
+  return out;
+}
+
+// Parts of a square whose models may be kept for the next square, so they must keep their own copy.
+const KEEPS_MODELS = /^(landmarks|grass|lamps|sky)/;
+
+/** freeOnUpload for the rest of a square, once it's built: the copy the page keeps of each big model
+ *  made for this square alone (since: the first model and attribute numbers made for it) goes once
+ *  it has been drawn, as most were already up on the graphics card by then. Models that move,
+ *  are shared or may be kept for another square stay as they are. A square is thrown away whole
+ *  when it's dropped and built afresh when you come back, so nothing needs them sent up again. */
+function shedArrays(group: THREE.Group, shared: Shared, since: { geo: number; attr: number }) {
+  if ((globalThis as { __keepArrays?: boolean }).__keepArrays) return;
+  const keep = sharedThings(shared);
+  const part = (o: THREE.Object3D | null): string => (!o || o === group ? "" : o.name || part(o.parent));
+  group.traverse((o) => {
+    const g = (o as THREE.Mesh).geometry;
+    if (!g || (o as THREE.InstancedMesh).isInstancedMesh || g.id < since.geo || keep.has(g) || KEEPS_MODELS.test(part(o))
+      || Object.keys(g.morphAttributes).length) return;
+    const all = [...Object.values(g.attributes), ...(g.index ? [g.index] : [])] as THREE.BufferAttribute[];
+    if (all.some((a) => !a.isBufferAttribute || (a as unknown as THREE.InstancedBufferAttribute).isInstancedBufferAttribute || a.id < since.attr)) return;
+    const held = all.filter((a) => a.array);
+    if (held.reduce((n, a) => n + a.array.byteLength, 0) < 16384) return;
+    if (held.length < all.length && !g.boundingSphere) return;
+    g.boundingSphere ?? g.computeBoundingSphere();
+    if (held.length === all.length) g.boundingBox ?? g.computeBoundingBox();
+    const was = o.onAfterRender;
+    o.onAfterRender = function (...args) {
+      was.apply(this, args);
+      o.onAfterRender = was;
+      for (const a of held) (a as { array: unknown }).array = null;
+    };
+  });
 }
 
 /** Free what a square's scenery alone uses (the materials and models it shares with the main
  *  world stay), finished or not, and take it out of the scene. */
 export function disposeTileGroup(group: THREE.Group, shared: Shared) {
-  const sharedThings = new Set<unknown>();
-  const collect = (v: unknown) => {
-    if (v instanceof THREE.Material || v instanceof THREE.Texture || v instanceof THREE.BufferGeometry) sharedThings.add(v);
-    else if (v && typeof v === "object") for (const w of Object.values(v)) collect(w);
-  };
-  collect(shared);
+  const keep = sharedThings(shared);
   group.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (m.geometry && !sharedThings.has(m.geometry)) m.geometry.dispose();
+    if (m.geometry && !keep.has(m.geometry)) m.geometry.dispose();
     if (o instanceof THREE.InstancedMesh) o.dispose();
     for (const mat of m.material ? ([] as THREE.Material[]).concat(m.material) : []) {
-      if (sharedThings.has(mat)) continue;
-      for (const v of Object.values(mat)) if (v instanceof THREE.Texture && !sharedThings.has(v)) v.dispose();
+      if (keep.has(mat)) continue;
+      for (const v of Object.values(mat)) if (v instanceof THREE.Texture && !keep.has(v) && !v.userData.lent) v.dispose();
       mat.dispose();
     }
   });

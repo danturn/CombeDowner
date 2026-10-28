@@ -45,7 +45,7 @@ from shapely.strtree import STRtree
 
 from . import MARGIN, Q, evidence_of, lap, zone_at
 from .buildings import clean_buildings
-from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
+from .corridors import CORNERED, PATHS, PATHW, REACH, fit_cross_section, line_corners, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
 from structures import match_structures, osm_structures
@@ -511,6 +511,9 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None, hard=None):
     if e["cls"] in PATHS:
         w = PATHW.get(e["cls"], 1.8)
         ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
+        # its corners too, so the gardens and walls laid after it fit round the way it really turns
+        ts = np.array(sorted(set(ts.tolist()) | {t for t in line_corners(e["line"], e["cls"])
+                                                 if np.abs(ts - t).min() > 0.05}))
         car = offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2))
         return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=True,
                     line=_line_json(e["line"]), struct=e.get("struct", {}),
@@ -520,6 +523,13 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None, hard=None):
     if ts is None:
         ts, L, R = side_reach(e["line"], otree, obstacles)
     stretches, sec = fit_cross_section(e, ts, L, R, hard=hard)
+    if e["cls"] in CORNERED:
+        # its corners too, with the cross-section there taken from the samples either side
+        cs = [t for t in line_corners(e["line"], e["cls"]) if np.abs(ts - t).min() > 0.05]
+        if cs:
+            at = np.array(sorted(set(np.asarray(ts).tolist()) | set(cs)))
+            sec = np.column_stack([np.interp(at, ts, sec[:, j]) for j in range(sec.shape[1])])
+            ts = at
     car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
     pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
     pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])

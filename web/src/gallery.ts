@@ -26,7 +26,9 @@
 //
 // Who decides what: the host runs the evening. Who's in, when the painting starts and stops and
 // the subject come from the host ("qe" k "go"); each painter paints on their own screen and sends
-// their painting round when it's hung (k "ch", in pieces of a few kilobytes: easel.ts packs it).
+// their painting round when it's hung (k "ch", in pieces of a few kilobytes: easel.ts packs it),
+// with its time-lapse just before it (a "ch" of its own, which an older page passes over), and each
+// screen plays every painting's time-lapse on its canvas as the doors open.
 // The host looks at the paintings, stages the show and sends it round (who comes, what they say and
 // when, as text), counts the room's votes and sends the verdict; every screen walks the crowd round
 // from the same script. The gallery itself is built from a fixed design on every screen.
@@ -39,8 +41,9 @@ import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { ctlText } from "./controls";
-import { CRITICS, THEMES, criticsFor, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
-import { Easel, H, W, decode, encode, howText, readHow, toImage, type How } from "./easel";
+import { CRITICS, THEMES, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
+import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
+import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
 import { SET_PIECES } from "./landmarks/setpieces";
@@ -57,10 +60,33 @@ const GO_IN = 6;                     // how close to the curator to go in
 const CHUNK = 9000;
 const SPEAK = 4.6;
 const BEAT_MS = 3200;                // the critics confer before the verdict's read out
-const CLOSE_MS = 90000;              // and the gallery closes this long after it
+const CLOSE_MS = 90000;
+const EYE_WAIT_MS = 20000;           // how long the show waits for the critics' eye before going on without it              // and the gallery closes this long after it
 const LINGER_MS = 30000;             // but never sooner than this after you've put the verdict away
 const CURATOR_REACH = 2.4;
+const REPLAY_MS = 8000;              // each painting's time-lapse as the doors open
 const PATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track", "service"]);
+
+// ---- the time-lapse ------------------------------------------------------------------------------
+
+/** When each pixel turns over as one snapshot dissolves into the next: in small patches, a little
+ *  ragged, so it reads as paint going on rather than static. */
+let ORDER: Uint8Array | null = null;
+const MIX = new Uint8Array(W * H), BLANK = new Uint8Array(W * H);
+function order() {
+  if (ORDER) return ORDER;
+  ORDER = new Uint8Array(W * H);
+  const h = (n: number) => { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) ORDER[y * W + x] = Math.min(255, Math.floor(256 * (0.8 * h((x >> 3) * 977 + (y >> 3) * 131) + 0.2 * h(y * W + x + 7))));
+  return ORDER;
+}
+/** The painting u of the way through its time-lapse (0 a blank canvas, 1 the finished painting). */
+function between(frames: Uint8Array[], fin: Uint8Array, u: number): Uint8Array {
+  const seq = [BLANK, ...frames.slice(0, -1), fin], at = Math.max(0, Math.min(1, u)) * (seq.length - 1);
+  const k = Math.min(seq.length - 2, Math.floor(at)), a = seq[k], b = seq[k + 1], cut = (at - k) * 256, o = order();
+  for (let i = 0; i < MIX.length; i++) MIX[i] = o[i] < cut ? b[i] : a[i];
+  return MIX;
+}
 
 // ---- where it goes ------------------------------------------------------------------------------
 
@@ -511,6 +537,16 @@ class Room {
     this.atlasTex.needsUpdate = true;
   }
 
+  /** Just the picture, for the time-lapse: its card stays as it is. */
+  picture(p: number, px: Uint8Array) {
+    const x = this.atlas.getContext("2d")!;
+    this.img ??= x.createImageData(W, H);
+    toImage(px, this.img);
+    x.putImageData(this.img, (p % 4) * 256 + 8, Math.floor(p / 4) * 256 + 4);
+    this.atlasTex.needsUpdate = true;
+  }
+  private img: ImageData | null = null;
+
   get hung() { return this.n; }
 
   dispose() {
@@ -595,8 +631,13 @@ registerChallenge({
     let enterNow = by === w.selfId, inT = 0;
     const chunks = new Map<string, string[]>();
     const works = new Map<string, { px: Uint8Array; strokes: number; how?: How }>();
+    // each painting's time-lapse, as sent (to pass on to anyone who missed it) and unpacked
+    const tapes = new Map<string, { text: string; frames: Uint8Array[] }>();
+    let replayT0 = 0, replayDrawn = 0, replayOver = false;
     let show: { cast: number[]; remarks: Remark[]; dur: number } | null = null;
     let full: ReturnType<typeof stageShow> | null = null;
+    const eyes = new Map<string, Eye>();
+    let staging = false;
     let showT0 = 0;
     let result: Verdict | null = null;
     let resultT = 0, closeAt = 0, revealed = false, carded = false, warned = false;
@@ -695,7 +736,11 @@ registerChallenge({
       easel.hideAndRelock();
       const how = easel.how();
       const text = `${howText(easel.strokes, how)},${encode(easel.px)}`;
+      const tape = easel.replay();
+      tapes.set(w.selfId, { text: tape, frames: decodeReplay(tape) });
       works.set(w.selfId, { px: easel.px.slice(), strokes: easel.strokes, how });
+      // the time-lapse first, so the host has it by the time the painting itself lands
+      sendBig(`r:${w.selfId}`, tape);
       sendBig(`p:${w.selfId}`, text);
       if (w.isHost) checkHung();
       SFX.jobStep();
@@ -708,6 +753,8 @@ registerChallenge({
         works.set(id, { px: decode(text.slice(comma + 1)), strokes: Math.max(0, Math.min(999, parseInt(text.slice(0, comma)) || 0)), how: readHow(text.slice(0, comma)) });
         if (room.hung) drawAll();
         if (w.isHost) checkHung();
+      } else if (g.startsWith("r:")) {
+        if (tapes.size < MAX_PAINTERS * 2) tapes.set(g.slice(2), { text, frames: decodeReplay(text) });
       } else if (g === "show") {
         try {
           const s = JSON.parse(text);
@@ -721,27 +768,56 @@ registerChallenge({
     }
     /** Host: everything's in (or the wait's over): hang the lot and stage the show. */
     function stageIt() {
-      if (!w.isHost || show || full || !painters.length) return;
+      if (!w.isHost || show || full || staging || !painters.length) return;
       if (phase === "paint") tell({ k: "hang" });
-      full = staged();
-      const s = { cast: full.cast, remarks: full.remarks, dur: full.dur };
-      setTimeout(() => {
-        if (phase === "out" || job.done) return;
-        sendBig("show", JSON.stringify({ ...s, el: 0 }));
-        startShow(s, 0);
-      }, 2200);
+      staging = true;
+      if (eyeState().state === "loading") stage = { key: "arriving", title: "The critics are still arriving", sub: "Mr Pettigrew pours the wine", colour: COLOUR, life: 3 };
+      lookAtThem().finally(() => {
+        if (phase === "out" || job.done || show || full) return;
+        full = staged();
+        const s = { cast: full.cast, remarks: full.remarks, dur: full.dur };
+        setTimeout(() => {
+          if (phase === "out" || job.done) return;
+          sendBig("show", JSON.stringify({ ...s, el: 0 }));
+          startShow(s, 0);
+        }, 2200);
+      });
+    }
+    /** Host: the critics' eye looks at each painting, if it's arrived in time; otherwise the show goes on without it. */
+    async function lookAtThem() {
+      const late = (ms: number) => new Promise<false>((ok) => setTimeout(() => ok(false), ms));
+      const until = performance.now() + EYE_WAIT_MS;
+      if (eyeState().state === "off" || !(await Promise.race([wakeEye(), late(EYE_WAIT_MS)]))) return;
+      // one at a time, so the frame rate only stutters, never stops
+      for (const id of painters) {
+        const px = works.get(id)?.px;
+        if (!px || eyes.has(id)) continue;
+        const e = await Promise.race([eyeJudge([px], THEMES[themeIndex()].t).catch(() => null), late(Math.max(2000, until - performance.now()))]);
+        if (!e) return;
+        eyes.set(id, e[0]);
+      }
     }
 
     const themeIndex = () => hash("theme", offer.seed) % THEMES.length;
+    /** On the host's screen, how far the critics' eye has got with loading. */
+    const glasses = () => {
+      const e = eyeState();
+      return w.isHost && e.state === "loading" ? ` · The critics are finding their glasses: ${Math.round(e.progress * 100)}%` : "";
+    };
     /** The paintings as hung, a blank canvas for anyone whose painting never came. */
-    const hungUp = (): Painting[] => painters.map((id) => ({ id, name: w.nameOf(id), px: works.get(id)?.px ?? new Uint8Array(W * H), strokes: works.get(id)?.strokes ?? 0, how: works.get(id)?.how }));
+    const hungUp = (): Painting[] => painters.map((id) => ({
+      id, name: w.nameOf(id), px: works.get(id)?.px ?? new Uint8Array(W * H), strokes: works.get(id)?.strokes ?? 0, how: works.get(id)?.how, eye: eyes.get(id),
+      early: earlyFrom(tapes.get(id)?.frames ?? []),
+    }));
     const staged = () => {
       const S = slots(painters.length);
       return stageShow(hungUp(), THEMES[themeIndex()], themeText, hash("show", offer.seed, painters.join(",")), (p) => [S[p].x, S[p].z + S[p].nz * 2.3], [HX - 1.2, 0]);
     };
 
     function drawAll() {
-      painters.forEach((id, p) => room.draw(p, works.get(id)?.px ?? null, {
+      // a painting with a time-lapse stays under wraps until the doors open and it plays
+      const wraps = (id: string) => !replayT0 && (phase === "paint" || phase === "hang") && !!tapes.get(id)?.frames.length;
+      painters.forEach((id, p) => room.draw(p, wraps(id) ? null : works.get(id)?.px ?? null, {
         name: w.nameOf(id), title: themeText,
         mark: result?.final[p], sold: result ? result.prizes[0]?.p === p : false,
         prizes: result?.prizes.filter((q) => q.p === p).map((q) => q.title),
@@ -752,6 +828,7 @@ registerChallenge({
       if (show) return;
       show = { cast: s.cast.filter((v) => Number.isFinite(v) && visitor(v)), remarks: s.remarks.filter((r) => r && Number.isFinite(r.at) && visitor(r.v) && typeof r.text === "string"), dur: Math.min(400, s.dur) };
       showT0 = performance.now() - elapsed * 1000;
+      replayT0 = showT0;
       phase = "show";
       saidUpTo = 0;
       if (!room.hung) { room.hang(painters.length); drawAll(); }
@@ -759,6 +836,20 @@ registerChallenge({
       buildCrowd();
       stage = { key: "show", title: "The private view", sub: `${show.cast.length} visitors, ${show.remarks.length} opinions`, colour: COLOUR, life: 3 };
       if (aboard || camInside()) SFX.door(0, 0);
+    }
+
+    /** The time-lapses, all at once, each painting dissolving from one snapshot to the next. */
+    function replayTick() {
+      if (!replayT0 || replayOver || !room.hung) return;
+      const now = performance.now(), u = (now - replayT0) / REPLAY_MS;
+      if (u < 1 && now - replayDrawn < 70) return;
+      replayDrawn = now;
+      painters.forEach((id, p) => {
+        const frames = tapes.get(id)?.frames, fin = works.get(id)?.px;
+        if (!frames?.length || !fin) return;
+        room.picture(p, u >= 1 ? fin : between(frames, fin, u));
+      });
+      if (u >= 1) replayOver = true;
     }
 
     function buildCrowd() {
@@ -985,6 +1076,7 @@ registerChallenge({
         for (const id of busy) if (id !== w.selfId && !posed.has(id)) { w.pose?.(id, 0, "push"); posed.add(id); }
         for (const id of [...posed]) if (!busy.has(id)) { w.pose?.(id, 0, ""); posed.delete(id); }
         if (shown) {
+          replayTick();
           updateCrowd(dt);
           pettigrew.wave = phase === "result" && revealed && performance.now() % 7000 < 1800 ? 2 : 0;
           pettigrew.holdAt(PETTIGREW[0], 0, PETTIGREW[1], Math.PI / 2, 0, 0);
@@ -1004,6 +1096,7 @@ registerChallenge({
         }
       },
       host() {
+        if (aboard) wakeEye();
         if (phase === "gather") {
           if (list.length && !gatherSince) gatherSince = performance.now();
           const all = w.players().every((p) => list.includes(p.id));
@@ -1063,7 +1156,11 @@ registerChallenge({
           }
           case "need":
             if (!w.isHost) return;
-            for (const [id, wk] of works) sendBig(`p:${id}`, `${wk.how ? howText(wk.strokes, wk.how) : wk.strokes},${encode(wk.px)}`, from);
+            for (const [id, wk] of works) {
+              const tape = tapes.get(id)?.text;
+              if (tape) sendBig(`r:${id}`, tape, from);
+              sendBig(`p:${id}`, `${wk.how ? howText(wk.strokes, wk.how) : wk.strokes},${encode(wk.px)}`, from);
+            }
             if (show) sendBig("show", JSON.stringify({ ...show, el: (performance.now() - showT0) / 1000 }), from);
             return;
           case "hang":
@@ -1161,10 +1258,10 @@ registerChallenge({
         if (phase === "paint") {
           const left = Math.max(0, Math.ceil((paintEnd - performance.now()) / 1000));
           const timer = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-          if (myPainter() >= 0) return { line: `Paint: ${themeText}`, sub: hung ? "Hung. Waiting for the others" : easel.open ? "{easel.leave} to step back" : "{use} to go back to your easel", timer, stage };
-          return { line: "The artists are painting", sub: `“${themeText}”`, timer, stage };
+          if (myPainter() >= 0) return { line: `Paint: ${themeText}`, sub: (hung ? "Hung. Waiting for the others" : easel.open ? "{easel.leave} to step back" : "{use} to go back to your easel") + glasses(), timer, stage };
+          return { line: "The artists are painting", sub: `“${themeText}”${glasses()}`, timer, stage };
         }
-        if (phase === "hang") return { line: "Hanging the show", stage };
+        if (phase === "hang") return { line: staging && eyeState().state === "loading" ? "The critics are still arriving" : "Hanging the show", sub: glasses().slice(3) || undefined, stage };
         if (phase === "show" && show) {
           const t = (performance.now() - showT0) / 1000, said = show.remarks.filter((r) => r.at <= t).length;
           return { line: "The private view", sub: painters.length > 1 ? "Walk round. {use} by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${show.remarks.length}`, bar: said / Math.max(1, show.remarks.length), stage };
@@ -1213,8 +1310,9 @@ registerChallenge({
     }
 
     if (TESTING) (window as unknown as Record<string, unknown>).__gallery = {
-      easel, phase: () => phase, painters: () => painters, theme: () => themeText, show: () => show, result: () => result,
-      works: () => works.size, aboard: () => aboard, top, C: { x: Cx, z: Cz }, door, hang: () => hangMine(), start: () => job.use!(),
+      easel, eyes: () => [...eyes.values()], phase: () => phase, painters: () => painters, theme: () => themeText, show: () => show, result: () => result,
+      works: () => works.size, tapes: () => [...tapes].map(([id, t]) => ({ id, frames: t.frames.length, bytes: t.text.length })),
+      replay: () => (replayT0 ? (performance.now() - replayT0) / REPLAY_MS : -1), aboard: () => aboard, top, C: { x: Cx, z: Cz }, door, hang: () => hangMine(), start: () => job.use!(),
       hint: () => job.hint!(), card: () => job.card(), pettigrew: PETTIGREW, closeIn: (ms?: number) => { if (ms !== undefined) closeAt = performance.now() + ms; return closeAt - performance.now(); },
     };
     return job;
