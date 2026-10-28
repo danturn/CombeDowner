@@ -70,7 +70,7 @@ def drawn(sf, kinds):
         return Polygon(), 0.0
     v = sf["v"]
     tris = {}
-    for kind in ("road", "service", "pave", "path", "front", "drive"):
+    for kind in ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"):
         ids = sf.get(kind) or []
         tris[kind] = [t for t in (Polygon([(v[3 * i], v[3 * i + 1]) for i in ids[k:k + 3]])
                                   for k in range(0, len(ids) - 2, 3)) if t.area > 0]
@@ -105,7 +105,7 @@ def measure(tile, part, sq):
     if deck is not None:
         path_faces = path_faces.difference(deck)
     if sf and "path" in sf:
-        out["path_not_drawn"] = path_faces.difference(drawn(sf, ("path",))[0]).area
+        out["path_not_drawn"] = path_faces.difference(drawn(sf, ("path", "grass", "dirt", "gravel"))[0]).area
     else:
         paths = [r for r in rd if r["c"] in GAME_PATHS]
         strips = union([strip(r["p"], width(r) / 2) for r in paths]

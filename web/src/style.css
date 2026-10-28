@@ -495,12 +495,19 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 #drive .label { justify-content: flex-end; }
 .driverow { line-height: 1; }
 #mph { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* the speed limit, as the UK's roundel: a red ring round a black number on white */
+#limit { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-right: 10px; vertical-align: 6px;
+  border-radius: 50%; border: 6px solid #d8262e; background: #fff; color: #111; font-size: 19px; font-weight: 800; box-sizing: border-box; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+#limit[hidden] { display: none; }
 #drive small { color: var(--muted); margin-left: 6px; font-size: 18px; font-weight: 700; text-transform: uppercase; }
 #drive em { display: block; font-style: normal; color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px; }
 #usehint {
   position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); background: var(--panel); padding: 5px 14px 4px;
   font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; pointer-events: none;
 }
+/* over a mission's or a race's screens: what to press now matters more than a card about it */
+#usehint { z-index: 7; }
+body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
 #usehint b { color: var(--accent); }
 #usehint button {
   pointer-events: auto; font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.3);
@@ -689,6 +696,7 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
   font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #fff; background: rgba(0, 0, 0, 0.55);
   pointer-events: none;
 }
+body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display: none; }
 
 /* Now playing: a little Winamp 2 at the top of the screen */
 #np {
@@ -757,6 +765,7 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
   #ammo { min-width: 120px; }
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
+  #limit { width: 32px; height: 32px; border-width: 5px; font-size: 15px; vertical-align: 4px; }
   #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
   #hud:has(#mprog:not([hidden])) #buscard { top: 190px; }
   #buscard .bustitle { font-size: 17px; }

@@ -6,7 +6,7 @@ import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
-import { STREETS, controlsPage, ctl, ctlText, placeNow } from "./controls";
+import { STREETS, controlsPage, ctl, ctlText, input, placeNow } from "./controls";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -220,11 +220,14 @@ async function pickMap(id: string) {
 const t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
-  const v = (window as any).__view;   // experiments: [cam x, cam y, height above ground, look x, look y] in data metres
+  // experiments: [cam x, cam y, height above ground, look x, look y] in data metres; a height below
+  // nought is above the floor of the tunnel there instead (inside one, the ground is the hill over it)
+  const v = (window as any).__view;
   if (v) {
     const [cx, cy, h, lx, ly, lh = 1.2] = v;
-    camera.position.set(cx, map.ground(cx, -cy) + h, -cy);
-    camera.lookAt(lx, map.ground(lx, -ly) + lh, -ly);
+    const above = (x: number, z: number, h: number) => (h < 0 ? (map.tunnelFloor(x, z) ?? map.ground(x, z)) - h : map.ground(x, z) + h);
+    camera.position.set(cx, above(cx, -cy, h), -cy);
+    camera.lookAt(lx, above(lx, -ly, lh), -ly);
     world.update(cx, camera.position.y, -cy);
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
     return;
@@ -804,6 +807,7 @@ padActions(STREETS, {
   ride: press("KeyX"),
   bino: press("KeyB"),
   mark: press("KeyG"),
+  job: press("KeyJ"),
   out: press("KeyE"),
   horn: hold("KeyH"),
   view: (down) => { if (down) game?.toggleView(); },
@@ -819,6 +823,7 @@ padSettings();
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 const told = new Set<string>();
+let inputWas = "";
 function frame(now: number) {
   // booked first, so something going wrong in one frame can't stop every frame after it
   requestAnimationFrame(frame);
@@ -826,6 +831,9 @@ function frame(now: number) {
   last = now;
   const js0 = performance.now();
   pad.poll(dt);
+  // for the stylesheet: a pad or a touch screen aims without the mouse, so no "click to aim"
+  const using = input();
+  if (using !== inputWas) document.body.dataset.input = inputWas = using;
   try {
     if (game) { game.update(dt); playing(raw); } else attract(now);
   } catch (e) {

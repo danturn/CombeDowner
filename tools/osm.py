@@ -1,15 +1,20 @@
 """Download OpenStreetMap businesses and named buildings for a game map's bounding box.
 
-Usage: python3 -I tools/osm.py <map> <out.geojson> [wide] [roads | bridges]
+Usage: python3 -I tools/osm.py <map> <out.geojson> [wide] [roads | bridges | detail]
 
 With "wide" on the end it fetches the map's wider circle (see area.py) instead, for the tiles.
 With "roads" it fetches the streets instead (tools/prep_map.py reads osm-roads.geojson beside the
 other layers): every way tagged highway, with only the tags that say how wide it is and whether it
-has pavements (lanes, width, sidewalk), as lines.
+has pavements (lanes, width, sidewalk), its speed limit (maxspeed and the zone tags: tools/maxspeed.py)
+and whether it's on a bridge or in a tunnel, as lines.
 With "bridges" it fetches the bridges instead (osm-bridges.geojson, read by the partition's writer):
 every way tagged bridge (a street's, a path's, the railway's or the canal's), with only the tags that
 say what kind of bridge it is (bridge:structure, material, layer and what it carries), as lines, and
 every bridge's outline (man_made=bridge) as a polygon.
+With "detail" it fetches what the streets' records leave out (osm-detail.geojson, read by the
+partition): each way tagged highway that says what it is made of or what kind of service road it is
+(surface, tracktype, service, access) or how its steps are built (handrail, step_count, incline), with
+only those tags, and every crash barrier (barrier=guard_rail), as lines.
 
 Keeps every node, way and multipolygon tagged shop, amenity, office, craft, healthcare, tourism or
 leisure, or a building with a name. Nodes become points, closed ways polygons; tags are kept as
@@ -36,27 +41,33 @@ def get(url, data=None, timeout=180):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
-ROAD_TAGS = ("highway", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway")
+ROAD_TAGS = ("highway", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway",
+             "maxspeed", "maxspeed:type", "zone:maxspeed", "source:maxspeed", "tunnel", "bridge", "layer", "covered")
 BRIDGE_TAGS = ("bridge", "bridge:structure", "bridge:support", "material", "layer", "highway", "railway",
                "waterway", "man_made", "name", "bridge:name")
+DETAIL_TAGS = ("highway", "surface", "tracktype", "service", "access", "handrail", "handrail:left", "handrail:right",
+               "handrail:center", "step_count", "incline", "barrier")
 ROADS = False
 BRIDGES = False
+DETAIL = False
 
 
 def wanted(tags):
+    if DETAIL: return tags.get("barrier") == "guard_rail" or ("highway" in tags and any(k in tags for k in DETAIL_TAGS[1:-1]))
     if ROADS: return "highway" in tags
     if BRIDGES: return tags.get("bridge", "no") != "no" or tags.get("man_made") == "bridge"
     return any(k in tags for k in KEYS) or ("building" in tags and "name" in tags)
 
 
 def keep(tags):
+    if DETAIL: return {k: v for k, v in tags.items() if k in DETAIL_TAGS}
     if BRIDGES: return {k: v for k, v in tags.items() if k in BRIDGE_TAGS}
     return {k: v for k, v in tags.items() if k in ROAD_TAGS} if ROADS else tags
 
 
 def overpass(W, S, E, N):
     b = f"{S},{W},{N},{E}"
-    sel = f'way["highway"]({b});' if ROADS else f'way["bridge"]["bridge"!="no"]({b});way["man_made"="bridge"]({b});' if BRIDGES else "".join(f'nwr["{k}"]({b});' for k in KEYS) + f'nwr["building"]["name"]({b});'
+    sel = "".join(f'way["highway"]["{k}"]({b});' for k in DETAIL_TAGS[1:-1]) + f'way["barrier"="guard_rail"]({b});' if DETAIL else f'way["highway"]({b});' if ROADS else f'way["bridge"]["bridge"!="no"]({b});way["man_made"="bridge"]({b});' if BRIDGES else "".join(f'nwr["{k}"]({b});' for k in KEYS) + f'nwr["building"]["name"]({b});'
     q = f"[out:json][timeout:120];({sel});out geom tags;"
     js = json.loads(get("https://overpass-api.de/api/interpreter", urllib.parse.urlencode({"data": q}).encode()))
     feats = []
@@ -74,7 +85,8 @@ def overpass(W, S, E, N):
             if not rings: continue
             geom = {"type": "MultiPolygon", "coordinates": [[r] for r in rings]}
         else: continue
-        if ROADS or (BRIDGES and tags.get("man_made") != "bridge"): geom = dict(geom, type="LineString", coordinates=[[p["lon"], p["lat"]] for p in e["geometry"]]) if e["type"] == "way" else None
+        if DETAIL and not wanted(tags): continue
+        if ROADS or DETAIL or (BRIDGES and tags.get("man_made") != "bridge"): geom = dict(geom, type="LineString", coordinates=[[p["lon"], p["lat"]] for p in e["geometry"]]) if e["type"] == "way" else None
         if geom: feats.append(dict(type="Feature", geometry=geom, properties={**keep(tags), "osm": f"{e['type']}/{e['id']}"}))
     return feats
 
@@ -99,7 +111,7 @@ def main_api(W, S, E, N):
             tags = {t.get("k"): t.get("v") for t in el.findall("tag")}
             if el.tag == "node":
                 nodes[el.get("id")] = (float(el.get("lon")), float(el.get("lat")))
-                if wanted(tags) and not ROADS: feats.append(("node", el.get("id"), tags))
+                if wanted(tags) and not ROADS and not DETAIL: feats.append(("node", el.get("id"), tags))
             elif el.tag == "way":
                 ways[el.get("id")] = [nd.get("ref") for nd in el.findall("nd")]
                 if wanted(tags): feats.append(("way", el.get("id"), tags))
@@ -117,7 +129,7 @@ def main_api(W, S, E, N):
         elif kind == "way":
             r = ring(id_)
             if len(r) < 2: continue
-            geom = {"type": "Polygon", "coordinates": [r]} if r[0] == r[-1] and len(r) > 3 and not ROADS and not (BRIDGES and tags.get("man_made") != "bridge") else {"type": "LineString", "coordinates": r}
+            geom = {"type": "Polygon", "coordinates": [r]} if r[0] == r[-1] and len(r) > 3 and not ROADS and not DETAIL and not (BRIDGES and tags.get("man_made") != "bridge") else {"type": "LineString", "coordinates": r}
         else:
             rings = [r for r in map(ring, tags.pop("_outer")) if len(r) > 3 and r[0] == r[-1]]
             if not rings: continue
@@ -129,6 +141,7 @@ def main_api(W, S, E, N):
 if __name__ == "__main__":
     ROADS = "roads" in sys.argv[3:]
     BRIDGES = "bridges" in sys.argv[3:]
+    DETAIL = "detail" in sys.argv[3:]
     A, out = area(sys.argv[1], wide="wide" in sys.argv[3:]), sys.argv[2]
     t = time.time()
     try:

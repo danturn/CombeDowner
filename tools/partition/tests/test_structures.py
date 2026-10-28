@@ -120,6 +120,23 @@ class Structures(unittest.TestCase):
         self.assertEqual(out[9]["z"], [5, 4, 3])
         self.assertEqual(out[9]["span"], [1])
 
+    def test_a_roads_tunnel_does_not_mark_a_lane_drawn_along_it(self):
+        edges = [edge(0, [(0, 0), (100, 0)], "trunk"), edge(1, [(0, 1), (100, 1)], "service")]
+        seg = LineString([(0, 0), (100, 0)])
+        out = match_structures(edges, [(seg, {"class": "trunk",
+                                              "road_flags": [{"values": ["is_tunnel"], "between": [0.2, 0.8]}]})])
+        self.assertEqual(list(out), [0])
+
+
+    def test_osm_tags_mark_their_stretch_and_a_covered_way_stays_on_the_ground(self):
+        from structures import osm_structures
+        edges = [dict(id=0, obs=[(0, 30, {"highway": "trunk"}), (30, 100, {"highway": "trunk", "tunnel": "yes", "layer": "-1"})]),
+                 dict(id=1, obs=[(0, 20, {"highway": "footway", "covered": "yes"})])]
+        edges.append(dict(id=2, obs=[(0, 40, {"highway": "service", "tunnel": "covered"})]))
+        edges.append(dict(id=3, obs=[(0, 40, {"highway": "pedestrian", "bridge": "yes", "_ring": True})]))
+        out = osm_structures(edges, {0: {"tunnel": [[28.0, 90.0]]}})
+        self.assertEqual(out, {0: {"tunnel": [[28.0, 100.0]]}})
+
 
 if __name__ == "__main__":
     unittest.main()

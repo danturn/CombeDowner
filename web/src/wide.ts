@@ -29,6 +29,7 @@ export interface WideData {
   t: { nx: number; ny: number; x0: number; y0: number; dx: number; z0: number; cs: number; ci: [number, number, number]; h: string; k: string };
   cl: string[]; nm: string[]; bl: number[][]; rd: number[][]; wp: number[][]; wl: number[][]; tr: string; pl: Place[];
   lm?: (number | string)[][];                     // landmarks out in Bath (tools/landmarks/<map>_bath.py), as in MapData
+  ms?: number[];                                  // each road's speed limit in mph, in rd's order (0: none)
 }
 
 export interface WideRoad extends Road { bridge: boolean }
@@ -92,12 +93,12 @@ export class Wide {
     this.k = bytes(T.k);
 
     for (const f of d.bl) this.bl.push(this.building(f));
-    for (const f of d.rd) {
+    for (const [i, f] of d.rd.entries()) {
       const n = f[2] ? 3 : 2, count = (f.length - 3) / n;
       let p = unpack(f, 3, count, n);
       // points carry absolute heights like the detailed map's roads
       p = p.map((q) => [q[0], q[1], n > 2 ? q[2] : this.ground(q[0], -q[1]) + this.z0]);
-      this.rd.push({ c: d.cl[f[0]], n: d.nm[f[1]], p, bridge: !!f[2] });
+      this.rd.push({ c: d.cl[f[0]], n: d.nm[f[1]], p, bridge: !!f[2], ms: d.ms?.[i] || undefined });
     }
     for (const f of d.wp) {
       const rings: number[][][] = [];
@@ -152,6 +153,7 @@ export class Wide {
     // the packed copies are all unpacked above: let them go, as a phone can't spare the memory
     // for the whole of Bath twice over
     d.bl = d.rd = d.wp = d.wl = [];
+    d.ms = undefined;
     d.tr = d.t.h = d.t.k = "";
   }
 

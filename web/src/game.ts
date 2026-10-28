@@ -77,7 +77,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { padInUse, padText, rumble } from "./gamepad";
-import { B as PAD, control, ctl, ctlText, input, isKey, strip, stripOf } from "./controls";
+import { B as PAD, control, ctl, ctlText, input, isKey, placeNow, strip, stripOf } from "./controls";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -110,12 +110,13 @@ import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } 
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
+import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
-import { missionActive } from "./missionscreens";
+import { missionActive, missionCardUp } from "./missionscreens";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
 import { CatState, Cats, ESCAPE } from "./cats";
@@ -130,7 +131,7 @@ import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
 import { drawCompass, ITEM_SIZE, markerMessage, Markers, playerColours } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
-import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
+import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate, stickSteer } from "./player";
 import { Quests, type Perch, type QuestWorld } from "./quests";
 import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
@@ -547,7 +548,8 @@ export class Game {
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private swapAt: Item | null = null;              // a ride or a ladder at your feet while your hands are full: E swaps for it
   private riding = false;
-  private heldToast: { text: string; secs: number } | null = null;   // a call-out kept back till a race's countdown is over
+  private heldToast: { text: string; secs: number } | null = null;   // a call-out kept back till a race's countdown or a title card is over
+  private calmed = false;
   private hushed = false;                          // a race's countdown had the middle of the screen last frame
   private rideTip = 0;                             // till when the middle of the screen says what to do with what you've just got, or just got on
   private tipSlot: string | null = null;           // what was in your hands last frame, to start that tip when it changes
@@ -969,6 +971,8 @@ export class Game {
       if (isKey(e.code, "ride") && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (isKey(e.code, "torch") && !e.repeat && this.active) this.toggleTorch();
+      // the back seat's radio has J (and the pad's button) to itself
+      if (isKey(e.code, "job") && !e.repeat && this.active && placeNow() !== "back") this.quests.recall();
       if (isKey(e.code, "map") && !e.repeat) this.toggleMap();
       if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
@@ -2623,7 +2627,7 @@ export class Game {
     const key = (a: string, b: string) => (on && (k.has(a) || k.has(b)) ? 1 : 0);
     // (the left and right arrows are the indicators, see the keys above, and the up arrow the horn)
     let throttle = key("KeyW", "KeyW") - key("KeyS", "ArrowDown"), steer = key("KeyA", "KeyA") - key("KeyD", "KeyD");
-    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -p.joy.x; }
+    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -stickSteer(p.joy.x); }
     const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || k.has("ArrowUp") || this.firing);
     // the police car's siren and the ice cream van's chimes: H (or the up arrow) switches them on and off
     if (v.spec.siren && horn && !this.hornWas) {
@@ -3609,6 +3613,17 @@ export class Game {
       this.minimap.spots = this.gameSpots();
     }
     const p = this.player.pos, now = performance.now(), fence = this.map.zoneFence;
+    // Walking never gets you past the wall, so you were put there (a link, Go to, a journey, or the
+    // wall going up round you). The collisions alone would shove you onto the wall's line in one
+    // step, however far, perhaps into a house: clear ground just inside it instead.
+    if (fence && this.alive && !this.car && !this.ride && this.balloons.aboard < 0 && fence.edge(p.x, p.z) < -2) {
+      const [ix, iz] = this.map.fieldInside(p.x, p.z, 2);
+      const [x, z] = clearSpot(this.map, ix, iz, 25) ?? [ix, iz];
+      this.player.spawn(x, z, this.player.yaw);
+      this.landing = { t: 20 };
+      this.wallSaid = 0;
+      this.sendState();
+    }
     if (fence && now > this.wallSaid && this.alive && fence.edge(p.x, p.z) < 4 && this.map.fieldEdgeBase(p.x, p.z) > 4) {
       this.wallSaid = now + 15000;
       const next = Z.list[Z.open], cur = Z.current(this.oddments.filled);
@@ -4398,6 +4413,7 @@ export class Game {
     $("drive").hidden = !car && !helm && !sky;
     $("ammo").hidden = !!car || !!helm || !!sky;
     $("drive").querySelector("small")!.textContent = sky ? "m up" : "mph";
+    if (!car) $("limit").hidden = true;
     if (sky) {
       const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
       $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
@@ -4416,6 +4432,8 @@ export class Game {
       const blink = performance.now() % 760 < 380;
       $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
+      const lim = limitShown(this.map, car.x, car.z, Math.cos(car.a), -Math.sin(car.a));
+      show($("limit"), lim ? String(lim) : "", !!lim);
       $("drivehint").innerHTML = car.tip ? stripOf([["out", "get out"]])
         : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]);
     }
@@ -4467,16 +4485,22 @@ export class Game {
       : wood && !ladder.startsWith("<b>") ? wood
       : ladder || wait;
     // in a race's countdown the prompt waits too, and what to do with the ride is said once it's over
-    const hush = this.quests.quiet();
-    if (this.hushed && !hush) {
-      if (this.riding) this.rideTip = performance.now() + TIP_MS;
+    // and call-outs wait for a mission's title card too, which has the space where they'd go
+    const hush = this.quests.quiet(), calm = hush || missionCardUp();
+    if (this.hushed && !hush && this.riding) this.rideTip = performance.now() + TIP_MS;
+    if (calm && !this.calmed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
+    if (!calm && this.heldToast) {
       const held = this.heldToast;
       this.heldToast = null;
-      if (held) this.toast(held.text, held.secs);
+      this.toast(held.text, held.secs);
     }
-    if (hush && !this.hushed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
     this.hushed = hush;
-    show($("usehint"), hush ? "" : ctlText(text), !hush && !!text);
+    this.calmed = calm;
+    // a results card in the middle: the prompt waits, and a tip about a ride just won waits for it to go
+    const results = !!document.querySelector(".rsc-end:not(.out)");
+    if (results && this.rideTip > performance.now()) this.rideTip = performance.now() + TIP_MS;
+    const quietNow = hush || results;
+    show($("usehint"), quietNow ? "" : ctlText(text), !quietNow && !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
@@ -4623,7 +4647,7 @@ export class Game {
 
   toast(text: string, secs = 2) {
     // a race's countdown has the middle of the screen: the call-out comes once GO has gone
-    if (this.quests.quiet()) { this.heldToast = { text, secs }; return; }
+    if (this.quests.quiet() || missionCardUp()) { this.heldToast = { text, secs }; return; }
     text = ctlText(this.freeMode ? text : padText(text));
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)

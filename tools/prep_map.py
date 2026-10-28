@@ -38,7 +38,7 @@ import numpy as np
 import shapely
 from PIL import Image
 from shapely.geometry import shape, box, Point
-from shapely.ops import substring, transform, unary_union
+from shapely.ops import nearest_points, substring, transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
@@ -74,6 +74,7 @@ if TILE is None:
     X0, Y0 = proj(W, S)
     X1, Y1 = proj(E, N)
     ROAD_BOX = None          # roads are cut at the edge of the data like everything else
+    FLOOR_BOX = None
 else:
     # ---- the tile: a square of the map's grid (area.py), worked out over a margin round it ----
     G = A.squares
@@ -90,6 +91,7 @@ else:
     # roads are taken whole for 500 m past the margin, so a street's lamps, cars and bridges are
     # laid out from the same start in every tile that has it
     ROAD_BOX = (X0 - 500, Y0 - 500, X1 + 500, Y1 + 500)
+    FLOOR_BOX = (TX0 - 1200, TY0 - 1200, TX1 + 1200, TY1 + 1200)    # (within the ground the tile reads)
     TBOX = box(TX0, TY0, TX1, TY1)
     own = lambda x, y: TX0 <= x < TX1 and TY0 <= y < TY1     # the tile's own (each point is in one tile)
 BM = box(X0, Y0, X1, Y1)
@@ -331,6 +333,7 @@ import tunnels as TN
 roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
 flat_z = grid.copy()
+SURVEY = grid.copy()                   # the ground before any road is laid on it
 flat_in = np.zeros(grid.shape, dtype=bool)   # the vertex is inside a road's carriageway (not just its easing)
 flat_f = np.zeros(grid.shape)          # how far out from that road's centre line the ground is flat (the verge's edge)
 SLOPE = 1.5                            # the ground eases from a road's level to its own over this many metres per metre of difference
@@ -546,16 +549,27 @@ for g, p in L("segment"):
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
     for coords in line_coords(g):
+        # a tunnel's floor runs between the road at its two ends, which a long one (the Combe Down
+        # Tunnel) can have well outside the tile's roads: so it is levelled over the whole of it
+        floors = []
+        if tunnel_ranges and FLOOR_BOX is not None:
+            for wide in densify_runs(coords, 4.0, FLOOR_BOX):
+                floors.append(([t for _, _, t in wide], level_structures(wide, [elev(x, y) for x, y, _ in wide], [], tunnel_ranges)))
         for run in densify_runs(coords, 4.0, ROAD_BOX):
             # the survey's heights, the structures carried straight between the road at their ends
             # (the roads are smoothed as a network once they're all in: smooth_network)
             z = [elev(x, y) for x, y, _ in run]
             z = level_structures(run, z, bridge_ranges, tunnel_ranges)
+            for i in in_ranges(run, tunnel_ranges):
+                for ts, zs_ in floors:
+                    if ts[0] <= run[i][2] <= ts[-1]:
+                        z[i] = float(np.interp(run[i][2], ts, zs_))
             pieces, through = (towpath(run, z, c != "steps", in_ranges(run, bridge_ranges)) if c in PATHS and CANAL else ([(run, z, {})], False))
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
-                bored = TN.bores(run, z, tr, elev)
+                bored = TN.bores(run, z, tr, elev, c)
                 pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow))
+TN.rebore(pending, elev)
 def chains():
     """The roads in pending joined up where one ends where another of the same kind begins, as
     lists of (road index, point index) along each."""
@@ -674,10 +688,11 @@ smooth_network()
 
 # an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
 # crosses over it is carried over as a bridge (Overture seldom marks the road on top), with the
-# cutting as wide as the road in it
+# cutting as wide as the road in it. Not the ends of a tunnel that is bored: those are its road
+# coming out of the hill face, and what passes near them is on the ground over the tunnel
 underpasses = []
 for k, r in enumerate(pending):
-    if not r["tunnel_ranges"]: continue
+    if not r["tunnel_ranges"] or r["bored"]: continue
     shallow = sorted(in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)})
     # (each unbroken stretch on its own: the cuttings at either end of a bored tunnel are two)
     runs_ = [[]]
@@ -917,16 +932,37 @@ for k, r in enumerate(pending):
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0     # headroom under a bridge for a road, for a path; metres over which a road eases down to it
 
 
-def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
+def joined_near(j, x, y, skip):
+    """Road j and the roads that meet it within DIP of (x, y), at its level, and those that meet
+    them: a road beside it there that joins it nowhere near is not brought down with it."""
+    zone = shapely.Point(x, y).buffer(DIP)
+    near = {int(i): road_lines[int(i)].intersection(zone) for i in road_tree.query(zone) if int(i) not in skip}
+    near[j] = road_lines[j].intersection(zone)
+
+    def z_at(i, p):
+        run = pending[i]["run"]
+        return pending[i]["z"][min(range(len(run)), key=lambda m: math.dist(run[m][:2], (p.x, p.y)))]
+    seen, todo = {j}, [j]
+    while todo:
+        a = todo.pop()
+        for b, g in near.items():
+            if b in seen or g.is_empty or near[a].is_empty or near[a].distance(g) > 0.5: continue
+            pa, pb = nearest_points(near[a], g)
+            if abs(z_at(a, pa) - z_at(b, pb)) < 2.0: seen.add(b); todo.append(b)
+    return seen
+
+
+def ease_roads(x, y, head, skip, down=True, reach=None, own=None, only=None):
     """Bring every road's points within DIP of (x, y) down to head (or up, with down False),
     easing in and out, so roads meeting there stay joined; skip: road indexes left alone (the
     bridge itself), and any road's points on a span or a deck are left alone too (except road
     own's, the one being carried over the canal); a road that's a bridge somewhere else is still
-    brought down beside it, and its deck carried to its new approaches afterwards (carry_spans)."""
+    brought down beside it, and its deck carried to its new approaches afterwards (carry_spans).
+    With `only`, just those roads."""
     n = 0
     for j in road_tree.query(shapely.Point(x, y).buffer(reach or DIP)):
         j = int(j)
-        if j in skip: continue
+        if j in skip or (only is not None and j not in only): continue
         o = pending[j]
         for i, q in enumerate(o["run"]):
             if j != own and (i in o["span"] or i in o["deck"]): continue
@@ -1147,7 +1183,8 @@ for k, r in enumerate(pending):
             dips.append((j, x))
             head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5      # (a little to spare, the deck being sampled a point or two off the crossing)
             # the road under, and the roads joining it there, dip together
-            dipped += ease_roads(x.x, x.y, head, own_road(k, line))
+            skip = own_road(k, line)
+            dipped += ease_roads(x.x, x.y, head, skip, only=joined_near(j, x.x, x.y, skip))
 # 3b. and under the railway's bridges and viaducts (tools/railway.py marks them)
 for t, track in enumerate(rail_tracks):
     tp = track["p"]
@@ -1166,7 +1203,7 @@ for t, track in enumerate(rail_tracks):
                 if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 4 for i in o["span"] | o["deck"]): continue     # (a bridge itself right there)
                 kk = min(range(k, e + 1), key=lambda kk: math.dist(tp[kk][:2], (x.x, x.y)))
                 head = tp[kk][2] - 0.9 - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD)
-                dipped += ease_roads(x.x, x.y, head, set())
+                dipped += ease_roads(x.x, x.y, head, set(), only=joined_near(j, x.x, x.y, set()))
                 dips.append((j, x))
         k = e + 1
 if dipped: print(f"bridges: {dipped} road points dipped to pass under a bridge")
@@ -1227,20 +1264,23 @@ if afloat: carry_spans(True)      # (the footbridges too)
 
 # a road the data lays right on top of another, well above it (a lane along the top of a cutting
 # drawn over the road down in it, or a path whose bridge the data stops short of the road it
-# crosses), is on a bridge there: the ground is the lower road's
+# crosses), is on a bridge there: the ground is the lower road's. Over a bored tunnel the ground is
+# the hill over its roof, and a way on it stays on the ground; and a path along the top of a
+# cutting's side, over the road's verge, is beside it, not on it
 stacked = 0
 for k, r in enumerate(pending):
     if r["c"] in PATHS and r["c"] in ("steps", "pedestrian"): continue
     for j in road_tree.query(road_lines[k].buffer(4.0)):
         o = pending[int(j)]
         if int(j) == k or o["c"] in PATHS: continue
-        half_ = RW.get(o["c"], 4) / 2
+        half_ = RW.get(o["c"], 4) / 2 - (1.5 if r["c"] in PATHS else 0.0)    # (structures.VERGE)
         line_ = road_lines[int(j)]
         for i, q in enumerate(r["run"]):
             if i in r["span"] or i in r["deck"] or i in r["tow"]: continue
             pt = shapely.Point(q[:2])
             if line_.distance(pt) > half_: continue
             m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
+            if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]): continue
             if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                 r["span"].add(i); r.setdefault("solid", set()).add(i); stacked += 1
 if stacked: print(f"bridges: {stacked} road points lying over another road well below them carried as bridges")
@@ -1274,6 +1314,31 @@ for o in pending:
         poly = shapely.LineString([o["run"][i][:2] for i in st]).buffer(RW.get(o["c"], 4) / 2 + 2.5, cap_style=2)
         win, inn = cover_xy(poly)
         PROTECT[win][inn] = False
+# the railway's bridges likewise: the track on the ground either side doesn't flatten the ground
+# under a span (on the lidar's true embankments a short bridge's gap was filled from both ends);
+# and the track on the ground keeps its own ground, under a road's bridge too, as does a road
+# passing under at grade (a path under one lies on the ground as it is, and nothing fills it)
+RAIL_HALF = 4.5
+for t in rail_tracks:
+    tp = t["p"]
+    for st in stretches({i for i, q in enumerate(tp) if q[3] == 1}):
+        a, b = tp[max(0, st[0] - 1)], tp[min(len(tp) - 1, st[-1] + 1)]
+        pts = [((a[0] + tp[st[0]][0]) / 2, (a[1] + tp[st[0]][1]) / 2)] + [tuple(tp[i][:2]) for i in st] \
+            + [((b[0] + tp[st[-1]][0]) / 2, (b[1] + tp[st[-1]][1]) / 2)]
+        win, inn = cover_xy(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))
+        PROTECT[win][inn] = True
+for t in rail_tracks:
+    tp = t["p"]
+    for st in stretches({i for i, q in enumerate(tp) if q[3] == 0}):
+        if len(st) < 2: continue
+        win, inn = cover_xy(shapely.LineString([tp[i][:2] for i in st]).buffer(RAIL_HALF))
+        PROTECT[win][inn] = False
+for o in pending:
+    if o["c"] in PATHS and o["c"] != "pedestrian": continue
+    for st in stretches({i for i in range(len(o["run"])) if i not in o["span"] and i not in o["deck"]}):
+        if len(st) < 2: continue
+        win, inn = cover_xy(shapely.LineString([o["run"][i][:2] for i in st]).buffer(RW.get(o["c"], 4) / 2 + 2.5, cap_style=2))
+        PROTECT[win][inn] = False
 
 for r in pending:
     c, run, z, span, bored, tunnel_ranges = r["c"], r["run"], r["z"], r["span"], r["bored"], r["tunnel_ranges"]
@@ -1304,7 +1369,6 @@ for r in pending:
 # the railway (tools/railway.py, <map>-rail.json): the ground is flattened under the track where it
 # runs on the ground, as under a road, so it sits in its cuttings and on its embankments rather
 # than through the hillside; not under its bridges and viaducts, nor over its tunnels
-RAIL_HALF = 4.5
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
 if os.path.exists(rail_file):
     rail_runs = 0
@@ -1331,6 +1395,21 @@ k = np.clip((flat_w - flat_f) / ease, 0, 1)
 k = k * k * (3 - 2 * k)
 k[np.isinf(flat_w)] = 1
 grid = flat_z * (1 - k) + grid * k
+# the ground over a tunnel is the hill's, whole: the cut down to the road at each portal, and the
+# easing out from it, stop a few metres in, inside the tube's mouth, where the game hides them
+for r in pending:
+    for i0, i1 in r["bored"]:
+        bore = shapely.LineString([q[:2] for q in r["run"][i0:i1 + 1]])
+        if bore.length < 4: continue
+        win, inn = cover_xy(bore.buffer(TN.HALF + TN.CUT + 1.0, cap_style=2))
+        gx, gy = GX[win][inn], GY[win][inn]
+        along = shapely.line_locate_point(bore, shapely.points(gx, gy))
+        under = (along > TN.INTO + 1.0) & (along < bore.length - TN.INTO - 1.0)
+        blk = grid[win]
+        sub = blk[inn]
+        dug = under & (sub < SURVEY[win][inn] - 0.5)
+        sub[dug] = SURVEY[win][inn][dug]
+        blk[inn] = sub
 
 
 def gelev0(x, y):
@@ -1382,8 +1461,9 @@ for r in pending:
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
     for i0, i1 in TN.split(run, bored):
         roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {})))
-    for i0, i1 in bored:
-        tunnel_list.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
+    for (i0, i1), (head, tail) in zip(bored, TN.faces(run, z, bored, elev, c)):
+        tp = pts[i0:i1 + 1]
+        tunnel_list.append(dict(c=c, n=r["n"], p=([[r1(v) for v in head]] if head else []) + tp + ([[r1(v) for v in tail]] if tail else [])))
 del pending
 z0 = math.floor(grid.min()) if TILE is None else A.squares.z0     # every tile measures from the same height
 
@@ -2390,8 +2470,9 @@ else:
     if garden is not None and not garden.is_empty: scatter(garden, 22.0)
 
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
-from streets import street_furniture
-fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=True)
+from streets import phone_boxes, street_furniture
+phones = phone_boxes(L("osm")) if os.path.exists(f"{src_dir}/osm.geojson") else []
+fx, marks = street_furniture(roads, L("infrastructure") + phones, gate_list, RW, gelev, proj, inside, rnd, keyed=True)
 
 # ---- shop signs ----------------------------------------------------------------
 from shops import businesses, shop_signs

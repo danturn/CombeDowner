@@ -6,7 +6,9 @@
 // results card (racescreens.ts summary) in the trail's colour.
 //
 // All drawn on the page in the HUD's layer, sized by the screen, and none of it takes a click.
-// Nothing here goes over the network: trail.ts says what to show from what it already knows.
+// Nothing here goes over the network: trail.ts says what to show from what it already knows. A
+// Wanted poster's screens (wantedscreens.ts) are built from the same boxes and paper, and share the
+// call-out, in the poster's red.
 import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
 import { style as raceStyle, touchUp } from "./racescreens";
@@ -59,7 +61,7 @@ function style() {
 
 const layer = () => document.getElementById("hud") ?? document.body;
 
-function box(cls: string): HTMLDivElement {
+export function box(cls: string): HTMLDivElement {
   style();
   const e = document.createElement("div");
   e.className = `rsc tsc ${cls}`;
@@ -70,7 +72,7 @@ function box(cls: string): HTMLDivElement {
 
 const written = new WeakMap<HTMLElement, string>();
 /** Write a box, only when its words change: written afresh it would play its entrance again. */
-function put(e: HTMLElement, html: string) {
+export function put(e: HTMLElement, html: string) {
   html = ctlText(html);
   if (written.get(e) !== html) { written.set(e, html); e.innerHTML = html; }
   e.classList.remove("out");
@@ -78,7 +80,7 @@ function put(e: HTMLElement, html: string) {
 }
 
 /** Fade a box out after secs, unless it's put up again first. */
-function fadeAfter(e: HTMLElement, secs: number, timer: { t: number }) {
+export function fadeAfter(e: HTMLElement, secs: number, timer: { t: number }) {
   clearTimeout(timer.t);
   timer.t = window.setTimeout(() => {
     e.classList.add("out");
@@ -150,9 +152,10 @@ let callEl: HTMLDivElement | null = null;
 const callT = { t: 0 };
 
 /** A banner across the middle for a few seconds: the search area's shrinking. */
-export function callout(head: string, sub: string, secs = 3.5) {
+export function callout(head: string, sub: string, secs = 3.5, colour = GOLD) {
   splash(null);
   callEl ??= box("tsc-call");
+  callEl.style.setProperty("--rc", colour);
   // written afresh each time, so a second call-out punches in like the first
   written.delete(callEl);
   put(callEl, `<div class="band"><div class="head">${head}</div><div class="rsub">${sub}</div></div>`);

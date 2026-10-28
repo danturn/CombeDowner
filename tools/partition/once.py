@@ -48,7 +48,8 @@ from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
-from structures import match_structures
+from structures import match_structures, osm_structures
+from maxspeed import resolve as speed_limits
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
                     classify_edges, front_normals, join_evidence, make_plots)
 
@@ -306,6 +307,25 @@ def graph_path(out):
     return os.path.join(out, "graph.json")
 
 
+# What the streets' own records leave out, from osm-detail (tools/osm.py): a path's surface, a
+# service road's kind and who may use it, and how a flight of steps is built.
+DETAIL_KEYS = ("surface", "tracktype", "service", "access", "handrail", "handrail:left", "handrail:right",
+               "handrail:center", "step_count", "incline")
+
+
+def way_detail(D, bb):
+    """osm id -> the detail tags of each street or path that has any."""
+    out = {}
+    for g, p in D.lines_near(bb, "osm-detail"):
+        tags = {k: p[k] for k in DETAIL_KEYS if k in p}
+        if tags and "highway" in p:
+            # which way the way was drawn, as a handrail's side and an incline are told along it
+            if g.geom_type == "LineString" and any(k in tags for k in ("incline", "handrail:left", "handrail:right")):
+                tags["_ends"] = [round(v, 1) for v in (*g.coords[0][:2], *g.coords[-1][:2])]
+            out[p["osm"]] = tags
+    return out
+
+
 def build_graph(out, raw, log=print):
     """The street graph, built once for the whole map and written to `<out>/graph.json`.
 
@@ -317,12 +337,21 @@ def build_graph(out, raw, log=print):
     bb = map_bbox()
     D = Data(raw, bb, log=log)
     roads = []
+    detail = way_detail(D, bb)
     for g, p in D.lines_near(bb, "osm-roads"):
+        if g.geom_type == "LineString" and g.is_ring:
+            p = dict(p, _ring=True)
         g = g.intersection(box(*bb))
+        p = {**p, **detail.get(p.get("osm"), {})}
         for l in (g.geoms if hasattr(g, "geoms") else [g]):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))
     log(f"  {len(roads)} road pieces over the whole map")
+    # each way's speed limit rides along in its tags, as "_ms", to the squares' streets
+    limits, _ = speed_limits(roads, log=log)
+    for _, p in roads:
+        if p.get("osm") in limits:
+            p["_ms"] = limits[p["osm"]]
     edges = street_graph(roads, bb, log=log)
     # a stable id and order: sorted by the line's own bounding box, a geometric key, so the same
     # edge keeps the same id however the ways were read and however many processes ran
@@ -333,10 +362,10 @@ def build_graph(out, raw, log=print):
     # the caller, so the owner and the other passes agree on what "edge 18729" is
     for i, e in enumerate(edges):
         e["id"] = i
-    # the bridges and tunnels, which the OSM ways do not carry: laid on from Overture's flags now
-    # the ids are fixed, so the profile pass and the writer find them on the edge they belong to
+    # the bridges and tunnels, from the OSM ways' own tags and from Overture's flags, laid on now the
+    # ids are fixed, so the profile pass and the writer find them on the edge they belong to
     segments = [(g, p) for g, p in D.near(bb, "segment") if p.get("subtype") == "road" and p.get("road_flags")]
-    marked = match_structures(edges, segments)
+    marked = osm_structures(edges, match_structures(edges, segments))
     for e in edges:
         e["struct"] = marked.get(e["id"], {})
     json.dump([dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), line=_line_json(e["line"]),
