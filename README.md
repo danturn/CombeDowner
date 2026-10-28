@@ -23,7 +23,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Bath, all of it**: streamed in around you in squares about a kilometre across, at the same
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
-  and more. Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
+  and more. Every other church has its tower where it really has one, as tall as the lidar
+  saw it, with battlements, and pinnacles and a spire where the lidar shows those too (St Stephen's
+  on Lansdown, St Mary's Bathwick, St Michael's on Broad Street, St John's on South Parade). Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
@@ -503,6 +505,8 @@ streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
+The churches' towers and spires are measured from the lidar by `tools/towers.py` and kept in
+`data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks

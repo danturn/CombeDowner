@@ -12,6 +12,7 @@
 import * as THREE from "three";
 import type { GameMap } from "../map";
 import { spire } from "./spire";
+import { tower } from "./tower";
 import { portico } from "./portico";
 import { bridge } from "./bridge";
 import { oak } from "./oak";
@@ -40,7 +41,7 @@ import { mergeStatic } from "./kit";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats, dundas };
+const KINDS: Record<string, Builder> = { spire, tower, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats, dundas };
 /** The set pieces' kinds (setpieces.ts). */
 const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville", "bathspa", "boastation", "castle", "cityhall", "stgeorges", "auwal", "clocktower", "capewheel", "zeitz", "boats", "dundas"]);
 
