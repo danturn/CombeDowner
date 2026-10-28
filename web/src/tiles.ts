@@ -14,14 +14,16 @@ import * as THREE from "three";
 import { GameMap, tileKey, type MapData } from "./map";
 import { SquareParser } from "./parsesquare";
 import type { TileWorld } from "./world";
-import { view } from "./view";
+import { SQUARES, view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
 import { clearCourt } from "./bonfire";
 import { clearClimb } from "./theclimb";
 
 // Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
-// and dropped once it's further than view.drop.
+// and dropped once it's further than view.drop; and no more than SQUARES of them, the nearest, with
+// a few more kept once built, so walking along the edge of one doesn't build and drop it by turns.
 const BUDGET = 6;        // milliseconds of setting up and building a frame
+const SPARE = 2;         // squares kept built past the budget
 // A phone or tablet takes one square at a time: each one being read briefly takes several times its
 // file's size in memory, and Chrome on Android closes the page outright when it runs short.
 const ONE_AT_A_TIME = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
@@ -47,6 +49,7 @@ function stat(t: { ti: number; tj: number }, k: "made" | "setup" | "build", ms: 
 interface Tile {
   ti: number; tj: number;
   d: number; od: number;             // how far its nearest edge is from us, and from anyone else
+  near?: boolean;                    // one of the squares round us to build in full
   map?: GameMap; ready?: boolean;    // ready: set up and joined to the main map
   group?: THREE.Group; world?: TileWorld; job?: Generator<void, TileWorld>;
   fetching?: boolean; failed?: boolean; gone?: boolean;
@@ -78,7 +81,8 @@ export class Tiles {
   private exists: Set<number>;
   private wait = 0;
   /** Reads each square's file off the main thread (parsesquare.ts). */
-  private parser = ONE_AT_A_TIME ? new SquareParser(1, 5000) : new SquareParser(2);
+  // (a worker keeps the memory of the biggest file it has read, so one left idle a while goes)
+  private parser = ONE_AT_A_TIME ? new SquareParser(1, 5000) : new SquareParser(2, 30000);
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
@@ -123,10 +127,25 @@ export class Tiles {
     this.wait -= dt;
     if (this.wait <= 0) {
       this.wait = 0.3;
+      // the nearest squares, as many as the budget allows
+      const nearest = (r: number, most: number) => {
+        const u = px - I.x0, v = -pz - I.y0, found: [number, number][] = [];
+        for (let ti = Math.floor((u - r) / S); ti <= Math.floor((u + r) / S); ti++)
+          for (let tj = Math.floor((v - r) / S); tj <= Math.floor((v + r) / S); tj++) {
+            const k = tileKey(ti, tj), d = far(ti, tj, px, pz);
+            if (this.exists.has(k) && d <= r) found.push([k, d]);
+          }
+        return new Set(found.sort((a, b) => a[1] - b[1]).slice(0, most).map(([k]) => k));
+      };
+      const near = nearest(view.load, SQUARES), keep = nearest(view.drop, SQUARES + SPARE);
       for (const [k, t] of this.live) {
-        t.d = far(t.ti, t.tj, px, pz); t.od = fromOthers(t.ti, t.tj);
-        if (t.d > view.drop && t.od > FAR_OTHERS && !this.pinned.has(k)) { this.drop(t); this.live.delete(k); }
-        else if (t.d > view.drop) this.unbuild(t);   // its scenery goes; its map stays for whoever's there
+        t.d = far(t.ti, t.tj, px, pz); t.od = fromOthers(t.ti, t.tj); t.near = near.has(k);
+        if (!keep.has(k) && t.od > FAR_OTHERS && !this.pinned.has(k)) { this.drop(t); this.live.delete(k); }
+        else if (!keep.has(k)) this.unbuild(t);   // its scenery goes; its map stays for whoever's there
+      }
+      for (const k of near) if (!this.live.has(k)) {
+        const ti = Math.floor(k / 1024) - 512, tj = (k % 1024) - 512;
+        this.live.set(k, { ti, tj, d: far(ti, tj, px, pz), od: fromOthers(ti, tj), near: true });
       }
       const want = (x: number, z: number, r: number, cap = Infinity) => {
         const u = x - I.x0, v = -z - I.y0;
@@ -137,12 +156,11 @@ export class Tiles {
             this.live.set(k, { ti, tj, d: far(ti, tj, px, pz), od: fromOthers(ti, tj) });
           }
       };
-      want(px, pz, view.load);
       for (const k of this.pinned) if (!this.live.has(k)) {
         const ti = Math.floor(k / 1024) - 512, tj = (k % 1024) - 512;
         this.live.set(k, { ti, tj, d: far(ti, tj, px, pz), od: fromOthers(ti, tj) });
       }
-      const ours = [...this.live.values()].filter((t) => t.d <= view.drop).length;
+      const ours = keep.size;
       for (const o of others) want(o.x, o.z, NEAR_OTHERS, ours + MAX_OTHERS);
       // a square that wouldn't load (a dropped connection, or no memory to spare just then) is
       // tried again in a while; Play doesn't wait for it meanwhile (hold)
@@ -160,7 +178,7 @@ export class Tiles {
     const T = (globalThis as any).__tileTimes as { setup: number; build: number; worlds: number } | undefined;
     if (T) { T.setup = T.build = T.worlds = 0; }
     const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? BUDGET);
-    const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.d <= view.load && !t.world))).sort((a, b) => first(a) - first(b));
+    const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.near && !t.world))).sort((a, b) => first(a) - first(b));
     for (const t of work) {
       while (!busy()) {
         if (!t.ready) {
@@ -180,7 +198,7 @@ export class Tiles {
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);
           continue;
         }
-        if (t.d > view.load) break;
+        if (!t.near) break;
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const s0 = performance.now(), r = t.job.next();
         const buildMs = performance.now() - s0;
@@ -199,8 +217,8 @@ export class Tiles {
     const w0 = performance.now();
     for (const t of this.live.values()) t.world?.update(px, pz, dt);
     if (T) T.worlds += performance.now() - w0;
-    (globalThis as any).__tilesPending = [...this.live.values()].filter((t) => !t.failed && t.d <= view.load && (!t.map || !t.ready || !t.world)).length;
-    tileTrouble.missing = [...this.live.values()].filter((t) => t.failed && t.d <= view.load).length;
+    (globalThis as any).__tilesPending = [...this.live.values()].filter((t) => !t.failed && t.near && (!t.map || !t.ready || !t.world)).length;
+    tileTrouble.missing = [...this.live.values()].filter((t) => t.failed && t.near).length;
   }
 
   private fetch(t: Tile) {
@@ -245,9 +263,13 @@ export class Tiles {
 
   /** Take down a square's scenery, finished or not. */
   private unbuild(t: Tile) {
+    if (!t.world && !t.job) return;
     if (t.world) t.world.dispose();
     else if (t.job) { t.job.return(undefined as never); if (t.group) this.free(t.group); }
     t.world = t.job = t.group = undefined;
+    // the map stays for whoever's there, on its true ground: what it was handed by the scenery
+    // would keep every bit of that scenery from being let go
+    if (t.map) { t.map.standOnDrawn(null); t.map.onTakeCar = () => {}; }
   }
 
   private drop(t: Tile) {

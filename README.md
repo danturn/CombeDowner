@@ -412,6 +412,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
   square that fails to load is tried again a little later, and Play never waits on it. Phones and
   tablets load one square at a time, to stay inside their memory.
+- **Light on memory**: the parts of Bath you leave behind are let go of as you travel, and built
+  again when you come back. However far you can see, only the nearest squares are built in full
+  (25 on a computer, enough for the furthest view it picks for itself, and 9 on a phone or
+  tablet); past them the simpler town stands in, as it does beyond the fog. `?squares=16` in the
+  address tries another number.
 - **Smooth on any machine**: the game picks how far you see, the resolution and shadows for your
   device (a quick check of its processor and graphics chip as it loads, then the menu's backdrop),
   and if frames get slow for a few seconds it eases back gently: shadows redrawn less often, then a

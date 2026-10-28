@@ -83,6 +83,8 @@ work on it. Useful URL options:
 - `?nightout=1` makes every night a Friday night out, with the crowd at the top of Milsom Street
   (`nightOut` in `web/src/daylight.ts`, `naughtyboys.ts`).
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
+- `?squares=16` sets the most squares of Bath built in full at once (`SQUARES` in `web/src/view.ts`),
+  the memory budget; `node tools/memory_probe.mjs` measures the memory along a fixed trip round Bath.
 - `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
   clockwise from north and up from level), and the menu backdrop looks from there (a fifth number
   lifts the backdrop that many metres off the ground, for views from the air). Shift+F3 copies a

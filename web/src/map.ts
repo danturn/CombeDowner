@@ -1010,7 +1010,7 @@ export class GameMap {
    *  under them. Once the scene is built, everything stands on it, so what you walk and drive on is
    *  what you see, not the survey's grid a metre under a street or above one in a cutting. */
   private drawn: ((x: number, z: number) => number) | null = null;
-  standOnDrawn(surface: (x: number, z: number) => number) { this.drawn = surface; }
+  standOnDrawn(surface: ((x: number, z: number) => number) | null) { this.drawn = surface; }
 
   /** Ground height (scene Y) at scene (x, z): the drawn surface, once there is one. */
   ground(x: number, z: number): number {
