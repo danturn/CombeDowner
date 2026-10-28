@@ -86,6 +86,7 @@ HEIGHT = {
 SEGMENT = 4.0       # metres between points along a road's centre line
 TUNNEL_HALF, TUNNEL_LEDGE = 2.6, 1.3    # the water and the towpath's ledge across a canal tunnel (tools/canal.py)
 CORNER_GAP = 0.3    # metres: corners closer than this to the last point kept are one corner
+CORNER_NEAR = 1.0   # metres: an even sample this near a corner gives way to it
 SURFACE_TOLERANCE = 0.05   # metres the street surfaces' outlines may move when simplified
 # Metres the road surface is shrunk before a barrier is tested against it: the road's interior, not
 # its boundary. A wall standing on the boundary is a front wall, and must survive.
@@ -397,21 +398,21 @@ def lidar_tall(sq):
 
 
 def stretch_samples(t0, t1, corners):
-    """Distances along a line to sample the stretch t0..t1 at: its corners, and evenly between them
-    no more than SEGMENT metres apart, for the heights and widths the later steps read along it."""
+    """Distances along a line to sample the stretch t0..t1 at: every SEGMENT metres, as the later
+    steps read heights and widths along it, and its corners. An even sample within CORNER_NEAR of a
+    corner gives way to it, and the rest stay where they were, so a way's heights by a bridge or a
+    junction away from its corners come out as before."""
+    n = max(2, int((t1 - t0) / SEGMENT) + 1)
+    even = [t0 + (t1 - t0) * k / n for k in range(n + 1)]
     inner = [t for t in corners if t0 + CORNER_GAP < t < t1 - CORNER_GAP]
     if not inner:
-        n = max(2, int((t1 - t0) / SEGMENT) + 1)
-        return [t0 + (t1 - t0) * k / n for k in range(n + 1)]
-    marks = [t0]
-    for t in inner + [t1]:
-        if t - marks[-1] >= CORNER_GAP or t == t1:
-            marks.append(t)
-    ts = [t0]
-    for a, b in zip(marks, marks[1:]):
-        n = max(1, math.ceil((b - a) / SEGMENT))
-        ts += [a + (b - a) * k / n for k in range(1, n + 1)]
-    return ts
+        return even
+    kept = []
+    for t in inner:
+        if not kept or t - kept[-1] >= CORNER_GAP:
+            kept.append(t)
+    clear = [t for t in even[1:-1] if all(abs(t - c) >= CORNER_NEAR for c in kept)]
+    return [t0] + sorted(clear + kept) + [t1]
 
 
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,

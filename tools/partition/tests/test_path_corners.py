@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import LineString, Point
 
 from partition.corridors import line_corners
-from partition.write_tile import CORNER_GAP, SEGMENT, stretch_samples
+from partition.write_tile import CORNER_GAP, CORNER_NEAR, SEGMENT, stretch_samples
 
 
 class PathCornerTest(unittest.TestCase):
@@ -24,8 +24,15 @@ class PathCornerTest(unittest.TestCase):
         drawn = LineString([line.interpolate(t).coords[0] for t in ts])
         for c in line.coords:
             self.assertLess(drawn.distance(Point(c)), 1e-6)
-        self.assertTrue(all(b - a <= SEGMENT + 1e-9 for a, b in zip(ts, ts[1:])))
+        self.assertTrue(all(b - a <= SEGMENT + CORNER_NEAR + 1e-9 for a, b in zip(ts, ts[1:])))
         self.assertTrue(all(b - a >= CORNER_GAP - 1e-9 for a, b in zip(ts, ts[1:])))
+
+    def test_samples_away_from_corners_stay_put(self):
+        line = LineString([(0, 0), (30, 0), (30, 10)])
+        plain = stretch_samples(0.0, line.length, [])
+        kept = stretch_samples(0.0, line.length, line_corners(line, "footway"))
+        self.assertIn(30.0, kept)
+        self.assertEqual([t for t in plain if abs(t - 30.0) >= CORNER_NEAR], [t for t in kept if t != 30.0])
 
     def test_gentle_bend_is_sampled_as_before(self):
         line = LineString([(0, 0), (10, 0), (20, 0.5)])
