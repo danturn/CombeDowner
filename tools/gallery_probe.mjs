@@ -5,17 +5,20 @@
 // show with the crowd and their speech bubbles, the verdict and the strange object; and a round in
 // two tabs of one ?net=local room, with both paintings going across. Shots along the way.
 //
-//   node tools/gallery_probe.mjs --out gallery [--map combe-down] [--only solo|duo|critics]
+// The ending is checked too: the verdict card stays up until it's put away, you can stay and look
+// round after it, and leaving (or the gallery closing) puts you back on the pavement facing the door.
+//
+//   node tools/gallery_probe.mjs --out gallery [--map combe-down] [--only solo|duo|critics] [--time 22:30]
 //
 // Writes <out>/report.txt and <out>/*.png; exits 1 if a check fails.
 import { createRequire } from "module";
 import { spawn } from "child_process";
 import fs from "fs";
-import { MUTED_ARGS, silenceContext, silenceNote } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = createRequire(WEB + "package.json")("playwright");
-const argv = process.argv.slice(2), opt = { out: "gallery", map: "combe-down", port: "5193", only: "" };
+const argv = process.argv.slice(2), opt = { out: "gallery", map: "combe-down", port: "5193", only: "", time: "11:00" };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 fs.mkdirSync(opt.out, { recursive: true });
 
@@ -42,10 +45,11 @@ async function newContext() {
 
 async function join(context, name, room) {
   const page = await context.newPage();
+  await silence(page);
   pages.push([name, page]);
   page.on("pageerror", (e) => complaints.push(`${name} error: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && /gallery|easel|critic/i.test(m.text())) complaints.push(`${name} console: ${m.text()}`); });
-  await page.goto(`${base}/?map=${opt.map}&net=local&room=${room}&time=11:00&fx=0&objects=0&zone=5&paint=30`);
+  await page.goto(`${base}/?map=${opt.map}&net=local&room=${room}&time=${opt.time}&fx=0&objects=0&zone=5&paint=30`);
   await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 180000 });
   await page.fill("#name", name);
   await page.click("#play");
@@ -63,7 +67,8 @@ async function join(context, name, room) {
       const job = g.quests.running, p = g.player, G = window.__gallery;
       return { job: job?.offer.kind ?? "", done: job?.done ?? null, me: g.net.selfId, host: g.isHost, x: p.pos.x, y: p.pos.y, z: p.pos.z,
         phase: G?.phase?.() ?? "", works: G?.works?.() ?? 0, aboard: G?.aboard?.() ?? false, objects: g.oddments.s.o.length,
-        easel: !!document.getElementById("easel") };
+        easel: !!document.getElementById("easel"), card: !!document.getElementById("gallerycard"), yaw: p.yaw,
+        ground: g.map.ground(p.pos.x, p.pos.z), hint: G && job && !job.done ? G.hint() : "", line: G && job && !job.done ? G.card().line + " | " + (G.card().sub ?? "") : "" };
     };
   });
   return page;
@@ -115,6 +120,7 @@ async function cameraOn(page, which) {
   const G = await page.evaluate(() => ({ top: window.__gallery.top, C: window.__gallery.C, n: window.__gallery.painters().length }));
   const y = G.top + 1.75;
   if (which === "wall") await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 1.5, y + 0.6, G.C.z + 3.2, G.C.x - 0.5, y - 0.1, G.C.z - 6.5]]);
+  else if (which === "door") await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 4, y + 0.3, G.C.z + 1.5, G.C.x + 10.3, y - 0.5, G.C.z - 2.2]]);
   else await page.evaluate(([c]) => { window.__cam = c; }, [[G.C.x + 9.5, y + 2.6, G.C.z + 5.5, G.C.x - 3, y - 0.6, G.C.z - 3]]);
 }
 
@@ -126,8 +132,10 @@ async function takeAndEnter(tabs, spots, seed) {
     window.__game().quests.take({ kind: "gallery", seed, stars: 2, title: "The Art Gallery", blurb: "", reward: "", x: b.x, z: b.z, where: b.name });
   }, [door, seed]);
   for (const t of tabs) await until(t, 15, (s) => s.job === "gallery");
-  await wait(800);
-  for (const t of tabs) await t.evaluate(() => window.__gallery.start());
+  const taker = await until(tabs[0], 5, (s) => s.aboard);
+  check("one E: taking it on by the curator goes straight into the gallery", taker.aboard, JSON.stringify(taker));
+  // everyone else goes in with E by the curator
+  for (const t of tabs.slice(1)) await t.evaluate(() => window.__gallery.start());
 }
 
 function remarkLines(show, names) {
@@ -200,6 +208,15 @@ try {
     await ada.evaluate(([x, z]) => window.__game().player.spawn(x - 3, z - 3, Math.atan2(3, 3)), [spots[0].x, spots[0].z]);
     await settle(ada);
     await ada.screenshot({ path: `${opt.out}/outside-curator.png` });
+    // the curator's name label, from a few metres in front of him
+    await ada.evaluate(([d, m]) => {
+      let ux = m.x - d.x, uz = m.z - d.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+      const cx = d.x - uz * 1.1 - ux * 0.3, cz = d.z + ux * 1.1 - uz * 0.3, g = window.__game(), y = g.map.ground(cx, cz);
+      window.__cam = [cx + ux * 3.2 + uz * 0.8, y + 1.9, cz + uz * 3.2 - ux * 0.8, cx, y + 1.7, cz];
+    }, [spots[0], spots[1]]);
+    await wait(1000);
+    await ada.screenshot({ path: `${opt.out}/curator-label.png` });
+    await ada.evaluate(() => { window.__cam = null; });
     await takeAndEnter([ada], spots, 4242);
     const painting = await until(ada, 20, (s) => s.phase === "paint" && s.easel);
     check("solo: in the gallery, the painting starts and the easel comes up", painting.phase === "paint" && painting.easel, JSON.stringify(painting));
@@ -219,6 +236,11 @@ try {
     await cameraOn(ada, "room");
     await wait(4000);
     await ada.screenshot({ path: `${opt.out}/room-crowd.png` });
+    // the same with the room's own light switched off: the street's daylight (or night) instead
+    await ada.evaluate(() => { window.__game().quests.indoors = () => false; });
+    await wait(400);
+    await ada.screenshot({ path: `${opt.out}/room-crowd-unlit.png` });
+    await ada.evaluate(() => { delete window.__game().quests.indoors; });
     await cameraOn(ada, "wall");
     await wait(5000);
     await ada.screenshot({ path: `${opt.out}/wall-critic-2.png` });
@@ -226,16 +248,46 @@ try {
     const sh = await ada.evaluate(async () => { const K = await import("/src/critics.ts"); const s = window.__gallery.show(); return { remarks: s.remarks.map((r) => ({ ...r, name: K.visitor(r.v).name })), cast: s.cast.map((c) => K.visitor(c).name), dur: s.dur }; });
     report.push(`== Solo show (${sh.cast.length} visitors: ${sh.cast.join(", ")}; ${sh.dur.toFixed(0)} s)`, ...remarkLines(sh, ["Ada"]));
     const before = (await state(ada)).objects;
-    const res = await until(ada, 120, (s) => s.phase === "result" || !!s.done);
+    await until(ada, 120, (s) => s.phase === "result" || !!s.done);
+    const beat = await state(ada);
+    check("solo: the critics confer before the verdict card comes up", beat.phase === "result" && !beat.card, JSON.stringify(beat));
+    const carded = await until(ada, 10, (s) => s.card);
     await wait(1200);
     await ada.screenshot({ path: `${opt.out}/result-card.png` });
     const verdict = await ada.evaluate(() => window.__gallery.result());
     report.push(`solo verdict: ${JSON.stringify(verdict)}`);
-    check("solo: the verdict comes in", !!verdict, JSON.stringify(res));
+    check("solo: the verdict comes in on a card", !!verdict && carded.card, JSON.stringify(carded));
+    await wait(16000);
+    const held = await state(ada);
+    check("solo: the card stays up, and you stay in, until it's put away", held.card && held.aboard && !held.done, JSON.stringify(held));
+    await ada.keyboard.press("Escape");
+    await wait(600);
+    const lingering = await state(ada);
+    check("solo: Esc puts the card away, and you're still in the gallery", !lingering.card && lingering.aboard && !lingering.done
+      && await ada.evaluate(() => document.getElementById("pause")?.hidden !== false), JSON.stringify(lingering));
+    report.push(`lingering card: ${lingering.line}`);
+    await cameraOn(ada, "wall");
+    await wait(1200);
+    await ada.screenshot({ path: `${opt.out}/linger-wall.png` });
+    await ada.evaluate(() => { window.__cam = null; });
+    // walk up to Mr Pettigrew by the exit and leave with E
+    await ada.evaluate(() => { const G = window.__gallery, g = window.__game(); g.player.spawn(G.C.x + G.pettigrew[0] - 1.2, G.C.z + G.pettigrew[1], -Math.PI / 2); g.player.pos.y = G.top; });
+    await wait(500);
+    await cameraOn(ada, "door");
+    await wait(800);
+    await ada.screenshot({ path: `${opt.out}/linger-pettigrew.png` });
+    await ada.evaluate(() => { window.__cam = null; });
+    const byHim = await state(ada);
+    check("solo: by Mr Pettigrew, E would leave", /Pettigrew|Leave/.test(byHim.hint), byHim.hint);
+    await ada.evaluate(() => window.__gallery.start());
     const end = await until(ada, 30, (s) => !!s.done || !s.job);
     await wait(3000);
     const after = await state(ada);
-    check("solo: it ends back on the street", !after.aboard && Math.abs(after.y - (await ada.evaluate(() => window.__game().map.ground(window.__game().player.pos.x, window.__game().player.pos.z)))) < 3, `y ${after.y.toFixed(1)}`);
+    const toDoor = Math.atan2(-(spots[0].x - after.x), -(spots[0].z - after.z));
+    const facing = Math.abs(((after.yaw - toDoor + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    check("solo: it ends back on the pavement, looking at the door", !after.aboard && Math.abs(after.y - after.ground) < 3 && facing < 0.6
+      && Math.hypot(after.x - spots[0].x, after.z - spots[0].z) < 4, `y ${after.y.toFixed(1)} ground ${after.ground.toFixed(1)}, ${Math.hypot(after.x - spots[0].x, after.z - spots[0].z).toFixed(1)} m from the door, ${facing.toFixed(2)} rad off facing it`);
+    await ada.screenshot({ path: `${opt.out}/outside-after.png` });
     if (verdict?.won) check("solo: a win leaves one of the strange objects", after.objects === before + 1, `${before} -> ${after.objects}, done ${JSON.stringify(end.done)}`);
     else report.push(`solo was lost (${verdict?.score} vs ${verdict?.bar}), so no object expected: ${before} -> ${after.objects}`);
     report.push(`Ada (solo) ${await silenceNote(ada)}`);
@@ -293,11 +345,42 @@ try {
     report.push("== Two-tab show, as the second screen got it", ...remarkLines(shB, shB.names));
     const before = (await state(host)).objects;
     await Promise.all([a, b].map((t) => until(t, 150, (s) => s.phase === "result" || !!s.done)));
+    const cards = await Promise.all([a, b].map((t) => until(t, 10, (s) => s.card)));
+    check("duo: the verdict card comes up on both screens", cards.every((s) => s.card), JSON.stringify(cards.map((s) => [s.phase, s.card])));
     await wait(1000);
     await other.screenshot({ path: `${opt.out}/duo-result.png` });
     const vs = await Promise.all([a, b].map((t) => t.evaluate(() => window.__gallery.result())));
     check("duo: both screens have the same verdict", vs[0] && vs[1] && JSON.stringify(vs[0]) === JSON.stringify(vs[1]), JSON.stringify(vs[0]));
     check("duo: the room's votes were counted", vs[0] && vs[0].votes.reduce((s, x) => s + x, 0) === 2, JSON.stringify(vs[0]?.votes));
+    // Ada puts it away with E, Bea with a click on the card
+    await a.evaluate(() => window.__gallery.start());
+    const hit = await b.evaluate(() => { const r = document.getElementById("gallerycard").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, on: document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2).map((e) => e.id || e.tagName).slice(0, 4) }; });
+    report.push(`what's under the middle of Bea's card: ${hit.on.join(" > ")}`);
+    await b.mouse.click(hit.x, hit.y);
+    await wait(600);
+    const put = await Promise.all([a, b].map(state));
+    check("duo: E and a click each put the card away, and both stay in", put.every((s) => !s.card && s.aboard && !s.done), JSON.stringify(put.map((s) => [s.card, s.aboard])));
+    // Ada leaves by the exit; Bea stays on till the gallery closes
+    await a.evaluate(() => { const G = window.__gallery, g = window.__game(); g.player.spawn(G.C.x + 10.4, G.C.z, -Math.PI / 2); g.player.pos.y = G.top; });
+    await wait(500);
+    const atExit = await state(a);
+    check("duo: at the exit, E would leave", /Leave/.test(atExit.hint), atExit.hint);
+    await a.evaluate(() => window.__gallery.start());
+    const aOut = await until(a, 10, (s) => !s.aboard);
+    check("duo: Ada's out on the pavement", !aOut.aboard && Math.abs(aOut.y - aOut.ground) < 3, `y ${aOut.y.toFixed(1)} ground ${aOut.ground.toFixed(1)}`);
+    const bStill = await state(b);
+    check("duo: Bea's still in the gallery after Ada's gone", bStill.aboard && !bStill.done, JSON.stringify(bStill));
+    await b.evaluate(() => window.__gallery.closeIn(17000));
+    await wait(3000);
+    const closing = await state(b);
+    report.push(`Bea's card as the gallery closes: ${closing.line}`);
+    check("duo: the gallery's closing is counted down", /closes in 0:1/.test(closing.line), closing.line);
+    await cameraOn(b, "room");
+    await wait(600);
+    await b.screenshot({ path: `${opt.out}/duo-closing.png` });
+    await b.evaluate(() => { window.__cam = null; });
+    const bOut = await until(b, 25, (s) => !s.aboard);
+    check("duo: when it closes, Bea's put out on the pavement", !bOut.aboard && Math.abs(bOut.y - bOut.ground) < 3, `y ${bOut.y.toFixed(1)} ground ${bOut.ground.toFixed(1)}`);
     await Promise.all([a, b].map((t) => until(t, 30, (s) => !!s.done || !s.job)));
     await wait(3000);
     const after = await state(host);

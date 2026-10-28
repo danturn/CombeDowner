@@ -301,7 +301,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
   Holburne, or failing that a big public building near a pedestrian street): an easel on the
   pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
-  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  starts it and takes you straight up into the gallery (anyone else goes in with E by him when they
+  get there), a long white room, lit the same day or night, with an easel each; once everyone's in (or E to get
   on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
   bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
   first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
@@ -318,7 +319,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
   if the show averages enough it's a success and one of the strange objects turns up at the door. The
-  more of you there are, the more paintings there are to carry and the higher the bar.
+  critics confer for a moment, then the verdict comes up on a card: put it away (E, Esc, a click or a
+  tap) and stay to look round, with the marks and rosettes on the cards by the paintings. Leave by the
+  exit or with E by Mr Pettigrew, the curator, inside it, or stay until the gallery closes (a minute
+  and a half, counted down on your card), and you're back on the pavement outside, looking at the
+  door. The more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel

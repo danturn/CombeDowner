@@ -578,6 +578,8 @@ export class Weapon {
   readonly scene = new THREE.Scene();
   readonly model = new THREE.Group();
   kind: GunKind = "rifle";
+  /** Held in a room lit from within (world.ts's indoors), where night doesn't darken it. */
+  indoors = false;
   ammo = MAG;           // rifle rounds in the magazine
   reserve = RESERVE;    // spare rifle rounds
   hasSniper = false;
@@ -742,7 +744,7 @@ export class Weapon {
   }
 
   update(dt: number, camera: THREE.PerspectiveCamera, wantAim: boolean, bob: number, speed: number, sprinting: boolean, crouch: number, lookDx: number, lookDy: number, onRadio: boolean) {
-    const night = nightNow();
+    const night = this.indoors ? 0 : nightNow();
     this.hemi.intensity = 2.2 * (1 - 0.6 * night); this.sun.intensity = 1.6 * (1 - 0.8 * night);
     this.hemi.color.lerpColors(Weapon.DAY, Weapon.NIGHT, night);
     this.t += dt;

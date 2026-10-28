@@ -4016,6 +4016,7 @@ export class Game {
     this.idleT = idle ? this.idleT + dt : 0;
     if (this.idleT > IDLE_LINE) { Quips.idle(); this.idleT = IDLE_LINE - 60; }
     w.paint(paintFor(colourFor(this.net.selfId)));
+    w.indoors = this.world.indoors;
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
@@ -4147,6 +4148,7 @@ export class Game {
     // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
     const focus = this.reveal.on ? this.reveal.look : tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
+    this.world.indoors = this.quests.indoors();
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
     // after dark (or in a tunnel), the traffic and anything being driven have their lights on
     this.lit.length = 0;

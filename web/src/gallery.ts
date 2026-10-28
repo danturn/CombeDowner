@@ -3,8 +3,10 @@
 // challenge stands outside a gallery or museum found from the map: a set piece called one (the
 // Holburne) if it's in the zone, otherwise the biggest public building near a pedestrian street,
 // named for the square or street it's on. On the pavement an easel says the Open Exhibition is
-// tonight, and the curator stands by it beckoning. E by him and you're in the gallery itself: a
-// long white room built high over the street (like the bell ringers' chamber), with an easel each.
+// tonight, and the curator stands by it beckoning. E by him starts it and takes you straight into
+// the gallery itself (anyone else goes in with E by him when they get there): a long white room
+// built high over the street (like the bell ringers' chamber), with an easel each. Its light is its
+// own (world.ts's indoors), so nobody in it goes dark at night against its white walls.
 //
 // Once everyone's in (or someone presses E to get on with it) the subject is set ("A seagull's
 // revenge", "Last orders at" the nearest pub...) and so is who's judging tonight, two critics with
@@ -16,7 +18,11 @@
 // ten (critics.ts). While they're at it you can walk round too, and E by a painting votes for it
 // (not your own): the room's favourite gets half a mark. Average enough across the show and it's
 // a success, and one of the strange objects turns up at the gallery door; the more of you there
-// are, the more paintings there are and the higher the bar.
+// are, the more paintings there are and the higher the bar. The critics confer for a moment, then
+// the verdict comes up on a card that stays until you put it away; after that you can stay and look
+// round, the marks and prizes on the cards, until you leave (the exit, or E by Mr Pettigrew inside
+// it) or the gallery closes, and you're put back on the pavement looking at the door. Each screen
+// ends the evening for its own player as they leave; the object comes with the first to go.
 //
 // Who decides what: the host runs the evening. Who's in, when the painting starts and stops and
 // the subject come from the host ("qe" k "go"); each painter paints on their own screen and sends
@@ -32,6 +38,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
+import { ctlText } from "./controls";
 import { CRITICS, THEMES, criticsFor, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
 import { Easel, H, W, decode, encode, toImage } from "./easel";
 import { gullFigure } from "./gulls";
@@ -49,6 +56,10 @@ const HX = 11, HZ = 6.5, RH = 5.2;   // the room's half length and half width, a
 const GO_IN = 6;                     // how close to the curator to go in
 const CHUNK = 9000;
 const SPEAK = 4.6;
+const BEAT_MS = 3200;                // the critics confer before the verdict's read out
+const CLOSE_MS = 90000;              // and the gallery closes this long after it
+const LINGER_MS = 30000;             // but never sooner than this after you've put the verdict away
+const CURATOR_REACH = 2.4;
 const PATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track", "service"]);
 
 // ---- where it goes ------------------------------------------------------------------------------
@@ -562,7 +573,7 @@ registerChallenge({
   goal: () => "Go in, paint the subject, and get the show past the critics",
   place,
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0], spots[0].name),
-  start({ offer, spots, w }) {
+  start({ offer, spots, w, by }) {
     const door = spots[0], mid = spots[1] ?? spots[0];
     const gallery = door.name;
     const street = placedInfo.get(spots)?.street ?? "";
@@ -580,13 +591,16 @@ registerChallenge({
     let hung = false;
     let aboard = false;
     let gatherSince = 0, startAsked = false, hangSince = 0;
+    // whoever took it on by the curator is already there: their E takes them straight in
+    let enterNow = by === w.selfId, inT = 0;
     const chunks = new Map<string, string[]>();
     const works = new Map<string, { px: Uint8Array; strokes: number }>();
     let show: { cast: number[]; remarks: Remark[]; dur: number } | null = null;
     let full: ReturnType<typeof stageShow> | null = null;
     let showT0 = 0;
     let result: Verdict | null = null;
-    let resultT = 0;
+    let resultT = 0, closeAt = 0, revealed = false, carded = false, warned = false;
+    let cardStop: AbortController | null = null;
     const votes = new Map<string, number>();
     let myVote = -1;
     const posed = new Set<string>();
@@ -599,6 +613,14 @@ registerChallenge({
 
     const room = new Room(Cx, top, Cz, gallery);
     const welcome = new Welcome(w.scene, w.map, door, mid, gallery);
+    // which way is out from the gallery's door to the street, for putting people back on the pavement
+    const [outX, outZ] = (() => { const dx = mid.x - door.x, dz = mid.z - door.z, l = Math.hypot(dx, dz); return l < 0.5 ? [0, 1] : [dx / l, dz / l]; })();
+    // Mr Pettigrew sees the evening through from beside the exit, in the room's own frame
+    const PETTIGREW: [number, number] = [HX - 0.7, -2.7];
+    const pettigrew = new Avatar("Mr Pettigrew, Curator", "#1f2a44", "curator", "#bdbdbd");
+    pettigrew.armed = false;
+    pettigrew.setWear("specs");
+    room.root.add(pettigrew.root);
     const easel = new Easel();
     w.mark("@challenge", { x: door.x, z: door.z }, offer.title, COLOUR);
 
@@ -642,15 +664,20 @@ registerChallenge({
       const pl = w.body?.();
       if (pl) { pl.pos.y = top; pl.vel.set(0, 0, 0); pl.onGround = true; }
       w.mark("@challenge", null);
+      inT = 2;
       if (w.isHost) job.event!({ k: "in" }, w.selfId); else send({ k: "in" });
     }
     function goDown() {
       if (!aboard) return;
       aboard = false;
       easel.hide();
-      const k = Math.max(0, list.indexOf(w.selfId));
-      w.moveTo(door.x + Math.cos(k) * 1.4, door.z + Math.sin(k) * 1.4, 0);
+      // out on the pavement, side by side, looking back at the door
+      const k = Math.max(0, list.indexOf(w.selfId)), side = (k % 2 ? 0.9 : -0.9) * Math.ceil((k % 4) / 2), out = 1.8 + Math.floor(k / 4) * 0.9;
+      const x = door.x + outX * out - outZ * side, z = door.z + outZ * out + outX * side;
+      w.moveTo(x, z, Math.atan2(x - door.x, z - door.z));
     }
+    const atDoor = (lx: number, lz: number) => lx > HX - 1.8 && Math.abs(lz) < 1.4;
+    const byPettigrew = (lx: number, lz: number) => Math.hypot(lx - PETTIGREW[0], lz - PETTIGREW[1]) < CURATOR_REACH;
 
     function openEasel() {
       if (myPainter() < 0 || hung || phase !== "paint") return;
@@ -847,17 +874,30 @@ registerChallenge({
       setTimeout(() => el.remove(), 11000);
     }
 
+    /** The verdict's in, the same on every screen: a moment while the critics confer, then it's read out (revealResult). */
     function showResult(v: Verdict) {
       result = v;
       phase = "result";
       resultT = performance.now();
+      closeAt = resultT + BEAT_MS + CLOSE_MS;
+      stage = { key: "confer", title: "The critics confer", sub: "Mr Pettigrew taps his glass", colour: COLOUR, life: BEAT_MS / 1000 };
+      if (aboard) speak("Ladies and gentlemen. The critics have conferred.", 99, 2, { voice: 3, pitch: 0.9 });
+    }
+
+    /** The marks go up on the cards by the paintings, and anyone in the gallery gets the verdict on a
+     *  card of its own, up until they put it away; anyone outside just hears how it went. */
+    function revealResult() {
+      const v = result!;
+      revealed = true;
       drawAll();
-      if (!(aboard || camInside())) return;
+      if (!(aboard || camInside())) { finish(); return; }
+      carded = true;
       SFX.jobDone(v.won);
       cardEl?.remove();
       const el = document.createElement("div");
       cardEl = el;
-      el.style.cssText = "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;pointer-events:none;background:#f6f1e3;color:#111;border:3px solid #111;box-shadow:0 12px 40px rgba(0,0,0,.6);padding:14px 18px;width:min(640px,94vw);max-height:90vh;overflow:hidden;font:14px/1.3 Georgia,serif";
+      el.id = "gallerycard";
+      el.style.cssText = "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;pointer-events:auto;cursor:pointer;touch-action:manipulation;background:#f6f1e3;color:#111;border:3px solid #111;box-shadow:0 12px 40px rgba(0,0,0,.6);padding:14px 18px;width:min(640px,94vw);max-height:90vh;overflow:hidden;font:14px/1.3 Georgia,serif";
       const thumbs = painters.map((id, p) => {
         const c = document.createElement("canvas");
         c.width = W; c.height = H;
@@ -876,16 +916,36 @@ registerChallenge({
         <div style="display:flex;flex-wrap:wrap;justify-content:center;margin:8px 0">${thumbs}</div>
         <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid #111;padding-top:6px">
           <div>The show averaged <b>${v.score.toFixed(1)}</b>; it needed <b>${v.bar.toFixed(1)}</b>.</div>
-          <div style="font:900 22px Georgia,serif;color:${colour};border:3px solid ${colour};padding:2px 10px;transform:rotate(-6deg)">${v.won ? "A SUCCESS" : "PANNED"}</div></div>`;
+          <div style="font:900 22px Georgia,serif;color:${colour};border:3px solid ${colour};padding:2px 10px;transform:rotate(-6deg)">${v.won ? "A SUCCESS" : "PANNED"}</div></div>
+        <div style="text-align:center;margin-top:8px;font:italic 13px Georgia,serif;color:#444">${ctlText("<b>{use}</b> or a tap to look round the show: the marks are on the cards")}</div>`;
       document.body.appendChild(el);
-      setTimeout(() => { if (cardEl === el) { el.remove(); cardEl = null; } }, 13000);
+      // put away by use (job.use), a click or a tap on it, Esc, Enter or Space, or the mouse let go
+      const stop = (cardStop = new AbortController()), sig = { capture: true, signal: stop.signal };
+      el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); dismissCard(); }, { signal: stop.signal });
+      addEventListener("keydown", (e) => {
+        if (e.code !== "Escape" && e.code !== "Enter" && e.code !== "Space") return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (!e.repeat) dismissCard();
+      }, sig);
+      // a click with the mouse captured (or the pad's trigger) puts it away rather than firing a shot
+      addEventListener("mousedown", (e) => { e.stopImmediatePropagation(); dismissCard(); }, sig);
+      document.addEventListener("pointerlockchange", () => { if (!document.pointerLockElement) dismissCard(); }, { signal: stop.signal });
+    }
+
+    function dismissCard() {
+      if (!cardEl) return;
+      cardStop?.abort(); cardStop = null;
+      cardEl.remove(); cardEl = null;
+      closeAt = Math.max(closeAt, performance.now() + LINGER_MS);
     }
 
     function finish() {
       if (job.done || !result) return;
+      dismissCard();
+      phase = "out";
       goDown();
       job.done = {
-        won: result.won, screen: true, x: door.x, z: door.z,
+        won: result.won, screen: carded, x: door.x, z: door.z,
         text: result.won ? `The show was a success: ${result.score.toFixed(1)} against ${result.bar.toFixed(1)}` : `The critics panned it: ${result.score.toFixed(1)}, and it needed ${result.bar.toFixed(1)}`,
       };
     }
@@ -905,6 +965,13 @@ registerChallenge({
       update(dt) {
         welcome.update(dt);
         hook();
+        if (enterNow) {
+          enterNow = false;
+          const m = me();
+          if (phase === "gather" && Math.hypot(m.x - door.x, m.z - door.z) < 15) goUp();
+        }
+        // the host's word on who's in can cross with ours on the way: say it again till it lands
+        if (aboard && phase === "gather" && !w.isHost && !list.includes(w.selfId) && (inT -= dt) <= 0) { inT = 2; send({ k: "in" }); }
         const c = cam();
         const near = Math.hypot(c.x - Cx, c.z - Cz) < 500;
         if (near !== shown) { shown = near; if (near) w.scene.add(room.root); else w.scene.remove(room.root); }
@@ -916,8 +983,24 @@ registerChallenge({
         const busy = new Set(phase === "paint" ? painters : []);
         for (const id of busy) if (id !== w.selfId && !posed.has(id)) { w.pose?.(id, 0, "push"); posed.add(id); }
         for (const id of [...posed]) if (!busy.has(id)) { w.pose?.(id, 0, ""); posed.delete(id); }
-        if (shown) updateCrowd(dt);
-        if (phase === "result" && performance.now() - resultT > 14000) { phase = "out"; finish(); }
+        if (shown) {
+          updateCrowd(dt);
+          pettigrew.wave = phase === "result" && revealed && performance.now() % 7000 < 1800 ? 2 : 0;
+          pettigrew.holdAt(PETTIGREW[0], 0, PETTIGREW[1], Math.PI / 2, 0, 0);
+          pettigrew.update(performance.now(), dt);
+        }
+        if (phase === "result") {
+          const now = performance.now();
+          if (!revealed) { if (now - resultT > BEAT_MS) revealResult(); }
+          else if (!cardEl) {
+            if (!aboard) finish();
+            else if (now > closeAt) { w.toast("The gallery's closed for the night", 3); finish(); }
+            else if (!warned && closeAt - now < 15000) {
+              warned = true;
+              stage = { key: "closing", title: "The gallery's closing", sub: "Mr Pettigrew is turning the lights off", colour: COLOUR, life: 3 };
+            }
+          }
+        }
       },
       host() {
         if (phase === "gather") {
@@ -1013,6 +1096,7 @@ registerChallenge({
         if (p.r && !result) showResult(p.r);
       },
       use() {
+        if (cardEl) { dismissCard(); return true; }
         const m = me();
         if (!aboard) {
           if (phase === "result" || phase === "out") return false;
@@ -1021,7 +1105,11 @@ registerChallenge({
           return true;
         }
         const lx = m.x - Cx, lz = m.z - Cz;
-        if (lx > HX - 1.8 && Math.abs(lz) < 1.4 && phase !== "paint") { goDown(); return true; }
+        if (phase === "result") {
+          if (revealed && (atDoor(lx, lz) || byPettigrew(lx, lz))) { finish(); return true; }
+          return false;
+        }
+        if (atDoor(lx, lz) && phase !== "paint") { goDown(); return true; }
         if (phase === "gather") { if (w.isHost) startAsked = true; else send({ k: "start" }); return true; }
         if (phase === "paint" && myPainter() >= 0 && !hung) { openEasel(); return true; }
         if (phase === "show" && painters.length > 1) {
@@ -1042,7 +1130,11 @@ registerChallenge({
           return Math.hypot(m.x - door.x, m.z - door.z) < GO_IN ? `<b>{use}</b> Go into the gallery${phase === "gather" ? "" : " and watch"}` : "";
         }
         const lx = m.x - Cx, lz = m.z - Cz;
-        if (lx > HX - 1.8 && Math.abs(lz) < 1.4 && phase !== "paint") return "<b>{use}</b> Leave the gallery";
+        if (phase === "result") {
+          if (!revealed || cardEl) return "";
+          return atDoor(lx, lz) ? "<b>{use}</b> Leave the gallery" : byPettigrew(lx, lz) ? "<b>{use}</b> Thank Mr Pettigrew and leave" : "";
+        }
+        if (atDoor(lx, lz) && phase !== "paint") return "<b>{use}</b> Leave the gallery";
         if (phase === "gather") return "<b>{use}</b> Start the painting";
         if (phase === "paint" && myPainter() >= 0 && !hung && !easel.open) return "<b>{use}</b> Back to your easel";
         if (phase === "show" && painters.length > 1) {
@@ -1076,21 +1168,33 @@ registerChallenge({
           const t = (performance.now() - showT0) / 1000, said = show.remarks.filter((r) => r.at <= t).length;
           return { line: "The private view", sub: painters.length > 1 ? "Walk round. {use} by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${show.remarks.length}`, bar: said / Math.max(1, show.remarks.length), stage };
         }
-        if (result) return { line: result.won ? "A success!" : "Panned", sub: `${result.score.toFixed(1)} against ${result.bar.toFixed(1)}`, stage };
+        if (result) {
+          const head = result.won ? "A success!" : "Panned", marks = `${result.score.toFixed(1)} against ${result.bar.toFixed(1)}`;
+          if (!revealed) return { line: "The critics confer", stage };
+          if (cardEl || !aboard) return { line: head, sub: marks, stage };
+          const left = Math.max(0, Math.ceil((closeAt - performance.now()) / 1000));
+          const timer = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+          return { line: `${head} Have a look round`, sub: `${marks}. The gallery closes in ${timer}: {use} by the door or Mr Pettigrew to leave`, timer, stage };
+        }
         return { line: "The Art Gallery", stage };
       },
       scarAt: () => ({ x: door.x, z: door.z }),
+      quiet: () => !!cardEl,
+      aloft: () => aboard,
+      indoors: () => aboard || camInside(),
       end() {
+        dismissCard();
         easel.hide();
         for (const id of posed) w.pose?.(id, 0, "");
         if (aboard) goDown();
         unhook();
         dropCrowd();
+        room.root.remove(pettigrew.root);
+        pettigrew.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
         if (shown) w.scene.remove(room.root);
         room.dispose();
         welcome.dispose();
         ticker?.remove();
-        cardEl?.remove();
         w.mark("@challenge", null);
       },
     };
@@ -1110,6 +1214,7 @@ registerChallenge({
     if (TESTING) (window as unknown as Record<string, unknown>).__gallery = {
       easel, phase: () => phase, painters: () => painters, theme: () => themeText, show: () => show, result: () => result,
       works: () => works.size, aboard: () => aboard, top, C: { x: Cx, z: Cz }, door, hang: () => hangMine(), start: () => job.use!(),
+      hint: () => job.hint!(), card: () => job.card(), pettigrew: PETTIGREW, closeIn: (ms?: number) => { if (ms !== undefined) closeAt = performance.now() + ms; return closeAt - performance.now(); },
     };
     return job;
   },
