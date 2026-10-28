@@ -535,6 +535,15 @@ With only the lidar and canopy fetched (`tools/fetch.py $MAP --only lidar,canopy
 `mapdata.py unpack`), the same `--measure` builds measure afresh from the data already in the
 repository.
 
+Roofs can also come from the lidar as they really are, in faces: a church's nave, aisles and
+porch, an L-shaped house's two ridges, a terrace stepping down the hill, a mansard. So far this is
+tried out on a few squares (the village's nine, St Stephen's on Lansdown and the middle of town),
+whose faces are kept in `data/$MAP/measured/faces/`; every other building keeps the flat, gabled or
+hipped roof that fits it best. `python3 -I tools/roofs/faces.py ti,tj ...` works the faces out from
+the lidar over a square as last built without them (a building keeps its old roof where the faces
+don't fit the survey clearly better), `tools/roofs/errors.py` measures how far every drawn roof is
+from the survey, and `?roofs=simple` in the address draws the old roofs everywhere, to compare.
+
 Each map's centre, size and character areas are in `tools/area.py`. To make a map of somewhere
 new, follow [docs/new-area.md](docs/new-area.md): every download (lidar and canopy included),
 where it goes, the build, and landmark packs. A map with no wide area is one file, built with

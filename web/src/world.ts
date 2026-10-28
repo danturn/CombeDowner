@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -1805,6 +1805,40 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     facingTri(g, a, b, c, n, ua, ub, uc, col);
   };
 
+  /** A roof from the lidar (map.ts RoofMesh): its faces, tiled down each slope (flat ones in the
+   *  grey of a flat roof), the walls in its steps, seen from both sides, and the chimney stacks
+   *  standing on whichever face is under them. */
+  const roofFaces = (b: Building, roofs: Geo, plain: Geo, roofCol: number[], wallCol: number[]) => {
+    const m = b.rm!, v = m.v, t = m.t, FLAT = [0.42, 0.42, 0.43];
+    const at = (i: number) => [v[3 * i], v[3 * i + 2] - Z0, -v[3 * i + 1]];
+    for (let i = 0; i < t.length; i += 3) {
+      const A = at(t[i]), B = at(t[i + 1]), C = at(t[i + 2]);
+      let n = norm(cross(sub(B, A), sub(C, A)));
+      if (n[1] < 0) n = n.map((k) => -k);
+      const flat = n[1] > 0.985;
+      // along the eaves and up the slope, in metres, halved as the pitched roofs' tiles are
+      const ua = flat ? [1, 0, 0] : norm([n[2], 0, -n[0]]), va = flat ? [0, 0, -1] : cross(n, ua);
+      const uv = (p: number[]) => [dot(p, ua) / 2, dot(p, va) / 2];
+      facingTri(roofs, A, B, C, n, uv(A), uv(B), uv(C), flat ? FLAT : roofCol);
+    }
+    const w = m.w ?? [];
+    for (let i = 0; i < w.length; i += 8) {
+      const [x0, y0, f0, t0, x1, y1, f1, t1] = w.slice(i, i + 8);
+      const len = Math.hypot(x1 - x0, y1 - y0) || 1, out = [(y1 - y0) / len, 0, (x1 - x0) / len];
+      const q = [[x0, f0 - Z0, -y0], [x1, f1 - Z0, -y1], [x1, t1 - Z0, -y1], [x0, t0 - Z0, -y0]];
+      const uvs = [[0, f0 / 3], [len / 3, f1 / 3], [len / 3, t1 / 3], [0, t0 / 3]];
+      facing(plain, q[0], q[1], q[2], q[3], out, uvs[0], uvs[1], uvs[2], uvs[3], wallCol);
+      facing(plain, q[0], q[1], q[2], q[3], out.map((k) => -k), uvs[0], uvs[1], uvs[2], uvs[3], wallCol);
+    }
+    for (const [x, y] of b.ch ?? []) {
+      const z = roofMeshAt(b, x, y);
+      if (z === null) continue;
+      const foot = z - Z0 - 0.4, top = z - Z0 + 1.1, u = [1, 0];
+      boxAt(plain, x, y, u, 0.3, 0.55, foot, top, wallCol);
+      for (const off of [-0.22, 0.22]) boxAt(roofs, x, y + off, u, 0.1, 0.1, top, top + 0.38, POT);
+    }
+  };
+
   // front doors and shopfronts: the ground-floor window behind one is left out, and a front door
   // says how many window bays its wall has (tools/landscape.py put it in the middle of one)
   type Opening = { x: number; y: number; w: number; n: number };
@@ -1838,7 +1872,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
-    const ground = b.g - Z0, eave = ground + b.h, base = ground - 0.6;
+    const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
     const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
@@ -1866,7 +1900,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const n = door ? door.n : Math.round(len / bay);
         const sp = door ? len / n : n > 0 ? Math.min(1.25 * bay, Math.max(0.8 * bay, len / n)) : bay;
         const u0 = n / 2 - len / sp / 2, u1 = n / 2 + len / sp / 2;
-        const v0 = (base - ground - lift) / storey, v1 = stories;
+        const v0 = (base - ground - lift) / storey;
         const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
         const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
           facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out, [ua, va], [ub, va], [ub, vb], [ua, vb], wallCol);
@@ -1876,6 +1910,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           let ua = u0 + (o.t - o.w / 2) / sp, ub = u0 + (o.t + o.w / 2) / sp;
           for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
           blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
+        }
+        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
+        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
+        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
+        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
+        const v1 = (eave - ground - lift) / storey;
+        if (za !== undefined && zb !== undefined && Math.max(za, zb) - Z0 > eave + 0.02) {
+          const vt = (h: number) => (h - ground - lift) / storey;
+          facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
         }
         const top = Math.min(eave, ground + lift + storey);
         if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
@@ -1891,7 +1934,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (u < u1) quad(walls, u, u1, base, top, v0, 1);
           if (top < eave) quad(walls, u0, u1, top, eave, 1, v1);
         }
-        if (b.pp && ri === 0) {
+        if (b.pp && ri === 0 && (za === undefined || zb === undefined || Math.abs(za - zb) < 0.3)) {
           // a parapet: the wall carries on past the eaves, seen from both sides
           const top = eave + b.pp, vp = stories + b.pp / storey, back = out.map((k) => -k);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
@@ -1900,6 +1943,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     });
 
+    const eave = eaveAll;
+    if (b.rm) { roofFaces(b, roofs, plain, roofCol, wallCol); return; }
     const pitched = roofsFit(b);
     for (const roof of pitched) {
       // pitched roof over a rectangle whose first edge (q0 -> q1) runs along the ridge

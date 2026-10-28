@@ -2034,8 +2034,11 @@ def ground_offset(poly):
     return float(np.median(lift[near])) if len(near) >= OFFSET_MIN else 0.0
 
 
+# roofs as the lidar shows them, in faces (tools/roofs/faces.py), by each building's outline as built
+from roofs import faces as roof_faces
+FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {}
 blds, footprints, bld_props, bld_fresh = [], [], [], []
-at_measured, uphill = 0, [0, 0]       # (unmeasured, measured on ground not the map's)
+at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
 for (poly, p), b, f in zip(cand, info, fresh):
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     if not ring: continue       # a sliver with no area once rounded: nothing to build
@@ -2063,6 +2066,11 @@ for (poly, p), b, f in zip(cand, info, fresh):
         out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
         out["rp"] = round(b["roof"]["rise"], 1)
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
+    k = roof_faces.ring_key(out) if FACES and b.get("base") is not None else None
+    if k in FACES:
+        # into the map's frame as the eaves were: the survey's heights over its ground at the walls
+        out["r"], out["rm"] = roof_faces.for_game(FACES[k], eaves - b["base"] - b["eaves"])
+        faced += 1
     if b["chim"]:
         out["ch"] = [[r1(x), r1(y)] for x, y in b["chim"]]
     if b["parapet"]:
@@ -2075,6 +2083,7 @@ for (poly, p), b, f in zip(cand, info, fresh):
     footprints.append(max(getattr(built, "geoms", [built]), key=lambda g: g.area) if not built.is_empty else poly)
     bld_props.append(p)
     bld_fresh.append(f)
+if FACES: print(f"roofs: {faced} of {len(blds)} in faces from the lidar")
 print(f"buildings: {at_measured} of {len(blds)} at their measured eaves height; by the hill behind them, "
       f"{uphill[0]} unmeasured and {uphill[1]} where the survey's ground isn't the map's")
 
