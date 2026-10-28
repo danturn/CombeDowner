@@ -2933,7 +2933,8 @@ def end_at_portals(rd, tunnels):
                     if abs(u[2] - a[2]) > 3.0 or abs((v[0] - u[0]) * dx + (v[1] - u[1]) * dy) / seg < 0.8:
                         continue
                     ou, ov = (u[0] - a[0]) * dx + (u[1] - a[1]) * dy, (v[0] - a[0]) * dx + (v[1] - a[1]) * dy
-                    f = ou / (ou - ov) if ou != ov else 0.0
+                    # (just inside the face, where the check and the game take it as on the tube's floor)
+                    f = (ou - 0.3) / (ou - ov) if ou != ov else 0.0
                     face = [round(u[0] + (v[0] - u[0]) * f, 1), round(u[1] + (v[1] - u[1]) * f, 1), a[2]]
                     run = [face] + run[m:]
                     r["p"] = run[::-1] if back else run
