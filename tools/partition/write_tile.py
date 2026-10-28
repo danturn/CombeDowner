@@ -84,6 +84,7 @@ HEIGHT = {
     "dry_stone": 1.2, "wire_fence": 1.2, "guard_rail": 0.75,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
+TUNNEL_HALF, TUNNEL_LEDGE = 2.6, 1.3    # the water and the towpath's ledge across a canal tunnel (tools/canal.py)
 CORNER_GAP = 0.3    # metres: corners closer than this to the last point kept are one corner
 SURFACE_TOLERANCE = 0.05   # metres the street surfaces' outlines may move when simplified
 # Metres the road surface is shrunk before a barrier is tested against it: the road's interior, not
@@ -413,7 +414,8 @@ def stretch_samples(t0, t1, corners):
     return ts
 
 
-def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None):
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,
+                         portals=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -526,7 +528,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
                     marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
                                        (road_lines, road_tree) if not vehicle and road_lines else None,
-                                       (road_lines, road_tree) if road_lines else None, carried, roof)
+                                       (road_lines, road_tree) if road_lines else None, carried, roof, portals)
                     if marked is None:
                         continue
                     for piece, deep, lay, tow, fitted in marked:
@@ -720,7 +722,7 @@ APPROACH = 9
 ROAD_RAMP = 0.15
 
 
-def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None, carried=None, roof=None):
+def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None, carried=None, roof=None, portals=None):
     """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
     by each point's distance along the whole street so a re-fitted or clipped line still reads the
     right height and bridge mark; the ground's own height where the street has no profile. None if
@@ -732,13 +734,18 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
         # the stretches in one of the canal's tunnels are left out: the tunnel's ledge is the towpath
         steps = len(prof["z"]) - 1
         gone = set(prof["gone"])
-        keep = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) not in gone for x, y in seg]
+        near = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) for x, y in seg]
+        # (and, by the tunnel, a point past its portal: the profile's points are 4 m apart, so the
+        # nearest one could still be outside while the way's own point was already on the ledge)
+        keep = [k not in gone and not (portals is not None and gone & {k - 1, k + 1} and portals.contains(Point(x, y)))
+                for k, (x, y) in zip(near, seg)]
         if not all(keep):
             rest = dict(prof, gone=[])
             out = []
             for st in stretches({i for i, k in enumerate(keep) if k}):
                 if len(st) >= 2:
-                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets, carried, roof) or []
+                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets, carried, roof,
+                                     portals) or []
             return out
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
@@ -1444,6 +1451,14 @@ def _lift(tile, seen):
     """How far the tile's ground stands above the survey's at a bridge, by the end where the two agree
     best (the other may be over water the survey has lower)."""
     return float(np.clip(min((g - s for g, s in zip(tile, seen)), key=abs), -1.5, 1.5))
+
+
+def canal_portals(canal):
+    """The canal's tunnels from portal to portal, as wide as the water and the towpath's ledge in
+    them, or None."""
+    bores = [LineString([t["a"], t["b"]]).buffer(TUNNEL_HALF + TUNNEL_LEDGE, cap_style="flat")
+             for t in (canal or {}).get("tunnels", []) if t["a"] != t["b"]]
+    return shapely.union_all(bores) if bores else None
 
 
 def over_roof(tunnels, inside=False):
@@ -5482,7 +5497,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                               (water, rails + canal_lines,
                                [(Polygon(w["r"][0]), w["z"]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]),
                               lidar_tall(sq), carried,
-                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))))
+                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))),
+                              canal_portals(canal))
     hold_steep_streets(rd, T)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
