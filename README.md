@@ -33,7 +33,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   parapets run unbroken round its bends and where its pieces join, stopping only where another
   deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
   pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the
-  road runs on under it unbroken; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
+  road runs on under it unbroken, for walking or driving under; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. A road the map
@@ -41,7 +41,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern
   concrete box, with square openings under a flat lintel, a pier between the bores and concrete
-  wing walls, lorry-high inside: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
+  wing walls, lorry-high inside, and nothing on the hill over it gets in the way of the traffic: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
   Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
