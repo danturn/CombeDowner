@@ -440,14 +440,21 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             chain.clear()
 
         last = None     # the sample before, and whether it was inside
+        # a flight of steps keeps its own corners: it is only a few metres long and turns at its
+        # landings, so sampled every SEGMENT metres a dog-leg folds into a V
+        corners = []
+        if r["cls"] == "steps":
+            cs = list(whole.coords)
+            corners = list(itertools.accumulate(math.dist(a[:2], b[:2]) for a, b in zip(cs, cs[1:])))[:-1]
         for t0, t1, sec in r["sections"]:
             if t1 - t0 < 0.5:
                 continue
             # the stretch, as the points along it that are inside the square. Sampling by length and
             # then dropping the outside points keeps the record's own geometry as the corridor's.
             n = max(2, int((t1 - t0) / SEGMENT) + 1)
-            for k in range(n + 1):
-                p = whole.interpolate(t0 + (t1 - t0) * k / n)
+            ts = sorted({t0 + (t1 - t0) * k / n for k in range(n + 1)} | {t for t in corners if t0 + 0.05 < t < t1 - 0.05})
+            for k, t in enumerate(ts):
+                p = whole.interpolate(t)
                 inside = has_ground(p.x, p.y)
                 # A street leaving the square runs on to its edge: stopped at the last sample inside,
                 # its surface beyond took that sample's height and met the next square's in a step.
