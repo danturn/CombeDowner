@@ -33,7 +33,9 @@ def square(map_id, sq):
 
 def footprint(b):
     rings = b["r"]
-    return shapely.Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3]).buffer(0)
+    g = shapely.Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3]).buffer(0)
+    # (an outline that crosses itself comes apart: the game stands on the biggest piece)
+    return max(getattr(g, "geoms", [g]), key=lambda q: q.area) if not g.is_empty else g
 
 
 def grid_in(poly, inset=INSET, px=PX):
