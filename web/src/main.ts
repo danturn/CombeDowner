@@ -849,7 +849,7 @@ function frame(now: number) {
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
   frames++; fpsT += raw;
-  if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
+  if (fpsT >= 1) { (window as any).__fps = frames / fpsT; (window as any).__gl = renderer.info; frames = 0; fpsT = 0; }
 }
 requestAnimationFrame(frame);
 

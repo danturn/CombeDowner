@@ -51,6 +51,7 @@ import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import type { JobSpot } from "./minimap";
 import { missionStage } from "./missionscreens";
+import { bannerSpot } from "./bannerspot";
 import { type NaughtyBoys, type Target, SOCIETY, look } from "./naughtyboys";
 import { esc, hash, rng } from "./quests";
 import { gateModel, ghostModel } from "./race";
@@ -786,14 +787,16 @@ export class Scars {
   private build(s: Scar) {
     const map = this.w.map, y0 = map.ground(s.x, s.z), g = new THREE.Group(), r = rng(s.id);
     const ground = (x: number, z: number) => map.ground(x, z);
-    g.position.set(s.x, y0, s.z);
+    const ban = s.k === "pub" ? bannerSpot(map, s.x, s.z) : null;
+    g.position.set(ban ? ban.x : s.x, ban ? map.ground(ban.x, ban.z) : y0, ban ? ban.z : s.z);
     // things scattered on the ground are laid on it where they fall, so only the rest is turned about
     if (s.k !== "gulls" && s.k !== "race" && s.k !== "trail") g.rotation.y = r() * Math.PI * 2;
+    if (ban) g.rotation.y = ban.yaw;
     const v: View = { g, cryT: 2, extra: [] };
     const cs = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
     if (s.k === "pub") {
-      const n = ties(s.c), W = 3.6, H = 1.1, cy = 5.6;
-      for (const x of [-W / 2 - 0.2, W / 2 + 0.2]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 6.8, 6), lambert("#777")); p.position.set(x, 3.4, 0); g.add(p); }
+      const n = ties(s.c), W = 3.6, H = 1.1, cy = ban!.cy, bx = ban!.x, bz = ban!.z, by = g.position.y;
+      for (const x of [-W / 2 - 0.2, W / 2 + 0.2]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, cy + 1.2, 6), lambert("#777")); p.position.set(x, (cy + 1.2) / 2, 0); g.add(p); }
       const tex = lettering(512, 160, "#f4f4f4", [
         { t: "WE RUN THIS", font: "900 84px Impact, 'Barlow Condensed', sans-serif", c: "#c8102e", y: 66 },
         { t: `— ${s.n.split("|")[1] || "the Flag Lads"}`, font: "italic 600 34px Georgia, serif", c: "#222", y: 134 },
@@ -810,7 +813,7 @@ export class Scars {
       for (let i = 0; i < n; i++) {
         const lx = i < 4 ? (i % 2 ? W / 2 : -W / 2) : -W / 2 + W * FR[i - 4], ly = cy + (i < 4 ? (i < 2 ? H / 2 : -H / 2) : i % 2 ? H / 2 : -H / 2);
         v.loc.set([lx, ly, 0.05], i * 3);
-        v.tgts.push({ x: s.x + lx * cs, y: y0 + ly, z: s.z - lx * sn, r: 0.3 });
+        v.tgts.push({ x: bx + lx * cs, y: by + ly, z: bz - lx * sn, r: 0.3 });
       }
       v.tie = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: "#ffd23a" }), n);
       g.add(v.tie);
