@@ -233,14 +233,24 @@ export function bark(): THREE.CanvasTexture {
 
 /** Label sprite texture for a player's name. */
 export function nameLabel(text: string, colour: string): THREE.CanvasTexture {
-  const [c, g] = canvas(256, 64);
-  g.font = "600 30px system-ui, sans-serif";
+  // drawn at twice the size it's shown, so it stays sharp up close
+  const [c, g] = canvas(512, 128);
   g.textAlign = "center"; g.textBaseline = "middle";
-  const w = Math.min(250, g.measureText(text).width + 28);
-  g.fillStyle = "rgba(10,14,18,0.6)";
-  g.beginPath(); g.roundRect(128 - w / 2, 10, w, 44, 12); g.fill();
-  g.fillStyle = colour;
-  g.fillText(text, 128, 33);
+  // a long name ("Mr Pettigrew, Curator") gets smaller type rather than losing its ends
+  let size = 60;
+  g.font = `600 ${size}px system-ui, sans-serif`;
+  const room = 512 - 2 * 28 - 8;
+  const wide = g.measureText(text).width;
+  if (wide > room) { size = Math.max(30, Math.floor((size * room) / wide)); g.font = `600 ${size}px system-ui, sans-serif`; }
+  const w = Math.min(504, g.measureText(text).width + 56);
+  g.fillStyle = "rgba(10,14,18,0.72)";
+  g.beginPath(); g.roundRect(256 - w / 2, 20, w, 88, 24); g.fill();
+  // in their own colour, but never so dark it disappears into the band (a curator's navy coat)
+  const c0 = new THREE.Color(colour), hex = c0.getHex(), hsl = { h: 0, s: 0, l: 0 };
+  const bright = (0.299 * (hex >> 16) + 0.587 * ((hex >> 8) & 255) + 0.114 * (hex & 255)) / 255;
+  c0.getHSL(hsl);
+  g.fillStyle = bright >= 0.45 ? colour : `#${new THREE.Color().setHSL(hsl.h, Math.min(hsl.s, 0.6), 0.8).getHexString()}`;
+  g.fillText(text, 256, 66, 504 - 40);
   return tex(c);
 }
 

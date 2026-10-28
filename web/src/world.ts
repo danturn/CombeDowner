@@ -150,6 +150,9 @@ export interface World {
   cableway: Cableway | null;
   /** 0 out in the open .. 1 inside a tunnel, where the daylight goes (and the headlights come on). */
   readonly tunnel: number;
+  /** In a room of a job's own, lit from within (the Art Gallery's, gallery.ts): its light is the
+   *  same whatever the hour, so the people in it aren't black shapes against its white walls at night. */
+  indoors: boolean;
   /** The force field's shimmer, for the zones' wall to wear too (zones.ts). */
   fieldLook: THREE.Material;
   /** Free the GPU memory behind the scene, when switching to another map. */
@@ -381,7 +384,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core) { scene.matrixAutoUpdate = false; scene.updateMatrixWorld = function (force?: boolean) { placeShown(this, !!force); }; }
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
-  let dark = 0;
+  let dark = 0, indoors = false;
+  const indoorSun = new THREE.Color("#fff4e2"), indoorSky = new THREE.Color("#fffaf0"), indoorGround = new THREE.Color("#8a7458");
   // (names what each part of the build adds, so the frame-rate probe, tools/fpsprobe.mjs, can count draws by kind)
   let marked = 0;
   const mark = (name: string) => { (globalThis as any).__wphase = name; for (; marked < scene.children.length; marked++) scene.children[marked].name ||= name; };
@@ -2459,6 +2463,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     scene: world, sun, surface: surfaceAll, paved: pavedAll, pavement: pavementAll, vehicles, fieldLook: fieldMat, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     get tunnel() { return dark; },
+    get indoors() { return indoors; },
+    set indoors(on: boolean) { indoors = on; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       // (when the spike probe is watching how a frame is spent, tools/spikeprobe.mjs; with no
@@ -2477,6 +2483,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       fog.near = view.fogNear * (1 - night / 3) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
       sun.color.copy(sk.lightCol); sun.intensity = sk.lightI * (1 - 0.9 * dark);
       hemi.color.copy(sk.hemiSky); hemi.groundColor.copy(sk.hemiGround); hemi.intensity = sk.hemiI * (1 - 0.8 * dark);
+      if (indoors) {
+        sun.color.copy(indoorSun); sun.intensity = 1.5;
+        hemi.color.copy(indoorSky); hemi.groundColor.copy(indoorGround); hemi.intensity = 1.9;
+      }
       skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
       skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
       for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
