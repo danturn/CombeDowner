@@ -313,10 +313,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
   with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
   covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
-  subject at all and how much effort went in, and each has their likes: one critic loves a blank
+  subject at all and how much effort went in. They also recognise what you drew: a sun, a bus,
+  a cat, a face, gulls, houses, trees, a stick figure, writing (draw the subject's own thing and it
+  counts towards being on the subject). And yes, the rude doodles: the critics have seen it all
+  before, your nan hasn't got her glasses on, and the Roman approves. They notice where the picture's
+  weight sits, a horizon, empty space, clashing or calm colours, mud, black outlines, hatching, ruled
+  or wobbly lines, how long you took and how often you pressed Undo, and two paintings that look
+  suspiciously alike. Each has their likes: one critic loves a blank
   canvas, another wants every square inch working. The critics' marks count double. Walk round while
   they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
-  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
+  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
+  (with a couple more for anything cheeky, none of them for restraint), and
   if the show averages enough it's a success and one of the strange objects turns up at the door. The
   more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job

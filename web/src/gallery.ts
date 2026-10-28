@@ -33,7 +33,7 @@ import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { CRITICS, THEMES, criticsFor, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
-import { Easel, H, W, decode, encode, toImage } from "./easel";
+import { Easel, H, W, decode, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
 import { SET_PIECES } from "./landmarks/setpieces";
@@ -581,7 +581,7 @@ registerChallenge({
     let aboard = false;
     let gatherSince = 0, startAsked = false, hangSince = 0;
     const chunks = new Map<string, string[]>();
-    const works = new Map<string, { px: Uint8Array; strokes: number }>();
+    const works = new Map<string, { px: Uint8Array; strokes: number; how?: How }>();
     let show: { cast: number[]; remarks: Remark[]; dur: number } | null = null;
     let full: ReturnType<typeof stageShow> | null = null;
     let showT0 = 0;
@@ -666,8 +666,9 @@ registerChallenge({
       if (hung || myPainter() < 0) return;
       hung = true;
       easel.hideAndRelock();
-      const text = `${easel.strokes},${encode(easel.px)}`;
-      works.set(w.selfId, { px: easel.px.slice(), strokes: easel.strokes });
+      const how = easel.how();
+      const text = `${howText(easel.strokes, how)},${encode(easel.px)}`;
+      works.set(w.selfId, { px: easel.px.slice(), strokes: easel.strokes, how });
       sendBig(`p:${w.selfId}`, text);
       if (w.isHost) checkHung();
       SFX.jobStep();
@@ -677,7 +678,7 @@ registerChallenge({
       if (g.startsWith("p:")) {
         const id = g.slice(2), comma = text.indexOf(",");
         if (comma < 0) return;
-        works.set(id, { px: decode(text.slice(comma + 1)), strokes: Math.max(0, Math.min(999, parseInt(text.slice(0, comma)) || 0)) });
+        works.set(id, { px: decode(text.slice(comma + 1)), strokes: Math.max(0, Math.min(999, parseInt(text.slice(0, comma)) || 0)), how: readHow(text.slice(0, comma)) });
         if (room.hung) drawAll();
         if (w.isHost) checkHung();
       } else if (g === "show") {
@@ -706,7 +707,7 @@ registerChallenge({
 
     const themeIndex = () => hash("theme", offer.seed) % THEMES.length;
     /** The paintings as hung, a blank canvas for anyone whose painting never came. */
-    const hungUp = (): Painting[] => painters.map((id) => ({ id, name: w.nameOf(id), px: works.get(id)?.px ?? new Uint8Array(W * H), strokes: works.get(id)?.strokes ?? 0 }));
+    const hungUp = (): Painting[] => painters.map((id) => ({ id, name: w.nameOf(id), px: works.get(id)?.px ?? new Uint8Array(W * H), strokes: works.get(id)?.strokes ?? 0, how: works.get(id)?.how }));
     const staged = () => {
       const S = slots(painters.length);
       return stageShow(hungUp(), THEMES[themeIndex()], themeText, hash("show", offer.seed, painters.join(",")), (p) => [S[p].x, S[p].z + S[p].nz * 2.3], [HX - 1.2, 0]);
@@ -979,7 +980,7 @@ registerChallenge({
           }
           case "need":
             if (!w.isHost) return;
-            for (const [id, wk] of works) sendBig(`p:${id}`, `${wk.strokes},${encode(wk.px)}`, from);
+            for (const [id, wk] of works) sendBig(`p:${id}`, `${wk.how ? howText(wk.strokes, wk.how) : wk.strokes},${encode(wk.px)}`, from);
             if (show) sendBig("show", JSON.stringify({ ...show, el: (performance.now() - showT0) / 1000 }), from);
             return;
           case "hang":
