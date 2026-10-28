@@ -1948,7 +1948,8 @@ try:
         import lidar as LD
         if STORE.record: surveyed = STORE.put_buildings([c[0] for c in cand], each(lambda poly: lidar.survey(poly, canopy.at if canopy is not None else None), [c[0] for c in cand]))
         else: surveyed = STORE.get_buildings([c[0] for c in cand])
-        measured = [LD.decide(c[0], got) for c, got in zip(cand, surveyed)]
+        import towers
+        measured = towers.judge([c[0] for c in cand], [c[1] for c in cand], surveyed, proj, towers.load(A.id))
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:

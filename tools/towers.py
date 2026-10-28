@@ -144,12 +144,18 @@ def measure(map_id, raw):
     out = []
     for g, name in religious(raw):
         poly = shapely.transform(g, lambda c: (c - [lon0, lat0]) * [kx, ky])
-        for t in find(lidar, poly):
-            if any(math.hypot(t["x"] - o["x"], t["y"] - o["y"]) < 3 for o in out): continue
+        found = [t for t in find(lidar, poly) if not any(math.hypot(t["x"] - o["x"], t["y"] - o["y"]) < 3 for o in out)]
+        if not found: continue
+        # the church's own roof, without its tower, which would otherwise be taken for its ridge
+        body = poly.difference(shapely.union_all([_box(t["x"], t["y"], t["a"], t["w"], t["d"]).buffer(1.0) for t in found]))
+        body = max(getattr(body, "geoms", [body]), key=lambda q: q.area)
+        got = lidar.survey(body) if not body.is_empty else None
+        for t in found:
             t["n"] = name
+            if got and "p95" in got: t["b"] = [round(got[k] - got["base"], 1) for k in ("p12", "p50", "p95")]
             out.append(t)
     rows = [dict(n=t["n"], lon=round(t["x"] / kx + lon0, 7), lat=round(t["y"] / ky + lat0, 7), a=round(t["a"], 3),
-                 w=round(t["w"], 1), d=round(t["d"], 1), h=round(t["h"], 1), s=round(t["s"], 1), p=round(t["p"], 1))
+                 w=round(t["w"], 1), d=round(t["d"], 1), h=round(t["h"], 1), s=round(t["s"], 1), p=round(t["p"], 1), **({"b": t["b"]} if "b" in t else {}))
             for t in sorted(out, key=lambda t: (round(t["y"]), round(t["x"])))]
     with open(path(map_id), "w") as f:
         f.write("[\n" + ",\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n]\n")
@@ -164,12 +170,50 @@ def load(map_id):
     return json.load(open(p)) if os.path.exists(p) else []
 
 
-def _rect(ctx, t):
+def _box(x, y, a, w, d):
     from shapely.geometry import Polygon
+    ux, uy = math.cos(a), math.sin(a)
+    return Polygon([(x + ux * s - uy * u, y + uy * s + ux * u) for s, u in ((-w / 2, -d / 2), (w / 2, -d / 2), (w / 2, d / 2), (-w / 2, d / 2))])
+
+
+def _rect(ctx, t):
     x, y = ctx.proj(t["lon"], t["lat"])
-    ux, uy = math.cos(t["a"]), math.sin(t["a"])
-    hw, hd = t["w"] / 2, t["d"] / 2
-    return x, y, Polygon([(x + ux * s - uy * u, y + uy * s + ux * u) for s, u in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd))])
+    return x, y, _box(x, y, t["a"], t["w"], t["d"])
+
+
+STEEP = 8.0        # metres a church's roof may rise from its eaves to its ridge (a house's: lidar.MAX_RISE)
+SPREAD = 1.2       # how far above its median a church's ridge may stand, in the spread of its roof below the median
+RELIGIOUS = ("church", "chapel", "cathedral", "religious", "temple", "mosque", "synagogue")
+
+
+def judge(polys, props, surveyed, proj, towers):
+    """lidar.decide for each footprint, but a church's steep roof is believed, and its ridge is
+    read from its own roof, not a tower standing on it: where a tower was measured on it, from
+    the survey without the tower (towers' "b": the 12th, 50th and 95th percentile heights of the
+    rest of the roof, above the ground at its walls); otherwise no higher than the spread of the
+    roof's heights allows."""
+    import shapely
+    import lidar as LD
+    from types import SimpleNamespace
+    ctx = SimpleNamespace(proj=proj)
+    rects = [(_rect(ctx, t)[2].buffer(1.0), t["b"]) for t in towers if "b" in t]
+    tree = shapely.STRtree([r for r, _ in rects]) if rects else None
+    out = []
+    for poly, p, got in zip(polys, props, surveyed):
+        church = p.get("class") in RELIGIOUS or p.get("subtype") == "religious"
+        if church and got and "p95" in got and tree is not None:
+            for i in tree.query(poly):
+                r, b = rects[int(i)]
+                if poly.area > 2 * r.area and got["p95"] - got["base"] > b[2] + 2:
+                    got = dict(got, p12=got["base"] + b[0], p50=got["base"] + b[1], p95=got["base"] + b[2], fit=None)
+                    break
+        if church and got and "p95" in got:
+            # a pitched roof's heights spread evenly from eaves to ridge: far more above the median
+            # than below it is something standing on the roof (a tower, a bellcote, a tree)
+            top = got["p50"] + SPREAD * max(got["p50"] - got["p12"], 1.0) + 1.0
+            if got["p95"] > top + 1.0: got = dict(got, p95=top, fit=None)
+        out.append(LD.decide(poly, got, STEEP if church else LD.MAX_RISE))
+    return out
 
 
 def _standing(ctx, towers):
