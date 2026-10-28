@@ -58,7 +58,7 @@ from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
-from partition.corridors import PATHW, path_width, service_kind
+from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
 from partition.standing import Standing
@@ -84,6 +84,9 @@ HEIGHT = {
     "dry_stone": 1.2, "wire_fence": 1.2, "guard_rail": 0.75,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
+TUNNEL_HALF, TUNNEL_LEDGE = 2.6, 1.3    # the water and the towpath's ledge across a canal tunnel (tools/canal.py)
+CORNER_GAP = 0.3    # metres: corners closer than this to the last point kept are one corner
+CORNER_NEAR = 1.0   # metres: an even sample this near a corner gives way to it
 SURFACE_TOLERANCE = 0.05   # metres the street surfaces' outlines may move when simplified
 # Metres the road surface is shrunk before a barrier is tested against it: the road's interior, not
 # its boundary. A wall standing on the boundary is a front wall, and must survive.
@@ -111,6 +114,8 @@ KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassif
 PEDESTRIAN_STREET_NEAR = 15.0  # metres: main draws a wide pedestrian street on its middle line, so a street's edge can lie this far off it
 PEDESTRIAN_NEAR = 3.0    # metres: how near an old pedestrian street a new street must lie along to be one
 GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+# Ways written along their own corners, not only sampled along, as their corridors were laid
+KEEP_CORNERS = GAME_PATHS | CORNERED
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8
@@ -391,7 +396,26 @@ def lidar_tall(sq):
     return tall
 
 
-def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None):
+def stretch_samples(t0, t1, corners):
+    """Distances along a line to sample the stretch t0..t1 at: every SEGMENT metres, as the later
+    steps read heights and widths along it, and its corners. An even sample within CORNER_NEAR of a
+    corner gives way to it, and the rest stay where they were, so a way's heights by a bridge or a
+    junction away from its corners come out as before."""
+    n = max(2, int((t1 - t0) / SEGMENT) + 1)
+    even = [t0 + (t1 - t0) * k / n for k in range(n + 1)]
+    inner = [t for t in corners if t0 + CORNER_GAP < t < t1 - CORNER_GAP]
+    if not inner:
+        return even
+    kept = []
+    for t in inner:
+        if not kept or t - kept[-1] >= CORNER_GAP:
+            kept.append(t)
+    clear = [t for t in even[1:-1] if all(abs(t - c) >= CORNER_NEAR for c in kept)]
+    return [t0] + sorted(clear + kept) + [t1]
+
+
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,
+                         portals=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -440,20 +464,21 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             chain.clear()
 
         last = None     # the sample before, and whether it was inside
-        # a flight of steps keeps its own corners: it is only a few metres long and turns at its
-        # landings, so sampled every SEGMENT metres a dog-leg folds into a V
-        corners = []
-        if r["cls"] == "steps":
-            cs = list(whole.coords)
-            corners = list(itertools.accumulate(math.dist(a[:2], b[:2]) for a, b in zip(cs, cs[1:])))[:-1]
+        prof = (profiles or {}).get(r.get("id"))
+        corners = line_corners(whole, r["cls"]) if r["cls"] in KEEP_CORNERS else []
+        if prof and corners:
+            # (not beside a bridge, whose heights the profile gives only every 4 m: a corner by a
+            # deck's end was held part way down the drop to the ground instead of at either end)
+            steps = len(prof["z"]) - 1
+            marks = set(prof["span"]) | set(prof["deck"])
+            corners = [t for t in corners
+                       if not marks & {round(t / (whole.length or 1) * steps) + d for d in (-1, 0, 1)}]
         for t0, t1, sec in r["sections"]:
             if t1 - t0 < 0.5:
                 continue
             # the stretch, as the points along it that are inside the square. Sampling by length and
             # then dropping the outside points keeps the record's own geometry as the corridor's.
-            n = max(2, int((t1 - t0) / SEGMENT) + 1)
-            ts = sorted({t0 + (t1 - t0) * k / n for k in range(n + 1)} | {t for t in corners if t0 + 0.05 < t < t1 - 0.05})
-            for k, t in enumerate(ts):
+            for k, t in enumerate(stretch_samples(t0, t1, corners)):
                 p = whole.interpolate(t)
                 inside = has_ground(p.x, p.y)
                 # A street leaving the square runs on to its edge: stopped at the last sample inside,
@@ -475,7 +500,6 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             if not fit:
                 flush()
         flush()
-        prof = (profiles or {}).get(r.get("id"))
 
         def no_closer(piece, pts, ww=None, vv=None):
             """Whether a street run on to the square's edge (`pts`) reaches no further over a house
@@ -511,7 +535,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
                     marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
                                        (road_lines, road_tree) if not vehicle and road_lines else None,
-                                       (road_lines, road_tree) if road_lines else None, carried, roof)
+                                       (road_lines, road_tree) if road_lines else None, carried, roof, portals)
                     if marked is None:
                         continue
                     for piece, deep, lay, tow, fitted in marked:
@@ -705,7 +729,7 @@ APPROACH = 9
 ROAD_RAMP = 0.15
 
 
-def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None, carried=None, roof=None):
+def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None, carried=None, roof=None, portals=None):
     """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
     by each point's distance along the whole street so a re-fitted or clipped line still reads the
     right height and bridge mark; the ground's own height where the street has no profile. None if
@@ -717,13 +741,18 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
         # the stretches in one of the canal's tunnels are left out: the tunnel's ledge is the towpath
         steps = len(prof["z"]) - 1
         gone = set(prof["gone"])
-        keep = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) not in gone for x, y in seg]
+        near = [int(round(whole.project(Point(x, y)) / (whole.length or 1) * steps)) for x, y in seg]
+        # (and, by the tunnel, a point past its portal: the profile's points are 4 m apart, so the
+        # nearest one could still be outside while the way's own point was already on the ledge)
+        keep = [k not in gone and not (portals is not None and gone & {k - 1, k + 1} and portals.contains(Point(x, y)))
+                for k, (x, y) in zip(near, seg)]
         if not all(keep):
             rest = dict(prof, gone=[])
             out = []
             for st in stretches({i for i, k in enumerate(keep) if k}):
                 if len(st) >= 2:
-                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets, carried, roof) or []
+                    out += _profiled(seg[st[0]:st[-1] + 1], whole, rest, ground, crossings, others, streets, carried, roof,
+                                     portals) or []
             return out
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
@@ -1429,6 +1458,14 @@ def _lift(tile, seen):
     """How far the tile's ground stands above the survey's at a bridge, by the end where the two agree
     best (the other may be over water the survey has lower)."""
     return float(np.clip(min((g - s for g, s in zip(tile, seen)), key=abs), -1.5, 1.5))
+
+
+def canal_portals(canal):
+    """The canal's tunnels from portal to portal, as wide as the water and the towpath's ledge in
+    them, or None."""
+    bores = [LineString([t["a"], t["b"]]).buffer(TUNNEL_HALF + TUNNEL_LEDGE, cap_style="flat")
+             for t in (canal or {}).get("tunnels", []) if t["a"] != t["b"]]
+    return shapely.union_all(bores) if bores else None
 
 
 def over_roof(tunnels, inside=False):
@@ -5467,7 +5504,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                               (water, rails + canal_lines,
                                [(Polygon(w["r"][0]), w["z"]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]),
                               lidar_tall(sq), carried,
-                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))))
+                              (over_roof(tile.get("tn")), over_roof(tile.get("tn"), inside=True), along_mouths(tile.get("tn"))),
+                              canal_portals(canal))
     hold_steep_streets(rd, T)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])

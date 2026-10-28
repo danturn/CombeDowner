@@ -55,7 +55,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
-  pavement or parked cars; flights of steps are solid treads climbing between the ground at each
+  pavement or parked cars; paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
+  dog-leg between gardens goes round them rather than through them; flights of steps are solid treads climbing between the ground at each
   end, turning at their landings, with handrails along them where the map has them. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
@@ -326,7 +327,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   program for a minute and a half: pencil, brush, airbrush, fill, line, rectangle, ellipse, eraser and
   colour picker, four sizes, sixteen colours (left click for the first, right click for the second),
   Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
-  easel. The paintings go up in gilt frames with a card each, and in come the critics and a crowd of
+  easel. The paintings go up in gilt frames with a card each, under wraps until the doors open, when
+  each one plays back how it was painted, a time-lapse of about eight seconds on its own canvas, before
+  it settles. In come the critics and a crowd of
   the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
   Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
   with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
@@ -337,8 +340,19 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   before, your nan hasn't got her glasses on, and the Roman approves. They notice where the picture's
   weight sits, a horizon, empty space, clashing or calm colours, mud, black outlines, hatching, ruled
   or wobbly lines, how long you took and how often you pressed Undo, and two paintings that look
-  suspiciously alike. Each has their likes: one critic loves a blank
-  canvas, another wants every square inch working. The critics' marks count double. Walk round while
+  suspiciously alike. The critics also bring their glasses: a picture-recognising model that runs on
+  the host's own screen and can make out hundreds of things (dogs, castles, pints, the Abbey, the
+  Royal Crescent, a snowman...) and how well each painting fits the subject. It downloads (about
+  70 MB, once; the browser keeps it) while you paint, and the host's panel says how far it's got
+  ("The critics are finding their glasses: 40%"). If it isn't there when the paintings are hung the
+  critics wait for it a few seconds ("still arriving"), then go round without it, and a browser that
+  can't run it never notices. Add `?critics=plain` to the address to leave it at home. Each has their
+  likes: one critic loves a blank
+  canvas, another wants every square inch working, but everyone knows good work when they see it: a
+  careful painting of the subject that fills the canvas, ground first, with the time taken, gets 8s
+  and 9s and a 10 from someone, a half-done or wrongly coloured one about 6, and a blob or a scribble
+  2 to 4. They watch the time-lapse too, and a painting that started as a cat and ended as a bus, or
+  had something rude painted out, gets talked about. The critics' marks count double. Walk round while
   they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
   (with a couple more for anything cheeky, none of them for restraint), and
@@ -366,9 +380,6 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   thing, so you can see what was picked when you get there. Each player's markers and arrow are in
   their own colour on the maps, never one the maps use for something else; click your marker, or the
   thing it's on, again to take it down.
-- **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
-  (on foot) is a whistle heard 300 m off; and with the big map open, P (□ on a pad) is a pencil to draw on it for
-  the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
 - **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
   streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
   waiting; the Flag Lads' red still shows where they hold a square today. A line in the map's
@@ -405,6 +416,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
   square that fails to load is tried again a little later, and Play never waits on it. Phones and
   tablets load one square at a time, to stay inside their memory.
+- **Light on memory**: the parts of Bath you leave behind are let go of as you travel, and built
+  again when you come back. However far you can see, only the nearest squares are built in full
+  (25 on a computer, enough for the furthest view it picks for itself, and 9 on a phone or
+  tablet); past them the simpler town stands in, as it does beyond the fog. `?squares=16` in the
+  address tries another number.
 - **Smooth on any machine**: the game picks how far you see, the resolution and shadows for your
   device (a quick check of its processor and graphics chip as it loads, then the menu's backdrop),
   and if frames get slow for a few seconds it eases back gently: shadows redrawn less often, then a

@@ -272,6 +272,11 @@ def main():
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
         if canal:
+            # (between the tunnel's portals: the water's points are 4 m apart, so the last one flagged
+            # in the tunnel can be past its mouth, where the towpath comes up to the portal)
+            portals = [LineString([t["a"], t["b"]]) for t in canal.get("tunnels", []) if t["a"] != t["b"]]
+            def bored(q):
+                return not portals or any(0 < ln.project(Point(q[:2])) < ln.length for ln in portals)
             for run in canal["runs"]:
                 p, lv = run["p"], run["lv"]
                 for k in range(len(p) - 1):
@@ -287,7 +292,7 @@ def main():
                             o = (q[0] - a[0]) * nx_ + (q[1] - a[1]) * ny_
                             t = ((q[0] - a[0]) * (b[0] - a[0]) + (q[1] - a[1]) * (b[1] - a[1])) / L ** 2
                             if not 0 <= t <= 1: continue
-                            if (a[6] & 1) and abs(o) < a[2] + 1.3 and q[2] < lv + 3.5 and len(q) < 4:
+                            if (a[6] & 1) and abs(o) < a[2] + 1.3 and q[2] < lv + 3.5 and len(q) < 4 and bored(q):
                                 note("7 way through a canal tunnel", lv + 3.5 - q[2], (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} at {q[2]:.1f}, water {lv:.1f}")
                             if any(math.dist(q[:2], g) < 45 for lk in canal["locks"] for g in (lk["lo"], lk["hi"])): continue    # (beside a lock the towpath climbs with it)
                             w = a[7] if o > 0 else a[8]

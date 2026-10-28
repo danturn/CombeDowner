@@ -12,6 +12,7 @@ street's width and pavements never step at a junction or mid-piece.
 This is where the POC's numbers come from that must not get worse: no mid-street pavement step,
 and (stage 3) carriageway widths that hold up on tagged streets with the tag hidden.
 """
+import math
 import statistics
 
 import numpy as np
@@ -78,6 +79,32 @@ STEP = 2.0                      # metres between cross-section samples
 CHANGE = 0.5                    # metres: a fitted value differing by this much starts a new stretch
 SHORT = 25.0                    # metres: a shorter stretch is merged into its neighbour
 TAPER = 4.0                     # metres each side a cross-section blends into the next
+CORNER_TURN = 10.0              # degrees a way turns at one of its points for that point to be a corner
+# Streets laid along their own corners as well as the paths: the pedestrian ones, which the game
+# draws as paths. A lane or yard is fitted to the carriageway between the buildings instead, and
+# along its own line it met the buildings a car park's aisles run under or beside.
+CORNERED = {"pedestrian"}
+
+
+def line_corners(line, cls):
+    """How far along `line` each of its own corners is, where the way turns by more than
+    `CORNER_TURN`. Sampled only every few metres, a path cut its bends: a dog-leg between two
+    gardens folded into a diagonal through both, and a twitten took its corner through the building
+    it turns round. A flight of steps keeps every corner, since it turns at its landings."""
+    cs = list(line.coords)
+    out, run = [], 0.0
+    for a, b, c in zip(cs, cs[1:], cs[2:]):
+        run += math.dist(a[:2], b[:2])
+        if cls == "steps" or _turn(a, b, c) > CORNER_TURN:
+            out.append(run)
+    return out
+
+
+def _turn(a, b, c):
+    """Degrees the way turns at b, coming from a and going on to c."""
+    h1 = math.atan2(b[1] - a[1], b[0] - a[0])
+    h2 = math.atan2(c[1] - b[1], c[0] - b[0])
+    return abs(math.degrees((h2 - h1 + math.pi) % (2 * math.pi) - math.pi))
 
 
 def side_reach(line, obstacles_tree, obstacles, step=STEP):

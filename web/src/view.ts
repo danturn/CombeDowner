@@ -39,6 +39,12 @@ export const VIEW_DEFAULT = touch ? 520 : 900;
 export const NIGHT_FAR = 0.7;
 /** Street lamps' posts and glass are drawn to here; further off, after dark, only their glow (furniture.ts). */
 export const LAMPS_FAR = touch ? 200 : 260;
+/** The most squares of Bath built in full round you at once (tiles.ts), the nearest first; past
+ *  them the wider map's simpler streets and buildings stand in, as they do beyond the fog. Each
+ *  square holds a good deal of memory, and a phone's or tablet's browser closes the page when it
+ *  takes much more than a gigabyte or two, so they keep fewer. ?squares=16 tries another number. */
+const askedSquares = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("squares")) : 0;
+export const SQUARES = askedSquares >= 1 ? Math.round(askedSquares) : touch ? 9 : 25;
 /** Squares of Bath whose nearest edge is further off than this are drawn simpler (world.ts): coarser
  *  ground, and none of the footpaths and pavements, which are too thin to see from there. It only
  *  comes into play at the longer draw distances. */

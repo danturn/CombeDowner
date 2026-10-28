@@ -3,7 +3,13 @@
 // several angles, near-misses such as a rocket and a mushroom, a random scribble...), each looked at
 // as the host would, and what it was read as printed next to what it was meant to be.
 //
-//   node tools/critics_probe.mjs [--out dir] [--only name]
+//   node tools/critics_probe.mjs [--out dir] [--only name] [--table marks.json]
+//
+// Then whole paintings (tools/critics_scenes.mjs), careful, middling and lazy, each shown to ten
+// different evenings' crowds, with the marks they got set against what they ought to get; --table
+// writes those marks out, to set one run against another. --eye subject.json gives the whole
+// paintings the critics' eye's subject scores (by number, from tools/critics_eye_probe.mjs on the
+// cal-*.png pictures), to see the marks as a host with the eye would give them.
 //
 // With --out it also writes each painting as a PNG at four times size, in the easel's own colours,
 // and an index.html with a caption under each. Exits 1 if anything meant to be seen wasn't, or
@@ -12,10 +18,11 @@ import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
 import zlib from "zlib";
+import { scenes } from "./critics_scenes.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { build } = createRequire(WEB + "package.json")("esbuild");
-const argv = process.argv.slice(2), opt = { out: "", only: "" };
+const argv = process.argv.slice(2), opt = { out: "", only: "", table: "", eye: "" };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 
 // critics.ts and its imports, bundled for node. The easel's sound and controls are left out, and
@@ -28,7 +35,7 @@ const stub = { name: "stub", setup(b) {
   b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "export const ctl = () => ''; export const strip = () => '';", loader: "js" }));
 } };
 const res = await build({
-  stdin: { contents: "export * from './critics'; export * from './sight'; export { PALETTE, W, H, C } from './easel';", resolveDir: WEB + "src", loader: "ts" },
+  stdin: { contents: "export * from './critics'; export * from './sight'; export { PALETTE, W, H, C, encode, encodeReplay, decodeReplay, packReplay } from './easel';", resolveDir: WEB + "src", loader: "ts" },
   bundle: true, write: false, format: "esm", platform: "node", plugins: [stub], logLevel: "error",
 });
 const tmp = path.join(fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "critics-")), "k.mjs");
@@ -95,6 +102,7 @@ const GLYPH = {
   B: [[0, 0, 0, 6], [0, 0, 3, 0], [3, 0, 3, 3], [0, 3, 3, 3], [3, 3, 3, 6], [0, 6, 3, 6]],
   A: [[0, 6, 2, 0], [2, 0, 4, 6], [1, 3, 3, 3]], T: [[0, 0, 4, 0], [2, 0, 2, 6]], H: [[0, 0, 0, 6], [4, 0, 4, 6], [0, 3, 4, 3]],
   E: [[0, 0, 0, 6], [0, 0, 4, 0], [0, 3, 3, 3], [0, 6, 4, 6]], L: [[0, 0, 0, 6], [0, 6, 4, 6]], O: [[0, 0, 4, 0], [4, 0, 4, 6], [4, 6, 0, 6], [0, 6, 0, 0]],
+  D: [[0, 0, 0, 6], [0, 0, 3, 0], [3, 0, 4, 2], [4, 2, 4, 4], [4, 4, 3, 6], [3, 6, 0, 6]],
   R: [[0, 0, 0, 6], [0, 0, 4, 0], [4, 0, 4, 3], [4, 3, 0, 3], [0, 3, 4, 6]], I: [[2, 0, 2, 6]], S: [[4, 0, 0, 0], [0, 0, 0, 3], [0, 3, 4, 3], [4, 3, 4, 6], [4, 6, 0, 6]],
 };
 const write = (p, text, x, y, s, c) => {
@@ -269,6 +277,65 @@ if (group.length === 5) {
   if (!twinOk) bad++;
 }
 
+// ---- whole paintings, and what they're marked ---------------------------------------------------------
+const CAL = scenes({ C, W, H, rect, disc, ring, ellipse, line, poly, write, rand, put, phallus });
+const WANT = { good: [8, 9], mid: [5.5, 6.5], lazy: [2, 4], twist: [1, 10] };
+const calRows = [];
+const EYE = opt.eye ? JSON.parse(fs.readFileSync(opt.eye, "utf8")) : null;
+for (const s of CAL) {
+  const eye = EYE ? { subject: EYE[CAL.indexOf(s) + 1] ?? 0, seen: [], top: [], fits: [] } : undefined;
+  if (opt.only && !s.name.toLowerCase().includes(opt.only.toLowerCase())) continue;
+  const frames = [];
+  const px = canvas();
+  for (const layer of s.layers) { layer(px); frames.push(px.slice()); }
+  const early = frames.length >= 3 ? K.earlyFrom(frames) : undefined;
+  const theme = K.THEMES.find((t) => t.t === s.theme);
+  const shows = [], critic = [], all = [], byWho = {};
+  for (let k = 0; k < 10; k++) {
+    const sh = K.stageShow([{ id: "a", name: "Ada", px, strokes: s.strokes, ...(s.how ? { how: s.how } : {}), ...(early ? { early } : {}), ...(eye ? { eye } : {}) }], theme, theme.t.replace("{pub}", "the Hadley Arms"), 4321 + k * 7919, () => [0, 0], [0, 0]);
+    shows.push(sh.marks[0]);
+    for (const r of sh.remarks) { all.push(r.mark); (byWho[K.visitor(r.v).name] ??= []).push(r.mark); if (K.visitor(r.v).critic) critic.push({ who: K.visitor(r.v).name, mark: r.mark, text: r.text }); }
+  }
+  const mean = shows.reduce((a, b) => a + b, 0) / shows.length;
+  const [lo, hi] = WANT[s.tier];
+  const look = K.analyse(px, s.strokes, theme, s.how);
+  const traits = K.traits(look, theme);
+  const said = [];
+  { const sh = K.stageShow([{ id: "a", name: "Ada", px, strokes: s.strokes, ...(s.how ? { how: s.how } : {}), ...(early ? { early } : {}) }], theme, theme.t.replace("{pub}", "the Hadley Arms"), 4321, () => [0, 0], [0, 0]);
+    for (const r of sh.remarks) said.push(`${K.visitor(r.v).name}: ${r.text} (${r.mark})`); }
+  const bestCritic = critic.reduce((b, c) => (c.mark > b.mark ? c : b), { mark: 0, who: "" });
+  const replay = K.encodeReplay ? K.encodeReplay(frames.length ? frames : [px]) : "";
+  calRows.push({ s, px, frames, mean, lo: Math.min(...shows), hi: Math.max(...shows), critic: bestCritic, top: Math.max(...all), low: Math.min(...all), ok: mean >= lo - 0.25 && mean <= hi + 0.25 && (s.tier !== "good" || bestCritic.mark >= 9.5), traits, said, replay, byWho });
+}
+const calBad = calRows.filter((r) => !r.ok).length;
+
+// the time-lapse: every replay comes back as it went, and a long painting still packs small
+let tapeBad = 0;
+const tapeNotes = [];
+for (const r of calRows) {
+  if (!r.replay) continue;
+  const back = K.decodeReplay(r.replay), sent = r.frames.length ? r.frames : [r.px];
+  if (back.length !== sent.length || back.some((f, i) => f.some((v, j) => v !== sent[i][j]))) { tapeBad++; tapeNotes.push(`${r.s.name}: replay doesn't come back as it went`); }
+}
+if (K.packReplay && calRows.length) {
+  // the worst case: a hundred strokes of speckle, each shown as a snapshot
+  const fin = calRows[0].px, r = rand(23), tape = [], cur = canvas();
+  for (let k = 0; k < 95; k++) { for (let n = 0; n < 500; n++) { const i = Math.floor(r() * W * H); cur[i] = fin[i]; } tape.push(cur.slice()); }
+  tape.push(fin.slice());
+  const packed = K.packReplay(tape), back = K.decodeReplay(packed);
+  const ok = packed.length <= 60000 && back.length >= 2 && back[back.length - 1].every((v, j) => v === fin[j]);
+  if (!ok) tapeBad++;
+  tapeNotes.push(`a hundred speckled strokes pack to ${back.length} snapshots, ${packed.length} B${ok ? "" : " (TOO BIG, or the last isn't the painting)"}`);
+  const smooth = calRows.find((x) => x.s.name.startsWith("Last orders"));
+  if (smooth) {
+    // brushwork: the layers again, each one put down a strip at a time
+    const t2 = [], c2 = canvas();
+    for (let k = 1; k <= smooth.frames.length; k++) { const to = smooth.frames[k - 1]; for (let y = 0; y < H; y += 12) { for (let i = y * W; i < Math.min(H, y + 12) * W; i++) c2[i] = to[i]; t2.push(c2.slice()); } }
+    const pk = K.packReplay(t2);
+    tapeNotes.push(`${t2.length} strokes of a careful painting pack to ${K.decodeReplay(pk).length} snapshots, ${pk.length} B`);
+  }
+}
+
 const pad = (v, n) => String(v).padEnd(n);
 console.log(pad("painting", 28), pad("wanted", 16), pad("seen", 26), pad("ok", 4), "traits");
 for (const r of rows) {
@@ -284,6 +351,15 @@ if (room) {
   console.log(`  ${said.length} remarks, ${new Set(said).size} different`);
 }
 if (opt.only) for (const r of rows) for (const l of r.remarks) console.log("  " + l);
+console.log(`\n${pad("whole painting", 32)} ${pad("tier", 5)} ${pad("wanted", 9)} ${pad("mean", 5)} ${pad("range", 10)} ${pad("best critic", 30)} ok`);
+for (const r of calRows) {
+  const [lo, hi] = WANT[r.s.tier];
+  console.log(`${pad(r.s.name, 32)} ${pad(r.s.tier, 5)} ${pad(lo + "-" + hi, 9)} ${pad(r.mean.toFixed(1), 5)} ${pad(r.lo.toFixed(1) + "-" + r.hi.toFixed(1), 10)} ${pad(r.critic.mark + " " + r.critic.who, 30)} ${r.ok ? "yes" : "NO"}${r.replay ? `  replay ${r.frames.length} frames ${r.replay.length} B` : ""}`);
+}
+console.log(`${calRows.length - calBad} of ${calRows.length} marked as meant`);
+for (const n of tapeNotes) console.log("time-lapse: " + n);
+if (opt.only) for (const r of calRows) { console.log(`  ${r.s.name}: ${r.traits.join(",")}`); if (process.env.FRAMES) r.frames.forEach((f, i) => { const g = K.see(f); console.log(`    frame ${i + 1}: ${[...Object.keys(g.things), ...Object.keys(g.rude)].join(",")}`); }); console.log("    " + Object.entries(r.byWho).map(([k, v]) => `${k.split(" ")[0]} ${(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1)}`).join(", ")); for (const l of r.said) console.log("    " + l); }
+if (opt.table) fs.writeFileSync(opt.table, JSON.stringify(calRows.map((r) => ({ name: r.s.name, tier: r.s.tier, mean: +r.mean.toFixed(2), lo: r.lo, hi: r.hi, critic: r.critic.mark, critic_who: r.critic.who, top: r.top, low: r.low })), null, 1));
 
 // ---- pictures ----------------------------------------------------------------------------------------
 if (opt.out) {
@@ -301,6 +377,18 @@ if (opt.out) {
       <div class="said">${r.remarks.slice(0, 3).map((l) => `<div>${esc(l)}</div>`).join("")}</div>
       ${r.remarks.length > 3 ? `<details><summary>and ${r.remarks.length - 3} more</summary>${r.remarks.slice(3).map((l) => `<div>${esc(l)}</div>`).join("")}</details>` : ""}</figcaption></figure>`);
   });
+  const calCards = calRows.map((r, i) => {
+    const file = `cal-${String(i + 1).padStart(2, "0")}-${r.s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "")}.png`;
+    fs.writeFileSync(path.join(opt.out, file), png(r.px, 4, RGB));
+    const [lo, hi] = WANT[r.s.tier];
+    return `<figure class="${r.ok ? "ok" : "no"}"><img src="${file}" alt="${esc(r.s.name)}" width="480" height="360"><figcaption><b>${esc(r.s.name)}</b> <span class="v">${esc(r.s.tier)}, wanted ${lo} to ${hi}</span><br>
+      Subject: ${esc(r.s.theme)}<br>Mean over ten evenings: <b>${r.mean.toFixed(1)}</b> (${r.lo.toFixed(1)} to ${r.hi.toFixed(1)}); best critic ${r.critic.mark} (${esc(r.critic.who)})<br>Traits: ${esc(r.traits.join(", "))}
+      <div class="said">${r.said.slice(0, 3).map((l) => `<div>${esc(l)}</div>`).join("")}</div>
+      ${r.said.length > 3 ? `<details><summary>and ${r.said.length - 3} more</summary>${r.said.slice(3).map((l) => `<div>${esc(l)}</div>`).join("")}</details>` : ""}</figcaption></figure>`;
+  });
+  cards.unshift(`<h2 style="grid-column:1/-1">Whole paintings, and their marks</h2>`, ...calCards, `<h2 style="grid-column:1/-1">What it can make out</h2>`);
+  // each whole painting's layers, for tools/gallery_probe.mjs --scene to paint in the game
+  fs.writeFileSync(path.join(opt.out, "scenes.json"), JSON.stringify(Object.fromEntries(calRows.map((r) => [r.s.name, { theme: r.s.theme, frames: r.frames.map(K.encode) }]))));
   fs.writeFileSync(path.join(opt.out, "index.html"), `<!doctype html><meta charset="utf-8"><title>What the critics see</title>
 <style>body{font:14px/1.4 system-ui,sans-serif;margin:16px;background:#f4f1ea;color:#222}main{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
 figure{margin:0;background:#fff;padding:8px;border:2px solid #9c9}figure.no{border-color:#d66}img{width:100%;height:auto;image-rendering:pixelated;border:1px solid #ccc}
@@ -309,7 +397,7 @@ figure{margin:0;background:#fff;padding:8px;border:2px solid #9c9}figure.no{bord
   console.log(`pictures in ${opt.out}`);
 }
 fs.rmSync(path.dirname(tmp), { recursive: true, force: true });
-process.exit(bad ? 1 : 0);
+process.exit(bad || tapeBad ? 1 : 0);
 
 /** A painting as a PNG, each pixel a scale x scale square. */
 function png(px, scale, rgb) {

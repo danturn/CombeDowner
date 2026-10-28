@@ -6,7 +6,9 @@
 // leaves room for it really having been a rocket, a mushroom or a marrow all along, because
 // sometimes it was. {name} is the painter, {theme} the subject, {colour} and {second} the two main
 // colours, {thing} what they recognised (the subject's own thing, if it's there), {item} the
-// harmless thing next to a rude one, and {other} the painter whose picture this one looks like.
+// harmless thing next to a rude one, {other} the painter whose picture this one looks like, and
+// {seen} something the critics' eye made out (SEEN, at the bottom); {was} what a
+// painting showed early in its time-lapse that it doesn't now, and {became} what it shows instead.
 //
 // Who decides what: the host picks the lines (critics.ts); this is only the words.
 export const MORE: Record<string, Record<string, string[]>> = {
@@ -78,6 +80,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     ground: ["The ground laid down first, the way the masters did it. Proper."],
     twin: ["This looks remarkably like {other}'s. Did you two confer? You conferred.", "One has seen this before. About four feet to the left, by {other}."],
     oddOne: ["The odd one out in the room. Whether that's a compliment is still under review."],
+    changed: ["It began as {was} and ended as {became}. I watched it happen. I am still not sure how.", "One saw {was} at the start of that little film. One sees {became} now. A change of heart, or of glasses."],
+    covered: ["I am reliably informed there was {was} in this earlier. There isn't now. I am choosing to be grateful."],
   },
 
   "Octavia Vane": {
@@ -120,6 +124,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     nerve: ["Never once took a stroke back. Commitment. I find that very attractive in a canvas."],
     twin: ["Two of them the same. A comment on mass production? No. They copied.", "This and {other}'s. Twins. One of them is the original, and it isn't this one."],
     oddOne: ["The odd one out. The only one in the room that isn't trying to fit in. Bravo.", "Everything else here agrees with everything else. This one doesn't. I'm in love."],
+    changed: ["It started as {was} and became {became}. The becoming IS the work.", "{was}, then {became}. A painting that changed its mind. Braver than most people I know."],
+    covered: ["There was {was}, and then there wasn't. Erasure as a statement. The ghost of it is everything."],
   },
 
   "Dr Rupert Varnish": {
@@ -149,6 +155,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     bigBrush: ["Broad strokes, big brush. Colour by the bucket. I'm in heaven."],
     twin: ["The same palette as {other}'s. Did you share a box? You shared a box."],
     oddOne: ["The one colour scheme in the room that doesn't match the others. Brave."],
+    changed: ["Started as {was}, finished as {became}. The colour came along for the ride, which is the main thing."],
+    covered: ["Painted right over {was}. Good, honest coverage, and a better colour on top."],
   },
 
   "Lady Fenella Gouache": {
@@ -180,6 +188,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     oddOne: ["That one stands out. Statement piece. I'll put it in the hall where everyone sees it."],
     slow: ["They spent ages on it. One can always tell. It looks expensive."],
     quick: ["Knocked off in a minute? I'm still not paying less for it."],
+    changed: ["It was {was} and now it's {became}. Like my second husband. Much improved."],
+    covered: ["I gather there was {was} under there. Well, what the eye doesn't see."],
   },
 
   "Pauline (a nan)": {
@@ -213,6 +223,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     fiddly: ["Kept starting again, did you? Like my knitting."],
     twin: ["This one's just like {other}'s! Twins! Isn't that nice."],
     oddOne: ["That one's different from all the others. Like our Kieran."],
+    changed: ["Ooh, it was {was} at first and now it's {became}! Like magic, that. Like Paul Daniels."],
+    covered: ["Was that {was} at the start? No, it can't have been. Not with my glasses off."],
   },
 
   "Dave (a builder)": {
@@ -249,6 +261,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     centred: ["Dead in the middle. Measured that, did you?"],
     twin: ["That's the same as {other}'s. Same drawings, two contractors. Happens."],
     oddOne: ["That one's not like the rest. Bit of a cowboy, or a bit of a genius."],
+    changed: ["Started as {was}, ended up {became}. Classic. The client changed their mind halfway.", "{was}, knocked through, now it's {became}. Should've had a drawing first, mate."],
+    covered: ["Saw {was} on the time-lapse. Plastered over now. Good. Nobody needs to know."],
   },
 
   "Jasper (an art student)": {
@@ -286,6 +300,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     complement: ["Clashing colours. It's giving football kit."],
     twin: ["{name} and {other} have basically done the same one. Collaboration or theft, discuss.", "Did you two copy each other? Appropriation is valid, but, like, credit them."],
     oddOne: ["This is the only one in the room with any nerve.", "The one that doesn't fit. I relate to this painting on a personal level."],
+    changed: ["It literally started as {was} and became {became}. That's my entire dissertation, actually.", "{was} into {became}. Process over product. My tutor would cry."],
+    covered: ["They painted over {was}?? Why would you censor yourself like that? That was the best bit."],
   },
 
   "Gloria (on a coach trip)": {
@@ -308,6 +324,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     twin: ["That one's just like the other one! Same as {other}'s. Buy one get one free."],
     oddOne: ["That one's a bit different, isn't it. Like Ron."],
     quick: ["Done in a jiffy! Like Ron at the buffet."],
+    changed: ["Ron! It was {was} and now it's {became}! Like those flip books! Ron?"],
+    covered: ["I'm sure I saw {was} at the start. Ron says I didn't. Ron never sees anything."],
   },
 
   "Alfie (aged 7)": {
@@ -332,6 +350,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     fiddly: ["They kept rubbing it out. I rub mine out too. Then I cry."],
     twin: ["That one's the same as {other}'s! Copycat! COPYCAT!"],
     oddOne: ["That one's different. I like the different one."],
+    changed: ["It was {was} and then it turned into {became}! Do it again! DO IT AGAIN!"],
+    covered: ["There was {was} and they covered it up! Mum, there was {was}! There WAS!"],
   },
 
   "Kyle (a Flag Lad)": {
@@ -350,6 +370,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     complement: ["Red and green? That's Wales, that. Not having it."],
     twin: ["Same as {other}'s. Like a team kit. Love that."],
     oddOne: ["That one's the odd one out. Like the one bloke at the match in an away shirt."],
+    changed: ["Was {was}, now it's {became}. Should've gone for a flag both times, mate."],
+    covered: ["Painted over {was}? Bottled it. Absolutely bottled it."],
   },
 
   "Gareth (from the Council)": {
@@ -378,6 +400,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     twin: ["This is substantially similar to {other}'s submission. I'll need to see both applications."],
     oddOne: ["This one's not in keeping with the rest of the street. Of paintings."],
     fiddly: ["Several revisions submitted. That's fine. That's how it works."],
+    changed: ["Submitted as {was}, built as {became}. That's a material change. That needs a fresh application."],
+    covered: ["I note {was} was removed during works. Retrospective consent granted. Well done."],
   },
 
   "Marcus (a Roman re-enactor)": {
@@ -400,6 +424,8 @@ export const MORE: Record<string, Record<string, string[]>> = {
     centred: ["Centred and balanced. Like a temple front."],
     twin: ["Same as {other}'s. Two legions, one standard. Discipline."],
     oddOne: ["That one's the barbarian of the room. I quite like barbarians, off duty."],
+    changed: ["Began as {was}, ended as {became}. Like Bath itself. Built over, many times."],
+    covered: ["{was}, plastered over. Like the Romans did with the old gods. Very authentic."],
   },
 
   "A seagull": {
@@ -414,5 +440,64 @@ export const MORE: Record<string, Record<string, string[]>> = {
     cat: ["SKRAAAAW! (It has seen the cat. It's keeping its distance.)"],
     writing: ["Kek. (It pecks at the writing, letter by letter.)"],
     twin: ["Skraw. (It looks from this one to {other}'s and back. It can't tell either.)"],
+    changed: ["Skraw? (It watched {was} turn into {became}. It suspects a trick involving chips.)"],
+    covered: ["KEK. (It pecks at the spot where {was} used to be. It remembers.)"],
   },
+};
+
+/** About something the critics' eye (eye.ts) made out that the shape tests have no word for: {seen}
+ *  is what it is, "the dog", "the castle", "the pint". Only said when the eye is sure. */
+export const SEEN: Record<string, string[]> = {
+  "Sir Jeremy Plinth": [
+    "{seen}. Recognisably {seen}. In this room that is practically a miracle.",
+    "One sees {seen}, and one sees that {name} has looked at {seen}. Looking is half of it.",
+  ],
+  "Octavia Vane": [
+    "{seen}. Just {seen}. Where's the idea? Where's the danger?",
+    "Painting {seen} because {seen} was there. The death of art in four strokes.",
+  ],
+  "Dr Rupert Varnish": [
+    "{seen} in {colour}! Nobody has ever seen {seen} in {colour}, and they're all poorer for it.",
+    "Look at {seen}. Now look at the colour of it. That's where the feeling is.",
+  ],
+  "Lady Fenella Gouache": [
+    "Is that {seen}? I've a cousin who'd buy anything with {seen} in it.",
+    "{seen}, how charming. It would look marvellous over the Aga.",
+  ],
+  "Pauline (a nan)": [
+    "Oh, it's {seen}! Isn't that lovely. I'll tell our Sandra.",
+    "{seen}, bless. Mine never sit still long enough to draw.",
+  ],
+  "Dave (a builder)": [
+    "That's {seen}, that is. Knew it straight off.",
+    "{seen}. Fair play. I couldn't do {seen}.",
+  ],
+  "Jasper (an art student)": [
+    "{seen}, but like, as a signifier? Of {seen}ness?",
+    "Doing {seen} is so post-ironic right now. I think. Is it?",
+  ],
+  "Gloria (on a coach trip)": [
+    "Ron! It's {seen}! Ron, come and look at {seen}!",
+    "Oh, {seen}. We saw {seen} in Weston last year.",
+  ],
+  "Alfie (aged 7)": [
+    "IT'S {seen}! I can do {seen}! I do {seen} better though.",
+    "Is {seen} the main one? I like {seen}.",
+  ],
+  "Kyle (a Flag Lad)": [
+    "{seen}! Get in! Proper {seen}, that.",
+    "Lads. LADS. It's {seen}.",
+  ],
+  "Gareth (from the Council)": [
+    "{seen}. I'll need to check whether {seen} needs a licence.",
+    "There's {seen} in it. Noted.",
+  ],
+  "Marcus (a Roman re-enactor)": [
+    "{seen}! We had {seen} in Aquae Sulis. Well. Probably.",
+    "Ah, {seen}. Very classical, {seen}, if you squint.",
+  ],
+  "A seagull": [
+    "Skraw? (It eyes {seen}, in case {seen} is edible.)",
+    "KEK. (It has seen {seen}. It is not impressed by {seen}.)",
+  ],
 };

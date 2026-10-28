@@ -14,6 +14,8 @@
 //
 // Who decides what: nobody. The painting is yours until you hang it; encode() is what goes round,
 // with howText() in front of it, the easel's note of how it was painted, for the host's critics.
+// The easel also keeps a few snapshots as you paint, and replay() packs them (encodeReplay) for the
+// time-lapse each painting plays when the show opens.
 import * as SFX from "./audio";
 import { ctl, strip } from "./controls";
 
@@ -80,6 +82,78 @@ export function decode(s: string): Uint8Array {
     p = end;
   }
   return px;
+}
+
+// ---- the time-lapse: snapshots as it was painted -----------------------------------------------------
+
+/** Most snapshots a replay carries, and the most text it may take, so a long painting stays small. */
+export const REPLAY_FRAMES = 40, REPLAY_MAX = 60000;
+const SAME = 16;
+
+/** Snapshots as one string: each one as runs against the one before (the first against a blank
+ *  canvas), a run being a byte (what's there: a colour, or 16 for "as before", then its length less
+ *  one in the top three bits, 7 meaning the length follows, seven bits a byte), base64. */
+export function encodeReplay(frames: Uint8Array[]): string {
+  const out: number[] = [Math.min(255, frames.length)];
+  let prev: Uint8Array = new Uint8Array(W * H);
+  for (const f of frames.slice(0, 255)) {
+    for (let i = 0; i < f.length;) {
+      const sym = f[i] === prev[i] ? SAME : f[i] & 15;
+      let j = i + 1;
+      while (j < f.length && (sym === SAME ? f[j] === prev[j] : f[j] === sym)) j++;
+      const run = j - i;
+      if (run <= 7) out.push(sym | ((run - 1) << 5));
+      else {
+        out.push(sym | (7 << 5));
+        let v = run - 8;
+        while (v >= 128) { out.push((v & 127) | 128); v >>>= 7; }
+        out.push(v);
+      }
+      i = j;
+    }
+    prev = f;
+  }
+  let s = "";
+  for (let i = 0; i < out.length; i += 8192) s += String.fromCharCode(...out.slice(i, i + 8192));
+  return btoa(s);
+}
+
+/** And back; nothing at all if it's garbled, so the painting just hangs as it is. */
+export function decodeReplay(s: string): Uint8Array[] {
+  let bin = "";
+  try { bin = atob(s); } catch { return []; }
+  const n = Math.min(REPLAY_FRAMES * 2, bin.charCodeAt(0) || 0), frames: Uint8Array[] = [];
+  let i = 1, prev: Uint8Array = new Uint8Array(W * H);
+  for (let k = 0; k < n; k++) {
+    const f = new Uint8Array(W * H);
+    let p = 0;
+    while (p < f.length) {
+      if (i >= bin.length) return frames;
+      const b = bin.charCodeAt(i++), sym = b & 31;
+      let run = (b >> 5) + 1;
+      if (run === 8) {
+        let v = 0, shift = 0, q: number;
+        do { q = bin.charCodeAt(i++) || 0; v |= (q & 127) << shift; shift += 7; } while (q & 128 && shift < 28 && i < bin.length);
+        run = 8 + v;
+      }
+      const end = Math.min(f.length, p + run);
+      if (sym === SAME) f.set(prev.subarray(p, end), p); else f.fill(sym & 15, p, end);
+      p = end;
+    }
+    frames.push(f);
+    prev = f;
+  }
+  return frames;
+}
+
+/** As many of the snapshots as fit, evenly spread, the last one always kept. */
+export function packReplay(tape: Uint8Array[]): string {
+  for (let want = REPLAY_FRAMES; want >= 2; want = Math.floor(want * 0.7)) {
+    const pick = tape.length <= want ? tape : Array.from({ length: want }, (_, k) => tape[Math.round(((k + 1) * (tape.length - 1)) / want)]);
+    const s = encodeReplay(pick);
+    if (s.length <= REPLAY_MAX) return s;
+  }
+  return encodeReplay(tape.slice(-1));
 }
 
 // ---- how it was painted, for the critics ------------------------------------------------------------
@@ -213,6 +287,10 @@ export class Easel {
   /** How many times the brush has gone to the canvas: the critics notice effort, or the lack of it. */
   strokes = 0;
   private undo: Uint8Array[] = [];
+  /** Snapshots for the time-lapse: after every stroke, then every other one as it fills up, and so on. */
+  private tape: Uint8Array[] = [];
+  private tapeEvery = 1;
+  private tapeN = 0;
   private kept = { t0: 0, undos: 0, big: 0, fine: 0, ruled: 0, ground: false, turn: 0, turns: 0 };
   /** A freehand stroke as it goes: the last point that counted, and the way it was heading. */
   private path: { x: number; y: number; a: number | null } | null = null;
@@ -357,7 +435,7 @@ export class Easel {
     this.strokes++;
     this.noteStroke(x, y);
     this.drag = { c, x0: x, y0: y, x, y, base: this.px.slice(), id: e.pointerId };
-    if (this.tool === "fill") { this.fill(x, y, c); this.drag = null; }
+    if (this.tool === "fill") { this.fill(x, y, c); this.drag = null; this.film(); }
     else if (this.tool === "pencil" || this.tool === "brush" || this.tool === "eraser") this.stroke(x, y, x, y);
     else if (this.tool === "spray") { this.sprayT = 0; this.spray(x, y, c); }
     this.render();
@@ -383,6 +461,7 @@ export class Easel {
     this.drag = null;
     if (this.tool === "rect" || this.tool === "ellipse") this.kept.ground ||= this.strokes === 1 && Math.abs(d.x - d.x0) * Math.abs(d.y - d.y0) > 0.3 * W * H && this.solid;
     this.path = null;
+    this.film();
     this.render();
   }
 
@@ -408,6 +487,14 @@ export class Easel {
     }
     this.path = { x, y, a };
   }
+  private film() {
+    if (++this.tapeN % this.tapeEvery) return;
+    this.tape.push(this.px.slice());
+    if (this.tape.length >= 96) { this.tape = this.tape.filter((_, i) => i % 2); this.tapeEvery *= 2; }
+  }
+  /** The time-lapse of it, packed to go round with it. */
+  replay(): string { return packReplay([...this.tape, this.px.slice()]); }
+
   /** How it went, up to now. */
   how(): How {
     const k = this.kept, n = Math.max(1, this.strokes), pc = (v: number) => (100 * v) / n;
@@ -430,6 +517,7 @@ export class Easel {
     else for (let i = 2; i < p.length; i += 2) this.stroke(p[i - 2], p[i - 1], p[i], p[i + 1], op.c);
     if (p.length === 2 && (op.tool === "brush" || op.tool === "pencil")) this.stroke(p[0], p[1], p[0], p[1], op.c);
     this.tool = t; this.size = sz; this.solid = sol;
+    this.film();
     this.render();
   }
 
@@ -528,11 +616,12 @@ export class Easel {
   }
   private back() {
     const u = this.undo.pop();
-    if (u) { this.px.set(u); this.kept.undos++; this.render(); }
+    if (u) { this.px.set(u); this.kept.undos++; this.film(); this.render(); }
   }
   private clear() {
     this.save();
     this.px.fill(this.bg);
+    this.film();
     this.render();
   }
 

@@ -44,7 +44,7 @@
 //   pick out there by eye ("the house with the teal door"), with the tin on its doorstep.
 // - Bearings: two look-outs (picked from the lie of the land, each with a clear view down to the
 //   tin). Stood at one, you see a gold line on the ground running towards the tin and on past it;
-//   the tin is where the lines cross. Each line you see is pencilled on your own map (signals.ts).
+//   the tin is where the lines cross. Each line you see is pencilled on your own map.
 // - Sketch maps: a riddle to the place, and a rough inked sketch of 250 m round it with an X on it
 //   (sketch.ts), turned round and with no north arrow on hard trails. With friends only the
 //   map-holder sees it, full screen while they hold use (or the Clue button), with no big map meanwhile,
@@ -60,7 +60,6 @@
 //   reads, the others open; on your own, you walk back and forth.
 // - Twin tins: open both within 30 seconds of each other with friends, or on your own with just
 //   long enough to get from one to the other quickly (ride if you can).
-// Each clue comes with one flare to send up and the whistle and pencil to hand (signals.ts).
 //
 // More players make more to tell each other, not harder tins. Whoever takes the trail on says how
 // many there are, and from that:
@@ -793,7 +792,6 @@ class Trail implements Job {
     this.race = !!((offer.mode ?? 0) & 1);
     this.daily = !!((offer.mode ?? 0) & DAILY);
     this.build(w.players().length);
-    w.flares?.(1);
     const sig = { signal: this.keys.signal };
     addEventListener("blur", () => { this.sketchKey = false; this.digKey = false; this.askOnLetGo = false; }, sig);
     addEventListener("keydown", (e) => { if (isKey(e.code, "use") && !e.repeat) { this.digKey = true; this.useAt = performance.now(); } }, sig);
@@ -1062,7 +1060,7 @@ class Trail implements Job {
   /** On a touch screen, a button to hold for the spade. */
   private digButton(want: boolean) {
     if (want && !this.digBtn) {
-      const host = document.getElementById("t-signals") ?? document.getElementById("touch");
+      const host = document.getElementById("touch");
       if (!host) return;
       const b = (this.digBtn = document.createElement("button"));
       b.className = "tbtn small"; b.textContent = "Dig";
@@ -1117,7 +1115,7 @@ class Trail implements Job {
   /** On a touch screen, a Clue button: tap for the clue again, or hold for the sketch if it's yours. */
   private touchButton() {
     if (this.sketchBtn) return;
-    const host = document.getElementById("t-signals") ?? document.getElementById("touch");
+    const host = document.getElementById("touch");
     if (!host) return;
     const b = (this.sketchBtn = document.createElement("button"));
     b.className = "tbtn small"; b.textContent = "Clue";
@@ -1704,7 +1702,6 @@ class Trail implements Job {
       if (this.line) { dispose(this.line.mesh); this.line = null; }
       for (let i = 0; i < 3; i++) this.w.circle(`trailhi${i}`, null);
       this.w.wipe?.();
-      this.w.flares?.(1);
       this.soundT = 0;
     }
     if (!last) {
@@ -1984,7 +1981,6 @@ class Trail implements Job {
     if (this.chestFx) { dispose(this.chestFx.coins); this.chestFx = null; }
     if (this.line) { dispose(this.line.mesh); this.line = null; }
     this.w.wipe?.();
-    this.w.flares?.(null);
     if (this.noteView) { dispose(this.noteView.view); this.noteView = null; }
     this.pics.clear();
     this.w.circle("trail", null); this.w.circle("trail2", null);
