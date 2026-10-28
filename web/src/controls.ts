@@ -267,7 +267,9 @@ export function stripOf(rows: [string, string][]): string {
   let out = "";
   rows.forEach(([id, what], i) => {
     const k = ctl(id);
-    out += k.toLowerCase() === what.toLowerCase() ? `<b>${k}</b>` : what ? `<b>${k}</b> ${what}` : `<b>${k}</b> `;
+    // a touch word that already says it ("Get out") isn't followed by it again
+    const kl = k.toLowerCase(), wl = what.toLowerCase();
+    out += kl === wl || kl.endsWith(` ${wl}`) ? `<b>${k}</b>` : what ? `<b>${k}</b> ${what}` : `<b>${k}</b> `;
     if (what && i < rows.length - 1) out += " · ";
   });
   return out;
