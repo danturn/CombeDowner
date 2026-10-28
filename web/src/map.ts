@@ -638,6 +638,7 @@ export class GameMap {
       const g = +z - this.z0;
       if (kind === "oak") this.addPost(+x, +y, 1.1, g + 6, g);
       else if (kind === "spire") this.addBox(+x, +y, +ang, 0, +rest[0] / 2, +rest[0] / 2, g + +rest[1]);   // the tower
+      else if (kind === "tower") this.addBox(+x, +y, +ang, 0, +rest[0] / 2, +rest[1] / 2, g + +rest[2]);
       else if (kind === "bridge") this.addBox(+x, +y, +ang, 0, 9, 3.2, g + 3);                           // the arched base
       else if (kind === "portico") {
         // the podium, and each of the six columns (local x along the front, z out from the wall)

@@ -1985,7 +1985,7 @@ if STORE is not None:
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
 from types import SimpleNamespace
-pack = landmarks.load(A.landmarks)
+pack = landmarks.load(A.landmarks, A.id)
 ctx = SimpleNamespace(
     buildings=[dict(poly=c[0], whole=c[1].get("_whole_geom", c[0]), name=name(c[1]), props=c[1], eaves=b["eaves"], ridge=b["eaves"] + (b["roof"]["rise"] if b["roof"] else 0))
                for c, b in zip(cand, info)],

@@ -26,13 +26,20 @@ turns it about the vertical, and the rest depends on the kind. ctx carries the m
     gelev      ground height at model x, y
 The game draws each kind with a builder in web/src/landmarks/ (see index.ts there): a new kind
 for another area is a new builder, registered by name.
+
+Every map also gets its churches' towers and spires, as the lidar measured them (tools/towers.py),
+alongside its pack's landmarks: where the pack has a spire of its own, the pack's stands.
 """
 import importlib
+import towers
+
+TOWERS = []
 
 
-def load(map_id):
-    """The map's pack, or None."""
-    name = f"landmarks.{map_id.replace('-', '_')}"
+def load(pack_id, map_id=None):
+    """The pack, or None; and the towers of the map it's for."""
+    TOWERS[:] = towers.load(map_id or pack_id)
+    name = f"landmarks.{pack_id.replace('-', '_')}"
     try:
         return importlib.import_module(name)
     except ModuleNotFoundError as e:
@@ -41,11 +48,13 @@ def load(map_id):
 
 
 def replaced(pack, ctx):
-    return set(pack.replaces(ctx)) if pack is not None and hasattr(pack, "replaces") else set()
+    own = set(pack.replaces(ctx)) if pack is not None and hasattr(pack, "replaces") else set()
+    return own | towers.replaces(ctx, TOWERS)
 
 
 def place(pack, ctx):
-    return pack.place(ctx) if pack is not None else []
+    own = pack.place(ctx) if pack is not None else []
+    return own + towers.place(ctx, TOWERS, own)
 
 
 def named(ctx, text):

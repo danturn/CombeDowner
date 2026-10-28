@@ -39,7 +39,7 @@ def terrain(tiles):
 def main():
     map_id, out_dir, *which = sys.argv[1:]
     A = area(map_id)
-    pack = landmarks.load(A.landmarks)
+    pack = landmarks.load(A.landmarks, A.id)
     lon0, lat0 = A.centre
     kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
     proj = lambda lon, lat: ((lon - lon0) * kx, (lat - lat0) * ky)
