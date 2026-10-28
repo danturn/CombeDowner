@@ -691,9 +691,8 @@ function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler, mat: 
 /**
  * A flight's line and heights: `along(s)` the point and heading s metres along it, `height(s)` the
  * treads' level there, `inside(x, y, d)` whether a point is within d of the flight's own line.
- * Exported for the probes that measure how the steps sit.
  */
-export function stairLayout(r: { p: number[][]; w?: number }, ground: (x: number, y: number) => number) {
+function stairLayout(r: { p: number[][]; w?: number }, ground: (x: number, y: number) => number) {
   const pts = r.p, len: number[] = [0];
   for (let k = 1; k < pts.length; k++) len.push(len[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
   const L = len[len.length - 1];
