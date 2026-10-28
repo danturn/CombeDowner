@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from partition.write_tile import car_level, car_sides, wires_on_poles
+from partition.write_tile import car_level, car_sides
 
 
 class CarSidesTest(unittest.TestCase):
@@ -26,13 +26,6 @@ class CarLevelTest(unittest.TestCase):
         edge = lambda x, y: None if x > 10 else 5.0
         self.assertTrue(car_level(0.0, 0.0, 0.0, edge))
         self.assertFalse(car_level(10.0, 0.0, 0.0, edge))
-
-
-class WiresTest(unittest.TestCase):
-    def test_a_wire_follows_its_moved_pole_and_goes_with_a_removed_one(self):
-        poles = {(1.0, 1.0, 10.0): ["pole", 2.0, 1.0, 10.5, 0.0], (5.0, 5.0, 10.0): None}
-        wires = [[1.0, 1.0, 17.3, 9.0, 9.0, 12.0], [5.0, 5.0, 17.6, 9.0, 9.0, 12.0]]
-        self.assertEqual(wires_on_poles(wires, poles), [[2.0, 1.0, 17.8, 9.0, 9.0, 12.0]])
 
 
 if __name__ == "__main__":

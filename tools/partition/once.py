@@ -48,7 +48,7 @@ from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
-from structures import match_structures
+from structures import match_structures, osm_structures
 from maxspeed import resolve as speed_limits
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
                     classify_edges, front_normals, join_evidence, make_plots)
@@ -339,6 +339,8 @@ def build_graph(out, raw, log=print):
     roads = []
     detail = way_detail(D, bb)
     for g, p in D.lines_near(bb, "osm-roads"):
+        if g.geom_type == "LineString" and g.is_ring:
+            p = dict(p, _ring=True)
         g = g.intersection(box(*bb))
         p = {**p, **detail.get(p.get("osm"), {})}
         for l in (g.geoms if hasattr(g, "geoms") else [g]):
@@ -360,10 +362,10 @@ def build_graph(out, raw, log=print):
     # the caller, so the owner and the other passes agree on what "edge 18729" is
     for i, e in enumerate(edges):
         e["id"] = i
-    # the bridges and tunnels, which the OSM ways do not carry: laid on from Overture's flags now
-    # the ids are fixed, so the profile pass and the writer find them on the edge they belong to
+    # the bridges and tunnels, from the OSM ways' own tags and from Overture's flags, laid on now the
+    # ids are fixed, so the profile pass and the writer find them on the edge they belong to
     segments = [(g, p) for g, p in D.near(bb, "segment") if p.get("subtype") == "road" and p.get("road_flags")]
-    marked = match_structures(edges, segments)
+    marked = osm_structures(edges, match_structures(edges, segments))
     for e in edges:
         e["struct"] = marked.get(e["id"], {})
     json.dump([dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), line=_line_json(e["line"]),

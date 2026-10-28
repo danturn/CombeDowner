@@ -1210,6 +1210,117 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
 - [ ] **A back yard's fence or hedge is rolled on its parent block** (pass 2's, the same in every
   square), so every garden round a block shares one.
 
+## The lidar's true ground under the bridges (27 October)
+
+The ground now takes the Environment Agency's 1 m lidar wherever it covers the terrain tiles
+(`tools/lidar_ground.py`), not Mapzen's coarse fallback. It shows real embankments and cuttings, and
+it put clashes up at bridges until these rules went in, each in the laying-out order, none for one
+bridge (clash counts with all of them, main first: road too steep 42 to 22, kinked 7 to 4, ground in
+the gap 2 to 0, span ends where its record does 62 to 36, track off its ground 3 to 2, the rest the
+same as main):
+
+- [ ] **A street held to the ground where that makes it too steep keeps its fitted levels**
+  (`hold_steep_streets`): the tile's ground was laid to `prep_map.py`'s roads, whose kinds differ (the
+  Bailbrook slips are primary there, trunk here), so following it gave a trunk road 1 in 6. The
+  street keeps its profile there and the ground is laid to it; streets meeting it at a junction take
+  their fitted level too. Not within 8 m of the square's edge.
+- [ ] **The railway's bridges keep their gap** (`prep_map.py`): the track on the ground either side
+  no longer flattens the ground under a span (a short underbridge on a true embankment was filled from
+  both ends), and the track on the ground keeps its own ground under a road's bridge (Sydney Place).
+  A path under a railway bridge no longer clears the protection, since a path lies on the ground and
+  doesn't flatten it: only roads at grade do.
+- [ ] **The opening under a span runs through a bank the survey left in it**, from abutment to
+  abutment, wherever there's room under the deck on both sides (`lay_ground`): cut to 0.4 m under an
+  arch's underside (Mill Lane at Bathampton).
+- [ ] **A span's last points lying on the bank are its abutment** (`_profiled`): a span running on
+  over the bank left a piece in the next square with no gap under it (Midford Road).
+- [ ] **A path's deck ending in the air where no other deck meets it comes down to the ground** there
+  (`_ends_on_the_bank`); and **records of a footbridge meeting on the deck are joined** even where
+  paths on the ground below meet at the same point (`_join_spans`: the university walkways).
+  A path whose record stops one point past its deck, still in the air with nothing going on, has the
+  deck run on to that end (`decks_to_loose_ends`).
+- [ ] **Only a bridge in the data over a tunnel stretch is not hill** (`tunnels.rebore`, run once
+  every way is known, in `structures.solve` and in `prep_map.py`). The survey keeps a bridge's deck
+  as ground, so a tunnel point counts as under a deck where a way the data marks as a bridge passes
+  within 5 m across, 2.5 m or more over its floor, and so does the ground between two such points that
+  stands no more than 1 m above them; a bore runs only between points of real hill. This used to count
+  any way 2.5 to 10 m over the floor as a deck, which opened the Bailbrook Underpass into a cutting with
+  its lane and footway on decks over the A46; OSM marks it `tunnel=yes`, `layer=-1`, with Bailbrook
+  Lane, the lane and the path on the ground over its roof, so it is bored again (56 m of its 70 m;
+  the rest is its approach cuttings). The trade-offs: an underpass under a junction whose crossing
+  roads the data does not mark as bridges is bored if the ground over it is deep enough (none other
+  changes today: run over the whole graph, Bailbrook is the only bore that differs); and each
+  carriageway gets its own 4.8 m tube (`TUNNEL` in `web/src/map.ts`), narrower than a two-lane trunk.
+  The game's tunnels still come from `prep_map.py`'s squares (`tn`), not the partition's `bored`.
+- [ ] **A tunnel is a bore under whole ground** (Dan, after the Bailbrook shots). The ground over a
+  bore is the survey's, unbroken past the first 5 m inside each mouth (`tunnels.INTO`, dug so the
+  slope up onto the hill falls inside the tube, where the game hides it: `prep_map.py` puts the rest
+  back after the roads' easing, and the writer
+  neither holds nor lays ground for a road inside the game's tube), with whatever is on it laid on it
+  as anywhere else: no deck, no stacked bridge (rule 2g skips a bore), no underpass decks at a bored
+  tunnel's ends, and a way running along the top of the approach cutting is laid on its bank rather
+  than carried (`along_mouths`). The bore runs from the first point where the ground stands a whole
+  arch over the floor to the last (`tunnels.bores`, stretches the data splits joined), its floor
+  from the road just outside each mouth (`profiles.MOUTH`) and levelled over the whole tunnel, not
+  the square's clip (the Combe Down Tunnel stepped 34 m where 1_1 met 1_0). OSM's `tunnel=covered`
+  (Quarry Road under The Parade) is not a tunnel, and a closed way tagged bridge (the outline of a
+  raised deck) is not laid on as one. In the game, bores coming out side by
+  side are run out to one line and share one headwall (`alignPortals`). Trade-offs: the hill face
+  over a portal is a step on the 4 m grid beyond the headwall's width; the tube is still 4.8 m wide
+  per carriageway; and the bores' ends now follow the hill face, so the Combe Down Tunnel is one
+  1,649 m bore rather than ten pieces, and the footway culvert at (-2777, -2466) grows from 16 m to
+  27 m: it runs under a railway embankment (rails at 74.6 m, floor 66 m) whose crest is about 10 m
+  wide and whose footing about 30 m, so 27 m is the right order. A tunnel cut at a square's edge
+  has no headwall there (`tunnels.ts onSeam`, by the square's box `b`).
+- [ ] **A portal's cutting and wing walls are the game's** (`tunnels.ts walls`). A headwall reaches
+  sideways only as far as the hill stands 0.6 of an arch over the floor behind it, never less than a
+  pier past the arches; a wing wall runs out along each side of the cutting while the hill there
+  stands a metre over the floor (up to 12 m), and between them the ground is dug to the floor
+  (`world.ts`, from `cuttings`) and covered by a flat apron, with the grid's slope back up onto the
+  hill hidden like a mouth. A path in that cutting lies on its floor (`drawnGround`). A wing wall's
+  top is the upper hull of the survey's bank every metre (straight slopes, never under the bank),
+  with a coping; one still holding a high bank at 12 m runs on 3 m more, down to the ground at its
+  line. No tree's crown (2.8 times its size) reaches over a headwall or its wing walls, and no wall,
+  fence or hedge crosses the cutting (`write_tile.clear_portals`); no street face but the roads'
+  going in lies in the cutting (`street_surfaces`). Trade-offs: the wing walls follow the survey,
+  not the laid ground; the cutting is as wide as the headwall's whole reach (a pier's width past
+  each arch and more), wider than the roads in it; the apron is plain grass colour; the terrain is hidden 40 m into each tube along its own bends (`MOUTH`), so a tube under
+  less than an arch of hill further in than that shows the hill inside it.
+- [ ] **Faces are cut where two streets' levels differ** (`write_tile.level_cuts`). Where two streets'
+  carriageways or pavements meet with their levels (the ground under each one's line) more than
+  1.5 m apart, the faces are cut along the line equally far from both, so each keeps its own level
+  and the game stands a kerb or stone face between them; and a portal's face line divides the road
+  going in from whatever lies on the hill over it (`portal_planes`), on the one line the game's
+  headwall stands on where bores come out side by side (`portal_faces`, as `alignPortals`). A corner
+  of a face behind it that no street reaches takes the nearest street allowed there (the lane over
+  the roof), and one in front the road going in's, not the grid's dug or sloping ground. A street's level is its own
+  height, not the ground's, where the ground stands more than 1.5 m over it (a road's last metres
+  into a portal). No road, pavement or path face lies inside a tunnel's tube. Trade-off: a real
+  ramp between two streets whose middles differ by that much is cut into a step.
+- [ ] **A dip under a bridge lowers only the roads joined to the one under it** (`structures.joined_near`,
+  and `prep_map.py`'s copy). Every road within 35 m of the crossing used to come down with it: the
+  Bailbrook roundabout's north-west slip, beside the A46's cutting but joining it nowhere near the
+  cycle bridge over it, was dug 3.5 m under the survey, and the survey left standing between it and
+  the cutting was a spike of grass. Joined means meeting within those 35 m at a level within 2 m.
+  And a grid point standing 2 m over all eight of its neighbours after the ground is laid comes down
+  to the highest of them (`write_tile._unspiked`). Trade-off: a road that meets the one under only
+  further off, but runs close beside it, keeps its level and may stand over the cutting's edge.
+- [ ] **Out-of-town trunk roads have verges** (`write_tile.verge_out_of_town`). A one-way trunk or
+  motorway, or any slip road, with fewer than 30% of its points within 25 m of a building has no
+  pavements (`pv` [0, 0]) and the partition's pavement faces beside it are left off. The 9.5 m given
+  to the Bailbrook roundabout's three lanes is OSM's lanes tag and right; the sheet of asphalt was
+  each carriageway's 2 m pavements meeting the next one's and filling the gaps between slips. A
+  pavement that really runs along such a road (OSM's sidewalk tag, or a footpath mapped beside it,
+  which is drawn as a path anyway) is not drawn as one. The verge is measured from the carriageway
+  as laid, which the survey's kerbs can make wider than the record: measured from the record's
+  width, strips of pavement were left either side as paving.
+- [ ] **OSM's own bridge and tunnel tags** (`tools/osm.py` keeps `bridge`, `tunnel`, `layer` and
+  `covered` on the streets; `structures.osm_structures` lays `bridge` and `tunnel` on the edges they
+  cover, alongside Overture's flags, and a `covered` way stays on the ground). The packed
+  `data/combe-down/osm-roads` now has them (fetched afresh on main for the speed limits), so the
+  graph's edges carry OSM's own bridges and tunnels alongside Overture's; `layer` and `covered` are
+  carried but no rule reads them yet.
+
 ## A faster build, the same map (27 October)
 
 - [ ] **A parent block is cut once per square, not once per city.** Pieces of one parent in one
@@ -1233,3 +1344,80 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   today; a new reader that does needs the reach raising.
 - [ ] **prep_map's squares aren't in the store yet**: a fresh worktree still spends about 110 s on
   them, and about 45 s on the seams, which run over every square that was taken from the store.
+
+## Bridges over roads (27 October)
+
+- [x] **A minor way laid along the top of an underpass is a flat lid.** At the Bailbrook Underpass
+  the service road and footway mapped on the tunnel's roof became a 58 m deck along the top of the
+  A46's east carriageway. The underpass is bored again (only the data's bridges over a tunnel count
+  as decks, above), so they are on the ground over its roof; and Overture's tunnel flag on the A46
+  no longer marks the lane alongside as in the tunnel too (`match_structures`: a road's flag only
+  marks the same road, by class or name).
+- [ ] **Pavements in a dual carriageway's median keep its piers out.** A bridge over both
+  carriageways is now one flattened elliptical arch springing from the banks (Bailbrook Lane, Mill
+  Lane), where the real ones may have a pier in the middle. A pier allowed on a median wider than
+  its own footing would put it back.
+- [ ] **A deck end that falls steeply to the ground ends in the air.** A footbridge whose last point
+  is mapped down at road level (the west footway over the Bailbrook cutting) now stops at its last
+  point in the air, with no approach parapets there, rather than sloping 7 m down in under a metre.
+- [ ] **A face point is levelled by the street at the ground's level there.** Where several streets'
+  carriageways and pavements reach it, the writer prefers a street on the ground over a deck, and
+  where their levels differ by more than 1.5 m the one nearest the ground under the point. A real
+  ramp between two levels inside one pavement would be cut into a step.
+- [ ] **A road at grade under a deck 2.5 m or more up keeps its faces there** (`HEADROOM` in the
+  writer). A deck lower than that over a road still cuts the road's faces out, as before.
+- [ ] **Piers are searched for over the whole span**, deduped within 4 m, and kept out of every
+  road or path under it (across it, or along it within its reach): a long deck along a road can
+  end up with no piers at all.
+
+## A tunnel's bore as wide as its way (28 October)
+
+- [ ] **A bore is as wide as the way going in** (Dan: "tunnel bore should be same width as road").
+  The writer gives each tunnel `hw`, half its width at every point (`write_tile.bore_widths`,
+  `tunnels.bore_half`): the carriageway's `w` plus its pavements, or 0.5 m of floor each side where
+  it has none; a path's width plus 1 m each side. It comes from the record meeting each portal, or
+  at an end cut at the square's edge from pass 1's corridor there, so both halves of a tunnel meet
+  at one width, and changes evenly between the ends. The game's tube, its floor, the headwall's
+  openings and reach (`TUNNEL.past` past the bore's side), the hidden ground in its mouths, the
+  collision and the tunnel floor, and the writer's tube, portal faces and clearances and the clash
+  check's `in_tube` all read it. Trade-offs: a trunk road or motorway in a tunnel has no pavements
+  inside even where the record at its portal has them (the Bailbrook Underpass's south end, which
+  `verge_out_of_town` counts as in town); the arch stays 5.2 m high at every width, so a footway
+  subway is a tall narrow slot; a bore with pavements raises them a kerb over the carriageway, but
+  the tunnel's floor for walking is still the carriageway's level (none in Bath has one today); and
+  the writer's first passes (before `rd` is written) use pass 1's corridor width, a few centimetres
+  off the final one. The Two Tunnels go from 4.8 m to 4.2 m (cycleway 2.2 m), the Bailbrook bores
+  from 4.8 m to 7.3 m (carriageway 6.3 m), the footway culvert to 3.5 m.
+
+## A tunnel's look and height follow what goes through it (28 October)
+
+- [ ] **Concrete for cars, stone for everything else, from the tunnel's own class** (Dan: style B
+  for the Bailbrook Underpass and as the rule). `map.ts carriesTraffic` reads the record's `c`:
+  motorway, trunk, primary, secondary, tertiary, unclassified, residential, living street, service
+  and their links are drawn as a concrete box (`tunnels.ts portalStyle` "b"); anything else (a
+  railway, a path, a cycleway on an old railway) as a brick arch in a Bath stone face ("a").
+  `?portal=a|b[,east,north]` still forces one to compare. The grassed-bank, trough and bare-face
+  trial styles (c, d, e) are gone. No map rebuild: the class was already in every record.
+- [ ] **A bore's height follows its class** (`map.ts boreCrown`): 5.2 m under a road, 6.0 m under a
+  railway (none in `tn` today: rail tunnels are the railway's), 3.6 m under a path. The arch
+  springs from `crown - min(half, 0.45 crown)`, so a low path bore is a flattish arch on short
+  walls. The collision, rays, lamps, the hidden ground in its mouths and the bore's roof for faces
+  over it all read the same height. Trade-off: `tools/tunnels.py` still starts a bore where the
+  hill stands 5.2 m (`CROWN`) over its floor whatever its class, so a path's headwall carries 2 m or
+  more of stone over its arch; changing it moves where every path tunnel starts (a rebuild).
+- [ ] **No wood canopy over a portal or the way out in front of it** (`tunnels.ts aroundPortals`,
+  `world.ts`): the canopy grid is laid over the ground, so over a deep cutting it came down its
+  sides in sheets and filled the Combe Down tunnel's cuttings, and over the dug floor just inside
+  the bore it hung in the tube. Cleared across the headwall and 4 m each side, 10 m behind the
+  face and 40 m out along the way. The game does it, as it does for the canal; the writer's
+  `clear_portals` already keeps single trees off. Trade-off: elsewhere on very steep wooded
+  slopes the canopy still comes down in sheets (the cutting's sides past the cleared strip).
+- [ ] **A cutting is dug at least 6 m out** (`tunnels.ts REACH`), more than one grid square: with
+  no wing walls (the Combe Down tunnel's south end) it was 2 m, and the ground made up behind the
+  headwall ran down to the next grid point in front as a mound on the path. The light apron shows
+  in patches there from the air where the ground's grid meets it.
+- [ ] **A headwall reaches at least 1.8 m past its openings** (`MIN_PAST`, was 0.8), so where the
+  hill beside is low it is still a face, not two jambs (the Combe Down tunnel's north end).
+- [ ] **A stream through a tunnel is left out inside its bore** (`world.ts outsideBores`): the
+  footway culvert at -2781,-2464 carries one, and draped on the ground it climbed into the arch
+  and over the headwall. Trade-off: no water is drawn on the tube's floor.

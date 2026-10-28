@@ -25,7 +25,7 @@ class Towpath(unittest.TestCase):
         seg = [(float(x), 5.0) for x in range(0, 41, 4)]
         whole = LineString(seg)
         prof = dict(z=[10.4] * 11, span=[], deck=[], bored=[], dip=[], tow=list(range(11)), gone=[])
-        (pts, _, _, _), = _profiled(seg, whole, prof, flat(9.0))
+        (pts, _, _, _, _), = _profiled(seg, whole, prof, flat(9.0))
         self.assertTrue(all(abs(q[2] - 10.4) < 0.05 for q in pts))
 
     def test_a_towpath_through_a_canal_tunnel_is_left_out(self):
@@ -34,7 +34,7 @@ class Towpath(unittest.TestCase):
         prof = dict(z=[10.4] * 11, span=[], deck=[], bored=[], dip=[], tow=[], gone=[4, 5, 6])
         pieces = _profiled(seg, whole, prof, flat(10.4))
         self.assertEqual(len(pieces), 2)
-        self.assertTrue(all(not 14 < q[0] < 26 for pts, _, _, _ in pieces for q in pts))
+        self.assertTrue(all(not 14 < q[0] < 26 for pts, _, _, _, _ in pieces for q in pts))
 
     def test_the_canals_tunnels_are_found_portal_to_portal(self):
         p = [[x, 0, 3.0, 0, 0, 0, 1 if 20 <= x <= 60 else 0] for x in range(0, 81, 10)]
@@ -113,7 +113,7 @@ class Decks(unittest.TestCase):
         z = [10.0 + 2.0 * min(1.0, max(0.0, (min(i, 28 - i) - 5) / 5)) for i in range(29)]
         prof = dict(z=z, span=list(range(12, 18)), deck=[], bored=[], dip=[], tow=[], gone=[])
         T = grid(10.0)
-        (pts, _, lay, _), = _profiled(seg, whole, prof, lambda x, y: ground_at(T, x, y, split=False))
+        (pts, _, lay, _, _), = _profiled(seg, whole, prof, lambda x, y: ground_at(T, x, y, split=False))
         self.assertEqual([round(q[2], 1) for q in pts[9:12]], [11.6, 12.0, 12.0])
         self.assertNotIn(1, [q[3] if len(q) > 3 else 0 for q in pts[:12]])
         road = dict(c="residential", n="", w=6, pv=[1.7, 1.7], p=pts, _lay=lay)
