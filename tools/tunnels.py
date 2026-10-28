@@ -80,8 +80,11 @@ def faces(run, z, bored, elev, c):
     """For each bored range, where its two portals truly stand: the run is a point every 4 m, so on
     a steep hill face the first point with the hill high enough over it can be metres into the
     hill, under a tall headwall. Each end is moved out towards the point before it, to where the
-    hill stands just its arch and FACE_COVER over the floor there (or left where it is). Gives
-    [(start, end)], each None or (x, y, floor)."""
+    hill stands just its arch and FACE_COVER over the floor there (or left where it is). A road's
+    concrete box keeps its portal at the point: its face is lorry-high whatever, so there's no tall
+    wall over a low arch to take off. Gives [(start, end)], each None or (x, y, floor)."""
+    if c.removesuffix("_link") in MOTOR:
+        return [(None, None) for _ in bored]
     start = crown(c) + FACE_COVER
     out = []
     for i0, i1 in bored:
