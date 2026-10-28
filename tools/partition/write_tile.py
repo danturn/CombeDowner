@@ -2915,7 +2915,7 @@ def end_at_portals(rd, tunnels):
 
             def inside(q):
                 ox, oy = q[0] - a[0], q[1] - a[1]
-                return ox * dx + oy * dy > 0.05 and abs(-ox * dy + oy * dx) < h
+                return 0.05 < ox * dx + oy * dy < TN.INTO * 2 and abs(-ox * dy + oy * dx) < h
 
             for r in rd:
                 q = r["p"]
@@ -2926,11 +2926,11 @@ def end_at_portals(rd, tunnels):
                     m = 0
                     while m < len(run) - 2 and inside(run[m]) and len(run[m]) < 4:
                         m += 1
-                    if not m:
+                    if not m or inside(run[m]):
                         continue
                     u, v = run[m], run[m - 1]
                     seg = math.dist(u[:2], v[:2]) or 1.0
-                    if abs((v[0] - u[0]) * dx + (v[1] - u[1]) * dy) / seg < 0.8:
+                    if abs(u[2] - a[2]) > 3.0 or abs((v[0] - u[0]) * dx + (v[1] - u[1]) * dy) / seg < 0.8:
                         continue
                     ou, ov = (u[0] - a[0]) * dx + (u[1] - a[1]) * dy, (v[0] - a[0]) * dx + (v[1] - a[1]) * dy
                     f = ou / (ou - ov) if ou != ov else 0.0
