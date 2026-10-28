@@ -543,10 +543,9 @@ Roofs can also be fitted to the lidar: each house is cut into its main body and 
 gets a plain roof (gabled, hipped, mansard, lean-to or flat) whose pitch, height and ridge the
 survey decides, steep where the survey says so. Wings meet the main roof in valleys, as cross
 gables do, and a terrace or a pair of semis is decided together, so a row reads as one roof that
-steps only where the survey shows it really does. So far this is tried out on a few squares (the
-village's nine, St Stephen's on Lansdown and the middle of town), whose roofs are kept in
-`data/$MAP/measured/faces/`; every other building keeps the flat, gabled or hipped roof that fits
-it best. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
+steps only where the survey shows it really does. The roofs for every square are kept in
+`data/$MAP/measured/faces/`; a building the survey can't see, or whose row the new roofs don't fit
+clearly better, keeps the flat, gabled or hipped roof that fits it best. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
 without them (a row keeps its old roofs where the new ones don't fit the survey clearly better),
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare.
