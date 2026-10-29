@@ -1,6 +1,6 @@
 // Minimap: a round map in the corner that turns with you (your heading is always up), with a
 // north marker on its rim. The whole map is drawn once to an offscreen canvas, then each frame
-// a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
+// something on the minimap has moved or changed, a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
 // is drawn more coarsely to a second canvas underneath, with the ground at full detail wherever
 // there's a square of Bath (groundkinds.ts), so it's as sharp as the village's anywhere. The minigames' doors (Spot) get a
 // point-of-interest marker on every map here, and the players' own map markers (markers.ts) a pin
@@ -53,7 +53,10 @@ export interface Spot { x: number; z: number; name?: string }
 export const POI = "#38e6ff";
 
 const sprites = new Map<string, { c: HTMLCanvasElement; n: number }>();
-if (typeof document !== "undefined") document.fonts?.addEventListener("loadingdone", () => sprites.clear());
+let fontLoads = 0;
+if (typeof document !== "undefined") document.fonts?.addEventListener("loadingdone", () => { sprites.clear(); fontLoads++; });
+/** How many times fonts have finished loading: a canvas kept from before one may have its text in the fallback font. */
+export const fontEpoch = () => fontLoads;
 
 /** A glowing icon drawn once onto a little canvas of its own, then copied wherever it goes: the
  *  glow (shadowBlur) is slow to draw, and the minimap and compass draw the same icons every frame.
@@ -237,10 +240,13 @@ function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number,
   else jobIcon(g, x, y, k, j.colour, j.glyph, j.done);
 }
 
+/** How far through its glow a challenge's badge is just now, in sixteenths. */
+const challengeBeat = () => Math.round(16 * (0.5 + 0.5 * Math.sin(performance.now() / 260))) / 16;
+
 /** A team challenge: a round badge bigger than a job's, a dark question mark on it, and a glow
  *  that swells and fades so it catches the eye among everything else. */
 export function challengeIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, done = false) {
-  const beat = done ? 0 : Math.round(16 * (0.5 + 0.5 * Math.sin(performance.now() / 260))) / 16;
+  const beat = done ? 0 : challengeBeat();
   sprite(g, x, y, 34 * k + 2, `challenge|${k}|${colour}|${done}|${beat}`, true, (s, x, y) => drawChallengeIcon(s, x, y, k, colour, done, beat));
 }
 function drawChallengeIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, done: boolean, beat: number) {
@@ -524,6 +530,16 @@ function drawCable(g: CanvasRenderingContext2D, a: number[], b: number[], dpr: n
 /** A small arrow pointing up, centred on the origin, k pixels to the unit. */
 export function arrow(g: CanvasRenderingContext2D, k: number) {
   g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
+}
+
+const ids = new WeakMap<object, number>();
+let lastId = 0;
+/** A number for a list that stays the same as long as it's the same list. */
+function idOf(o: object | null): number {
+  if (!o) return 0;
+  let i = ids.get(o);
+  if (i === undefined) ids.set(o, (i = ++lastId));
+  return i;
 }
 
 export class Minimap {
@@ -1302,6 +1318,19 @@ export class Minimap {
     g.restore();
   }
 
+  /** Everything the minimap shows, as a string: the same as last frame and there's nothing to redraw.
+   *  "" when something on it is pulsing, which needs drawing every frame. Lists that come afresh
+   *  only now and then (the zones, the bus stops, a route's line) count by which list it is. */
+  private drawKey(x: number, z: number, yaw: number, dpr: number, blips: Blip[], mates: Mate[]): string {
+    if (this.circles.some((c) => c.pulse)) return "";
+    const beat = this.jobs.some((j) => j.challenge && !j.done) ? challengeBeat() : 0;
+    const bus = this.bus;
+    return JSON.stringify([this.size, dpr, x, z, yaw, beat, fontLoads, !!this.map?.wide, idOf(this.zones), idOf(this.stops), [...this.off],
+      blips, mates, this.jobs, this.circles, this.markers, this.spots, this.boss,
+      this.routes.map((r) => [idOf(r.pts), r.gates, r.colour]), bus && [idOf(bus.pts), bus.colour, bus.stops]]);
+  }
+  private drawn = "";
+
   /** Draw the minimap around the player at scene (x, z) facing yaw, with the other players at the
    *  rim, pointing their way, when they're out of range. */
   draw(x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
@@ -1310,6 +1339,9 @@ export class Minimap {
     if (!css) return;
     if (this.size !== Math.round(css * dpr)) { this.size = Math.round(css * dpr); c.width = c.height = this.size; }
     const S = this.size, R = S / 2, g = this.ctx;
+    const key = this.drawKey(x, z, yaw, dpr, blips, mates);
+    if (key === this.drawn) return;
+    this.drawn = key;
     const scale = R / RANGE;                       // screen px per metre
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, S, S);

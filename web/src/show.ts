@@ -1,6 +1,7 @@
 // The boxes the game puts words in (the prompt in the middle of the screen, the job card, the
 // flags-up panel and the rest), written only when the words have changed, so the page is left alone
-// on the frames where nothing did.
+// on the frames where nothing did. The same goes for the HUD's bars and lights (their inline styles)
+// and for showing and hiding its parts.
 //
 // The element itself says whether it has changed, rather than the game noting down what it last
 // wrote. That matters because these elements outlive a game: taking a train to another town builds a
@@ -29,6 +30,17 @@ export function show(el: HTMLElement, html: string, up?: boolean) {
  *  only needs its text, so it takes whatever one of those a caller has to hand. */
 export function say(el: Element, text: string) {
   if (el.textContent !== text) el.textContent = text;
+}
+
+/** An inline style (a property, or a --custom one) set only when the element doesn't already have it.
+ *  A value the browser writes back differently (a colour turned to rgb()) is just set every time. */
+export function setStyle(el: HTMLElement, prop: string, value: string) {
+  if (el.style.getPropertyValue(prop) !== value) el.style.setProperty(prop, value);
+}
+
+/** Hide or show an element, leaving it alone if it already is. */
+export function setHidden(el: HTMLElement, hidden: boolean) {
+  if (el.hidden !== hidden) el.hidden = hidden;
 }
 
 const sizes = new WeakMap<Element, { w: number; h: number }>();

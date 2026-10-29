@@ -31,6 +31,7 @@
 // prefects (who follow every player near the court on everyone's screen, from where they're
 // standing), the lab coats, the fire and the fireworks (lit when the host says it's burning).
 import * as THREE from "three";
+import { darkable } from "./unlit";
 import * as SFX from "./audio";
 import { award } from "./trophies";
 import { missionActive, missionClear, missionEnd, missionProgress, missionStart } from "./missionscreens";
@@ -501,10 +502,11 @@ export class Bonfire {
       if (map.fieldEdge(cx, -cy) > 0) { this.x = cx; this.z = -cy; }
     }
     // the fire's light: on the map with the bonfire, always in the scene (dark till bonfire night)
-    // and never in a group that's hidden, so the number of lights never changes
+    // and never in a group that's hidden (unlit.ts leaves it out of the drawing while it's dark)
     if (Number.isFinite(this.x)) {
       this.fireLight = new THREE.PointLight("#ff8a3a", 0, 40, 1.4);
       scene.add(this.fireLight);
+      darkable(scene, this.fireLight);
     }
   }
 
