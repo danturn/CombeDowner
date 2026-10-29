@@ -1,10 +1,17 @@
 // A quick headless check of travelling between maps (main.ts's travel, game.ts's travelTo):
 // start a solo game on Combe Down, travel to Bradford-on-Avon as the train would, and see that
+<<<<<<< ours
 // the game is now on the new map with the same connection, and that the prompt we boarded by
 // went with it. The new Game fills the same page's boxes (web/src/show.ts), so a box that still
 // holds a line about the map we left is the bug this guards: a note of what was last shown, kept
 // by the game rather than read back from the element, starts empty and skips the new game's first
 // write. Run from web/ with the committed build. Exits 1 if a check fails.
+=======
+// the game is now on the new map with the same connection, and that the old map's on-screen
+// prompt went with it (the new Game shares the page's HUD elements, and each one it caches as
+// "what I last showed" must start unwritten or the last map's prompt stays up for good).
+// Run from web/ with the committed build. Exits 1 if a check fails.
+>>>>>>> theirs
 import { createRequire } from "module";
 // playwright from PW if given, else the game's own (web/node_modules, after npm install), else
 // wherever node can find it — as tools/shoot.mjs does
@@ -58,8 +65,13 @@ const prompt = () => page.evaluate(() => {
   return el && !el.hidden ? (el.textContent ?? "").trim() : "";
 });
 
+<<<<<<< ours
 // board a real train: stand on Bath Spa's platform and wait for a Bradford train (the one east from
 // platform 2, which goes on there: railway.ts's linkFor) to be dwelling there with its doors open, then board it, exactly as E does in the game
+=======
+// board a real train: stand on Bath Spa's platform and wait for a Bradford train to be dwelling
+// there with its doors open, then board it, exactly as E does in the game
+>>>>>>> theirs
 const boarded = await page.evaluate(async () => {
   const g = window.__game();
   window.__before = g;
@@ -155,6 +167,7 @@ const ok = await page.evaluate(() => {
   return true;
 });
 const t1=Date.now();
+<<<<<<< ours
 // Watch the journey rather than sampling it once at the end: one reading can't tell "travel never
 // started" from "travel started and was still fetching the far map when we looked", and it reads
 // the wrong map when nothing swapped, because window.__map is current.map and current flips
@@ -178,6 +191,22 @@ const travelMs = journey.length ? journey[journey.length - 1].ms : 0;
 const stages = journey.filter((j, i) => i === 0 || j.stage !== journey[i - 1].stage || j.map !== journey[i - 1].map)
   .map((j) => `${j.stage}@${j.map}${j.pending ? `(arriving ${j.pending})` : ""}${j.err ? ` !${j.err}` : ""}`);
 const after = reachedBuilt ? await page.evaluate(() => window.__map().d.id) : null;
+=======
+// Step off to open ground, well clear of the platform and any train, where the new map has nothing
+// to prompt about. Done here, the instant the new game exists, so that nothing the arrival itself
+// would prompt about (the train we came in on, stood at the platform) is ever drawn: a prompt that
+// changes makes the stale one look updated, and hides the fault we're checking for.
+await page.waitForFunction(() => {
+  if (window.__travelError) return true;
+  if (window.__travelStage !== 'built') return false;
+  const g = window.__game(), pl = g.world.railway?.platform("Bradford-on-Avon");
+  const away = 300;
+  g.player.spawn(pl ? pl.centre[0] + away : g.player.pos.x + away, pl ? -pl.centre[1] : g.player.pos.z, 0);
+  return true;
+}, null, { timeout: 15000 }).catch(()=>{});
+const travelMs=Date.now()-t1;
+const after = await page.evaluate(() => window.__map().d.id);
+>>>>>>> theirs
 const travelError = await page.evaluate(() => window.__travelError ?? null);
 const onPlat = await page.evaluate(() => {
   const g = window.__game();
@@ -204,6 +233,7 @@ for (let i = 0; i < 60 && promptAfter; i++) {
   if (promptAfter) await new Promise((r) => setTimeout(r, 100));
 }
 const stalePrompt = promptAfter !== "";
+<<<<<<< ours
 const noTrain = !onPlat.trainHere;
 console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, reachedBuilt, stages, travelError, travelMs, arrival: onPlat, promptBefore, promptAfter, errors: errs.slice(0, 3) }));
 console.log(`journey: ${stages.join(" -> ") || "(no stage change)"} in ${travelMs} ms`);
@@ -220,3 +250,10 @@ console.log(`${noTrain ? "FAIL" : "PASS"} a train is at the platform we stepped 
 await browser.close();
 server.close();
 process.exit(stalePrompt || noTrain ? 1 : 0);
+=======
+console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, promptBefore, promptAfter, errors: errs.slice(0, 3) }));
+console.log(`${stalePrompt ? "FAIL" : "PASS"} the prompt went with the map (was "${promptBefore}", now "${promptAfter}")`);
+await browser.close();
+server.close();
+process.exit(stalePrompt ? 1 : 0);
+>>>>>>> theirs
