@@ -128,6 +128,9 @@ export class Post {
     Telemetry.drawn(this.renderer);
   }
 
+  /** What the world is drawn into (a buffer, not the screen). */
+  get worldTarget() { return this.composer.renderTarget1; }
+
   /** Which of RES_STEPS it's drawing at. */
   get resolution() { return resStep; }
 

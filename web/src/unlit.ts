@@ -37,25 +37,28 @@ const WARM_PER_FRAME = 4; // newly built shaders readied for use each frame
 export class Unlit {
   private scanT = 0;
   private both = new WeakSet<THREE.Material>();
+  private bothFor = 0;   // how many dark lights there were when those were built: a new one (the game's own, after the menu's) means building them again
   private warm = new WeakSet<object>();
 
   constructor(private renderer: THREE.WebGLRenderer) {}
 
   /** Before drawing scene with camera: leave the dark lights out if they all are, and get ready for them changing. */
-  frame(scene: THREE.Scene, camera: THREE.Camera, dt: number) {
+  frame(scene: THREE.Scene, camera: THREE.Camera, dt: number, target: THREE.WebGLRenderTarget | null) {
     const lights = lightsOf.get(scene);
     if (!lights) return;
     const want = lights.some((l) => l.intensity > 0);
     for (const l of lights) if (l.visible !== want) l.visible = want;
+    if (lights.length !== this.bothFor) { this.bothFor = lights.length; this.both = new WeakSet(); this.scanT = 0; }
     if ((this.scanT -= dt) <= 0) {
       this.scanT = SCAN_EVERY;
-      this.prepare(scene, camera, lights, want);
+      this.prepare(scene, camera, lights, want, target);
     }
     this.warmUp();
   }
 
-  /** Build the other version (with the dark lights, or without) of every lit material drawn last frame that hasn't got it. */
-  private prepare(scene: THREE.Scene, camera: THREE.Camera, lights: Darkable[], shown: boolean) {
+  /** Build the other version (with the dark lights, or without) of every lit material drawn last frame that hasn't got it.
+   *  target: what the world is drawn into, as shaders differ by that too (the screen's colours, or the buffer's). */
+  private prepare(scene: THREE.Scene, camera: THREE.Camera, lights: Darkable[], shown: boolean, target: THREE.WebGLRenderTarget | null) {
     const list = this.renderer.renderLists.get(scene, 0);
     const objects: THREE.Object3D[] = [], materials = new Set<THREE.Material>();
     for (const items of [list.opaque, list.transmissive, list.transparent]) {
@@ -70,12 +73,15 @@ export class Unlit {
     // three's compile takes the lights from scene and the things to build for from what it's given
     const some = { traverse: (f: (o: THREE.Object3D) => void) => objects.forEach(f), traverseVisible: () => {} } as unknown as THREE.Object3D;
     for (const l of lights) l.visible = !shown;
+    const was = this.renderer.getRenderTarget();
     try {
+      this.renderer.setRenderTarget(target);
       this.renderer.compile(some, camera, scene);
     } catch (e) {
       // not worth losing frames over: the switch will build them when it comes, as it always did
       console.warn("couldn't build the shaders for the lights ahead of time:", e);
     } finally {
+      this.renderer.setRenderTarget(was);
       for (const l of lights) l.visible = shown;
     }
     for (const m of materials) this.both.add(m);

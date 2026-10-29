@@ -847,7 +847,7 @@ function frame(now: number) {
   // quality.ts): they're a good share of a frame's work, and a moving shadow a frame behind can't be seen
   renderer.shadowMap.autoUpdate = false;
   if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
-  unlit.frame(current.world.scene, camera, dt);
+  unlit.frame(current.world.scene, camera, dt, post.worldTarget);
   post.render(current.world.scene, game ? game.weapon.scene : null);
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
