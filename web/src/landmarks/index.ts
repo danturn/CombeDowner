@@ -37,7 +37,7 @@ import { auwal } from "./auwal";
 import { clockTower, capeWheel, zeitz, boats } from "./waterfront";
 import { dundas } from "./dundas";
 import { type Shape, shapeOf } from "./shape";
-import { mergeStatic } from "./kit";
+import { mergeAcross, mergeStatic } from "./kit";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
@@ -91,6 +91,7 @@ export const landmarkLamps = (map: GameMap): number[] => lampsOf.get(map) ?? [];
 
 /** Build the map's landmarks (or the list given: the wider map's) into the scene. */
 export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d.lm ?? []) {
+  const built: THREE.Object3D[] = [];
   for (const [kind, x, y, z, ang, ...rest] of list) {
     const build = KINDS[kind as string];
     if (!build) { console.warn(`no builder for landmark ${kind}`); continue; }
@@ -117,5 +118,7 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     delete obj.userData.lamps;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });
     scene.add(obj);
+    built.push(obj);
   }
+  mergeAcross(scene, built);
 }

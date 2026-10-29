@@ -470,6 +470,58 @@ function plateShown(this: THREE.Object3D, _r: THREE.WebGLRenderer, _s: THREE.Sce
   if (mat instanceof THREE.MeshLambertMaterial && mat.userData.plate) showPlate(mat, text, sub);
 }
 
+/** Furniture baked into one model a cell (bake below): the parts' colours are kept as the bytes they
+ *  were written in, and made linear here as three.js does them, a quarter of the memory of floats. */
+const BAKED = new THREE.MeshLambertMaterial({ vertexColors: true });
+BAKED.onBeforeCompile = (sh) => {
+  sh.vertexShader = sh.vertexShader.replace("#include <color_vertex>", `#include <color_vertex>
+    vColor.rgb = mix(pow(vColor.rgb * 0.9478672986 + vec3(0.0521327014), vec3(2.4)), vColor.rgb * 0.0773993808, vec3(lessThanEqual(vColor.rgb, vec3(0.04045))));`);
+};
+BAKED.customProgramCacheKey = () => "bakedFurniture";
+
+const toSRGB = (c: number) => (c < 0.0031308 ? c * 12.92 : 1.055 * c ** 0.41666 - 0.055);
+const toLinear = (c: number) => (c < 0.04045 ? c * 0.0773993808 : (c * 0.9478672986 + 0.0521327014) ** 2.4);
+
+/** One model of many copies of models (each placed by its matrix), as world.ts's Geo holds them:
+ *  normals in a byte each; colours (if the material takes them) in bytes, or floats where a colour
+ *  isn't one the bytes can hold exactly (the flag returned says which). */
+function* bake(parts: [THREE.BufferGeometry, THREE.Matrix4][], colours: boolean): Generator<void, [THREE.BufferGeometry, boolean]> {
+  const n = parts.reduce((a, [g]) => a + g.attributes.position.count, 0);
+  const P = new Float32Array(n * 3), N = new Int8Array(n * 3), C8 = colours ? new Uint8Array(n * 3) : null;
+  let C32: Float32Array | null = null;
+  const v = new THREE.Vector3(), nm = new THREE.Matrix3(), col = new THREE.Color();
+  let at = 0;
+  for (const [g, m] of parts) {
+    if (at % 20000 > (at + g.attributes.position.count) % 20000) yield;
+    const p = g.attributes.position, no = g.attributes.normal, c = g.attributes.color;
+    nm.getNormalMatrix(m);
+    for (let i = 0; i < p.count; i++, at++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m);
+      P[at * 3] = v.x; P[at * 3 + 1] = v.y; P[at * 3 + 2] = v.z;
+      v.fromBufferAttribute(no, i).applyMatrix3(nm).normalize();
+      N[at * 3] = Math.round(v.x * 127); N[at * 3 + 1] = Math.round(v.y * 127); N[at * 3 + 2] = Math.round(v.z * 127);
+      if (!colours) continue;
+      col.fromBufferAttribute(c as THREE.BufferAttribute, i);
+      if (C32) { col.toArray(C32, at * 3); continue; }
+      const s = [col.r, col.g, col.b].map((x) => toSRGB(x) * 255);
+      if (s.some((x) => Math.abs(x - Math.round(x)) > 1e-3)) {
+        C32 = new Float32Array(n * 3);
+        for (let k = 0; k < at; k++) for (let j = 0; j < 3; j++) C32[k * 3 + j] = toLinear(C8![k * 3 + j] / 255);
+        col.toArray(C32, at * 3);
+        continue;
+      }
+      C8![at * 3] = Math.round(s[0]); C8![at * 3 + 1] = Math.round(s[1]); C8![at * 3 + 2] = Math.round(s[2]);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.BufferAttribute(P, 3));
+  out.setAttribute("normal", new THREE.BufferAttribute(N, 3, true));
+  if (C32) out.setAttribute("color", new THREE.BufferAttribute(C32, 3));
+  else if (C8) out.setAttribute("color", new THREE.BufferAttribute(C8, 3, true));
+  out.computeBoundingSphere();
+  return [out, !!C32];
+}
+
 /** Street furniture, wires, bus stops, street name signs and road markings, built a kind at a time (yields between). */
 export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
@@ -485,10 +537,25 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     q.setFromAxisAngle(up, f[4] as number);
     return m4.compose(p.set(f[1] as number, (f[3] as number) - Z0, -(f[2] as number)), q, scale ? sc.fromArray(scale(f)) : one);
   };
+  // What never changes once it's put up is baked, each 250 m square of it into one model a
+  // material and distance it's drawn to, so a street's bins, bollards, benches and posts are one
+  // draw instead of one a kind. Parked cars (which can be driven off), wheelie bins (each tinted),
+  // and see-through or lit-up parts stay instanced.
+  const baked = new Map<string, { material: THREE.Material; range: number; parts: [THREE.BufferGeometry, THREE.Matrix4][] }>();
   // one instanced mesh per 250 m square, so distant squares can be skipped
   const instanced = function* (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string,
     placed?: (f: (string | number)[], m: THREE.InstancedMesh, i: number) => void, range = 200, scale?: (f: (string | number)[]) => number[]): Generator<void> {
     const groups = new Map<string, (string | number)[][]>();
+    if (!colour && !placed && (material === mat || material === LAMP_GLASS)) {
+      for (let gi = 0; gi < all.length; gi++) {
+        const f = all[gi];
+        const k = `${Math.floor((f[1] as number) / 250)},${Math.floor((f[2] as number) / 250)}|${material.uuid}|${range}`;
+        const b = baked.get(k) ?? baked.set(k, { material, range, parts: [] }).get(k)!;
+        b.parts.push([geo, place(f, scale).clone()]);
+        if (gi % 300 === 299) yield;
+      }
+      return;
+    }
     for (let gi = 0; gi < all.length; gi++) {
       const f = all[gi];
       const k = `${Math.floor((f[1] as number) / 250)},${Math.floor((f[2] as number) / 250)}`;
@@ -652,6 +719,15 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   yield* instanced(MODELS.lift(), across.get("lift") ?? [], mat, undefined, undefined, 200, (f) => [1, 1, wide(f)]);
   yield* instanced(MODELS.grid(), across.get("grid") ?? [], mat, undefined, undefined, 200, (f) => [1, 1, wide(f)]);
   yield* instanced(MODELS.block(), across.get("block") ?? []);
+  for (const b of baked.values()) {
+    const [g, floats] = yield* bake(b.parts, b.material === mat);
+    const m = new THREE.Mesh(g, b.material === mat ? (floats ? mat : BAKED) : b.material);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+    culler.add(m, b.range);
+    yield;
+  }
+  baked.clear();
   yield* stepsDetail(map, scene, culler, mat);
   let mk = 0;
   for (const [ax, ay, bx, by, za, zb, kind] of D.mk ?? []) {

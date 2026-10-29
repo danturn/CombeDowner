@@ -1540,6 +1540,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
   }
+  /** One material for several kinds of street surface that share a texture and lie at the same
+   *  height over the ground, each kind (the mesh's "kind", in the order given) in its own colour. */
+  const kindsLook = (key: string, kinds: THREE.MeshLambertMaterial[]): THREE.Material => {
+    const id = `kinds:${key}:${kinds.length}`;
+    if (S[id]) return S[id];
+    const mat = kinds[0].clone(), cols = kinds.map((m) => m.color.clone());
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.kindCol = { value: cols };
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float kind;\nvarying float vKind;")
+        .replace("#include <uv_vertex>", "#include <uv_vertex>\nvKind = kind;");
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\nuniform vec3 kindCol[${cols.length}];\nvarying float vKind;`)
+        .replace("vec4 diffuseColor = vec4( diffuse, opacity );", "vec4 diffuseColor = vec4( kindCol[int(vKind + 0.5)], opacity );");
+    };
+    mat.customProgramCacheKey = () => id;
+    return (S[id] = mat);
+  };
   const bridgeMat: THREE.Material = S.bridgeMat ??= new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true });
   const steelMat: THREE.Material = S.steelMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
 
@@ -1579,11 +1595,27 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (thin) mesh.userData.thin = true;
     };
     // (thin: footpaths and pavements, with their kerbs, which a square seen from far off leaves out)
-    for (const k of ["path", "service", "road", "pave", "grass", "dirt", "gravel"] as const) { add(geo[k].build(), roadMats[k], false, k !== "service" && k !== "road"); yield; }
+    // Surfaces with the same texture lying at the same height over the ground are one mesh, each
+    // in its own colour (kindsLook): the paths of every kind, and the pavements with the drives.
+    const addKinds = (kinds: [Geo, THREE.MeshLambertMaterial][], key: string) => {
+      const built = kinds.map(([g, m]) => [g.build(), m] as const).filter((k): k is [THREE.BufferGeometry, THREE.MeshLambertMaterial] => !!k[0]);
+      if (built.length < 2) { for (const [g, m] of built) add(g, m, false, true); return; }
+      for (const [g, k] of built.map(([g], k) => [g, k] as const)) g.setAttribute("kind", new THREE.BufferAttribute(new Uint8Array(g.attributes.position.count).fill(k), 1));
+      const merged = mergeGeometries(built.map(([g]) => g));
+      if (!merged) { for (const [g, m] of built) { g.deleteAttribute("kind"); add(g, m, false, true); } return; }
+      merged.computeBoundingSphere();
+      add(freeOnUpload(merged), kindsLook(key, built.map(([, m]) => m)), false, true);
+    };
+    addKinds([[geo.path, roadMats.path as THREE.MeshLambertMaterial], [geo.grass, roadMats.grass as THREE.MeshLambertMaterial], [geo.dirt, roadMats.dirt as THREE.MeshLambertMaterial], [geo.gravel, roadMats.gravel as THREE.MeshLambertMaterial]], "paths");
+    yield;
+    add(geo.service.build(), roadMats.service);
+    add(geo.road.build(), roadMats.road);
+    yield;
+    addKinds([[geo.pave, roadMats.pave as THREE.MeshLambertMaterial], [geo.drive, S.driveMat]], "paved");
+    yield;
     add(geo.bridge.build(), bridgeMat, true);
     add(geo.steel.build(), steelMat, true);
     add(geo.front.build(), S.pathMat!, false, true);
-    add(geo.drive.build(), S.driveMat!, false, true);
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
   }
@@ -2261,18 +2293,33 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const byChunk = new Map<string, number[][]>();
     for (const d of doors) { const k = `${Math.floor(d[0] / 250)},${Math.floor(d[1] / 250)}`; (byChunk.get(k) ?? byChunk.set(k, []).get(k)!).push(d); }
     const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), pp = new THREE.Vector3();
-    const frameMat = new THREE.MeshLambertMaterial({ color: "#ece6d6" }), fanMat = new THREE.MeshLambertMaterial({ color: "#2a3640" });
-    const doorMat = new THREE.MeshLambertMaterial({ color: "#ffffff" });
+    // the frame, the door and the fanlight over it as one model, drawn in one go: their colours in
+    // its vertex colours, and only the door ("tint") painted each house's colour
+    const doorModel = mergeGeometries([[frameGeo, "#ece6d6", 0], [doorGeo, "#ffffff", 1], [fanGeo, "#2a3640", 0]].map(([g, c, t]) => {
+      const part = (g as THREE.BufferGeometry).clone(), n = part.attributes.position.count, col = new THREE.Color(c as string);
+      part.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 3).map((_, i) => [col.r, col.g, col.b][i % 3]), 3));
+      part.setAttribute("tint", new THREE.BufferAttribute(new Float32Array(n).fill(t as number), 1));
+      return part;
+    }))!;
+    const doorMat: THREE.MeshLambertMaterial = S.doorMat ??= (() => {
+      const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+      m.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float tint;")
+          .replace("#include <color_vertex>", "vColor = color;\n#ifdef USE_INSTANCING_COLOR\nvColor *= mix(vec3(1.0), instanceColor, tint);\n#endif");
+      };
+      m.customProgramCacheKey = () => "doors";
+      return m;
+    })();
     let dk = 0;
     for (const list of byChunk.values()) {
-      const meshes = [new THREE.InstancedMesh(frameGeo, frameMat, list.length), new THREE.InstancedMesh(doorGeo, doorMat, list.length), new THREE.InstancedMesh(fanGeo, fanMat, list.length)];
+      const m = new THREE.InstancedMesh(doorModel, doorMat, list.length);
       list.forEach((d, k) => {
         qq.setFromAxisAngle(up, d[3]);
         m4.compose(pp.set(d[0], d[2] - Z0, -d[1]), qq, one);
-        for (const m of meshes) m.setMatrixAt(k, m4);
-        meshes[1].setColorAt(k, DOOR[d[4] % DOOR.length]);
+        m.setMatrixAt(k, m4);
+        m.setColorAt(k, DOOR[d[4] % DOOR.length]);
       });
-      for (const m of meshes) { m.computeBoundingSphere(); scene.add(m); culler.add(m, 150); }
+      m.computeBoundingSphere(); scene.add(m); culler.add(m, 150);
       if (++dk % 6 === 5) yield;
     }
     // porch canopies over about half the front doors
