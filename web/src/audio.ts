@@ -1776,7 +1776,7 @@ export function solved() {
 export function step(hard: boolean, vol: number, distance = 0, pan = 0) {
   if (!ctx || distance > 40) return;
   const t = now(), j = vary(0.12);
-  const d = out(vol * 2.5 * fall(distance, 6), pan, distance, 0.04);
+  const d = out(vol * 1.5 * fall(distance, 6), pan, distance, 0.04);
   if (hard) {
     burst(d, t, 0.035, 0.7, 1500 * j, { q: 1.3 });
     tone(d, t, 0.05, 0.45, 95 * j, 60);
