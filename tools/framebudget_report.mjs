@@ -25,6 +25,76 @@ for (const rate of rates) {
     views.filter((v) => B.views[v][`x${rate}`]?.base).map((v) => { const m = B.views[v][`x${rate}`].base; return [v, f(m.fps, 0), f(m.frameMs), f(m.p95Ms, 1), f(m.jsMs), f(m.gpuMs), f(m.gpuPass.shadow), f(m.gpuPass.world), f(m.gpuPass.gun), f(m.gpuPass.post), f(draws(m, "world"), 0), f(draws(m, "shadow"), 0), f(draws(m, "gun"), 0), f(tris(m, "world") / 1000, 0), f(tris(m, "shadow") / 1000, 0), m.heapMB]; }));
 }
 
+if (views.some((v) => B.views[v].census)) {
+  p("### What the scene holds (three.js visits every object each frame, drawn or not)");
+  table(["view", "objects", "meshes", "visible meshes", "lights", "matrix update ms (x1)", "biggest categories by meshes (visible/all)"], views.filter((v) => B.views[v].census).map((v) => { const c = B.views[v].census; return [v, c.objects, c.meshes, c.visibleMeshes, c.lights, f(c.matrixMs, 3), Object.entries(c.by).sort((a, b) => b[1].meshes - a[1].meshes).slice(0, 6).map(([k, e]) => `${nice(k)} ${e.shown}/${e.meshes}`).join(", ")]; }));
+}
+
+// the frame in seven parts that add up to it, per view: the headline
+for (const rate of rates) {
+  const rows = [];
+  for (const v of views) {
+    const at = B.views[v][`x${rate}`]; if (!at?.tree || !at?.base) continue;
+    const sc = at.base.jsMs / at.tree.jsMs, g = { walk: 0, draws: 0, gunpost: 0, hud: 0, sim: 0 };
+    let covered = 0;
+    for (const [k, e] of Object.entries(at.tree.tree)) {
+      const parts = k.split(" > "), leaf = parts[parts.length - 1];
+      if (parts.length === 1) covered += e.incl;
+      if (parts[0] === "render: world pass") { if (leaf.startsWith("draw: ")) g.draws += e.incl; else if (parts.length <= 2) g.walk += e.self; continue; }
+      if (parts.length !== 1) continue;
+      if (k === "render: gun pass" || k === "render: post pass") g.gunpost += e.incl; else if (k === "game.updateHud") g.hud += e.incl; else g.sim += e.incl;
+    }
+    const outside = at.tree.jsMs - covered;
+    rows.push([v, at.base.frameMs, at.base.frameMs - at.base.jsMs, g.walk * sc, g.draws * sc, g.sim * sc, g.hud * sc, g.gunpost * sc, outside * sc, at.base.gpuMs]);
+  }
+  if (!rows.length) continue;
+  const mean = rows[0].slice(1).map((_, i) => rows.reduce((a, r) => a + r[i + 1], 0) / rows.length);
+  p(`### The frame in parts, CPU x${rate} (ms per frame)`);
+  p("Frame = not-JavaScript + the six JavaScript parts. *Walk*: three.js visiting, placing, culling and sorting the scene (world pass and shadow map). *Draws*: three.js handing each draw over (choosing the program, uploading uniforms, binding, the GL call), every category, both passes. *Simulation*: everything `Game.update` calls except the HUD. GPU runs alongside, not added.");
+  p();
+  table(["view", "frame", "not JS (browser, GPU wait)", "walk", "draws", "simulation", "HUD", "gun + post passes", "JS outside timed calls", "GPU (alongside)"],
+    [...rows.map((r) => [r[0], ...r.slice(1).map((x) => f(x))]), ["**mean**", ...mean.map((x) => `**${f(x)}**`)], ["share of frame", "", ...mean.slice(1, 8).map((x) => `${(100 * x / mean[0]).toFixed(0)}%`), ""]]);
+}
+
+// one ranked budget per CPU speed: the frame split into systems, each view a column. The game's
+// top-level calls partition its JavaScript; the world pass is split into three.js's own walk of the
+// scene, the shadow map, placing things, and handing over each category's draws.
+function systems(tree, js, frame) {
+  const S = {};
+  const add = (k, v) => { S[k] = (S[k] ?? 0) + v; };
+  let covered = 0;
+  for (const [k, e] of Object.entries(tree)) {
+    const parts = k.split(" > ");
+    if (parts.length === 1) covered += e.incl;
+    const leaf = parts[parts.length - 1];
+    if (parts[0] === "render: world pass") {
+      if (parts.length === 1) add("three.js: walking, culling, sorting the scene (world pass)", e.self);
+      else if (leaf.startsWith("draw: ")) add(`draws: ${nice(leaf.slice(6))}`, e.incl);
+      else if (parts.length === 2 && leaf.startsWith("shadow map")) add("three.js: shadow map walk and culling", e.self);
+      else if (parts.length === 2) add(`three.js: ${leaf}`, e.incl);
+      continue;
+    }
+    if (parts.length !== 1) continue;
+    if (k.startsWith("render: ")) { add(k.replace("render: ", "render (all): "), e.incl); continue; }
+    const owner = k.split(".")[0];
+    add(owner === "game" ? k : `${owner}.*`, e.incl);
+  }
+  add("(JavaScript outside every timed call: Game.update's own lines, main.ts, other rAF callbacks)", Math.max(0, js - covered));
+  add("(not JavaScript: browser style/layout/compositing, waiting on the GPU)", Math.max(0, frame - js));
+  return S;
+}
+for (const rate of rates) {
+  const vs = views.filter((v) => B.views[v][`x${rate}`]?.tree && B.views[v][`x${rate}`]?.base);
+  if (!vs.length) continue;
+  const cols = vs.map((v) => { const at = B.views[v][`x${rate}`]; const scale = at.base.jsMs / Math.max(0.01, at.tree.jsMs); const s = systems(at.tree.tree, at.tree.jsMs, at.tree.jsMs + (at.base.frameMs - at.base.jsMs)); for (const k of Object.keys(s)) if (!k.startsWith("(not JavaScript")) s[k] *= scale; return s; });
+  const keys = [...new Set(cols.flatMap((c) => Object.keys(c)))];
+  const mean = (k) => cols.reduce((a, c) => a + (c[k] ?? 0), 0) / cols.length;
+  keys.sort((a, b) => mean(b) - mean(a));
+  p(`### The frame budget by system, CPU x${rate} (ms per frame; timed calls scaled so JavaScript adds up to its untimed figure)`);
+  table(["system", "mean", ...vs], [["**frame**", f(vs.reduce((a, v) => a + B.views[v][`x${rate}`].base.frameMs, 0) / vs.length), ...vs.map((v) => `**${f(B.views[v][`x${rate}`].base.frameMs)}**`)],
+    ...keys.filter((k) => mean(k) >= 0.01).map((k) => [k.replace(/\|/g, "/"), f(mean(k)), ...cols.map((c) => f(c[k] ?? 0))])]);
+}
+
 // the tree, rolled into one ranked list per view: each row's own time (what it spends outside the rows
 // under it), so the rows add up to the JavaScript of the frame
 function flat(tree, js) {

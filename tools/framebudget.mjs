@@ -21,7 +21,7 @@
 //
 //   cd web && npx vite build --minify false --sourcemap && node ../tools/framebudget.mjs --out ../out/fb
 //     [--views a,b] [--phases base,tree,profile,trace,cats,settings,hopper,reload] [--throttle 1,4]
-//     [--secs 3] [--reps 3] [--size 1920x1080]
+//     [--secs 3] [--reps 3] [--size 1920x1080] [--settings "shadows off,res 360 lines"]
 //
 // Each measurement is taken --reps times and the median kept. --throttle runs everything that
 // concerns the CPU again with the page's CPU slowed that many times (Chrome's CPU throttling; the GPU
@@ -40,7 +40,7 @@ const req = createRequire(WEB + "package.json");
 const { chromium } = req("playwright");
 const { SourceMapConsumer } = req("source-map-js");
 const argv = process.argv.slice(2);
-const opt = { dist: WEB + "dist", out: "fb", secs: "3", reps: "3", size: "1920x1080", views: "", phases: "base,tree,profile,trace,cats,settings,hopper,reload", throttle: "1,4" };
+const opt = { dist: WEB + "dist", out: "fb", secs: "3", reps: "3", size: "1920x1080", views: "", phases: "census,base,tree,profile,trace,cats,settings,hopper,reload", throttle: "1,4" };
 for (let i = 0; i < argv.length; i++) { const a = argv[i]; if (a.startsWith("--")) opt[a.slice(2)] = argv[++i]; }
 const [W, H] = opt.size.split("x").map(Number);
 const SECS = +opt.secs, REPS = +opt.reps, PHASES = new Set(opt.phases.split(",")), RATES = opt.throttle.split(",").map(Number);
@@ -527,6 +527,9 @@ const SETTINGS = [
   ["sniper", async () => page.evaluate(() => { const w = window.__game().weapon; w.giveSniper(); w.select("sniper"); })],
   ["grass half as thick", async () => page.evaluate(() => { window.__grassThin = 0.5; })],
   ["grass to 20 m", async () => page.evaluate(() => { window.__grassNear = 20; })],
+  // every lit material loops over every light for each pixel or corner, lit or not (the lamps'
+  // lights stay in the scene by day at nought brightness so nothing recompiles at dusk)
+  ["point and spot lights out", async () => page.evaluate(() => { const sc = window.__game().world.scene; window.__lightsOff = []; sc.traverse((o) => { if ((o.isPointLight || o.isSpotLight) && o.visible) { o.visible = false; window.__lightsOff.push(o); } }); sc.traverse((o) => { for (const m of [].concat(o.material ?? [])) m.needsUpdate = true; }); })],
 ];
 const CPU_SETTINGS = new Set(["shadows off", "shadows every frame", "view 600 m", "view 1200 m", "no gun drawn", "grass half as thick"]);
 async function resetSettings() {
@@ -534,6 +537,7 @@ async function resetSettings() {
     delete window.__q.shadowEvery; window.__S.skip = null; window.__S.skipObj = null;
     const s = window.__game().world.sun.shadow; if (s.mapSize.x !== 2048) { s.mapSize.set(2048, 2048); s.map?.dispose(); s.map = null; }
     window.__grassThin = 1; window.__grassNear = 0;
+    if (window.__lightsOff?.length) { for (const l of window.__lightsOff) l.visible = true; window.__lightsOff = []; window.__game().world.scene.traverse((o) => { for (const m of [].concat(o.material ?? [])) m.needsUpdate = true; }); }
     const w = window.__game().weapon; if (w.kind !== "rifle") w.select("rifle");
   });
   await setv("set-shadows", true); await setv("set-res", 2); await setv("set-fx", true);
@@ -573,6 +577,32 @@ for (const name of views) {
   await page.evaluate(() => window.__label());
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(opt.out, `${name}.png`) }).catch(() => {});
+  // what the scene holds, by category: three.js walks every object each frame (to place it and to
+  // cull it), drawn or not, so the count of objects matters as well as the draws
+  if (PHASES.has("census")) {
+    R.census = await page.evaluate(() => {
+      const g = window.__game(), scene = g.world.scene, by = {};
+      const cat = (o) => { for (let p = o; p && p !== scene; p = p.parent) if (p.name) return p.name; return "(unnamed)"; };
+      let objects = 0, autoMatrix = 0, visibleMeshes = 0, meshes = 0, lights = 0;
+      const walk = (o, shown) => {
+        objects++; shown = shown && o.visible;
+        if (o.matrixAutoUpdate || o.matrixWorldAutoUpdate) autoMatrix++;
+        if (o.isLight) lights++;
+        if (o.isMesh || o.isLine || o.isPoints || o.isSprite) {
+          meshes++; if (shown) visibleMeshes++;
+          const k = cat(o), e = (by[k] ??= { meshes: 0, shown: 0, instances: 0 });
+          e.meshes++; if (shown) e.shown++; if (o.isInstancedMesh) e.instances += o.count;
+        }
+        for (const c of o.children) walk(c, shown);
+      };
+      walk(scene, true);
+      let t = performance.now(); for (let i = 0; i < 20; i++) scene.updateMatrixWorld(); const matrixMs = (performance.now() - t) / 20;
+      const lightKinds = {}; scene.traverse((o) => { if (o.isLight) { const k = `${o.type}${o.visible ? "" : " (hidden)"}${o.castShadow ? " casting shadow" : ""}`; lightKinds[k] = (lightKinds[k] ?? 0) + 1; } });
+      return { lightKinds, objects, meshes, visibleMeshes, autoMatrix, lights, topChildren: scene.children.length, matrixMs: +matrixMs.toFixed(3), by };
+    });
+    console.log(`${name} census: ${R.census.objects} objects, ${R.census.meshes} meshes (${R.census.visibleMeshes} visible), ${R.census.lights} lights, matrices ${R.census.matrixMs} ms`);
+    save();
+  }
   for (const rate of RATES) {
     const at = (R[`x${rate}`] = {});
     await cdp.send("Emulation.setCPUThrottlingRate", { rate });
@@ -604,6 +634,7 @@ for (const name of views) {
       at.settings = {};
       for (const [label, fn] of SETTINGS) {
         if (rate !== 1 && !CPU_SETTINGS.has(label)) continue;
+        if (opt.settings && !opt.settings.split(",").includes(label)) continue;
         at.settings[label] = await paired(async () => { await fn(); await page.waitForTimeout(800); }, async () => { await resetSettings(); await page.waitForTimeout(500); }, SECS);
         const m = at.settings[label].with, d = at.settings[label].saved;
         console.log(`  ${label}: ${m.fps} fps, frame ${m.frameMs}, js ${m.jsMs}, gpu ${m.gpuMs} ${JSON.stringify(m.gpuPass)} | saves frame ${d.frameMs}, js ${d.jsMs}, gpu ${d.gpuMs}`);
