@@ -1,16 +1,17 @@
 // Flashes of light: a firework bursting over the bonfire (bonfire.ts) or a car going up (game.ts)
 // lights up the streets, trees and houses round it for a moment, and you see it best after dark.
-// It's one light, always in the scene and dark between flashes, so the number of lights never
-// changes and nothing has to be rebuilt when one goes off; a new flash takes it over from the last.
+// It's one light, always in the scene and dark between flashes (left out of the drawing while it and
+// the other lights like it are all dark, unlit.ts); a new flash takes it over from the last.
 //
 // Who decides what: nobody. Each player's machine flashes it for whatever it sees go off.
 import * as THREE from "three";
+import { darkable } from "./unlit";
 
 export class Flash {
   private light = new THREE.PointLight("#ffffff", 0, 170, 1);
   private t = 99; private peak = 0; private fade = 2.2; private twinkle = false;
 
-  constructor(scene: THREE.Scene) { scene.add(this.light); }
+  constructor(scene: THREE.Scene) { scene.add(this.light); darkable(scene, this.light); }
 
   /** A flash at scene (x, y, z): how bright at first, how quickly it dies away (bigger is quicker),
    *  how far it reaches (metres), and whether it flickers as it goes (a crackling willow, flames). */

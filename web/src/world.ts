@@ -2,6 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
+import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
 import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofsFit, spanFlags } from "./map";
@@ -2429,13 +2430,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- after dark: the street lamps nearest you light the street round them -----------------
   // (and the lamps on landmarks, such as those under the station canopies)
   // A few lights, moved to whichever lamps are nearest every so often; always there (dark by
-  // day) so the number of lights never changes and nothing has to be rebuilt at dusk. A light
+  // day, and left out of the drawing while they and the other such lights are all dark, with the
+  // shaders for both ready beforehand: unlit.ts) so nothing has to be rebuilt at dusk. A light
   // that moves to another lamp fades out first and back in there, so pools of light don't jump.
   const LAMP_LIGHTS = 4;
   const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
     const l = new THREE.PointLight("#ffc77a", 0, 22, 1.4);
     l.userData = { on: false, k: 0, to: new THREE.Vector3() };
     scene.add(l);
+    darkable(scene, l);
     return l;
   });
   const lampHeads = new WeakMap<GameMap, Float32Array>();

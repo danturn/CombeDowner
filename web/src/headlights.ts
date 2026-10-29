@@ -9,12 +9,13 @@
 // reversing and indicator lamps) laid over every lit vehicle's own lamps, so they cost a draw call
 // each however many cars there are, and the last three none at all when nothing's showing them. The
 // beams are a few spotlights, moved to whichever lit vehicles are nearest the camera every so often:
-// always there (dark by day) so the number of lights never changes and nothing has to be rebuilt
-// at dusk, as with the street lamps (world.ts).
+// always there (dark by day, and left out of the drawing while they and the street lamps are all
+// dark, unlit.ts), as with the street lamps (world.ts).
 //
 // Nothing goes over the network: everyone already sees the same traffic and vehicles, and the time
 // of day comes from the clock (daylight.ts).
 import * as THREE from "three";
+import { darkable } from "./unlit";
 
 /** One pair of lamps, in the vehicle's own frame (+x forward, y up, z across): along, up, across
  *  (each lamp sits that far either side of the middle), and the lamp's width and height. */
@@ -62,6 +63,7 @@ export class Headlights {
     for (let k = 0; k < BEAMS; k++) {
       const l = new THREE.SpotLight("#fff1d6", 0, 50, 0.52, 0.55, 1.3);
       scene.add(l, l.target);
+      darkable(scene, l);
       this.beams.push(l);
     }
   }
