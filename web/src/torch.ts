@@ -2,13 +2,14 @@
 // touch screen), which throws a beam of light wherever they're looking. Yours comes from your eyes;
 // everyone else's from their heads, pointing the way they're facing.
 //
-// The beams are a few spotlights, always in the scene (dark when nobody's using them) so the number
-// of lights never changes and nothing has to be rebuilt, as with the headlights (headlights.ts): one
+// The beams are a few spotlights, always in the scene (dark when nobody's using them, and left out
+// of the drawing while every such light is, unlit.ts), as with the headlights (headlights.ts): one
 // for you, and the rest go to whichever other players nearest the camera have theirs on.
 //
 // Over the network each player says whether their torch is on in their state message ("st", game.ts);
 // nobody decides anything about anyone else's torch.
 import * as THREE from "three";
+import { darkable } from "./unlit";
 
 const OTHERS = 3;              // spotlights for other players' torches
 const REACH = 45, ANGLE = 0.42, PENUMBRA = 0.5, DECAY = 1.4;
@@ -27,6 +28,7 @@ export class Torches {
     const beam = () => {
       const l = new THREE.SpotLight("#fff4dc", 0, REACH, ANGLE, PENUMBRA, DECAY);
       scene.add(l, l.target);
+      darkable(scene, l);
       return l;
     };
     this.mine = beam();

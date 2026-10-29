@@ -35,6 +35,7 @@ import * as Saves from "./saves";
 import { mine } from "./features";
 import { openLink } from "./link";
 import { easelUp, onEaselRelock } from "./easel";
+import { Unlit } from "./unlit";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -75,6 +76,7 @@ canvas.addEventListener("webglcontextrestored", () => location.reload());
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, view.cameraFar);
 // ?fx=0 turns off the retro colour grade and ?res=full draws at full resolution, to compare
 const post = new Post(renderer, camera, params.get("fx") !== "0", params.get("res") !== "full", gfx.plainBuffer, gfx.samples);
+const unlit = new Unlit(renderer);
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -845,6 +847,7 @@ function frame(now: number) {
   // quality.ts): they're a good share of a frame's work, and a moving shadow a frame behind can't be seen
   renderer.shadowMap.autoUpdate = false;
   if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
+  unlit.frame(current.world.scene, camera, dt, post.worldTarget);
   post.render(current.world.scene, game ? game.weapon.scene : null);
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);

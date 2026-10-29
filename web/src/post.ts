@@ -39,6 +39,14 @@ const RetroShader = {
     }`,
 };
 
+/** Whether anything in this scene would be drawn: something visible to draw, all its parents visible too. */
+function drawsAnything(o: THREE.Object3D): boolean {
+  if (!o.visible) return false;
+  if ((o as THREE.Mesh).isMesh || (o as THREE.Points).isPoints || (o as THREE.Line).isLine || (o as THREE.Sprite).isSprite) return true;
+  for (const c of o.children) if (drawsAnything(c)) return true;
+  return false;
+}
+
 /** The resolutions Settings offers: about this many lines tall, 0 for the screen's own. */
 export const RES_STEPS = [{ lines: 270, name: "Lowest" }, { lines: 360, name: "Low" }, { lines: 540, name: "Normal" },
   { lines: 720, name: "High" }, { lines: 0, name: "Full" }];
@@ -102,7 +110,8 @@ export class Post {
 
   render(world: THREE.Scene, weapon: THREE.Scene | null) {
     this.worldPass.scene = world;
-    this.weaponPass.enabled = !!weapon;
+    // with nothing in your hands (in a car, on a menu) the pass would only clear the depth and draw nothing
+    this.weaponPass.enabled = !!weapon && drawsAnything(weapon);
     if (weapon) {
       this.weaponPass.scene = weapon;
       const c = this.camera, w = this.weaponCam;
@@ -118,6 +127,9 @@ export class Post {
     this.composer.render();
     Telemetry.drawn(this.renderer);
   }
+
+  /** What the world is drawn into (a buffer, not the screen). */
+  get worldTarget() { return this.composer.renderTarget1; }
 
   /** Which of RES_STEPS it's drawing at. */
   get resolution() { return resStep; }

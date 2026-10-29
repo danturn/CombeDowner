@@ -14,7 +14,7 @@
 // and simply don't show it; what it's on comes as a fourth item and its kind as a fifth, which
 // older pages ignore.
 import * as THREE from "three";
-import { pinIcon } from "./minimap";
+import { fontEpoch, pinIcon } from "./minimap";
 import { sizeOf } from "./show";
 
 /** One player's marker, in scene coordinates. what: the name of the thing it was put down on, if
@@ -164,18 +164,25 @@ function far(d: number) {
   return d < 1000 ? `${Math.round(d / 5) * 5} m` : `${(d / 1000).toFixed(d < 10000 ? 1 : 0)} km`;
 }
 
+// what each compass was last drawn showing, so a frame that would draw the same leaves it be
+const drawn = new WeakMap<HTMLCanvasElement, string>();
+
 const LETTERS: [number, string][] = [[0, "N"], [45, "NE"], [90, "E"], [135, "SE"], [180, "S"], [225, "SW"], [270, "W"], [315, "NW"]];
 
 /**
  * The compass strip along the top of the screen: the way you face in the middle, half the horizon
  * either side, and a pin for each marker at its bearing with how far away it is. A marker behind
- * you sits at the end of the strip nearest to it, with an arrow saying turn that way.
+ * you sits at the end of the strip nearest to it, with an arrow saying turn that way. Drawn again
+ * only when something on it would change.
  * (x, z) is where you are in the scene and yaw the way you face.
  */
 export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: number, markers: Marker[]) {
   const dpr = Math.min(2, devicePixelRatio || 1);
   const css = sizeOf(c), W = Math.round(css.w * dpr), H = Math.round(css.h * dpr);
   if (!W || !H) return;
+  const key = `${W} ${H} ${yaw} ${fontEpoch()}` + (markers.length ? ` ${x} ${z} ${JSON.stringify(markers)}` : "");
+  if (c.width === W && c.height === H && drawn.get(c) === key) return;
+  drawn.set(c, key);
   if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   const g = c.getContext("2d")!;
   g.clearRect(0, 0, W, H);
@@ -190,22 +197,26 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
   bg.addColorStop(0.88, "rgba(14,16,18,0.72)"); bg.addColorStop(1, "rgba(14,16,18,0)");
   g.fillStyle = bg; g.fillRect(0, 0, W, band);
 
-  // ticks every 15 degrees, with the points of the compass
+  // ticks every 15 degrees, with the points of the compass. The big letters and the small ones
+  // go in separate rounds because setting the canvas's font is slow, and none of them overlap.
   g.textAlign = "center"; g.textBaseline = "middle";
-  for (let deg = 0; deg < 360; deg += 15) {
-    const off = wrap((deg * Math.PI) / 180 - heading);
-    if (Math.abs(off) > FOV / 2) continue;
-    const px = mid + off * pxPerRad, fade = 1 - Math.abs(off) / (FOV / 2);
-    const letter = LETTERS.find(([d]) => d === deg)?.[1];
-    if (letter) {
-      g.globalAlpha = 0.25 + 0.75 * fade;
-      g.font = `700 ${(letter.length === 1 ? 15 : 12) * dpr}px "Barlow Condensed", system-ui, sans-serif`;
-      g.fillStyle = letter === "N" ? "#ff7a5c" : "#f4f1ea";
-      g.fillText(letter, px, band / 2 + 1 * dpr);
-    } else {
-      g.globalAlpha = 0.2 + 0.5 * fade;
-      g.fillStyle = "#f4f1ea";
-      g.fillRect(px - 0.5 * dpr, band * 0.32, 1 * dpr, band * 0.36);
+  for (const size of [15, 12]) {
+    g.font = `700 ${size * dpr}px "Barlow Condensed", system-ui, sans-serif`;
+    for (let deg = 0; deg < 360; deg += 15) {
+      const off = wrap((deg * Math.PI) / 180 - heading);
+      if (Math.abs(off) > FOV / 2) continue;
+      const px = mid + off * pxPerRad, fade = 1 - Math.abs(off) / (FOV / 2);
+      const letter = LETTERS.find(([d]) => d === deg)?.[1];
+      if (letter) {
+        if ((letter.length === 1 ? 15 : 12) !== size) continue;
+        g.globalAlpha = 0.25 + 0.75 * fade;
+        g.fillStyle = letter === "N" ? "#ff7a5c" : "#f4f1ea";
+        g.fillText(letter, px, band / 2 + 1 * dpr);
+      } else if (size === 15) {
+        g.globalAlpha = 0.2 + 0.5 * fade;
+        g.fillStyle = "#f4f1ea";
+        g.fillRect(px - 0.5 * dpr, band * 0.32, 1 * dpr, band * 0.36);
+      }
     }
   }
   g.globalAlpha = 1;

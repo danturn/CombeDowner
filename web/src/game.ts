@@ -109,7 +109,7 @@ import { Torches } from "./torch";
 import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
-import { show, say } from "./show";
+import { show, say, setHidden, setStyle } from "./show";
 import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
@@ -4249,23 +4249,24 @@ export class Game {
     const bendy = this.bendy.at(), up = bendy.state === 1, bd = Math.hypot(bendy.x - p.pos.x, bendy.z - p.pos.z);
     this.minimap.boss = this.bendy.living() && bd < 300 ? { x: bendy.x, z: bendy.z, after: !!this.bendy.target } : null;
     const boss = $("boss");
-    boss.hidden = !(up && (bd < 120 || this.bendy.target === this.net.selfId));
+    let bossOff = !(up && (bd < 120 || this.bendy.target === this.net.selfId));
     let bossName = "Bendy", bossFill = (100 * bendy.hp) / BENDY_HP;
-    if (boss.hidden) {
+    if (bossOff) {
       // or the Chair, or a Wanted ringleader, when you're close
       for (const c of this.naughtyBoys.living()) {
         const at = this.naughtyBoys.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
         bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
-        boss.hidden = false;
+        bossOff = false;
         break;
       }
     }
-    const jobBoss = boss.hidden ? this.quests.bossBar() : null;
-    if (jobBoss) { bossName = jobBoss.name; bossFill = 100 * jobBoss.fill; boss.hidden = false; }
-    if (!boss.hidden) {
-      $("bossfill").style.width = `${bossFill}%`;
+    const jobBoss = bossOff ? this.quests.bossBar() : null;
+    if (jobBoss) { bossName = jobBoss.name; bossFill = 100 * jobBoss.fill; bossOff = false; }
+    setHidden(boss, bossOff);
+    if (!bossOff) {
+      setStyle($("bossfill"), "width", `${bossFill}%`);
       const label = boss.querySelector(".bossname")!;
       say(label, bossName);
     }
@@ -4288,35 +4289,35 @@ export class Game {
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
     this.minimap.routes = this.quests.routes();
-    this.minimap.tint = this.invasion.tint();
+    if (this.mapOpen || !$("bigmap").hidden) this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markerList();
     this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;
-    compass.hidden = !this.markers.size;
+    setHidden(compass, !this.markers.size);
     if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
     if (this.mapOpen) this.mapFrame(dt);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     this.watch.update();
-    $("hpnum").textContent = String(Math.ceil(this.hp));
+    say($("hpnum"), String(Math.ceil(this.hp)));
     $("health").classList.toggle("low", this.alive && this.hp <= 30);
     const fill = $("hpfill");
-    fill.style.width = `${this.hp}%`;
-    fill.style.background = this.hp > 60 ? "var(--ok)" : this.hp > 30 ? "var(--accent)" : "var(--danger)";
+    setStyle(fill, "width", `${this.hp}%`);
+    setStyle(fill, "background", this.hp > 60 ? "var(--ok)" : this.hp > 30 ? "var(--accent)" : "var(--danger)");
     const gun = w.gun, fists = w.kind === "fists", sniper = w.kind === "sniper";
-    $("ammolabel").textContent = ammoLabel(w.kind);
-    $("ammonum").textContent = fists ? "–" : String(w.rounds);
-    $("ammomax").textContent = fists ? "" : `/ ${sniper ? w.sniperReserve : w.reserve}`;
-    $("magfill").style.width = fists ? "0%" : `${(w.rounds / gun.mag) * 100}%`;
-    $("ammo").style.setProperty("--segs", String(gun.mag || 1));
+    say($("ammolabel"), ammoLabel(w.kind));
+    say($("ammonum"), fists ? "–" : String(w.rounds));
+    say($("ammomax"), fists ? "" : `/ ${sniper ? w.sniperReserve : w.reserve}`);
+    setStyle($("magfill"), "width", fists ? "0%" : `${(w.rounds / gun.mag) * 100}%`);
+    setStyle($("ammo"), "--segs", String(gun.mag || 1));
     $("ammo").classList.toggle("low", !fists && w.rounds <= (sniper ? 2 : 6));
-    $("reloadmsg").textContent = ctlText(fists ? (w.has("rifle") ? "Press {rifle} for the rifle" : w.has("sniper") ? "Press {sniper} for the sniper" : "Out of ammo: find some rounds")
+    say($("reloadmsg"), ctlText(fists ? (w.has("rifle") ? "Press {rifle} for the rifle" : w.has("sniper") ? "Press {sniper} for the sniper" : "Out of ammo: find some rounds")
       : sniper ? (w.reloading > 0 ? "Reloading…" : w.sniperAmmo === 0 ? (w.sniperReserve ? "Press {reload} to reload" : "Out of sniper rounds")
         : w.rechambering ? "Working the bolt…" : w.sniperAmmo === 1 ? "Last round" : w.sniperAmmo === 2 ? "2 rounds left" : "")
       : w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? (w.reserve ? "Press {reload} to reload" : "Out of ammo")
-      : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : "");
-    $("scope").hidden = !this.scoped || !this.alive;
-    $("binoculars").hidden = this.bino < 0.85 || !this.alive;
+      : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : ""));
+    setHidden($("scope"), !this.scoped || !this.alive);
+    setHidden($("binoculars"), this.bino < 0.85 || !this.alive);
     $("t-bino").classList.toggle("latched", this.binoculars);
     $("t-aim").classList.toggle("latched", this.aiming);
     $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
@@ -4324,52 +4325,52 @@ export class Game {
     say($("t-crouch"), crouchText);
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
-    ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
-    ch.style.opacity = w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car ? "0" : "1";
+    setStyle(ch, "--gap", `${gap.toFixed(1)}px`);
+    setStyle(ch, "opacity", w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car ? "0" : "1");
     // aiming the paintball marker: its red dot, square in the middle where the paint goes
-    $("reddot").hidden = !(w.kind === "rifle" && !gore() && w.aim > 0.6 && w.model.visible);
+    setHidden($("reddot"), !(w.kind === "rifle" && !gore() && w.aim > 0.6 && w.model.visible));
     this.driveHud();
     const lining = this.sports.lining;
-    $("kick").hidden = !lining;
+    setHidden($("kick"), !lining);
     if (lining) {
       const pw = this.sports.power;
-      $("kickfill").style.width = `${Math.round(pw * 100)}%`;
-      $("kickfill").style.background = `hsl(${Math.round((1 - pw) * 120)}, 85%, 50%)`;
+      setStyle($("kickfill"), "width", `${Math.round(pw * 100)}%`);
+      setStyle($("kickfill"), "background", `hsl(${Math.round((1 - pw) * 120)}, 85%, 50%)`);
       const bowl = this.sports.sport === "c";
-      $("kicklabel").textContent = bowl ? "Bowling · pace" : "Kick at goal · power";
+      say($("kicklabel"), bowl ? "Bowling · pace" : "Kick at goal · power");
       // the wind: which way it's blowing, from where you're facing (up the screen is straight ahead)
       const wind = this.sports.wind, mph = wind ? Math.round(wind.length() * 2.237) : 0, flag = this.sports.flagOnly;
-      $("wind").textContent = flag ? "Read the wind from the corner flag" : mph ? `Wind ${mph} mph` : "No wind";
-      $("windarrow").hidden = !mph || flag;
+      say($("wind"), flag ? "Read the wind from the corner flag" : mph ? `Wind ${mph} mph` : "No wind");
+      setHidden($("windarrow"), !mph || flag);
       if (wind && mph) {
         const yaw = p.yaw, ahead = -wind.x * Math.sin(yaw) - wind.z * Math.cos(yaw), right = wind.x * Math.cos(yaw) - wind.z * Math.sin(yaw);
-        $("windarrow").style.transform = `rotate(${Math.atan2(right, ahead)}rad)`;
+        setStyle($("windarrow"), "transform", `rotate(${Math.atan2(right, ahead)}rad)`);
       }
-      $("kickhint").innerHTML = stripOf([["steer", "aim"], ["throttle", bowl ? "pace" : "power"], ["kick", bowl ? "bowl" : "kick"], ["walkoff", "walk off"]]);
+      show($("kickhint"), stripOf([["steer", "aim"], ["throttle", bowl ? "pace" : "power"], ["kick", bowl ? "bowl" : "kick"], ["walkoff", "walk off"]]));
     }
     this.shootCard();
     $("hud").classList.toggle("tv", this.broadcast.on);
     if (this.broadcast.on) say($("caption"), this.broadcast.caption);
-    $("boost").hidden = (this.boostT <= 0 && this.smokeT <= 0) || !this.alive;
-    if (this.smokeT > 0) $("boost").textContent = `Jamie's ciggie: can't be hurt, double damage ${Math.ceil(this.smokeT)}s`;
-    else if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
+    setHidden($("boost"), (this.boostT <= 0 && this.smokeT <= 0) || !this.alive);
+    if (this.smokeT > 0) say($("boost"), `Jamie's ciggie: can't be hurt, double damage ${Math.ceil(this.smokeT)}s`);
+    else if (this.boostT > 0) say($("boost"), `Lucozade: double damage ${Math.ceil(this.boostT)}s`);
     this.hitT -= dt;
-    $("hitmarker").style.opacity = this.hitT > 0 ? "1" : "0";
+    setStyle($("hitmarker"), "opacity", this.hitT > 0 ? "1" : "0");
     this.hurtT -= dt;
     // smoking one of Jamie's: the red creeps in round the edges, throbbing
     const rage = this.smokeT > 0 && this.alive ? 0.28 + 0.12 * Math.sin(now / 1000 * 5) : 0;
-    $("vignette").style.opacity = String(Math.max(0, this.hurtT * 2, this.hp < 35 && this.alive ? 0.35 : 0, rage));
+    setStyle($("vignette"), "opacity", String(Math.max(0, this.hurtT * 2, this.hp < 35 && this.alive ? 0.35 : 0, rage)));
     const death = $("death");
     // out of a race and watching the others, the race's own banner says so instead
-    death.hidden = this.alive || this.quests.waiting();
+    setHidden(death, this.alive || this.quests.waiting());
     if (!death.hidden) {
-      $("deathby").textContent = this.killer;
-      $("deathcount").textContent = `Respawn in ${Math.max(1, Math.ceil(RESPAWN_SECONDS - this.deadFor))}…`;
+      say($("deathby"), this.killer);
+      say($("deathcount"), `Respawn in ${Math.max(1, Math.ceil(RESPAWN_SECONDS - this.deadFor))}…`);
     }
     const n = this.remotes.size + 1, where = mapName(this.mapId);
-    $("roominfo").textContent = this.net.kind === "local" && this.room === "SOLO"
+    say($("roominfo"), this.net.kind === "local" && this.room === "SOLO"
       ? `Practice · ${where} · on your own`
-      : `Room ${this.room} · ${where} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`;
+      : `Room ${this.room} · ${where} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`);
     this.renderTalkers();
     this.toastT -= dt;
     $("toast").classList.toggle("show", this.toastT > 0);
@@ -4385,7 +4386,7 @@ export class Game {
       if (bd > 10) best = this.placeAt(p.pos.x, -p.pos.z)?.n ?? best;
       const edge = this.map.fieldEdge(p.pos.x, p.pos.z), aloft = this.quests.aloft();
       const where = $("where");
-      where.textContent = aloft ? "" : edge < 25 ? "Force field: you can't go further" : best;
+      say(where, aloft ? "" : edge < 25 ? "Force field: you can't go further" : best);
       where.classList.toggle("warn", !aloft && edge < 25);
       $("hud").classList.toggle("aloft", aloft);
     }
@@ -4396,32 +4397,32 @@ export class Game {
     const car = this.car, ride = this.ride, canal = this.world.canal, me = this.net.selfId;
     const helm = canal?.helmOf(me) ?? null;
     const sky = this.balloons.gauges(), flying = !!this.balloons.flying;
-    $("drive").hidden = !car && !helm && !sky;
-    $("ammo").hidden = !!car || !!helm || !!sky;
-    $("drive").querySelector("small")!.textContent = sky ? "m up" : "mph";
-    if (!car) $("limit").hidden = true;
+    setHidden($("drive"), !car && !helm && !sky);
+    setHidden($("ammo"), !!car || !!helm || !!sky);
+    say($("drive").querySelector("small")!, sky ? "m up" : "mph");
+    if (!car) setHidden($("limit"), true);
     if (sky) {
       const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
-      $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
-      $("mph").textContent = String(sky.up);
+      say($("drivename"), `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`);
+      say($("mph"), String(sky.up));
       const out = this.balloons.clearance() <= 3;
-      $("drivehint").innerHTML = !flying ? (out ? stripOf([["use", "get out"]]) : "Along for the ride")
-        : stripOf([["burner", "burner"], ["vent", "vent"], ["steer", "turn"], ...(out ? [["use", "get out"] as [string, string]] : [])]);
+      show($("drivehint"), !flying ? (out ? stripOf([["use", "get out"]]) : "Along for the ride")
+        : stripOf([["burner", "burner"], ["vent", "vent"], ["steer", "turn"], ...(out ? [["use", "get out"] as [string, string]] : [])]));
     }
     if (helm) {
-      $("drivename").textContent = `${helm.name}, narrowboat`;
-      $("mph").textContent = String(Math.round(Math.abs(helm.v) * 2.237));
-      $("drivehint").innerHTML = stripOf([["throttle", "throttle"], ["steer", "tiller"], ["horn", "bell"], ["left", ""], ["right", "wave"], ["view", "view"], ["out", "let go"]]);
+      say($("drivename"), `${helm.name}, narrowboat`);
+      say($("mph"), String(Math.round(Math.abs(helm.v) * 2.237)));
+      show($("drivehint"), stripOf([["throttle", "throttle"], ["steer", "tiller"], ["horn", "bell"], ["left", ""], ["right", "wave"], ["view", "view"], ["out", "let go"]]));
     }
     if (car) {
       const horn = car.kind === "police" ? "siren" : car.kind === "icecream" ? "chimes" : "horn";
       const blink = performance.now() % 760 < 380;
-      $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
-      $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
+      say($("drivename"), (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : ""));
+      say($("mph"), String(Math.round(Math.abs(car.speed) * 2.237)));
       const lim = limitShown(this.map, car.x, car.z, Math.cos(car.a), -Math.sin(car.a));
       show($("limit"), lim ? String(lim) : "", !!lim);
-      $("drivehint").innerHTML = car.tip ? stripOf([["out", "get out"]])
-        : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]);
+      show($("drivehint"), car.tip ? stripOf([["out", "get out"]])
+        : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]));
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
@@ -4505,13 +4506,13 @@ export class Game {
     const woodUse = wood.startsWith("<b>{use}</b>") && !ladderUse;
     const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
     const goal = this.sports.goalCall;
-    $("t-car").hidden = !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
-    $("t-ride").hidden = (!this.held && !lad && !odd) || !!ride || !!this.basket;
-    $("t-view").hidden = !this.car && !this.world.canal?.helmOf(this.net.selfId);
-    $("t-sigl").hidden = $("t-sigr").hidden = !this.car && !this.world.canal?.helmOf(this.net.selfId);
-    $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : odd ? "Put down" : "Ride";
-    $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? (wood.includes("Set it") ? "Set it in" : "Pick up") : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    setHidden($("t-car"), !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse);
+    setHidden($("t-ride"), (!this.held && !lad && !odd) || !!ride || !!this.basket);
+    setHidden($("t-view"), !this.car && !this.world.canal?.helmOf(this.net.selfId));
+    for (const id of ["t-sigl", "t-sigr"]) setHidden($(id), !this.car && !this.world.canal?.helmOf(this.net.selfId));
+    say($("t-ride"), this.riding ? "Get off" : lad ? "Put up" : odd ? "Put down" : "Ride");
+    setHidden($("t-trick"), !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind);
+    say($("t-car"), ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? (wood.includes("Set it") ? "Set it in" : "Pick up") : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus");
   }
 
   /** The score card of a set of penalties or a shoot-out, and the keeper's dive buttons. */
@@ -4522,9 +4523,9 @@ export class Game {
       show($("shootcard"), c ? `<b>${esc(c.score)}</b><em>${esc(c.turn)}</em>` : "", !!c);
     }
     const dives = !!c && c.role === "keeper" && this.alive;
-    $("t-dl").hidden = $("t-dr").hidden = !dives;
+    setHidden($("t-dl"), !dives); setHidden($("t-dr"), !dives);
     if (dives) say($("shoothint"), input() === "touch" ? "You're in goal: tap a Dive button" : ctlText("You're in goal: hold {steer} to one side and press {dive} to dive"));
-    $("shoothint").hidden = !dives;
+    setHidden($("shoothint"), !dives);
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */

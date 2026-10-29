@@ -214,6 +214,82 @@ export function mergeStatic(root: THREE.Object3D): void {
   }
 }
 
+const plainBefore = THREE.Object3D.prototype.onBeforeRender, plainAfter = THREE.Object3D.prototype.onAfterRender;
+const plainCompile = THREE.Material.prototype.onBeforeCompile, plainKey = THREE.Material.prototype.customProgramCacheKey;
+const SKIP_KEYS = new Set(["uuid", "id", "name", "version", "userData", "_listeners", "onBeforeCompile", "customProgramCacheKey"]);
+
+/** Everything that decides how a material draws, so two made apart but alike can share one draw;
+ *  null for one that has to keep its own (it lights up, changes, or is drawn in a way of its own). */
+function lookKey(m: THREE.Material): string | null {
+  const l = m as THREE.MeshLambertMaterial;
+  if (!(l.isMeshLambertMaterial || (m as THREE.MeshBasicMaterial).isMeshBasicMaterial) || m.transparent) return null;
+  if (m.onBeforeCompile !== plainCompile || m.customProgramCacheKey !== plainKey || Object.keys(m.userData).length) return null;
+  if (l.emissiveMap || (l.emissive && (l.emissive.r || l.emissive.g || l.emissive.b))) return null;
+  const parts: string[] = [m.type];
+  for (const k of Object.keys(m).sort()) {
+    if (SKIP_KEYS.has(k)) continue;
+    const v = (m as unknown as Record<string, unknown>)[k];
+    if (typeof v === "function") return null;
+    if (v instanceof THREE.Texture) parts.push(k, v.uuid);
+    else if (v instanceof THREE.Color) parts.push(k, `${v.r},${v.g},${v.b}`);
+    else if (v && typeof v === "object") parts.push(k, JSON.stringify(v));
+    else parts.push(k, String(v));
+  }
+  return parts.join("|");
+}
+
+/** After mergeStatic, the landmarks standing near one another (in the same 250 m cell) that share a
+ *  look are drawn as one mesh between them: a square of central Bath has a dozen set pieces, each
+ *  made with its own copies of the same stone and glass. Only what mergeStatic would merge is
+ *  touched, and nothing that lights up after dark, sees through, or does anything as it's drawn. */
+export function mergeAcross(scene: THREE.Object3D, roots: THREE.Object3D[]) {
+  const groups = new Map<string, THREE.Mesh[]>();
+  for (const root of roots) {
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || (o.constructor as unknown) !== THREE.Mesh || Array.isArray(m.material) || !m.material) return;
+      if (o.name || Object.keys(o.userData).length || o.children.length || !o.visible) return;
+      if (o.onBeforeRender !== plainBefore || o.onAfterRender !== plainAfter || o.renderOrder || !o.frustumCulled || o.layers.mask !== 1) return;
+      for (let p = o.parent; p && p !== scene; p = p.parent) if (p.name || Object.keys(p.userData ?? {}).length || !p.visible) return;
+      const look = lookKey(m.material);
+      if (!look) return;
+      const g = m.geometry;
+      g.boundingSphere ?? g.computeBoundingSphere();
+      const c = g.boundingSphere!.center.clone().applyMatrix4(o.matrixWorld);
+      const k = `${Math.floor(c.x / 250)},${Math.floor(c.z / 250)}|${+o.castShadow}${+o.receiveShadow}|${look}`;
+      (groups.get(k) ?? groups.set(k, []).get(k)!).push(m);
+    });
+  }
+  for (const meshes of groups.values()) {
+    if (meshes.length < 2) continue;
+    const mat = meshes[0].material as THREE.MeshLambertMaterial;
+    const usesUv = !!(mat.map || mat.alphaMap || (mat as THREE.MeshLambertMaterial).lightMap || (mat as THREE.MeshLambertMaterial).aoMap || (mat as THREE.MeshLambertMaterial).specularMap);
+    const geos = meshes.map((m) => {
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      for (const name of Object.keys(g.attributes)) if (!(name === "position" || name === "normal" || (name === "uv" && usesUv) || (name === "color" && mat.vertexColors))) g.deleteAttribute(name);
+      g.morphAttributes = {};
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (usesUv && !g.attributes.uv) g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      g.clearGroups();
+      return g.applyMatrix4(m.matrixWorld);
+    });
+    const merged = mergeGeometries(geos);
+    if (!merged) continue;
+    merged.computeBoundingSphere();
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = meshes[0].castShadow; mesh.receiveShadow = meshes[0].receiveShadow;
+    for (const m of meshes) m.removeFromParent();
+    scene.add(mesh);
+  }
+  // (a landmark whose every part went into the shared meshes leaves nothing behind)
+  for (const root of roots) {
+    const bare = (o: THREE.Object3D): boolean => !o.children.length && !(o as THREE.Mesh).isMesh && !(o as THREE.Light).isLight && o.type !== "Sprite";
+    const prune = (o: THREE.Object3D) => { for (const c of [...o.children]) prune(c); if (bare(o) && !o.name && !Object.keys(o.userData).length) o.removeFromParent(); };
+    prune(root);
+  }
+}
+
 /** A pointed (Gothic) arch's outline, w wide, springing at y0 and rising rise to its point,
  *  added to path p from its left foot to its right one. */
 export function pointedArch(p: THREE.Path, x: number, y0: number, w: number, rise: number) {
