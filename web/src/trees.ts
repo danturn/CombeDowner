@@ -6,6 +6,7 @@
 // isn't drawn at all. Nothing here goes over the network: everyone grows the same plants from the map.
 import * as THREE from "three";
 import { TREE_TO } from "./view";
+import { show } from "./cull";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as TX from "./textures";
 
@@ -332,7 +333,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
       }
     }
     for (const m of [...ch.meshes.flat(), ch.flat, ...(ch.trunk ? [ch.trunk] : [])]) {
-      m.visible = m.count > 0;
+      show(m, m.count > 0);
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
@@ -379,8 +380,8 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
   return {
     time, kit,
     dispose() {
-      for (const m of made) { m.removeFromParent(); m.dispose(); }
-      for (const ch of chunks) ch.holder.removeFromParent();
+      for (const m of made) { show(m, true); m.removeFromParent(); m.dispose(); }
+      for (const ch of chunks) { show(ch.holder, true); ch.holder.removeFromParent(); }
       for (const g of ownGeos) g.dispose();
       chunks.length = 0;
     },
@@ -392,7 +393,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
       for (const ch of chunks) {
         const d = Math.hypot(ch.x - px, ch.z - pz) - ch.r;
         const inRange = d < ch.to[ch.to.length - 1];   // (the trees' reach can change: view.ts)
-        ch.holder.visible = inRange;
+        show(ch.holder, inRange);
         if (!inRange) { ch.sx = Infinity; continue; }
         // a chunk wholly in the far band only needs dealing out once; nearer ones as the player moves
         if (d > ch.to[1]) {

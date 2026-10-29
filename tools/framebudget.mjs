@@ -33,7 +33,7 @@ import http from "http";
 import path from "path";
 import os from "os";
 import { execSync } from "child_process";
-import { MUTED_ARGS, silenceContext, silenceNote } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const req = createRequire(WEB + "package.json");
@@ -88,7 +88,7 @@ function origin(url, line, col) {
 const busy = () => { try { return execSync("ps aux | grep -E 'mac_build|prep_tiles|prep_map|shoot.mjs|fpsprobe|devicematrix|spikeprobe' | grep -v grep | wc -l").toString().trim() !== "0"; } catch { return false; } };
 const load = () => +os.loadavg()[0].toFixed(2);
 async function waitQuiet() {
-  for (let k = 0; busy() || load() > os.cpus().length * 0.35; k++) {
+  for (let k = 0; busy() || load() > os.cpus().length * +(opt.quiet ?? 0.35); k++) {
     console.log(`  waiting for a quiet machine (load ${load()}, other jobs ${busy()})`);
     await new Promise((r) => setTimeout(r, 30000));
     if (k > 40) { console.log("  still busy after 20 min: carrying on, noted in the results"); return false; }
@@ -119,6 +119,7 @@ await context.addInitScript(() => {
   });
 });
 const page = await context.newPage();
+await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") complaints.push(m.text().slice(0, 200)); if (process.env.FB_DEBUG) console.log("console", m.type(), m.text().slice(0, 200)); });
@@ -163,6 +164,7 @@ function INSTALL() {
     const x = e, z = -n, m = g.map;
     g.player.pos.set(x, m.ground(x, z), z);
     u(dt);
+    if (window.__calmOn) window.__calmOn();
     g.camera.position.set(x, m.ground(x, z) + h, z);
     g.camera.rotation.set(t * Math.PI / 180, -b * Math.PI / 180, 0, "YXZ");
     g.camera.updateMatrixWorld();
@@ -244,6 +246,25 @@ function INSTALL() {
     for (const [k, v] of Object.entries(g.world)) if (k !== "scene") dig(v, "world." + k, 0);
   };
   window.__label = () => { owner.clear(); kinds = new WeakMap(); label(); };
+  // --calm: only the scenery is drawn and nothing that walks or drives about is moved, so two builds
+  // of the game can be compared without the people and traffic about differing from run to run
+  const MARKS = new Set(["sky", "ground", "roads", "buildings", "walls-fences", "trees", "outskirts", "woods", "doors-bays", "landmarks-tunnels", "furniture", "shops", "pitches", "face-cells", "grass-build", "grass", "lamps", "field"]);
+  const scenery = (c) => MARKS.has(c.name) || c.isLight || c.children.some((k) => MARKS.has(k.name) || k.children.some((j) => MARKS.has(j.name)));
+  window.__stillAll = () => {
+    label();
+    const stilled = new Set();
+    for (const c of scene.children) {
+      if (scenery(c)) continue;
+      const k = owner.get(c);
+      if (k && !/^(player|weapon|world|map|camera|hud)/.test(k) && !stilled.has(k)) {
+        const sys = k.split(".").reduce((o, f) => o?.[f], g);
+        if (sys && typeof sys.update === "function") { sys.update = () => {}; stilled.add(k); }
+      }
+    }
+    // (what those own is hidden; the squares, the sky and the light, which no system of the game owns, are left)
+    window.__calmOn = () => { for (const c of scene.children) { const k = owner.get(c); if (k && (stilled.has(k) || /^(traffic|world\.vehicles|player)/.test(k)) && !scenery(c)) c.visible = false; } };
+    return [...stilled];
+  };
   let kinds = new WeakMap();
   const kind = (o, mat, geo) => {
     let k = kinds.get(o);
@@ -495,6 +516,7 @@ out.renderer = await page.evaluate(() => { const gl = window.__renderer.getConte
 console.log("renderer:", JSON.stringify(out.renderer));
 console.log(await silenceNote(page));
 await setv("set-shadows", true); await setv("set-res", 2); await setv("set-fx", true); await setv("set-view", 900);
+if (opt.calm) { out.calm = await page.evaluate(() => window.__stillAll()); console.log("calm: stilled", out.calm.join(", ")); }
 out.weapon = await page.evaluate(() => window.__game().weapon.kind);
 
 // the tree's wrappers, calibrated once: anything called more than 200 times a frame is left alone
@@ -577,6 +599,7 @@ for (const name of views) {
   await resetSettings();
   await setView(name);
   R.built = await settle();
+  if (opt.calm) await page.evaluate(() => window.__stillAll());
   await page.evaluate(() => window.__label());
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(opt.out, `${name}.png`) }).catch(() => {});
