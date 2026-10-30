@@ -14,7 +14,7 @@
 // weapons, the horn (at a car's wheel or a narrowboat's helm, where it's the bell), the map, the
 // radio, marking, the torch, binoculars and getting on or off a ride. Minigames whose play is quite
 // different (the tin lock, the easel, the bell chamber, the Climb, the tightrope, the Driving Test's
-// back seat, the big map) have their own table here, and show it as a strip while
+// back seat, the big map and a pub's card on it) have their own table here, and show it as a strip while
 // you're in them (strip).
 //
 // Who decides what: nobody. It's only names and buttons; what a control does stays where it always was.
@@ -157,6 +157,12 @@ export const PLACES: Record<string, Control[]> = {
     { id: "map.zoom", name: "zoom", say: STICK("Wheel or +/−", `${PAD_NAME[B.r2]}/${PAD_NAME[B.l2]} or right stick`, "Pinch") },
     { id: "map.find", name: "find yourself", keys: ["Space", "KeyC"], pad: B.triangle },
     { id: "map.close", name: "close", keys: ["KeyM", "Escape"], pad: B.circle, say: { keys: "M or Esc", touch: "Close map" } },
+  ],
+  // the card a pub on the big map opens: its buttons are tapped or clicked, and these do the same
+  pubcard: [
+    { id: "pubcard.go", name: "go there", keys: ["KeyE", "Enter"], pad: B.cross, say: { touch: "" } },
+    { id: "pubcard.mark", name: "mark it", keys: ["KeyG"], pad: B.square, say: { touch: "" } },
+    { id: "pubcard.back", name: "back", keys: ["Escape"], pad: B.circle, say: { touch: "" } },
   ],
   // a tin's combination lock: it has the keyboard to itself, and a pad drives it through the menu
   // code's arrows, Enter and Escape (gamepad.ts); on a touch screen its own buttons say it all

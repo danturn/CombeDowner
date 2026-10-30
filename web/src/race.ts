@@ -856,6 +856,8 @@ class Race implements Job {
     return t < GO_HUSH && (t > -COUNTDOWN || this.own);
   }
 
+  inIt() { return this.racing && !this.done; }
+
   /** Over the line or out of the race while others are still going, in the room's race: I wait,
    *  held still, and watch them. */
   waiting(): boolean {

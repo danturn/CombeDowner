@@ -1,5 +1,5 @@
 // The big map's key: what each thing on the maps is, drawn with the same icon, and on each row a
-// switch to take that kind of thing off the maps (the minimap, the big map and the pub map alike).
+// switch to take that kind of thing off the maps (the minimap and the big map alike).
 // It sits in the big map's top left corner and folds away to one button. What's switched off, and
 // whether the key is folded, are kept in this browser's localStorage (cd-mapoff, cd-mapkey), the same
 // way the Settings page keeps its options, so it's the same next time on this computer.
@@ -14,7 +14,7 @@
 // switched off in this game (features.ts) is hidden.
 import { ctlText } from "./controls";
 import { feature, type Feature } from "./features";
-import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, pintIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
 import { PLAYER_COLOURS } from "./markers";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
@@ -70,6 +70,7 @@ function sections(): [string, Row[]][] {
       { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
       { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
+      { layer: "pubs", label: "Pubs", note: "faint till you zoom in; {map.mark} one to go there or mark it", icon: (g, s) => pintIcon(g, s / 2, s / 2, s / 15, s / 16) },
       { layer: "stops", label: "Bus stops", note: "{use} at one to call a bus", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
       { layer: "route", label: "Your bus route", note: "the 2 or the 4, when you drive a bus", icon: (g, s) => {
         g.strokeStyle = ROUTE; g.lineWidth = s / 6; g.lineCap = "round";

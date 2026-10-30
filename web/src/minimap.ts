@@ -10,7 +10,8 @@
 // with its stops along it and the next one picked out. A race's route
 // and its checkpoints (race.ts) are drawn on every map while it's on, and the pencil lines
 // (signals.ts) on the big map. The big map also washes the squares you've cleared faintly green and
-// puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear.
+// puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear, and
+// a pint on every pub to go to or mark (pubmap.ts), faint till you zoom in so they don't crowd out the rest.
 // The minimap is for right now, the big map for planning: zoomed out the big map keeps to what
 // matters most (jobs close together are one badge with a count), and the rest comes in as it's
 // zoomed in. Whatever's under the pointer is named, and a marker put down on it says what it's on.
@@ -35,12 +36,15 @@ const JOB_RANGE = 400;      // and a job's noticeboard: further off, it's for th
 const LABELS_ZOOM = 4;       // names under the badges only from this close in, where they have room
 const CLUSTER_PX = 5;       // job badges right on top of each other on the big map (CSS pixels) are drawn as one, with a count
 const REACH_PX = 22;        // how near the pointer (CSS pixels) a thing on the big map has to be to be named, or marked
+const PINTS_ZOOM = 4;       // the pubs' pints are faint till the big map is zoomed in this far, so they don't drown the jobs
+const PINT_NAMES_ZOOM = 6;  // and named from this close in
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
 /** A dot on the maps. layer: the key's layer it belongs to (none: always shown). */
 export interface Blip { x: number; z: number; colour: string; layer?: string }
-/** A pub on the pub map (scene x, z): on is the one under the pointer, label its name. */
-export interface Pin { x: number; z: number; on: boolean; label: string }
+/** A pub on the big map (scene x, z): on is the one whose card is open, label its name, tip what
+ *  pointing at it says (how far it is, its food hygiene rating). */
+export interface Pin { x: number; z: number; on: boolean; label: string; tip: string }
 
 /** Another player: an arrow in their colour, the way they face, with a red ring if they've just fired. */
 export interface Mate { x: number; z: number; yaw: number; colour: string; name: string; firing: boolean }
@@ -132,6 +136,15 @@ export interface RouteLine { pts: number[]; gates: number[]; colour: string }
 
 /** Several jobs too close together to tell apart at this size: a dark badge with how many there
  *  are, ringed in the first one's colour. */
+/** A pint glass at (x, y), k times its size, for a pub. */
+export function pintIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, line: number) {
+  g.beginPath();
+  g.moveTo(x - 4 * k, y - 6 * k); g.lineTo(x + 4 * k, y - 6 * k); g.lineTo(x + 3 * k, y + 6 * k); g.lineTo(x - 3 * k, y + 6 * k); g.closePath();
+  g.fillStyle = "#d9932b"; g.fill();
+  g.lineWidth = line; g.strokeStyle = "#1c1208"; g.stroke();
+  g.fillStyle = "#f6efd8"; g.fillRect(x - 4 * k + 1, y - 6 * k + 1, 8 * k - 2, 3 * k);
+}
+
 export function clusterIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, n: number, colour: string, done = false) {
   g.save();
   g.translate(x, y);
@@ -871,8 +884,7 @@ export class Minimap {
     const g = c.getContext("2d")!, scale = this.full.scale * this.zoom, [vx, vy] = this.centre ?? [this.fx, this.fy];
     const P = (sx: number, sz: number) => [S / 2 + (sx - vx) * scale, S / 2 + (sz + vy) * scale];
     const on = (layer?: string) => !layer || !this.off.has(layer);
-    // the pub menu's pints stand alone, so yours aren't drawn while it has the map
-    const mine = on("yours") && !this.pins.length ? this.mine : null;
+    const mine = on("yours") ? this.mine : null;
     const under = () => {
       if (mine) {
         const held = new Set(on("flags") ? this.tint.filter((t) => t.a > 0.1 || t.free).map((t) => `${Math.round(t.x0)},${Math.round(t.z0)}`) : []);
@@ -906,11 +918,16 @@ export class Minimap {
     }
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
     drawPencil(g, this.pencil, P, dpr);
+    // opened to go to a pub, the pints go over everything else
+    const pintsOnTop = on("pubs") && this.pinsBold;
+    if (on("pubs") && !pintsOnTop) this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     if (mine) {
       drawMinePubs(g, mine, P, dpr);
-      for (const pb of mine.pubs) { const [sx, sy] = P(pb.x, pb.z); this.hit(sx, sy, 8 * dpr, pb.x, pb.z, pb.name ?? "Your pub", "pub"); }
+      for (const pb of mine.pubs) {
+        const [sx, sy] = P(pb.x, pb.z), pin = this.pins.find((q) => Math.abs(q.x - pb.x) < 2 && Math.abs(q.z - pb.z) < 2);
+        this.hit(sx, sy, 8 * dpr, pb.x, pb.z, pin?.tip || (pb.name ?? "Your pub"), "pub");
+      }
     }
-    this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the bus stops (zoomed in), and the route you're driving, its next stop named
     if (on("stops")) for (const st of this.stops) {
       const [sx, sy] = P(st.x, st.z);
@@ -932,6 +949,7 @@ export class Minimap {
       }
     }
     this.drawJobs(g, P, S, dpr, on);
+    if (pintsOnTop) this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the map markers, with whose they are and what they're on
     g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
@@ -1061,6 +1079,18 @@ export class Minimap {
    *  icons drawn over each other, the one on top (they're kept in the order they're drawn); off
    *  them all, the one whose edge is nearest, within reach (a finger gets more, reach > 1). */
   private hitAt(x: number, y: number, dpr: number, reach = 1): MapHit | null {
+    const h = this.topHitAt(x, y, dpr, reach);
+    // a pint is drawn under the rest, but a bus stop outside a pub mustn't hide it: pointing nearer the pint gets the pub
+    if (!h || h.kind === "pub") return h;
+    const dh = Math.hypot(h.x - x, h.y - y);
+    for (let i = 0; i < this.nHits; i++) {
+      const p = this.hits[i];
+      if (p.kind === "pub" && Math.hypot(p.x - x, p.y - y) < Math.min(dh, p.r)) return p;
+    }
+    return h;
+  }
+
+  private topHitAt(x: number, y: number, dpr: number, reach: number): MapHit | null {
     let best: MapHit | null = null, bd = REACH_PX * 0.5 * reach * dpr;
     for (let i = this.nHits - 1; i >= 0; i--) {
       const h = this.hits[i], d = Math.hypot(h.x - x, h.y - y) - h.r;
@@ -1091,7 +1121,8 @@ export class Minimap {
   /** The thing under the pointer lit up, with its name in a box beside it. */
   private tooltip(g: CanvasRenderingContext2D, x: number, y: number, S: number, dpr: number) {
     const h = this.hitAt(x, y, dpr);
-    if (!h) return;
+    // a pub whose card is open says it all there
+    if (!h || (h.kind === "pub" && this.pins.some((p) => p.on && p.x === h.wx && p.z === h.wz))) return;
     const name = this.hitName(h);
     g.save();
     g.beginPath(); g.arc(h.x, h.y, h.r + 3 * dpr, 0, Math.PI * 2);
@@ -1132,8 +1163,26 @@ export class Minimap {
   magnetAt(u: number, v: number): [number, number] | null {
     const f = this.full, dpr = Math.min(2, devicePixelRatio || 1);
     const h = f ? this.hitAt(u * f.size, v * f.size, dpr) : null;
+    // faint pints are everywhere in town: the cursor dragging on to each would make it crawl
+    if (h?.kind === "pub" && this.pintAlpha < 0.6) return null;
     return h && f ? [h.x / f.size, h.y / f.size] : null;
   }
+
+  /** Which pins are within reach (CSS pixels) of a point a fraction (u, v) across and down the full map, nearest first. */
+  pinsAt(u: number, v: number, reach: number): number[] {
+    const f = this.full, w = this.fullAt?.clientWidth;
+    if (!f || !w) return [];
+    const out: [number, number][] = [];
+    this.pins.forEach((p, i) => {
+      const at = this.toFull(p.x, p.z);
+      const d = at ? Math.hypot(at[0] - u, at[1] - v) * w : Infinity;
+      if (d < reach) out.push([d, i]);
+    });
+    return out.sort((a, b) => a[0] - b[0]).map(([, i]) => i);
+  }
+
+  /** Zoomed in as far as the full map goes. */
+  get fullZoomedIn() { return this.zoom >= MAX_ZOOM * 0.99; }
 
   /** The thing that can be marked nearest scene (x, z), within r metres: a job, a challenge, a
    *  minigame or one of the jobs' own markers (a pub the Flag Lads hold, say). */
@@ -1255,22 +1304,27 @@ export class Minimap {
     }
   }
 
-  /** The pubs the pub menu is choosing between: a pint glass each, drawn on the full map. */
+  /** Every pub: a pint glass each, drawn on the full map. */
   pins: Pin[] = [];
+  /** The pints at full strength however far out the map is (opened to go to a pub, from the pause menu). */
+  pinsBold = false;
+  private get pintAlpha() { return this.pinsBold ? 1 : Math.min(1, 0.35 + 0.65 * (this.zoom - 1) / (PINTS_ZOOM - 1)); }
 
-  /** A pint glass on each pin, and their names where there's room (the one you're pointing at always). */
+  /** A pint glass on each pin, and their names where there's room (the one picked always). */
   private drawPins(g: CanvasRenderingContext2D, P: (x: number, z: number) => number[], dpr: number, fontPx: number) {
     const pins = this.pins;
     if (!pins.length) return;
-    const at = pins.map((p) => P(p.x, p.z));
-    const pint = (x: number, y: number, k: number) => {
-      g.beginPath();
-      g.moveTo(x - 4 * k, y - 6 * k); g.lineTo(x + 4 * k, y - 6 * k); g.lineTo(x + 3 * k, y + 6 * k); g.lineTo(x - 3 * k, y + 6 * k); g.closePath();
-      g.fillStyle = "#d9932b"; g.fill();
-      g.lineWidth = 1.5 * dpr; g.strokeStyle = "#1c1208"; g.stroke();
-      g.fillStyle = "#f6efd8"; g.fillRect(x - 4 * k + 1, y - 6 * k + 1, 8 * k - 2, 3 * k);
-    };
-    pins.forEach((p, i) => { if (!p.on) pint(at[i][0], at[i][1], 1.1 * dpr); });
+    const at = pins.map((p) => P(p.x, p.z)), S = this.full?.size ?? 0;
+    const pint = (x: number, y: number, k: number) => pintIcon(g, x, y, k, 1.5 * dpr);
+    g.save();
+    g.globalAlpha = this.pintAlpha;
+    pins.forEach((p, i) => {
+      const [x, y] = at[i];
+      if (x < -20 || y < -20 || x > S + 20 || y > S + 20) return;
+      if (!p.on) pint(x, y, 1.5 * dpr);
+      this.hit(x, y, 9 * dpr, p.x, p.z, p.tip || p.label, "pub");
+    });
+    g.restore();
     g.font = `700 ${fontPx}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "left"; g.textBaseline = "alphabetic"; g.lineJoin = "round";
     const hover = pins.findIndex((p) => p.on), taken: number[][] = [];
@@ -1282,8 +1336,8 @@ export class Minimap {
       g.fillStyle = force ? "#ffdd00" : "#f4f1ea"; g.fillText(text, bx, y);
     };
     // the others claim their room first, so pointing at a pub doesn't make their names come and go
-    if (this.zoom >= 3) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
-    if (hover >= 0) { pint(at[hover][0], at[hover][1], 1.7 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
+    if (this.zoom >= (this.pinsBold ? 3 : PINT_NAMES_ZOOM)) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
+    if (hover >= 0) { pint(at[hover][0], at[hover][1], 2.1 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
   }
 
   /** Paint the wider map span metres across round (cx, cy) at about mpp metres to the pixel. */

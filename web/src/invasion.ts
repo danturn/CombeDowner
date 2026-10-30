@@ -359,6 +359,10 @@ export class Invasion {
   }
 
   get on() { return this.sqs.length > 0; }
+  /** The pub whose takeover is being fought within r metres of (x, z), if there is one. */
+  fightNear(x: number, z: number, r: number): string | null {
+    return this.calls.find((c) => c.on && Math.hypot(c.x - x, c.z - z) < r)?.name ?? null;
+  }
 
   /** Which square scene (x, z) is in, or -1. */
   squareAt(x: number, z: number) {
