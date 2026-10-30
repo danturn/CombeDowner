@@ -173,13 +173,12 @@ Bath's files must not change in this stage.
 
 ### The play area
 
-The force field is the wide circle in `tools/area.py` (1200 m round `field_centre` (0, 100)), with
-a strip reaching out past it down Trowbridge Road (`FIELD_LANES` in `web/src/map.ts`, the same
-mechanism as Bath's up Lansdown): from the circle past the Moulton Drive junction, over the canal
-bridge at Widbrook, to the Boathouse, the marina and the turnings just beyond, about 150 m either
-side of the road. Players asked for it as a common way out of town. Square (2, 0) already covers
-it in full detail, so nothing was rebuilt. Growing the circle instead would have pushed the edge
-out all round the town and left only about 100 m of the wide data showing beyond it.
+The force field is the wide circle in `tools/area.py`: 1500 m round `field_centre` (100, -50),
+nudged south-east of the town so that Trowbridge Road past the Moulton Drive junction, the canal
+bridge at Widbrook, the Boathouse and the marina are well inside (players asked for it as a common
+way out of town). It replaced a 1200 m circle with a strip reaching out down Trowbridge Road
+(`FIELD_LANES` in `web/src/map.ts`, as Bath's up Lansdown). The wide data reaches 400 m past the
+edge all round (`half` 1900), and the squares it touches are built in full detail, 21 of them.
 
 ### Stage 3: the railway on both maps
 
