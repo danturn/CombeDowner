@@ -117,7 +117,9 @@ const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2
 
 /** Add a quad whose front faces along `out` (so winding never needs thinking about). */
 function facing(g: Geo, a: number[], b: number[], c: number[], d: number[], out: number[], ua: number[], ub: number[], uc: number[], ud: number[], col: number[]) {
-  const n = norm(cross(sub(b, a), sub(c, a)));
+  // across the diagonals, so a quad with two corners at one point (a wall's triangle up to the
+  // roof) still says which way it faces, where a, b and c can lie in a line
+  const n = cross(sub(c, a), sub(d, b));
   if (dot(n, out) >= 0) g.quad(a, b, c, d, norm(out), ua, ub, uc, ud, col);
   else g.quad(a, d, c, b, norm(out), ua, ud, uc, ub, col);
 }
