@@ -155,8 +155,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
   one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal, a cable car,
-  hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
-  platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
+  hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field reaches
+  down Trowbridge Road to the canal bridge at Widbrook; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go. The rifle's balls lob
   out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
