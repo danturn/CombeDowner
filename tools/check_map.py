@@ -32,11 +32,15 @@ case by case:
     a gate; no tree, shrub or street item stands on a wall or inside a building; no building
     stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
     pavement).
+12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
+    tunnel mouths, pubs and wires, boats. (11 is kept for the roofs.)
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_more   # rules 12 on (tools/check_more.py)
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -332,6 +336,7 @@ def main():
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
         fit_together(m, tag, note, f)
         under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
+        check_more.square(m, tag, note, f)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
