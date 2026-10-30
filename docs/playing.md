@@ -741,8 +741,12 @@ for the low ones, turn to shred, and everyone nearby hears your solo.
 ### The record player on Solsbury Hill
 
 Up on the flat top of Little Solsbury Hill, over Batheaston, someone has left a portable record
-player on a folding table, lid propped open and a record on it. It doesn't play: the record sits
-still, and the hill is quiet.
+player on a folding table, lid propped open and a record on it. It plays whatever MIDI files are in
+the repo's `web/Record player/` folder, one after another, round and round, on synthesised
+instruments with the crackle of an old record; with nothing in the folder it sits silent. You hear
+it from about 70 m off, louder as you come up to the table, and the soundtrack fades down while
+you're there. Between records the needle sits in the run-out groove for a few turns. Everyone up
+there hears the same bit at the same time.
 
 ### Ball games
 

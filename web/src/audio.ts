@@ -288,7 +288,8 @@ export function setMusicVolume(v: number) {
 }
 
 let hush = 1;
-/** Turn the soundtrack down while other music plays close by: 1 is as it is, 0 is off. */
+/** Turn the soundtrack down while other music plays close by (the record player on Solsbury Hill,
+ *  recordplayer.ts): 1 is as it is, 0 is off. */
 export function hushMusic(level: number) {
   if (level === hush || (Math.abs(level - hush) < 0.02 && level !== 1)) return;
   hush = level;
@@ -1169,8 +1170,9 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
 }
 
 /**
- * A way out for music that plays on in one place: whatever goes into node comes out from there,
- * quieter and duller the further off it is, with a little of the hill's echo. Call set() every frame, and stop() out of earshot.
+ * A way out for music that plays on in one place (the record player on Solsbury Hill,
+ * recordplayer.ts): whatever goes into node comes out from there, quieter and duller the further
+ * off it is, with a little of the hill's echo. Call set() every frame, and stop() out of earshot.
  */
 export function placedOut(): { node: AudioNode; set(vol: number, distance: number, pan: number): void; stop(): void } | null {
   if (!ctx) return null;

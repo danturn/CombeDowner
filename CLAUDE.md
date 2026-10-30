@@ -169,6 +169,8 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
+  The one exception is `web/Record player/`: MIDI files Spencer adds there, which the record
+  player on Solsbury Hill plays (`recordplayer.ts`, `midiplayer.ts`). Leave what's in it alone.
 - **The map** is built by the Python tools in `tools/` from Overture Maps, Environment Agency
   lidar, tree canopy, energy certificates and OSM, all of Bath in one run of square builds
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
