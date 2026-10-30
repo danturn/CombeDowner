@@ -229,7 +229,7 @@ def square(m, tag, note, f):
             dz = q[2] - float(ground(ox, oy))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
-    boats(m, whole, roads, rlines, rtree, marked, waters, wtree, note, at, sq)
+    boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
 
 
 def buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, ground, note, at, off_deck, pts):
@@ -492,7 +492,7 @@ def gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, 
             if clear < 4.5: note("17 overhead wire low over a road", 4.5 - clear, at(x.x, x.y), f"{r['c']} {r['n']!r} {clear:.1f} m clear")
 
 
-def boats(m, whole, roads, rlines, rtree, marked, waters, wtree, note, at, sq):
+def boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq):
     canal = whole["canal"]
     if not canal or not canal.get("moor"): return
     runs = [(LineString([q[:2] for q in r["p"]]), r) for r in canal["runs"] if len(r["p"]) > 1]
@@ -508,6 +508,7 @@ def boats(m, whole, roads, rlines, rtree, marked, waters, wtree, note, at, sq):
             if any(waters[int(w)].buffer(0.3).contains(p) for w in wtree.query(p)): continue   # (a basin or marina's water)
             ln, r = min(runs, key=lambda lr: lr[0].distance(p))
             k = min(range(len(r["p"])), key=lambda k: math.dist(r["p"][k][:2], (px, py)))
+            if float(ground(px, py)) < r["lv"] + 0.3: continue    # (over water lower than the canal: the river or a basin beside it)
             worst = max(worst, ln.distance(p) - r["p"][k][2])
         if worst > 0.3: note("18 moored boat on the bank", worst, at(x, y), f"{L:.0f} m boat, {worst:.1f} m out of the water")
         for j, other in enumerate(hulls):
