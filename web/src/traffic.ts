@@ -21,7 +21,7 @@ import * as THREE from "three";
 import { carSteerable, paintFor } from "./furniture";
 import { carShape, isCoachMake, MAKES, PARAMOUNT, trafficMake } from "./makes";
 import { COACH, COACH_LAMPS, coachDecals, coachSteerable } from "./coaches";
-import { glossy } from "./gloss";
+import { charred, glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { CAR_LAMPS, contact, twist } from "./vehicles";
@@ -490,7 +490,7 @@ export class Traffic {
   /** Host: car c goes up. Everything near it gets caught (game.ts sorts out who's hurt), and the rest of the traffic's thrown about. */
   private boom(c: Car, blast: (x: number, y: number, z: number, by: string) => void) {
     c.fire = 2; c.burnT = BURN;
-    c.mat.color.set(CHAR);
+    c.mat.color.set(CHAR); charred(c.mat);
     c.liftV = Math.max(c.liftV, 3.5);   // it jumps with the blast
     const y = c.y + c.lift + 0.8;
     this.onBoom?.(c.x, y, c.z);
@@ -697,7 +697,7 @@ export class Traffic {
       // landed with a crunch, caught fire, gone up
       if (c.wv[3] > 0.15 && lift < 0.05) this.onCrunch?.(c.x, c.y + 0.4, c.z, 0.5);
       if (fire === 2 && c.fire !== 2) {
-        c.mat.color.set(CHAR);
+        c.mat.color.set(CHAR); charred(c.mat);
         if (c.fire === 1) { c.burnT = BURN; this.onBoom?.(c.x, c.y + c.lift + 0.8, c.z); }
       }
       c.fire = fire;

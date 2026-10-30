@@ -31,7 +31,7 @@ import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, s
 import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 export { MAKES };
 import { Cockpit } from "./cockpit";
-import { glossy } from "./gloss";
+import { GLASS, glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
 import { CHIP, CHIP_LAMPS, chipDecals, chipParts } from "./chipvan";
@@ -240,7 +240,7 @@ const cyl = (r: number, h: number, seg = 10) => new THREE.CylinderGeometry(r, r,
 const wheels = (at: number[][], col = "#151515", hub = "#a7abb0"): Part[] => at.flatMap(([x, z, r, w]) => [
   [cyl(r, w, 14), col, x, r, z, Math.PI / 2] as Part, [cyl(r * 0.6, w + 0.01), hub, x, r, z, Math.PI / 2] as Part,
 ]);
-const GLASS = "#1d252c", BLACK = "#18191b", LAMP = "#e9ecee", TAIL = "#a3221b", PLATE = "#f2f2ea", REAR_PLATE = "#e8c42a";
+const BLACK = "#18191b", LAMP = "#e9ecee", TAIL = "#a3221b", PLATE = "#f2f2ea", REAR_PLATE = "#e8c42a";
 const PAINT = "paint";   // parts in the vehicle's own colour
 
 /** A hatchback from its side profile and cabin, with its windows, plus its own bits (b, c: where its pillars are, as for pillars()). */
