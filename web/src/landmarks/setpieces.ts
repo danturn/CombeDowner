@@ -266,7 +266,7 @@ export const SET_PIECES: SetPiece[] = [
   {
     // landmarks/bradford.ts, on the Bradford-on-Avon map. The origin: between the tracks opposite
     // the station house, at the up platform's top; x runs east along the line.
-    name: "Bradford-on-Avon station", kind: "boastation", at: [-2.2523079, 51.3448271], bearing: 80.9, height: 31.4,
+    name: "Bradford-on-Avon station", kind: "boastation", at: [-2.2523079, 51.3448271], bearing: 80.9, height: 31.0,
     outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
     covers: BOA_COVERS,
   },

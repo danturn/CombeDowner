@@ -443,11 +443,13 @@ def pack_epc(raw, out):
         used |= set(homes)
         write("certificates", ["uprn", "lodgement_date", "walls_description", "property_type"], lines)
         print(f"epc: {len(homes)} homes")
+    # a copy unpacked from the repository has its words hashed already, and no addresses
+    words = lambda r: r["words"] if "words" in r else " ".join(sorted(hashed_words(r["address"].split(",")[0])))
     if os.path.exists(nondom):
         premises = latest(nondom, lambda old, r: old["lodgement_date"] < r["lodgement_date"])
         used |= set(premises)
         write("non-domestic", ["uprn", "lodgement_date", "words"],
-              [[u, r["lodgement_date"], " ".join(sorted(hashed_words(r["address"].split(",")[0])))] for u, r in premises.items()])
+              [[u, r["lodgement_date"], words(r)] for u, r in premises.items()])
         print(f"epc: {len(premises)} premises")
     write("uprn", ["UPRN", "LATITUDE", "LONGITUDE"], [row for row in rows if row[0] in used])
 
