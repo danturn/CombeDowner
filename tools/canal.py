@@ -536,6 +536,12 @@ def main():
     marina_land = unary_union(marina_land) if marina_land else None
     # (the canal's own water past where its stretches end, at the edge of the map, isn't a basin)
     beyond = unary_union(lines).difference(corridor).buffer(10.0) if lines else Point(1e9, 1e9).buffer(1)
+    btree_all = shapely.STRtree(bfeats)
+
+    def built_on(q):
+        """The buildings standing in water q (its outline is often rough round them): they stand."""
+        return unary_union([bfeats[int(k)].buffer(0.3, join_style=2) for k in btree_all.query(q.buffer(2))] or [Point(1e9, 1e9).buffer(1)])
+
     basins = []
     for w in water:
         rest = w.difference(corridor).difference(lock_zone).difference(beyond)
@@ -551,7 +557,7 @@ def main():
                 # its pound: the stretch it opens on to
                 k = min(range(len(open_runs)), key=lambda j: open_runs[j][0].distance(c))
                 lv = runs[open_runs[k][2]]["lv"]
-                shape_ = unary_union([q, way]).buffer(1.5).intersection(w).difference(lock_zone)
+                shape_ = unary_union([q, way]).buffer(1.5).intersection(w).difference(lock_zone).difference(built_on(q))
                 shape_ = max(getattr(shape_, "geoms", [shape_]), key=lambda g: g.area if g.geom_type == "Polygon" else 0)
                 if shape_.geom_type != "Polygon": continue
                 basins.append(dict(poly=shape_.simplify(0.3), lv=lv, own=False,
@@ -562,7 +568,9 @@ def main():
             # (the map's own water is drawn at the lowest of its banks, a little above: prep_map.py)
             edge = q.exterior
             lv = min(T.elev(*edge.interpolate(t, normalized=True).coords[0]) for t in np.linspace(0, 1, 80, endpoint=False)) + 0.1
-            basins.append(dict(poly=q.simplify(0.3), lv=round(float(lv), 2), own=True, marina=True))
+            q = q.difference(built_on(q))
+            q = max(getattr(q, "geoms", [q]), key=lambda g: g.area if g.geom_type == "Polygon" else 0)
+            if q.geom_type == "Polygon": basins.append(dict(poly=q.simplify(0.3), lv=round(float(lv), 2), own=True, marina=True))
     print(f"basins: {sum(not b['own'] for b in basins)} off the canal ({sum(b['marina'] and not b['own'] for b in basins)} marinas), "
           f"{sum(b['own'] for b in basins)} marinas on other water")
 

@@ -251,6 +251,16 @@ export function canalBores(d: CanalData | null | undefined, z0: number, x0: numb
 /** If data (x, y) is between a lock's walls (in its chamber, or between the wing walls below it),
  *  the height of its coping there (above sea level), else null: what a bridge over a lock (the
  *  walkway at its gates) leaves open under it. */
+/** Is data (x, y) inside ring [[x, y], ...]? */
+export function inRing(ring: number[][], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 export function lockAt(d: CanalData | null | undefined, x: number, y: number): number | null {
   for (const lk of d?.locks ?? []) {
     const [lx, ly] = lk.lo, [hx, hy] = lk.hi, L = Math.hypot(hx - lx, hy - ly) || 1;
@@ -541,6 +551,8 @@ export class Canal {
   readonly moored: Mover[] = [];
   /** Each moored boat, by its place in the canal file's list: where it lies, its instance in the
    *  drawing, its box, and whether it's out (cast off as a boat under way: castOff). */
+  /** The boats moored in marinas the map draws itself, still waiting for its water's level. */
+  private unsettled: number[] = [];
   private moorings: { x: number; z: number; a: number; len: number; paint: number; lv: number; im: THREE.InstancedMesh; k: number; mover: Mover; out: boolean }[] = [];
   /** Something to hear: a lock filling or emptying (vol 0..1), at scene (x, y, z). */
   onWater?: (i: number, x: number, y: number, z: number, vol: number) => void;
@@ -737,6 +749,7 @@ export class Canal {
         const mover = { x, z: -y, a: ang, hl: len / 2, hw: HW, y: lv - z0 - 0.5, top: lv - z0 + 1.75, waist: lv - z0 + 1.0 };
         this.moored.push(mover);
         this.moorings[i] = { x, z: -y, a: ang, len, paint, lv, im, k, mover, out: false };
+        if (basin !== undefined && (d.basins ?? []).some((b) => b.own && inRing(b.r[0], x, y))) this.unsettled.push(i);
       });
       im.castShadow = im.receiveShadow = true;
       im.computeBoundingSphere();
@@ -883,6 +896,7 @@ export class Canal {
    *  it isn't the canal's, null to leave it out (it's just the canal), or the level to draw it at
    *  (a side pond or a basin off the canal: the lowest pound it opens onto). */
   pondLevel(w: Pond): number | null | undefined {
+    this.settle(w);
     const ring = w.r[0], n = Math.min(ring.length, 40), by = new Map<number, number>();
     let near = 0;
     for (let k = 0; k < n; k++) {
@@ -897,6 +911,22 @@ export class Canal {
     let lv = Infinity;
     for (const [r, c] of by) if (c >= n * 0.15) lv = Math.min(lv, this.d.runs[r].lv);
     return Number.isFinite(lv) ? lv - 0.03 : undefined;
+  }
+
+  /** The boats in a marina the map draws itself (on a river) float on its water, at the level
+   *  the map's square gives it, once that square is built. */
+  private settle(w: Pond) {
+    if (!this.unsettled.length) return;
+    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
+    this.unsettled = this.unsettled.filter((m) => {
+      const o = this.moorings[m];
+      if (!o || !inRing(w.r[0], o.x, -o.z)) return true;
+      o.lv = w.z;
+      o.im.setMatrixAt(o.k, M.compose(new THREE.Vector3(o.x, o.lv - this.z0, o.z), Q.setFromAxisAngle(Y, o.a), new THREE.Vector3(o.len / 18, 1, 1)));
+      o.im.instanceMatrix.needsUpdate = true;
+      Object.assign(o.mover, { y: o.lv - this.z0 - 0.5, top: o.lv - this.z0 + 1.75, waist: o.lv - this.z0 + 1.0 });
+      return false;
+    });
   }
 
   /** What there is to stand on at scene (x, z) from the canal: its bed in the water (a lock's

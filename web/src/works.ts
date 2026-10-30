@@ -23,7 +23,7 @@
 //
 // Nothing here goes over the network: every player builds the same banks from the same canal file.
 import * as THREE from "three";
-import { lockAt, type CanalData } from "./canal";
+import { inRing, lockAt, type CanalData } from "./canal";
 
 const UP = 0.4;          // the coping and the banks stand this far above the water
 const BED = 1.2;         // the bed is this far below it
@@ -57,16 +57,6 @@ interface Station {
 /** A stretch of a canal tunnel between two of the canal's points: the water down the middle and
  *  the towpath's ledge on its side (side: 1 left, -1 right, 0 none; tools/canal.py's "tw"). */
 interface Bore { ax: number; ay: number; bx: number; by: number; len: number; lv: number; side: number }
-
-/** Is data (x, y) inside ring [[x, y], ...]? */
-function inRing(ring: number[][], x: number, y: number): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i], [xj, yj] = ring[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
 
 /** A stretch between two stations: what the ground and the drawing go by. */
 interface Seg {
