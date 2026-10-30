@@ -7,7 +7,6 @@ import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
 import { STREETS, controlsPage, ctl, ctlText, input, placeNow } from "./controls";
-import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
@@ -445,7 +444,7 @@ document.addEventListener("pointerlockchange", () => {
 // the window. That click doesn't do anything else.
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
-  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen || easelUp()) return;
+  if (!$("pause").hidden || game.mapOpen || easelUp()) return;
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
@@ -454,16 +453,17 @@ addEventListener("pointerdown", (e) => {
   lock();
 }, true);
 addEventListener("keydown", (e) => {
-  // Esc shuts the big map, back to the game; the mouse can't be captured from Esc, so the next click does it
+  // Esc shuts a pub's card, then the big map, back to the game (or the pause menu, if it was opened
+  // from there); the mouse can't be captured from Esc, so the next click does it
   if (e.code === "Escape" && game?.mapOpen && !e.repeat) {
-    game.toggleMap();
-    if (!freeMode && document.pointerLockElement !== canvas) $("clickhint").hidden = false;
+    game.mapBack();
+    if (!game.mapOpen && $("pause").hidden && !freeMode && document.pointerLockElement !== canvas) $("clickhint").hidden = false;
     return;
   }
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
   // Esc with the pause menu up closes it and goes back to the game. The browser won't capture the
   // mouse from the Esc key, so you play on with it loose and the next click captures it, as when
-  // joining took too long. (Settings, the pub map and the wardrobe each take Esc first, back to here.)
+  // joining took too long. (Settings, the big map opened from here and the wardrobe each take Esc first, back to here.)
   else if (e.code === "Escape" && game && !$("pause").hidden && !e.repeat && performance.now() - pausedAt > 250) {
     e.preventDefault();
     resume();
@@ -686,8 +686,13 @@ const codeInput = $<HTMLInputElement>("code");
 codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
 codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").click(); });
 $("resume").onclick = () => { SFX.unlock(); lock(); };
-const pubMap = new PubMap(() => game, () => lock());
-$("gopub").onclick = () => pubMap.open();
+// the big map with the pubs at full strength; closing it without going anywhere comes back here
+$("gopub").onclick = () => {
+  if (!game) return;
+  $("pause").hidden = true;
+  game.active = true;
+  game.openPubs(showPause);
+};
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
 $("trophybtn").onclick = () => openCabinet(() => showCompletion());
 
