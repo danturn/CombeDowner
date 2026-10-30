@@ -741,13 +741,8 @@ for the low ones, turn to shred, and everyone nearby hears your solo.
 ### The record player on Solsbury Hill
 
 Up on the flat top of Little Solsbury Hill, over Batheaston, someone has left a portable record
-player going on a folding table, lid propped open and the record turning. It plays "Up the Hill", an
-ode to the song about climbing this hill: B major, seven beats to the bar with a bar of four at the
-end of each chorus, a bright strummed guitar to start it off, then vibes on the tune with electric
-piano, upright bass and brushes, and all the crackle of an old record. You hear it from about 70 m off, louder as you
-come up to the table, and the soundtrack fades down while you're there. When the side ends, the
-needle sits in the run-out groove for a few turns, then the arm goes back and it starts again.
-Everyone up there hears the same bit at the same time.
+player on a folding table, lid propped open and a record on it. It doesn't play: the record sits
+still, and the hill is quiet.
 
 ### Ball games
 
