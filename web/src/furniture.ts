@@ -284,24 +284,37 @@ function landRoverParts(): Part[] {
 function golfParts(driver = false): Part[] {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   const lamp = (r: number) => new THREE.CylinderGeometry(r, r, 0.04, 14).rotateZ(Math.PI / 2);
-  const cab = [[0.85, 0.82], [0.12, 1.37], [-1.44, 1.35], [-1.79, 0.92]], W = 1.63, cabW = 1.48, BK = "#18191b", RED = "#d0261e";
+  const cab = [[0.85, 0.82], [0.12, 1.37], [-1.46, 1.36], [-1.76, 0.95]], W = 1.63, cabW = 1.54, BK = "#18191b", RED = "#d0261e";
   return [
-    [prof([[-1.88, 0.3], [1.86, 0.3], [1.9, 0.5], [1.89, 0.74], [0.85, 0.83], [-1.78, 0.93], [-1.9, 0.86]], W), "#ffffff", 0, 0, 0],
+    [prof([[-1.86, 0.3], [1.86, 0.3], [1.9, 0.5], [1.89, 0.74], [0.85, 0.83], [-1.76, 0.96], [-1.85, 0.55]], W), "#ffffff", 0, 0, 0],
     [prof([...cab, [cab[3][0], cab[0][1]]], cabW), "#ffffff", 0, 0, 0],
-    [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...pillars(cab, cabW, "#ffffff", 0.42, 0.52),
-    [box(0.03, 0.2, 1.3), BK, 1.905, 0.63, 0],                                                     // the grille, right across
-    ...(driver ? [] : [[box(0.035, 0.022, 1.32), RED, 1.907, 0.735, 0], [box(0.035, 0.022, 1.32), RED, 1.907, 0.525, 0]] as Part[]),   // and its red stripe
-    [lamp(0.095), BK, 1.91, 0.63, 0.55], [lamp(0.095), BK, 1.91, 0.63, -0.55],
-    [lamp(0.078), "#f1f0e6", 1.925, 0.63, 0.55], [lamp(0.078), "#f1f0e6", 1.925, 0.63, -0.55],    // round headlamps
-    driver ? [new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12).rotateZ(Math.PI / 2), "#c9ccd0", 1.92, 0.63, 0] : [box(0.02, 0.05, 0.14), "#c9ccd0", 1.92, 0.63, -0.25],   // the VW roundel, or the GTI badge
-    [box(0.13, 0.13, 1.66), BK, 1.93, 0.42, 0], [box(0.12, 0.13, 1.64), BK, -1.92, 0.44, 0],        // black bumpers
+    [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...pillars(cab, cabW, "#ffffff", 0.42, 0.01),
+    // the broad back pillar, its front edge leaning with the tailgate, and the tailgate round its glass in a black seal
+    ...[1, -1].map((s) => [prof([[-1.3, 0.88], [-0.99, 1.35], [-1.46, 1.35], [-1.76, 0.95], [-1.76, 0.88]], 0.03), "#ffffff", 0, 0, s * (cabW / 2 + 0.015)] as Part),
+    ...[1, -1].flatMap((s) => [
+      [box(0.03, 0.5, 0.1).rotateZ(-0.64), "#ffffff", -1.645, 1.17, s * (cabW / 2 - 0.03)] as Part,
+      [box(0.03, 0.46, 0.03).rotateZ(-0.64), BK, -1.655, 1.17, s * (cabW / 2 - 0.09)] as Part,
+    ]),
+    [box(0.03, 0.03, cabW - 0.16), BK, -1.51, 1.3, 0],
+    [box(0.04, 0.04, cabW), BK, -1.765, 0.95, 0],                                                  // the glass's rubber seal
+    [box(0.03, 0.2, 1.5), BK, 1.905, 0.63, 0],                                                     // the grille, right across
+    ...(driver ? [] : [[box(0.035, 0.022, 1.5), RED, 1.907, 0.735, 0], [box(0.035, 0.022, 1.5), RED, 1.907, 0.525, 0]] as Part[]),   // and its red stripe
+    // big round headlamps out at the corners of the grille, each in a bright rim
+    ...[0.63, -0.63].flatMap((z) => [[lamp(0.1), "#c9ccd0", 1.91, 0.63, z], [lamp(0.088), "#e9ecea", 1.925, 0.63, z], [lamp(0.035), "#ffffff", 1.93, 0.63, z]] as Part[]),
+    driver ? [new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12).rotateZ(Math.PI / 2), "#c9ccd0", 1.92, 0.63, 0] : [box(0.02, 0.05, 0.14), "#c9ccd0", 1.92, 0.63, -0.3],   // the VW roundel, or the GTI badge
+    [box(0.13, 0.13, 1.66), BK, 1.93, 0.42, 0], [box(0.12, 0.13, 1.64), BK, -1.9, 0.44, 0],        // black bumpers
     [box(0.04, 0.05, 0.12), "#e0902a", 1.995, 0.43, 0.6], [box(0.04, 0.05, 0.12), "#e0902a", 1.995, 0.43, -0.6],   // indicators
     [box(0.2, 0.06, 1.58), BK, 1.86, 0.27, 0],                                                     // the lip spoiler
     [box(2.1, 0.07, W + 0.01), BK, -0.05, 0.4, 0],                                                 // the stripe along the sills
     ...[1.2, -1.2].flatMap((x) => [0.82, -0.82].map((z) => [box(0.74, 0.08, 0.05), BK, x, 0.6, z] as Part)),   // arch extensions
-    [box(0.04, 0.15, 0.34), "#a3221b", -1.905, 0.72, 0.55], [box(0.04, 0.15, 0.34), "#a3221b", -1.905, 0.72, -0.55],   // tail lights
-    [box(0.08, 0.05, 1.36), BK, -1.81, 0.93, 0],                                                   // a rubber lip under the back window
-    [box(0.03, 0.11, 0.5), "#f2f2ea", 2.0, 0.42, 0], [box(0.03, 0.11, 0.5), "#e8c42a", -1.995, 0.6, 0],   // plates
+    // the big tail lights out at the corners under the tailgate, an amber band over the red, the reversing light inboard
+    ...[1, -1].flatMap((s) => [
+      [box(0.04, 0.17, 0.4), BK, -1.81, 0.72, s * 0.6] as Part,
+      [box(0.04, 0.09, 0.38), "#b3201a", -1.82, 0.69, s * 0.6] as Part,
+      [box(0.04, 0.05, 0.38), "#e0902a", -1.815, 0.77, s * 0.6] as Part,
+      [box(0.04, 0.05, 0.08), "#ecece4", -1.825, 0.69, s * 0.45] as Part,
+    ]),
+    [box(0.03, 0.11, 0.5), "#f2f2ea", 2.0, 0.42, 0], [box(0.03, 0.11, 0.5), "#e8c42a", -1.83, 0.7, 0],   // plates
     ...[-1.2, 1.2].flatMap((x) => [-0.72, 0.72].flatMap((z) => [
       [new THREE.CylinderGeometry(0.28, 0.28, 0.19, 14), "#151515", x, 0.28, z, Math.PI / 2] as Part,
       ...(driver ? [
