@@ -278,9 +278,10 @@ function landRoverParts(): Part[] {
 /**
  * A Mk1 Volkswagen Golf GTI: Giugiaro's crisp little box, round headlamps in a black grille with the
  * red stripe round it, black bumpers, a lip spoiler under the nose, black arch extensions and a stripe
- * along the sills, and slotted alloys. White parts take its paint.
+ * along the sills, and slotted alloys. The Driver (golfdriver.ts) wears the same arches, spoiler and
+ * stripe, but its grille has no red and no badge, and it sits on steel wheels. White parts take its paint.
  */
-function golfParts(): Part[] {
+function golfParts(driver = false): Part[] {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   const lamp = (r: number) => new THREE.CylinderGeometry(r, r, 0.04, 14).rotateZ(Math.PI / 2);
   const cab = [[0.85, 0.82], [0.15, 1.36], [-1.05, 1.38], [-1.8, 0.9]], W = 1.63, cabW = 1.48, BK = "#18191b", RED = "#d0261e";
@@ -289,10 +290,10 @@ function golfParts(): Part[] {
     [prof([...cab, [cab[3][0], cab[0][1]]], cabW), "#ffffff", 0, 0, 0],
     [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...pillars(cab, cabW, "#ffffff", 0.5, 0.42),
     [box(0.03, 0.2, 1.3), BK, 1.905, 0.63, 0],                                                     // the grille, right across
-    [box(0.035, 0.022, 1.32), RED, 1.907, 0.735, 0], [box(0.035, 0.022, 1.32), RED, 1.907, 0.525, 0],   // and its red stripe
+    ...(driver ? [] : [[box(0.035, 0.022, 1.32), RED, 1.907, 0.735, 0], [box(0.035, 0.022, 1.32), RED, 1.907, 0.525, 0]] as Part[]),   // and its red stripe
     [lamp(0.095), BK, 1.91, 0.63, 0.55], [lamp(0.095), BK, 1.91, 0.63, -0.55],
     [lamp(0.078), "#f1f0e6", 1.925, 0.63, 0.55], [lamp(0.078), "#f1f0e6", 1.925, 0.63, -0.55],    // round headlamps
-    [box(0.02, 0.05, 0.14), "#c9ccd0", 1.92, 0.63, -0.25],                                          // the GTI badge
+    driver ? [new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12).rotateZ(Math.PI / 2), "#c9ccd0", 1.92, 0.63, 0] : [box(0.02, 0.05, 0.14), "#c9ccd0", 1.92, 0.63, -0.25],   // the VW roundel, or the GTI badge
     [box(0.13, 0.13, 1.66), BK, 1.93, 0.42, 0], [box(0.12, 0.13, 1.64), BK, -1.92, 0.44, 0],        // black bumpers
     [box(0.04, 0.05, 0.12), "#e0902a", 1.995, 0.43, 0.6], [box(0.04, 0.05, 0.12), "#e0902a", 1.995, 0.43, -0.6],   // indicators
     [box(0.2, 0.06, 1.58), BK, 1.86, 0.27, 0],                                                     // the lip spoiler
@@ -303,8 +304,13 @@ function golfParts(): Part[] {
     [box(0.03, 0.11, 0.5), "#f2f2ea", 2.0, 0.42, 0], [box(0.03, 0.11, 0.5), "#e8c42a", -1.995, 0.6, 0],   // plates
     ...[-1.2, 1.2].flatMap((x) => [-0.72, 0.72].flatMap((z) => [
       [new THREE.CylinderGeometry(0.28, 0.28, 0.19, 14), "#151515", x, 0.28, z, Math.PI / 2] as Part,
-      [new THREE.CylinderGeometry(0.2, 0.2, 0.2, 12), "#c8cbce", x, 0.28, z, Math.PI / 2] as Part,   // slotted alloys
-      [new THREE.CylinderGeometry(0.07, 0.07, 0.205, 8), "#2a2c2e", x, 0.28, z, Math.PI / 2] as Part,
+      ...(driver ? [
+        [new THREE.CylinderGeometry(0.19, 0.19, 0.2, 12), "#3a3d40", x, 0.28, z, Math.PI / 2] as Part,   // black steel wheels
+        [new THREE.CylinderGeometry(0.1, 0.1, 0.205, 10), "#c8cbce", x, 0.28, z, Math.PI / 2] as Part,   // with a bright centre cap
+      ] : [
+        [new THREE.CylinderGeometry(0.2, 0.2, 0.2, 12), "#c8cbce", x, 0.28, z, Math.PI / 2] as Part,   // slotted alloys
+        [new THREE.CylinderGeometry(0.07, 0.07, 0.205, 8), "#2a2c2e", x, 0.28, z, Math.PI / 2] as Part,
+      ]),
     ])),
   ];
 }
@@ -342,10 +348,14 @@ function xr3iParts(): Part[] {
   ];
 }
 
+/** The one Golf Driver's shape (golfdriver.ts): not a make's, so never among the parked cars. */
+export const GOLF_DRIVER_SHAPE = CAR_SHAPES;
+
 /** The everyday car's parts in one of its shapes (makes.ts): the body and its bits, then its four wheels. White parts take its paint. */
 function carParts(shape = 0): Part[] {
   if (shape === 3) return landRoverParts();
   if (shape === 4) return golfParts();
+  if (shape === GOLF_DRIVER_SHAPE) return golfParts(true);
   if (shape === 5) return xr3iParts();
   const S = SHAPES[shape] ?? SHAPES[0], [lx, ly, lz, lw] = S.lamp, [tx, ty, tz, th] = S.tail, f = S.body[2][0], b = S.body[6][0];
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
