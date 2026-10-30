@@ -239,10 +239,13 @@ export const GRENVILLE = { x: -3911, y: 7634 };
 /** Where the force field reaches out past its circle, by map: a strip running straight out from
  *  the circle to (x, y) (data metres), w either side of its middle and rounded at its end. On
  *  Bath's map it runs up Bath Road over Lansdown to Grenville's monument, for anyone who tries to
- *  get out of Bath to the north that way. A strip whose end is far outside the circle (a smaller
- *  map with the same id, like the single-file build's) is left out. */
+ *  get out of Bath to the north that way. On Bradford-on-Avon's it runs down Trowbridge Road past
+ *  Moulton Drive to the canal bridge at Widbrook, the Boathouse and the marina, a common way out of
+ *  town. A strip whose end is far outside the circle (a smaller map with the same id, like the
+ *  single-file build's) is left out. */
 const FIELD_LANES: Record<string, { x: number; y: number; w: number }[]> = {
   "combe-down": [{ x: -3955, y: 7630, w: 210 }],
+  "bradford-on-avon": [{ x: 970, y: -1030, w: 150 }],
 };
 
 /** A strip of the force field, in scene x and z: from a (inside the circle) to b, w either side. */
