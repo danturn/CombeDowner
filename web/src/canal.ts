@@ -1,7 +1,7 @@
 // The Kennet and Avon Canal (laid out by tools/canal.py): its water at the right level all the way
 // along, the six locks of the Widcombe flight, the two short tunnels through Sydney Gardens, the
-// Dundas Aqueduct, rows of narrowboats moored along the bank, and a few chugging along it, each
-// with its wake behind it (drawn by every screen from where the boats are).
+// Dundas Aqueduct, rows of narrowboats moored along the bank and in the marinas, and a few chugging
+// along it, each with its wake behind it (drawn by every screen from where the boats are).
 //
 // Locks work. Lean on a balance beam (E by a lock) and its gates swing shut, the paddles go up and
 // the chamber fills or empties, then the gates at the other end swing open. Boats coming along
@@ -28,7 +28,9 @@ export interface CanalData {
   runs: { lv: number; p: number[][] }[];
   locks: { n: string; no: string; lo: number[]; hi: number[]; zl: number; zh: number; tl?: number }[];
   tunnels: { n: string; a: number[]; b: number[]; tw?: number }[];
-  moor: number[][];
+  moor: number[][];   // x, y, angle, length, livery, and the water's level for a boat in a basin (which stays moored)
+  // open water off the canal (a marina, a side pond): its outline and level; own: the map draws its water
+  basins?: { lv: number; r: number[][][]; own?: number }[];
 }
 
 const HW = 1.04;                       // half a narrowboat's beam (7 ft)
@@ -633,6 +635,19 @@ export class Canal {
       }
     });
 
+    // the basins off the canal, flat at their pound's level
+    for (const b of d.basins ?? []) {
+      if (b.own) continue;
+      const ring = (r: number[][]) => r.map(([x, y]) => new THREE.Vector2(x, y));
+      const shape = new THREE.Shape(ring(b.r[0]));
+      for (const h of b.r.slice(1)) shape.holes.push(new THREE.Path(ring(h)));
+      const g = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
+      g.translate(0, b.lv - z0, 0);
+      const m = new THREE.Mesh(g, waterMat);
+      m.receiveShadow = true;
+      add(m);
+    }
+
     // the aqueduct and the tunnels (the banks along the open water are works.ts's, laid with the
     // ground of each square of Bath)
     const st = new Mesher();
@@ -716,7 +731,7 @@ export class Canal {
     for (const [paint, list] of byPaint) {
       const im = new THREE.InstancedMesh(this.boatGeo[paint % this.boatGeo.length], this.boatMat, list.length);
       list.forEach((i, k) => {
-        const [x, y, ang, len] = d.moor[i], at = this.nearest(x, -y), lv = at ? d.runs[at.run].lv : long;
+        const [x, y, ang, len, , basin] = d.moor[i], at = this.nearest(x, -y), lv = basin ?? (at ? d.runs[at.run].lv : long);
         M.compose(new THREE.Vector3(x, lv - z0, -y), Q.setFromAxisAngle(Y, ang), new THREE.Vector3(len / 18, 1, 1));
         im.setMatrixAt(k, M);
         const mover = { x, z: -y, a: ang, hl: len / 2, hw: HW, y: lv - z0 - 0.5, top: lv - z0 + 1.75, waist: lv - z0 + 1.0 };
@@ -1089,7 +1104,8 @@ export class Canal {
   mooredNear(x: number, y: number, z: number): number {
     for (let m = 0; m < this.moorings.length; m++) {
       const o = this.moorings[m];
-      if (!o || o.out || Math.abs(o.x - x) > o.len || Math.abs(o.z - z) > o.len) continue;
+      // (a boat in a marina stays put: it can't find its way out on to the canal)
+      if (!o || o.out || this.d.moor[m].length > 5 || Math.abs(o.x - x) > o.len || Math.abs(o.z - z) > o.len) continue;
       const back = o.len / 2 - 0.6, tx = o.x - Math.cos(o.a) * back, tz = o.z + Math.sin(o.a) * back;
       if (Math.hypot(tx - x, tz - z) < 2.4 && Math.abs(o.lv - this.z0 + 1 - y) < 2) return m;
     }
@@ -1104,7 +1120,7 @@ export class Canal {
     const live = this.boats.get(MOOR + m);
     if (live) return live;
     const o = this.moorings[m];
-    if (!o) return null;
+    if (!o || this.d.moor[m].length > 5) return null;
     // the stretch it lies on, how far along, which way it faces along it and how far off the middle
     let best: { leg: number; s: number; tx: number; tz: number; x: number; z: number } | null = null, bd = Infinity;
     this.legs.forEach((L, leg) => {
