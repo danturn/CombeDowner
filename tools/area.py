@@ -148,9 +148,9 @@ MAPS = {
         z0=15,                         # metres: what every square's ground heights are measured from
         # the town and the fields round it, and the Avon valley either side
         wide=dict(
-            field=1200,
-            field_centre=(0, 100),
-            half=1600,
+            field=1500,
+            field_centre=(100, -50),       # nudged south-east so Widbrook's canal bridge and the marina are well inside
+            half=1900,
         ),
     ),
 }
