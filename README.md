@@ -156,7 +156,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
   one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field reaches
-  down Trowbridge Road to the canal bridge at Widbrook; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
+  down Trowbridge Road to the canal bridge at Widbrook; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go. The rifle's balls lob
   out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
@@ -376,8 +376,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   R2/L2 or the right stick zoom, A marks and B closes.
 - **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
-  checkpoint, a minigame, the strange structure, a pub, a bus stop or a cable car station, and the
-  marker goes exactly on it and says what it is ("Dan marked Push the Bus"); clicking a bunch of jobs
+  checkpoint, a minigame, the strange structure, a bus stop or a cable car station, and the
+  marker goes exactly on it and says what it is ("Dan marked Push the Bus"); a pub opens its card,
+  with Mark it on it; clicking a bunch of jobs
   zooms in on them. In the street a marker on something is a ring of light that fits round that
   thing, so you can see what was picked when you get there. Each player's markers and arrow are in
   their own colour on the maps, never one the maps use for something else; click your marker, or the

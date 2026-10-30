@@ -268,6 +268,8 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number; y?: number } | null;
+  /** You're taking part in it just now (riding in a race, not watching it), so going off to a pub would leave it. */
+  inIt?(): boolean;
   /** You're waiting for the job's end (over a race's line while others ride on): nothing hurts you,
    *  and if you're dead you come back once it's over. */
   waiting?(): boolean;
@@ -743,6 +745,14 @@ export class Quests {
 
   private startCard(o: Offer, kind: JobKind) {
     missionStart({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind) });
+  }
+
+  /** The job you're in, if going off somewhere else would leave it (a race you're riding in, or a
+   *  team challenge): what to call it, and whether it's yours alone, so leaving can call it off. */
+  leaving(): { what: string; alone: boolean } | null {
+    const j = this.job, k = j && kinds.get(j.offer.kind);
+    if (!j || j.done || !(k?.challenge || j.inIt?.())) return null;
+    return { what: k?.challenge ? "challenge" : k?.label.toLowerCase() ?? "job", alone: this.local || this.w.players().length <= 1 };
   }
 
   /** Call the job off (the pause menu), for everyone. */

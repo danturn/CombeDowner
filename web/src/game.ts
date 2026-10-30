@@ -37,9 +37,11 @@
 // - Vehicles (vehicles.ts): the host says who gets in (the first to ask gets the wheel, then the
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
-// - Going to a pub from the pause menu's pub map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
+// - Going to a pub from the big map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
 //   your next position update, and everyone else sees you vanish and turn up outside the pub. You come
-//   back to life outside the last pub you went to, which is your own business too.
+//   back to life outside the last pub you went to, which is your own business too. Whether something's
+//   after you and holds you back (travelHold) is judged from what every player already has: the naughty
+//   boys', cats' and Bendy's targets as the host sends them, and the shots you've seen.
 // - The canal (canal.ts): the host runs its locks and boats and sends them round; working a lock, taking a
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
@@ -113,7 +115,7 @@ import { show, say, setHidden, setStyle } from "./show";
 import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
-import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
+import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
 import { missionActive, missionCardUp } from "./missionscreens";
@@ -126,7 +128,8 @@ import * as Posh from "./posh";
 import { GameMap, Mover, PATHS, Place, RayHit } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net, type MessageType } from "./net";
-import { Minimap, Pin, type Blip, type Mate } from "./minimap";
+import { Minimap, type Blip, type Mate } from "./minimap";
+import { PubMap, type TravelHold } from "./pubmap";
 import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
 import { drawCompass, ITEM_SIZE, markerMessage, Markers, playerColours } from "./markers";
@@ -174,6 +177,26 @@ const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const MARK_SNAP = 12;           // metres: a marker put down this close to a job, a challenge or a minigame is put on it
+// what keeps you from going to a pub: you can't use one to get out of trouble
+const HOSTILE_NEAR = 40;        // metres: anything after you this close
+const HURT_HOLD = 5000;         // ms since anything last hurt you
+const PVP_HOLD = 10000;         // ms since you and another player last shot at each other
+const SHOT_NEAR = 2;            // metres: a shot passing this close to someone was a shot at them
+const TAKEOVER_NEAR = 150;      // metres from a pub takeover that's on: you're in it
+/** What the naughty boys' kinds are called when they're after you: one, and several. */
+const AFTER_YOU: Record<number, [string, string]> = {
+  [NAUGHTY]: ["a naughty boy", "naughty boys"], [RUGBY]: ["a rugby player", "rugby players"],
+  [CRICKET]: ["a cricketer", "cricketers"], [SOCIETY]: ["a Flag Lad", "Flag Lads"], [CHAIR]: ["a Flag Lads boss", "Flag Lads bosses"],
+  [GIRL]: ["a naughty girl", "naughty girls"],
+};
+const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+/** How close (x, y, z) comes to the line from a to b. */
+function nearLine(a: THREE.Vector3, b: THREE.Vector3, x: number, y: number, z: number): number {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, len = dx * dx + dy * dy + dz * dz;
+  const t = len ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy + (z - a.z) * dz) / len)) : 0;
+  return Math.hypot(a.x + dx * t - x, a.y + dy * t - y, a.z + dz * t - z);
+}
 const SEND_HZ = 20;
 const NAUGHTY_HZ = 10;
 /** Who hit you, when it was a naughty boy, the rugby team or the cricket team: by kind (see naughtyboys.ts). */
@@ -261,15 +284,6 @@ interface Score { name: string; k: number; d: number; c: number; hp: number; ali
 
 /** What travels with you to another town (main.ts's travel): the room's connection and the match's
  *  state stay put, so stepping off the train doesn't start a new game. */
-/** What the pub menu does with the big map while it borrows it (Game.pickOnMap). */
-export interface MapPicker {
-  pins: Pin[];
-  tap(clientX: number, clientY: number): void;
-  /** The mouse over the map at a page point, or off it (no point). */
-  hover(clientX?: number, clientY?: number): void;
-  back(): void;
-}
-
 export interface GameCarry {
   born: number;                              // when you started this game, for working out the host
   since: [string, number][];                 // when everyone else did
@@ -525,7 +539,9 @@ export class Game {
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
-  private picker: MapPicker | null = null;
+  private pubMap: PubMap;
+  private mapBackTo: (() => void) | null = null;   // opened from the pause menu: closing it goes back there
+  private pvp = new Map<string, number>();         // players you've traded shots with, and when (ms), so a pub's no escape
   private yourT = 0;                             // seconds till what's yours and the paper next hear where you are
   private minePoint: { x: number; z: number } | null = null;   // the square pointed at on the big map, for what you've done there
   /** The watch on your wrist, bottom left: the time of day. */
@@ -692,6 +708,16 @@ export class Game {
     };
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
     this.mapKey = new MapKey($("mapkey"), (off) => { this.minimap.off = off; });
+    this.pubMap = new PubMap({
+      pubs: () => this.pubs(),
+      hold: () => this.travelHold(),
+      goTo: (i) => {
+        const why = this.goTo(i);
+        if (!why && this.mapOpen) { this.mapBackTo = null; this.toggleMap(); }
+        return why;
+      },
+      mark: (p) => this.setMarker(p.x, p.z, undefined, p.name, "pub"),
+    }, this.minimap);
     this.minimap.spots = this.gameSpots();
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
@@ -932,6 +958,7 @@ export class Game {
       this.look(e.movementX, e.movementY);
     }, sig);
     addEventListener("keydown", (e) => {
+      if (isKey(e.code, "pubcard.go") && this.mapOpen && this.pubMap.isOpen) { if (!e.repeat) this.pubMap.go(); return; }
       if (isKey(e.code, "scores")) { e.preventDefault(); this.dailyT = 0; $("scoreboard").classList.remove("join"); $("scoreboard").hidden = false; this.renderScores(); }
       if (isKey(e.code, "reload") && this.active) this.reload();
       if (this.active && !e.repeat) {
@@ -969,19 +996,28 @@ export class Game {
     addEventListener("blur", () => this.voice.radio(false), sig);
   }
 
-  /** The big map is up (and not borrowed by the pub menu). */
-  get mapOpen() { return !this.picker && !$("bigmap").hidden; }
+  /** The big map is up. */
+  get mapOpen() { return !$("bigmap").hidden; }
   /** Capture the mouse again (main.ts), when the map closes. */
   relock?: () => void;
 
   toggleMap() {
-    if (this.picker) { this.picker.back(); return; }
     const el = $("bigmap");
     el.hidden = !el.hidden;
     // the map works like any other game's: an ordinary pointer to click, drag and zoom with, so the
     // mouse is let go while it's up; a pad keeps it, and steers a cursor of its own with the stick
     if (!el.hidden && document.pointerLockElement && !padInUse()) document.exitPointerLock();
-    if (el.hidden && !this.freeMode && !document.pointerLockElement) this.relock?.();
+    this.pubMap.close();
+    if (el.hidden) {
+      const back = this.mapBackTo;
+      this.mapBackTo = null;
+      this.minimap.pinsBold = false;
+      if (back) back();
+      else if (!this.freeMode && !document.pointerLockElement) this.relock?.();
+    } else {
+      this.pubMap.refresh();
+      $("bigmapclose").textContent = input() === "touch" ? "Close map" : `Close map (${ctl("map.close")})`;
+    }
     this.minimap.hover = null;
     this.mapZoomHeld = 0;
     this.mapHint();
@@ -991,6 +1027,21 @@ export class Game {
     this.firing = false;
     this.minePoint = null;
     this.showMine();
+  }
+
+  /** "Go to a pub" in the pause menu: the big map, with the pubs at full strength. back: where
+   *  closing it without going anywhere takes you (the pause menu again). */
+  openPubs(back: () => void) {
+    if (!this.mapOpen) this.toggleMap();
+    this.minimap.pinsBold = true;
+    this.mapBackTo = back;
+    $("bigmapclose").textContent = input() === "touch" ? "Back" : `Back (${ctl("map.close")})`;
+  }
+
+  /** Esc or the pad's back button with the map up: a pub's card closes first, then the map. */
+  mapBack() {
+    if (this.pubMap.isOpen) this.pubMap.close();
+    else if (this.mapOpen) this.toggleMap();
   }
 
   // ---- map markers --------------------------------------------------------------------------
@@ -1020,13 +1071,16 @@ export class Game {
     if (r.width) this.markAtFull((clientX - r.left) / r.width, (clientY - r.top) / r.width, finger ? 1.6 : 1);
   }
 
-  /** A click on the full map a fraction (u, v) across and down it. On anything drawn there (a job,
-   *  a challenge, a minigame, a pub, a bus stop, a race's checkpoint), the marker goes exactly on
-   *  it and says what it is, and on the thing you've already marked it comes down; on a bunch of
-   *  jobs, the map zooms in on them (or, zoomed right in, picks the nearest); on your own marker, it
-   *  comes down. Anywhere else, it goes where you clicked. */
+  /** A click on the full map a fraction (u, v) across and down it. On a pub, its card (pubmap.ts),
+   *  to go there or mark it. On anything else drawn there (a job, a challenge, a minigame, a bus
+   *  stop, a race's checkpoint), the marker goes exactly on it and says what it is, and on the thing
+   *  you've already marked it comes down; on a bunch of jobs, the map zooms in on them (or, zoomed
+   *  right in, picks the nearest); on your own marker, it comes down. Anywhere else, it goes where
+   *  you clicked. With a pub's card open, a click off it just closes it. */
   private markAtFull(u: number, v: number, reach = 1) {
     let hit = this.minimap.pickAt(u, v, reach);
+    if (hit?.kind === "pub") { this.pubMap.pick(hit.wx, hit.wz, u, v); return; }
+    if (this.pubMap.isOpen) { this.pubMap.close(); return; }
     const at = this.minimap.fromFullAt(u, v), mine = this.markers.at(this.net.selfId);
     if (hit && hit.cluster >= 0) {
       const one = this.minimap.pickInCluster(hit, u, v);
@@ -1045,8 +1099,9 @@ export class Game {
     else this.setMarker(at.x, at.z);
   }
 
-  /** G with the map up: a marker under the pad's cursor or the pointer. */
+  /** G with the map up: a marker under the pad's cursor or the pointer, or with a pub's card open, mark the pub. */
   private markUnderPointer() {
+    if (this.pubMap.isOpen) { this.pubMap.markIt(); return; }
     const c = this.minimap.cursor ?? this.minimap.hover;
     if (c) this.markAtFull(c[0], c[1]);
   }
@@ -1110,13 +1165,14 @@ export class Game {
     // (a finger lifting leaves too, and what it tapped should stay said)
     c.addEventListener("pointerleave", (e) => {
       if (e.pointerType === "mouse") this.minimap.hover = null;
-      if (!down.size && (this.picker || e.pointerType === "mouse")) this.pointMap();
+      if (!down.size && e.pointerType === "mouse") this.pointMap();
     });
     const up = (e: PointerEvent) => {
       if (!down.delete(e.pointerId)) return;
       c.style.cursor = "";
       if (!down.size && moved <= 5 && e.type === "pointerup") {
-        if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY, e.pointerType !== "mouse"); this.pointMap(e.clientX, e.clientY); }
+        this.markOnMap(e.clientX, e.clientY, e.pointerType !== "mouse");
+        this.pointMap(e.clientX, e.clientY);
       }
     };
     c.addEventListener("pointerup", up);
@@ -1133,11 +1189,12 @@ export class Game {
   private markAtCursor() {
     const c = this.minimap.cursor;
     if (!c) { this.toast(input() === "pad" ? "Move the cursor with the left stick, then {map.mark} to mark" : "Move the mouse to aim, then click to mark", 2); return; }   // keys-ok: the mouse's own way
-    // the crosshair on the key: switch that row instead
-    const r = $("bigmapcanvas").getBoundingClientRect();
-    if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
+    // the crosshair on the key: switch that row instead; on a pub's card, press that button
+    const r = $("bigmapcanvas").getBoundingClientRect(), px = r.left + c[0] * r.width, py = r.top + c[1] * r.height;
+    if (this.mapKey.clickAt(px, py)) return;
+    const on = document.elementFromPoint(px, py);
+    if (on instanceof HTMLButtonElement && on.closest("#pubcard")) { on.click(); return; }
     if (c[0] < 0) return;   // beside the map, between the key's rows
-    if (this.picker) { this.picker.tap(r.left + c[0] * r.width, r.top + c[1] * r.height); return; }
     this.markAtFull(c[0], c[1]);
   }
 
@@ -1489,8 +1546,7 @@ export class Game {
 
   /** The line under the big map: just the controls for whatever you're playing with. */
   private mapHint() {
-    if (this.picker) return;
-    const text = strip("map") + (input() === "touch" ? " · tap your marker to take it down" : "");
+    const text = (this.minimap.pinsBold ? `<b>${ctl("map.mark")}</b> a pub to go there · ` : "") + strip("map") + (input() === "touch" ? " · tap your marker to take it down" : "");
     if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").innerHTML = text; }
   }
 
@@ -1506,6 +1562,11 @@ export class Game {
     if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
     if (!down) return false;
     const is = (id: string) => b === control(id)?.pad;
+    if (this.pubMap.isOpen) {
+      if (is("pubcard.go")) { this.pubMap.go(); return true; }
+      if (is("pubcard.mark")) { this.pubMap.markIt(); return true; }
+      if (is("pubcard.back")) { this.pubMap.close(); return true; }
+    }
     if (is("map.mark")) { this.markUnderPointer(); return true; }
     if (is("map.close")) { this.toggleMap(); return true; }
     if (is("map.find")) { this.minimap.centreFull(this.player.pos.x, this.player.pos.z); return true; }
@@ -1515,6 +1576,7 @@ export class Game {
   /** Each frame with the big map up: the keys and the pad move it, and the pad's cursor. */
   private mapFrame(dt: number) {
     this.mapHint();
+    this.pubMap.frame(dt);
     const k = this.player.keys, mm = this.minimap;
     const kx = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
     const ky = (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0) - (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0);
@@ -1533,20 +1595,6 @@ export class Game {
     }
   }
 
-  /** The pub menu borrows the big map: its pins are drawn on it, and taps and pointing go to the picker. */
-  pickOnMap(picker: MapPicker | null) {
-    this.picker = picker;
-    this.minimap.pins = picker?.pins ?? [];
-    $("bigmap").hidden = !picker;
-    $("hud").classList.toggle("pubmode", !!picker);
-    $("bigmapclose").textContent = picker ? "Back" : input() === "touch" ? "Close map" : `Close map (${ctl("map.close")})`;
-    $("bigmapme").hidden = !!picker;
-    this.minimap.cursor = null;
-    this.minimap.resetFull();
-    this.mapKey.hideTip();
-    this.firing = false;
-  }
-
   /** How flagged the square at scene (x, z) is today, 0 to 1. */
   flagLevel(x: number, z: number) { return this.invasion.levelAt(x, z); }
   /** What the paper and the big map call the place. Bath's map is named after the village it grew from,
@@ -1562,25 +1610,9 @@ export class Game {
   }
   /** The pointer, the crosshair or a tap is at a page point on the big map (none: it's left). */
   private pointMap(clientX?: number, clientY?: number) {
-    if (this.picker) { this.picker.hover(clientX, clientY); return; }
     const at = clientX === undefined || clientY === undefined ? undefined : this.minimap.fromFull(clientX, clientY);
     this.minePoint = at ? { x: at.x, z: at.z } : null;
     this.showMine();
-  }
-
-  /** Which pins are within reach of a page point on the big map, nearest first. */
-  pinsNear(clientX: number, clientY: number, reach: number): number[] {
-    const r = $("bigmapcanvas").getBoundingClientRect();
-    return (this.picker?.pins ?? []).map((p, i) => {
-      const f = this.minimap.toFull(p.x, p.z);
-      return [f ? Math.hypot(r.left + f[0] * r.width - clientX, r.top + f[1] * r.width - clientY) : Infinity, i];
-    }).filter(([d]) => d < reach).sort((a, b) => a[0] - b[0]).map(([, i]) => i);
-  }
-
-  /** Zoom the big map in by `by` on a page point. */
-  zoomMapAt(clientX: number, clientY: number, by: number) {
-    const r = $("bigmapcanvas").getBoundingClientRect();
-    this.minimap.zoomFull(by, (clientX - r.left) / r.width, (clientY - r.top) / r.width);
   }
 
   /** Where to stand outside a pub that has no sign in the map: on the pavement between it and
@@ -1659,12 +1691,58 @@ export class Game {
     this.sendState();
   }
 
+  /** What's stopping you going to a pub just now, if anything: the pub's card on the big map says it
+   *  instead of offering to go. A race or a challenge you're in, or a takeover you're fighting, is yours
+   *  to leave, so the card asks; anything else waits till you're clear. */
+  travelHold(): TravelHold | null {
+    if (!this.alive) return { why: "Wait till you're back on your feet." };
+    const now = performance.now(), p = this.player.pos;
+    const after = this.afterYou(p.x, p.z);
+    if (after) return { why: `${after}. Get clear of them first.` };
+    let foe = "", left = 0;
+    for (const [id, t] of this.pvp) {
+      const l = PVP_HOLD - (now - t), r = this.remotes.get(id);
+      if (l <= 0 || !r) this.pvp.delete(id);
+      else if (l > left) { left = l; foe = r.name; }
+    }
+    if (left > 0) return { why: `You and ${foe} have been shooting at each other. Give it ${Math.ceil(left / 1000)} seconds.` };
+    if (now - this.hurtAt < HURT_HOLD) return { why: "Not while someone's having a go at you. Get out of the fight first." };
+    const job = this.quests.leaving();
+    if (job && !job.alone) return { why: `You're in a ${job.what} with everyone else. See it through, or call it off from the pause menu.` };
+    if (job) return { why: `You're in a ${job.what}. Going calls it off.`, leave: { yes: `Leave the ${job.what}`, go: () => this.quests.callOff() } };
+    const pub = this.invasion.fightNear(p.x, p.z, TAKEOVER_NEAR);
+    if (pub) return { why: `The takeover at ${pub} is still on. Leave the lads to it?`, leave: { yes: "Leave the takeover", go: () => {} } };
+    return null;
+  }
+
+  /** What's hostile, near and after you ("Two naughty boys and a cat are after you"), as every player
+   *  draws them: their targets come from the host with the rest of their state. */
+  private afterYou(x: number, z: number): string | null {
+    const me = this.net.selfId, near = (o: { x: number; z: number }) => Math.hypot(o.x - x, o.z - z) < HOSTILE_NEAR;
+    const count = new Map<string, { n: number; one: string; many: string }>();
+    const add = ([one, many]: [string, string]) => { const c = count.get(many); if (c) c.n++; else count.set(many, { n: 1, one, many }); };
+    for (const c of this.naughtyBoys.living()) if (c.target === me && AFTER_YOU[c.kind] && near(c)) add(AFTER_YOU[c.kind]);
+    for (const c of this.cats.living()) if (c.target === me && near(c)) add(["a cat", "cats"]);
+    const b = this.bendy.living();
+    if (b?.target === me && near(b)) add(["Bendy", "Bendy"]);
+    if (!count.size) return null;
+    const all = [...count.values()], n = all.reduce((t, c) => t + c.n, 0);
+    const parts = all.map((c) => (c.n === 1 ? c.one : `${NUMBERS[c.n] ?? "a crowd of"} ${c.many}`));
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+    return `${list[0].toUpperCase()}${list.slice(1)} ${n === 1 ? "is" : "are"} after you`;
+  }
+
+  /** You and another player shot at each other just now (a hit, or a shot that passed close). */
+  private traded(id: string) {
+    if (!this.passive && this.remotes.has(id)) this.pvp.set(id, performance.now());
+  }
+
   /** Go straight to pub i (from pubs()). Returns why not, if you can't just now. */
   goTo(i: number): string | null {
     const pub = this.pubList[i];
     if (!pub) return "That pub isn't on this map.";
-    if (!this.alive) return "Wait till you're back on your feet.";
-    if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
+    const held = this.travelHold();
+    if (held && !held.leave) return held.why;
     const at = this.outside(pub);
     if (this.ride) this.getOut();
     if (this.balloons.aboard >= 0) this.balloons.leave(true);   // over the side: the balloon comes down on its own
@@ -1839,6 +1917,7 @@ export class Game {
       const near = o.clone().addScaledVector(line, along);
       const [miss, pan] = this.hear(near.x, near.y, near.z);
       if (along > 3 && along < len - 0.5 && this.alive) SFX.whiz(miss, pan, sniper);
+      if (d[6] !== 2 && along > 1 && near.distanceTo(cam) < SHOT_NEAR) this.traded(from);
     }
   }
 
@@ -1849,6 +1928,7 @@ export class Game {
     const colOf = (id: string) => (isGang(id) ? "#d8d8d8" : id === me ? "#e3a33b" : colourFor(id));
     const who = (id: string) => `<b style="color:${colOf(id)}">${esc(nameOf(id))}</b>`;
     if (d.k === "dmg" && d.t === me && d.life === this.life) {
+      this.traded(d.by);
       this.broadcast.skip();   // never watching the telly while someone's hitting you
       this.hp = d.hp;
       this.hurtT = 0.5;
@@ -2820,6 +2900,7 @@ export class Game {
       if (!a.alive || a.seated || v.distance(a.x, a.z) > 0.5 || Math.abs(a.y - v.y) > 2 || !fresh(`${r.id}.${r.life}`)) continue;
       this.thud(v);
       const claim = { t: r.id, head: false, life: r.life, w: RUN, s };
+      this.traded(r.id);
       if (this.isMatchHost) this.applyHit(this.net.selfId, claim);
       else this.net.send("hit", claim, this.matchHostId);
     }
@@ -3801,6 +3882,9 @@ export class Game {
         SFX.hitMarker(head);
       }
     }
+    // a miss counts as a shot at someone only if it wasn't at something else
+    const atNobody = !victim && !naughtyBoy && !cat && !boss && !quarry;
+    for (const r of this.remotes.values()) if (r === victim || (atNobody && r.avatar.alive && nearLine(origin, end, r.avatar.x, r.avatar.y + 1, r.avatar.z) < SHOT_NEAR)) this.traded(r.id);
     if (victim) {
       const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isMatchHost) this.applyHit(this.net.selfId, claim);
