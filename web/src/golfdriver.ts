@@ -1,6 +1,6 @@
 // The one Volkswagen Golf Driver in Bath: the 1983-84 British special edition, a Mk1 with the GTI's
-// black arches, lip spoiler and sill stripe, but the 1.6 under the bonnet, steel wheels, a plain
-// grille and "Driver" on its back quarters. It's petrol blue, and it sits on the drive of number 5,
+// black arches, lip spoiler and sill stripe, but a smaller engine, steel wheels, a plain
+// grille and no badges on its sides. It's petrol blue, and it sits on the drive of number 5,
 // at the head of Cranhill Road off Weston Road, with the driver's door left open and a tape going in
 // the deck: "Petrol Blue Feedback" (tracks/petrol-blue-feedback.ts), loud, through little door
 // speakers. On the passenger seat is the tape's box, "Bath Moon Rising": reach in through the door
@@ -14,7 +14,6 @@
 // nobody's at the wheel, everyone near hears the tape from their own deck, and everyone can take
 // their own copy, kept on their device with their trophies.
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
 import { model, prof } from "./furniture";
 import { GLASS } from "./gloss";
@@ -65,37 +64,13 @@ const DOORWAY: THREE.Plane[] = (() => {
     new THREE.Plane(lean, -lean.dot(new THREE.Vector3(0.74, 0.84, 0)))];
 })();
 
-let decal: THREE.CanvasTexture | null = null;
-/** "Driver" in a sloping script with a stripe running into it, as it was on the back quarters. */
-function driverDecal(): THREE.CanvasTexture {
-  if (decal) return decal;
-  const c = document.createElement("canvas");
-  c.width = 256; c.height = 64;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#ffffff";
-  g.fillRect(0, 40, 92, 6);
-  g.font = 'italic 700 46px "Brush Script MT", "Segoe Script", Georgia, serif';
-  g.textBaseline = "alphabetic";
-  g.fillText("Driver", 100, 46);
-  decal = new THREE.CanvasTexture(c);
-  decal.colorSpace = THREE.SRGBColorSpace;
-  decal.anisotropy = 4;
-  return decal;
-}
-
 /**
- * The Driver's own bits on top of its Golf body (furniture.ts): the decals, the driver's door (on
+ * The Driver's own bits on top of its Golf body (furniture.ts): the driver's door (on
  * the right) hung at its front edge, and the tape on the passenger seat. White parts take the paint
  * (mat); the rest goes in the trim (trim).
  */
 export function driverDressing(mat: THREE.Material, trim: THREE.Material): THREE.Group {
   const g = new THREE.Group(), box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-  const words = new THREE.MeshLambertMaterial({ map: driverDecal(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-  g.add(new THREE.Mesh(mergeGeometries([1, -1].map((s) => {
-    const m = new THREE.PlaneGeometry(0.7, 0.175);
-    if (s < 0) m.rotateY(Math.PI);
-    return m.translate(-1.12, 0.74, s * (SIDE + 0.004));
-  })), words));
   // the door, built out from its hinge along -x, so turning it about y swings it out
   const L = 1.25, win = [[0, 0.84], [-0.62, 1.32], [-L, 1.33], [-L, 0.84]];
   const door = new THREE.Group();
