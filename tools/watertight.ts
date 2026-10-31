@@ -277,9 +277,25 @@ tracks.forEach((p) => {
     }
   }
 });
+// and on the ground round each platform, a few metres out from its edge
+for (const pl of platRings) {
+  const r = pl.r;
+  for (let i = 0; i < r.length; i++) {
+    const A = r[i], B = r[(i + 1) % r.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    for (let u = 0; u < L; u += 8) {
+      let nx = -(B[1] - A[1]) / L, ny = (B[0] - A[0]) / L;
+      const mx = A[0] + ((B[0] - A[0]) * u) / L, my = A[1] + ((B[1] - A[1]) * u) / L;
+      if (inRing(r, mx + nx * 0.5, my + ny * 0.5)) { nx = -nx; ny = -ny; }
+      const x = mx + nx * 3, y = my + ny * 3, g = ground(x, y);
+      if (g !== null && !platformAt(x, y)) eyes.push({ x, y, z: g + 1.6, where: "beside a platform" });
+    }
+  }
+}
 const AZ = 12, ELEV = [-4, -12, -25, -45, -70].map((d) => (d * Math.PI) / 180), REACH = 30, DS = 0.2;
 const holes = new Map<string, { x: number; y: number; n: number; sky: number; where: string; at: number[] }>();
 for (const e of eyes) {
+  const inside = body(e.x, e.y, ground(e.x, e.y)!);
+  if (inside && e.z < inside[1] && e.z > inside[0]) continue;     // (shut inside the body: nowhere anyone stands)
   let n = 0, sky = 0, at: number[] = [];
   for (let ai = 0; ai < AZ; ai++) for (const el of ELEV) {
     const az = (ai / AZ) * Math.PI * 2, dx = Math.cos(az) * Math.cos(el), dy = Math.sin(az) * Math.cos(el), dz = Math.sin(el);
