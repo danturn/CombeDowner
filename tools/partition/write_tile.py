@@ -2020,6 +2020,12 @@ def follow_laid_ground(tile, change):
                 dz = change(row[xi], row[xi + 1])
                 if abs(dz) > 0.05:
                     row[zi] = round(row[zi] + dz, 2)
+    # (and a stream along its bed, which was laid on the base tile's ground)
+    for w in tile.get("wl") or []:
+        for q in w.get("p") or []:
+            dz = change(q[0], q[1])
+            if abs(dz) > 0.05:
+                q[2] = round(q[2] + dz, 2)
     return moved
 
 
