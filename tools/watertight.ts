@@ -214,7 +214,11 @@ function body(x: number, y: number, g: number): [number, number] | null {
   const t = top(x, y, n.z + 0.3);
   if (t === null || t <= g) return null;
   const plan = plans[n.t];
-  const lo = n.flag === 1 && plan.span(n.s) ? Math.max(g, plan.bottom(n.s)) : g;
+  // (the underside as drawn: straight between the bottom's heights every 0.75 m or so, railway.ts)
+  const s0 = plan.s[n.k], L = plan.s[n.k + 1] - s0, m = Math.max(1, Math.ceil(L / 0.75)), u = Math.min(m - 1, Math.floor(((n.s - s0) / (L || 1)) * m));
+  const sa = s0 + (L * u) / m, sb = s0 + (L * (u + 1)) / m, fr = (n.s - sa) / (sb - sa || 1);
+  const drawn = plan.bottom(sa) + (plan.bottom(sb) - plan.bottom(sa)) * fr;
+  const lo = n.flag === 1 && plan.span(n.s) ? Math.max(g, drawn) : g;
   return t > lo ? [lo, t] : null;
 }
 
