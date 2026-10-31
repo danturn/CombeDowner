@@ -186,6 +186,10 @@ def main():
             for e in (0, len(r["p"]) - 1):
                 all_ends[(round(r["p"][e][0]), round(r["p"][e][1]))] += 1
                 if mk[e] == 1: span_ends[(round(r["p"][e][0]), round(r["p"][e][1]))].append(r)
+        joints = bridge_joints(roads, marks)
+        pieces = set_pieces_near(m)
+        # (a span in a set piece's outline is the set piece's, which builds what holds it up: held)
+        held = {id(r) for r, mk in zip(roads, marks) if pieces and any(f == 1 and any(pc.contains(Point(q[:2])) for pc in pieces) for q, f in zip(r["p"], mk))}
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
             p = r["p"]
@@ -201,10 +205,11 @@ def main():
                     c = q[2] - ground(q[0], q[1])
                     if c < -0.3: note("3 span sunk in the ground", -c, (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} {c:.1f} m")
                 # starts and ends on the ground, not where its record does: the game builds each
-                # record's span as a bridge of its own, with an abutment at a deck end left in the air
+                # record's span as a bridge of its own, with an abutment at a deck end left in the air,
+                # unless it joins the next record's span there into one bridge (world.ts joinSpans)
                 T = m["t"]
                 for end in (k, e):
-                    if mk[end] == 1 and end in (0, len(p) - 1) and not (
+                    if mk[end] == 1 and end in (0, len(p) - 1) and (id(r), end == 0) not in joints and id(r) not in held and not (
                             min(p[end][0] - T["x0"], T["x0"] + (T["nx"] - 1) * T["dx"] - p[end][0],
                                 p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3):
                         note("3 span ends where its record does", 1, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
@@ -421,7 +426,10 @@ def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
     wps = [w for w in m["wp"] if len(w["r"][0]) >= 3]
     wz = [w["z"] for w in wps]
     wtree = shapely.STRtree(water_all)
-    blds = [h for h in m["bl"] if len(h["r"][0]) >= 3]
+    # (the game hides what a set piece's outline holds and builds its own: landmarks/setpieces.ts)
+    pieces = set_pieces_near(m)
+    hidden = lambda ring: any(p.contains(Point(sum(q[0] for q in ring) / len(ring), sum(q[1] for q in ring) / len(ring))) for p in pieces)
+    blds = [h for h in m["bl"] if len(h["r"][0]) >= 3 and not hidden(h["r"][0])]
     homes = [Polygon(h["r"][0]) for h in blds]
     homes = [g if g.is_valid else g.buffer(0) for g in homes]
     htree = shapely.STRtree(homes)
@@ -790,6 +798,51 @@ def roofs_whole(m, tag, note):
             if j <= i: continue
             x = p.intersection(q).area
             if x > 2: note("11 buildings standing in each other", x, (tag, round(p.centroid.x), round(p.centroid.y)), f"{x:.0f} m2")
+
+
+def set_pieces_near(m):
+    """The outlines of the set pieces reaching this square (tools/check_more.py reads them from the game)."""
+    if not m.get("centre"): return []
+    sq = box(*m["b"]).buffer(200)
+    return [p for p in check_more._set_pieces(tuple(m["centre"])) if p.intersects(sq)]
+
+
+def bridge_joints(roads, marks):
+    """The record ends where the game joins one bridge record's span on to the next one's
+    (world.ts joinSpans), as (id(record), whether it is the first point): two spans meeting end to
+    end, or at a junction on the deck the same street running on most nearly straight."""
+    spans = [r for r, mk in zip(roads, marks) if any(mk)]
+    key = lambda q: (round(q[0] * 3), round(q[1] * 3))
+    ends = collections.defaultdict(list)
+    for i, r in enumerate(spans):
+        for q in (r["p"][0], r["p"][-1]): ends[key(q)].append(i)
+
+    def leaving(r, q):
+        p = r["p"]
+        A, B = (p[0], p[1]) if key(p[0]) == key(q) else (p[-1], p[-2])
+        n = math.dist(A[:2], B[:2]) or 1
+        return ((B[0] - A[0]) / n, (B[1] - A[1]) / n)
+
+    def onward(i, q):
+        e = ends[key(q)]
+        if len(e) < 2 or len(q) < 4 or q[3] != 1: return None
+        if len(e) == 2:
+            j = e[1] if e[0] == i else e[0]
+            return None if j == i else j
+        a, da, best, most = spans[i], leaving(spans[i], q), None, math.cos(math.pi / 5)
+        for j in e:
+            b = spans[j]
+            if j == i or ((a["n"] != b["n"]) if (a["n"] or b["n"]) else (a["c"] != b["c"])): continue
+            db = leaving(b, q)
+            straight = -(da[0] * db[0] + da[1] * db[1])
+            if straight > most: most, best = straight, j
+        return best
+    out = set()
+    for i, r in enumerate(spans):
+        for first, q in ((True, r["p"][0]), (False, r["p"][-1])):
+            j = onward(i, q)
+            if j is not None and onward(j, q) == i: out.add((id(r), first))
+    return out
 
 
 def walls_facing_in(b):
