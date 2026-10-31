@@ -38,11 +38,15 @@ case by case:
     wall drawn facing indoors, no roof reaching well past its walls, no ridge more than 15 m over
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw.
+12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
+    tunnel mouths, pubs and wires, boats.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_more   # rules 12 on (tools/check_more.py)
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -339,6 +343,7 @@ def main():
         fit_together(m, tag, note, f)
         roofs_whole(m, tag, note)
         under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
+        check_more.square(m, tag, note, f)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
