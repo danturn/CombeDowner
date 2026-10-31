@@ -1798,13 +1798,21 @@ if True:
         held = blk[rim & fixed]
         alone = all(int(o) == k for o in bank_tree.query(poly, predicate="dwithin", distance=1.0))
         if alone and len(held) and held.min() < wz + 0.1:
-            wz = round(float(held.min()) - 0.1, 1)
-            entry["z"] = wz
+            low = round(float(held.min()) - 0.1, 1)
             bwin, wet = cover_xy(poly, edge=True)
             wet &= ~flat_in[bwin]
-            bed = grid[bwin]; bed[wet] = np.minimum(bed[wet], wz - 0.6); grid[bwin] = bed
+            was = grid[bwin].copy()
+            bed = grid[bwin]; bed[wet] = np.minimum(bed[wet], low - 0.6); grid[bwin] = bed
+            # (a pond too small for the grid to dig a bed under it keeps its level, rather than
+            # come down below its own floor)
+            mid = poly.representative_point()
+            if gelev0(mid.x, mid.y) > low + 0.1:
+                grid[bwin] = was
+            else:
+                wz = low
+                entry["z"] = wz
+                lowered += 1
             blk = grid[win]
-            lowered += 1
         up = rim & ~fixed & (blk < wz + 0.1)
         rimmed += int(up.sum())
         if up.any(): rim_lift = max(rim_lift, float((wz + 0.1 - blk[up]).max()))
