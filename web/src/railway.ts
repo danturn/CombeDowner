@@ -635,8 +635,10 @@ export class Railway {
               if (q.kind === "wall") continue;
               for (const sp of [q.a, q.b]) {
                 if (sp < plan.s[k] || sp >= plan.s[k + 1]) continue;
-                const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1, hi = plan.bottom(sp) - M[2];
-                if (hi - lo < 0.3) continue;
+                // up to the deck, not only to the springing, so nothing is seen past the arch's last
+                // facet into the pier; and down past the ground the data records, as a wall's sides go
+                const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1 - WALL_SKIRT, hi = 0.2;
+                if (plan.bottom(sp) - M[2] - (plan.ground(sp) - M[2] - 1) < 0.3) continue;
                 quad(P(M, -2.4, lo), P(M, 2.4, lo), P(M, 2.4, hi), P(M, -2.4, hi), STONE);
               }
             }
