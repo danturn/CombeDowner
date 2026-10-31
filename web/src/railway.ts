@@ -681,6 +681,7 @@ export class Railway {
       // passes under: an arch under the line beside it ends at its wall, not in the open space under it.
       let low = top - 4;
       for (const p of tracks2) for (const q of p) if (q[3] === 1 && q[4] !== undefined && q[0] > x0 - 10 && q[0] < x1 + 10 && q[1] > y0 - 10 && q[1] < y1 + 10) low = Math.min(low, q[4] - z0 - 0.3);
+      let over = Infinity;
       for (let q = 0; q < ring.length; q++) {
         const A = ring[q], B = ring[(q + 1) % ring.length];
         const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
@@ -691,6 +692,7 @@ export class Railway {
           const P0 = [A[0] + ((B[0] - A[0]) * u) / n, A[1] + ((B[1] - A[1]) * u) / n], P1 = [A[0] + ((B[0] - A[0]) * (u + 1)) / n, A[1] + ((B[1] - A[1]) * (u + 1)) / n];
           const headroom = Math.max(this.need(P0[0], P0[1]), this.need(P1[0], P1[1]), this.need((P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2));
           const foot = Math.min(top - 4, headroom > 0 ? low + 0.3 + headroom : low);
+          if (headroom > 0) over = Math.min(over, foot);
           pos2.push(P0[0], top, -P0[1], P1[0], top, -P1[1], P1[0], foot, -P1[1], P0[0], top, -P0[1], P1[0], foot, -P1[1], P0[0], foot, -P0[1]);
           for (let k = 0; k < 6; k++) col2.push(...BRICK);
         }
@@ -705,6 +707,8 @@ export class Railway {
         };
         strip(0, 0.45, 0.01, COPING); strip(0.5, 0.9, 0.012, STUDS); strip(1.05, 1.15, 0.012, YELLOW);
       }
+      // over a road or path its walls stop at the headroom, so it has an underside there, like a bridge's
+      if (over < Infinity) for (let q = 0; q < surf.count; q++) { pos2.push(surf.getX(q), over, surf.getZ(q)); col2.push(...SOFFIT); }
       add(pos2, col2);
       this.plat.push({ n: pl.n, no: pl.no ?? "", r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
     }
