@@ -2741,6 +2741,13 @@ def pave_slivers(pave, paving, buildings, kept, width=SLIVER):
 ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
 ALONG_LEAST = 4.0      # metres of a path's strip along a pavement before it is taken for that pavement
 ALONG_STEP = 0.4       # metres a footway beside a pavement may lie off its street's level and still be paved as it
+ALONG_CELL = 6.0       # metres: the stretch of such a footway whose level is judged at a time
+
+
+def longest_run(lines):
+    """The length of the longest unbroken stretch of `lines`."""
+    parts = shapely.line_merge(unary_union([g for g in getattr(lines, "geoms", [lines]) if g.geom_type in ("LineString", "MultiLineString")] or [LineString()]))
+    return max((g.length for g in getattr(parts, "geoms", [parts])), default=0.0)
 
 
 def paths_along_pavements(path, pave, reach=ALONG_REACH, least=ALONG_LEAST, off_level=None):
@@ -2761,9 +2768,33 @@ def paths_along_pavements(path, pave, reach=ALONG_REACH, least=ALONG_LEAST, off_
     for g in getattr(near, "geoms", [near]):
         if g.geom_type != "Polygon" or g.area < 0.5:
             continue
-        shared = g.exterior.intersection(edge).length
-        if shared > least and not (off_level and off_level(g)):
+        # (its longest stretch along it: a path leaving the pavement at a slant at each end shares more
+        # than its width in all, but runs along it nowhere)
+        shared = longest_run(g.exterior.intersection(edge))
+        if shared <= least:
+            continue
+        if off_level is None:
             take.append(g)
+            continue
+        # (judged a few metres at a time, where it meets the pavement: a long footway beside a street
+        # that climbs past a bank only there is that pavement everywhere else, and stays a strip of its
+        # own, a step off it, there)
+        x0, y0, x1, y1 = g.bounds
+        cells = [box(x, y, x + ALONG_CELL, y + ALONG_CELL) for x in np.arange(x0, x1, ALONG_CELL)
+                 for y in np.arange(y0, y1, ALONG_CELL)]
+        meet, behind = [], []
+        for piece in shapely.intersection(g, cells):
+            for q in getattr(piece, "geoms", [piece]):
+                if q.geom_type != "Polygon" or q.area <= 0.05:
+                    continue
+                seam = q.exterior.intersection(edge)
+                if seam.length < 0.5:
+                    behind.append(q)
+                elif not off_level(seam):
+                    meet.append(q)
+        if meet:
+            near_meet = unary_union(meet).buffer(0.05)
+            take += meet + [q for q in behind if near_meet.intersects(q)]
     if not take:
         return path, Polygon()
     along = unary_union(take)
@@ -3405,11 +3436,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                         unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
     taken = unary_union([road, pave, plaza, *buildings])
     path = drawn_paths(shapes("path"), rd, taken).difference(taken)
-    def off_level(g):
-        for x, y in shapely.segmentize(g.exterior, 2.0).coords:
+    def off_level(seam):
+        for x, y in shapely.get_coordinates(shapely.segmentize(seam, 2.0)):
             k, z = nearest(x, y), ground(x, y)
             lv = None if k is None or z is None else _level_at(heights[k], x, y, ground, square)
-            if lv is not None and abs(z - lv) > ALONG_STEP:
+            if lv is not None and abs(z - lv) > ALONG_STEP + PAVE_FALL:
                 return True
         return False
     path, along = paths_along_pavements(path, pave, off_level=off_level)
@@ -3550,11 +3581,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # across above it: stood level with the middle of the street, its back stood a kerb and more over
     # the grass and showed as a dark step, wherever the ground falls away from a street (Sydney Road
     # over the canal's tunnel). The kerb side stays level with the carriageway.
+    # Where a footway mapped beside the street was taken into its pavement, the pavement reaches back
+    # over that footway's ground and lies on it, as the footway did: held at the street's level it
+    # stood a ledge over the ground behind, and the house there stood on air.
+    widened = along.buffer(0.05) if not along.is_empty else None
     for k in walk - kerbside:
-        g = ground(v[3 * k], v[3 * k + 1])
+        x, y = v[3 * k], v[3 * k + 1]
+        g = ground(x, y)
         if g is not None:
             z = v[3 * k + 2]
-            v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
+            if widened is not None and shapely.contains_xy(widened, x, y):
+                v[3 * k + 2] = round(g, 2)
+            else:
+                v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
     for k in PATH_FACE.values():
         if not out[k]:
             del out[k]
