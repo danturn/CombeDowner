@@ -463,6 +463,12 @@ KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassif
 FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
 
 
+def longest_run(lines):
+    """The length of the longest unbroken stretch of `lines`."""
+    parts = shapely.line_merge(shapely.union_all([g for g in getattr(lines, "geoms", [lines]) if g.geom_type in ("LineString", "MultiLineString")] or [LineString()]))
+    return max((g.length for g in getattr(parts, "geoms", [parts])), default=0.0)
+
+
 def faces_of(m):
     """The streets' faces (sf) as the game draws them: each kind's triangles, unioned."""
     sf = m.get("sf")
@@ -505,6 +511,14 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
         if over > 0.5:
             c = band.intersection(soft).representative_point()
             note("9 paving over a carriageway", over, at(c.x, c.y), f"{r['c']} {r['n']!r} {over:.1f} m2")
+    if "pave" in F:
+        # (two faces drawn over each other flicker in the game, and a pavement over the road hides it)
+        cars = shapely.union_all([F[k] for k in ("road", "service") if k in F] or [Polygon()])
+        both = F["pave"].intersection(cars).intersection(inner)
+        for g in getattr(both, "geoms", [both]):
+            if g.geom_type == "Polygon" and g.area > 0.5:
+                c = g.representative_point()
+                note("9 pavement over the road", g.area, at(c.x, c.y), f"{g.area:.1f} m2")
     if "path" in F and "pave" in F:
         edge = F["pave"].boundary
         # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
@@ -512,7 +526,8 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
         for g in getattr(F["path"], "geoms", [F["path"]]):
             if g.geom_type != "Polygon" or not inner.intersects(g): continue
             shared = g.exterior.intersection(edge.buffer(0.05))
-            along = shared.length
+            # (its longest stretch: a path leaving the pavement at a slant at both ends runs along it nowhere)
+            along = longest_run(shared)
             steps = [abs(zs["path"][k] - zs["pave"][k]) for k in
                      ((round(x, 2), round(y, 2)) for x, y in shapely.get_coordinates(shared))
                      if k in zs["path"] and k in zs["pave"]]
