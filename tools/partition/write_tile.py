@@ -1834,6 +1834,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
 
     deck_nodes = {(q[0], q[1]) for r in rd if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
                   for q in r["p"] if flagged(q, 1)}
+    mouths = [tuple(q[:2]) for t in tunnels or () if len(t["p"]) > 1 for q in (t["p"][0], t["p"][-1])]
 
     def hold(run, reach, core=0.0):
         # (the ground under a street or the railway on the ground stays as the base tile laid it,
@@ -1865,6 +1866,11 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
                                  and not (in_tube and in_tube(*q[:3]))}):
                 for a, b in zip(st, st[1:]):
                     hold([p[a], p[b]], reach, 0.0 if a in at_deck or b in at_deck else r.get("w", 4) / 2 + 0.5)
+        elif mouths:
+            # (a path's last metres into a tunnel lie in the mouth's cutting: the ground is laid to
+            # them, so the hill laid over the tunnel's roof doesn't ease back over its floor)
+            r["_lay"] = lay | {tuple(q[:2]) for q in p if not flagged(q, 1, 2) and not (in_tube and in_tube(*q[:3]))
+                               and any(math.dist(q[:2], m) < PORTAL for m in mouths)}
     for t in rails:
         for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}):
             if len(st) >= 2:
