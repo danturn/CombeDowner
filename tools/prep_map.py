@@ -3441,9 +3441,11 @@ print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path 
 # telegraph poles go up once the walls and buildings are down, each clear of them
 from landscape import telegraph, string_wires
 from buildings import zone_at
+_items = shapely.STRtree([shapely.Point(q[1], q[2]) for q in fx if q[0] not in ("car", "wheelie")])
 tpoles, twires = telegraph(_whole_streets(roads), doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True,
                            clear=lambda x, y: not (near_line(shapely.Point(x, y), 0.2)
-                                                   or len(indoor.query(shapely.Point(x, y), predicate="within"))),
+                                                   or len(indoor.query(shapely.Point(x, y), predicate="within"))
+                                                   or len(_items.query(shapely.Point(x, y), predicate="dwithin", distance=0.5))),
                            widths=RW)
 fx += tpoles
 for r in roads:
