@@ -373,13 +373,19 @@ function enterFreeMode() {
   game.active = true;
   $("touch").hidden = false;
   $("pause").hidden = true;
-  $("pausehint").textContent = "Drag on the right to look, use the stick on the left to move, tap to shoot.";
+  $("pausehint").textContent = "Drag on the right to look, use the stick on the left to move, tap to shoot. "
+    + "With a keyboard: W A S D move, the arrow keys look, Enter shoots and / aims.";
 }
 
+/** How many times running the browser has refused to capture the mouse. */
+let lockFails = 0;
 /** Pointer lock was refused, often because the click that asked for it came too long ago. */
 function lockFailed() {
   if (!game || freeMode) return;
   if (!MOUSE) return enterFreeMode();
+  // refused again after a fresh click, on something with a touch screen too (an iPad with a
+  // keyboard and trackpad): it isn't going to, so play with the touch controls and the keyboard
+  if (++lockFails >= 2 && navigator.maxTouchPoints > 0) return enterFreeMode();
   if ($("pause").hidden) { $("clickhint").hidden = false; return; }   // keep playing; a click captures the mouse
   showPause();
   $("pausehint").textContent = "Click Resume to aim with the mouse.";
@@ -430,6 +436,7 @@ function resume() {
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
+  if (locked) lockFails = 0;
   // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
   if (!locked && (game.mapOpen || easelUp())) { $("clickhint").hidden = true; return; }
   game.active = locked;

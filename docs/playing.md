@@ -162,6 +162,16 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 - Sound: music, sound effects, background (the traffic, birds and wind round you) and voice chat volumes.
 - Reset to defaults puts them all back.
 
+### Touch screens, and an iPad's keyboard
+
+On a phone or an iPad you drag on the right of the screen to look, push the stick that comes up
+under your thumb on the left to move, and tap to shoot; the buttons round the edge do the rest. A
+keyboard works alongside (an iPad's Magic Keyboard, say): W A S D move, the arrow keys look round
+(slowly at first, for a fine aim, then faster), Enter shoots (hold it for a burst) and / aims,
+again to stop. The other keys do what they do on a computer. The arrows walk instead whenever the
+mouse is captured. If the browser keeps refusing to capture a trackpad, the game gives up asking
+and plays this way.
+
 ### Game controllers
 
 A PS5 pad (over Bluetooth or a cable), an Xbox pad or any other the browser sees plays the whole

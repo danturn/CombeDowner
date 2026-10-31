@@ -971,6 +971,15 @@ export class Game {
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
       if (this.active && !e.repeat && isKey(e.code, "use")) { this.leaveKey = true; this.useKey = true; }
+      // no mouse to click (an iPad's keyboard): Enter shoots, held for a burst, and / aims, again to stop
+      if (isKey(e.code, "keyfire") && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
+        e.preventDefault();
+        if (!e.repeat) { this.firing = true; this.shootOnce = true; }
+      }
+      if (isKey(e.code, "keyaim") && !e.repeat && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
+        e.preventDefault();
+        this.aiming = !this.aiming; this.binoculars = false;
+      }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (isKey(e.code, "bino") && !e.repeat && this.active) this.toggleBinoculars();
       if (isKey(e.code, "view") && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
@@ -992,6 +1001,7 @@ export class Game {
     addEventListener("keyup", (e) => {
       if (e.code === "Tab") $("scoreboard").hidden = true;
       if (e.code === "KeyV") this.voice.radio(false);
+      if (isKey(e.code, "keyfire")) this.firing = false;
     }, sig);
     addEventListener("blur", () => this.voice.radio(false), sig);
   }
@@ -1246,6 +1256,21 @@ export class Game {
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
+  }
+
+  /** How long the arrow keys have been held down to look round. */
+  private arrowHeld = 0;
+  /** The arrow keys looking round, with no mouse to do it: slowly at first, for a fine aim, then
+   *  quickly enough to turn round. Aiming down the sights slows it, as it does the mouse. */
+  private arrowLook(dt: number, on: boolean) {
+    const k = this.player.keys;
+    const x = on ? (k.has("ArrowRight") ? 1 : 0) - (k.has("ArrowLeft") ? 1 : 0) : 0;
+    const y = on ? (k.has("ArrowDown") ? 1 : 0) - (k.has("ArrowUp") ? 1 : 0) : 0;
+    if (!x && !y) { this.arrowHeld = 0; return; }
+    this.arrowHeld += dt;
+    // radians a second, turned into the mouse's units
+    const rate = (0.35 + 0.65 * Math.min(1, this.arrowHeld / 0.4)) * dt / this.player.sensitivity;
+    this.look(x * rate * 2.4, y * rate * 1.4);
   }
 
   /** The jump button: walks off the ball if you're lining up a kick, and is the handbrake while driving. */
@@ -4035,6 +4060,9 @@ export class Game {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
+      // no mouse captured (an iPad with a keyboard, a touch screen): the arrow keys look round instead of walking
+      p.arrowsWalk = !this.freeMode;
+      if (this.freeMode) this.arrowLook(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !this.reveal.on && !placeNow());
       p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
