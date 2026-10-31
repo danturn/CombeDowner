@@ -810,7 +810,8 @@ def set_pieces_near(m):
 def bridge_joints(roads, marks):
     """The record ends where the game joins one bridge record's span on to the next one's
     (world.ts joinSpans), as (id(record), whether it is the first point): two spans meeting end to
-    end, or at a junction on the deck the same street running on most nearly straight."""
+    end, or at a junction on the deck the same street running on most nearly straight; and the ends
+    that meet another deck, which it builds as a joint, not a bank."""
     spans = [r for r, mk in zip(roads, marks) if any(mk)]
     key = lambda q: (round(q[0] * 3), round(q[1] * 3))
     ends = collections.defaultdict(list)
@@ -837,11 +838,17 @@ def bridge_joints(roads, marks):
             straight = -(da[0] * db[0] + da[1] * db[1])
             if straight > most: most, best = straight, j
         return best
+    # (and where a span's end is on another way's deck, as a branch off a junction on the deck is,
+    # the game stands no abutment there either: world.ts bridgeStructures, joint)
+    decked = collections.defaultdict(set)
+    for r, mk in zip(roads, marks):
+        for q, f in zip(r["p"], mk):
+            if f == 1: decked[key(q)].add(id(r))
     out = set()
     for i, r in enumerate(spans):
         for first, q in ((True, r["p"][0]), (False, r["p"][-1])):
             j = onward(i, q)
-            if j is not None and onward(j, q) == i: out.add((id(r), first))
+            if (j is not None and onward(j, q) == i) or decked[key(q)] - {id(r)}: out.add((id(r), first))
     return out
 
 
