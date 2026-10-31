@@ -16,11 +16,16 @@
 17. Where the game sends players: a pub's door is outside, near a street and inside the force
     field; an overhead wire doesn't run through a building or low over a road.
 18. Boats: a moored boat is on the canal's water, not in a lock, under a bridge or in another boat.
+19. The railway is watertight, as the game builds it (tools/watertight.ts runs the game's own
+    web/src/railway.ts over the squares' ground): nowhere on its track bed, bridges or platforms is
+    what you stand on well below what's drawn ("falls through the floor"), and no ray from standing
+    height on, under or beside the line passes into its body (under its ballast, deck or platform,
+    above the ground and an arch's opening) without meeting a face ("sky through the ground").
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
 """
-import functools, json, math, os, subprocess
+import functools, json, math, os, subprocess, tempfile
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
@@ -86,6 +91,25 @@ def _set_pieces(centre):
         for r in rings:
             if len(r) >= 3: out.append(_poly([(ox + ux * lx + uy * lz, oy + uy * lx - ux * lz) for lx, lz in r]))
     return out
+
+
+@functools.lru_cache(maxsize=2)
+def watertight(root, map_id):
+    """Rule 19's findings over the whole map, from tools/watertight.ts bundled with the game's code;
+    none if that can't be run. Called once before the squares are checked, so it runs only once."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    web = os.path.join(os.path.dirname(here), "web")
+    try:
+        js = subprocess.run([os.path.join(web, "node_modules", ".bin", "esbuild"), "--bundle", "--platform=node", "--format=esm",
+                             "--loader=ts", "--log-level=error",
+                             "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"
+                             "globalThis.document={createElement:()=>({getContext:()=>new Proxy({},{get:()=>()=>({})})})};"],
+                            input=open(os.path.join(here, "watertight.ts")).read(), cwd=web, capture_output=True, text=True, check=True).stdout
+        with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
+            f.write(js); f.flush()
+            return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
 
 
 def _unmask(m, pieces):
@@ -229,6 +253,8 @@ def square(m, tag, note, f):
             dz = q[2] - float(ground(ox, oy))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
+    for w in watertight(root, map_id):
+        if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
 
 

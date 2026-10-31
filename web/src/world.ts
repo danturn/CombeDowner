@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { Need, needUnder } from "./railbridge";
+import { Need, railNeed } from "./railbridge";
 import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
@@ -1731,19 +1731,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     map.movers.push(...canal.moored);
   }
   /** The headroom wanted under the railway at data (x, y), by what passes under there: the village's
-   *  and the rest of Bath's (the wider map). A van's under a street, a walker's under its pavements
-   *  and a path, a narrowboat's under the canal. */
+   *  and the rest of Bath's (the wider map). */
   function underRail(rail: NonNullable<typeof map.railData>): Need {
-    const ways: { p: number[][]; reach: number; need: number }[] = [];
-    for (const r of [...map.d.rd, ...(map.wide?.rd ?? [])]) {
-      if (r.bridge) continue;
-      const foot = PATHS.has(r.c);
-      ways.push({ p: r.p, reach: width(r) / 2 + (KERBED.has(r.c) ? pv(r) : 0.3) + 1, need: 2.3 });
-      if (!foot) ways.push({ p: r.p, reach: width(r) / 2 + 0.3, need: 3.4 });
-    }
-    for (const l of [...map.d.wl, ...(map.wide?.wl ?? [])]) ways.push({ p: l.p, reach: 2, need: l.c === "canal" ? 2.8 : 0.8 });
-    for (const run of map.canalData?.runs ?? []) ways.push({ p: run.p, reach: 6, need: 2.8 });
-    return needUnder(rail.tracks.map((t) => t.p), ways, [...map.d.wp, ...(map.wide?.wp ?? [])].map((w) => w.r[0]));
+    return railNeed(rail.tracks.map((t) => t.p), [...map.d.rd, ...(map.wide?.rd ?? [])], [...map.d.wl, ...(map.wide?.wl ?? [])],
+      [...map.d.wp, ...(map.wide?.wp ?? [])].map((w) => w.r[0]), map.canalData?.runs ?? []);
   }
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }

@@ -39,7 +39,7 @@ case by case:
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
-    tunnel mouths, pubs and wires, boats.
+    tunnel mouths, pubs and wires, boats, and the railway's holes.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
@@ -346,6 +346,7 @@ def main():
         check_more.square(m, tag, note, f)
         return found
 
+    check_more.watertight(root, map_id)      # (once, here, so every worker shares it)
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check
