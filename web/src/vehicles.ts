@@ -151,12 +151,12 @@ export const SPECS: Record<VKind, Spec> = {
     offroad: true, paint: LR_PAINT,
   },
   golf: {   // every Golf about is a Mk1 GTI (makes.ts): very nearly an XR3i
-    name: "Volkswagen Golf GTI", L: 3.8, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
+    name: "Volkswagen Golf GTI", L: 3.7, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: GOLF_PAINT,
   },
   golfdriver: {   // the one Golf Driver, parked on a drive on Cranhill Road (golfdriver.ts): the GTI's looks on a 1.6
-    name: "Volkswagen Golf Driver", L: 3.8, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 37, accel: 5.5, brake: 11, rev: 7,
+    name: "Volkswagen Golf Driver", L: 3.7, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 37, accel: 5.5, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: [PETROL_BLUE],
   },
