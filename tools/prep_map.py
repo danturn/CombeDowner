@@ -2110,21 +2110,30 @@ def _faced(poly):
     return bool(ring) and roof_faces.ring_key({"r": [ring, *holes]}) in FACES
 
 
-def give_way(cand, info):
+def give_way(cand, info, fresh):
     """Two outlines mapped over one another (a block mapped whole and again as its parts, a house
     mapped again inside its terrace, two guesses at one semi) would stand walls and roofs inside each
     other. Where one lies within the other, the bigger has it cut out, as a courtyard or a notch, so
     each part stands on its own ground at its own height; where they only overlap, the overlap goes
     from the smaller. An outline whose lidar roof is kept isn't cut (the roof is fitted to it), nor
-    is a pitched roof given a hole it would span, nor is an outline cut in two."""
+    is a pitched roof given a hole it would span, nor is an outline cut in two. A part standing inside
+    another gets a courtyard of its own only where the lidar or the mapped heights put it higher or
+    lower than the rest; at the same height it is one roof, and the part is left out of the whole.
+    Returns how many were cut, and which parts were left out."""
+    def known(n):
+        return fresh[n] or cand[n][1].get("height") or cand[n][1].get("num_floors")
+
+    def level(n):
+        return info[n]["eaves"], info[n]["eaves"] + (info[n]["roof"]["rise"] if info[n]["roof"] else 0)
+
     polys = [c[0] for c in cand]
     tree = shapely.STRtree(polys)
     faced = [None] * len(polys)
     is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i])) or faced[i]
-    cut = 0
+    cut, merged = 0, set()
     for i in range(len(polys)):
         for j in sorted(int(k) for k in tree.query(polys[i])):
-            if j <= i: continue
+            if j <= i or i in merged or j in merged: continue
             a, b = polys[i], polys[j]
             over = a.intersection(b).area
             if over < 0.5: continue
