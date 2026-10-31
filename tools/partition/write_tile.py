@@ -3542,6 +3542,68 @@ def drop_paths_along_streets(rd):
     return out, cut
 
 
+INDOORS_FLOOR = 2.0     # metres of a way inside a building before it is stopped at the wall: less is a corner clipped
+
+
+def buildings_next_door(ti, tj, base, sq, reach=40.0):
+    """The footprints the squares round this one hold that reach within `reach` of it: a path by the
+    edge can run into a building the next square has. Taken from the next square's own starting
+    point beside `base`, else from the game's copy of it."""
+    near, out = box(*sq).buffer(reach), []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            if not (di or dj):
+                continue
+            name = f"{ti + di}_{tj + dj}.json"
+            path = os.path.join(os.path.dirname(os.path.abspath(base)), name)
+            if not os.path.exists(path):
+                path = os.path.join(os.path.dirname(tile_base(ti, tj)[0]), name)
+            if not os.path.exists(path):
+                continue
+            for b in json.load(open(path)).get("bl") or []:
+                rings = b.get("r") or []
+                if len(rings) and len(rings[0]) >= 3:
+                    g = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3]).buffer(0)
+                    if g.intersects(near):
+                        out.append(g)
+    return out
+
+
+def ways_out_of_buildings(rd, houses, floor=2.0):
+    """A way the data runs on through a building (a shopping centre's corridors, an arcade, a
+    passage through a terrace, a path drawn on to a door inside, a lane into a covered yard) stops
+    at its wall: the game's buildings are solid, so indoors the way would lie under the floor and
+    lead walkers and drivers into the wall. A building by a stretch on a deck or in a tunnel is left
+    to it."""
+    inner = [g for g in (h.buffer(0).buffer(-0.3) for h in houses) if not g.is_empty]
+    if not inner:
+        return rd, 0.0
+    tree = STRtree(inner)
+    out, cut = [], 0.0
+    for r in rd:
+        if len(r["p"]) < 2:
+            out.append(r)
+            continue
+        line = LineString([tuple(q[:3]) for q in r["p"]])
+        ends = (Point(r["p"][0][:2]), Point(r["p"][-1][:2]))
+        raised = [Point(q[:2]) for q in r["p"] if len(q) > 3 and q[3]]
+        hit = [inner[int(k)] for k in tree.query(line)
+               if (inner[int(k)].intersection(line).length > INDOORS_FLOOR
+                   or any(inner[int(k)].contains(e) for e in ends))
+               and not any(inner[int(k)].distance(q) < 1.0 for q in raised)]
+        if not hit:
+            out.append(r)
+            continue
+        rest = line.difference(unary_union([h.buffer(0.8) for h in hit]))
+        cut += line.length - rest.length
+        marks = {(q[0], q[1]): q[3:] for q in r["p"]}
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type == "LineString" and piece.length >= floor:
+                out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
+                                      for x, y, z in piece.coords]))
+    return out, cut
+
+
 def carry_one_way(rd, old):
     """One-way streets keep their way: the corridors don't carry it, so each new stretch takes `ow`
     from the old build's road it lies along (most of its length within 2 m of one), turned to its
@@ -5568,6 +5630,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     verge_out_of_town(rd, houses)
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
+    rd, _ = ways_out_of_buildings(rd, houses + buildings_next_door(ti, tj, base, sq))
     rd, _ = drop_paths_along_streets(rd)
     whole_spans(rd, sq, road_ground, wet)
     paths_on_the_towpath(rd, canal)
