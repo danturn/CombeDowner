@@ -59,9 +59,9 @@ export function driverSpot(map: GameMap): { x: number; z: number; a: number } | 
  */
 const DOORWAY: THREE.Plane[] = (() => {
   const P = (x: number, y: number, z: number, c: number) => new THREE.Plane(new THREE.Vector3(x, y, z), c);
-  const lean = new THREE.Vector3(0.48, 0.62, 0).normalize();
+  const lean = new THREE.Vector3(0.44, 0.47, 0).normalize();
   return [P(1, 0, 0, -0.79), P(-1, 0, 0, -0.45), P(0, 1, 0, -1.32), P(0, -1, 0, 0.4), P(0, 0, 1, -0.95), P(0, 0, -1, -0.72),
-    new THREE.Plane(lean, -lean.dot(new THREE.Vector3(0.74, 0.84, 0)))];
+    new THREE.Plane(lean, -lean.dot(new THREE.Vector3(0.74, 0.87, 0)))];
 })();
 
 /**
@@ -72,19 +72,19 @@ const DOORWAY: THREE.Plane[] = (() => {
 export function driverDressing(mat: THREE.Material, trim: THREE.Material): THREE.Group {
   const g = new THREE.Group(), box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   // the door, built out from its hinge along -x, so turning it about y swings it out
-  const L = 1.25, win = [[0, 0.84], [-0.62, 1.32], [-L, 1.33], [-L, 0.84]];
+  const L = 1.25, win = [[0, 0.87], [-0.47, 1.31], [-L, 1.32], [-L, 0.87]];
   const door = new THREE.Group();
   door.name = "door";
   door.position.set(0.8, 0, SIDE + 0.026);
   door.add(new THREE.Mesh(model([
     [box(L, 0.46, 0.05), "#ffffff", -L / 2, 0.61, 0],
-    [box(L - 0.62, 0.04, 0.05), "#ffffff", -(L + 0.62) / 2, 1.33, 0],                   // the window frame along the roof
-    [box(0.79, 0.04, 0.05).rotateZ(-0.659), "#ffffff", -0.31, 1.08, 0],                  // and down the windscreen pillar
+    [box(L - 0.47, 0.04, 0.05), "#ffffff", -(L + 0.47) / 2, 1.32, 0],                   // the window frame along the roof
+    [box(0.64, 0.04, 0.05).rotateZ(-0.753), "#ffffff", -0.235, 1.09, 0],                  // and down the windscreen pillar
   ]), mat));
   door.add(new THREE.Mesh(model([
     [box(L - 0.06, 0.4, 0.012), "#3a3b3f", -L / 2, 0.62, -0.03],     // the trim inside
     [box(0.5, 0.05, 0.08), "#2c2d30", -0.75, 0.72, -0.06],           // its armrest
-    [box(L + 0.002, 0.07, 0.052), "#18191b", -L / 2, 0.4, 0],        // the sill stripe carries on along it
+    [box(L + 0.002, 0.035, 0.052), "#18191b", -L / 2, 0.4, 0],        // the sill stripe carries on along it
     [box(0.14, 0.03, 0.02), "#18191b", -L + 0.16, 0.78, 0.03],      // the handle
     [prof(win, 0.02), GLASS, 0, 0, 0],
     [box(0.04, 0.5, 0.045), "#18191b", -L + 0.02, 1.08, 0],          // the frame's back edge

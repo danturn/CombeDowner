@@ -18,7 +18,7 @@ import { model, Part } from "./furniture";
 /** Where a kind's windscreen starts, metres ahead of the driver's seat, and how far back its top leans. */
 const SCREEN: Record<string, [number, number]> = {
   xr3i: [1.2, 0.83], robin: [0.92, 0.6], nova: [0.87, 0.54], metro: [0.83, 0.46], sierra: [1.2, 0.88], police: [1.2, 0.88],
-  golf: [1.05, 0.7], golfdriver: [1.05, 0.7], landrover: [0.67, 0.02], car0: [1.45, 0.9], car1: [1.55, 0.82], car2: [1.67, 1.04], transit: [0.49, 0.46], icecream: [0.31, 0.45], chipvan: [0.55, 0.49], milkfloat: [0.55, 0],
+  golf: [1.0, 0.47], golfdriver: [1.0, 0.47], landrover: [0.67, 0.02], car0: [1.45, 0.9], car1: [1.55, 0.82], car2: [1.67, 1.04], transit: [0.49, 0.46], icecream: [0.31, 0.45], chipvan: [0.55, 0.49], milkfloat: [0.55, 0],
   c5: [0.9, 0], roller: [0.7, 0],
 };
 const OPEN = new Set(["c5", "roller"]);
@@ -79,7 +79,8 @@ export class Cockpit {
     const [al, up, ac] = d.seat, [screen, rake] = SCREEN[d.kind] ?? SCREEN.car0, ey = this.eye.y;
     const yd = Math.min(ey - 0.25, d.waist + 0.02);     // the top of the dash, along the bottom of the windows
     const front = al + screen - 0.02, deep = Math.max(0.15, screen - 0.55), back = front - deep;
-    const half = d.W / 2 - 0.08, roof = d.H - 0.06;
+    // the lining sits a little above the real roof: at its true height the wide view makes it crowd the top of the screen
+    const half = d.W / 2 - 0.08, roof = d.H + 0.02;
     const parts: Part[] = [];
     if (d.kind !== "c5") {
       parts.push([box(deep, 0.2, half * 2), d.kind === "landrover" ? "#5a5f55" : DASH, (front + back) / 2, yd - 0.1, 0]);   // the dashboard
