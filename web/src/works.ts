@@ -338,19 +338,41 @@ export class CanalWorks {
     let cur: Seg | null = null, crowded = false;
     const quad = (P: number[][], c: THREE.Color | THREE.Color[], wall = false) => {
       if (crowded && cur) {
-        // where stretches run into one another (a junction's basin) a stretch's banks are laid
-        // a metre at a time, leaving out whatever lies over the other's water
+        // where stretches run into one another (a junction's basin) or a basin opens off the canal,
+        // a stretch's banks are laid a metre at a time, leaving out whatever lies over the other's water
         const len = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]), nu = Math.max(1, Math.ceil(len)), nv = wall ? 1 : 2;
         const lerp = (a: number[], b: number[], f: number) => a.map((v, i) => v + (b[i] - v) * f);
         const at = (u: number, v: number) => lerp(lerp(P[0], P[1], u), lerp(P[3], P[2], u), v);
         const Cs = Array.isArray(c) ? c : null;
         const was = crowded;
         crowded = false;
-        for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
-          const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv, m = at((u0 + u1) / 2, (v0 + v1) / 2);
-          if (this.water(m[0], m[1], cur) !== null) continue;
-          quad([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)], Cs ? Cs[0] : c, wall);
-        }
+        const seg = cur;
+        // (a piece the water's edge runs across is split finer, and kept if any of it is dry, so
+        // the bank stops at the edge of the other water; under that water it's laid as the bed,
+        // and the bank's edge has a side down to it, so nothing under the water is open to the sky)
+        const piece = (u0: number, u1: number, v0: number, v1: number, depth: number) => {
+          const lvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1], [(u0 + u1) / 2, (v0 + v1) / 2]].map(([u, v]) => { const m = at(u, v); return this.water(m[0], m[1], seg); });
+          const wet = lvs.map((l) => l !== null);
+          if (depth < 2 && wet.some((w) => w !== wet[4])) {
+            const um = (u0 + u1) / 2, vm = wall ? v1 : (v0 + v1) / 2;
+            piece(u0, um, v0, vm, depth + 1); piece(um, u1, v0, vm, depth + 1);
+            if (!wall) { piece(u0, um, vm, v1, depth + 1); piece(um, u1, vm, v1, depth + 1); }
+            return;
+          }
+          const P4 = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+          const bed = (lvs.find((l) => l !== null) ?? 0) - BED;
+          if (!wet.some((w) => !w)) {
+            if (!wall) quad(P4.map((p) => [p[0], p[1], bed]), Cs ? Cs[0] : c);
+            return;
+          }
+          quad(P4, Cs ? Cs[0] : c, wall);
+          if (wall || !wet.some((w) => w)) return;
+          for (let e = 0; e < 4; e++) {
+            const a = P4[e], b = P4[(e + 1) % 4];
+            quad([a, b, [b[0], b[1], bed], [a[0], a[1], bed]], Cs ? Cs[0] : c, true);
+          }
+        };
+        for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) piece(i / nu, (i + 1) / nu, j / nv, (j + 1) / nv, 0);
         crowded = was;
         return;
       }
