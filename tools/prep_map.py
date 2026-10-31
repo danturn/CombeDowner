@@ -1964,6 +1964,16 @@ def _same_building(a, b):
     return over >= 0.8 * big or (over >= 0.8 * small and over >= 0.6 * big)
 
 
+def _hollow_unseen(holed, whole):
+    """Whether the lidar sees roof, not a courtyard, where one outline of a building has a hole and
+    the other covers it: the one covering it sees as high a roof (its lowest eighth of points no lower)."""
+    if not holed.interiors or whole.interiors or STORE is None or STORE.record: return False
+    if not whole.contains(shapely.Polygon(holed.exterior).difference(holed).buffer(-0.2)): return False
+    from mapdata import key as _key
+    a, b = STORE.bld.get(_key(holed)), STORE.bld.get(_key(whole))
+    return bool(a and b and a.get("p12") is not None and b.get("p12") is not None and b["p12"] >= a["p12"] - 0.5)
+
+
 _seen = shapely.STRtree([c[0] for c in cand]) if cand else None
 _twice = set()
 for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
@@ -1972,7 +1982,7 @@ for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
         j = int(j)
         if j != i and j not in _twice and (not name(cand[j][1]), j) < (not name(cand[i][1]), i) \
                 and _same_building(poly, cand[j][0]):
-            _twice.add(i)
+            _twice.add(j if not name(cand[j][1]) and _hollow_unseen(cand[j][0], poly) else i)
             break
 if _twice: print(f"buildings: {len(_twice)} mapped twice, left out")
 cand = [c for i, c in enumerate(cand) if i not in _twice]
