@@ -1944,6 +1944,13 @@ cand = split
 # a building mapped twice (on its own, and again as a wing cut from a bigger block round it)
 # would stand two roofs in each other, fighting to be seen: one is left out, keeping the one with
 # a name. A part standing in a bigger building (a tower, a higher range) covers far less of it and stays
+def _same_building(a, b):
+    """Two outlines of one building: most of the bigger covered, or all but a sliver of the smaller
+    and well over half the bigger (two guesses at one house, a little apart)."""
+    over, small, big = a.intersection(b).area, min(a.area, b.area), max(a.area, b.area)
+    return over >= 0.8 * big or (over >= 0.8 * small and over >= 0.6 * big)
+
+
 _seen = shapely.STRtree([c[0] for c in cand]) if cand else None
 _twice = set()
 for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
@@ -1951,7 +1958,7 @@ for i in sorted(range(len(cand)), key=lambda k: (not name(cand[k][1]), k)):
     for j in _seen.query(poly):
         j = int(j)
         if j != i and j not in _twice and (not name(cand[j][1]), j) < (not name(cand[i][1]), i) \
-                and poly.intersection(cand[j][0]).area >= 0.8 * max(poly.area, cand[j][0].area):
+                and _same_building(poly, cand[j][0]):
             _twice.add(i)
             break
 if _twice: print(f"buildings: {len(_twice)} mapped twice, left out")
@@ -2071,9 +2078,55 @@ def ground_offset(poly):
 # roofs fitted to the lidar (tools/roofs/shapes.py), kept as faces by each building's outline as built
 from roofs import mesh as roof_faces
 FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {}
+
+
+def _faced(poly):
+    """Whether the lidar's roof is kept for this outline as built (it is found by the outline)."""
+    ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
+    holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
+    return bool(ring) and roof_faces.ring_key({"r": [ring, *holes]}) in FACES
+
+
+def give_way(cand, info):
+    """Two outlines mapped over one another (a block mapped whole and again as its parts, a house
+    mapped again inside its terrace, two guesses at one semi) would stand walls and roofs inside each
+    other. Where one lies within the other, the bigger has it cut out, as a courtyard or a notch, so
+    each part stands on its own ground at its own height; where they only overlap, the overlap goes
+    from the smaller. An outline whose lidar roof is kept isn't cut (the roof is fitted to it), nor
+    is a pitched roof given a hole it would span, nor is an outline cut in two."""
+    polys = [c[0] for c in cand]
+    tree = shapely.STRtree(polys)
+    faced = [None] * len(polys)
+    is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i])) or faced[i]
+    cut = 0
+    for i in range(len(polys)):
+        for j in sorted(int(k) for k in tree.query(polys[i])):
+            if j <= i: continue
+            a, b = polys[i], polys[j]
+            over = a.intersection(b).area
+            if over < 0.5: continue
+            big, small = (i, j) if a.area >= b.area else (j, i)
+            # (where they only overlap, the smaller gives way unless its lidar roof is kept, then the bigger)
+            order = [big] if over >= 0.8 * polys[small].area else [small, big]
+            for k in order:
+                rest = polys[k].difference(polys[small if k == big else big])
+                if is_faced(k) or rest.geom_type != "Polygon" or rest.area < 0.5 * polys[k].area: continue
+                if info[k]["roof"] and len(rest.interiors) > len(polys[k].interiors): continue
+                rest = rest.simplify(0.05)
+                if not rest.is_valid or rest.geom_type != "Polygon": continue
+                polys[k] = rest
+                cand[k] = (rest, cand[k][1])
+                cut += 1
+                break
+    return cut
+
+
+_cut = give_way(cand, info)
+if _cut: print(f"buildings: {_cut} outlines cut where another stands in them")
 blds, footprints, bld_props, bld_fresh = [], [], [], []
+as_built = [c[0] for c in cand]     # each outline as the game draws it, for the doors to stand on its walls
 at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
-for (poly, p), b, f in zip(cand, info, fresh):
+for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     if not ring: continue       # a sliver with no area once rounded: nothing to build
     holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
@@ -2114,6 +2167,8 @@ for (poly, p), b, f in zip(cand, info, fresh):
     if b["storeys"]:
         out["st"] = b["storeys"]
     blds.append(out)
+    _drawn = shapely.Polygon(out["r"][0], [h for h in out["r"][1:] if len(h) >= 3]).buffer(0)
+    if _drawn.geom_type == "Polygon" and not _drawn.is_empty: as_built[n_c] = _drawn
     # (what is kept clear of the building is the outline as built, not the one before cleaning)
     built = shapely.Polygon(ring, holes).buffer(0)
     footprints.append(max(getattr(built, "geoms", [built]), key=lambda g: g.area) if not built.is_empty else poly)
