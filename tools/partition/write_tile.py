@@ -1343,6 +1343,7 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
             ramped += 1
             ramp(o, e + nxt, nxt, q[e], n + 1, None, seen, lay)
 
+    plan = []
     for r in rd:
         p = r["p"]
         # (a street's own approaches already keep its profile's height off the deck, the ground laid
@@ -1360,18 +1361,26 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
                     and 0.6 < deck_at.get(at(p[e]), p[e])[2] - p[e][2] <= JOIN_STEP:
                 starts.append((e - step, e, deck_at[at(p[e])], True))
         for i, j, prev, joined in starts:
-            step = 1 if j > i else -1
             # (the junction itself only where no other street meets it there, whose ground it is, or
             # where it is another way's deck end)
             e_ = j if joined or (i in (-1, len(p)) and streets[at(p[j])] == (2 if r["c"] not in GAME_PATHS else 0)) else None
-            g = ground(prev[0], prev[1])
-            # (a span that comes down on its bank already meets the ground: the way on from it is
-            # the street's, and its hollows are what the street passes over)
-            if g is None or prev[2] - g <= 0.6:
-                continue
-            # (a junction's ways come up to the deck on the ground the survey has: laid to them, it
-            # buried the paths that pass under the bridge's end)
-            ramp(r, j, step, prev, 0, e_, set(), not joined)
+            plan.append((r, i, j, prev, joined, e_))
+    # (where the bridge's own street runs on from its deck's end and leaves the junction on its
+    # ground, the other ways meeting there stay with it, not rising to the deck on their own)
+    on_ground = {at(r["p"][j]) for r, i, j, prev, joined, e_ in plan if not joined and e_ is None}
+    for r, i, j, prev, joined, e_ in plan:
+        p = r["p"]
+        if joined and at(p[j]) in on_ground:
+            continue
+        step = 1 if j > i else -1
+        g = ground(prev[0], prev[1])
+        # (a span that comes down on its bank already meets the ground: the way on from it is
+        # the street's, and its hollows are what the street passes over)
+        if g is None or prev[2] - g <= 0.6:
+            continue
+        # (a junction's ways come up to the deck on the ground the survey has: laid to them, it
+        # buried the paths that pass under the bridge's end)
+        ramp(r, j, step, prev, 0, e_, set(), not joined)
     return ramped
 
 
@@ -3767,13 +3776,23 @@ def carry_one_way(rd, old):
         if r["c"] in GAME_PATHS or len(r["p"]) < 2:
             continue
         line = LineString([q[:2] for q in r["p"]])
+        # (a stretch the corridors joined from several old one-way records takes their way where,
+        # together, they run along most of it the same way)
+        along = collections.Counter()
         for k in tree.query(line.buffer(2.0)):
             g, ow = ways[int(k)]
-            if line.intersection(g.buffer(2.0)).length < 0.7 * line.length:
+            shared = line.intersection(g.buffer(2.0))
+            ends = [c for part in getattr(shared, "geoms", [shared]) if part.geom_type == "LineString" and not part.is_empty
+                    for c in (part.coords[0], part.coords[-1])]
+            if shared.length <= 0 or len(ends) < 2:
                 continue
-            a, b = g.project(Point(line.coords[0])), g.project(Point(line.coords[-1]))
-            r["ow"] = ow if b >= a else -ow
-            break
+            first = min(ends, key=lambda c: line.project(Point(c)))
+            last = max(ends, key=lambda c: line.project(Point(c)))
+            along[ow if g.project(Point(last)) >= g.project(Point(first)) else -ow] += shared.length
+        if along:
+            ow, got = along.most_common(1)[0]
+            if got >= 0.7 * line.length:
+                r["ow"] = ow
 
 
 def carry_pedestrian(rd, old):
@@ -4776,11 +4795,12 @@ def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=())
     return opens, [o for o, k in blind if k in given]
 
 
-def clear_doorsteps(br, gt, doors):
+def clear_doorsteps(br, gt, doors, ground=None):
     """`br` and `gt` with a gap wherever a run still crosses a doorstep: what the partition's own
     openings didn't reach (a mapped wall, a run moved off the street's edge onto the house front). A
     piece left shorter than DOOR_STUB beside a gap goes with it, so no stub stands on its own, and a
-    gate the gap reaches is part of the opening."""
+    gate the gap reaches is part of the opening. With `ground`, a run's new end at a gap stands on
+    the ground there rather than at a height drawn between its old points."""
     steps = [LineString([(d[0] + math.sin(d[3]) * 0.1, d[1] - math.cos(d[3]) * 0.1),
                          (d[0] + math.sin(d[3]) * DOOR_STEP, d[1] - math.cos(d[3]) * DOOR_STEP)]) for d in doors]
     if not steps or not br:
@@ -4817,7 +4837,12 @@ def clear_doorsteps(br, gt, doors):
         for a, b in keep:
             piece = substring(line, a, b)
             if piece.geom_type == "LineString" and len(piece.coords) >= 2:
-                out.append(dict(run, p=[[round(c[0], 1), round(c[1], 1), round(c[2], 1)] for c in piece.coords]))
+                pts = [[round(c[0], 1), round(c[1], 1), round(c[2], 1)] for c in piece.coords]
+                if ground is not None:
+                    for k, cut in ((0, a > 0), (-1, b < L)):
+                        if cut:
+                            pts[k][2] = round(float(ground(pts[k][0], pts[k][1])), 1)
+                out.append(dict(run, p=pts))
     # a gate the gaps reach is part of the opening, and a short piece they left with nothing holding
     # either end goes (its neighbour or its gate taken by one), whether this cut it or the
     # partition's opening at the doorstep did
@@ -6030,7 +6055,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     points = mapped_points(sq)
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
-    br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near)
+    br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt

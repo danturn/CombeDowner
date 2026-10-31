@@ -300,14 +300,15 @@ def clear_doorsteps_unpartitioned(built, out_of):
     """On a map the partition doesn't lay out, open each square's walls and fences in front of its
     doors and those just over its edge, as the partition does, and drop the doors over the edge it
     was given for that. Returns how many square files had a boundary opened."""
-    from partition.write_tile import clear_doorsteps
+    from partition.write_tile import clear_doorsteps, ground_at
     opened = 0
     for t in built:
         d = json.load(open(out_of(t)))
         if "drn" not in d: continue
         near = d.pop("drn")
         br = d.get("br") or []
-        new_br, new_gt = clear_doorsteps(br, d.get("gt") or [], (d.get("dr") or []) + near)
+        new_br, new_gt = clear_doorsteps(br, d.get("gt") or [], (d.get("dr") or []) + near,
+                                         lambda x, y, T=d["t"]: ground_at(T, x, y))
         if new_br != br:
             opened += 1
             d["br"] = new_br
