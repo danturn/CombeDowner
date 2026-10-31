@@ -252,10 +252,11 @@ def main():
                 if inside.length > 6: note("5 wall along a carriageway", inside.length, (tag, round(bline["p"][0][0]), round(bline["p"][0][1])), f"{bline['c']} {inside.length:.0f} m in the road")
         # ---- 6. the railway --------------------------------------------------------------------
         b = m["b"]
+        drawn = check_more.terrain(T)     # (the ground as the game draws it, which the track lies on)
         for pts in rail_pts:
             for q in pts:
                 if q[3] == 0 and b[0] <= q[0] <= b[2] and b[1] <= q[1] <= b[3]:
-                    dz = q[2] - ground(q[0], q[1])
+                    dz = q[2] - float(drawn(q[0], q[1]))
                     if abs(dz) > 0.6: note("6 track off its ground", abs(dz), (tag, round(q[0]), round(q[1])), f"{dz:+.1f} m")
         for r, mk, ln in zip(roads, marks, lines):
             for t in rail_tree.query(ln):

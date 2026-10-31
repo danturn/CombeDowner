@@ -185,6 +185,14 @@ def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False, walls=()):
 POLE_TOP = 7.6           # metres above a pole's foot that the span to the next pole hangs from
 POLE_DROP = 7.3          # and the drop to a house
 POLE_SLIDE = (0, 1, -1, 2, -2, 3, -3, 4, -4, 6, -6)    # metres along the street a pole may stand off its spot
+WIRE_OVER_ROAD = 5.0     # the least a wire hangs over a street it crosses (lorries pass under at 4.5)
+WIRE_STREETS = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown", "trunk"}
+
+
+def wire_z(a, b, t):
+    """A wire's height a fraction t along it from a to b, sagging as the game hangs it."""
+    sag = min(0.9, math.dist(a[:2], b[:2]) * 0.018)
+    return a[2] + (b[2] - a[2]) * t - sag * 4 * t * (1 - t)
 
 
 def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y: True, widths=None):
@@ -198,6 +206,22 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y:
     numbers of the poles it hangs from [x0, y0, z0, x1, y1, z1, a, b] (b is -1 for a drop to a house),
     so whatever later moves or removes a pole moves or removes its wires with it (`string_wires`)."""
     poles, wires = [], []
+    streets = [r for r in roads if r["c"] in WIRE_STREETS and len(r["p"]) > 1]
+    slines = [LineString([q[:2] for q in r["p"]]) for r in streets]
+    stree = shapely.STRtree(slines)
+
+    def over_streets(a, b):
+        """Whether a wire from a to b hangs high enough over every street it crosses: a drop to a
+        house across another street from its pole, down a hill, would hang at head height over it."""
+        w = LineString([a[:2], b[:2]])
+        for k in stree.query(w):
+            x = slines[int(k)].intersection(w)
+            for c in getattr(x, "geoms", [x]):
+                if c.is_empty or c.geom_type != "Point": continue
+                p = streets[int(k)]["p"]
+                i = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (c.x, c.y)))
+                if wire_z(a, b, w.project(c) / (w.length or 1)) - p[i][2] < WIRE_OVER_ROAD: return False
+        return True
     door_pts = [Point(d[0], d[1]) for d in doors]
     dtree = shapely.STRtree(door_pts) if door_pts else None
     r2 = lambda v: round(float(v), 2)
@@ -252,6 +276,7 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False, clear=lambda x, y:
                 for k in near[:3]:
                     d = doors[k]
                     if rnd_.random() < 0.5: continue
+                    if not over_streets((px, py, z + POLE_DROP), (d[0], d[1], d[2] + 5.2)): continue
                     wires.append([r2(px), r2(py), r2(z + POLE_DROP), r2(d[0]), r2(d[1]), r2(d[2] + 5.2), pid, -1])
             s += 38 + rnd_.random() * 6
     return poles, wires

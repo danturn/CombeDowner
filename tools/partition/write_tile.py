@@ -1834,6 +1834,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
 
     deck_nodes = {(q[0], q[1]) for r in rd if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
                   for q in r["p"] if flagged(q, 1)}
+    mouths = [tuple(q[:2]) for t in tunnels or () if len(t["p"]) > 1 for q in (t["p"][0], t["p"][-1])]
 
     def hold(run, reach, core=0.0):
         # (the ground under a street or the railway on the ground stays as the base tile laid it,
@@ -1865,6 +1866,11 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
                                  and not (in_tube and in_tube(*q[:3]))}):
                 for a, b in zip(st, st[1:]):
                     hold([p[a], p[b]], reach, 0.0 if a in at_deck or b in at_deck else r.get("w", 4) / 2 + 0.5)
+        elif mouths:
+            # (a path's last metres into a tunnel lie in the mouth's cutting: the ground is laid to
+            # them, so the hill laid over the tunnel's roof doesn't ease back over its floor)
+            r["_lay"] = lay | {tuple(q[:2]) for q in p if not flagged(q, 1, 2) and not (in_tube and in_tube(*q[:3]))
+                               and any(math.dist(q[:2], m) < PORTAL for m in mouths)}
     for t in rails:
         for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}):
             if len(st) >= 2:
@@ -2014,6 +2020,12 @@ def follow_laid_ground(tile, change):
                 dz = change(row[xi], row[xi + 1])
                 if abs(dz) > 0.05:
                     row[zi] = round(row[zi] + dz, 2)
+    # (and a stream along its bed, which was laid on the base tile's ground)
+    for w in tile.get("wl") or []:
+        for q in w.get("p") or []:
+            dz = change(q[0], q[1])
+            if abs(dz) > 0.05:
+                q[2] = round(q[2] + dz, 2)
     return moved
 
 
@@ -3649,11 +3661,16 @@ def demote_pedestrian(rd, old):
     return cleared
 
 
+ON_TRACK = 1.5      # metres from a track's middle that a lane's end is on the line
+
+
 def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
-    """A path that crosses the railway level with it is cut either side of the track: there are no
-    level crossings in Bath, and the ground here cannot be dug for the path to pass under a bridge.
-    `tracks` are the rail file's, points [x, y, height, flag]; a flag of 2 is a track the path passes
-    over. Streets and anything on a bridge are left. Returns the records and how many paths were cut."""
+    """A path or a service lane that crosses the railway level with it is cut either side of the
+    track: there are no level crossings in Bath, and the ground here cannot be dug for the path to
+    pass under a bridge. A lane mapped on to the line (a way in for the railway's own staff) stops
+    at its fence the same way. `tracks` are the rail file's, points [x, y, height, flag]; a flag of
+    2 is a track the path passes over. Streets and anything on a bridge are left. Returns the
+    records and how many were cut."""
     lines = [LineString([q[:2] for q in t["p"]]) for t in tracks if len(t["p"]) > 1]
     tracks = [t for t in tracks if len(t["p"]) > 1]
     if not lines:
@@ -3662,7 +3679,7 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
     out, cut = [], 0
     for r in rd:
         p = r["p"]
-        if r["c"] not in GAME_PATHS or len(p) < 2:
+        if (r["c"] not in GAME_PATHS and r["c"] != "service") or len(p) < 2:
             out.append(r)
             continue
         line = LineString([q[:2] for q in p])
@@ -3679,6 +3696,13 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (pt.x, pt.y)))
                 if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2:
                     spots.append(pt)
+        for q in (p[0], p[-1]) if r["c"] == "service" else ():
+            for t in tree.query(Point(q[:2]).buffer(ON_TRACK)):
+                tp = tracks[int(t)]["p"]
+                k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], q[:2]))
+                if (len(q) < 4 and lines[int(t)].distance(Point(q[:2])) < ON_TRACK and abs(q[2] - tp[k][2]) < clear
+                        and tp[k][3] != 2):
+                    spots.append(Point(q[:2]))
         if not spots:
             out.append(r)
             continue
@@ -5000,6 +5024,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             keep.append([r[0]] + at_ground(r[1:], q, 0.2))
             moved["fx"] += 1
     gone["fx"] = len(rows) - len(keep)
+    moved["fx"] += spread_items(keep, lambda x, y, r: clear(x, y, item_room(r)) and not in_full_road(x, y),
+                                lambda r, q: [r[0]] + at_ground(r[1:], q, 0.2))
     keep = [at_street_level(r, 1, 3) for r in keep]
     tile["fx"] = keep
     # the wires hang from their poles where they stand now; a pole that went takes its wires with it
@@ -5007,6 +5033,42 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     tile["wr"] = string_wires([r for r in keep if r[0] == "pole"], tile.get("wr") or [],
                               {pid for w in tile.get("wr") or [] if len(w) > 7 for pid in w[6:8]} - here)
     return gone
+
+
+ITEM_GAP = 0.7      # metres between two street items' middles, so neither stands in the other
+ITEM_SLIDE = (0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2)
+# what the map data maps stays where it is; what the build puts up itself gives way to it
+GENERATED = {"sign", "lamp", "pole"}
+
+
+def spread_items(rows, free, moved_to):
+    """Street items that two sources, or two snaps to the same kerb, put on one spot, set side by
+    side along the pavement instead: the later one (a generated one after every mapped one) slides
+    along its street, the way it faces, to the nearest spot that is `free` and a step from every
+    other. Returns how many moved; one with nowhere to go stays where it was."""
+    items = sorted((k for k, r in enumerate(rows) if r[0] not in ("car", "wheelie")),
+                   key=lambda k: rows[k][0] in GENERATED)
+    placed, n = collections.defaultdict(list), 0
+
+    def crowded(x, y):
+        i, j = int(x // ITEM_GAP), int(y // ITEM_GAP)
+        return any(math.dist((x, y), p) < ITEM_GAP for a in (i - 1, i, i + 1) for b in (j - 1, j, j + 1)
+                   for p in placed[a, b])
+
+    for k in items:
+        r = rows[k]
+        x, y = float(r[1]), float(r[2])
+        if crowded(x, y):
+            a = float(r[4]) if len(r) > 4 and isinstance(r[4], (int, float)) else 0.0
+            for d in ITEM_SLIDE:
+                nx, ny = x + math.cos(a) * d, y + math.sin(a) * d
+                if not crowded(nx, ny) and free(nx, ny, r):
+                    rows[k] = moved_to(r, (nx, ny))
+                    x, y = nx, ny
+                    n += 1
+                    break
+        placed[int(x // ITEM_GAP), int(y // ITEM_GAP)].append((x, y))
+    return n
 
 
 # How far a boundary must keep from a street item's middle: its own half-width and a little, so a

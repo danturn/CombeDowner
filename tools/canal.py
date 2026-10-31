@@ -629,7 +629,9 @@ def main():
                 room = d1 - d + 1.0
                 L = rnd.choice([v for v in (21, 20, 18, 17, 15, 12) if v <= room] or [round(min(room, 10.0), 1)])
                 i0 = int(d / c.length * (len(pts) - 1))
-                half = pts[min(len(pts) - 1, i0)][2]
+                i1 = int(math.ceil((d + L) / c.length * (len(pts) - 1)))
+                # (as far out as the narrowest water along the boat, where the canal narrows past it)
+                half = min(q[2] for q in pts[min(len(pts) - 1, i0):min(len(pts), i1 + 1)])
                 m, a, b = c.interpolate(d + L / 2), c.interpolate(d), c.interpolate(d + L)
                 ang = math.atan2(b.y - a.y, b.x - a.x)
                 off = side * (half - 1.15)
