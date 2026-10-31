@@ -1310,7 +1310,11 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
             g = ground(p[j][0], p[j][1])
             if g is None or prev[2] - g <= 0.6:
                 return
-            p[j] = [p[j][0], p[j][1], round(max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade), 1)]
+            z = max(g, prev[2] - math.dist(p[j][:2], prev[:2]) * grade)
+            # (a way coming up to a junction's deck end: where it is already as high, it is there)
+            if not lay and j != e_ and p[j][2] >= z:
+                return
+            p[j] = [p[j][0], p[j][1], round(z, 1)]
             if lay:
                 r.setdefault("_lay", set()).add(tuple(p[j][:2]))
             prev = p[j]
@@ -2705,6 +2709,28 @@ def pave_to_walls(pave, br, buildings, kept):
     return unary_union([pave, *fill]) if fill else pave
 
 
+SLIVER = 2.0           # metres: open ground narrower than this left between streets, paths and houses is paved
+
+
+def pave_slivers(pave, paving, buildings, kept, width=SLIVER):
+    """`pave` with the thin strips of open ground left between it and the other paving (`paving`: the
+    road, squares and paths) or the houses: where two streets meet at a slant, or a footway runs
+    beside a pavement, the partition leaves a strip nobody's face takes, and it showed as grass
+    between them. Plots and the map's green ground (`kept`) stay as they are."""
+    if pave.is_empty:
+        return pave
+    near = pave.buffer(width)
+    shapely.prepare(near)
+    solid = unary_union([pave, *(g.intersection(near) for g in paving if not g.is_empty),
+                         *(b for b in buildings if near.intersects(b))])
+    r = width / 2
+    gap = solid.buffer(r).buffer(-r).difference(solid)
+    if kept is not None and not kept.is_empty:
+        gap = gap.difference(kept)
+    fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and g.area > 0.05 and g.distance(pave) < 0.01]
+    return unary_union([pave, *fill]) if fill else pave
+
+
 WIDEN_STEP = 2.0       # metres between the points a street's pavement is measured at against the paving
 WIDEN_RUN = FIT_SHORT          # the shortest stretch given a pavement width of its own, as a fitted record
 WIDEN_LEAST = FACE_MARGIN      # paving this near the pavement's edge is within its fit already
@@ -3290,6 +3316,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                                                             strips(dv, DRIVE_WIDTH / 2), strips(fp, FRONT_PATH_HALF)])).intersection(square)
     if filled is not None:
         filled.append((pave, pave.difference(fitted)))
+    # (after the pavements' own widths are taken from it: a strip paved between two ways is neither's)
+    pave = pave_slivers(pave, [road, plaza, shapes("path")], buildings,
+                        unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
     taken = unary_union([road, pave, plaza, *buildings])
     path = drawn_paths(shapes("path"), rd, taken).difference(taken)
     if bores is not None:
