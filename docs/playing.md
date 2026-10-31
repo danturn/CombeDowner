@@ -170,12 +170,14 @@ keyboard works alongside (an iPad's Magic Keyboard, say): W A S D move, the arro
 (slowly at first, for a fine aim, then faster), Enter shoots (hold it for a burst) and / aims,
 again to stop. The other keys do what they do on a computer.
 
-A trackpad or mouse on an iPad (the Magic Keyboard's, say) aims as on a Mac: click on the game and
-it's captured (that click doesn't shoot), the touch buttons go away, and you play exactly as on a
-computer, the mouse to look, click to shoot, a two-finger click to aim, the arrows walking. Touch
-the screen to go back to the touch controls, or press Esc for the pause menu. ` (the key left of
-1) turns the trackpad's aiming off, so it drags to look as a finger does, and on again; the game
-remembers which. If the browser won't capture it, the game says so and the trackpad drags to look.
+A trackpad or mouse on an iPad (the Magic Keyboard's, say) aims much as a Mac's does. Safari on an
+iPad can't hand the pointer over to a game, so the pointer stays on the screen: move it over the game
+to look round, and hold it near the edge of the screen to keep turning that way. A two-finger swipe
+looks round as well, with no edge to stop it. A click shoots (hold it for a burst) and a two-finger
+click aims, again to stop. The touch buttons go away while you use the trackpad and come back when
+you touch the screen. ` (the key left of 1) turns the trackpad's aiming off, so it drags to look as
+a finger does, and on again; the game remembers which. The mouse wheel's weapon change is Q or 1, 2
+and 3 here, as the swipe looks.
 
 ### Game controllers
 
