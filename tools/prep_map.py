@@ -1877,11 +1877,24 @@ if TILE is not None:
     # buildings this far past the margin are classed too, so a terrace that runs over the edge is
     # one terrace, the same from both sides
     WORK = box(X0 - 150, Y0 - 150, X1 + 150, Y1 + 150)
+    _size, _circle = CELLS * D, Point(*A.field_centre).buffer(A.half, 256)
+    _tile_box = lambda i, j: box(G.x0 + i * _size, G.y0 + j * _size, G.x0 + (i + 1) * _size, G.y0 + (j + 1) * _size)
+    _built = lambda i, j: 0 <= i <= 2 and 0 <= j <= 2 or _tile_box(i, j).intersects(_circle)    # as prep_tiles.py
+
+    def keeper(poly):
+        """The tile a building belongs to: the one holding its middle, or, at the map's edge where that
+        one isn't built, the built one holding most of it, so it isn't left out with its door standing."""
+        c = poly.centroid
+        at = (math.floor((c.x - G.x0) / _size), math.floor((c.y - G.y0) / _size))
+        if _built(*at): return at
+        x0, y0, x1, y1 = poly.bounds
+        near = [(i, j) for i in range(math.floor((x0 - G.x0) / _size), math.floor((x1 - G.x0) / _size) + 1)
+                for j in range(math.floor((y0 - G.y0) / _size), math.floor((y1 - G.y0) / _size) + 1) if _built(i, j)]
+        return max(near, key=lambda t: (poly.intersection(_tile_box(*t)).area, t), default=at)
 for g, p in L("building"):
     for poly in (polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
-            c = poly.centroid
-            p = dict(p, _own=own(c.x, c.y))      # whole, in the tile holding its middle
+            p = dict(p, _own=keeper(poly) == (ti, tj))      # whole, in the tile holding its middle
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
