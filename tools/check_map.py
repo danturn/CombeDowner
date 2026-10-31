@@ -526,7 +526,8 @@ def fit_together(m, tag, note, f=None):
     """Rule 9: walls, gates, paths, pavements, buildings, trees and street items don't clash."""
     KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
     line = lambda p: LineString([q[:2] for q in p])
-    homes = [Polygon(b["r"][0]) for b in m["bl"] if len(b["r"][0]) >= 3]
+    # (a courtyard, a hole in the footprint, is open ground: the game draws it so)
+    homes = [Polygon(b["r"][0], [h for h in b["r"][1:] if len(h) >= 3]) for b in m["bl"] if len(b["r"][0]) >= 3]
     homes = [h if h.is_valid else h.buffer(0) for h in homes]
     indoors = shapely.STRtree([h.buffer(-0.3) for h in homes])
     bars = [b for b in m["br"] if len(b["p"]) > 1]

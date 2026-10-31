@@ -103,6 +103,33 @@ def _unmask(m, pieces):
     m["sp"] = [list(p.exterior.coords) for p in near for p in getattr(p, "geoms", [p])]
 
 
+@functools.lru_cache(maxsize=12)
+def _terrain_of(path):
+    return terrain(json.load(open(path))["t"]) if os.path.exists(path) else None
+
+
+def beyond(f, m, ground):
+    """ground, and past the square's edge the ground of the square there (a building held by this
+    square can reach over its edge, standing on the next square's ground in the game)."""
+    x0, y0, x1, y1 = m["b"]
+    size = x1 - x0
+    try:
+        ti, tj = (int(n) for n in os.path.basename(f)[:-5].split("_"))
+    except ValueError:
+        return ground
+
+    def at(x, y):
+        x, y = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(y, float))
+        out = np.asarray(ground(x, y), float).copy()
+        di, dj = np.floor((x - x0) / size).astype(int), np.floor((y - y0) / size).astype(int)
+        for a, b in set(zip(di.tolist(), dj.tolist())) - {(0, 0)}:
+            g = _terrain_of(os.path.join(os.path.dirname(f), f"{ti + a}_{tj + b}.json"))
+            k = (di == a) & (dj == b)
+            if g is not None: out[k] = g(x[k], y[k])
+        return out
+    return at
+
+
 @functools.lru_cache(maxsize=24)
 def _buildings_of(path, centre):
     """A square's buildings as the game shows them, with their outlines, for the squares beside one."""
@@ -215,7 +242,7 @@ def square(m, tag, note, f):
         return ~hits(dtree, p)
 
     drawn = surface(m, ground)
-    buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, drawn, note, at, off_deck, pts)
+    buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, beyond(f, m, drawn), note, at, off_deck, pts)
     streets(m, roads, rlines, rtree, marked, homes, solid, ground, note, at, sq, f)
     land_and_water(m, waters, ground, note, at, sq, f)
     small_things(m, roads, rlines, rtree, solid, wtree, drawn, note, at, off_deck, pts, hits, inner)
