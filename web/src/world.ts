@@ -1738,8 +1738,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
-  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData)) : null;
-  if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail()) : null;
+  if (railway) { map.floors.push((x, z, y) => railway.floor(x, z, y)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const backdrop = core ? buildBackdrop(map, scene as THREE.Scene, GROUND, earth, shell!.sun, shell!.hemi) : null;
   const streams = outsideBores(map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl, boreRoof(map));
