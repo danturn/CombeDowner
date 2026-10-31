@@ -3096,6 +3096,45 @@ def bore_widths(tunnels, rd, rows):
         TN.widen(t, [e or (known[0] if known else (TN.HALF, 0.0)) for e in ends])
 
 
+STEEPEST_WALK = 0.67    # the steepest a path is walked up as a slope (1 in 1.5); steeper, it is a flight of steps
+STEP_RUN = 2.0          # metres: a rise over less than this is a kerb or a bump, not a flight
+
+
+def steep_paths_as_steps(rd):
+    """A footway climbing steeper than anyone walks a slope (up a retaining wall or a bank the survey
+    sees, as many of Bath's flights are mapped as plain footways) is drawn and walked as steps there."""
+    out = []
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in ("footway", "path", "pedestrian") or len(p) < 2 or any(len(q) > 3 and q[3] for q in p):
+            out.append(r)
+            continue
+        rise = [b[2] - a[2] for a, b in zip(p, p[1:])]
+
+        def flight(i):
+            d = math.dist(p[i][:2], p[i + 1][:2])
+            if d <= STEP_RUN or abs(rise[i]) <= STEEPEST_WALK * d:
+                return False
+            # a climb that drops straight back is a spike in the heights, not a flight to build
+            return all(rise[j] * rise[i] >= 0 or abs(rise[j]) < 0.5 * abs(rise[i]) for j in (i - 1, i + 1) if 0 <= j < len(rise))
+        steep = [flight(i) for i in range(len(rise))]
+        if not any(steep):
+            out.append(r)
+            continue
+        k = 0
+        while k < len(steep):
+            e = k
+            while e + 1 < len(steep) and steep[e + 1] == steep[k]:
+                e += 1
+            piece = dict(r, p=[list(q) for q in p[k:e + 2]])
+            if steep[k]:
+                piece["c"] = "steps"
+                piece["w"] = max(r.get("w", 1.5), 1.8)
+            out.append(piece)
+            k = e + 1
+    return out
+
+
 def end_at_portals(rd, tunnels):
     """A way going into a bore along it ends at the portal, on the bore's floor: the points the record
     carried on inside rose up the hill face over the arch, and its surface stood up in the opening
@@ -5768,6 +5807,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     # (once the ground is laid: the hill over a portal is laid to the ways crossing it, not to these)
     end_at_portals(rd, tile.get("tn"))
+    rd = steep_paths_as_steps(rd)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
