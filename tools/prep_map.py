@@ -3600,6 +3600,9 @@ if TILE is not None:
         fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
         tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],
         lm=[q for q in marks_lm if own(q[1], q[2])], dr=[q for q in doors if own(q[0], q[1])], sb=[q for q in shrub_list if own(q[0], q[1])],
+        # (the doors just over the edge, for the partition to open a boundary across the edge in front of
+        # them the same from both sides; it takes them out again)
+        drn=[q for q in doors if not own(q[0], q[1]) and TX0 - 6 <= q[0] <= TX1 + 6 and TY0 - 6 <= q[1] <= TY1 + 6],
         by=[q for q in bays if own(q[0], q[1])], pi=[q for q in pitch_list if own(q[1], q[2])],
         cn=canopy_grid, pl=places,
     )
