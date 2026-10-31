@@ -108,13 +108,14 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   let rdk = 0;
   for (const r of D.rd) { line(r.p, roadWidth(r) + (kerbed.has(r.c) ? 2 * Math.max(...(r.pv ?? [pavement])) + 0.6 : paths.has(r.c) ? 0.5 : 0.8)); if (++rdk % 300 === 299) yield; }
   for (const w of D.wl) line(w.p, 2.2);
-  // nor through the railway's ballast where the line runs on the ground (railway.ts)
+  // nor through the top of the railway's ballast where the line runs on the ground (railway.ts):
+  // its shoulders and bank grow grass like the ground beside them
   for (const p of rail) {
     let run: number[][] = [];
     for (let k = 0; k <= p.length; k++) {
       const q = p[k];
       if (q && q[3] !== 1 && q[3] !== 2) { run.push(q); continue; }
-      if (run.length > 1) line(run, 5.2);
+      if (run.length > 1) line(run, 3.4);
       run = q ? [q] : [];
     }
   }

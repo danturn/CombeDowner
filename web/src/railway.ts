@@ -985,6 +985,23 @@ export class Railway {
     return best;
   }
 
+  /** The height of the ballast's shoulders and the bank below them at scene (x, z) where the line
+   *  runs on the ground, for grass to grow on the bank as on the ground beside it; -Infinity off them. */
+  bankAt(x: number, z: number): number {
+    let best = -Infinity;
+    for (const [t, k] of this.cells.get(`${Math.floor(x / 16)},${Math.floor(z / 16)}`) ?? []) {
+      const a = this.d.tracks[t].p[k], b = this.d.tracks[t].p[k + 1];
+      if (a[3] === 1 && b[3] === 1) continue;
+      const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+      const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (-z - a[1]) * vy) / l2));
+      const d = Math.hypot(x - a[0] - vx * f, -z - a[1] - vy * f);
+      if (d < 1.6) continue;
+      const h = bedAt(d, a[2] + (b[2] - a[2]) * f - this.z0);
+      if (h !== null && h > best) best = h;
+    }
+    return best;
+  }
+
   /** Push a circle at feet height y out of the sides of the platforms: you can vault up onto one, as
    *  onto a low wall, but you can't walk into its edge from the track. Returns the height above the
    *  feet of the tallest platform it pushed against, or -Infinity if none. */
