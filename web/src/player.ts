@@ -246,6 +246,9 @@ export class Player {
   flapped = false;
   /** Whether flapping still lifts you (the wings' flight runs out: wings.ts); gliding goes on regardless. */
   wingLift = true;
+  /** Whether the arrow keys walk as W A S D do. With no mouse captured (game.ts) they look round instead. */
+  arrowsWalk = true;
+  private arrow(code: string) { return this.arrowsWalk && this.keys.has(code); }
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
@@ -363,10 +366,10 @@ export class Player {
     if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;
     if (active) {
-      if (k.has("KeyW") || k.has("ArrowUp")) fz -= 1;
-      if (k.has("KeyS") || k.has("ArrowDown")) fz += 1;
-      if (k.has("KeyA") || k.has("ArrowLeft")) fx -= 1;
-      if (k.has("KeyD") || k.has("ArrowRight")) fx += 1;
+      if (k.has("KeyW") || this.arrow("ArrowUp")) fz -= 1;
+      if (k.has("KeyS") || this.arrow("ArrowDown")) fz += 1;
+      if (k.has("KeyA") || this.arrow("ArrowLeft")) fx -= 1;
+      if (k.has("KeyD") || this.arrow("ArrowRight")) fx += 1;
       if (!fx && !fz && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fx = this.joy.x; fz = this.joy.y; }
     }
     if (!this.canProne) this.proneLatch = false;
@@ -556,7 +559,7 @@ export class Player {
     const L = this.ladder!, k = this.keys;
     let push = 0;
     if (active) {
-      push = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
+      push = (k.has("KeyW") || this.arrow("ArrowUp") ? 1 : 0) - (k.has("KeyS") || this.arrow("ArrowDown") ? 1 : 0);
       if (!push && Math.abs(this.joy.y) > 0.3) push = -this.joy.y;
     }
     // facing the wall, forward climbs; facing away from it (coming down off a roof) forward goes down;
@@ -623,10 +626,10 @@ export class Player {
     const control = active && this.tumble <= 0;
     let fwd = 0, side = 0, stick = false;
     if (active) {
-      if (k.has("KeyW") || k.has("ArrowUp")) fwd += 1;
-      if (k.has("KeyS") || k.has("ArrowDown")) fwd -= 1;
-      if (k.has("KeyA") || k.has("ArrowLeft")) side -= 1;
-      if (k.has("KeyD") || k.has("ArrowRight")) side += 1;
+      if (k.has("KeyW") || this.arrow("ArrowUp")) fwd += 1;
+      if (k.has("KeyS") || this.arrow("ArrowDown")) fwd -= 1;
+      if (k.has("KeyA") || this.arrow("ArrowLeft")) side -= 1;
+      if (k.has("KeyD") || this.arrow("ArrowRight")) side += 1;
       if (!fwd && !side && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fwd = -this.joy.y; side = this.joy.x; stick = true; }
       if (!control) fwd = 0;
     }

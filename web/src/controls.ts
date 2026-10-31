@@ -72,6 +72,12 @@ export const STREETS: Control[] = [
   { id: "look", name: "Look", say: STICK("the mouse", "right stick", "drag") },
   { id: "fire", name: "Shoot", mouse: 0, pad: B.r2, touch: "Fire", where: "foot" },
   { id: "aim", name: "Aim", mouse: 2, pad: B.l2, touch: "Aim", where: "foot" },
+  // with no mouse captured (an iPad's keyboard, or a touch screen with a keyboard), the arrows look
+  // round instead of walking, and these two shoot and aim
+  { id: "keylook", name: "Look, with no mouse", keys: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"], say: { keys: "← → ↑ ↓" } },
+  { id: "keyfire", name: "Shoot, with no mouse", keys: ["Enter"], via: "fire", where: "foot" },
+  { id: "keyaim", name: "Aim, with no mouse", keys: ["Slash"], via: "aim", where: "foot" },
+  { id: "mouseaim", name: "Aim with a tablet's trackpad, or drag to look", keys: ["Backquote"], say: { pad: "the ` key", touch: "the ` key" } },
   { id: "jump", name: "Jump, or the handbrake", keys: ["Space"], pad: B.cross, touch: "Jump" },
   { id: "reload", name: "Reload", keys: ["KeyR"], pad: B.square, touch: "Reload", where: "foot" },
   { id: "use", name: "Use, get in or out", keys: ["KeyE"], pad: B.square, hold: true, touch: "Use", live: true },
@@ -206,7 +212,7 @@ export const PLACES: Record<string, Control[]> = {
 
 const KEY_NAME: Record<string, string> = {
   Space: "Space", Tab: "Tab", Escape: "Esc", ShiftLeft: "Shift", Enter: "Enter", Backspace: "Backspace", Wheel: "the mouse wheel",
-  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Comma: ",", Period: ".",
+  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Comma: ",", Period: ".", Slash: "/", Backquote: "`",
   Mouse0: "Left click", Mouse1: "Middle click", Mouse2: "Right click",
 };
 /** A key code as the keyboard prints it. */

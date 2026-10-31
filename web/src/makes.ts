@@ -20,11 +20,11 @@ export const isCoachMake = (make: number) => make === PARAMOUNT || make === ALIZ
 const MODERN = 10;   // the makes before it
 
 /** The Golf GTIs' paint: Mars Red, Diamond Silver, black, Alpine White, Lhasa Green and Helios Blue. */
-export const GOLF_PAINT = ["#b3201b", "#a9adb0", "#16171a", "#efefe9", "#3f5d4a", "#4c6f9c"];
+export const GOLF_PAINT = ["#c8201a", "#b9bdc0", "#16171a", "#f4f4ee", "#2f6a4a", "#3f72b0"];
 /** The XR3is' paint: Diamond White, Radiant Red, black, Strato Silver and Caspian Blue. */
-export const XR3I_PAINT = ["#f0f0ea", "#b3141b", "#1b1c1f", "#a8adb2", "#1f4c86"];
+export const XR3I_PAINT = ["#f5f5ef", "#cc1a1c", "#1b1c1f", "#b9bec3", "#1f55a0"];
 /** The Land Rovers' paint: Bronze Green, Pastel Green, Limestone, Marine Blue, Mid Grey, Sand, Poppy Red, Masai Red and Coniston Green. */
-export const LR_PAINT = ["#4b5a3c", "#9eb29a", "#d9d3b8", "#2e4a6b", "#7c8184", "#c8b282", "#b3302a", "#7c2420", "#2d4a33"];
+export const LR_PAINT = ["#4a6038", "#a6bea0", "#e2dcc0", "#2a4f7c", "#7c8184", "#d0b884", "#c8302a", "#8e2620", "#2b5636"];
 
 /**
  * The shape each make is drawn in (furniture.ts): a little hatchback (Fiesta, Corsa, 206, Clio), a

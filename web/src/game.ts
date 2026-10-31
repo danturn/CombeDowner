@@ -87,6 +87,7 @@ import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { RecordPlayer } from "./recordplayer";
+import { GolfDriver } from "./golfdriver";
 import { Bonfire } from "./bonfire";
 import { Oddments } from "./oddments";
 import { bonfireKey } from "./saves";
@@ -270,6 +271,7 @@ const CAR_LINE: Record<string, string> = {
   robin: "Reliant Robin: three wheels, so mind the corners",
   landrover: "Land Rover: fields, tracks and hills are all the same to it",
   golf: "Volkswagen Golf GTI: the original hot hatch",
+  golfdriver: "Volkswagen Golf Driver: someone's left the tape running",
   paramount: "Arleen Coaches, Plaxton Paramount: day trips and tours",
   alizee: "Arleen Coaches, Van Hool Alizée: sit back and enjoy the view",
 };
@@ -444,6 +446,7 @@ export class Game {
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private records: RecordPlayer;               // the record player on Solsbury Hill
+  private golfDriver: GolfDriver;              // the Golf Driver on Royal Avenue, and its tape
   private bonfire: Bonfire;
   private oddments: Oddments;                  // the strange objects and the structure that wants them
   private zones: Zones;                        // the map opened up a zone at a time
@@ -660,6 +663,8 @@ export class Game {
     this.dayBendy = new DayBendy(map, world.scene);
     this.records = new RecordPlayer(map, world.scene);
     this.records.hear = (x, y, z) => this.hear(x, y, z);
+    this.golfDriver = new GolfDriver((text, secs) => this.toast(text, secs));
+    this.golfDriver.hear = (x, y, z) => this.hear(x, y, z);
     this.bonfire = new Bonfire(map, world.scene, bonfireKey(this.mapId, this.room));
     this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
     this.bonfire.toast = (text, secs) => this.toast(text, secs);
@@ -971,6 +976,15 @@ export class Game {
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
       if (this.active && !e.repeat && isKey(e.code, "use")) { this.leaveKey = true; this.useKey = true; }
+      // no mouse to click (an iPad's keyboard): Enter shoots, held for a burst, and / aims, again to stop
+      if (isKey(e.code, "keyfire") && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
+        e.preventDefault();
+        if (!e.repeat) { this.firing = true; this.shootOnce = true; }
+      }
+      if (isKey(e.code, "keyaim") && !e.repeat && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
+        e.preventDefault();
+        this.aiming = !this.aiming; this.binoculars = false;
+      }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (isKey(e.code, "bino") && !e.repeat && this.active) this.toggleBinoculars();
       if (isKey(e.code, "view") && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
@@ -992,6 +1006,7 @@ export class Game {
     addEventListener("keyup", (e) => {
       if (e.code === "Tab") $("scoreboard").hidden = true;
       if (e.code === "KeyV") this.voice.radio(false);
+      if (isKey(e.code, "keyfire")) this.firing = false;
     }, sig);
     addEventListener("blur", () => this.voice.radio(false), sig);
   }
@@ -1246,6 +1261,21 @@ export class Game {
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
+  }
+
+  /** How long the arrow keys have been held down to look round. */
+  private arrowHeld = 0;
+  /** The arrow keys looking round, with no mouse to do it: slowly at first, for a fine aim, then
+   *  quickly enough to turn round. Aiming down the sights slows it, as it does the mouse. */
+  private arrowLook(dt: number, on: boolean) {
+    const k = this.player.keys;
+    const x = on ? (k.has("ArrowRight") ? 1 : 0) - (k.has("ArrowLeft") ? 1 : 0) : 0;
+    const y = on ? (k.has("ArrowDown") ? 1 : 0) - (k.has("ArrowUp") ? 1 : 0) : 0;
+    if (!x && !y) { this.arrowHeld = 0; return; }
+    this.arrowHeld += dt;
+    // radians a second, turned into the mouse's units
+    const rate = (0.35 + 0.65 * Math.min(1, this.arrowHeld / 0.4)) * dt / this.player.sensitivity;
+    this.look(x * rate * 2.4, y * rate * 1.4);
   }
 
   /** The jump button: walks off the ball if you're lining up a kick, and is the handbrake while driving. */
@@ -3973,6 +4003,7 @@ export class Game {
       this.useKey = false;
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
+      else if (!this.car && !this.ride && this.alive && this.golfDriver.use()) { /* the tape on the Golf Driver's seat */ }
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
       else if (!this.car && !this.ride && this.invasion.use()) { /* cuffing the Gaffer */ }
       else if (!this.car && !this.ride && this.scars.use()) { /* putting right what a lost job left */ }
@@ -3997,6 +4028,7 @@ export class Game {
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);
+    this.golfDriver.update(dt, this.vehicles.list, (v) => this.vehicles.of(this.net.selfId)?.v === v, p.pos.x, p.pos.y, p.pos.z);
     this.flash.update(dt);
     this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
     this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
@@ -4035,6 +4067,9 @@ export class Game {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
+      // no mouse captured (an iPad with a keyboard, a touch screen): the arrow keys look round instead of walking
+      p.arrowsWalk = !this.freeMode;
+      if (this.freeMode) this.arrowLook(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !this.reveal.on && !placeNow());
       p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
@@ -4509,7 +4544,8 @@ export class Game {
         : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]));
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
-    const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
+    const tape = free && !this.car ? this.golfDriver.hint() : "";
+    const near = free && !tape ? this.nearCar() : null, stop = free && !near && !tape ? this.stopNear() : null;
     const tour = !ride && this.alive && this.mineTour.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
     const deli = !ride && this.alive && !tour && this.deliDoor.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
     if (stop !== this.busStop) this.busMenu = 0;   // walked off: the menu goes
@@ -4541,6 +4577,7 @@ export class Game {
       : deli ? `<b>{use}</b> Work a shift in the deli kitchen`
       : train ? train
       : job ? job
+      : tape ? tape
       : near ? `<b>{use}</b> ${verb} the ${esc(near.name)}`
       : balloon ? (balloon.why ? esc(balloon.why) : `<b>{use}</b> Climb into ${esc(balloon.b.name)}'s basket`)
       : tiller ? (this.zones.can("boat") ? `<b>{use}</b> Take the tiller of ${esc(tiller.name)}` : esc(this.zones.shut("boat")))
@@ -4821,6 +4858,7 @@ export class Game {
     this.unEarn();
     this.wings.dispose();
     this.records.dispose();
+    this.golfDriver.dispose();
     this.reveal.dispose();
     this.zones.dispose();
     this.oddments.dispose();

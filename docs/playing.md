@@ -162,6 +162,23 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 - Sound: music, sound effects, background (the traffic, birds and wind round you) and voice chat volumes.
 - Reset to defaults puts them all back.
 
+### Touch screens, and an iPad's keyboard
+
+On a phone or an iPad you drag on the right of the screen to look, push the stick that comes up
+under your thumb on the left to move, and tap to shoot; the buttons round the edge do the rest. A
+keyboard works alongside (an iPad's Magic Keyboard, say): W A S D move, the arrow keys look round
+(slowly at first, for a fine aim, then faster), Enter shoots (hold it for a burst) and / aims,
+again to stop. The other keys do what they do on a computer.
+
+A trackpad or mouse on an iPad (the Magic Keyboard's, say) aims much as a Mac's does. Safari on an
+iPad can't hand the pointer over to a game, so the pointer stays on the screen: move it over the game
+to look round, and hold it near the edge of the screen to keep turning that way. A two-finger swipe
+looks round as well, with no edge to stop it. A click shoots (hold it for a burst) and a two-finger
+click aims, again to stop. The touch buttons go away while you use the trackpad and come back when
+you touch the screen. ` (the key left of 1) turns the trackpad's aiming off, so it drags to look as
+a finger does, and on again; the game remembers which. The mouse wheel's weapon change is Q or 1, 2
+and 3 here, as the swipe looks.
+
 ### Game controllers
 
 A PS5 pad (over Bluetooth or a cable), an Xbox pad or any other the browser sees plays the whole
@@ -741,13 +758,12 @@ for the low ones, turn to shred, and everyone nearby hears your solo.
 ### The record player on Solsbury Hill
 
 Up on the flat top of Little Solsbury Hill, over Batheaston, someone has left a portable record
-player going on a folding table, lid propped open and the record turning. It plays "Up the Hill", an
-ode to the song about climbing this hill: B major, seven beats to the bar with a bar of four at the
-end of each chorus, a bright strummed guitar to start it off, then vibes on the tune with electric
-piano, upright bass and brushes, and all the crackle of an old record. You hear it from about 70 m off, louder as you
-come up to the table, and the soundtrack fades down while you're there. When the side ends, the
-needle sits in the run-out groove for a few turns, then the arm goes back and it starts again.
-Everyone up there hears the same bit at the same time.
+player on a folding table, lid propped open and a record on it. It plays whatever MIDI files are in
+the repo's `web/Record player/` folder, one after another, round and round, on synthesised
+instruments with the crackle of an old record; with nothing in the folder it sits silent. You hear
+it from about 70 m off, louder as you come up to the table, and the soundtrack fades down while
+you're there. Between records the needle sits in the run-out groove for a few turns. Everyone up
+there hears the same bit at the same time.
 
 ### Ball games
 
