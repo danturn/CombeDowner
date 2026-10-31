@@ -3661,11 +3661,16 @@ def demote_pedestrian(rd, old):
     return cleared
 
 
+ON_TRACK = 1.5      # metres from a track's middle that a lane's end is on the line
+
+
 def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
-    """A path that crosses the railway level with it is cut either side of the track: there are no
-    level crossings in Bath, and the ground here cannot be dug for the path to pass under a bridge.
-    `tracks` are the rail file's, points [x, y, height, flag]; a flag of 2 is a track the path passes
-    over. Streets and anything on a bridge are left. Returns the records and how many paths were cut."""
+    """A path or a service lane that crosses the railway level with it is cut either side of the
+    track: there are no level crossings in Bath, and the ground here cannot be dug for the path to
+    pass under a bridge. A lane mapped on to the line (a way in for the railway's own staff) stops
+    at its fence the same way. `tracks` are the rail file's, points [x, y, height, flag]; a flag of
+    2 is a track the path passes over. Streets and anything on a bridge are left. Returns the
+    records and how many were cut."""
     lines = [LineString([q[:2] for q in t["p"]]) for t in tracks if len(t["p"]) > 1]
     tracks = [t for t in tracks if len(t["p"]) > 1]
     if not lines:
@@ -3674,7 +3679,7 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
     out, cut = [], 0
     for r in rd:
         p = r["p"]
-        if r["c"] not in GAME_PATHS or len(p) < 2:
+        if (r["c"] not in GAME_PATHS and r["c"] != "service") or len(p) < 2:
             out.append(r)
             continue
         line = LineString([q[:2] for q in p])
@@ -3691,6 +3696,13 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (pt.x, pt.y)))
                 if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2:
                     spots.append(pt)
+        for q in (p[0], p[-1]) if r["c"] == "service" else ():
+            for t in tree.query(Point(q[:2]).buffer(ON_TRACK)):
+                tp = tracks[int(t)]["p"]
+                k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], q[:2]))
+                if (len(q) < 4 and lines[int(t)].distance(Point(q[:2])) < ON_TRACK and abs(q[2] - tp[k][2]) < clear
+                        and tp[k][3] != 2):
+                    spots.append(Point(q[:2]))
         if not spots:
             out.append(r)
             continue
