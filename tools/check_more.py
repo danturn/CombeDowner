@@ -24,6 +24,7 @@ import functools, json, math, os, subprocess
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import substring
 
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 VEHICLE = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown",
@@ -229,6 +230,7 @@ def square(m, tag, note, f):
             dz = q[2] - float(ground(ox, oy))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
+    street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
 
 
@@ -455,6 +457,69 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         p = Point(q[1], q[2])
         g = min((rlines[int(k)].distance(p) for k in rtree.query(p.buffer(10))), default=10)
         if g > 1.5: note("15 path gate off its path", g, at(q[1], q[2]), f"{q[0]} {g:.1f} m off")
+
+
+KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}   # (a living street is paved flush)
+FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
+
+
+def faces_of(m):
+    """The streets' faces (sf) as the game draws them: each kind's triangles, unioned."""
+    sf = m.get("sf")
+    if not sf or "o" not in sf: return {}
+    v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
+    out = {}
+    for k in FACE_KINDS:
+        if not sf.get(k): continue
+        tri = np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3)
+        polys = shapely.polygons(np.stack([v[tri[:, 0], :2], v[tri[:, 1], :2], v[tri[:, 2], :2]], axis=1))
+        out[k] = shapely.union_all(shapely.make_valid(polys[shapely.area(polys) > 1e-6]))
+    return out
+
+
+def levels_of(m):
+    """Each street face kind's corner heights, by where the corner is."""
+    sf = m.get("sf")
+    v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
+    out = {}
+    for k in ("path", "pave"):
+        ids = np.unique(np.cumsum(np.asarray(sf.get(k) or [], np.int64)))
+        out[k] = {(round(v[i, 0], 2), round(v[i, 1], 2)): v[i, 2] for i in ids}
+    return out
+
+
+def street_faces(m, roads, rlines, marked, note, at, sq):
+    """Where a path or a pedestrian area meets a street, each keeps to its own ground: no paving or path
+    lies over a kerbed street's carriageway (a sawtooth of paving into the road where a pedestrian
+    area's edge runs along it), and no path's strip runs along a pavement beside it (it is that pavement)."""
+    F = faces_of(m)
+    if not F: return
+    inner = sq.buffer(-3)
+    soft = shapely.union_all([F[k] for k in ("pave", "path", "front", "drive", "grass", "dirt", "gravel") if k in F] or [Polygon()])
+    for r, ln, mk in zip(roads, rlines, marked):
+        if r["c"] not in KERBED or mk or ln.length < 6: continue
+        core = substring(ln, 2, ln.length - 2)
+        # (the middle of the road only: a record's width and its drawn carriageway differ by a little)
+        band = core.buffer(1.0, cap_style="flat").intersection(inner)
+        over = band.intersection(soft).area
+        if over > 0.5:
+            c = band.intersection(soft).representative_point()
+            note("9 paving over a carriageway", over, at(c.x, c.y), f"{r['c']} {r['n']!r} {over:.1f} m2")
+    if "path" in F and "pave" in F:
+        edge = F["pave"].boundary
+        # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
+        zs = levels_of(m)
+        for g in getattr(F["path"], "geoms", [F["path"]]):
+            if g.geom_type != "Polygon" or not inner.intersects(g): continue
+            shared = g.exterior.intersection(edge.buffer(0.05))
+            along = shared.length
+            steps = [abs(zs["path"][k] - zs["pave"][k]) for k in
+                     ((round(x, 2), round(y, 2)) for x, y in shapely.get_coordinates(shared))
+                     if k in zs["path"] and k in zs["pave"]]
+            if steps and max(steps) > 0.4: continue
+            if along > 6:
+                c = g.representative_point()
+                note("9 path strip along a pavement", along, at(c.x, c.y), f"{along:.0f} m")
 
 
 def gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits):
