@@ -183,6 +183,7 @@ def low(x, y, r):
 
 STEP = 4.0
 BANK = 10.0     # metres back from the water's edge over which the ground slopes down to it
+RIM = 4.0       # metres round a pond or a river that hold its water in, a step above it
 if TILE is None:
     nx, ny = int(math.ceil((X1 - X0) / STEP)) + 1, int(math.ceil((Y1 - Y0) / STEP)) + 1
     dx, dy = (X1 - X0) / (nx - 1), (Y1 - Y0) / (ny - 1)
@@ -1575,7 +1576,7 @@ if True:
                     else:
                         grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
                         blk = OTHER_WET[win]; blk[wet] = True
-                    if not at_sea: banks.append((poly, None if is_canal else wz))
+                    if not at_sea: banks.append((poly, None if is_canal else wz, entry))
     # a basin's bed is dug wherever its water is, the map's water or not (a channel cut to it:
     # tools/canal.py), and the ground round it stands at least a little above its water, as the
     # canal's banks do, or the water would stand over land lower than itself with nothing holding it
@@ -1596,7 +1597,14 @@ if True:
         for bp in whole_polys(g):
             win, inn = cover_xy(bp.buffer(2.5))
             BUILT[win][inn] = True
-    for poly, wz in banks:
+    # each pond's or river's own rim (out to RIM past its edge), at its water's level: another
+    # piece's bank lower down doesn't take it away, or a pond beside the river would hang over it
+    RIM_LV = np.full(grid.shape, -np.inf)
+    for poly, wz, _ in banks:
+        if wz is None: continue
+        win, rim = cover_xy(poly.buffer(RIM), edge=True)
+        blk = RIM_LV[win]; blk[rim] = np.maximum(blk[rim], wz); RIM_LV[win] = blk
+    for poly, wz, _ in banks:
         edge = poly.exterior
         x0, y0, x1, y1 = poly.bounds
         i0, i1 = max(0, int((x0 - BANK - X0) / dx)), min(nx - 1, int((x1 + BANK - X0) / dx) + 1)
@@ -1609,9 +1617,12 @@ if True:
         near = ~shapely.contains_xy(poly, px, py) & (flat_w[win] > flat_f[win] + 1.5 * dx) & ~BUILT[win]
         if PROTECT is not None: near &= ~PROTECT[win]                                                   # (nor a bridge's abutments)
         if not near.any(): continue
+        lip = (canal_lv(px, py) if wz is None else np.full(px.shape, wz)) + 0.3
+        near &= ~(RIM_LV[win] > lip)
+        if not near.any(): continue
         d = shapely.distance(edge, shapely.points(px[near], py[near]))
         s = np.clip(d / BANK, 0, 1); s = s * s * (3 - 2 * s)
-        lip = (canal_lv(px[near], py[near]) if wz is None else wz) + 0.3
+        lip = lip[near]
         want = lip + (grid[win][near] - lip) * s
         blk = grid[win]
         blk[near] = np.minimum(blk[near], want)
@@ -1767,6 +1778,39 @@ if True:
             dug += int((new < cur - 0.05).sum())
             blk[near] = new; grid[win] = blk
         if dug: print(f"canal: the ground dug down under its bridges at {dug} vertices")
+# a pond's or a river's water stands no higher than the ground round its edge, which holds it in:
+# the rim out to RIM is laid a little above the water wherever it's free to be (as a basin's is),
+# and a pond on its own, whose rim is a road, a building or a bridge's abutment lower than its
+# water, comes down to that, its bed dug down with it
+if True:
+    rimmed = lowered = 0
+    rim_lift = 0.0
+    bank_tree = shapely.STRtree([b[0] for b in banks])
+    for k, (poly, wz, entry) in enumerate(banks):
+        if wz is None or not poly.buffer(RIM).intersects(BM): continue
+        win, rim = cover_xy(poly.buffer(RIM).difference(poly), edge=True)
+        rim &= ~OTHER_WET[win]
+        if canal_lv is not None: rim &= ~canal_bed(GX[win], GY[win])
+        if not rim.any(): continue
+        fixed = flat_in[win] | (flat_w[win] < flat_f[win] + 1.0) | BUILT[win]
+        if PROTECT is not None: fixed |= PROTECT[win]
+        blk = grid[win]
+        held = blk[rim & fixed]
+        alone = all(int(o) == k for o in bank_tree.query(poly, predicate="dwithin", distance=1.0))
+        if alone and len(held) and held.min() < wz + 0.1:
+            wz = round(float(held.min()) - 0.1, 1)
+            entry["z"] = wz
+            bwin, wet = cover_xy(poly, edge=True)
+            wet &= ~flat_in[bwin]
+            bed = grid[bwin]; bed[wet] = np.minimum(bed[wet], wz - 0.6); grid[bwin] = bed
+            blk = grid[win]
+            lowered += 1
+        up = rim & ~fixed & (blk < wz + 0.1)
+        rimmed += int(up.sum())
+        if up.any(): rim_lift = max(rim_lift, float((wz + 0.1 - blk[up]).max()))
+        blk[up] = wz + 0.1
+        grid[win] = blk
+    if rimmed or lowered: print(f"water: rims raised at {rimmed} vertices (by up to {rim_lift:.1f} m), {lowered} ponds brought down to the ground holding them")
 # a span's marks run on to where its deck meets the ground as it finally is, now the water's
 # beds and banks and the canal's are laid (the ground under a bridge's end may have gone down)
 regrown = 0
