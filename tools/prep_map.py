@@ -3342,7 +3342,7 @@ print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
 bays = []
-doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys,
+doors = front_doors(as_built, info, roads, gelev, rnd, bays, keys,
                     walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
