@@ -2143,18 +2143,28 @@ def give_way(cand, info, fresh):
             for k in order:
                 rest = polys[k].difference(polys[small if k == big else big])
                 if is_faced(k) or rest.geom_type != "Polygon" or rest.area < 0.5 * polys[k].area: continue
-                if info[k]["roof"] and len(rest.interiors) > len(polys[k].interiors): continue
+                if len(rest.interiors) > len(polys[k].interiors):
+                    if info[k]["roof"]: continue
+                    o = small if k == big else big
+                    if not (known(o) and known(k) and max(abs(x - y) for x, y in zip(level(o), level(k))) >= 1.0):
+                        merged.add(o)
+                        break
                 rest = rest.simplify(0.05)
                 if not rest.is_valid or rest.geom_type != "Polygon": continue
                 polys[k] = rest
                 cand[k] = (rest, cand[k][1])
                 cut += 1
                 break
-    return cut
+    return cut, merged
 
 
-_cut = give_way(cand, info)
+_mapped = [c[0] for c in cand]      # (the doors' colours and bay windows were placed on these)
+_cut, _merged = give_way(cand, info, fresh)
 if _cut: print(f"buildings: {_cut} outlines cut where another stands in them")
+if _merged:
+    print(f"buildings: {len(_merged)} parts at the height of the building round them left as one with it")
+    cand, info, fresh, _mapped = ([x for n, x in enumerate(l) if n not in _merged] for l in (cand, info, fresh, _mapped))
+    if keys is not None: keys = [k for n, k in enumerate(keys) if n not in _merged]
 blds, footprints, bld_props, bld_fresh = [], [], [], []
 as_built = [c[0] for c in cand]     # each outline as the game draws it, for the doors to stand on its walls
 at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
@@ -3378,7 +3388,7 @@ print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
 bays = []
-doors = front_doors(as_built, info, roads, gelev, rnd, bays, keys,
+doors = front_doors(as_built, info, roads, gelev, rnd, bays, keys, mapped=_mapped,
                     walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
