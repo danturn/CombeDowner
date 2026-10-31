@@ -155,7 +155,7 @@ export const SPECS: Record<VKind, Spec> = {
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: GOLF_PAINT,
   },
-  golfdriver: {   // the one Golf Driver, parked on a drive on Cranhill Road (golfdriver.ts): the GTI's looks on a 1.6
+  golfdriver: {   // the one Golf Driver, parked on Royal Avenue by Royal Victoria Park (golfdriver.ts): the GTI's looks on a 1.6
     name: "Volkswagen Golf Driver", L: 3.7, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 37, accel: 5.5, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: [PETROL_BLUE],
@@ -1243,7 +1243,7 @@ export class Vehicles {
     // and in the square with the top of Old Bond Street in, Mr D's chip van (last, so nothing else's number moves)
     const chips = this.chipSpot(map);
     if (chips) add("chipvan", chips.x, chips.z, chips.a);
-    // and in the square with Cranhill Road in, the Golf Driver on its drive, in place of the car the map parked there
+    // and in the square with Royal Avenue in, the Golf Driver in its space, in place of the car the map parked there
     const golf = driverSpot(map);
     if (golf) add("golfdriver", golf.x, golf.z, golf.a);
   }

@@ -94,14 +94,16 @@ export class Cockpit {
       const rear = Math.max(-d.L / 2 + 0.3, al - 1.45), len = front - rear, mid = (front + rear) / 2, wide = d.W / 2 - 0.03;
       const SEAT = d.kind === "xr3i" || d.kind === "golf" || d.kind === "golfdriver" ? "#3c3a44" : d.kind === "landrover" ? "#4a4a42" : "#3a3a3e";
       this.cut = new THREE.Box3(new THREE.Vector3(rear, up + 0.01, -wide), new THREE.Vector3(front, d.waist + 0.1, wide));
-      parts.push([box(len, 0.03, wide * 2), "#2a2826", mid, up - 0.005, 0]);                                    // the carpet
+      // seen through an open door from outside, the floor can't hang below the body's sills
+      const fl = d.doorway ? Math.max(up, 0.32) : up;
+      parts.push([box(len, 0.03, wide * 2), "#2a2826", mid, fl - 0.005, 0]);                                    // the carpet
       // seen from outside through the open driver's door (doorway), that door's inside goes with the door
       for (const z of d.doorway ? [-wide + 0.03] : [wide - 0.03, -wide + 0.03]) {
-        parts.push([box(len, d.waist + 0.06 - up, 0.06), TRIM, mid, (d.waist + 0.06 + up) / 2, z]);              // the doors' insides
+        parts.push([box(len, d.waist + 0.06 - fl, 0.06), TRIM, mid, (d.waist + 0.06 + fl) / 2, z]);              // the doors' insides
         parts.push([box(0.5, 0.05, 0.09), "#2c2d30", al + 0.1, d.waist - 0.14, z - Math.sign(z) * 0.06]);       // and their armrests
       }
-      if (d.kind !== "c5") parts.push([box(0.08, Math.max(0.05, yd - 0.2 - up), wide * 2), "#1f2022", front - 0.04, (yd - 0.2 + up) / 2, 0]);   // the footwell's end, under the dash
-      parts.push([box(Math.max(0.1, back - al + 0.4), 0.16, 0.24), "#2a2b2e", (back + al - 0.4) / 2, up + 0.08, 0]);   // the hump down the middle
+      if (d.kind !== "c5") parts.push([box(0.08, Math.max(0.05, yd - 0.2 - fl), wide * 2), "#1f2022", front - 0.04, (yd - 0.2 + fl) / 2, 0]);   // the footwell's end, under the dash
+      parts.push([box(Math.max(0.1, back - al + 0.4), 0.16, 0.24), "#2a2b2e", (back + al - 0.4) / 2, fl + 0.08, 0]);   // the hump down the middle
       // the front seats, yours and the one beside it, and a bench in the back if there's room
       for (const z of [ac, -ac]) {
         parts.push([box(0.5, 0.14, 0.48), SEAT, al + 0.05, up + 0.32, z], [box(0.12, 0.62, 0.48).rotateZ(0.18), SEAT, al - 0.27, up + 0.68, z]);
@@ -117,7 +119,8 @@ export class Cockpit {
       const base = [front + 0.02, yd - 0.02], top = [front + 0.02 - rake, roof];
       for (const z of [half - 0.02, -half + 0.02]) parts.push(strut(base, top, z, 0.07, 0.08, TRIM));       // the windscreen pillars
       parts.push([box(0.08, 0.05, half * 2), TRIM, top[0] - 0.02, roof - 0.02, 0]);                            // the rail over the windscreen
-      const rear = Math.max(-d.L / 2 + 0.3, al - 1.5);
+      // and from outside the lining mustn't run on past the roof into the back window
+      const rear = Math.max(-d.L / 2 + 0.3, al - (d.doorway ? 0.95 : 1.5));
       parts.push([box(top[0] - rear, 0.025, half * 2 - 0.04), LINING, (top[0] + rear) / 2, roof - 0.03, 0]);  // the roof lining
       for (const z of [half - 0.03, -half + 0.03]) parts.push([box(0.1, roof - d.waist, 0.05), TRIM, al - 0.4, (roof + d.waist) / 2, z]);   // the pillars behind the doors
       parts.push([box(0.03, 0.05, 0.2), "#1c1d1f", top[0] - 0.1, roof - 0.1, 0], [box(0.005, 0.04, 0.18), "#8b97a1", top[0] - 0.118, roof - 0.1, 0]);   // the mirror

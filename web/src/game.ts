@@ -446,7 +446,7 @@ export class Game {
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private records: RecordPlayer;               // the record player on Solsbury Hill
-  private golfDriver: GolfDriver;              // the Golf Driver on Cranhill Road, and its tape
+  private golfDriver: GolfDriver;              // the Golf Driver on Royal Avenue, and its tape
   private bonfire: Bonfire;
   private oddments: Oddments;                  // the strange objects and the structure that wants them
   private zones: Zones;                        // the map opened up a zone at a time

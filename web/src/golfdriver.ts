@@ -1,7 +1,7 @@
 // The one Volkswagen Golf Driver in Bath: the 1983-84 British special edition, a Mk1 with the GTI's
 // black arches, lip spoiler and sill stripe, but a smaller engine, steel wheels, a plain
-// grille and no badges on its sides. It's petrol blue, and it sits on the drive of number 5,
-// at the head of Cranhill Road off Weston Road, with the driver's door left open and a tape going in
+// grille and no badges on its sides. It's petrol blue, and it's parked on Royal Avenue,
+// along the bottom of Royal Victoria Park, with the driver's door left open and a tape going in
 // the deck: "Petrol Blue Feedback" (tracks/petrol-blue-feedback.ts), loud, through little door
 // speakers. On the passenger seat is the tape's box, "Bath Moon Rising": reach in through the door
 // (or get in) and take it, and you get a trophy and the track joins your soundtrack. You can drive it
@@ -24,8 +24,8 @@ import TAPE from "./tracks/petrol-blue-feedback";
 import type { Vehicle } from "./vehicles";
 
 export const PETROL_BLUE = "#184a5c";
-/** The drive of number 5, at the head of Cranhill Road (data metres and the way the drive runs, nose in to the house). */
-const DRIVE = { x: -2168.24, y: 3116.07, a: 0.39 };
+/** Its space on Royal Avenue, by Royal Victoria Park (data metres and the way it faces), one the map parks a car in. */
+const DRIVE = { x: -1688.79, y: 2584.51, a: 6.17 };
 const OPEN = 1.05;   // how far the door swings, radians
 const EAR = 45;      // the tape's heard this far off
 const LOOK = 60;     // and the inside's drawn through the door this far off
