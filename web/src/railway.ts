@@ -677,8 +677,8 @@ export class Railway {
       const x0 = Math.min(...xs) - 6, x1 = Math.max(...xs) + 6, y0 = Math.min(...ys) - 6, y1 = Math.max(...ys) + 6;
       const near = tracks2.flatMap((p) => p.slice(1).map((q, i) => [p[i], q]).filter(([a, b]) => Math.max(a[0], b[0]) > x0 && Math.min(a[0], b[0]) < x1 && Math.max(a[1], b[1]) > y0 && Math.min(a[1], b[1]) < y1));
       // A platform up on a viaduct is walled down to the ground the viaduct stands on (the lowest
-      // the line's bridges record near it), but no lower than leaves headroom over anything that
-      // passes under: an arch under the line beside it ends at its wall, not in the open space under it.
+      // the line's bridges record near it), but over anything that passes under (a road, the river)
+      // it stops as high as it ever did: an arch under the line beside it ends at its wall.
       let low = top - 4;
       for (const p of tracks2) for (const q of p) if (q[3] === 1 && q[4] !== undefined && q[0] > x0 - 10 && q[0] < x1 + 10 && q[1] > y0 - 10 && q[1] < y1 + 10) low = Math.min(low, q[4] - z0 - 0.3);
       let over = Infinity;
@@ -691,7 +691,7 @@ export class Railway {
         for (let u = 0; u < n; u++) {
           const P0 = [A[0] + ((B[0] - A[0]) * u) / n, A[1] + ((B[1] - A[1]) * u) / n], P1 = [A[0] + ((B[0] - A[0]) * (u + 1)) / n, A[1] + ((B[1] - A[1]) * (u + 1)) / n];
           const headroom = Math.max(this.need(P0[0], P0[1]), this.need(P1[0], P1[1]), this.need((P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2));
-          const foot = Math.min(top - 4, headroom > 0 ? low + 0.3 + headroom : low);
+          const foot = headroom > 0 ? Math.max(top - 4, low + 0.3 + headroom) : Math.min(top - 4, low);
           if (headroom > 0) over = Math.min(over, foot);
           pos2.push(P0[0], top, -P0[1], P1[0], top, -P1[1], P1[0], foot, -P1[1], P0[0], top, -P0[1], P1[0], foot, -P1[1], P0[0], foot, -P0[1]);
           for (let k = 0; k < 6; k++) col2.push(...BRICK);
