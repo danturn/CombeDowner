@@ -65,6 +65,7 @@ const CHUNK = 150;                   // track points to a mesh (fewer, longer me
 // squares flatten it there), which can't be known here, as the squares load later than this is built.
 const BANK_DEPTH = 5, BANK_SLOPE = 1.5;     // metres down, and out per metre down
 const BANK_REACH = 2.3 + BANK_DEPTH * BANK_SLOPE;
+const WALL_SKIRT = 3;                       // metres a solid bridge stretch's sides go below its recorded ground
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
 // reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
 // CANOPY_SHORT gets none; one LONG_PLATFORM or more gets two, at the 2nd and 4th of five parts.
@@ -611,7 +612,10 @@ export class Railway {
                     quad(P(M0, 2.47 * w, 1.1), P(M1, 2.47 * w, 1.1), P(M1, 2.47 * w, m), P(M0, 2.47 * w, m), GIRDER2);
                   }
                 } else {
-                  quad(P(A, 2.4 * w, 1.0), P(B, 2.4 * w, 1.0), P(B, 2.4 * w, lowB), P(A, 2.4 * w, lowA), STONE);
+                  // a solid stretch's side goes on below the ground the line's data records under it, as
+                  // the squares' own ground can lie lower (buried where it doesn't)
+                  const skirt = kind === "wall" ? WALL_SKIRT : 0;
+                  quad(P(A, 2.4 * w, 1.0), P(B, 2.4 * w, 1.0), P(B, 2.4 * w, lowB - skirt), P(A, 2.4 * w, lowA - skirt), STONE);
                   quad(P(A, 2.46 * w, 0.05), P(B, 2.46 * w, 0.05), P(B, 2.46 * w, -0.15), P(A, 2.46 * w, -0.15), BAND);
                   quad(P(A, 2.5 * w, 1.15), P(B, 2.5 * w, 1.15), P(B, 2.5 * w, 1.0), P(A, 2.5 * w, 1.0), CAP);
                   quad(P(A, 2.1 * w, 1.15), P(B, 2.1 * w, 1.15), P(B, 2.5 * w, 1.15), P(A, 2.5 * w, 1.15), CAP);
@@ -690,7 +694,10 @@ export class Railway {
         const n = Math.max(1, Math.ceil(len / 3));
         for (let u = 0; u < n; u++) {
           const P0 = [A[0] + ((B[0] - A[0]) * u) / n, A[1] + ((B[1] - A[1]) * u) / n], P1 = [A[0] + ((B[0] - A[0]) * (u + 1)) / n, A[1] + ((B[1] - A[1]) * (u + 1)) / n];
-          const headroom = Math.max(this.need(P0[0], P0[1]), this.need(P1[0], P1[1]), this.need((P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2));
+          // (only what passes under it, not a street running alongside whose reach just touches its edge)
+          const ix = (-(B[1] - A[1]) / (len || 1)) * (area > 0 ? 1 : -1) * 1.5, iy = ((B[0] - A[0]) / (len || 1)) * (area > 0 ? 1 : -1) * 1.5;
+          const mid = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2], under = this.need(mid[0] + ix, mid[1] + iy);
+          const headroom = under > 0 ? Math.max(under, this.need(P0[0], P0[1]), this.need(P1[0], P1[1]), this.need(mid[0], mid[1])) : 0;
           const foot = headroom > 0 ? Math.max(top - 4, low + 0.3 + headroom) : Math.min(top - 4, low);
           if (headroom > 0) over = Math.min(over, foot);
           pos2.push(P0[0], top, -P0[1], P1[0], top, -P1[1], P1[0], foot, -P1[1], P0[0], top, -P0[1], P1[0], foot, -P1[1], P0[0], foot, -P0[1]);
