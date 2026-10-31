@@ -6,7 +6,7 @@ import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
-import { STREETS, controlsPage, ctl, ctlText, input, placeNow } from "./controls";
+import { STREETS, controlsPage, ctl, ctlText, input, isKey, placeNow } from "./controls";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
@@ -354,8 +354,9 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   game.voice.mute(!micOn);
   touchControls = new TouchControls(game, canvas, showPause);
   // Android Chrome has requestPointerLock but nothing to lock without a mouse, so any device
-  // without one goes straight to touch rather than hoping the request fails
-  if (!MOUSE || !("requestPointerLock" in canvas)) enterFreeMode();
+  // without one goes straight to touch rather than hoping the request fails. A tablet starts on
+  // touch too, and a trackpad's first click on the game captures it (an iPad's Magic Keyboard).
+  if (!MOUSE || MOBILE || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
     // Start playing straight away. Joining can take long enough that the browser no longer counts
     // the click on Play, so it may refuse to capture the mouse; then a click on the game does it.
@@ -374,18 +375,77 @@ function enterFreeMode() {
   $("touch").hidden = false;
   $("pause").hidden = true;
   $("pausehint").textContent = "Drag on the right to look, use the stick on the left to move, tap to shoot. "
-    + "With a keyboard: W A S D move, the arrow keys look, Enter shoots and / aims.";
+    + "With a keyboard: W A S D move, the arrow keys look, Enter shoots and / aims."
+    + (canCapture() ? ctlText(" Click with a trackpad or mouse to aim with it, as on a computer ({mouseaim} turns that off and on).") : "");
 }
 
-/** How many times running the browser has refused to capture the mouse. */
-let lockFails = 0;
+/** A trackpad or mouse captured on a tablet (an iPad with a Magic Keyboard): from now on it plays
+ *  as on a computer, the touch controls put away, until the mouse is let go back to them. */
+function leaveFreeMode() {
+  if (!game) return;
+  freeMode = false;
+  game.freeMode = false;
+  game.player.joy.x = game.player.joy.y = 0;
+  $("touch").hidden = true;
+  $("stickbase").hidden = $("stickknob").hidden = true;
+  $("pausehint").textContent = "";
+}
+
+// ---- a tablet's trackpad or mouse ----------------------------------------------------------------
+// On an iPad with a Magic Keyboard the trackpad can be captured as a Mac's is. Its click on the game
+// captures it (that click doesn't shoot), and then the game plays as on a computer. A touch on the
+// screen, or the mouse-aim key, lets it go back to the touch controls; Esc lets it go to the pause
+// menu, as on a computer. The key also turns the capturing off, for those who'd rather drag to look.
+let mouseAim = (() => { try { return localStorage.getItem("cd-mouseaim") !== "off"; } catch { return true; } })();
+/** The browser has refused to capture the mouse here this visit: drag to look instead. */
+let captureRefused = false;
+/** The next time the mouse is let go, it's back to the touch controls rather than the pause menu. */
+let toFree = false;
+const canCapture = () => MOBILE && "requestPointerLock" in canvas && !captureRefused;
+function tryCapture() {
+  const refused = () => {
+    if (document.pointerLockElement === canvas || captureRefused) return;
+    captureRefused = true;
+    game?.toast("This browser won't capture the trackpad here: drag with it to look instead", 4);
+  };
+  try {
+    const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+    p?.then?.(() => {}, refused);
+  } catch { refused(); }
+  setTimeout(() => { if (freeMode && document.pointerLockElement !== canvas) refused(); }, 1000);
+}
+addEventListener("pointerdown", (e) => {
+  // a touch on the screen with the trackpad captured: back to the touch controls
+  if (e.pointerType === "touch" && MOBILE && document.pointerLockElement === canvas) { toFree = true; document.exitPointerLock(); return; }
+  if (!game?.active || !freeMode || e.pointerType !== "mouse" || e.target !== canvas || !mouseAim || !canCapture()) return;
+  if (game.mapOpen || easelUp()) return;
+  e.stopPropagation();
+  e.preventDefault();
+  tryCapture();
+}, true);
+function setMouseAim(on: boolean) {
+  mouseAim = on;
+  try { localStorage.setItem("cd-mouseaim", on ? "on" : "off"); } catch { /* ignore */ }
+}
+addEventListener("keydown", (e) => {
+  if (!isKey(e.code, "mouseaim") || e.repeat || !MOBILE || !game?.active || e.target instanceof HTMLInputElement) return;
+  if (document.pointerLockElement === canvas) {
+    setMouseAim(false);
+    toFree = true;
+    document.exitPointerLock();
+    game.toast(ctlText("Mouse aim off: drag with the trackpad to look ({mouseaim} turns it back on)"), 3);
+  } else if (freeMode && canCapture()) {
+    setMouseAim(!mouseAim);
+    game.toast(ctlText(mouseAim ? "Mouse aim on: click with the trackpad to aim with it" : "Mouse aim off: drag with the trackpad to look ({mouseaim} turns it back on)"), 3);
+    if (mouseAim) tryCapture();
+  }
+});
+
 /** Pointer lock was refused, often because the click that asked for it came too long ago. */
 function lockFailed() {
   if (!game || freeMode) return;
-  if (!MOUSE) return enterFreeMode();
-  // refused again after a fresh click, on something with a touch screen too (an iPad with a
-  // keyboard and trackpad): it isn't going to, so play with the touch controls and the keyboard
-  if (++lockFails >= 2 && navigator.maxTouchPoints > 0) return enterFreeMode();
+  // a tablet goes back to its touch controls, where a trackpad's click can try again
+  if (!MOUSE || MOBILE) return enterFreeMode();
   if ($("pause").hidden) { $("clickhint").hidden = false; return; }   // keep playing; a click captures the mouse
   showPause();
   $("pausehint").textContent = "Click Resume to aim with the mouse.";
@@ -434,9 +494,11 @@ function resume() {
 }
 
 document.addEventListener("pointerlockchange", () => {
-  if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
-  if (locked) lockFails = 0;
+  if (locked && freeMode) leaveFreeMode();   // a tablet's trackpad, captured
+  if (!game || freeMode) return;
+  // let go by a touch or the mouse-aim key: on with the touch controls
+  if (!locked && toFree) { toFree = false; enterFreeMode(); return; }
   // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
   if (!locked && (game.mapOpen || easelUp())) { $("clickhint").hidden = true; return; }
   game.active = locked;
