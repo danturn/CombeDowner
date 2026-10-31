@@ -1,15 +1,16 @@
 // A record player on a folding table up on Little Solsbury Hill, the flat-topped hill fort over
-// Batheaston, playing "Up the Hill" (jazz.ts), an ode to the song about climbing it, to whoever
-// comes up. It's an old portable, the suitcase kind, with its lid propped open, the record going
-// round at 33⅓ and the arm on it. Come
-// within earshot and you hear it, quieter and duller the further off you are; the soundtrack goes
-// down as you get close, so it's the record you hear.
+// Batheaston. It's an old portable, the suitcase kind, with its lid propped open and a record on
+// it, the arm resting in the groove. It plays whatever MIDI files are in the "Record player" folder
+// (web/Record player/, read and played by midiplayer.ts), one after another, round and round; with
+// nothing in the folder the record sits still and the hill is quiet. Come within earshot and you
+// hear it, quieter and duller the further off you are; the soundtrack goes down as you get close,
+// so it's the record you hear.
 //
-// Who decides what: nothing goes over the network. Where it stands is fixed, and where the record
-// has got to comes from the clock (jazz.ts), so everyone up there hears the same bit at the same time.
+// Who decides what: nothing goes over the network. Where it stands is fixed, and where the records
+// have got to comes from the clock (midiplayer.ts), so everyone up there hears the same bit at the same time.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { Band } from "./jazz";
+import { readMidi, Records, type Song } from "./midiplayer";
 import type { GameMap } from "./map";
 import { Kit, plain } from "./landmarks/kit";
 
@@ -17,9 +18,22 @@ import { Kit, plain } from "./landmarks/kit";
 const SPOT = { x: 748.2, y: 5105.7 };
 const FACING = { x: 744.7, y: 5108.4 };
 const MAP = "combe-down";
-const EAR = 70;              // the band plays while you're this close
+const EAR = 70;              // the records play while you're this close
 const TOP = 0.72;            // the table's height
 const RPM = 100 / 3;
+/** The files in the "Record player" folder, found when the game is built. */
+const FILES = import.meta.glob<string>("../Record player/*.{mid,midi,MID,MIDI}", { query: "?url", import: "default" });
+
+let songs: Promise<Song[]> | null = null;
+/** Read the folder's records, once, in order of their file names. */
+function records(): Promise<Song[]> {
+  return (songs ??= Promise.all(Object.keys(FILES).sort().map(async (path) => {
+    try {
+      const buf = await (await fetch(await FILES[path]())).arrayBuffer();
+      return readMidi(buf, path.split("/").pop()!);
+    } catch { return null; }
+  })).then((all) => all.filter((s): s is Song => !!s)));
+}
 
 /** The table and the record player on it: its front faces +z, its middle at the origin on the ground. */
 function build(): { root: THREE.Group; record: THREE.Object3D } {
@@ -52,7 +66,7 @@ function build(): { root: THREE.Group; record: THREE.Object3D } {
   k.add(sleeve, new THREE.BoxGeometry(0.31, 0.004, 0.31), 0.32, y + 0.002, 0.02, 0.3);
   k.add(cream, new THREE.BoxGeometry(0.14, 0.001, 0.14), 0.32, y + 0.0045, 0.02, 0.3);
   const root = k.build();
-  // the record itself, going round: black with a bright label, and a mark on the label so you can see it turn
+  // the record itself: black with a bright label, and a mark on the label so you can see it turn
   const rk = new Kit();
   rk.cyl(plain("#151515"), 0, 0, 0, 0.15, 0.003, 28);
   rk.cyl(plain("#e07a2a"), 0, 0.003, 0, 0.045, 0.001, 16);
@@ -64,13 +78,14 @@ function build(): { root: THREE.Group; record: THREE.Object3D } {
   return { root, record };
 }
 
-/** The record player on Solsbury Hill: drawn while you're about, and playing while you're in earshot. */
+/** The record player on Solsbury Hill: drawn while you're about, and playing its records while you're in earshot. */
 export class RecordPlayer {
   /** How far away a point is, and how far to your right, for placing the sound (game.ts sets it). */
   hear: (x: number, y: number, z: number) => [number, number] = () => [0, 0];
   private model: { root: THREE.Group; record: THREE.Object3D } | null = null;
   private spot: { x: number; z: number; y: number } | null | undefined;   // undefined: not looked for yet; null: not on this map
-  private band: Band | null = null;
+  private songs: Song[] | null = null;    // null until the folder's been read
+  private band: Records | null = null;
   private out: ReturnType<typeof SFX.placedOut> = null;
   private hushed = false;
 
@@ -81,6 +96,7 @@ export class RecordPlayer {
     const spot = this.find(px, pz);
     const far = spot ? Math.hypot(px - spot.x, pz - spot.z) : Infinity;
     if (!spot || far > 400) { if (this.model) this.model.root.visible = false; this.quiet(); return; }
+    if (this.songs === null) { this.songs = []; records().then((s) => { this.songs = s; }); }
     if (!this.model) {
       this.model = build();
       this.model.root.position.set(spot.x, spot.y, spot.z);
@@ -88,6 +104,7 @@ export class RecordPlayer {
       this.scene.add(this.model.root);
     }
     this.model.root.visible = true;
+    if (!this.songs.length) { this.quiet(); return; }   // an empty folder: the record sits still
     this.model.record.rotation.y -= dt * RPM * Math.PI / 30;
     // the music, while you're near enough to hear it
     const c = SFX.context();
@@ -96,7 +113,7 @@ export class RecordPlayer {
       if (far > EAR) return;
       this.out = SFX.placedOut();
       if (!this.out) return;
-      this.band = new Band(c, this.out.node);
+      this.band = new Records(c, this.out.node, this.songs);
     }
     this.band.play(c.currentTime + 0.6);
     const [d, pan] = this.hear(spot.x, spot.y + TOP + 0.2, spot.z);
