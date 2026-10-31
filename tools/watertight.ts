@@ -207,7 +207,7 @@ const platformAt = (x: number, y: number) => platRings.find((p) => x >= p.box[0]
  *  or to an arch's or girder's underside where something passes under. Null where there's no body. */
 function body(x: number, y: number, g: number): [number, number] | null {
   const pl = platformAt(x, y);
-  if (pl) return pl.z > g ? [g, pl.z] : null;
+  if (pl) { const lo = need(x, y) > 0 ? g + need(x, y) : g; return pl.z > lo ? [lo, pl.z] : null; }
   const n = nearest(x, y);
   if (!n || n.flag === 2 || n.off > 2.3) return null;
   const t = top(x, y, n.z + 0.3);
