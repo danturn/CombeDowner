@@ -360,16 +360,21 @@ export class CanalWorks {
             return;
           }
           const P4 = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
-          const bed = (lvs.find((l) => l !== null) ?? 0) - BED;
           if (!wet.some((w) => !w)) {
+            const bed = (lvs.find((l) => l !== null) ?? 0) - BED;
             if (!wall) quad(P4.map((p) => [p[0], p[1], bed]), Cs ? Cs[0] : c);
             return;
           }
           quad(P4, Cs ? Cs[0] : c, wall);
-          if (wall || !wet.some((w) => w)) return;
+          if (wall) return;
+          const cx = (P4[0][0] + P4[2][0]) / 2, cy = (P4[0][1] + P4[2][1]) / 2;
           for (let e = 0; e < 4; e++) {
-            const a = P4[e], b = P4[(e + 1) % 4];
-            quad([a, b, [b[0], b[1], bed], [a[0], a[1], bed]], Cs ? Cs[0] : c, true);
+            const a = P4[e], b = P4[(e + 1) % 4], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ml = Math.hypot(mx - cx, my - cy) || 1;
+            const beyond = this.water(mx + ((mx - cx) / ml) * 0.1, my + ((my - cy) / ml) * 0.1, seg);
+            if (beyond === null && !(wet[e] && wet[(e + 1) % 4])) continue;
+            const low = (beyond ?? lvs[e] ?? lvs[(e + 1) % 4] ?? 0) - BED;
+            if (Math.max(a[2], b[2]) - low < 0.05) continue;
+            quad([a, b, [b[0], b[1], low], [a[0], a[1], low]], Cs ? Cs[0] : c, true);
           }
         };
         for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) piece(i / nu, (i + 1) / nu, j / nv, (j + 1) / nv, 0);
@@ -397,13 +402,20 @@ export class CanalWorks {
       const at = (S: Station, o: number): [number, number] => [S.x + S.nx * o, S.y + S.ny * o];
       // (does another stretch's water reach its banks? at a junction's basin)
       cur = s;
-      crowded = [A, B].some((S) => [1, -1].some((side) => [S.half + 0.5, S.half + S.w[side > 0 ? 0 : 1] + S.v[side > 0 ? 0 : 1]].some((o) => this.water(S.x + S.nx * o * side, S.y + S.ny * o * side, s) !== null)));
+      const mid: Station = { ...A, x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, nx: (A.nx + B.nx) / 2, ny: (A.ny + B.ny) / 2, half: (A.half + B.half) / 2, w: [(A.w[0] + B.w[0]) / 2, (A.w[1] + B.w[1]) / 2], v: [(A.v[0] + B.v[0]) / 2, (A.v[1] + B.v[1]) / 2] };
+      crowded = [A, mid, B].some((S) => [1, -1].some((side) => [S.half + 0.5, S.half + S.w[side > 0 ? 0 : 1] + S.v[side > 0 ? 0 : 1]].some((o) => this.water(S.x + S.nx * o * side, S.y + S.ny * o * side, s) !== null)));
+      // the bed, between the channel's sides: under the water nothing is open to the sky, seen
+      // from wherever the banks stop (where a basin opens off the canal)
+      {
+        const [ax, ay] = at(A, A.half), [bx, by] = at(B, B.half), [cx, cy] = at(B, -B.half), [dx, dy] = at(A, -A.half);
+        quad([[ax, ay, A.lv - BED], [bx, by, B.lv - BED], [cx, cy, B.lv - BED], [dx, dy, A.lv - BED]], STONE);
+      }
       for (const k of [0, 1]) {
         const side = k === 0 ? 1 : -1;
         const P = (S: Station, o: number, h: number) => { const [x, y] = at(S, o * side); return [x, y, h]; };
         const lvA = A.bank, lvB = B.bank;
-        // the channel's side, from under the water up to the coping, facing the water
-        quad([P(A, A.half, A.lv - 0.6), P(B, B.half, B.lv - 0.6), P(B, B.half, lvB), P(A, A.half, lvA)], STONE, true);
+        // the channel's side, from the bed up to the coping, facing the water
+        quad([P(A, A.half, A.lv - BED), P(B, B.half, B.lv - BED), P(B, B.half, lvB), P(A, A.half, lvA)], STONE, true);
         // the coping, then the bank (the towpath, or grass on the far side)
         const ca = Math.min(COPE, A.w[k]), cb = Math.min(COPE, B.w[k]);
         quad([P(A, A.half, lvA), P(B, B.half, lvB), P(B, B.half + cb, lvB), P(A, A.half + ca, lvA)], COPING);
