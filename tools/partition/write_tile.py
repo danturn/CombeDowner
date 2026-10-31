@@ -5024,6 +5024,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             keep.append([r[0]] + at_ground(r[1:], q, 0.2))
             moved["fx"] += 1
     gone["fx"] = len(rows) - len(keep)
+    moved["fx"] += spread_items(keep, lambda x, y, r: clear(x, y, item_room(r)) and not in_full_road(x, y),
+                                lambda r, q: [r[0]] + at_ground(r[1:], q, 0.2))
     keep = [at_street_level(r, 1, 3) for r in keep]
     tile["fx"] = keep
     # the wires hang from their poles where they stand now; a pole that went takes its wires with it
@@ -5031,6 +5033,42 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     tile["wr"] = string_wires([r for r in keep if r[0] == "pole"], tile.get("wr") or [],
                               {pid for w in tile.get("wr") or [] if len(w) > 7 for pid in w[6:8]} - here)
     return gone
+
+
+ITEM_GAP = 0.7      # metres between two street items' middles, so neither stands in the other
+ITEM_SLIDE = (0.8, -0.8, 1.6, -1.6, 2.4, -2.4, 3.2, -3.2)
+# what the map data maps stays where it is; what the build puts up itself gives way to it
+GENERATED = {"sign", "lamp", "pole"}
+
+
+def spread_items(rows, free, moved_to):
+    """Street items that two sources, or two snaps to the same kerb, put on one spot, set side by
+    side along the pavement instead: the later one (a generated one after every mapped one) slides
+    along its street, the way it faces, to the nearest spot that is `free` and a step from every
+    other. Returns how many moved; one with nowhere to go stays where it was."""
+    items = sorted((k for k, r in enumerate(rows) if r[0] not in ("car", "wheelie")),
+                   key=lambda k: rows[k][0] in GENERATED)
+    placed, n = collections.defaultdict(list), 0
+
+    def crowded(x, y):
+        i, j = int(x // ITEM_GAP), int(y // ITEM_GAP)
+        return any(math.dist((x, y), p) < ITEM_GAP for a in (i - 1, i, i + 1) for b in (j - 1, j, j + 1)
+                   for p in placed[a, b])
+
+    for k in items:
+        r = rows[k]
+        x, y = float(r[1]), float(r[2])
+        if crowded(x, y):
+            a = float(r[4]) if len(r) > 4 and isinstance(r[4], (int, float)) else 0.0
+            for d in ITEM_SLIDE:
+                nx, ny = x + math.cos(a) * d, y + math.sin(a) * d
+                if not crowded(nx, ny) and free(nx, ny, r):
+                    rows[k] = moved_to(r, (nx, ny))
+                    x, y = nx, ny
+                    n += 1
+                    break
+        placed[int(x // ITEM_GAP), int(y // ITEM_GAP)].append((x, y))
+    return n
 
 
 # How far a boundary must keep from a street item's middle: its own half-width and a little, so a
