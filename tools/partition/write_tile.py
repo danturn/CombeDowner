@@ -4454,6 +4454,9 @@ DOOR_REACH = 25.0       # metres: how far a gate looks for the door it leads to
 DOOR_RAY = 14.0         # metres: how far out from a door a boundary is looked for
 PATH_SHORTEST = 1.5     # metres: a front path shorter than this is only a doorstep
 DOOR_GATE_SHORTEST = 3.0   # metres of front garden before a door is given a gate of its own
+DOOR_STEP = 1.0         # metres out from a door that no boundary may cross
+DOOR_GAP = 1.2          # metres: the opening made in one that does
+DOOR_STUB = 1.5         # metres: a piece left shorter than this beside that opening goes with it
 
 
 def _way_in(mid, door_pts, dtree, houses, htree, road_area, walls=None, wtree=None, taken=()):
@@ -4476,12 +4479,13 @@ def _way_in(mid, door_pts, dtree, houses, htree, road_area, walls=None, wtree=No
     return None
 
 
-def gates_for_doors(part, houses, doors, road_area=None, sq=None):
+def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=()):
     """Gates for the doors no gate leads to. The partition puts a gate on the plot edge nearest the
     house, and for a semi or a corner house that is often a side boundary, so the way out to the street
     from the door was a wall (a third of the doors on the village square). A door with no gate to reach
     gets one where the line straight out from it first meets a boundary, as the old build gave every
-    front its gate opposite the house. Returns the new openings and the old gates they replace."""
+    front its gate opposite the house. doors_near: those just over the square's edge, whose doorsteps
+    are kept clear here too. Returns the new openings and the old gates they replace."""
     if not houses or not doors:
         return [], []
     houses = [h if h.is_valid else h.buffer(0) for h in houses]
@@ -4541,8 +4545,105 @@ def gates_for_doors(part, houses, doors, road_area=None, sq=None):
         t = min(max(line.project(pt), EDGE_STUB + 0.5), L - EDGE_STUB - 0.5)
         opens.append(dict(edge=eid, t=t, width=1.0, kind="gate"))
         given.add(k)
+    # nothing stands across a doorstep: where a boundary runs within a step of a door (a front wall
+    # along a house built up to its plot's edge) it is opened in front of the door
+    taken = {i: list(edges[i].get("drop") or ()) for i in kept}
+    for o in (part.get("openings") or []) + opens:
+        if o.get("edge") is not None and o.get("kind") in ("gate", "drive", "open", "path"):
+            taken.setdefault(o["edge"], []).append((o["t"] - o["width"] / 2, o["t"] + o["width"] / 2))
+    for d in list(doors) + list(doors_near):
+        nx, ny = math.sin(d[3]), -math.cos(d[3])
+        step = LineString([(d[0], d[1]), (d[0] + nx * DOOR_STEP, d[1] + ny * DOOR_STEP)])
+        for j in etree.query(step):
+            eid = kept[int(j)]
+            hit = lines[eid].intersection(step)
+            if hit.is_empty:
+                continue
+            line, L = lines[eid], lines[eid].length
+            t = line.project(hit.centroid)
+            if any(a - 0.1 <= t - DOOR_GAP / 2 and t + DOOR_GAP / 2 <= b + 0.1 for a, b in taken.get(eid, ())):
+                continue
+            a, b = t - DOOR_GAP / 2, t + DOOR_GAP / 2
+            # (and no stub of it is left standing on its own beside the opening)
+            ends = [0.0, L] + [v for ab in taken.get(eid, ()) for v in ab]
+            a = max([v for v in ends if a - DOOR_STUB < v <= a] + [a])
+            b = min([v for v in ends if b <= v < b + DOOR_STUB] + [b])
+            a, b = max(a, 0.0), min(b, L)
+            o = dict(edge=eid, t=(a + b) / 2, width=b - a, kind="open")
+            opens.append(o)
+            taken.setdefault(eid, []).append((a, b))
     # the gate that led only to a wall at the wrong side of that house goes: it was a hole in a side fence
     return opens, [o for o, k in blind if k in given]
+
+
+def clear_doorsteps(br, gt, doors):
+    """`br` and `gt` with a gap wherever a run still crosses a doorstep: what the partition's own
+    openings didn't reach (a mapped wall, a run moved off the street's edge onto the house front). A
+    piece left shorter than DOOR_STUB beside a gap goes with it, so no stub stands on its own, and a
+    gate the gap reaches is part of the opening."""
+    steps = [LineString([(d[0] + math.sin(d[3]) * 0.1, d[1] - math.cos(d[3]) * 0.1),
+                         (d[0] + math.sin(d[3]) * DOOR_STEP, d[1] - math.cos(d[3]) * DOOR_STEP)]) for d in doors]
+    if not steps or not br:
+        return br, gt
+    tree = STRtree(steps)
+    out, gone = [], []
+    for run in br:
+        line = LineString([q[:3] for q in run["p"]]) if len(run["p"]) > 1 else None
+        hits = [] if line is None else [line.project(line.intersection(steps[int(k)]).centroid)
+                                        for k in tree.query(line) if line.intersects(steps[int(k)])]
+        if not hits:
+            out.append(run)
+            continue
+        L = line.length
+        cuts = sorted((max(0.0, t - DOOR_GAP / 2), min(L, t + DOOR_GAP / 2)) for t in hits)
+        joined = []
+        for a, b in cuts:
+            if joined and a - joined[-1][1] < DOOR_STUB:
+                joined[-1] = (joined[-1][0], max(joined[-1][1], b))
+            else:
+                joined.append((a, b))
+        if joined[0][0] < DOOR_STUB:
+            joined[0] = (0.0, joined[0][1])
+        if L - joined[-1][1] < DOOR_STUB:
+            joined[-1] = (joined[-1][0], L)
+        keep, at = [], 0.0
+        for a, b in joined:
+            if a > at:
+                keep.append((at, a))
+            at = b
+            gone.append(substring(line, a, b))
+        if at < L:
+            keep.append((at, L))
+        for a, b in keep:
+            piece = substring(line, a, b)
+            if piece.geom_type == "LineString" and len(piece.coords) >= 2:
+                out.append(dict(run, p=[[round(c[0], 1), round(c[1], 1), round(c[2], 1)] for c in piece.coords]))
+    # a gate the gaps reach is part of the opening, and a short piece they left with nothing holding
+    # either end goes (its neighbour or its gate taken by one), whether this cut it or the
+    # partition's opening at the doorstep did
+    near_steps = [st.buffer(DOOR_GAP / 2 + 1.0) for st in steps]
+    while True:
+        if gone and gt:
+            opened = STRtree(gone)
+            taken = [g for g in gt if any(gone[int(k)].distance(Point(x, y)) < 0.3 for x, y in ((g[0], g[1]), (g[2], g[3]))
+                                          for k in opened.query(Point(x, y).buffer(0.3)))]
+            gone += [LineString([(g[0], g[1]), (g[2], g[3])]) for g in taken]
+            gt = [g for g in gt if g not in taken]
+        near = STRtree(gone + near_steps)
+        lines = [LineString([q[:2] for q in r["p"]]) for r in out]
+        held = STRtree(lines + [Point(g[k], g[k + 1]) for g in gt or () for k in (0, 2)])
+        geoms = held.geometries
+
+        def free(pt, i):
+            return not any(int(k) != i and geoms[int(k)].distance(pt) < 0.3 for k in held.query(pt.buffer(0.3)))
+        loose = {i for i, ln in enumerate(lines) if ln.length < DOOR_STUB
+                 and len(near.query(ln, predicate="dwithin", distance=0.3))
+                 and free(Point(ln.coords[0]), i) and free(Point(ln.coords[-1]), i)}
+        if not loose:
+            break
+        gone += [lines[i] for i in loose]
+        out = [r for i, r in enumerate(out) if i not in loose]
+    return out, gt
 
 
 def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=(), gt=None):
@@ -5677,7 +5778,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         abutments = unary_union(deck_ends_reach(gaps))
         shapely.prepare(wall_blocked)
         shapely.prepare(abutments)
-    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
+    doors_near = tile.pop("drn", None) or []
+    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq, doors_near)
     gone = {id(o) for o in wrong_side}
     part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
     # drives go beside the gates that are left, so none stands beside a gate that was taken out
@@ -5726,6 +5828,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     points = mapped_points(sq)
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
+    br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt

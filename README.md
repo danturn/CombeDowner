@@ -60,7 +60,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
   pavement or parked cars; in front of a shop the pavement runs on up to its front, with no
-  front garden, and a front door opens clear of any wall or fence; paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
+  front garden, and a front door opens clear of any wall or fence, on a wall with open ground
+  outside it (never a terrace's party wall or into a neighbour's extension); paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
   dog-leg between gardens goes round them rather than through them; flights of steps are solid treads climbing between the ground at each
   end, turning at their landings, with handrails along them where the map has them. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
