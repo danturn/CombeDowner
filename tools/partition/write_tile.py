@@ -414,6 +414,12 @@ def stretch_samples(t0, t1, corners):
     return [t0] + sorted(clear + kept) + [t1]
 
 
+# m2 more of a house a street run on to the square's edge may reach over than its piece did: the
+# next square, which doesn't hold that house, runs its own piece on to the edge, so refusing a corner
+# this small left the street with a gap at the seam
+EDGE_GRAZE = 0.5
+
+
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,
                          portals=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
@@ -509,7 +515,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 return True
             ww, vv = (piece[1], piece[2]) if piece is not None else (ww, vv)
             band = lambda q: LineString(q).buffer(ww / 2 + max(vv), cap_style="flat").intersection(house_area).area
-            return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + 0.05
+            return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + EDGE_GRAZE
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             # (the faces stop at the square's edge, so a point by it can't be measured across; the
