@@ -421,6 +421,7 @@ function makeShell(scene: THREE.Scene) {
  */
 function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
+  if (core) S.railTracks = map.railData?.tracks.map((t) => t.p) ?? [];
   const D = map.d, T = D.t, Z0 = map.z0;
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
@@ -2440,7 +2441,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- grass round the player ---------------------------------------------------------------
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
   mark("grass-build");
-  const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE) : { update() {} };
+  const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE, S.railTracks ?? []) : { update() {} };
   yield;
 
   mark("grass");
