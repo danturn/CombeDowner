@@ -3359,8 +3359,11 @@ def _tube_floor(t, rd):
         line = LineString([q[:2] for q in r["p"]])
         if not line.intersects(tube):
             continue
+        # (a way that goes into no tunnel itself, such as a street across a building's passage at its own
+        # level, keeps its faces too)
         if any(tube.contains(Point(q[:2])) and q[2] > tl.interpolate(flat.project(Point(q[:2]))).z + TN.CROWN * 0.5
-               for q in r["p"]) or not any(tube.contains(Point(q[:2])) for q in r["p"]):
+               for q in r["p"]) or not any(tube.contains(Point(q[:2])) for q in r["p"]) \
+                or not any(len(q) > 3 and q[3] == 2 for q in r["p"]):
             over.append(line.buffer(r.get("w", 4) / 2 + max(r.get("pv") or (0, 0)) + 0.5, cap_style="flat"))
     return _minus(tube, unary_union(over)) if over else tube
 
