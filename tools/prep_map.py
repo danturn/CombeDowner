@@ -2172,10 +2172,45 @@ if TILE is not None:
         near = [(i, j) for i in range(math.floor((x0 - G.x0) / _size), math.floor((x1 - G.x0) / _size) + 1)
                 for j in range(math.floor((y0 - G.y0) / _size), math.floor((y1 - G.y0) / _size) + 1) if _built(i, j)]
         return max(near, key=lambda t: (poly.intersection(_tile_box(*t)).area, t), default=at)
-for g, p in L("building"):
-    for poly in (polys(g) if TILE is None else whole_polys(g, WORK)):
+
+
+def _outlines(layer):
+    if not os.path.exists(f"{src_dir}/{layer}.geojson"): return []
+    return [(p, transform(proj, g).buffer(0)) for g, p in L(layer) if g.geom_type.endswith("Polygon")]
+
+
+# what the census's output areas say of each building (buildings.priors),
+# worked out over every footprint in the square's cut of the map, so each output area is seen whole
+_census = [(p["hh"], g) for p, g in _outlines("census")]
+PRIOR = {}
+if _census:
+    from buildings import priors
+    _everywhere = box(-1e9, -1e9, 1e9, 1e9)
+    _every = []
+    for fi, (g, p) in enumerate(L("building")):
+        for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, _everywhere)):
+            poly = poly.simplify(0.25)
+            if poly.area < 6 or poly.geom_type != "Polygon": continue
+            _every.append(((fi, k), poly, p))
+    _every_certs = None
+    try:
+        import epc
+        _every_certs = epc.per_building(epc.load(os.path.join(src_dir, "epc"), A.bbox, proj), [e[1] for e in _every])
+    except FileNotFoundError:
+        pass
+    _got = priors([e[1] for e in _every], [e[2] for e in _every], _every_certs,
+                  [zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()) for c in (e[1].centroid for e in _every)],
+                  A.zones, A.default_zone, _census)
+    for (fid, _, _), pr in zip(_every, _got):
+        PRIOR[fid] = dict(pr, near=[_every[j][0] for j in pr["near"]])
+    print(f"census: {len(_census)} output areas, {sum(1 for pr in _got if pr['flats'] is not None)} homes in them, "
+          f"{sum(1 for pr in _got if pr['flats'])} blocks of flats, {sum(len(pr['near']) for pr in _got) // 2} pairs of houses sharing a wall")
+for fi, (g, p) in enumerate(L("building")):
+    for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
             p = dict(p, _own=keeper(poly) == (ti, tj))      # whole, in the tile holding its middle
+        if PRIOR:
+            p = dict(p, _fid=(fi, k), _prior=PRIOR.get((fi, k)))
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))

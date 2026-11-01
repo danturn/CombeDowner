@@ -118,10 +118,154 @@ def zone_at(zones, x, y, default):
     return default
 
 
-def groups(polys, wholes=None):
+# ---- what the census says (tools/census.py) ----
+FLAT_M2 = 75.0          # square metres of a block's floors to each flat, its share of the stairs and landings with it
+FLATS_LEAST = 150.0     # square metres: a smaller footprint is a house (a town house divided into flats is still one)
+NEAR_GAP = 3.0          # metres between two houses' footprints that may be one party wall the outlines drew apart
+WHOLE_AREA = 480.0      # metres: an output area no wider than this is whole in every square that builds a house in it
+HOME = {"", "residential", "apartments", "house", "detached", "semidetached_house", "terrace", "bungalow"}
+HOUSE = {"house", "detached", "semidetached_house", "terrace", "bungalow"}
+
+
+def _form(size):
+    return 0 if size == 1 else 1 if size == 2 else 2
+
+
+def priors(polys, props, certs, keys, zones, default_zone, census):
+    """What the census says of each footprint, for classify, as dict(flats=..., near=[...]) per
+    footprint.
+
+    census is [(households by TS044's types, outline)] per output area, in the map's metres.
+    polys must be every footprint near the ones being built (a square's whole cut of the map), so
+    each output area is seen whole and a house comes out the same from every square that builds it.
+
+    - flats: True or False for a home in an output area, None elsewhere. Overture's class, a
+      floor count that says a block, and certificates that say houses win; then the area's blocks
+      of flats are its biggest homes, each taken that brings the share of its households in flats
+      (a block's by its floor area, a house's one) nearer the census's share in purpose-built
+      flats. A block that would hold far more than the census's flats is something else (a
+      school, a works).
+    - near: houses whose footprints stand within NEAR_GAP of this one's that are taken as sharing
+      its wall, as the outlines often draw a pair of semis or a row apart: the closest first, for
+      as long as that brings the area's detached, semi-detached and terraced households nearer the
+      census's.
+    An output area wider than WHOLE_AREA can run past what a square sees: there the same is done
+    a house at a time, by the area's shares and the house's own draw."""
+    n = len(polys)
+    out = [dict(flats=None, near=[]) for _ in range(n)]
+    if not n or not census: return out
+    certs = certs or [None] * n
+    pts = np.array([p.centroid.coords[0] for p in polys])
+    zone = [zone_at(zones, x, y, default_zone) for x, y in pts]
+    draw = lambda i, salt: random.Random(keys[i] * 7907 + salt).random()
+
+    adj, comp = groups(polys)
+    otree = STRtree([g for _, g in census])
+    oa_of = np.full(n, -1)
+    for a, b in zip(*otree.query(shapely.points(pts), predicate="within")): oa_of[int(a)] = int(b)
+    have_certs = any(certs)
+    homes = defaultdict(list)
+    est = np.zeros(n)
+    fixed = {}
+    for i, (poly, p) in enumerate(zip(polys, props)):
+        cls = p.get("class") or p.get("subtype") or ""
+        name = (p.get("names") or {}).get("primary") or ""
+        if oa_of[i] < 0 or cls not in HOME or poly.area < 28 or "Chapel" in name: continue
+        floors, c = p.get("num_floors") or 0, certs[i]
+        est[i] = max(1.0, poly.area * (floors or 3) / FLAT_M2, (c["n"] - c["houses"]) if c else 0)
+        if (poly.area > 320 or (poly.area > 150 and floors >= 4)) and (cls == "apartments" or (floors >= 4 and zone[i] not in BATH)):
+            fixed[i] = True
+        elif cls in HOUSE or (c and c["houses"] * 2 > c["n"]):
+            fixed[i] = False
+        elif poly.area < FLATS_LEAST or (have_certs and not (c and c["n"] > c["houses"])):
+            fixed[i] = False          # a house, or (where the certificates are known) no homes at all
+        homes[int(oa_of[i])].append(i)
+
+    for k, members in sorted(homes.items()):
+        hh, outline = census[k]
+        target = np.array(hh[:4], float)
+        x0, y0, x1, y1 = outline.bounds
+        whole = max(x1 - x0, y1 - y0) <= WHOLE_AREA
+        flats = {i for i in members if fixed.get(i) is True}
+        if whole:
+            # the households in flats as a share of those in flats and houses (a house holding one),
+            # as near the census's as the biggest homes can bring it
+            want = target[3] / max(1.0, target.sum())
+            have, houses = sum(est[i] for i in flats), len(members) - len(flats)
+            share = lambda f, h: f / max(1.0, f + h)
+            for i in sorted((i for i in members if i not in fixed), key=lambda i: (-polys[i].area, keys[i])):
+                if est[i] > 2 * target[3] + 10: continue
+                if abs(share(have + est[i], houses - 1) - want) < abs(share(have, houses) - want):
+                    flats.add(i); have += est[i]; houses -= 1
+        else:
+            part = target[3] / max(1.0, sum(hh))
+            flats |= {i for i in members if i not in fixed and polys[i].area >= 320 and draw(i, 1) < part}
+        for i in members: out[i]["flats"] = i in flats
+
+        houses = [i for i in members if i not in flats]
+        tree = STRtree([polys[i] for i in houses]) if houses else None
+        links = []
+        for i in houses:
+            for b in tree.query(polys[i].buffer(NEAR_GAP)):
+                j = houses[int(b)]
+                if j <= i or comp[i][0] == comp[j][0] or j in adj[i]: continue
+                gap = polys[i].distance(polys[j])
+                if gap > NEAR_GAP or max(polys[i].area, polys[j].area) > 2.5 * min(polys[i].area, polys[j].area): continue
+                reach = gap / 2 + 0.35
+                if _shared_wall(polys[i].buffer(reach), polys[j].buffer(reach)) is None: continue
+                links.append((gap, min(keys[i], keys[j]), i, j))
+        links.sort()
+        if not whole:
+            # two detached houses become a pair as often as the census has semis to detached
+            semi = target[1] / max(1.0, target[0] + target[1])
+            for gap, _, i, j in links:
+                if comp[i][1] > 1 or comp[j][1] > 1 or out[i]["near"] or out[j]["near"]: continue
+                if random.Random(min(keys[i], keys[j]) * 7907 + max(keys[i], keys[j])).random() < semi:
+                    out[i]["near"].append(j); out[j]["near"].append(i)
+            continue
+        # the groups as the houses' outlines touch, joined as links are taken
+        size = {comp[i][0]: comp[i][1] for i in houses}
+        parent = {}
+        def find(r):
+            while parent.get(r, r) != r: r = parent[r]
+            return r
+        flat_hh = sum(est[i] for i in flats)
+        def error(join=()):
+            got = np.zeros(4)
+            got[3] = flat_hh
+            for i in houses:
+                r = find(comp[i][0])
+                got[_form(sum(size[q] for q in join) if r in join else size[r])] += 1
+            if got.sum() <= 0 or target.sum() <= 0: return 0.0
+            return float(np.abs(got / got.sum() - target / target.sum()).sum())
+        now = error()
+        for gap, _, i, j in links:
+            ri, rj = find(comp[i][0]), find(comp[j][0])
+            if ri == rj: continue
+            then = error((ri, rj))
+            if then < now - 1e-9:
+                parent[rj] = ri; size[ri] += size[rj]; now = then
+                out[i]["near"].append(j); out[j]["near"].append(i)
+    return out
+
+
+def _shared_wall(gi, gj):
+    """The wall two grown footprints share, as (end, end, middle), or None if under 2.5 m long."""
+    shared = gi.intersection(gj)
+    if shared.is_empty or shared.area <= 0: return None
+    q = list(shared.minimum_rotated_rectangle.exterior.coords)[:4]
+    e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
+    if max(e0, e1) < 2.5: return None
+    a, b = (q[0], q[1]) if e0 >= e1 else (q[1], q[2])
+    return a, b, shared.centroid.coords[0]
+
+
+def groups(polys, wholes=None, joined=()):
     """Shared-wall neighbours of each footprint, and the wall segments they share. wholes, if
     given, is the original footprint each one was split from (roof_parts): a house's own
-    extension is not its neighbour, so a detached house with a lean-to stays detached."""
+    extension is not its neighbour, so a detached house with a lean-to stays detached. joined
+    are pairs of houses whose footprints stand a little apart where the houses really share a
+    wall (see priors): each side's wall is on its own footprint, so its chimney stands on it."""
     tree = STRtree(polys)
     adj = defaultdict(dict)
     grown = [p.buffer(0.35) for p in polys]
@@ -130,17 +274,19 @@ def groups(polys, wholes=None):
             j = int(j)
             if j <= i: continue
             if wholes is not None and wholes[i] is not None and wholes[i] is wholes[j]: continue
-            shared = grown[i].intersection(grown[j])
-            if shared.is_empty or shared.area <= 0: continue
-            rect = shared.minimum_rotated_rectangle
-            q = list(rect.exterior.coords)[:4]
-            e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
-            length = max(e0, e1)
-            if length < 2.5: continue
-            a, b = (q[0], q[1]) if e0 >= e1 else (q[1], q[2])
-            wall = (a, b, shared.centroid.coords[0])
+            wall = _shared_wall(grown[i], grown[j])
+            if wall is None: continue
             adj[i][j] = wall
             adj[j][i] = wall
+    for i, j in joined:
+        if j in adj[i]: continue
+        reach = polys[i].distance(polys[j]) / 2 + 0.35
+        wall = _shared_wall(polys[i].buffer(reach), polys[j].buffer(reach))
+        if wall is None: continue
+        for k, l in ((i, j), (j, i)):
+            ring = polys[k].exterior
+            on = ring.interpolate(ring.project(Point(wall[2])))
+            adj[k][l] = (wall[0], wall[1], (on.x, on.y))
     comp, seen = {}, set()
     for i in range(len(polys)):
         if i in seen: continue
@@ -418,8 +564,15 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     measured, if given, has one lidar measurement (see lidar.py) or None per footprint: where
     there is one, the real eaves height and roof shape replace the guesses below. certs, if
     given, has what the energy certificates of the homes in each footprint say (see epc.py) or
-    None: their wall material, and whether they are bungalows, replace the guesses too."""
-    adj, comp = groups(polys, [p.get("_whole_geom") for p in props])
+    None: their wall material, and whether they are bungalows, replace the guesses too.
+
+    A footprint's props may carry "_prior", what priors says of it (the census), and "_fid",
+    which footprint of the map it is, for the houses priors takes as sharing a wall ("near")."""
+    whole = {p["_fid"]: i for i, p in enumerate(props) if "_fid" in p and p.get("_whole_geom") is None}
+    joined = sorted({(min(i, whole[f]), max(i, whole[f])) for i, p in enumerate(props) if p.get("_whole_geom") is None
+                     for f in (p.get("_prior") or {}).get("near", ()) if f in whole})
+    adj, comp = groups(polys, [p.get("_whole_geom") for p in props], joined)
+    apart = set(joined)
     near_wall = near_walls(polys, certs)
     out = []
     cluster_seed = {}
@@ -441,19 +594,23 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         cr = cluster_seed.setdefault(root, random.Random((group_key[root] if keys is not None else root) * 7919 + 17))
         r_group = cr.random()
         r_self = random.Random(keys[i] * 31 + 3).random() if keys is not None else rnd.random()
+        prior = p.get("_prior") or {}
+        flats = prior.get("flats")          # what the census says, where it says anything
 
         # ---- what kind of building ----
         if cls in ("church", "chapel") or "Chapel" in name or name == "Holy Trinity":
             kind = "church"
-        elif cls in ("school", "kindergarten", "hospital", "university") or area > 700:
+        elif cls in ("school", "kindergarten", "hospital", "university") or (area > 700 and not flats):
             kind = "institution"
         elif cls in ("garage", "garages", "shed", "hut", "roof") or area < 28:
             kind = "outbuilding"
         elif cls in ("retail", "commercial", "office", "kiosk") and size == 1:
             kind = "shop"
-        elif area > 320 and zone in ("mulberry", "riverside", "london", "cbd", "cape"):
+        elif flats:
             kind = "flats"
-        elif (area > 320 or (area > 150 and floors >= 4)) and (cls == "apartments" or (floors >= 4 and zone not in BATH)):
+        elif flats is None and area > 320 and zone in ("mulberry", "riverside", "london", "cbd", "cape"):
+            kind = "flats"
+        elif flats is None and (area > 320 or (area > 150 and floors >= 4)) and (cls == "apartments" or (floors >= 4 and zone not in BATH)):
             kind = "flats"        # a block of flats by the data, in any area
         elif area > 420:
             kind = "institution"
@@ -583,6 +740,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         if kind not in ("outbuilding",) and not (kind == "institution" and poly.area > 900 and not (m and not m["flat"])):
             # ridge direction: along the row for attached houses, along the long side otherwise
             walls = list(adj[i].values())
+            # (the survey's hips stand where houses taken as sharing a wall really stand apart)
+            touching = [w for j, w in adj[i].items() if (min(i, j), max(i, j)) not in apart]
             if m:
                 ux, uy = m["u"]                         # the ridge as surveyed
             elif walls:
@@ -614,10 +773,10 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     hip0, hip1 = (half if h else 0.0 for h in m["hips"])
                 elif m["hipped"]:
                     hip0 = hip1 = half
-                if (hip0 or hip1) and kind == "semi" and walls:
+                if (hip0 or hip1) and kind == "semi" and touching:
                     # only the outer end is hipped: the other is the party wall, whatever the
                     # survey's fit made of the neighbour's roof running on past it
-                    _, _, (wx, wy) = walls[0]
+                    _, _, (wx, wy) = touching[0]
                     s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
                     if s_wall > length / 2: hip1 = 0.0
                     else: hip0 = 0.0
@@ -625,7 +784,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     # the same in a terrace or a row of shops: no hip at an end that meets a
                     # neighbour's wall, so a middle house's roof runs on into the next one's.
                     # Only walls across the ridge count, near an end of it
-                    for (ax, ay), (bx, by), (wx, wy) in walls:
+                    for (ax, ay), (bx, by), (wx, wy) in touching:
                         wl = math.hypot(bx - ax, by - ay) or 1
                         if abs((bx - ax) * ux + (by - ay) * uy) / wl > 0.5: continue
                         s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
