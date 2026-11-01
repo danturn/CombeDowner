@@ -148,6 +148,9 @@ def main():
     if want("osm") and not os.path.exists(os.path.join(raw, "osm-detail.geojson")):
         # paths' surfaces, service roads' kinds, steps' handrails and the crash barriers (the partition)
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-detail.geojson"), "wide", "detail")
+    if want("osm") and not os.path.exists(os.path.join(raw, "osm-rail.geojson")):
+        # the railway's kinds (a miniature railway is left out) and its level crossings (tools/railway.py, prep_map.py)
+        run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-rail.geojson"), "wide", "rail")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
