@@ -575,8 +575,10 @@ In England and Wales the 2021 Census says how many homes in each street are flat
 semi-detached or detached, and the build follows it wherever the map data doesn't say, so a street
 of flats or of semis looks like one. A conservation area that no character area covers is the
 town's old core: its houses are built of what the old buildings round them are made of (Bath stone
-in Bath, stock brick in Hackney), and its tall terraces get parapets, tall sash windows and
-railings.
+in Bath, stock brick in Hackney), each a shade of its own, with a painted front where the houses
+round it are painted, and its tall terraces get parapets, tall sash windows and railings. London
+stock brick has a look of its own: yellow to grey-brown bricks in pale mortar, sooty, with red
+brick arches over the windows and red bands at the floors.
 
 Each map's centre, size and character areas are in `tools/area.py`. To make a map of somewhere
 new, follow [docs/new-area.md](docs/new-area.md): every download (lidar and canopy included),

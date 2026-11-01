@@ -310,7 +310,7 @@ function run<T>(g: Generator<void, T>): T {
 /** Walls whose windows light up after dark (world.update turns the glow up at night): some windows and not
  *  others, picked by which window it is on the wall, which storey, and the building's colour. */
 const GLOWING: THREE.MeshLambertMaterial[] = [];
-function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "render") {
+function litWindows(mat: THREE.MeshLambertMaterial, kind: TX.WallKind) {
   mat.emissiveMap = TX.windowGlow(kind);
   mat.emissive.set("#ffffff");
   mat.emissiveIntensity = 0;
@@ -326,7 +326,7 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "r
 
 /** One material for a kind of wall, windowed and plain alike (Geo.windowed marks which faces have
  *  windows), so a square's walls of that kind are drawn in one go instead of two. */
-function anyWalls(kind: "stone" | "brick" | "render") {
+function anyWalls(kind: TX.WallKind) {
   const mat = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
   const plainMap = TX.wall(kind, false), lit = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
@@ -1899,7 +1899,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const WALL_TINTS: Record<Surf, number[][]> = {
     s: [[0.96, 0.86, 0.66], [0.93, 0.82, 0.6], [0.9, 0.84, 0.72], [0.98, 0.9, 0.74], [0.88, 0.8, 0.66]],   // Bath stone
     k: [[0.74, 0.44, 0.33], [0.68, 0.4, 0.31], [0.78, 0.5, 0.38], [0.64, 0.42, 0.34]],                   // red brick
-    y: [[0.9, 0.77, 0.55], [0.86, 0.72, 0.5], [0.92, 0.8, 0.6]],                                        // buff brick
+    y: [[1, 1, 0.98], [0.92, 0.91, 0.89], [0.82, 0.8, 0.77], [0.97, 0.95, 0.9]],                  // stock brick, coloured in its texture: clean to sooty
     r: [[0.96, 0.95, 0.91], [0.93, 0.91, 0.85], [0.97, 0.93, 0.83], [0.9, 0.9, 0.88]],                  // render
     c: [[0.98, 0.42, 0.62], [0.36, 0.72, 0.98], [0.99, 0.86, 0.22], [0.48, 0.86, 0.46], [0.98, 0.56, 0.2],
         [0.66, 0.46, 0.92], [0.22, 0.84, 0.8], [0.99, 0.3, 0.3]],                                       // painted render, as in the Bo-Kaap
@@ -1919,11 +1919,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // a colour the data gives is met halfway by the material's own tint, so a mapper's pure "#FF0000"
   // brick still reads as brick and the retro grade doesn't make it glare
-  const tinted = (base: number[], hex?: string) => {
+  const tinted = (base: number[], hex?: string, share = 0.5) => {
     const m = hex && /^#?([0-9a-f]{6})$/i.exec(hex);
     if (!m) return base;
     const v = parseInt(m[1], 16), rgb = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => c / 255);
-    return base.map((c, k) => c * 0.5 + rgb[k] * 0.5);
+    return base.map((c, k) => c * (1 - share) + rgb[k] * share);
   };
   const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
@@ -2020,7 +2020,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
-    const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc);
+    // (stock brick's texture has its colour already: mappers' "brown" for it would turn it to mud)
+    const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc, surf === "y" ? 0.25 : 0.5);
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
     const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
@@ -2165,7 +2166,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r", "c"] as Surf[]) {
-    const kind = sfc === "s" ? "stone" : sfc === "r" || sfc === "c" ? "render" : "brick";
+    const kind = sfc === "s" ? "stone" : sfc === "r" || sfc === "c" ? "render" : sfc === "y" ? "stock" : "brick";
     wallMats[sfc] = anyWalls(kind);
   }
   wallMats.roof ??= new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street

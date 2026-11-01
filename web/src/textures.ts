@@ -88,6 +88,48 @@ function brick(g: CanvasRenderingContext2D, w: number, h: number, r: () => numbe
   }
 }
 
+/** London stock brick in Flemish bond: yellow to grey-brown bricks, each its own shade, in pale
+ *  lime mortar, with the ash specks and soot of a London wall. Coloured here, not tinted from white,
+ *  so it never reads as Bath stone. */
+function stock(g: CanvasRenderingContext2D, w: number, h: number, r: () => number) {
+  g.fillStyle = "#c6c2b8";
+  g.fillRect(0, 0, w, h);
+  const courses = 26, course = h / courses, header = w / 12;
+  for (let row = 0; row < courses; row++) {
+    // Flemish bond: a stretcher and a header in turn, the next course set off by a header and a half
+    let x = (row % 2) * -header * 1.5, k = 0;
+    while (x < w) {
+      const bw = k++ % 2 ? header : header * 2, t = r();
+      const [cr, cg, cb] = t < 0.45 ? [214, 198, 156] : t < 0.75 ? [196, 188, 168] : t < 0.93 ? [184, 164, 132] : [156, 142, 126];
+      const l = 0.9 + r() * 0.14;
+      g.fillStyle = `rgb(${cr * l},${cg * l},${cb * l})`;
+      g.fillRect(x + 1.5, row * course + 1.5, bw - 2.5, course - 2.5);
+      x += bw;
+    }
+  }
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = `rgba(${r() < 0.8 ? "40,34,30" : "120,60,40"},${0.15 + r() * 0.25})`;
+    g.fillRect(r() * w, r() * h, 1.5, 1.5);
+  }
+  // soot, heavier in streaks running down from the sills and copings
+  for (let i = 0; i < 9; i++) {
+    const sx = r() * w, sw = 10 + r() * 40, soot = g.createLinearGradient(0, 0, 0, h);
+    soot.addColorStop(0, "rgba(40,36,34,0.12)"); soot.addColorStop(1, "rgba(40,36,34,0)");
+    g.fillStyle = soot; g.fillRect(sx, 0, sw, h * (0.4 + r() * 0.6));
+  }
+}
+
+/** A flat arch of red rubbed brick over a window, its bricks fanned out from the middle. */
+function redArch(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  g.fillStyle = "#e8e2d6"; g.fillRect(x, y, w, h);
+  const n = 11;
+  for (let i = 0; i < n; i++) {
+    const l = 0.9 + ((i * 37) % 7) / 40;
+    g.fillStyle = `rgb(${190 * l},${86 * l},${62 * l})`;
+    g.fillRect(x + (i * w) / n + 1, y + 1, w / n - 2, h - 2);
+  }
+}
+
 /** Smooth render with faint weathering. */
 function render(g: CanvasRenderingContext2D, w: number, h: number, r: () => number) {
   g.fillStyle = "#f4f2ee";
@@ -98,14 +140,23 @@ function render(g: CanvasRenderingContext2D, w: number, h: number, r: () => numb
   }
 }
 
+export type WallKind = "stone" | "brick" | "stock" | "render";
+
 /** One bay of one storey (3.4 m wide, one storey tall), optionally with a sash window. */
-export function wall(kind: "stone" | "brick" | "render", withWindow: boolean): THREE.CanvasTexture {
+export function wall(kind: WallKind, withWindow: boolean): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
-  const r = rng(kind === "stone" ? 7 : kind === "brick" ? 17 : 27);
-  if (kind === "stone") stone(g, 256, 256, r); else if (kind === "brick") brick(g, 256, 256, r); else render(g, 256, 256, r);
+  const r = rng(kind === "stone" ? 7 : kind === "brick" ? 17 : kind === "stock" ? 37 : 27);
+  if (kind === "stone") stone(g, 256, 256, r); else if (kind === "brick") brick(g, 256, 256, r);
+  else if (kind === "stock") stock(g, 256, 256, r); else render(g, 256, 256, r);
   if (withWindow) {
     const wx = 82, wy = 58, ww = 92, wh = 128;
-    g.fillStyle = kind === "brick" ? "#b9b2a6" : "#d9cdb0"; g.fillRect(wx - 8, wy - 12, ww + 16, 12);   // lintel
+    if (kind === "stock") {
+      redArch(g, wx - 8, wy - 16, ww + 16, 16);
+      // a band of red brick at each floor, as on many a Victorian stock-brick terrace
+      g.fillStyle = "#a8624c"; g.fillRect(0, 256 - 256 / 26 + 1.5, 256, 256 / 26 - 2.5);
+    } else {
+      g.fillStyle = kind === "brick" ? "#b9b2a6" : "#d9cdb0"; g.fillRect(wx - 8, wy - 12, ww + 16, 12);   // lintel
+    }
     g.fillStyle = "#e6e0d2"; g.fillRect(wx - 4, wy - 2, ww + 8, wh + 4);
     const glass = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
     glass.addColorStop(0, "#3d4c5a"); glass.addColorStop(0.55, "#22303c"); glass.addColorStop(1, "#4d6070");
@@ -114,14 +165,14 @@ export function wall(kind: "stone" | "brick" | "render", withWindow: boolean): T
     g.fillRect(wx, wy + wh / 2 - 3, ww, 6);
     g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
     if (kind === "stone") for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);   // Georgian glazing bars
-    g.fillStyle = kind === "brick" ? "#c4bdb1" : "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);   // sill
+    g.fillStyle = kind === "brick" ? "#c4bdb1" : kind === "stock" ? "#e2ddd2" : "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);   // sill
   }
   return pixelTex(c, 128, 128, 24, 71);
 }
 
 /** The light from wall()'s window after dark: the glass glowing warm, the frame and glazing bars
  *  black. Used as the walls' glow map (world.ts lights some windows and not others). */
-export function windowGlow(kind: "stone" | "brick" | "render"): THREE.CanvasTexture {
+export function windowGlow(kind: WallKind): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
   g.fillStyle = "#000"; g.fillRect(0, 0, 256, 256);
   const wx = 82, wy = 58, ww = 92, wh = 128;
