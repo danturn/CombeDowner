@@ -30,6 +30,8 @@ often gives a floor count (which there includes the basement and the attic):
 Outside Bath:
 - london: inner London (Hackney): Victorian terraces of yellow London stock brick, some red brick
   or stucco, two or three storeys under slate, with big blocks of council flats between them.
+- squares: London's Georgian squares and terraces (Clapton Square, Sutton Place): three tall
+  storeys of stock brick or stucco, a parapet hiding the slate, railings to the street.
 
 Cape Town (no lidar or certificates, so OpenStreetMap's floor counts and heights stand in):
 - cbd: the city centre and the Foreshore: rendered office blocks and towers, flat roofs.
@@ -509,6 +511,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             elif zone == "london":
                 storeys = 3 if r_group < 0.4 else 2
                 eaves = storeys * 3.0 + 0.3
+            elif zone == "squares":
+                tall = 3
+                eaves = tall * 3.3 + 0.6
             else:
                 storeys = 2
                 eaves = 5.2 + r_group * 0.4
@@ -545,6 +550,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "brick" if r_group < 0.6 else "buff" if r_group < 0.85 else "stone"
         elif zone == "london":
             wall = "buff" if r_group < 0.6 else "brick" if r_group < 0.85 else "render"
+        elif zone == "squares":
+            wall = "buff" if r_group < 0.8 else "render"
         elif zone == "foxhill":
             wall = "render" if r_group < 0.55 else "brick" if r_group < 0.85 else "stone"
         elif zone == "cbd":
@@ -642,7 +649,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 half = min(depth / 2, length / 2)
                 if shape in ("hipped", "pyramidal"): hip0 = hip1 = half
                 elif shape in ("gabled", "saltbox", "gambrel", "skillion"): pass
-                elif zone == "georgian": pass                                     # behind a parapet: plain gables
+                elif zone in ("georgian", "squares"): pass                        # behind a parapet: plain gables
                 elif kind == "detached":
                     if zone == "village" or r_self < 0.45: pass                 # gabled
                     else: hip0 = hip1 = half                                    # hipped
@@ -661,7 +668,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
 
         # a parapet along the eaves hides Georgian roofs from the street; a single-storey building
         # there is a later bungalow, garage or extension, with its roof in plain view
-        parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") and eaves >= 5.0 else 0.0
+        parapet = 0.9 if zone in ("georgian", "squares") and kind not in ("outbuilding", "church") and eaves >= 5.0 else 0.0
         if zone in ("cbd", "bokaap") and kind not in ("outbuilding", "church"): parapet = 0.6
 
         # roof covering
@@ -675,6 +682,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             cover = "slate" if r_group < 0.7 else "pantile"
         elif zone == "london":
             cover = "slate" if r_group < 0.85 else "grey"
+        elif zone == "squares":
+            cover = "slate"
         elif zone == "mulberry":
             cover = "grey"
         elif zone in CAPE:

@@ -34,6 +34,7 @@ STYLE = {
     "foxhill": ([("hedge_low", 0.5), ("brick_wall_low", 0.3), ("railing", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
     "mulberry": ([("railing", 0.4), ("hedge_low", 0.4), ("brick_wall_low", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
     "london": ([("brick_wall_low", 0.5), ("railing", 0.3), ("hedge_low", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
+    "squares": ([("railing", 0.85), ("brick_wall_low", 0.15)], [("fence", 0.92), ("hedge", 0.08)]),
     # Cape Town: a high plastered wall to the street or a steel palisade, and masonry walls between
     # and behind the plots rather than wooden fences; the Bo-Kaap's stoeps have low railings
     "cape": ([("security_wall", 0.55), ("palisade", 0.3), ("railing", 0.15)], [("boundary_wall", 0.9), ("hedge", 0.1)]),
