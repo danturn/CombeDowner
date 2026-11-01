@@ -28,6 +28,7 @@ export interface Building {
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
   rm?: RoofMesh;                                  // the roof as the lidar shows it, in place of rr, rp and hp
+  wc?: string; rk?: string;                       // the wall's and the roof's colour where the map data gives one ("#rrggbb")
 }
 /** ?roofs=simple: every roof the shape it was before the lidar's faces (flat, gabled or hipped), to
  *  compare, or for a machine that can't spare the triangles. */

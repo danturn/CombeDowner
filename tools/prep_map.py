@@ -2247,6 +2247,8 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     lowest = min([ground] + [gelev(q.x, q.y) for q in (foot.interpolate(t) for t in np.arange(0.5, foot.length, 1.0))]) if foot else ground
     out = dict(r=[ring, *holes], h=round(eaves - lowest, 1), g=r1(lowest), c=b["kind"], n=name(p),
                m={"stone": "s", "brick": "k", "buff": "y", "render": "r", "paint": "c"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - lowest))
+    for k in ("wc", "rk"):
+        if b.get(k): out[k] = b[k]
     if b["roof"]:
         out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
         out["rp"] = round(b["roof"]["rise"], 1)
