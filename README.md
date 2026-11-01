@@ -568,7 +568,11 @@ where it goes, the build, and landmark packs. A map with no wide area is one fil
 
 Two other maps are set up but left out of the main menu: Royal Victoria Park (in `tools/area.py`;
 build it and add it back to `web/src/maps.ts` to try it) and Hackney, a kilometre round the
-Pembury Tavern in east London, which has its own page, `pembury.html`.
+Pembury Tavern in east London, which has its own page, `pembury.html`. Hackney is built like
+Bath, in full-detail squares with the lidar's roofs, and its buildings take their floor counts and
+brick from the map data: stock-brick terraces with bay windows, red-brick council estates and
+tower blocks, and Georgian terraces with parapets and railings round Clapton Square and Sutton
+Place. Its data is kept in `data/pembury/` (rebuild it as Bath's, with `mapdata.py unpack pembury`).
 
 Cape Town has its own page too, `cape-town.html`: the first map outside the UK, built from worldwide
 data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
