@@ -62,7 +62,7 @@ It runs, in order (so you can rerun any one):
 
 | Step | Command | Measured (Frome) |
 |---|---|---|
-| Downloads | `python3 -I tools/fetch.py frome data/raw/frome/wide --only overture,canopy,osm,lidar,fsa` (lidar and fsa only where they cover) | about 25 min: eight Overture layers (a few seconds to 3 min each), the 290 MB canopy tile, OpenStreetMap, five 5 km lidar squares x3 |
+| Downloads | `python3 -I tools/fetch.py frome data/raw/frome/wide --only overture,canopy,osm,lidar,fsa,census,conservation` (lidar, fsa, the census and the conservation areas only where they cover) | about 25 min: eight Overture layers (a few seconds to 3 min each), the 290 MB canopy tile, OpenStreetMap, five 5 km lidar squares x3 |
 | Church towers | `python3 -I tools/towers.py frome data/raw/frome/wide` (England only, needs the lidar) | seconds |
 | Squares | `python3 -I tools/prep_tiles.py frome data/raw/frome/wide web/public/maps/frome --measure` | 13 squares, 76 s on 14 cores; also downloads terrain |
 | Whole-area file | `python3 -I tools/prep_wide.py frome data/raw/frome/wide web/public/maps/frome-wide.json --measure` | seconds |

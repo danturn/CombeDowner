@@ -571,6 +571,13 @@ in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/che
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
 walls or too tall, faces lying over each other and buildings standing in each other.
 
+In England and Wales the 2021 Census says how many homes in each street are flats, terraced,
+semi-detached or detached, and the build follows it wherever the map data doesn't say, so a street
+of flats or of semis looks like one. A conservation area that no character area covers is the
+town's old core: its houses are built of what the old buildings round them are made of (Bath stone
+in Bath, stock brick in Hackney), and its tall terraces get parapets, tall sash windows and
+railings.
+
 Each map's centre, size and character areas are in `tools/area.py`. To make a map of somewhere
 new, follow [docs/new-area.md](docs/new-area.md): every download (lidar and canopy included),
 where it goes, the build, and landmark packs. A map with no wide area is one file, built with
@@ -618,7 +625,10 @@ World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
 Agency (Open Government Licence). Listed railings and walls contain Historic England data ©
-Historic England 2026 (Open Government Licence). The copy of the map data in `data/` is shared under the same
+Historic England 2026 (Open Government Licence). House types from the 2021 Census: source, Office
+for National Statistics, licensed under the Open Government Licence v3.0. Conservation areas from
+planning.data.gov.uk: © Historic England 2026 and the local planning authorities (Open Government
+Licence). Both contain OS data © Crown copyright and database right 2026. The copy of the map data in `data/` is shared under the same
 terms (see `data/combe-down/README.md`, which also says where each part comes from).
 
 Multiplayer runs over WebRTC with [Trystero](https://github.com/dmotz/trystero).

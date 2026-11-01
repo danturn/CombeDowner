@@ -13,6 +13,8 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional | England and Wales |
 | OpenStreetMap | shops, pubs, cafés and offices, on the right building | recommended | worldwide |
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
+| 2021 Census, accommodation type (TS044) | how many homes in each street are flats, terraced, semi-detached or detached | recommended | England and Wales |
+| Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
 `tools/new_area.py` does the registering and the build in order for an ordinary area, and the
@@ -160,6 +162,52 @@ in `data/combe-down/README.md`.
 
    For shop signs, also download the **Non-domestic** certificates for the same authority and
    save them as `data/raw/my-place/epc/non-domestic.csv`.
+
+### The census's house types and the conservation areas (England and Wales)
+
+Two open downloads, no account, a few seconds each (with `wide` on the end for a map with a wider
+circle, which every new map has):
+
+```sh
+python3 -I tools/census.py $MAP data/raw/$MAP/wide/census.geojson wide
+python3 -I tools/conservation.py $MAP data/raw/$MAP/wide/conservation.geojson wide
+```
+
+`tools/fetch.py $MAP --only census,conservation` runs both (it skips them outside England and
+Wales, and the conservation areas outside England). `census.py` takes every 2021 output area (about
+125 households each) the map's box touches, from the ONS's outlines, and how many of each one's
+households live in a detached, semi-detached or terraced house, a purpose-built block of flats, a
+converted house and so on, from Nomis (table TS044). It prints the mix over the whole map: Bath's
+is about a fifth each detached and semi-detached, a third terraced and a sixth flats, Hackney's
+over half flats. `conservation.py` takes the council's conservation areas from
+planning.data.gov.uk and prints their names; there are usually one to four per square kilometre
+of town. Without either file the build guesses as before, from the zones.
+
+The build (`buildings.priors`) then uses them wherever the map data and the surveys don't say:
+
+- **Flats.** In each output area, the biggest homes are made blocks of flats, one at a time, as
+  long as that brings the share of households in flats nearer the census's (a block holds one
+  household for each 75 m² of its floors, a house one). Overture's class (`apartments`, `house`,
+  `terrace` ...), a floor count of four or more, and energy certificates that say houses come first.
+- **Pairs and rows.** Where two houses' footprints stand up to 3 m apart (the outlines often draw
+  a pair of semis or a terrace apart), they are taken as sharing a wall, closest first, for as
+  long as that brings the area's detached, semi-detached and terraced homes nearer the census's.
+  Footprints that touch are a pair or a row as before.
+- **The old core.** A building in a conservation area, where no zone in `tools/area.py` covers
+  it, is in the old core: its houses and shops are built of what most of the old core's buildings
+  within 400 m are made of, as their energy certificates and mapped facades say (Bath stone in
+  Bath, stock brick in Hackney), and a terraced or semi-detached house there with its eaves 8 m or
+  more up is a Georgian or Regency town house: a parapet, tall sash windows and railings to its
+  front. Blocks of flats keep the zone's walls, being of their own time. (Bath's village and city
+  lay out their gardens their own way, `tools/partition/`, so they keep their own fronts.)
+
+The build prints what it took, for example
+`census: 299 output areas, 6779 homes in them, 862 blocks of flats, 158 pairs of houses sharing a
+wall; conservation areas: 20, 3023 buildings in an old core (2472 with its walls from the data)`.
+For a map kept in the repository, pack the two files with the rest
+(`python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide census conservation` packs just these),
+and add their rows to `data/$MAP/README.md` (copy them from `data/combe-down/README.md`).
+Licence: Open Government Licence v3; the attributions are in `data/combe-down/README.md`.
 
 ### OpenStreetMap businesses (recommended)
 
@@ -451,7 +499,10 @@ changed for every area at once.
    brick or render. A building takes the majority, and bungalows get one storey.
 6. **Everything else** (`buildings.classify`): where the data is silent, the area's zones in
    `tools/area.py` decide the materials, roof style and storeys, with Overture's building class
-   and attachment (detached, semi or terrace) worked out from shared walls.
+   and attachment (detached, semi or terrace) worked out from shared walls. Where the census and
+   the conservation areas have been downloaded, they decide first (`buildings.priors`, above):
+   which homes are blocks of flats, which houses standing a little apart share a wall, and the old
+   core's walls, parapets and railings.
 7. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
    present, tree heights and crowns come from it, with roofs and thin things removed. Trunks are
    kept off roads and pavements.
