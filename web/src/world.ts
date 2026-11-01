@@ -1910,6 +1910,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g: [[0.42, 0.43, 0.46], [0.36, 0.37, 0.4]],                       // modern grey tiles
   };
   const pick = <T,>(a: T[], r: number) => a[Math.floor(r * a.length) % a.length];
+  // a building whose wall or roof the data doesn't give takes the commonest in its own square
+  const commonest = (vals: (string | undefined)[], known: Record<string, unknown>, none: string) => {
+    const n = new Map<string, number>();
+    for (const v of vals) if (v && v in known) n.set(v, (n.get(v) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? none;
+  };
+  // a colour the data gives is met halfway by the material's own tint, so a mapper's pure "#FF0000"
+  // brick still reads as brick and the retro grade doesn't make it glare
+  const tinted = (base: number[], hex?: string) => {
+    const m = hex && /^#?([0-9a-f]{6})$/i.exec(hex);
+    if (!m) return base;
+    const v = parseInt(m[1], 16), rgb = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => c / 255);
+    return base.map((c, k) => c * 0.5 + rgb[k] * 0.5);
+  };
+  const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
   /** Box from (x, y) footprint centre, half-sizes along u and across, from y0 to y1. */
   const boxAt = (g: Geo, x: number, y: number, u: number[], hu: number, hv: number, y0: number, y1: number, col: number[]) => {
@@ -1999,15 +2014,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     let cx = 0, cy = 0;
     for (const [x, y] of outerRing) { cx += x; cy += y; }
     cx /= outerRing.length; cy /= outerRing.length;
-    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : "s") as Surf;
+    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : WALL_USUAL) as Surf;
     const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
-    const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
+    const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc);
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
-    const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
+    const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
     // windows sit at the same height on every storey, the top row just under the eaves. On a
     // slope the walls start from the lowest ground, but storeys are counted from the ground
     // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
@@ -2244,7 +2259,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       if (spec.mat !== "iron") {
         // stone and brick walls get a slightly darker coping along the top
-        const top = spec.mat === "stone" || spec.mat === "brick" ? col.map((c) => c * 0.85) : col;
+        const top = spec.mat === "stone" || spec.mat === "brick" || spec.mat === "render" ? col.map((c) => c * 0.85) : col;
         facing(g, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], [u0, 0], [u1, 0], [u1, t], [u0, t], top);
       }
       // the ends of the run are closed, so a wall doesn't show as a hollow shell where it stops
@@ -2268,13 +2283,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // moved a little by a rebuild keeps its look
     const f = g.leaf, cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2, gl = Math.hypot(f.x1 - f.x0, f.y1 - f.y0);
     const [x0, y0, x1, y1] = gt as number[];
-    const iron = g.look.mat === "iron" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
+    const iron = g.look.mat === "iron" || g.look.mat === "render" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
     boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, f.gu, gl / 2, f.half, f.foot, f.top,
       iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
   }
   const barMats: Record<BarMat, THREE.Material> = S.barMats ??= {
     stone: new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }),
     brick: new THREE.MeshLambertMaterial({ map: TX.wall("brick", false), vertexColors: true }),
+    render: new THREE.MeshLambertMaterial({ map: TX.wall("render", false), vertexColors: true }),
     leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
     wood: new THREE.MeshLambertMaterial({ map: TX.boards(), vertexColors: true, side: THREE.DoubleSide }),
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),

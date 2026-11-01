@@ -28,6 +28,7 @@ export interface Building {
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
   rm?: RoofMesh;                                  // the roof as the lidar shows it, in place of rr, rp and hp
+  wc?: string; rk?: string;                       // the wall's and the roof's colour where the map data gives one ("#rrggbb")
 }
 /** ?roofs=simple: every roof the shape it was before the lidar's faces (flat, gabled or hipped), to
  *  compare, or for a machine that can't spare the triangles. */
@@ -106,7 +107,7 @@ export interface MapData {
 
 /** What each kind of wall, fence, hedge and railing is made of, how thick it is and its colour: world.ts
  *  draws them so, and the walls you hit are that thick. */
-export type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron" | "steel";
+export type BarMat = "stone" | "brick" | "render" | "leaf" | "wood" | "iron" | "steel";
 export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[] }> = {
   wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
   stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
@@ -116,6 +117,9 @@ export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[
   railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
   dry_stone: { mat: "stone", t: 0.6, col: [0.7, 0.68, 0.6] }, wire_fence: { mat: "iron", t: 0.05, col: [0.42, 0.44, 0.42] },
   guard_rail: { mat: "steel", t: 0.1, col: [0.7, 0.72, 0.74] },
+  // Cape Town's: high plastered walls to the street and between plots, and steel palisades
+  security_wall: { mat: "render", t: 0.25, col: [0.93, 0.9, 0.83] }, boundary_wall: { mat: "render", t: 0.22, col: [0.88, 0.85, 0.79] },
+  palisade: { mat: "iron", t: 0.06, col: [0.3, 0.32, 0.33] },
 };
 export const barrierLook = (c: string) => BARRIER_LOOK[c] ?? BARRIER_LOOK.wall;
 
@@ -129,12 +133,13 @@ export function gateShape(gt: (number | string)[], z0: number) {
   const look = BARRIER_LOOK[style] ?? BARRIER_LOOK.garden_wall, hh = BARRIER_HEIGHT[style] ?? 1;
   const ux = x1 - x0, uy = y1 - y0, w = Math.hypot(ux, uy) || 1, u = [ux / w, uy / w];
   const ground = z - z0;
-  const pillars = look.mat === "stone" || look.mat === "brick" ? [[x0, y0], [x1, y1]] : [];
+  const pillars = look.mat === "stone" || look.mat === "brick" || look.mat === "render" ? [[x0, y0], [x1, y1]] : [];
+  const tall = hh > 1.6;    // a gate in a wall too high to jump stands as high as the wall
   const ang = Math.atan2(u[1], u[0]) - 0.25;
   const gu = [Math.cos(ang), Math.sin(ang)], gl = Math.min(1.0, w - 0.1);
   return {
     look, u, pillars, pillarHalf: 0.2, pillarFoot: ground - 0.3, pillarTop: ground + hh + 0.22,
-    leaf: { x0, y0, x1: x0 + gu[0] * gl, y1: y0 + gu[1] * gl, gu, half: 0.025, foot: ground + 0.08, top: ground + Math.min(1.0, hh + 0.05) },
+    leaf: { x0, y0, x1: x0 + gu[0] * gl, y1: y0 + gu[1] * gl, gu, half: 0.025, foot: ground + 0.08, top: ground + (tall ? hh - 0.05 : Math.min(1.0, hh + 0.05)) },
   };
 }
 
@@ -151,6 +156,7 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
   dry_stone: 1.2, wire_fence: 1.2, guard_rail: 0.75,                   // as OpenStreetMap names them
+  security_wall: 2.1, boundary_wall: 1.9, palisade: 1.8,
 };
 /** The full-detail squares round a map (built by tools/prep_tiles.py into public/maps/<id>/):
  *  each is cells x cells of the terrain grid that starts at (x0, y0), dx apart. */
