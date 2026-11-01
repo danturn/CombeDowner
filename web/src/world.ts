@@ -2400,7 +2400,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   mark("woods");
   // ---- front doors and bay windows ---------------------------------------------------------
   {
-    const DOOR = ["#1f3b2d", "#24324a", "#6b1f24", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
+    const DOOR = ["#1f3b2d", "#24324a", "#c8302c", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
     const doors = D.dr ?? [];
     const frameGeo = new THREE.BoxGeometry(1.25, 2.45, 0.06).translate(0, 1.22, 0.03);
     const doorGeo = new THREE.BoxGeometry(0.95, 2.05, 0.08).translate(0, 1.02, 0.05);
