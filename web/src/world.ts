@@ -1813,6 +1813,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g: [[0.42, 0.43, 0.46], [0.36, 0.37, 0.4]],                       // modern grey tiles
   };
   const pick = <T,>(a: T[], r: number) => a[Math.floor(r * a.length) % a.length];
+  // a building whose wall or roof the data doesn't give takes the commonest in its own square
+  const commonest = (vals: (string | undefined)[], known: Record<string, unknown>, none: string) => {
+    const n = new Map<string, number>();
+    for (const v of vals) if (v && v in known) n.set(v, (n.get(v) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? none;
+  };
+  const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
   /** Box from (x, y) footprint centre, half-sizes along u and across, from y0 to y1. */
   const boxAt = (g: Geo, x: number, y: number, u: number[], hu: number, hv: number, y0: number, y1: number, col: number[]) => {
@@ -1902,7 +1909,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     let cx = 0, cy = 0;
     for (const [x, y] of outerRing) { cx += x; cy += y; }
     cx /= outerRing.length; cy /= outerRing.length;
-    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : "s") as Surf;
+    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : WALL_USUAL) as Surf;
     const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
@@ -1910,7 +1917,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
-    const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
+    const roofCol = pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2));
     // windows sit at the same height on every storey, the top row just under the eaves. On a
     // slope the walls start from the lowest ground, but storeys are counted from the ground
     // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
