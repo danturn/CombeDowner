@@ -21,6 +21,12 @@
     what you stand on well below what's drawn ("falls through the floor"), and no ray from standing
     height on, under or beside the line passes into its body (under its ballast, deck or platform,
     above the ground and an arch's opening) without meeting a face ("sky through the ground").
+20. Nothing is drawn over a street, as the game draws it (tools/overroad.mjs looks down on every
+    kerbed street of the built game, every metre, in a muted headless Chrome): the first face seen
+    over a carriageway is the road, not paving, grass, earth, the ground over a buried road, a slab,
+    a wall or a building; the first over a pavement is paving; and no pavement stands on a lip more
+    than 0.3 m over the open ground behind it. Only when web/dist has been built (each run reads the
+    maps as they are now); CD_OVERROAD=0 leaves it out.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
@@ -37,6 +43,7 @@ VEHICLE = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassi
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 6, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.4, "track": 2.8, "bridleway": 2}
+OVERROAD_ONLY = [None]    # the squares being checked, when not all of them (check_map.py --tiles)
 EDGE = 15.0   # metres: something nearer a square's edge than this may belong with what is in the next square
 
 
@@ -109,6 +116,21 @@ def watertight(root, map_id):
         with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
             f.write(js); f.flush()
             return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
+
+
+@functools.lru_cache(maxsize=2)
+def overroad(root, map_id, only=None):
+    """Rule 20's places over the squares given (all if None), from tools/overroad.mjs looking at the
+    built game; none if there is no built game or no browser. Called once before the squares are checked."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if os.environ.get("CD_OVERROAD") == "0" or not os.path.exists(os.path.join(os.path.dirname(here), "web", "dist", "index.html")):
+        return []
+    args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
+    if only: args += ["--only", " ".join(only)]
+    try:
+        return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
         return []
 
@@ -282,6 +304,8 @@ def square(m, tag, note, f):
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
     for w in watertight(root, map_id):
+        if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
+    for w in overroad(root, map_id, OVERROAD_ONLY[0]):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
