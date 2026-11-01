@@ -126,6 +126,11 @@ WHOLE_AREA = 480.0      # metres: an output area no wider than this is whole in 
 CORE_REACH = 400.0      # metres round a building in an old core over which its old neighbours' walls are counted
 CORE_KNOWN = 5          # the fewest of them with a known wall that say what the old core is built of
 CORE_TALL = 8.0         # metres to the eaves: a town house of three storeys or more
+# an old core's houses differ a little within their material, as weathering, cleaning and soot leave
+# them, and some fronts are painted: white, cream or a pale colour
+PAINTS = ("#f7f5ef", "#f7f5ef", "#f1e7cc", "#e8eedf", "#f3e1da", "#e0e8f0", "#f2ecc8")
+CORE_SHADES = {"stone": ("#f2dfb2", "#e4d2a8", "#d8cdb6"), "buff": ("#f2efe8", "#cfcac0", "#a9a294"),
+               "brick": ("#c0644a", "#a85a46", "#c98062"), "render": PAINTS}
 HOME = {"", "residential", "apartments", "house", "detached", "semidetached_house", "terrace", "bungalow"}
 HOUSE = {"house", "detached", "semidetached_house", "terrace", "bungalow"}
 
@@ -608,6 +613,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     adj, comp = groups(polys, [p.get("_whole_geom") for p in props], joined)
     apart = set(joined)
     near_wall = near_walls(polys, certs)
+    # (the mapped facades count as well, for where an old core's fronts are painted)
+    near_data = near_walls(polys, [{"wall": w} if (w := _data_wall(p, c)) else None for p, c in zip(props, certs or [None] * len(props))])
     out = []
     cluster_seed = {}
     group_key = {}
@@ -629,6 +636,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         r_group = cr.random()
         r_self = random.Random(keys[i] * 31 + 3).random() if keys is not None else rnd.random()
         prior = p.get("_prior") or {}
+        core_wall = core_shade = None
         flats = prior.get("flats")          # what the census says, where it says anything
         core = bool(prior.get("core"))
 
@@ -766,6 +774,13 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             # where it named 80 (its blocks of flats are of their own time, and keep the zone's mix)
             mix = prior["walls"]
             wall = max(sorted(mix), key=mix.get)
+            r_core = random.Random(keys[i] * 613 + 29).random() if keys is not None else rnd.random()
+            # a front is painted where most of the mapped facades and certificates round it say
+            # rendered. Painting a share of the rest at the old core's own rate, at random, named a
+            # mapped facade in Hackney's conservation areas 89 times in 100 where this names it 91
+            if near_data[i] == "render": wall = "render"
+            shades = CORE_SHADES.get(wall)
+            core_shade, core_wall = shades[int(r_core * 977) % len(shades)] if shades else None, wall
         if near_wall[i]: wall = near_wall[i]
         facade = FACADE.get(p.get("facade_material") or "")
         if facade == "brick": facade = _brick_of(p.get("facade_color")) or ("buff" if wall == "buff" else "brick")
@@ -919,6 +934,6 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 pass   # end-of-terrace: the stack on the shared wall is enough
         # (base: the survey's lowest ground at the walls, which its eaves and ridge are measured from)
         out.append(dict(kind=kind, zone=zone, core=core, eaves=eaves, base=m.get("base") if m else None, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
-                        wc=_hex(p.get("facade_color")), rk=_hex(p.get("roof_color")),
+                        wc=_hex(p.get("facade_color")) or (core_shade if wall == core_wall else None), rk=_hex(p.get("roof_color")),
                         windows=kind not in ("outbuilding",)))
     return out

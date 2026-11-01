@@ -196,9 +196,10 @@ The build (`buildings.priors`) then uses them wherever the map data and the surv
 - **The old core.** A building in a conservation area, where no zone in `tools/area.py` covers
   it, is in the old core: its houses and shops are built of what most of the old core's buildings
   within 400 m are made of, as their energy certificates and mapped facades say (Bath stone in
-  Bath, stock brick in Hackney), and a terraced or semi-detached house there with its eaves 8 m or
-  more up is a Georgian or Regency town house: a parapet, tall sash windows and railings to its
-  front. Blocks of flats keep the zone's walls, being of their own time. (Bath's village and city
+  Bath, stock brick in Hackney), each a shade of its own; it is painted (white, cream or a pale
+  colour) where most of the mapped facades and certificates round it say rendered. A terraced or
+  semi-detached house there with its eaves 8 m or more up is a Georgian or Regency town house: a
+  parapet, tall sash windows and railings to its front. Blocks of flats keep the zone's walls, being of their own time. (Bath's village and city
   lay out their gardens their own way, `tools/partition/`, so they keep their own fronts.)
 
 The build prints what it took, for example
