@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -1778,6 +1778,51 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (ponds.length) {
     scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
     if (ponds.length > 1) for (const g of ponds) g.dispose();
+  }
+  // a tank's, a pool's or a reservoir's concrete walls, wherever its water stands above the ground
+  // round it, and each weir's stone crest with the white water falling from it into the water below:
+  // one mesh for the square
+  {
+    const pos: number[] = [], col: number[] = [];
+    const g = (x: number, y: number) => map.ground(x, -y);
+    const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      for (let q = 0; q < 6; q++) col.push(...cc);
+    };
+    const P = (x: number, y: number, h: number) => [x, h, -y];
+    const CONCRETE = [0.62, 0.61, 0.58], CREST = [0.55, 0.52, 0.47], FOAM = [0.84, 0.87, 0.88];
+    for (const w of D.wp) {
+      if (w.k !== "t" || !w.r[0]?.length) continue;
+      const top = w.z - Z0 + RIM_UP, ring = w.r[0];
+      for (let i = 0; i < ring.length; i++) {
+        const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % ring.length];
+        const ga = g(ax, ay), gb = g(bx, by);
+        if (top - Math.min(ga, gb) < 0.1) continue;
+        const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l * RIM_HALF, ny = (bx - ax) / l * RIM_HALF;
+        for (const s of [1, -1]) quad(P(ax + nx * s, ay + ny * s, ga - 0.3), P(bx + nx * s, by + ny * s, gb - 0.3), P(bx + nx * s, by + ny * s, top), P(ax + nx * s, ay + ny * s, top), CONCRETE);
+        quad(P(ax + nx, ay + ny, top), P(bx + nx, by + ny, top), P(bx - nx, by - ny, top), P(ax - nx, ay - ny, top), CONCRETE);
+      }
+    }
+    for (const f of D.wf ?? []) {
+      const b = f.b - Z0 - 0.15;
+      for (let i = 0; i + 1 < f.p.length; i++) {
+        const [ax, ay, at] = f.p[i], [bx, by, bt] = f.p[i + 1], l = Math.hypot(bx - ax, by - ay) || 1;
+        const rx = (by - ay) / l, ry = -(bx - ax) / l, ta = at - Z0 + 0.05, tb = bt - Z0 + 0.05;
+        const run = Math.max(1.2, ta - b);
+        quad(P(ax - rx * 1.0, ay - ry * 1.0, ta), P(bx - rx * 1.0, by - ry * 1.0, tb), P(bx + rx * 0.3, by + ry * 0.3, tb), P(ax + rx * 0.3, ay + ry * 0.3, ta), CREST);
+        quad(P(ax + rx * 0.3, ay + ry * 0.3, ta), P(bx + rx * 0.3, by + ry * 0.3, tb), P(bx + rx * (0.3 + run), by + ry * (0.3 + run), b), P(ax + rx * (0.3 + run), ay + ry * (0.3 + run), b), FOAM);
+      }
+    }
+    if (pos.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      geo.computeVertexNormals();
+      S.weirMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(geo, S.weirMat);
+      m.receiveShadow = true;
+      scene.add(m);
+    }
   }
   yield;
 

@@ -38,7 +38,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. You can walk the
   whole line without falling through it: along its viaducts, up its grassy embankments, and on to
-  the platforms, which are walled down to the ground under a station on a viaduct. A road the map
+  the platforms, which are walled down to the ground under a station on a viaduct. Where the map
+  data has a level crossing (the footpath over the main line at Ferry Lane, Bathampton, or Bridge
+  Street at Greenland Mills in Bradford-on-Avon), the way crosses the line at grade on a deck between
+  the rails, with red lights on posts either side; everywhere else a path stops at the line. A
+  garden's miniature railway is left out rather than built as a full-size main line. A river steps
+  down only at its weirs and dams, where the water falls over a stone crest into the water below
+  (Twerton, Kelston, Saltford, Warleigh and Avoncliff weirs, and the dam below Prior Park's top
+  lake), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
+  ground round it, as the filter beds do at the sewage works. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern

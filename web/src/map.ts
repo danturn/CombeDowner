@@ -50,7 +50,9 @@ export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; m
  *  sv, a service road's kind (d a drive, l an alley, a a car park's aisle, p private); and for steps sc, how many treads, hr, its handrails
  *  (1 on the left looking along its points, 2 on the right, 4 down the middle), up, 1 where its points run uphill and -1 downhill. */
 export interface Road { su?: string; sv?: string; sc?: number; hr?: number; up?: number }
-export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
+export interface Pond { r: number[][][]; z: number; c?: string; k?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels); k: "t" a tank, a pool or a reservoir, in its own walls (world.ts)
+/** How far a tank's walls stand over its water, and how thick they are. */
+export const RIM_UP = 0.3, RIM_HALF = 0.15;
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
 /** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z];
@@ -95,6 +97,9 @@ export interface MapData {
   // level crossings, where the data maps one: x, y, the rails' height, the line's direction, kind (r a road's, f a path's),
   // the way's width, and how far the deck reaches either side of the line's middle (furniture.ts draws them)
   lx?: (number | string)[][];
+  // weirs' faces, where a river or a lake steps down: the weir's line as [x, y, the water above's level], the water below on
+  // its right, and that water's level (world.ts draws them)
+  wf?: { p: number[][]; b: number }[];
   // what stands across a path or road: kind (gate, stile, kiss, cycle, lift, grid, block), x, y, ground, angle, width
   pb?: (number | string)[][];
 }
@@ -575,6 +580,15 @@ export class GameMap {
       const l = d.br[k], p = l.p;
       for (let i = 0; i < p.length - 1; i++) {
         this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0), barrierLook(l.c).t / 2);   // (2: a hedge, which can't be ground along)
+      }
+    }
+    // a tank's walls, where they stand above the ground (world.ts builds them)
+    for (const w of d.wp) {
+      if (w.k !== "t") continue;
+      const top = w.z - this.z0 + RIM_UP, ring = w.r[0];
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        if (top - Math.min(this.ground(a[0], -a[1]), this.ground(b[0], -b[1])) > 0.3) this.addSeg(a[0], -a[1], b[0], -b[1], top, 1, -Infinity, top, RIM_HALF);
       }
     }
     // garden gates: the pillars stop you and your shots; the gate, standing ajar and never shut, only shots
