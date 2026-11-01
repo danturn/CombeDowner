@@ -163,7 +163,7 @@ def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of, inne
         h = min(MAX_H, float(np.median(hs)))
         if float(np.std(hs)) > ROUGH: style = "hedge"
         else:
-            low, high = STYLE.get(zone_of(*(a + b) / 2), STYLE["suburb"])
+            low, high = STYLE.get(zone_of(*(a + b) / 2), ("brick_wall_low", "brick_wall"))
             style = low if h < 1.3 else high
         out.append(dict(c=style, h=round(h, 1), p=[[round(float(a[0]), 1), round(float(a[1]), 1)], [round(float(b[0]), 1), round(float(b[1]), 1)]]))
     return out + _under_trees(out, crowns, x0, y0)

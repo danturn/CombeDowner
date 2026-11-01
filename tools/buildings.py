@@ -553,11 +553,13 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "paint" if area < 260 and kind in ("terrace", "semi", "detached", "shop") else "render"   # the houses, not the blocks on the city side
         elif zone == "cape":
             wall = "render" if r_group < 0.85 else "brick"
-        elif kind in ("institution", "shop"):
+        elif kind in ("institution", "shop") and zone == "suburb":
             # big old buildings here (Prior Park, the schools) are Bath stone
             wall = "stone" if r_group < 0.7 or area > 1500 else "render"
-        else:
+        elif zone == "suburb":
             wall = "stone" if r_group < 0.55 else "render" if r_group < 0.85 else "brick"
+        else:
+            wall = "render" if r_group < 0.45 else "brick" if r_group < 0.9 else "stone"   # an area no table knows
         if near_wall[i]: wall = near_wall[i]
         facade = FACADE.get(p.get("facade_material") or "")
         if facade == "brick": facade = _brick_of(p.get("facade_color")) or ("buff" if wall == "buff" else "brick")
