@@ -286,7 +286,8 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
                    ws[k], pvs[k]) for k in range(n - 1)]
     shift = []
     for k in range(n):
-        if raw[k] is None or k in (0, n - 1) or raw[k][0] + raw[k][1] < MIN_CARRIAGEWAY:
+        # (a lane a house's corner has narrowed below the least a record is given is still centred on what's drawn)
+        if raw[k] is None or k in (0, n - 1) or raw[k][0] + raw[k][1] < NARROW_LANE:
             shift.append(0.0)
         else:
             shift.append(max(-ws[k] / 4, min(ws[k] / 4, (raw[k][0] - raw[k][1]) / 2)))
@@ -304,7 +305,10 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
         pave.append((min(pv[0], min(m[2] for m in near)) if pv[0] > 0 else 0.0,
                      min(pv[1], min(m[3] for m in near)) if pv[1] > 0 else 0.0))
     if houses is not None and not houses.is_empty:
-        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall, tall is not None)
+        # (the carriageway as drawn either side of the line, where its edge was seen short of the cap)
+        drawn = [None if raw[k] is None else tuple(d if d < ws[k] / 2 + 0.29 + abs(pvs[k][2] if len(pvs[k]) > 2 else 0) else None
+                                                   for d in raw[k][:2]) for k in range(n)]
+        shift, width, pave = _between_houses(xy, nrm, shift, width, pave, houses, tall, tall is not None, drawn)
     moved = [(xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]) for k in range(n)]
     runs, i = [], 0
     while i < n - 1:
@@ -338,14 +342,16 @@ MEASURED_GIVE = 1.0             # metres a street with a width tag may narrow wh
 NARROW_LANE = 1.8               # metres: a car's width, the least a lane squeezed between two buildings is drawn
 
 
-def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=False):
+def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=False, drawn=None):
     """(shift, width, pave) at each inner point: moved the least it must be for the carriageway to clear the
     houses each side, where there is room between them. Where there is not, the line is centred in the
     gap and the carriageway narrowed to it, down to `NARROW_LANE`, since the buildings are measured and
     the street's width is a guess, and each pavement stops at the wall beyond it. A street with a
     measured width (`measured`) narrows only there, and by at most `MEASURED_GIVE`: the tag is a
     measurement too. The ends stay put.
-    Halfway between two points is measured too and asked of both."""
+    Halfway between two points is measured too and asked of both. With `drawn` (each point's carriageway
+    edges as drawn, left and right of the line, None where not seen), the line is not moved off the
+    drawn carriageway on to its pavement: a lane a house narrows is narrowed there instead."""
     n = len(xy)
     reach = max(width) / 2 + HOUSE_SHIFT + 0.5
 
@@ -369,6 +375,10 @@ def _between_houses(xy, nrm, shift, width, pave, houses, tall=None, measured=Fal
         if not spans:
             continue
         lo, hi = max(s[0] for s in spans), min(s[1] for s in spans)
+        if drawn is not None and drawn[k] is not None:
+            dl, dr = drawn[k]
+            if dl is not None: hi = min(hi, dl - HOUSE_MARGIN - half)
+            if dr is not None: lo = max(lo, -dr + HOUSE_MARGIN + half)
         s = (lo + hi) / 2 if lo > hi else min(hi, max(lo, out[k]))
         if abs(s) <= HOUSE_SHIFT:
             out[k] = s
