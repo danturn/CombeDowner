@@ -1241,6 +1241,58 @@ def limit_grades():
 
 limit_grades()
 
+# 3c. where OpenStreetMap maps a level crossing (a node on both the way and the line tagged
+# railway=level_crossing, or railway=crossing for a path), the way crosses the line at grade: it is
+# laid level with the rails there, easing back to its own height either side, and the game draws
+# the crossing's deck and its lights (lx). Everywhere else a path meeting the line is cut at it.
+XING_REACH, XING_EASE, RAIL_TOP, XING_ONE = 4.0, 20.0, 0.3, 8.0
+BALLAST_HALF = 1.6       # (web/src/railway.ts)
+level_crossings = []
+if rail_lines and os.path.exists(f"{src_dir}/osm-rail.geojson"):
+    found = []
+    for g, p in L("osm-rail"):
+        if g.geom_type != "Point" or p.get("railway") not in ("level_crossing", "crossing"): continue
+        x, y = proj(g.x, g.y)
+        if not (X0 <= x <= X1 and Y0 <= y <= Y1): continue
+        node = shapely.Point(x, y)
+        near = [(rail_lines[int(t)].distance(node), int(t)) for t in rail_tree.query(node.buffer(2.0))]
+        if not near: continue
+        t = min(near)[1]
+        tp = rail_tracks[t]["p"]
+        kk = min(range(len(tp)), key=lambda kk: math.dist(tp[kk][:2], (x, y)))
+        if tp[kk][3] != 0: continue
+        zt = tp[kk][2]
+        a, b = tp[max(0, kk - 1)], tp[min(len(tp) - 1, kk + 1)]
+        widest = 0.0
+        for j in road_tree.query(node.buffer(XING_REACH)):
+            j = int(j); o = pending[j]
+            if not road_lines[j].crosses(rail_lines[t]) or road_lines[j].distance(node) > XING_REACH: continue
+            x_ = road_lines[j].intersection(rail_lines[t]); x_ = min(getattr(x_, "geoms", [x_]), key=lambda q: q.distance(node))
+            if x_.distance(node) > XING_REACH: continue
+            for i, q in enumerate(o["run"]):
+                if i in o["span"] or i in o.get("deck", ()): continue
+                d = math.dist(q[:2], (x_.x, x_.y))
+                if d >= XING_EASE: continue
+                e = d / XING_EASE; e = e * e * (3 - 2 * e)
+                o["z"][i] = zt + RAIL_TOP + (o["z"][i] - zt - RAIL_TOP) * e
+            widest = max(widest, RW.get(o["c"], 4))
+        if widest:
+            found.append((x, y, zt, math.atan2(b[1] - a[1], b[0] - a[0]), "r" if p["railway"] == "level_crossing" else "f", widest))
+    # the tracks of a double line crossed in one go are one crossing, its deck over both and its
+    # lights outside them: [x, y, rail height, the line's direction, r (a road's) or f (a path's), the
+    # way's width, how far the deck reaches either side of the middle across the line]
+    while found:
+        x, y, zt, ang, kind, w = found[0]
+        group = [f for f in found if math.dist(f[:2], (x, y)) < XING_ONE]
+        found = [f for f in found if f not in group]
+        cx_, cy_ = sum(f[0] for f in group) / len(group), sum(f[1] for f in group) / len(group)
+        nx_, ny_ = -math.sin(ang), math.cos(ang)
+        half = max(abs((f[0] - cx_) * nx_ + (f[1] - cy_) * ny_) for f in group) + BALLAST_HALF
+        if TILE is None or own(cx_, cy_):
+            level_crossings.append([r1(cx_), r1(cy_), r1(sum(f[2] for f in group) / len(group)), round(ang, 3),
+                                    "r" if any(f[4] == "r" for f in group) else "f", r1(max(f[5] for f in group)), r1(half)])
+    if level_crossings: print(f"railway: {len(level_crossings)} level crossings where the data maps them")
+
 # 4. a path through the water (the data has no bridge) is a footbridge: its points well inside a
 # pond or river are a span, just above the water
 afloat = 0
@@ -3640,6 +3692,7 @@ out = dict(
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
     bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
+    **({"lx": level_crossings} if level_crossings else {}),
 )
 if TILE is not None:
     # ---- a tile keeps only what is its own -------------------------------------------------

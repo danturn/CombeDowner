@@ -3883,13 +3883,15 @@ def demote_pedestrian(rd, old):
 ON_TRACK = 1.5      # metres from a track's middle that a lane's end is on the line
 
 
-def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
+def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5, level_crossings=()):
     """A path or a service lane that crosses the railway level with it is cut either side of the
-    track: there are no level crossings in Bath, and the ground here cannot be dug for the path to
-    pass under a bridge. A lane mapped on to the line (a way in for the railway's own staff) stops
-    at its fence the same way. `tracks` are the rail file's, points [x, y, height, flag]; a flag of
-    2 is a track the path passes over. Streets and anything on a bridge are left. Returns the
-    records and how many were cut."""
+    track, unless the data maps a level crossing there (`level_crossings`, the tile's `lx`, which
+    the game draws): the ground here cannot be dug for the path to pass under a bridge. A lane
+    mapped on to the line (a way in for the railway's own staff) stops at its fence the same way.
+    `tracks` are the rail file's, points [x, y, height, flag]; a flag of 2 is a track the path passes
+    over. Streets and anything on a bridge are left. Returns the records and how many were cut."""
+    marked = [(Point(c[0], c[1]), c[6] + 3.0) for c in level_crossings]
+    at_crossing = lambda pt: any(pt.distance(c) < r for c, r in marked)
     lines = [LineString([q[:2] for q in t["p"]]) for t in tracks if len(t["p"]) > 1]
     tracks = [t for t in tracks if len(t["p"]) > 1]
     if not lines:
@@ -3913,14 +3915,14 @@ def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
                 i = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (pt.x, pt.y)))
                 tp = tracks[int(t)]["p"]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (pt.x, pt.y)))
-                if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2:
+                if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2 and not at_crossing(pt):
                     spots.append(pt)
         for q in (p[0], p[-1]) if r["c"] == "service" else ():
             for t in tree.query(Point(q[:2]).buffer(ON_TRACK)):
                 tp = tracks[int(t)]["p"]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], q[:2]))
                 if (len(q) < 4 and lines[int(t)].distance(Point(q[:2])) < ON_TRACK and abs(q[2] - tp[k][2]) < clear
-                        and tp[k][3] != 2):
+                        and tp[k][3] != 2 and not at_crossing(Point(q[:2]))):
                     spots.append(Point(q[:2]))
         if not spots:
             out.append(r)
@@ -5951,7 +5953,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
     rd, _ = drop_paths_along_streets(rd)
     drop_empty_spans(rd, road_ground, water, rails)
-    rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
+    rd, _ = drop_paths_on_the_railway(rd, rail_tracks, level_crossings=tile.get("lx") or ())
     carry_one_way(rd, tile.get("rd") or [])
     verge_out_of_town(rd, houses)
     carry_pedestrian(rd, tile.get("rd") or [])

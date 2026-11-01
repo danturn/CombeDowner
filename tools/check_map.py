@@ -20,7 +20,8 @@ case by case:
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
     the data is checked for ones lying along a carriageway, which the game can't cut).
  6. The railway: track on the ground sits on it; a road crossing the line is a bridge or an
-    underpass, never at grade (there are no level crossings in Bath).
+    underpass, never at grade, except at a level crossing the data maps (the map's lx, which the
+    game draws).
  7. The canal: every road or path crossing it (outside its tunnels) is a bridge with headroom for
     a boat over the water, and the ground under the span is dug below the water; a path on its
     towpath is level with the coping (tools/canal.py's banks, web/src/works.ts); and nothing runs
@@ -273,7 +274,7 @@ def main():
                 tp = rail_pts[t]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (x.x, x.y)))
                 zt, flag = tp[k][2], tp[k][3]
-                if abs(zr - zt) < 2.5 and flag != 2 and not mk[i]:
+                if abs(zr - zt) < 2.5 and flag != 2 and not mk[i] and not any(math.dist(c[:2], (x.x, x.y)) < c[6] + 3 for c in m.get("lx") or []):
                     note("6 road crosses the railway at grade", 2.5 - abs(zr - zt), (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} road {zr:.1f} rail {zt:.1f} (rail flag {flag})")
         # ---- 7. the canal -----------------------------------------------------------------------
         for r, mk, ln in zip(roads, marks, lines):
