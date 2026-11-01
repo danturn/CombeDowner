@@ -72,6 +72,7 @@ STOREY_HOUSE = 2.8
 FACADE = {"brick": "brick", "plaster": "render", "render": "render", "stone": "stone", "concrete": "render",
           "cement_block": "render", "timber_framing": "render", "wood": "render"}
 ROOF_COVER = {"slate": "slate", "roof_tiles": "pantile", "tiles": "pantile", "metal": "grey", "concrete": "concrete"}
+NEAR_K, NEAR_R, NEAR_SHARE = 7, 60.0, 0.6   # neighbours' certificates: how many, how far, how many must agree
 
 
 def _hex(c):
@@ -85,6 +86,27 @@ def _brick_of(colour):
     if not h: return None
     r, g = int(h[1:3], 16), int(h[3:5], 16)
     return "brick" if r > 2.2 * max(1, g) else "buff"
+
+
+def near_walls(polys, certs):
+    """For each building without a certificate's wall, the wall most of the certified buildings
+    round it have, or None. A street was built of one thing, so the neighbours' certificates are a
+    better guess for a house with none than the area's mix: in Bath, held out, they name the wall
+    of a certified house nine times in ten, where the area's mix names it seven."""
+    if not certs: return [None] * len(polys)
+    known = [i for i, c in enumerate(certs) if c and c["wall"]]
+    if not known: return [None] * len(polys)
+    from scipy.spatial import cKDTree
+    pts = np.array([p.centroid.coords[0] for p in polys])
+    tree = cKDTree(pts[known])
+    out = []
+    for i in range(len(polys)):
+        if certs[i] and certs[i]["wall"]: out.append(None); continue
+        d, j = tree.query(pts[i], k=NEAR_K, distance_upper_bound=NEAR_R)
+        got = [certs[known[int(q)]]["wall"] for dd, q in zip(np.atleast_1d(d), np.atleast_1d(j)) if np.isfinite(dd)]
+        best = max(sorted(set(got)), key=got.count) if got else None
+        out.append(best if len(got) >= 3 and got.count(best) >= NEAR_SHARE * len(got) else None)
+    return out
 
 
 def zone_at(zones, x, y, default):
@@ -396,6 +418,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     given, has what the energy certificates of the homes in each footprint say (see epc.py) or
     None: their wall material, and whether they are bungalows, replace the guesses too."""
     adj, comp = groups(polys, [p.get("_whole_geom") for p in props])
+    near_wall = near_walls(polys, certs)
     out = []
     cluster_seed = {}
     group_key = {}
@@ -535,6 +558,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "stone" if r_group < 0.7 or area > 1500 else "render"
         else:
             wall = "stone" if r_group < 0.55 else "render" if r_group < 0.85 else "brick"
+        if near_wall[i]: wall = near_wall[i]
         facade = FACADE.get(p.get("facade_material") or "")
         if facade == "brick": facade = _brick_of(p.get("facade_color")) or ("buff" if wall == "buff" else "brick")
         if facade: wall = facade
