@@ -56,8 +56,10 @@ ENGLISH = {
     "parcels": "the Land Registry's garden plots (England and Wales, manual download)",
     "listed": "listed railings and walls (Historic England)",
     "fsa": "pubs and cafes OpenStreetMap is missing (food hygiene ratings, UK)",
+    "census": "the mix of flats, terraces, semis and detached houses in each street (2021 Census, England and Wales)",
+    "conservation": "the old core of the town, built of what its old buildings are (conservation areas, England)",
 }
-COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"epc", "parcels", "fsa"}, "GB-NIR": {"fsa"}, "GB-SCT": {"fsa"}}
+COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"epc", "parcels", "fsa", "census"}, "GB-NIR": {"fsa"}, "GB-SCT": {"fsa"}}
 
 
 def region_of(lon, lat):
@@ -165,7 +167,7 @@ def build(args):
     region = getattr(area(map_id), "region", None)
     have = COVERS.get(region, set()) if region is not None else set(ENGLISH)   # older entries were England's
     if region is not None: warn_missing(region)
-    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa") if s in have]
+    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation") if s in have]
     steps = [
         [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)],
         # towers are measured before the squares are built, which place them as landmarks

@@ -3,7 +3,7 @@ sources, into the raw dir the builds read: the start of rebuilding the repositor
 map data from scratch (tools/mapdata.py). For an ordinary rebuild none of this is needed:
 tools/mapdata.py unpack gives the same data from the repository.
 
-Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa]
+Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation]
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
@@ -13,7 +13,10 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
 - canopy: the Meta / WRI canopy height tile over the map's centre (about 290 MB);
 - osm, fsa: OpenStreetMap's businesses (and its streets' widths and pavements) and the Food Standards Agency's hygiene ratings
   (tools/osm.py, tools/fsa.py). These are the live data, so they will have changed since the copy
-  in the repository was made.
+  in the repository was made;
+- census, conservation (England and Wales, and England): the 2021 Census's accommodation types for
+  each output area, and the conservation areas (tools/census.py, tools/conservation.py), which say
+  what the houses are where the map data doesn't (buildings.priors). Both are open APIs.
 The HM Land Registry parcels (INSPIRE Index Polygons) have to be fetched by hand, one zip per local
 authority: `tools/parcels.py` converts the download to `parcels.geojson` in the wide dir (see
 docs/new-area.md). They are optional: without them the partition build divides blocks by rule.
@@ -155,6 +158,11 @@ def main():
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-rail.geojson"), "wide", "rail")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
+    # the census's output areas cover England and Wales, the conservation areas England
+    region = getattr(A, "region", "GB-ENG")
+    for name, regions in (("census", ("GB-ENG", "GB-WLS")), ("conservation", ("GB-ENG",))):
+        if want(name) and region in regions and not os.path.exists(os.path.join(raw, f"{name}.geojson")):
+            run(os.path.join(TOOLS, f"{name}.py"), map_id, None, os.path.join(raw, f"{name}.geojson"), "wide")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
         print(f"epc: download the energy certificates and OS Open UPRN by hand into {os.path.join(raw, 'epc')} (see docs/new-area.md)")
 
