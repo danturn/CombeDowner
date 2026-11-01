@@ -2763,6 +2763,68 @@ def pave_slivers(pave, paving, buildings, kept, width=SLIVER):
     return unary_union([pave, *fill]) if fill else pave
 
 
+CRACK = 1.0           # metres: a gap narrower than this between pieces of one carriageway is part of it
+
+
+def road_cracks(road, others, width=CRACK, most=3.0):
+    """`road` with the cracks the partition leaves between two carriageway faces that do not quite meet
+    filled in: a gap narrower than `width`, smaller than `most` m2, with road along most of its edge.
+    Left open, the ground showed through the road in a slit, or the pavement's gaps were paved through
+    it, a stripe of paving with a kerb along each side running across the road."""
+    if road.is_empty:
+        return road
+    r = width / 2
+    gap = road.buffer(r, join_style="mitre").buffer(-r, join_style="mitre").difference(road).difference(others)
+    edge = road.buffer(0.05)
+    fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and 1e-4 < g.area < most
+            and g.exterior.intersection(edge).length > 0.7 * g.exterior.length]
+    return unary_union([road, *fill]) if fill else road
+
+
+KERB_POINT = 0.5      # metres: a point of paving or road narrower than twice this is the other's
+KERB_POINT_AREA = 8.0  # m2: a larger piece is a strip of its own (an island between two carriageways)
+
+
+def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
+    """`road` and the paving round it (`others`: the pavements, a square's paving, the paths) with the
+    points and slivers where they meet given to the other side: the tip of a pavement's corner at a
+    slanting junction, a wedge of paving fanning into the road where two streets' strips cross, a
+    finger of a pedestrian street's paving along a road's kerb, a tongue of road into a pavement.
+    Each is a piece narrower than 2r that runs along the other side on most of its edge, so a narrow
+    pavement along its kerb stays, and the corner each leaves is rounded, as a kerb is laid."""
+    others = list(others)
+
+    def pieces(A):
+        thin = A.difference(A.buffer(-r).buffer(r + 0.01))
+        return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most]
+
+    for _ in range(2):
+        moved = False
+        if road.is_empty:
+            break
+        edge = road.buffer(0.05)
+        for i, A in enumerate(others):
+            if A.is_empty:
+                continue
+            give = [g for g in pieces(A) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+            if give:
+                g = unary_union(give)
+                others[i], road, moved = A.difference(g), road.union(g), True
+        edges = [A.buffer(0.05) for A in others]
+        given = [[] for _ in others]
+        for g in pieces(road):
+            shared = [g.exterior.intersection(e).length for e in edges]
+            if shared and sum(shared) > 0.6 * g.exterior.length:
+                given[shared.index(max(shared))].append(g)
+        for i, gs in enumerate(given):
+            if gs:
+                g = unary_union(gs)
+                road, others[i], moved = road.difference(g), others[i].union(g), True
+        if not moved:
+            break
+    return road, others
+
+
 ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
 ALONG_LEAST = 4.0      # metres of a path's strip along a pavement before it is taken for that pavement
 ALONG_STEP = 0.4       # metres a footway beside a pavement may lie off its street's level and still be paved as it
@@ -3469,6 +3531,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                                                             strips(dv, DRIVE_WIDTH / 2), strips(fp, FRONT_PATH_HALF)])).intersection(square)
     if filled is not None:
         filled.append((pave, pave.difference(fitted)))
+    road = road_cracks(road, unary_union([pave, plaza, shapes("path"), *buildings]))
     # (after the pavements' own widths are taken from it: a strip paved between two ways is neither's)
     pave = pave_slivers(pave, [road, plaza, shapes("path")], buildings,
                         unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
@@ -3523,6 +3586,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         bare = _minus(bare, unary_union(kept or [Polygon()]))
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
         pave, plaza = _minus(pave, bare), _minus(plaza, bare)
+    road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path))
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
