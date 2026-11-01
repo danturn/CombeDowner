@@ -129,6 +129,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         # kept for things like its drive
         lead, yard = row_of[i], yard_of[i]
         style_front = pick(STYLE.get(info[lead]["zone"], NEUTRAL)[0], rng_for(lead).random())
+        if info[lead].get("core") and info[lead]["parapet"]: style_front = "railing"   # a town house's area railings
         style_side = pick(STYLE.get(info[yard]["zone"], NEUTRAL)[1], rng_for(yard).random())
         edge = plot.exterior.difference(polys[i].buffer(0.4, join_style=2))
         street_side = street_of[i]

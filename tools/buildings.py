@@ -118,26 +118,38 @@ def zone_at(zones, x, y, default):
     return default
 
 
-# ---- what the census says (tools/census.py) ----
+# ---- what the census and the conservation areas say (tools/census.py, tools/conservation.py) ----
 FLAT_M2 = 75.0          # square metres of a block's floors to each flat, its share of the stairs and landings with it
 FLATS_LEAST = 150.0     # square metres: a smaller footprint is a house (a town house divided into flats is still one)
 NEAR_GAP = 3.0          # metres between two houses' footprints that may be one party wall the outlines drew apart
 WHOLE_AREA = 480.0      # metres: an output area no wider than this is whole in every square that builds a house in it
+CORE_REACH = 400.0      # metres round a building in an old core over which its old neighbours' walls are counted
+CORE_KNOWN = 5          # the fewest of them with a known wall that say what the old core is built of
+CORE_TALL = 8.0         # metres to the eaves: a town house of three storeys or more
 HOME = {"", "residential", "apartments", "house", "detached", "semidetached_house", "terrace", "bungalow"}
 HOUSE = {"house", "detached", "semidetached_house", "terrace", "bungalow"}
+
+
+def _data_wall(p, cert):
+    """What a building's own data says its walls are (its certificate, then its mapped facade), or None."""
+    if cert and cert["wall"]: return cert["wall"]
+    facade = FACADE.get(p.get("facade_material") or "")
+    if facade == "brick": facade = _brick_of(p.get("facade_color")) or "brick"
+    return facade
 
 
 def _form(size):
     return 0 if size == 1 else 1 if size == 2 else 2
 
 
-def priors(polys, props, certs, keys, zones, default_zone, census):
-    """What the census says of each footprint, for classify, as dict(flats=..., near=[...]) per
-    footprint.
+def priors(polys, props, certs, keys, zones, default_zone, census, cores):
+    """What the census and the conservation areas say of each footprint, for classify, as
+    dict(flats=..., near=[...], core=..., walls=...) per footprint.
 
-    census is [(households by TS044's types, outline)] per output area, in the map's metres.
-    polys must be every footprint near the ones being built (a square's whole cut of the map), so
-    each output area is seen whole and a house comes out the same from every square that builds it.
+    census is [(households by TS044's types, outline)] per output area, cores the conservation
+    areas' outlines, both in the map's metres. polys must be every footprint near the ones being
+    built (a square's whole cut of the map), so each output area is seen whole and a house comes
+    out the same from every square that builds it.
 
     - flats: True or False for a home in an output area, None elsewhere. Overture's class, a
       floor count that says a block, and certificates that say houses win; then the area's blocks
@@ -149,16 +161,37 @@ def priors(polys, props, certs, keys, zones, default_zone, census):
       its wall, as the outlines often draw a pair of semis or a row apart: the closest first, for
       as long as that brings the area's detached, semi-detached and terraced households nearer the
       census's.
+    - core: in a conservation area where the zones in area.py have nothing to say, the area's old
+      core: walls is then how many of its other buildings within CORE_REACH the data gives each
+      wall, or None where it gives too few.
     An output area wider than WHOLE_AREA can run past what a square sees: there the same is done
     a house at a time, by the area's shares and the house's own draw."""
     n = len(polys)
-    out = [dict(flats=None, near=[]) for _ in range(n)]
-    if not n or not census: return out
+    out = [dict(flats=None, near=[], core=False, walls=None) for _ in range(n)]
+    if not n or not (census or cores): return out
     certs = certs or [None] * n
     pts = np.array([p.centroid.coords[0] for p in polys])
     zone = [zone_at(zones, x, y, default_zone) for x, y in pts]
     draw = lambda i, salt: random.Random(keys[i] * 7907 + salt).random()
 
+    if cores:
+        ctree = STRtree(cores)
+        inside = shapely.points(pts)
+        in_core = np.zeros(n, bool)
+        for a, _b in zip(*ctree.query(inside, predicate="within")): in_core[int(a)] = True
+        wall = [_data_wall(p, c) if in_core[i] else None for i, (p, c) in enumerate(zip(props, certs))]
+        known = [i for i in range(n) if wall[i]]
+        if known:
+            from scipy.spatial import cKDTree
+            ktree = cKDTree(pts[known])
+        for i in range(n):
+            if not in_core[i] or zone[i] != default_zone: continue
+            out[i]["core"] = True
+            if not known: continue
+            got = [wall[known[k]] for k in ktree.query_ball_point(pts[i], CORE_REACH) if known[k] != i]
+            if len(got) >= CORE_KNOWN: out[i]["walls"] = {w: got.count(w) for w in sorted(set(got))}
+
+    if not census: return out
     adj, comp = groups(polys)
     otree = STRtree([g for _, g in census])
     oa_of = np.full(n, -1)
@@ -566,8 +599,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     given, has what the energy certificates of the homes in each footprint say (see epc.py) or
     None: their wall material, and whether they are bungalows, replace the guesses too.
 
-    A footprint's props may carry "_prior", what priors says of it (the census), and "_fid",
-    which footprint of the map it is, for the houses priors takes as sharing a wall ("near")."""
+    A footprint's props may carry "_prior", what priors says of it (the census and the
+    conservation areas), and "_fid", which footprint of the map it is, for the houses priors
+    takes as sharing a wall ("near")."""
     whole = {p["_fid"]: i for i, p in enumerate(props) if "_fid" in p and p.get("_whole_geom") is None}
     joined = sorted({(min(i, whole[f]), max(i, whole[f])) for i, p in enumerate(props) if p.get("_whole_geom") is None
                      for f in (p.get("_prior") or {}).get("near", ()) if f in whole})
@@ -596,6 +630,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         r_self = random.Random(keys[i] * 31 + 3).random() if keys is not None else rnd.random()
         prior = p.get("_prior") or {}
         flats = prior.get("flats")          # what the census says, where it says anything
+        core = bool(prior.get("core"))
 
         # ---- what kind of building ----
         if cls in ("church", "chapel") or "Chapel" in name or name == "Holy Trinity":
@@ -724,6 +759,13 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "stone" if r_group < 0.55 else "render" if r_group < 0.85 else "brick"
         else:
             wall = "render" if r_group < 0.45 else "brick" if r_group < 0.9 else "stone"   # an area no table knows
+        if prior.get("walls") and kind in ("terrace", "semi", "detached", "shop"):
+            # an old core's houses and shops are built of what most of its buildings are, as the data
+            # gives them: held out, this names a certified wall in Bath's conservation areas 95 times
+            # in 100, where the zone's mix named it 91, and a mapped facade in Hackney's 91 times
+            # where it named 80 (its blocks of flats are of their own time, and keep the zone's mix)
+            mix = prior["walls"]
+            wall = max(sorted(mix), key=mix.get)
         if near_wall[i]: wall = near_wall[i]
         facade = FACADE.get(p.get("facade_material") or "")
         if facade == "brick": facade = _brick_of(p.get("facade_color")) or ("buff" if wall == "buff" else "brick")
@@ -808,7 +850,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 half = min(depth / 2, length / 2)
                 if shape in ("hipped", "pyramidal"): hip0 = hip1 = half
                 elif shape in ("gabled", "saltbox", "gambrel", "skillion"): pass
-                elif zone in ("georgian", "squares"): pass                        # behind a parapet: plain gables
+                elif zone in ("georgian", "squares") or (core and kind in ("terrace", "semi") and eaves >= CORE_TALL): pass   # behind a parapet: plain gables
                 elif kind == "detached":
                     if zone == "village" or r_self < 0.45: pass                 # gabled
                     else: hip0 = hip1 = half                                    # hipped
@@ -829,6 +871,11 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         # there is a later bungalow, garage or extension, with its roof in plain view
         parapet = 0.9 if zone in ("georgian", "squares") and kind not in ("outbuilding", "church") and eaves >= 5.0 else 0.0
         if zone in ("cbd", "bokaap") and kind not in ("outbuilding", "church"): parapet = 0.6
+        if core and kind in ("terrace", "semi") and eaves >= CORE_TALL:
+            # an old core's tall attached houses are Georgian and Regency town houses: a parapet,
+            # and tall rooms with tall sash windows
+            parapet = 0.9
+            if not tall: tall = max(2, round((eaves - 0.6) / 3.3))
 
         # roof covering
         if zone == "village":
@@ -871,7 +918,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             elif kind == "terrace" and len(adj[i]) == 1 and r_self < 0.5:
                 pass   # end-of-terrace: the stack on the shared wall is enough
         # (base: the survey's lowest ground at the walls, which its eaves and ridge are measured from)
-        out.append(dict(kind=kind, zone=zone, eaves=eaves, base=m.get("base") if m else None, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
+        out.append(dict(kind=kind, zone=zone, core=core, eaves=eaves, base=m.get("base") if m else None, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
                         wc=_hex(p.get("facade_color")), rk=_hex(p.get("roof_color")),
                         windows=kind not in ("outbuilding",)))
     return out
