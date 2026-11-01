@@ -419,6 +419,15 @@ function makeShell(scene: THREE.Scene) {
  * the sky, the force field and the vehicles, or just the scenery of one full-detail square (lent:
  * the main world's shared materials), into a group of its own.
  */
+// a weir (world.ts draws the map's wf): its crest stands this far over the water above and is twice
+// this wide; the water pours off it this far out for each metre it falls (within these), in streaks
+// this wide, and its white water reaches this far on past where it lands. The colours are Pulteney
+// Weir's (landmarks/pulteney.ts), as vertex colours.
+const WEIR_CREST_UP = 0.12, WEIR_CREST_HALF = 0.35, WEIR_RUN = 1.1, WEIR_RUN_LEAST = 0.35, WEIR_RUN_MOST = 3.0;
+const WEIR_STREAK = 0.7, WEIR_FROTH = 0.8;
+const WEIR_STONE = [0.48, 0.38, 0.22], WEIR_FOAM = [0.9, 0.93, 0.93];
+const WEIR_STREAKS = [[0.09, 0.21, 0.28], [0.16, 0.3, 0.37], [0.11, 0.25, 0.32], [0.2, 0.34, 0.4]];
+
 function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
   if (core) S.railTracks = map.railData?.tracks.map((t) => t.p) ?? [];
@@ -1789,8 +1798,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       pos.push(...a, ...b, ...c, ...a, ...c, ...d);
       for (let q = 0; q < 6; q++) col.push(...cc);
     };
+    const quad4 = (a: number[], b: number[], c: number[], d: number[], ca: number[], cb: number[], cc: number[], cd: number[]) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      col.push(...ca, ...cb, ...cc, ...ca, ...cc, ...cd);
+    };
     const P = (x: number, y: number, h: number) => [x, h, -y];
-    const CONCRETE = [0.62, 0.61, 0.58], CREST = [0.55, 0.52, 0.47], FOAM = [0.84, 0.87, 0.88];
+    const CONCRETE = [0.62, 0.61, 0.58];
     for (const w of D.wp) {
       if (w.k !== "t" || !w.r[0]?.length) continue;
       const top = w.z - Z0 + RIM_UP, ring = w.r[0];
@@ -1803,14 +1816,53 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         quad(P(ax + nx, ay + ny, top), P(bx + nx, by + ny, top), P(bx - nx, by - ny, top), P(ax - nx, ay - ny, top), CONCRETE);
       }
     }
+    // A weir as Pulteney's is drawn (landmarks/pulteney.ts): a low stone crest just proud of the
+    // water above, the water pouring off it in glassy streaks that break white as they fall to the
+    // water below, and a narrow band of white water at its foot. Where the two sides lie hardly
+    // apart it's the crest and the foam.
+    const mix = (v: number[], t: number) => [0, 1, 2].map((c) => v[c] + (WEIR_FOAM[c] - v[c]) * t);
     for (const f of D.wf ?? []) {
-      const b = f.b - Z0 - 0.15;
-      for (let i = 0; i + 1 < f.p.length; i++) {
-        const [ax, ay, at] = f.p[i], [bx, by, bt] = f.p[i + 1], l = Math.hypot(bx - ax, by - ay) || 1;
-        const rx = (by - ay) / l, ry = -(bx - ax) / l, ta = at - Z0 + 0.05, tb = bt - Z0 + 0.05;
-        const run = Math.max(1.2, ta - b);
-        quad(P(ax - rx * 1.0, ay - ry * 1.0, ta), P(bx - rx * 1.0, by - ry * 1.0, tb), P(bx + rx * 0.3, by + ry * 0.3, tb), P(ax + rx * 0.3, ay + ry * 0.3, ta), CREST);
-        quad(P(ax + rx * 0.3, ay + ry * 0.3, ta), P(bx + rx * 0.3, by + ry * 0.3, tb), P(bx + rx * (0.3 + run), by + ry * (0.3 + run), b), P(ax + rx * (0.3 + run), ay + ry * (0.3 + run), b), FOAM);
+      const foot = f.b - Z0, p = f.p, m = p.length;
+      // each point's way across the line, mitred where the line bends so the crest doesn't open there
+      const side = p.map((_, i) => {
+        let sx = 0, sy = 0;
+        for (const [u, v] of [[i - 1, i], [i, i + 1]]) {
+          if (u < 0 || v >= m) continue;
+          const l = Math.hypot(p[v][0] - p[u][0], p[v][1] - p[u][1]) || 1;
+          sx += (p[v][1] - p[u][1]) / l; sy += -(p[v][0] - p[u][0]) / l;
+        }
+        const l = Math.hypot(sx, sy) || 1, ux = sx / l, uy = sy / l;
+        const u = i > 0 ? i - 1 : 0, ls = Math.hypot(p[u + 1][0] - p[u][0], p[u + 1][1] - p[u][1]) || 1;
+        const cos = Math.max(0.5, (ux * (p[u + 1][1] - p[u][1]) - uy * (p[u + 1][0] - p[u][0])) / ls);
+        return [ux / cos, uy / cos];
+      });
+      let k = 0;
+      for (let i = 0; i + 1 < m; i++) {
+        const [ax, ay, az] = p[i], [bx, by, bz] = p[i + 1], l = Math.hypot(bx - ax, by - ay) || 1;
+        const n = Math.max(1, Math.round(l / WEIR_STREAK));
+        for (let j = 0; j < n; j++, k++) {
+          const s0 = j / n, s1 = (j + 1) / n;
+          const x0 = ax + (bx - ax) * s0, y0 = ay + (by - ay) * s0, x1 = ax + (bx - ax) * s1, y1 = ay + (by - ay) * s1;
+          const r0 = [side[i][0] + (side[i + 1][0] - side[i][0]) * s0, side[i][1] + (side[i + 1][1] - side[i][1]) * s0];
+          const r1 = [side[i][0] + (side[i + 1][0] - side[i][0]) * s1, side[i][1] + (side[i + 1][1] - side[i][1]) * s1];
+          const top0 = az + (bz - az) * s0 - Z0, top1 = az + (bz - az) * s1 - Z0;
+          // (the crest's ends run up on to the banks; nothing pours where the ground is dry below it)
+          if (g((x0 + x1) / 2, (y0 + y1) / 2) > Math.max(top0, top1) + WEIR_CREST_UP) continue;
+          const A = (o: number, h: number) => P(x0 + r0[0] * o, y0 + r0[1] * o, h), B = (o: number, h: number) => P(x1 + r1[0] * o, y1 + r1[1] * o, h);
+          const c0 = top0 + WEIR_CREST_UP, c1 = top1 + WEIR_CREST_UP, H = WEIR_CREST_HALF;
+          quad(A(-H, c0), B(-H, c1), B(H, c1), A(H, c0), WEIR_STONE);
+          quad(A(-H, top0 - 0.3), B(-H, top1 - 0.3), B(-H, c1), A(-H, c0), WEIR_STONE);
+          const wet = g((x0 + x1) / 2 + (r0[0] + r1[0]), (y0 + y1) / 2 + (r0[1] + r1[1])) < foot + 0.3;
+          if (!wet) continue;
+          const drop = Math.max(top0, top1) - foot, run = Math.min(WEIR_RUN_MOST, Math.max(WEIR_RUN_LEAST, drop * WEIR_RUN));
+          const glass = WEIR_STREAKS[k % WEIR_STREAKS.length], broken = mix(glass, 0.3), end = H + run, bend = H + run * 0.4;
+          const z0m = c0 - (c0 - foot) * 0.6, z1m = c1 - (c1 - foot) * 0.6;
+          // the water going over, steepest just past the crest, then breaking white as it lands
+          quad4(A(H, c0), B(H, c1), B(bend, z1m), A(bend, z0m), glass, glass, broken, broken);
+          quad4(A(bend, z0m), B(bend, z1m), B(end, foot - 0.05), A(end, foot - 0.05), broken, broken, WEIR_FOAM, WEIR_FOAM);
+          quad4(A(end - 0.3, foot + 0.1), B(end - 0.3, foot + 0.1), B(end + WEIR_FROTH, foot + 0.1), A(end + WEIR_FROTH, foot + 0.1),
+            WEIR_FOAM, WEIR_FOAM, mix(glass, 0.6), mix(glass, 0.6));
+        }
       }
     }
     if (pos.length) {

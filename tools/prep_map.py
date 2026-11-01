@@ -38,7 +38,7 @@ import numpy as np
 import shapely
 from PIL import Image
 from shapely.geometry import shape, box, Point
-from shapely.ops import nearest_points, split, substring, transform, unary_union
+from shapely.ops import linemerge, nearest_points, split, substring, transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
@@ -1617,16 +1617,24 @@ if True:
     WEIR_FIND = 40.0     # a weir mapped as a point is on the river's line this near it
     WEIR_ACROSS = 150.0  # and is cut across the river this far either way
     WEIR_SIDE = 4.0      # water this near a weir's line is above or below it (a dam's crest between two lakes)
-    WEIR_STEP = 0.3      # water this much higher on one side than the other falls over the weir
+    WEIR_WORKS = 30.0    # metres from a weir mapped as an area that its sluices and gates stand
+    WEIR_TIDY = 1.0      # metres a weir's crest is straightened by, so it's drawn as one clean line
     reach = unary_union([q for _, q in near_boxes]).buffer(50)
     river_lines = [transform(proj, g) for g, p in L("water") if g.geom_type == "LineString" and p.get("class") in ("river", "stream")]
     river_tree = shapely.STRtree(river_lines) if river_lines else None
     weir_lines = []
+    # (a weir mapped as an area, as Pulteney's horseshoe is, has a shape a crest along a line can't
+    # draw: it and the works mapped beside it, its sluices and flood gates, are left as the water is,
+    # for a set piece to draw)
+    weir_areas = [transform(proj, g).buffer(WEIR_WORKS) for g, p in L("infrastructure") if p.get("class") in ("weir", "dam") and g.geom_type.endswith("Polygon")]
     for g, p in L("infrastructure"):
         if p.get("class") not in ("weir", "dam") or g.geom_type not in ("LineString", "Point"): continue
         w_ = transform(proj, g)
-        if not w_.intersects(reach): continue
+        if not w_.intersects(reach) or any(a_.intersects(w_) for a_ in weir_areas): continue
         if w_.geom_type == "Point":
+            # (a weir mapped both as a point and as a line is the line)
+            if any(transform(proj, g2).distance(w_) < WEIR_FIND for g2, p2 in L("infrastructure")
+                   if p2.get("class") in ("weir", "dam") and g2.geom_type == "LineString"): continue
             near = [river_lines[int(k)] for k in river_tree.query(w_.buffer(WEIR_FIND))] if river_tree is not None else []
             if not near: continue
             rl = min(near, key=lambda l: l.distance(w_))
@@ -1634,8 +1642,7 @@ if True:
             a_, b_ = rl.interpolate(max(0.0, t_ - 2)), rl.interpolate(min(rl.length, t_ + 2))
             dl = math.dist((a_.x, a_.y), (b_.x, b_.y)) or 1
             nx_, ny_ = -(b_.y - a_.y) / dl, (b_.x - a_.x) / dl
-            w_ = shapely.LineString([(w_.x - nx_ * WEIR_ACROSS, w_.y - ny_ * WEIR_ACROSS), (w_.x + nx_ * WEIR_ACROSS, w_.y + ny_ * WEIR_ACROSS)])
-            weir_lines.append((w_, w_))
+            weir_lines.append((w_, shapely.LineString([(w_.x - nx_ * WEIR_ACROSS, w_.y - ny_ * WEIR_ACROSS), (w_.x + nx_ * WEIR_ACROSS, w_.y + ny_ * WEIR_ACROSS)])))
             continue
         c_ = list(w_.coords)
         def past(a, b):
@@ -1678,12 +1685,17 @@ if True:
         parts = [g_ for g_ in getattr(whole, "geoms", [whole]) if g_.geom_type == "Polygon"]
         if weir_tree is None: return parts
         for k in weir_tree.query(whole):
-            cut = weir_lines[int(k)][1]
+            at, cut = weir_lines[int(k)]
             nxt = []
             for pc in parts:
                 if not pc.intersects(cut): nxt.append(pc); continue
+                if at.geom_type == "Point":
+                    # (only straight across where it's mapped, not wherever the river bends back across the line)
+                    across = [c_ for c_ in getattr(pc.intersection(cut), "geoms", [pc.intersection(cut)]) if c_.geom_type == "LineString" and c_.length > 0]
+                    if not across: nxt.append(pc); continue
+                    cut = run_on(min(across, key=lambda c_: c_.distance(at)), WEIR_PAST)
                 out, by = divide(pc, cut), 0.0
-                ends = island_ends(weir_lines[int(k)][0], pc)
+                ends = island_ends(at, pc) if at.geom_type != "Point" else (False, False)
                 while len(out) == 1 and any(ends) and by < WEIR_ON:
                     by += WEIR_ON_STEP
                     out = divide(pc, run_on(cut, by, ends))
@@ -1746,36 +1758,53 @@ if True:
                             grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
                             blk = OTHER_WET[win]; blk[wet] = True
                         if not at_sea: banks.append((poly, None if is_canal else wz, entry))
-    # each weir's face, where the water either side of it lies at levels a step apart: along the
-    # weir's line from bank to bank, as [x, y, the upper water's level], with the lower water on the
-    # line's right, and that water's level (b)
+    # each weir's crest, along its line over the water from bank to bank, as [x, y, the upper water's
+    # level], with the lower water on the line's right, and that water's level (b): one clean line to
+    # a weir however many pieces a square's edge or an island cuts the water into, and the game draws
+    # the water falling from it as far as the two sides lie apart
     weir_faces = []
     if weir_lines:
         pieces = [(shapely.Polygon(e["r"][0], [h for h in e["r"][1:] if len(h) >= 3]), e) for e in water_all if e.get("c") != "canal" and not e.get("k")]
         ptree = shapely.STRtree([pc for pc, _ in pieces]) if pieces else None
         for k, (line, cut) in enumerate(weir_lines):
             if ptree is None: break
-            if k in run_ons: line = run_on(cut, *run_ons[k])
+            point = line.geom_type == "Point"
+            if point: line = cut
+            elif k in run_ons: line = run_on(cut, *run_ons[k])
             side = [pieces[int(k)] for k in ptree.query(line.buffer(WEIR_SIDE))]
             side = [(pc, e) for pc, e in side if pc.distance(line) < WEIR_SIDE]
-            # every two pieces that meet across it a step apart (a square's edge, or an island, can
-            # cut the water either side into more than one)
-            for hi, he in side:
-                for lo, le in side:
-                    if he["z"] - le["z"] < WEIR_STEP: continue
+            runs = []
+            for i, (pa, ea) in enumerate(side):
+                for pb, eb in side[i + 1:]:
+                    (hi, he), (lo, le) = ((pa, ea), (pb, eb)) if ea["z"] >= eb["z"] else ((pb, eb), (pa, ea))
                     on = line.intersection(hi.buffer(WEIR_SIDE)).intersection(lo.buffer(WEIR_SIDE))
                     for run in getattr(on, "geoms", [on]):
                         if run.geom_type != "LineString" or run.length < 1: continue
-                        c_ = list(run.coords)
                         mx, my = run.interpolate(0.5, normalized=True).coords[0]
                         a_, b_ = run.interpolate(max(0.0, run.length / 2 - 0.5)), run.interpolate(min(run.length, run.length / 2 + 0.5))
                         dl = math.dist((a_.x, a_.y), (b_.x, b_.y)) or 1
                         rx, ry = (b_.y - a_.y) / dl, -(b_.x - a_.x) / dl
                         right, left = Point(mx + rx * WEIR_SIDE, my + ry * WEIR_SIDE), Point(mx - rx * WEIR_SIDE, my - ry * WEIR_SIDE)
-                        if lo.distance(right) < 1.5 and hi.distance(left) < 1.5: pass
-                        elif lo.distance(left) < 1.5 and hi.distance(right) < 1.5: c_.reverse()
-                        else: continue      # (both on the same side of it)
-                        weir_faces.append(dict(p=[[r1(x), r1(y), he["z"]] for x, y in c_], b=le["z"]))
+                        if not ((lo.distance(right) < 1.5 and hi.distance(left) < 1.5) or (lo.distance(left) < 1.5 and hi.distance(right) < 1.5)):
+                            continue      # (both on the same side of it)
+                        if not point or weir_lines[k][0].distance(run) < WEIR_FIND: runs.append((run, he["z"], le["z"], lo))
+            if not runs: continue
+            merged = unary_union([r for r, *_ in runs])
+            if merged.geom_type == "MultiLineString": merged = linemerge(merged)
+            for m in getattr(merged, "geoms", [merged]):
+                if m.length < 1: continue
+                near = [r for r in runs if r[0].intersection(m.buffer(0.5)).length > 0.5]
+                if not near: continue
+                lo = min(near, key=lambda r: r[2])[3]
+                m = m.simplify(WEIR_TIDY)
+                c_ = list(m.coords)
+                mx, my = m.interpolate(0.5, normalized=True).coords[0]
+                a_, b_ = m.interpolate(max(0.0, m.length / 2 - 0.5)), m.interpolate(min(m.length, m.length / 2 + 0.5))
+                dl = math.dist((a_.x, a_.y), (b_.x, b_.y)) or 1
+                rx, ry = (b_.y - a_.y) / dl, -(b_.x - a_.x) / dl
+                if lo.distance(Point(mx + rx * 2, my + ry * 2)) > lo.distance(Point(mx - rx * 2, my - ry * 2)): c_.reverse()
+                top = max(r[1] for r in near)
+                weir_faces.append(dict(p=[[r1(x), r1(y), top] for x, y in c_], b=min(r[2] for r in near)))
         if weir_faces: print(f"water: {len(weir_faces)} weirs' faces where the water steps down")
     # a basin's bed is dug wherever its water is, the map's water or not (a channel cut to it:
     # tools/canal.py), and the ground round it stands at least a little above its water, as the
