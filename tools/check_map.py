@@ -30,8 +30,9 @@ case by case:
  9. Things on the ground fit together: every gate has a wall or fence at both sides; no two walls,
     fences or hedges run on top of each other; a front path goes through a garden boundary only at
     a gate; no tree, shrub or street item stands on a wall or inside a building; no building
-    stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
-    pavement).
+    stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
+    pavement); and where the road and the paving meet, neither pokes a point or a sliver into the
+    other (check_more.slivers).
 11. Roofs are whole, as the game draws them (web/src/world.ts, roofFaces and addBuilding): no
     open edge left between a lidar roof's faces or between a face and its wall top once the game
     has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
