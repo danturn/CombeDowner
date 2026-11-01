@@ -267,6 +267,10 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
     nrm = [normal(xy[max(0, k - 1)], xy[min(n - 1, k + 1)]) for k in range(n)]
 
     def measure(p, nx, ny, w, pv):
+        # (from where the corridor put the carriageway's middle: it slides off a line drawn off the
+        # middle of its street, and measured from the line, the far side was cut short at the cap)
+        sl = pv[2] if len(pv) > 2 else 0.0
+        p = (p[0] + nx * sl, p[1] + ny * sl)
         cap = w / 2 + 0.3
         dl = _reach(car_area, p, nx, ny, 1, cap)
         dr = _reach(car_area, p, nx, ny, -1, cap)
@@ -274,7 +278,7 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None):
             return None
         pl = _reach(walk_area, p, nx, ny, 1, dl + pv[0] + 0.5) - dl if pv[0] > 0 else 0.0
         pr = _reach(walk_area, p, nx, ny, -1, dr + pv[1] + 0.5) - dr if pv[1] > 0 else 0.0
-        return (dl, dr, max(0.0, pl), max(0.0, pr))
+        return (dl + sl, dr - sl, max(0.0, pl), max(0.0, pr))
 
     raw = [measure(xy[k], nrm[k][0], nrm[k][1], ws[k], pvs[k]) for k in range(n)]
     # halfway between two points as well, so a pinch between them is seen
@@ -493,12 +497,12 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                     q = _at_edge(*((last[0], p) if last[1] else (p, last[0])), has_ground)
                     near = p if inside else last[0]
                     if q is not None and math.hypot(q[0] - near.x, q[1] - near.y) > 0.05:
-                        chain.append((q[0], q[1], float(sec[0]), (float(sec[1]), float(sec[2])), True))
+                        chain.append((q[0], q[1], float(sec[0]), (float(sec[1]), float(sec[2]), *sec[3:4]), True))
                 last = (p, inside)
                 if not inside:
                     flush()
                     continue
-                pt = (p.x, p.y, float(sec[0]), (float(sec[1]), float(sec[2])))
+                pt = (p.x, p.y, float(sec[0]), (float(sec[1]), float(sec[2]), *sec[3:4]))
                 if fit and chain and k == 0 and math.hypot(chain[-1][0] - p.x, chain[-1][1] - p.y) < 0.05:
                     chain[-1] = pt          # the shared point takes the later stretch's figures
                     continue
@@ -536,7 +540,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             elif r.get("path"):
                 pieces = [(xy, path_width(r["cls"], r.get("obs")), list(ch[0][3]))]
             else:
-                pieces = [(xy, ch[0][2], list(ch[0][3]))]
+                pieces = [(xy, ch[0][2], list(ch[0][3])[:2])]
             for pp, ww, vv in pieces:
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
                     marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
