@@ -1500,6 +1500,20 @@ for r in pending:
         while a > 0 and a - 1 not in r["span"] and not far(a - 1, st[0]) and z[a - 1] - gelev0(run[a - 1][0], run[a - 1][1]) > 0.3: a -= 1; r["deck"].add(a); grown += 1
         while b < n - 1 and b + 1 not in r["span"] and not far(b + 1, st[-1]) and z[b + 1] - gelev0(run[b + 1][0], run[b + 1][1]) > 0.3: b += 1; r["deck"].add(b); grown += 1
 if grown: print(f"bridges: spans run {grown} points further to where their decks meet the ground")
+
+# a path along a mapped pier, jetty or pontoon (man_made=pier, in Overture's infrastructure) is that
+# pier's deck (pr): its end out over the water is the jetty's end, with nothing to meet
+PIER_NEAR = 3.0
+piers = [transform(proj, g).buffer(PIER_NEAR) for g, p in L("infrastructure") if p.get("class") == "pier" and transform(proj, g).intersects(BM.buffer(600))]
+piers = unary_union(piers) if piers else None
+
+
+def on_pier(pts):
+    if piers is None or len(pts) < 2: return False
+    line = shapely.LineString([q[:2] for q in pts])
+    return line.length > 0 and line.intersection(piers).length >= 0.5 * line.length
+
+
 for r in pending:
     # a point the towpath took that has a bridge on both sides of it is on the bridge, high over
     # the bank (a footbridge's crossing the data doesn't mark as one), not down on the towpath
@@ -1517,7 +1531,8 @@ for r in pending:
     # a deck beside a road's span (a path along a bridge), at the road's height, with nothing built
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
     for i0, i1 in TN.split(run, bored):
-        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {})))
+        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {}),
+                          **({"pr": 1} if c in PATHS and on_pier(pts[i0:i1 + 1]) else {})))
     for (i0, i1), (head, tail) in zip(bored, TN.faces(run, z, bored, elev, c)):
         tp = pts[i0:i1 + 1]
         tunnel_list.append(dict(c=c, n=r["n"], p=([[r1(v) for v in head]] if head else []) + tp + ([[r1(v) for v in tail]] if tail else [])))

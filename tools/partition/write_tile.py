@@ -1259,6 +1259,50 @@ def decks_to_loose_ends(rd, ground, near=0.5):
     return run
 
 
+DECK_STEP = 0.3            # metres: two paths' decks meeting further apart than this in height have a step between them
+
+
+def decks_meet(rd, near=0.5):
+    """Where a path's deck ends on another path's deck (a pontoon's walkway branching off the
+    gangway down to it), the two meet at one height: the lower end is lifted to the other deck and
+    eases back down along its own, no steeper than a path's ramp, instead of leaving a step at the
+    joint. Only deck points are lifted, never lowered, so no deck loses its clearance. Returns the
+    points lifted."""
+    cell = lambda q: (int(q[0] // 3), int(q[1] // 3))
+    decks = collections.defaultdict(list)
+    for r in rd:
+        if r["c"] in GAME_PATHS:
+            for q in r["p"]:
+                if _flag(q):
+                    decks[cell(q)].append((id(r), q))
+    lifted = 0
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in GAME_PATHS or len(p) < 2:
+            continue
+        for e, order in ((0, range(len(p))), (len(p) - 1, range(len(p) - 1, -1, -1))):
+            q = p[e]
+            if not _flag(q):
+                continue
+            c = cell(q)
+            top = max((d[2] for i in (-1, 0, 1) for j in (-1, 0, 1) for o, d in decks[(c[0] + i, c[1] + j)]
+                       if o != id(r) and math.dist(d[:2], q[:2]) < near), default=None)
+            if top is None or top - q[2] <= DECK_STEP:
+                continue
+            run, prev = 0.0, q
+            for k in order:
+                if not _flag(p[k]):
+                    break
+                run += math.dist(p[k][:2], prev[:2])
+                prev = p[k]
+                want = round(top - PATH_RAMP * run, 1)
+                if want <= p[k][2]:
+                    break
+                p[k] = [p[k][0], p[k][1], want] + list(p[k][3:])
+                lifted += 1
+    return lifted
+
+
 RAMP = {"steps": 0.5}      # the steepest a ramp off a deck falls: these, else a path's or a road's
 PATH_RAMP = 0.125
 JOIN_STEP = 2.5            # metres: the most a way meeting a deck's end is below it and still joins it
@@ -6004,6 +6048,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
     decks_to_loose_ends(rd, road_ground)
+    decks_meet(rd)
     bridge_kinds(rd, osm_bridges(sq), water, rails, canal_lines, road_ground)
     # (what the base tile stood on the ground it had dug follows the filling too)
     follow_laid_ground(tile, lambda x, y, split=True: (
