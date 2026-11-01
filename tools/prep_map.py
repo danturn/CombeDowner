@@ -537,8 +537,12 @@ for g, p in L("segment"):
     # centre lines; and a one-way street says which way (1 with its points, -1 against them).
     # A main road stays a road whatever's marked on it: what closes one is a bus gate (the foot of
     # Broad Street, Northgate Street, High Street, Manvers Street), still a road with buses on it
-    # and its bus stops at the kerb, not a paved square
+    # and its bus stops at the kerb, not a paved square. A street closed to traffic that lets buses
+    # through (Milsom Street, the University's Parade, a bus station's lanes) says so (bu), so its
+    # bus stops are on a road and the buses called to them drive along it
     one_way = 0
+    buses = any(ar.get("access_type") == "allowed" and "bus" in ((ar.get("when") or {}).get("mode") or ())
+                for ar in p.get("access_restrictions") or [])
     for ar in p.get("access_restrictions") or []:
         if ar.get("access_type") != "denied": continue
         w = ar.get("when") or {}
@@ -569,7 +573,7 @@ for g, p in L("segment"):
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
                 bored = TN.bores(run, z, tr, elev, c)
-                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow))
+                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service")))
 TN.rebore(pending, elev)
 def chains():
     """The roads in pending joined up where one ends where another of the same kind begins, as
@@ -1513,7 +1517,7 @@ for r in pending:
     # a deck beside a road's span (a path along a bridge), at the road's height, with nothing built
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
     for i0, i1 in TN.split(run, bored):
-        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {})))
+        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {})))
     for (i0, i1), (head, tail) in zip(bored, TN.faces(run, z, bored, elev, c)):
         tp = pts[i0:i1 + 1]
         tunnel_list.append(dict(c=c, n=r["n"], p=([[r1(v) for v in head]] if head else []) + tp + ([[r1(v) for v in tail]] if tail else [])))

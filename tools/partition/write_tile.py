@@ -3821,6 +3821,34 @@ def carry_pedestrian(rd, old):
     return n
 
 
+CARRIED = {"bu": ("pedestrian", "service"), "pr": tuple(GAME_PATHS)}
+
+
+def carry_flags(rd, old):
+    """What the old build read from Overture that the partition's streets don't carry, taken from the
+    old records each stretch lies along (most of its length within PEDESTRIAN_NEAR of them), as
+    one-way streets take their way: `bu`, a street closed to traffic that buses may use (its bus
+    stops are on a road, and the buses called to them drive along it); `pr`, a path along a mapped
+    pier or pontoon (its end out over the water is the jetty's end). Returns how many took each."""
+    n = collections.Counter()
+    for flag, kinds in CARRIED.items():
+        ways = [LineString([q[:2] for q in r["p"]]) for r in old if r.get(flag) and len(r["p"]) > 1]
+        if not ways:
+            continue
+        tree = STRtree(ways)
+        for r in rd:
+            if r["c"] not in kinds or len(r["p"]) < 2:
+                continue
+            line = LineString([q[:2] for q in r["p"]])
+            if line.length < 1:
+                continue
+            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+            if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
+                r[flag] = 1
+                n[flag] += 1
+    return n
+
+
 def carry_missing_paths(rd, old, pavements=None, near=4.0, floor=6.0):
     """Paths main has that the partition's streets do not: field paths and tracks that Overture maps
     and OpenStreetMap does not. A stretch of an old path lying further than `near` from every street
@@ -5958,6 +5986,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     verge_out_of_town(rd, houses)
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
+    carry_flags(rd, tile.get("rd") or [])
     rd, _ = ways_out_of_buildings(rd, houses + buildings_next_door(ti, tj, base, sq))
     rd, _ = drop_paths_along_streets(rd)
     whole_spans(rd, sq, road_ground, wet)

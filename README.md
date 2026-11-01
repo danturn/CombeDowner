@@ -63,7 +63,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wall rather than in one slope of road.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
-  each kerb, and traffic lights at junctions; bus shelters only at the stops that have one; post
+  each kerb, and traffic lights at junctions; bus shelters only at the stops that have one, and the
+  stops on a street closed to traffic that buses still use (Milsom Street, the University's
+  Parade) at its kerb, with the bus you call driving along it; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no

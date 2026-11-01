@@ -502,6 +502,8 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         for n in np.nonzero(hits(wtree, p))[0]: note("15 parked car in the water", 1, at(cars[n][1], cars[n][2]), "")
     # on their street or path
     vlines = [(ln, r) for ln, r in zip(rlines, roads) if r["c"] in VEHICLE]
+    blines = vlines + [(ln, r) for ln, r in zip(rlines, roads) if r.get("bu") and r["c"] not in VEHICLE]
+    btree = shapely.STRtree([l for l, _ in blines])
     vtree = shapely.STRtree([l for l, _ in vlines])
     def street_gap(x, y, tree, lines):
         p = Point(x, y)
@@ -509,7 +511,7 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         return min((lines[int(k)][0].distance(p) - (lines[int(k)][1].get("w") or RW.get(lines[int(k)][1]["c"], 4)) / 2 for k in near), default=40)
     for q in fx:
         if q[0] != "bus" or not inner.contains(Point(q[1], q[2])): continue
-        g = street_gap(q[1], q[2], vtree, vlines)
+        g = street_gap(q[1], q[2], btree, blines)
         if g > 6: note("15 bus stop away from the road", g, at(q[1], q[2]), f"{q[5] if len(q) > 5 else ''!r} {g:.0f} m from the kerb")
     for q in m.get("cx") or []:
         if not inner.contains(Point(q[0], q[1])): continue
