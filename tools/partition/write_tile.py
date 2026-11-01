@@ -3391,6 +3391,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             return min(levels)[1]
         return min(levels, key=lambda hk: abs(hk[0] - z))[1]
 
+    def carriageway_of(x, y):
+        """The street whose carriageway a piece of carriageway at (x, y) is: the nearest street that has
+        one, not a pedestrian street (whose paving was taken out of the carriageway already) whose line
+        runs nearer. Across a junction the triangles of a carriageway fan out from the corner where a
+        pedestrian street meets it, and each one that was nearer that street's line was paved, in a
+        point or a bow tie of paving across the road."""
+        k = nearest(x, y)
+        if k is None or streets[k]["c"] != "pedestrian":
+            return k
+        p = Point(x, y)
+        near = sorted((lines[int(j)].distance(p), int(j)) for j in tree.query(p.buffer(40)) if streets[int(j)]["c"] != "pedestrian")
+        return near[0][1] if near and near[0][0] <= reach_of[near[0][1]] else k
+
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
         g = unary_union(polys).intersection(square) if polys else Polygon()
@@ -3585,7 +3598,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 elif flat:
                     kind = cls
                 else:
-                    k = nearest(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
+                    k = carriageway_of(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
                     c = streets[k]["c"] if k is not None else ""
                     kind = "road" if c in KERBED else "pave" if c == "pedestrian" else "service"
                 ids = [point(x, y, flat) for x, y in pts]
