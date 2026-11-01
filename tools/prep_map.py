@@ -2598,7 +2598,7 @@ roads, _cut = _along_streets(roads)
 print(f"footpaths: {_cut / 1000:.1f} km lying along a street's carriageway left out")
 
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
-from gardens import plots, _ahead
+from gardens import plots, _ahead, BETWEEN
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 
 
@@ -2993,7 +2993,7 @@ def _tidy_gardens(runs, others):
         qs = _along(ln, n)
         return [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]
     for k, b in enumerate(runs):
-        if b["c"] not in ("fence", "hedge"): continue      # (a front wall follows its street as it is)
+        if b["c"] not in BETWEEN: continue      # (a front wall follows its street as it is)
         pts = [list(q) for q in lines[k].simplify(0.1).coords]     # (its corners, not the points every 2.5 m)
         before = len(pts)
         joined = lambda q: any(int(j) != k and allx[int(j)].distance(shapely.Point(q[:2])) < 0.3 for j in lt.query(shapely.Point(q[:2]).buffer(0.3)))
@@ -3033,7 +3033,7 @@ def _tidy_gardens(runs, others):
         keep = []
         for k, (b, ln) in enumerate(zip(runs, lines)):
             ends = held(k, shapely.Point(ln.coords[0])) + held(k, shapely.Point(ln.coords[-1]))
-            if b["c"] in ("fence", "hedge") and ((ln.length < 5 and ends < 2) or (ln.length < 10 and ends == 0)): continue
+            if b["c"] in BETWEEN and ((ln.length < 5 and ends < 2) or (ln.length < 10 and ends == 0)): continue
             keep.append(b)
         if len(keep) == len(runs): break
         runs = keep
@@ -3043,7 +3043,7 @@ def _tidy_gardens(runs, others):
     tt = shapely.STRtree(targets)
     snapped, made = 0, []
     for k, b in enumerate(runs):
-        if b["c"] not in ("fence", "hedge"): continue      # (a front wall's ends are where its gate and corners put them)
+        if b["c"] not in BETWEEN: continue      # (a front wall's ends are where its gate and corners put them)
         pts = [list(q) for q in b["p"]]
         for end in (0, -1):
             h = shapely.Point(pts[end][:2])
@@ -3121,7 +3121,7 @@ if canopy is not None:
     FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low"}
     hedged = 0
     for b in barriers:
-        if b["c"] in ("wall", "fence", "hedge", "retaining_wall") or "h" in b or len(b["p"]) < 2: continue   # (not one the lidar measured)
+        if b["c"] in ("wall", "retaining_wall") + BETWEEN or "h" in b or len(b["p"]) < 2: continue   # (not one the lidar measured)
         line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
         hs = [canopy.at(*line.interpolate(k, normalized=False).coords[0]) for k in np.arange(0, line.length, 1.0)]
         if len(hs) < 2: continue
@@ -3184,8 +3184,8 @@ def _straighten(barriers):
     # across another wall or fence more than it did before.
     WAVE, waves = 3.0, 0
     line_of = lambda b: shapely.LineString([q[:2] for q in b["p"]])
-    runs = [b for b in barriers if b["c"] in ("fence", "hedge") and "h" not in b and len(b["p"]) > 1]
-    fixed = [line_of(b) for b in barriers if len(b["p"]) > 1 and not (b["c"] in ("fence", "hedge") and "h" not in b)]
+    runs = [b for b in barriers if b["c"] in BETWEEN and "h" not in b and len(b["p"]) > 1]
+    fixed = [line_of(b) for b in barriers if len(b["p"]) > 1 and not (b["c"] in BETWEEN and "h" not in b)]
     lines = [line_of(b) for b in runs]
     allines = lines + fixed
     lt = shapely.STRtree(allines)
@@ -3339,7 +3339,7 @@ print(f"walls: {_n_cut} ends cut back off a wall, fence or hedge they ran along,
 # or hedge (within 0.6 m, and running the same way) is taken out, and an end that pokes up to a metre
 # past a run it crosses is cut back to it
 def _undouble(barriers):
-    guessed = lambda b: b["c"] in ("fence", "hedge", "hedge_low") and "h" not in b
+    guessed = lambda b: b["c"] in BETWEEN + ("hedge_low",) and "h" not in b
     lines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers]
     tree = shapely.STRtree(lines)
     def lies_on(k, seg):

@@ -2147,7 +2147,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       if (spec.mat !== "iron") {
         // stone and brick walls get a slightly darker coping along the top
-        const top = spec.mat === "stone" || spec.mat === "brick" ? col.map((c) => c * 0.85) : col;
+        const top = spec.mat === "stone" || spec.mat === "brick" || spec.mat === "render" ? col.map((c) => c * 0.85) : col;
         facing(g, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], [u0, 0], [u1, 0], [u1, t], [u0, t], top);
       }
       // the ends of the run are closed, so a wall doesn't show as a hollow shell where it stops
@@ -2171,13 +2171,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // moved a little by a rebuild keeps its look
     const f = g.leaf, cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2, gl = Math.hypot(f.x1 - f.x0, f.y1 - f.y0);
     const [x0, y0, x1, y1] = gt as number[];
-    const iron = g.look.mat === "iron" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
+    const iron = g.look.mat === "iron" || g.look.mat === "render" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
     boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, f.gu, gl / 2, f.half, f.foot, f.top,
       iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
   }
   const barMats: Record<BarMat, THREE.Material> = S.barMats ??= {
     stone: new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }),
     brick: new THREE.MeshLambertMaterial({ map: TX.wall("brick", false), vertexColors: true }),
+    render: new THREE.MeshLambertMaterial({ map: TX.wall("render", false), vertexColors: true }),
     leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
     wood: new THREE.MeshLambertMaterial({ map: TX.boards(), vertexColors: true, side: THREE.DoubleSide }),
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),

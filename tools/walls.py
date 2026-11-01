@@ -38,6 +38,8 @@ STYLE = {
     "riverside": ("brick_wall_low", "brick_wall"), "mulberry": ("brick_wall_low", "brick_wall"),
     "foxhill": ("brick_wall_low", "fence"), "suburb": ("brick_wall_low", "fence"),
     "london": ("brick_wall_low", "brick_wall"),
+    "cape": ("boundary_wall", "security_wall"), "bokaap": ("boundary_wall", "security_wall"),
+    "cbd": ("boundary_wall", "security_wall"),
 }
 
 
