@@ -585,8 +585,8 @@ then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 Any place can be a map. `python3 -I tools/new_area.py add "Your Town" --radius 1500` finds it and
 puts it on the menu, and `python3 -I tools/new_area.py build your-town` downloads the open map data
 and builds it, which takes a quarter of an hour or so on a laptop. Then `cd web && npm run dev` and
-open `?map=your-town`. It works for anywhere in England, whose lidar gives the real roofs (not Wales, Scotland or abroad
-yet). [docs/own-area.md](docs/own-area.md) says what you will need installed
+open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
+elsewhere they are guessed from the open map data's heights and floor counts. [docs/own-area.md](docs/own-area.md) says what you will need installed
 and what the script can't do for you. If you use Claude Code, ask it to make a map of your area and
 it follows the `new-area` skill.
 
