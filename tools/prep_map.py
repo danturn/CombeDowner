@@ -3118,7 +3118,7 @@ if side_style:
 # ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
 
 if canopy is not None:
-    FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low"}
+    FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low", "security_wall", "palisade"}
     hedged = 0
     for b in barriers:
         if b["c"] in ("wall", "retaining_wall") + BETWEEN or "h" in b or len(b["p"]) < 2: continue   # (not one the lidar measured)
