@@ -2534,6 +2534,7 @@ PATH_STEP = 3.0             # metres: the longest edge of a path's outline, so i
 
 
 NODE_TOL = 1e-3     # metres: a corner this close to a neighbour's edge is on it
+NODE_REACH = 1.0    # metres: corners further than this outside a piece's box are not offered to it
 
 
 def noded(pieces):
@@ -2547,7 +2548,13 @@ def noded(pieces):
         if g.is_empty or not near:
             out.append(g)
             continue
-        out.append(shapely.snap(g, shapely.multipoints(shapely.get_coordinates(near)), NODE_TOL))
+        # corners well away from this piece can't snap to it, and snapping tests every corner
+        # against every edge, so only those round it are offered
+        xy = shapely.get_coordinates(near)
+        x0, y0, x1, y1 = g.bounds
+        xy = xy[(xy[:, 0] >= x0 - NODE_REACH) & (xy[:, 0] <= x1 + NODE_REACH)
+                & (xy[:, 1] >= y0 - NODE_REACH) & (xy[:, 1] <= y1 + NODE_REACH)]
+        out.append(shapely.snap(g, shapely.multipoints(xy), NODE_TOL))
     return out
 
 
@@ -2887,14 +2894,18 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
             if give:
                 g = unary_union(give)
                 others[i], road, moved = A.difference(g), road.union(g), True
-        edges = [once(edge_of, A) for A in others]
-        etree = STRtree(edges)
+        # each surface's edge is drawn only when a sliver comes near it: the boxes, grown a little
+        # more than the edge is, find every one that could touch, and one that turns out not to
+        # shares nothing, as it would have measured
+        boxes = [shapely.Polygon() if A.is_empty else shapely.box(*(np.array(A.bounds) + [-0.06, -0.06, 0.06, 0.06]))
+                 for A in others]
+        etree = STRtree(boxes)
         given = [[] for _ in others]
         for g in pieces(road):
             # an edge whose box misses the sliver shares none of it: its 0 is filled in unmeasured
-            shared = [0.0] * len(edges)
+            shared = [0.0] * len(others)
             for k in sorted(int(k) for k in etree.query(g.exterior)):
-                shared[k] = g.exterior.intersection(edges[k]).length
+                shared[k] = g.exterior.intersection(once(edge_of, others[k])).length
             if shared and sum(shared) > 0.6 * g.exterior.length:
                 given[shared.index(max(shared))].append(g)
         for i, gs in enumerate(given):
