@@ -64,6 +64,7 @@ from partition.corridors import CORNERED, PATHW, line_corners, path_width, servi
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
 from partition.standing import Standing
+from partition.straighten import straighten
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
 from landscape import string_wires
@@ -4477,6 +4478,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             open_by_edge.setdefault(o.get("edge"), []).append(o)
 
     node_shift = junction_shifts(part, corridor_faces)
+    registered = registered_plots(part)
 
     for eid, e in enumerate(part["edges"]):
         if e["kind"] == "none" or e["kind"] not in BARRIER:
@@ -4484,6 +4486,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         style = BARRIER[e["kind"]]
         height = HEIGHT.get(style, 1.2)
         seen = e.get("source") == "evidence" or e.get("support", 0) >= SUPPORT
+        guessed = guessed_between(e, registered) and not seen
         rank = (e.get("source") == "evidence" or (e.get("source") == "front" and e.get("support", 0) >= SUPPORT),
                 e.get("source") == "front",
                 round(LineString(e["xy"]).length, 1), eid)
@@ -4560,18 +4563,18 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
                     # next square draws on from there; this guards the grid's own edge
                     if not (x0 <= px <= x1 and y0 <= py <= y1):
                         if len(run) >= 2:
-                            out.append(dict(c=style, p=run, h=height, _k=rank))
+                            out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"]))
                         run = []
                         continue
                     z = ground(px, py)
                     if z is None:
                         if len(run) >= 2:
-                            out.append(dict(c=style, p=run, h=height, _k=rank))
+                            out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"]))
                         run = []
                         continue
                     run.append([round(px, 1), round(py, 1), round(z, 1)])
                 if len(run) >= 2:
-                    out.append(dict(c=style, p=run, h=height, _k=rank))
+                    out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"]))
 
         # the gate rows, from the same interval ends the wall stopped at
         for a, b, o in cuts:
@@ -4616,6 +4619,10 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = []
     # measured barriers the partition left out join the runs before the tidy, so it trims where they meet
     out += measured_not_drawn(measured, out, square, ground, blocked, houses, paths)
+    hard = [g for g in (road_area, blocked) if g is not None and not g.is_empty]
+    hard += [LineString([(g[0], g[1]), (g[2], g[3])]).buffer(0.8) for g in gaps]
+    out, _ = straighten(out, lambda r: r.get("_g"), ground, hard, houses)
+    out = [{k: v for k, v in r.items() if k != "_g"} for r in out]
     out = tidy_walls(out, ground, [(g[i], g[i + 1]) for g in gaps for i in (0, 2)])
     out, gaps = reseat_gates(out, gaps, ground)
     out, gaps = clear_gates_of_junctions(out, gaps, ground)
@@ -6109,15 +6116,32 @@ def _open_boundary(br, i, at, gap, ground):
     return out
 
 
+def registered_plots(part):
+    """The plots a registered parcel bounds: their gardens follow the survey's lines, so the
+    guesses between them are left as the plots drew them."""
+    return {tuple(sd) for e in part["edges"] if e.get("source") == "parcel"
+            for sd in e.get("sides") or () if sd[0] == "plot"}
+
+
+def guessed_between(e, registered):
+    """Whether `e` is a boundary between gardens, or a garden's back against open land, that only a
+    rule drew, round plots no registered parcel bounds: drawn as the old build drew its guesses."""
+    sides = e.get("sides") or ()
+    return (e.get("source") == "inferred" and not any(sd[0] == "corridor" for sd in sides)
+            and not any(tuple(sd) in registered for sd in sides if sd[0] == "plot"))
+
+
 def reroll_back_styles(part, parents):
     """The boundaries between gardens are one of the zone's back boundaries all round a block
     (`gardens.STYLE`, as the old build rolls them: a wooden fence or now and then a hedge in
     England, a masonry wall in Cape Town): every garden backing on to another round a block. Rolled
     on the block (pass 2's parent blocks, the same in every square), so a block crossing a square's
     edge is the same either side of it. A registered garden's edge against open land keeps the hedge
-    the plots gave it; a guessed one took the square's commonest evidence, so it is rolled too. A
-    fence or hedge a map or the lidar shows stays what it is."""
+    the plots gave it; a guessed one took the square's commonest evidence, so it is rolled too (round
+    plots no parcel bounds, whatever that evidence was). A fence or hedge a map or the lidar shows stays
+    what it is."""
     tree = STRtree(parents) if parents else None
+    registered = registered_plots(part)
     keys = [tuple(round(c, 1) for c in g.bounds) for g in parents]
     mixes = [GARDEN_STYLE.get(zone_at(*g.representative_point().coords[0]), GARDEN_NEUTRAL)[1] for g in parents]
 
@@ -6131,8 +6155,11 @@ def reroll_back_styles(part, parents):
     for e in part["edges"]:
         sides = e.get("sides") or []
         plots = [s[1] for s in sides if s[0] == "plot" and len(s) > 1]
-        if not plots or any(s[0] == "corridor" for s in sides) or e["kind"] not in ("fence", "hedge") \
-                or e.get("source") not in ("parcel", "inferred"):
+        if not plots or any(s[0] == "corridor" for s in sides) or e.get("source") not in ("parcel", "inferred"):
+            continue
+        # round plots no parcel bounds a guessed boundary's kind was only the square's commonest
+        # evidence (in Cape Town the map's plain walls), so it is rolled whatever it is
+        if e["kind"] not in ("fence", "hedge") and not guessed_between(e, registered):
             continue
         if e["source"] == "parcel" and any(s[0] != "plot" for s in sides):
             continue        # a registered garden's edge against open land keeps the hedge the plots gave it
