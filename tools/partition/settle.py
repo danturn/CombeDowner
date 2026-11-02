@@ -95,6 +95,12 @@ def as_mapped(kind, mapped):
     return kind if kind in ("fence", "railing") else "fence"
 
 
+def _box(p, tol):
+    """A box round `p` holding everything within `tol` of it: a little more than the circle, so an
+    index finds every line in reach without the circle being drawn first; the distance decides."""
+    return shapely.box(p.x - tol, p.y - tol, p.x + tol, p.y + tol)
+
+
 class Evidence:
     """The mapped barriers and lidar wall runs near a square, for asking whether a stretch of
     boundary has something real standing along it."""
@@ -120,7 +126,7 @@ class Evidence:
     def near(self, p, tol=EVIDENCE_NEAR):
         if self.tree is None:
             return False
-        idx = np.atleast_1d(self.tree.query(p.buffer(tol)))
+        idx = np.atleast_1d(self.tree.query(_box(p, tol)))
         return any(self.lines[int(k)].distance(p) <= tol for k in idx)
 
     def mapped_at(self, pts, tol=EVIDENCE_NEAR):
@@ -129,7 +135,7 @@ class Evidence:
         for p in pts:
             near = []
             if self.mapped_tree is not None:
-                near = [self.mapped[int(k)] for k in np.atleast_1d(self.mapped_tree.query(p.buffer(tol)))]
+                near = [self.mapped[int(k)] for k in np.atleast_1d(self.mapped_tree.query(_box(p, tol)))]
                 near = sorted((l.distance(p), MAPPED_GROUP.get(c, "wall")) for l, c in near if l.distance(p) <= tol)
             # The nearest, and of those about as near, a wall before a hedge before a fence: a fence
             # mapped along a wall usually stands on it. Picking from a set took whichever the run's
