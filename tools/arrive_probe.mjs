@@ -112,7 +112,9 @@ console.log("  at", await page.evaluate(() => { const p = window.__game().player
 await settle();
 }
 if (want.has("respawn")) {
-await page.evaluate(() => { const g = window.__game(); g.alive = false; g.respawn(); });
+// --respawn-at "east,north" comes back to life there, as a train or the mines' door would set you down
+await page.evaluate((at) => { const g = window.__game(); g.alive = false; g.respawn(at ? { x: at[0], z: -at[1], yaw: 0 } : undefined); },
+  opt["respawn-at"] ? opt["respawn-at"].split(",").map(Number) : null);
 log.cases.push(await burst("respawn"));
 await settle();
 }
