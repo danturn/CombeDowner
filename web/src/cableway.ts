@@ -152,6 +152,7 @@ export class CableLine {
       if (cut) { let out = ""; for (let k = 0; k < H.length; k++) out += String.fromCharCode(H[k]); C.h = btoa(out); }
     }
     if (d.sb) d.sb = d.sb.filter(([x, y, , sc]) => !this.occupied(x, y, 1 + 1.5 * sc));
+    if (d.rk) d.rk = d.rk.filter(([x, y, , s]) => !this.occupied(x, y, 1 + s));
     // where the map has a building of its own on a platform (the real station, where there is one),
     // the game's station stands in its place
     if (d.bl) d.bl = d.bl.filter((b) => {

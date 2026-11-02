@@ -2128,8 +2128,13 @@ if TILE is not None:
 
 # ---- ground types per terrain vertex ------------------------------------------
 # 0 garden/grass, 1 pitch (and golf greens), 2 wood floor, 3 farmland/meadow, 4 cemetery,
-# 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground
+# 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground, and the wild ground's
+# (tools/wild.py): 8 rock, 9 heath and scrub, 10 sand, 11 wetland, under all the rest
+import wild
 GT = np.zeros(grid.shape, dtype=np.int8)
+for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)):
+    win, inn = cover_xy(poly)
+    GT[win][inn] = t
 layers = []
 for g, p in L("land_use"):
     c = p.get("class")
@@ -2148,6 +2153,10 @@ for t, g in layers:
     for poly in polys(g):
         win, inn = cover_xy(poly)
         GT[win][inn] = t
+_from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [q for g, p in L("building") for q in polys(g)],
+                       [shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2)
+                        for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS])
+print(f"wild ground: {', '.join(f'{int((GT == k).sum())} points of {n}' for k, n in wild.NAMES.items())} ({_from_cover} from the land cover)")
 
 # ---- buildings ----------------------------------------------------------------
 from buildings import classify
@@ -2900,6 +2909,18 @@ if squares:
                         if q.geom_type == "LineString" and q.length >= 1.2]
     front, side = clip(front), clip(side)
     print(f"gardens: {len(squares)} paved squares and pedestrian streets kept clear of garden boundaries ({n_sq} runs before, {len(front) + len(side)} after)")
+# and no garden wall, fence or hedge is guessed out on mapped rock, heath, sand or marsh, past the yard
+# right round a house (where an outline drawn hugging the house would leave it none)
+_wild = [poly for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)) if t in wild.NAMES and poly.area > 0]
+if _wild:
+    _near = shapely.STRtree(_wild)
+    off_wild = unary_union(_wild).difference(unary_union([c[0].buffer(wild.YARD, quad_segs=2) for c in cand
+                                                          if len(_near.query(c[0], predicate="dwithin", distance=wild.YARD))]))
+    n_wd = len(front) + len(side)
+    cut = lambda run: [(st, q, o) for st, ln, o in run for q in getattr(ln.difference(off_wild), "geoms", [ln.difference(off_wild)])
+                       if q.geom_type == "LineString" and q.length >= 1.2]
+    front, side = cut(front), cut(side)
+    print(f"gardens: no boundaries guessed out on the wild ground ({n_wd} runs before, {len(front) + len(side)} after)")
 side_style = {o: st for st, _, o in side}     # each garden's fence or hedge, by its house
 garden_sides = [ln for _, ln, _ in side]     # (the side and back runs, for the lidar walls along them, below)
 garden_br = []
@@ -3788,6 +3809,14 @@ for q in trees:
 trees = kept
 print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path or a drive, {stepped} trees stepped "
       f"out of one, {n_tr - len(trees)} trees left out")
+# boulders on the bare rock, last, clear of everything laid before them
+_hard = [f.buffer(1.0) for f in footprints] + [
+    shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2 + (max(r.get("pv") or [1.7]) if r["c"] in KERBED else 0) + 0.8)
+    for r in roads if len(r["p"]) > 1] + [shapely.Polygon(w["r"][0]).buffer(1.0) for w in wp if len(w["r"][0]) >= 3]
+_hard_tree = shapely.STRtree(_hard)
+boulder_list = wild.boulders(GT, GX, GY, dx, lambda x, y, r: not len(_hard_tree.query(shapely.Point(x, y).buffer(r), predicate="intersects"))
+                             and not near_line(shapely.Point(x, y), r + 0.3) and not in_way(shapely.Point(x, y)), gelev, inside)
+print(f"wild ground: {len(boulder_list)} boulders on the rock")
 # telegraph poles go up once the walls and buildings are down, each clear of them
 from landscape import telegraph, string_wires
 from buildings import zone_at
@@ -3907,8 +3936,8 @@ out = dict(
     v=list(A.view) if getattr(A, "view", None) else None,
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
-           k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
+           k=wild.digits(GT.ravel())),
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, rk=boulder_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
     **({"lx": level_crossings} if level_crossings else {}),
     **({"wf": weir_faces} if weir_faces else {}),
 )
@@ -3965,13 +3994,14 @@ if TILE is not None:
         b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=spawn,
         t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,
                h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
-               k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
+               k=wild.digits(GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
         bl=blds, rd=cut_lines(roads), wp=wp, wl=cut_lines(wl), br=cut_lines(barriers), tn=cut_lines(tunnel_list),
         wf=cut_lines(weir_faces), lx=[c for c in level_crossings if own(c[0], c[1])],
         gt=[q for q in gate_list if mid(q, 0, 2)], mk=[q for q in marks if mid(q, 0, 2)], wr=[q for q in twires if own(q[0], q[1])],
         fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
         tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],
         lm=[q for q in marks_lm if own(q[1], q[2])], dr=[q for q in doors if own(q[0], q[1])], sb=[q for q in shrub_list if own(q[0], q[1])],
+        rk=[q for q in boulder_list if own(q[0], q[1])],
         # (the doors just over the edge, for the partition to open a boundary across the edge in front of
         # them the same from both sides; it takes them out again)
         drn=[q for q in doors if not own(q[0], q[1]) and TX0 - 6 <= q[0] <= TX1 + 6 and TY0 - 6 <= q[1] <= TY1 + 6],
@@ -4016,6 +4046,7 @@ if corridors:
     before = (len(out["tr"]), len(out["sb"]), len(out["fx"]), len(out["br"]))
     out["tr"] = [q for q in out["tr"] if not clear_at(q[0], q[1])]
     out["sb"] = [q for q in out["sb"] if not clear_at(q[0], q[1])]
+    out["rk"] = [q for q in out["rk"] if not clear_at(q[0], q[1])]
     out["fx"] = [q for q in out["fx"] if q[0] == "car" or not clear_at(q[1], q[2])]     # (parked cars stand in the road on purpose)
     # walls: the pieces outside the corridors, and off the pavements, are kept, cut at their edge
     # (a wall at the back of the pavement stands just clear of it)

@@ -17,6 +17,8 @@ import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
 import { REPOSE, aroundPortals, boreRoof, buildTunnels, cuttings, mouths, portalBanks, wingTop } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
+import { ROCK, WILD_CHANNEL } from "./groundkinds";
+import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
 import { aqueductSetPieceAt } from "./landmarks/setpieces";
@@ -455,6 +457,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     new THREE.Color("#8f8b82"), // hard standing
     new THREE.Color("#6a5a3c"), // flowerbeds
     new THREE.Color("#7d7350"), // playgrounds: worn grass, bark and sand
+    new THREE.Color("#8b8a82"), // bare rock and scree (tools/wild.py)
+    new THREE.Color("#78764e"), // heath and scrub
+    new THREE.Color("#cdbf98"), // sand and beaches
+    new THREE.Color("#536a46"), // wetland
   ];
   const earth = new THREE.Color("#7a6a4c");
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
@@ -624,6 +630,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   yield;
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
+  const tWild = new Uint8Array(T.nx * T.ny * 3);
   const hAt = (i: number, j: number) => T.h[Math.min(T.ny - 1, Math.max(0, j)) * T.nx + Math.min(T.nx - 1, Math.max(0, i))] / 10;
   const c = new THREE.Color();
   for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
@@ -631,8 +638,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     tPos[v * 3] = x; tPos[v * 3 + 1] = hAt(i, j) - sink[v]; tPos[v * 3 + 2] = z;
     tUv[v * 2] = x / 7; tUv[v * 2 + 1] = z / 7;
     const slope = Math.hypot(hAt(i + 1, j) - hAt(i - 1, j), hAt(i, j + 1) - hAt(i, j - 1)) / (2 * T.dx);
-    c.copy(GROUND[+T.k[v]] ?? GROUND[0]);
-    c.lerp(earth, Math.min(0.75, Math.max(0, (slope - 0.45) * 1.4)));
+    const kind = T.k.charCodeAt(v) - 48, ch = WILD_CHANNEL[kind];
+    c.copy(GROUND[kind] ?? GROUND[0]);
+    // (a steep slope is bare earth, but rock stays rock)
+    if (kind !== ROCK) c.lerp(earth, Math.min(0.75, Math.max(0, (slope - 0.45) * 1.4)));
+    if (ch !== undefined) tWild[v * 3 + ch] = 255;
     const n = 0.9 + hash(v) * 0.16;
     tCol[v * 3] = c.r * n; tCol[v * 3 + 1] = c.g * n; tCol[v * 3 + 2] = c.b * n;
     if (i === T.nx - 1 && j % 16 === 15) yield;
@@ -694,6 +704,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   terrGeo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
   terrGeo.setAttribute("color", new THREE.BufferAttribute(tCol, 3));
   terrGeo.setAttribute("uv", new THREE.BufferAttribute(tUv, 2));
+  terrGeo.setAttribute("wild", new THREE.BufferAttribute(tWild, 3, true));
   // how far each point is inside the canal's banks (works.ts): the ground isn't drawn inside them
   const works = map.works;
   if (works) terrGeo.setAttribute("cut", new THREE.BufferAttribute(works.sd.slice(), 1));   // (a copy: the map keeps its own for the ground)
@@ -713,12 +724,24 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
   // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
   const mottle = S.mottle ??= { value: TX.mottle() };
+  const wildTex = S.wildTex ??= { value: TX.wildDetail() };
   // (each count of tunnel mouths is its own shader: three.js would otherwise hand a square with
   // mouths the program compiled for one without, or the other way round, by the code's text alone)
   if (ownTerr && !mouth.a.length && !works) S.terrMat ??= terrMat;
   if (ownTerr) terrMat.onBeforeCompile = (shader) => {
     shader.uniforms.mottle = mottle;
-    shader.fragmentShader = "uniform sampler2D mottle;\n" + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+    shader.uniforms.wildMap = wildTex;
+    // rock, heath and sand each have their own detail in place of the grass's (TX.wildDetail: one in
+    // each channel), by how much of each the ground there is
+    shader.vertexShader = "attribute vec3 wild;\nvarying vec3 vWild;\n" + shader.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      vWild = wild;`);
+    shader.fragmentShader = "uniform sampler2D mottle;\nuniform sampler2D wildMap;\nvarying vec3 vWild;\n" + shader.fragmentShader.replace("#include <map_fragment>", `vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+      float ws = vWild.r + vWild.g + vWild.b;
+      if (ws > 0.004) {
+        vec3 wd = texture2D(wildMap, vMapUv * 0.5).rgb;
+        sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, vec3(dot(wd, vWild) / ws), min(ws, 1.0));
+      }
+      diffuseColor *= sampledDiffuseColor;
       float mt = texture2D(mottle, vMapUv * 0.061).r * 0.6 + texture2D(mottle, vMapUv * 0.23 + 0.37).r * 0.4;
       diffuseColor.rgb *= 0.78 + 0.44 * mt;`);
     if (works) {
@@ -759,7 +782,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     yield* cellTris(idx, ti, tj, Math.min(T.nx - 1, ti + TILE), Math.min(T.ny - 1, tj + TILE));
     const g = new THREE.BufferGeometry();
-    for (const name of ["position", "color", "uv", "normal", ...(works ? ["cut"] : [])]) g.setAttribute(name, terrGeo.getAttribute(name));
+    for (const name of ["position", "color", "uv", "wild", "normal", ...(works ? ["cut"] : [])]) g.setAttribute(name, terrGeo.getAttribute(name));
     g.setIndex(idx);
     freeOnUpload(g);
     const i1 = Math.min(T.nx - 1, ti + TILE), j1 = Math.min(T.ny - 1, tj + TILE);
@@ -800,10 +823,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const S = Math.max(2, Math.round(12 / T.dx));
     const cols = (n: number) => { const a: number[] = []; for (let i = 0; i < n - 1; i += S) a.push(i); a.push(n - 1); return a; };
     const ci = cols(T.nx), cj = cols(T.ny), nI = ci.length, nJ = cj.length;
-    const pos: number[] = [], col: number[] = [], uv: number[] = [], idx: number[] = [];
+    const pos: number[] = [], col: number[] = [], uv: number[] = [], wildW: number[] = [], idx: number[] = [];
     const vert = (i: number, j: number, h: number) => {
       const v = j * T.nx + i;
       pos.push(tPos[v * 3], h, tPos[v * 3 + 2]); col.push(tCol[v * 3], tCol[v * 3 + 1], tCol[v * 3 + 2]); uv.push(tUv[v * 2], tUv[v * 2 + 1]);
+      wildW.push(tWild[v * 3], tWild[v * 3 + 1], tWild[v * 3 + 2]);
       return pos.length / 3 - 1;
     };
     for (const j of cj) for (const i of ci) {
@@ -830,6 +854,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute("wild", new THREE.BufferAttribute(new Uint8Array(wildW), 3, true));
     g.setIndex(idx);
     g.computeVertexNormals();
     const nor = g.getAttribute("normal") as THREE.BufferAttribute;
@@ -2314,6 +2339,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- trees and shrubs ------------------------------------------------------------------
   const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, S.vegKit);
   S.vegKit ??= vegetation.kit;
+  buildBoulders(scene, D.rk ?? [], Z0, culler, () => view.sceneryFar * 0.6);
   yield;
 
   mark("trees");

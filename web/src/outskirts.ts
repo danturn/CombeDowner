@@ -9,6 +9,7 @@ import type { GameMap } from "./map";
 import { buildVegetation, type Vegetation, type VegetationKit } from "./trees";
 import type { Wide, WideRoad } from "./wide";
 import { freeOnUpload } from "./world";
+import { ROCK, WILD_CHANNEL } from "./groundkinds";
 
 /** What world.ts lends: the terrain's material and colours, and builders for roads and buildings. */
 export interface OutskirtsKit {
@@ -53,6 +54,7 @@ export function buildOutskirts(map: GameMap, scene: THREE.Scene, kit: OutskirtsK
   const terrain = (ci: number, cj: number): THREE.Mesh | null => {
     const n = W.cs + 1, i0 = ci * W.cs, j0 = cj * W.cs;
     const pos = new Float32Array(n * n * 3), nor = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2);
+    const wild = new Uint8Array(n * n * 3);
     const c = new THREE.Color();
     for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) {
       const i = i0 + a, j = j0 + b, v = b * n + a, x = W.x0 + i * W.dx, z = -(W.y0 + j * W.dx), h = W.at(i, j);
@@ -63,8 +65,10 @@ export function buildOutskirts(map: GameMap, scene: THREE.Scene, kit: OutskirtsK
       const l = Math.hypot(gx, 1, gn);
       nor.set([-gx / l, 1 / l, gn / l], v * 3);
       const g = j * W.nx + i;
-      c.copy(kit.ground[W.k[g]] ?? kit.ground[0]);
-      c.lerp(kit.earth, Math.min(0.75, Math.max(0, (Math.hypot(gx, gn) - 0.45) * 1.4)));
+      const kind = W.k[g], wc = WILD_CHANNEL[kind];
+      c.copy(kit.ground[kind] ?? kit.ground[0]);
+      if (kind !== ROCK) c.lerp(kit.earth, Math.min(0.75, Math.max(0, (Math.hypot(gx, gn) - 0.45) * 1.4)));
+      if (wc !== undefined) wild[v * 3 + wc] = 255;
       const k = 0.9 + hash(g) * 0.16;
       col.set([c.r * k, c.g * k, c.b * k], v * 3);
     }
@@ -81,6 +85,7 @@ export function buildOutskirts(map: GameMap, scene: THREE.Scene, kit: OutskirtsK
     geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
     geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
     geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute("wild", new THREE.BufferAttribute(wild, 3, true));
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     const m = new THREE.Mesh(freeOnUpload(geo), kit.terrMat);
