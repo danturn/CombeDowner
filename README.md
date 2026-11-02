@@ -615,15 +615,17 @@ brick from the map data: stock-brick terraces with bay windows, red-brick counci
 tower blocks, and Georgian terraces with parapets and railings round Clapton Square and Sutton
 Place. Its data is kept in `data/pembury/` (rebuild it as Bath's, with `mapdata.py unpack pembury`).
 
-Cape Town has its own page too, `cape-town.html`: the first map outside the UK, built from worldwide
-data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
-counts and the area's character). It runs from the V&A Waterfront through the city centre, the
+Cape Town has its own page too, `cape-town.html`: the first map outside the UK. It stands on the
+City of Cape Town's own survey of its ground (the 2 m contours from its 2019 lidar), its buildings
+are as tall as the City measured their roofs, and its trees grow where the City outlined their
+crowns (`tools/cct.py`, which any map inside the City picks up); with no energy certificates, what
+the buildings are made of is guessed from the area's character. It runs from the V&A Waterfront through the city centre, the
 painted houses of the Bo-Kaap and Gardens to the top of Table Mountain, which you can see from
 anywhere on the map, and you can ride the cableway up it. Hand-made set pieces stand in for the
 Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, the Clock Tower, the Cape
 Wheel and Zeitz MOCAA. Its houses stand behind high plastered walls and steel palisades, with
 masonry walls between the plots, as Cape Town's do. Table Bay and the harbour are sea, held at sea level (`sea` in
-`tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm` (or `mapdata.py unpack`),
+`tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm,city` (or `mapdata.py unpack`),
 then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 
 ## Play your own street
@@ -652,7 +654,8 @@ Agency (Open Government Licence). Listed railings and walls contain Historic Eng
 Historic England 2026 (Open Government Licence). House types from the 2021 Census: source, Office
 for National Statistics, licensed under the Open Government Licence v3.0. Conservation areas from
 planning.data.gov.uk: © Historic England 2026 and the local planning authorities (Open Government
-Licence). Both contain OS data © Crown copyright and database right 2026. The copy of the map data in `data/` is shared under the same
+Licence). Both contain OS data © Crown copyright and database right 2026. Cape Town's ground
+contours, building heights and tree canopy: City of Cape Town (its Open Data Policy). The copy of the map data in `data/` is shared under the same
 terms (see `data/combe-down/README.md`, which also says where each part comes from).
 
 Multiplayer runs over WebRTC with [Trystero](https://github.com/dmotz/trystero).
