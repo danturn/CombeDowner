@@ -37,7 +37,7 @@ from shapely.strtree import STRtree
 from gardens import STYLE as GARDEN_STYLE, pick
 from . import MAP, ROOT, once, zone_at
 from .data import Data
-from .plots import FRONT_ROW, SUPPORT
+from .plots import FRONT_ROW, GARDEN as PARCEL_NEAR, SUPPORT
 
 HOUSES = {"detached", "semi", "terrace"}     # as `gardens.HOUSES`: only a house has a garden
 OPEN_FRONT_ZONES = {"bath"}     # the city centre: buildings stand on the pavement, shops below
@@ -185,7 +185,19 @@ def load_evidence(sq, pad=50.0):
     listed = [(g, p["kind"]) for g, p in D.near(win, "listed") if g.geom_type == "Point"]
     ev = Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
     ev.styled = [(l, s) for l, s in styled if not l.is_empty and l.length > 0]
+    ev.parcels = [g for g, _p in D.polys_near((x0 - pad - PARCEL_NEAR, y0 - pad - PARCEL_NEAR,
+                                               x1 + pad + PARCEL_NEAR, y1 + pad + PARCEL_NEAR), "parcels")]
     return ev
+
+
+def unregistered(owners, evidence):
+    """The plots whose house stands on land no registered parcel reaches (within PARCEL_NEAR): their
+    gardens were laid out from the house alone, as the old build's were, and their guessed
+    boundaries are drawn as its were. Where parcels reach, the plots follow them and stay as they are."""
+    polys = getattr(evidence, "parcels", None) or []
+    tree = STRtree(polys) if polys else None
+    return {bi for bi, g in owners.items()
+            if tree is None or not len(tree.query(g, predicate="dwithin", distance=PARCEL_NEAR))}
 
 
 # What a mapped wall or fence is made of, where OpenStreetMap says (`wall`, `material`, `fence_type`):
