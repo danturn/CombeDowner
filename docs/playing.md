@@ -148,6 +148,13 @@ After dark its backlight glows blue-green so you can still read it.
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
 deli too. Safari and Firefox leave full screen when you press Esc.
 
+**The big cards** that stop you to read them (a job's end card, a race's or a trail's results, the
+opening poster of a treasure hunt or a Wanted bounty, the night out's front page, the driving
+test's report) each have a × in the top right corner to put them away. Esc puts one away too
+(without leaving full screen in Chrome and Edge), as does Options on a pad, and with a mouse a click
+anywhere off the card puts it away and goes straight back to aiming. While one's up the mouse is
+let go, so you can click its buttons. Leave it and it still goes by itself after a while.
+
 **Settings**, on the main menu and in the pause menu, is remembered on that computer:
 
 - Picture: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
@@ -239,7 +246,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | D-pad | up: the torch; down: ride; left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
 | Create, held | the scores | the scores |
 | Touchpad | tap: the map (on it: Cross marks, Triangle finds you, Circle closes); hold: the job's poster again (a Wanted bounty) | the map |
-| Options | pause | pause |
+| Options | pause (with a big card up: put it away) | pause |
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
@@ -701,8 +708,8 @@ At the end comes a results card: your place in big podium colours, your time, yo
 shine on it (or DNF), your best on the route ("NEW BEST!" if you beat it), how far you were off
 gold, and a few things from the run (top speed, boosts, slipstream, barges), with the podium and
 everyone's standings in a room race (anyone who didn't finish at the bottom), any prize, and a
-fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or for
-about 8 seconds; Again (use: E or □, or Backspace) goes again. On your own you get it as soon as
+fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or its
+×, or for about 8 seconds; Again (use: E or □, or Backspace) goes again. On your own you get it as soon as
 you're over the line or out. In a room race, over the line or out of it while others are still
 riding, you wait where you stopped, held still and safe from harm (killed, you come back once it's
 over), and watch the others from behind: Q and E or the arrow keys switch who (d-pad ← and →

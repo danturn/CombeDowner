@@ -6,12 +6,15 @@
 // over the game, in the look of the HUD and the race finish banner, in the HUD's own layer so they
 // go when it does.
 //
-// Nothing here ever takes a click, and nothing goes over the network: each player's screen draws
+// The banners take no clicks. The end card, the report and the front page wait for you to read
+// them (modal.ts): each has a × to put it away, Esc does too, and the mouse is let go while it's up.
+// Nothing goes over the network: each player's screen draws
 // them from the events that player already gets (quests.ts, race.ts, bonfire.ts). The panel is
 // written only when its words change, and the cards run on timers, not frames (only the confetti
 // has a frame loop, and only while it is falling).
 import { show } from "./show";
 import { ctlText } from "./controls";
+import { modal } from "./modal";
 
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
 const ACCENT = "#3ec7e8";
@@ -216,13 +219,15 @@ export function missionCardUp() {
   return !!card && !card.classList.contains("out") && (card.classList.contains("msc-start") || card.classList.contains("msc-stage"));
 }
 
-function putCard(cls: string, html: string, life: number, colour: string) {
+/** waits: it's a card to read rather than a banner, with a × and the mouse let go (modal.ts). */
+function putCard(cls: string, html: string, life: number, colour: string, waits = false) {
   style();
   dropCard();
   const el = (card = document.createElement("div"));
   el.className = `msc ${cls}`;
   el.innerHTML = `<div class="band" style="box-shadow:inset 0 -3px 0 ${colour}">${html}</div>`;
   layer().appendChild(el);
+  if (waits) modal(el, () => el.querySelector<HTMLElement>(".band") ?? el, () => { if (card === el) dropCard(); });
   cardTimer = window.setTimeout(() => {
     el.classList.add("out");
     cardTimer = window.setTimeout(() => { if (card === el) dropCard(); }, FADE * 1000);
@@ -266,7 +271,7 @@ interface Bit { x: number; y: number; vx: number; vy: number; a: number; va: num
 
 let ending: { remove(): void } | null = null;
 
-/** The card at the end: confetti for a win, a quiet one for a loss. It goes by itself. */
+/** The card at the end: confetti for a win, a quiet one for a loss. It goes by itself, or on its ×. */
 export function missionEnd(o: MissionEnd): EndHandle {
   style();
   dropCard();
@@ -291,6 +296,7 @@ export function missionEnd(o: MissionEnd): EndHandle {
   if (win) band.insertAdjacentHTML("beforeend", `<div class="flag b"></div>`);
   el.appendChild(band);
   layer().appendChild(el);
+  modal(el, () => band, () => remove());
 
   let dead = false, age = 0, bursts = 0;
   const bits: Bit[] = [];
@@ -355,12 +361,12 @@ export function missionSheet(o: { kind: string; title: string; who: string; stam
   putCard("msc-night msc-sheet", `<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div><div class="by">${esc(o.who)}</div>`
     + `<div class="stamp" style="color:${colour};border-color:${colour}">${esc(o.stamp)}</div>`
     + `<div class="small">${o.sections.map((x) => `<div><h4>${esc(x.head)}</h4>${x.lines.length ? x.lines.map((l) => esc(l)).join("<br>") : "None"}</div>`).join("")}</div>`
-    + (o.foot ? `<div class="stand">${esc(o.foot)}</div>` : ""), o.life ?? 14, colour);
+    + (o.foot ? `<div class="stand">${esc(o.foot)}</div>` : ""), o.life ?? 14, colour, true);
 }
 
 /** The night out's front page (nightout.ts): a newspaper card over the game, written by paper.ts. Items' text is html already escaped. */
 export function missionNight(o: { pub: string; head: string; stand: string; by: string; body: string[]; items: { head: string; text: string }[] }) {
   putCard("msc-night", `<div class="kind">Last orders at ${esc(o.pub)}</div><div class="title">${esc(o.head)}</div><div class="by">${esc(o.by)}</div>`
     + `<div class="stand">${esc(o.stand)}</div>${o.body.map((p) => `<p>${esc(p)}</p>`).join("")}`
-    + `<div class="small">${o.items.map((i) => `<div><h4>${i.head}</h4>${i.text}</div>`).join("")}</div>`, 16, "#8a2a1f");
+    + `<div class="small">${o.items.map((i) => `<div><h4>${i.head}</h4>${i.text}</div>`).join("")}</div>`, 16, "#8a2a1f", true);
 }

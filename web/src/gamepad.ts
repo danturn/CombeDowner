@@ -17,6 +17,7 @@
 //
 // Who decides what: nobody. Like the keyboard, a pad only moves you; what you do goes out as usual.
 import type { Player } from "./player";
+import { modalUp } from "./modal";
 import { B, HOLD_MS, PAD_NAME, keyName, padHooks, type Control, type Where } from "./controls";
 
 export { B, PAD_NAME };
@@ -555,7 +556,8 @@ export class GamepadControls {
       }
       if (pressed(B.options)) {
         // as Esc does: letting go of the mouse is what pauses a game played with it captured
-        if (document.pointerLockElement) document.exitPointerLock(); else tap("Escape");
+        // (a big card up is put away first, as Esc does: modal.ts)
+        if (document.pointerLockElement && !modalUp()) document.exitPointerLock(); else tap("Escape");
       }
       for (let i = 0; i < down.length; i++) if (pressed(i) && i !== B.options) page.button(i, true);
       padTick(now);

@@ -170,6 +170,10 @@ export const PLACES: Record<string, Control[]> = {
     { id: "pubcard.mark", name: "mark it", keys: ["KeyG"], pad: B.square, say: { touch: "" } },
     { id: "pubcard.back", name: "back", keys: ["Escape"], pad: B.circle, say: { touch: "" } },
   ],
+  // a big card over the game (a mission's end, a race's results, a bounty's poster: modal.ts)
+  card: [
+    { id: "card.close", name: "close", keys: ["Escape"], pad: B.options, touch: "×" },
+  ],
   // a tin's combination lock: it has the keyboard to itself, and a pad drives it through the menu
   // code's arrows, Enter and Escape (gamepad.ts); on a touch screen its own buttons say it all
   lock: [

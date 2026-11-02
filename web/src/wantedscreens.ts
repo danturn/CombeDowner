@@ -4,12 +4,14 @@
 // on the job control, which keeps up with what the witnesses have said, and the
 // little card beside the crosshair while you're looking at one of the men dressed like him, ticking
 // off which of his known features that man has. The circle's call-outs are the trail's (callout),
-// and the end is the race results card (racescreens.ts summary).
+// and the end is the race results card (racescreens.ts summary). The splash waits for you to read
+// it, with a × to put it away (Esc too), and the mouse let go while it's up (modal.ts).
 //
 // The pictures are drawn here as little SVGs, so there's nothing to load. Nothing here goes over the
 // network: wanted.ts says what to show from what it already knows.
 import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
+import { modal } from "./modal";
 import { box, fadeAfter, put } from "./trailscreens";
 
 export const RED = "#e04848";
@@ -142,7 +144,7 @@ function posterHtml(o: PosterInfo) {
 let splashEl: HTMLDivElement | null = null;
 const splashT = { t: 0 };
 
-/** The big card as the bounty starts; it goes by itself after secs. Null takes it down now. */
+/** The big card as the bounty starts; it goes by itself after secs, or on its ×. Null takes it down now. */
 export function wantedSplash(o: (PosterInfo & { clock: string; rules: string[]; again: string }) | null, secs = 18) {
   if (!o) { clearTimeout(splashT.t); if (splashEl) splashEl.hidden = true; return; }
   style();
@@ -150,6 +152,8 @@ export function wantedSplash(o: (PosterInfo & { clock: string; rules: string[]; 
   splashEl ??= box("tsc-splash wsc");
   put(splashEl, `<div class="band"><div class="kind">Wanted · a bounty</div><div class="clock">${o.clock}</div>${posterHtml(o)}`
     + `<ul>${o.rules.map((r) => `<li>${r}</li>`).join("")}</ul><div class="again">${o.again}</div></div>`);
+  const el = splashEl;
+  modal(el, () => el.querySelector<HTMLElement>(".band") ?? el, () => wantedSplash(null));
   fadeAfter(splashEl, secs, splashT);
 }
 const splashUp = () => !!splashEl && !splashEl.hidden && !splashEl.classList.contains("out");

@@ -6,10 +6,12 @@
 //
 // All drawn on the page in the HUD's layer and sized by the screen, so they work the same on a
 // phone. Nothing here goes over the network: race.ts says what to show from what it already knows.
-// The only things that take a press are the results card (Continue, Again) and the buttons to
-// switch who you're watching on a touch screen.
+// The only things that take a press are the results card (Continue, Again, and its × to put it
+// away: it lets the mouse go while it's up, modal.ts) and the buttons to switch who you're watching
+// on a touch screen.
 import { ctl, isKey } from "./controls";
 import { missionCardDrop } from "./missionscreens";
+import { modal, modalClicked } from "./modal";
 
 const COLOUR = "#3ec7e8";
 const PODIUM = ["", "#ffd23a", "#dfe5ea", "#e0975a"];
@@ -218,7 +220,7 @@ export interface Summary {
 
 let card: { remove(): void } | null = null;
 
-/** The card at the end of a race: it punches in, and stays till Continue (or about 8 s). again: the
+/** The card at the end of a race: it punches in, and stays till Continue or its × (or about 8 s). again: the
  *  Again button's go, if there is one. */
 export function summary(o: Summary, again?: () => void) {
   style();
@@ -265,8 +267,9 @@ export function summary(o: Summary, again?: () => void) {
     else if (again && (k.code === "Backspace" || isKey(k.code, "use"))) { k.preventDefault(); k.stopImmediatePropagation(); remove(); again(); }
   };
   addEventListener("keydown", onKey, true);
-  e.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", remove);
-  e.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { remove(); again?.(); });
+  e.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", () => { remove(); modalClicked(); });
+  e.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { remove(); again?.(); modalClicked(); });
+  modal(e, () => e.querySelector<HTMLElement>(".rcard") ?? e, remove);
   const timer = window.setTimeout(remove, CARD_SECS * 1000);
 }
 

@@ -5,12 +5,14 @@
 // anything's paid), and the call-out when a search circle draws in. Its end card is the race
 // results card (racescreens.ts summary) in the trail's colour.
 //
-// All drawn on the page in the HUD's layer, sized by the screen, and none of it takes a click.
+// All drawn on the page in the HUD's layer and sized by the screen. Only the splash takes a click:
+// it waits for you to read it, with a × to put it away (Esc too), and the mouse let go (modal.ts).
 // Nothing here goes over the network: trail.ts says what to show from what it already knows. A
 // Wanted poster's screens (wantedscreens.ts) are built from the same boxes and paper, and share the
 // call-out, in the poster's red.
 import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
+import { modal } from "./modal";
 import { style as raceStyle, touchUp } from "./racescreens";
 
 const GOLD = "#e0a526";
@@ -110,7 +112,7 @@ export interface SplashInfo {
 let splashEl: HTMLDivElement | null = null;
 const splashT = { t: 0 };
 
-/** The big card when a trail starts; it goes by itself after secs. Null takes it down now. */
+/** The big card when a trail starts; it goes by itself after secs, or on its ×. Null takes it down now. */
 export function splash(o: SplashInfo | null, secs = 16) {
   if (!o) { clearTimeout(splashT.t); if (splashEl) splashEl.hidden = true; return; }
   missionCardDrop();   // it says all the title card would, and more
@@ -118,6 +120,8 @@ export function splash(o: SplashInfo | null, secs = 16) {
   put(splashEl, `<div class="band"><div class="kind">Treasure hunt</div><div class="head">${esc(o.name)}</div>`
     + `<div class="look">${o.find}</div><div class="small">${o.clock}</div>${paper(o.tag, o.clue)}`
     + `<ul>${o.rules.map((r) => `<li>${r}</li>`).join("")}</ul><div class="again">${againText()}</div></div>`);
+  const el = splashEl;
+  modal(el, () => el.querySelector<HTMLElement>(".band") ?? el, () => splash(null));
   fadeAfter(splashEl, secs, splashT);
 }
 export const splashUp = () => !!splashEl && !splashEl.hidden && !splashEl.classList.contains("out");
