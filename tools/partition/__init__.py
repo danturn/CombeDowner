@@ -35,7 +35,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from area import area, MAPS
 
-MAP = os.environ.get("CD_MAP", "combe-down")      # set before any process pool starts, as macOS's workers start afresh
+
+def _map_named():
+    """The map a run is for: `CD_MAP` (the map build's stage sets it), else `--map <id>` on a
+    tool's command line, put in the environment so a process pool's workers, which macOS starts
+    afresh, see it too; else Bath."""
+    if os.environ.get("CD_MAP"):
+        return os.environ["CD_MAP"]
+    if "--map" in sys.argv[:-1]:
+        os.environ["CD_MAP"] = sys.argv[sys.argv.index("--map") + 1]
+        return os.environ["CD_MAP"]
+    return "combe-down"
+
+
+MAP = _map_named()
 A = area(MAP, wide=True)
 Q = A.squares
 LON0, LAT0 = A.centre
@@ -86,13 +99,19 @@ def _layer(src):
     return _LAYERS[key]
 
 
+# layers a map can be without: parcels are England and Wales's, listed buildings England's, and a
+# new map may have no OpenStreetMap detail or bridges fetched. Without them the plots follow the
+# blocks and the evidence alone, and a bridge's kind goes by what it carries and crosses
+OPTIONAL = ("parcels", "listed", "osm-detail", "osm-bridges")
+
+
 def load_layer(raw, name, bbox):
     """Overture features of one layer that touch bbox, in map metres."""
     path = os.path.join(raw, name + ".geojson")
     if not os.path.exists(path):
         xz = os.path.join(ROOT, "data", MAP, name + ".geojson.xz")
-        if name == "parcels" and not os.path.exists(xz):
-            return []                       # the plots then follow the evidence alone
+        if name in OPTIONAL and not os.path.exists(xz):
+            return []
         path = xz
     feats, envelopes = _layer(path)
     lon0, lat0 = bbox[0] / KX + LON0 - LONLAT_PAD, bbox[1] / KY + LAT0 - LONLAT_PAD

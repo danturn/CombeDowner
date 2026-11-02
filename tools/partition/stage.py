@@ -21,9 +21,13 @@ store. `--only` divides and assembles only what those squares gather from, and w
 metrics, checks and city summary come last (`pipeline.py report`), off the map's own path: a change
 to them redoes only the reports.
 
-The stage runs for a map marked `partition=True` in `tools/area.py` (Combe Down's Bath, so far the
-only one with the Land Registry's parcels and the lidar it needs kept, `measured.py`): for any
-other map `prep_tiles.py` builds straight into the game's folder and this stage doesn't run.
+The stage runs for every map, unless `tools/area.py` marks it `partition=False` or `prep_tiles.py`
+is given `--no-partition` (to compare with the old build): then `prep_tiles.py` builds straight
+into the game's folder and this stage doesn't run. What a map has no data for, the partition does
+without: no registered parcels outside England and Wales (the plots follow the blocks and the
+building fronts), no lidar wall runs outside England (only mapped barriers and the guessed
+boundaries), and no kept lidar (`measured.py`) where none was packed (no guess is dropped for
+nothing standing near it, and nothing is read from the survey's ground under a bridge).
 Nothing here is decided over the network: it is all build-time.
 """
 import collections
@@ -45,7 +49,7 @@ from area import MAPS
 
 
 def partitioned(map_id):
-    return bool(MAPS.get(map_id, {}).get("partition"))
+    return bool(MAPS.get(map_id, {}).get("partition", True))
 
 
 def stage_dir(src_dir):
@@ -149,10 +153,11 @@ def main(argv):
     assert MAP == map_id
     from partition.city import squares
     from partition.measured import PATH as KEPT
-    from partition.write_tile import drop_edge_stubs, string_city_wires
+    from partition.write_tile import drop_edge_stubs, drop_edge_way_stubs, string_city_wires
     if not os.path.exists(KEPT):
-        sys.exit(f"partition: {KEPT} is missing, and without it the map would quietly come out different: "
-                 "pack it from the lidar (tools/mapdata.py pack)")
+        print(f"partition: no kept lidar for {map_id} ({os.path.relpath(KEPT, ROOT)}): guesses stand whether or not "
+              "anything is seen there, and bridges take no ground from the survey (tools/mapdata.py pack adds it)",
+              flush=True)
 
     base, root = prep_dir(src_dir), stage_dir(src_dir)
     once, city, keys = (os.path.join(root, n) for n in ("once", "city", "keys"))
@@ -192,7 +197,8 @@ def main(argv):
     # the map's data or the writer has changed
     tw = time.time()
     wt = os.path.join(HERE, "write_tile.py")
-    writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "string_city_wires"),
+    writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "drop_edge_way_stubs"),
+                                         (wt, "string_city_wires"),
                                          (os.path.join(HERE, "measured.py"), "missed")),
                           cache.file_digest(KEPT), cache.libraries())
     data = data_keys(map_id, src_dir, store, wanted)
@@ -258,12 +264,13 @@ def main(argv):
                   + ", ".join(f"{n} {v}" for n, v in sorted(c.items())), flush=True)
         done = [t for t in todo if t in kept or t in wrote]
         stubs = drop_edge_stubs(out_dir, done)
+        way_stubs = drop_edge_way_stubs(out_dir, done)
         loose_wires = string_city_wires(out_dir, done)
         for t in done:
             open(os.path.join(keys, name(t) + ".tile"), "w").write(wkey(t))
         print(f"partition: {len(done)} squares written in {time.time() - t0:.0f}s, {stubs} stubs at the edges dropped, "
-              f"{loose_wires} wires with no pole left out", flush=True)
-        if missed:
+              f"{way_stubs} paths stopping at the edges dropped, {loose_wires} wires with no pole left out", flush=True)
+        if missed and os.path.exists(KEPT):
             # a dozen or so are the far ends of paths the old build dipped for bridges of its own
             print(f"partition: {missed} points under bridges had no kept lidar ground"
                   + (": pack it again (tools/mapdata.py pack)" if missed > 100 else ""))

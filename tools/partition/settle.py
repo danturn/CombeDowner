@@ -44,7 +44,10 @@ OPEN_FRONT_ZONES = {"bath"}     # the city centre: buildings stand on the paveme
 # zones whose guessed fronts are rolled from the suburb's mix, as main rolls every zone without a mix
 # of its own; the Georgian terraces keep the railings round their areas
 SUBURB_FRONTS = {"victorian", "riverside"}
-FRONT_GUESSES = {"garden_wall", "brick_wall_low", "hedge_low", "railing", "fence", "hedge"}
+# what a front nothing was seen along can be guessed as: every zone's front mix (Cape Town's
+# plastered walls and palisades too), and a fence or hedge
+FRONT_GUESSES = {"garden_wall", "brick_wall_low", "hedge_low", "railing", "fence", "hedge"} | {
+    k for front, _ in GARDEN_STYLE.values() for k, _ in front}
 SETBACK = 1.5           # metres: a house this close to its front line has no front garden
 SHOP_REACH = 4.0        # metres from a shop sign to the building it hangs on
 EVIDENCE_NEAR = 1.5     # metres: a stretch this near a mapped or lidar barrier is backed by it
@@ -70,7 +73,8 @@ LISTED_WALL = "stone_wall"
 MAPPED_GROUP = {"wall": "wall", "retaining_wall": "wall", "hedge": "hedge", "fence": "fence"}
 MAPPED_RANK = ["wall", "hedge", "fence"]
 MAPPED_TIE = 0.3        # metres: mapped barriers this much further than the nearest are as near
-WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
+WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall",
+         "security_wall", "boundary_wall"}
 GUESSED = {"front", "parcel", "inferred"}
 # Georgian Bath: where the houses round a front are tall town houses (the lidar's eaves), or Historic
 # England lists railings all along the streets, a front nothing was seen along is the iron railings

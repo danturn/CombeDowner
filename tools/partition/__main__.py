@@ -1,6 +1,6 @@
 """Build one square of the map as a partition of the ground.
 
-Usage: python3 -I tools/partition/__main__.py <ti> <tj> <out dir> [--raw <dir>] [--terrain <dir>]
+Usage: python3 -I tools/partition/__main__.py <ti> <tj> <out dir> [--map <id>] [--raw <dir>] [--terrain <dir>]
 
 Runs the stages in the design's order (buildings, street graph, corridors, plots, surface), writes
 <out>/partition.json (the faces), <out>/render.svg, <out>/evidence.svg, <out>/current.svg (the
@@ -38,7 +38,8 @@ QUICK = os.environ.get("CD_PARTITION_QUICK") == "1"
 
 
 def load_ridges(raw, ti, tj):
-    """The lidar wall runs the build kept for this square (data/combe-down/measured/<ti>_<tj>.zip)."""
+    """The lidar wall runs the build kept for this square (data/<map>/measured/<ti>_<tj>.zip), or none
+    where the map has no lidar."""
     import lzma
     ridges = []
     mz = os.path.join(ROOT, "data", MAP, "measured", f"{ti}_{tj}.zip")
