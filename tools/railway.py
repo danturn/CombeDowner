@@ -516,6 +516,32 @@ def main():
         if z is None: continue
         ring = list(poly.simplify(0.5).exterior.coords)[:-1]
         platforms.append(dict(n=n, r=[[r1(x), r1(y)] for x, y in ring], z=r1(z + 0.9), **({"no": no} if no else {})))
+    # The canopies over platforms up on a viaduct or a bank: a footprint the data maps mostly over
+    # such a platform can't stand on the ground below as a building (it would be a solid block round
+    # the line), so it's the platform's canopy, at the platform's height, and the squares leave it out.
+    canopies = []
+    raised = [(poly.buffer(CANOPY_REACH), r1(level[n or k] + 0.9)) for k, (n, poly, _) in enumerate(plats) if level.get(n or k) is not None]
+    for f in json.load(open(os.path.join(src, "building.geojson")))["features"]:
+        g = proj(shape(f["geometry"]))
+        if not g.geom_type.endswith("Polygon") or not g.intersects(circle): continue
+        for poly in getattr(g, "geoms", [g]):
+            poly = poly.buffer(0)
+            if poly.is_empty or poly.area < 6: continue
+            over = [(poly.intersection(P).area, z) for P, z in raised if poly.intersects(P)]
+            if not over or sum(a for a, _ in over) < CANOPY_SHARE * poly.area: continue
+            z = max(over)[1]
+            if z - T.elev(poly.centroid.x, poly.centroid.y) < CANOPY_RAISED: continue
+            ring = list(poly.simplify(0.3).exterior.coords)[:-1]
+            # (an outline the line runs through is the station's whole extent, not a roof: left out, not drawn)
+            whole = all_track.intersection(poly).length > CANOPY_TRACK
+            canopies.append((poly, dict(r=[[r1(x), r1(y)] for x, y in ring], z=z, **({"t": 1} if whole else {}))))
+    # one canopy drawn where two outlines map the same one
+    drawn = []
+    for poly, c in sorted(canopies, key=lambda pc: -pc[0].area):
+        if "t" not in c and any(poly.intersection(o).area > 0.8 * poly.area for o in drawn): c["t"] = 1
+        if "t" not in c: drawn.append(poly)
+    canopies = [c for _, c in canopies]
+    if canopies: print(f"railway: {len(drawn)} platform canopies up off the ground, and {len(canopies) - len(drawn)} more outlines over them left out")
     portals = []
     for t in tracks:
         p = t["p"]
@@ -535,7 +561,7 @@ def main():
     out_d = dict(
         tracks=[dict(n=t["n"], p=[[r1(q[0]), r1(q[1]), round(q[2], 2), q[3]] + ([r1(T.elev(q[0], q[1]))] if q[3] == 1 else []) for q in t["p"]])
                 for t in tracks],
-        routes=out_routes, platforms=platforms, portals=portals,
+        routes=out_routes, platforms=platforms, portals=portals, **({"canopies": canopies} if canopies else {}),
     )
     # the journeys on to another map: which lines carry on, the station at each end, and how long
     # the ride takes (the real distance at the local train's speed, plus a stop at each station on

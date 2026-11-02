@@ -745,6 +745,7 @@ if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points o
 #    easing in and out over a few dozen metres, and its own flattening cuts the ground with it.
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
 rail_tracks = json.load(open(rail_file))["tracks"] if os.path.exists(rail_file) else []
+rail_canopies = [shapely.Polygon(c["r"]).buffer(0) for c in (json.load(open(rail_file)).get("canopies") or [])] if os.path.exists(rail_file) else []
 is_sea = lambda p: p.get("subtype") == "ocean" and getattr(A, "sea", None) is not None   # a map by the sea holds it at sea level
 water_polys = [transform(proj, g) for g, p in L("water") if p.get("class") != "sea" and g.geom_type.endswith("Polygon")]
 water_tree = shapely.STRtree(water_polys)
@@ -2217,6 +2218,8 @@ for fi, (g, p) in enumerate(L("building")):
             p = dict(p, _fid=(fi, k), _prior=PRIOR.get((fi, k)))
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
+        # (a platform's canopy up on the viaduct is the railway's to draw: tools/railway.py)
+        if any(poly.intersects(c) and poly.intersection(c).area > 0.5 * max(poly.area, c.area) for c in rail_canopies): continue
         cand.append((poly, p))
 # buildings whose roofs stand at different levels in the lidar (a mansion between lower links
 # and wings, a house with a single-storey extension) are split where the levels change, and big

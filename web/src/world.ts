@@ -19,7 +19,7 @@ import { REPOSE, aroundPortals, boreRoof, buildTunnels, cuttings, mouths, portal
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
-import { aqueductSetPieceAt } from "./landmarks/setpieces";
+import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
@@ -1749,7 +1749,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
-  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail()) : null;
+  const railCentre = map.d.centre as [number, number] | undefined;
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail(),
+    railCentre ? (x, y) => setPieceAt(railCentre, x, y) : undefined) : null;
   if (railway) S.railBank = (x: number, z: number) => railway.bankAt(x, z);
   if (railway) { map.floors.push((x, z, y) => railway.floor(x, z, y)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;

@@ -347,15 +347,20 @@ export const SET_PIECES: SetPiece[] = [
 /** Does a set piece standing in for one of the canal's aqueducts (aqueduct: true) cover data
  *  (x, y), on the map whose centre is [lon0, lat0]? */
 export function aqueductSetPieceAt(centre: [number, number], x: number, y: number): boolean {
+  return SET_PIECES.some((sp) => sp.aqueduct && covers(sp, centre, x, y, [sp.outline]));
+}
+
+/** Does any set piece's outline cover data (x, y), on the map whose centre is [lon0, lat0]? */
+export function setPieceAt(centre: [number, number], x: number, y: number): boolean {
+  return SET_PIECES.some((sp) => covers(sp, centre, x, y, [sp.outline, ...sp.more ?? []]));
+}
+
+function covers(sp: SetPiece, centre: [number, number], x: number, y: number, rings: number[][][]): boolean {
   const [lon0, lat0] = centre, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;
-  for (const sp of SET_PIECES) {
-    if (!sp.aqueduct) continue;
-    const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
-    const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
-    const lx = (x - ox) * ux + (y - oy) * uy, lz = (x - ox) * uy - (y - oy) * ux;
-    if (inRing(sp.outline, lx, lz)) return true;
-  }
-  return false;
+  const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
+  const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+  const lx = (x - ox) * ux + (y - oy) * uy, lz = (x - ox) * uy - (y - oy) * ux;
+  return rings.some((r) => inRing(r, lx, lz));
 }
 
 // ---- the masking --------------------------------------------------------------------------------

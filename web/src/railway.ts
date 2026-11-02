@@ -275,7 +275,9 @@ export class Railway {
 
   /** `need`: the headroom wanted under the line at data (x, y) by what passes under it, and where no pier may stand. */
   /** `ground`: the ground's own detail texture, for the banks to look like the grass round them. */
-  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private need: Need = () => 0, private groundTex: THREE.Texture | null = null) {
+  /** setPiece: whether a set piece stands at data (x, y), drawing its own station there (landmarks/setpieces.ts). */
+  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private need: Need = () => 0, private groundTex: THREE.Texture | null = null,
+    private setPiece: (x: number, y: number) => boolean = () => false) {
     this.geos = trainModels();
     this.doorGeos = this.geos.map((g, i) => doorModels(i, g));
     this.build();
@@ -746,6 +748,39 @@ export class Railway {
       if (over < Infinity) for (let q = 0; q < surf.count; q++) { pos2.push(surf.getX(q), over, surf.getZ(q)); col2.push(...SOFFIT); }
       add(pos2, col2);
       this.plat.push({ n: pl.n, no: pl.no ?? "", r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+    }
+    // the canopies over the platforms up off the ground: a flat roof on a row of posts down its middle
+    const ROOF = C("#5d6466"), ROOF_UNDER = C("#8b9294"), POST = C("#3f4a45");
+    for (const cn of this.d.canopies ?? []) {
+      const ring = cn.r;
+      if (cn.t || ring.length < 3) continue;
+      const mx = ring.reduce((a, q) => a + q[0], 0) / ring.length, my = ring.reduce((a, q) => a + q[1], 0) / ring.length;
+      if (this.setPiece(mx, my)) continue;
+      const under = cn.z - z0 + CANOPY_Y, over = under + 0.35;
+      const pos3: number[] = [], col3: number[] = [];
+      const surf = new THREE.ShapeGeometry(new THREE.Shape(ring.map(([x, y]) => new THREE.Vector2(x, y)))).rotateX(-Math.PI / 2).toNonIndexed().getAttribute("position");
+      for (const [h, c] of [[over, ROOF], [under, ROOF_UNDER]] as const) for (let q = 0; q < surf.count; q++) { pos3.push(surf.getX(q), h, surf.getZ(q)); col3.push(...c); }
+      for (let q = 0; q < ring.length; q++) {
+        const A = ring[q], B = ring[(q + 1) % ring.length];
+        pos3.push(A[0], over, -A[1], B[0], over, -B[1], B[0], under, -B[1], A[0], over, -A[1], B[0], under, -B[1], A[0], under, -A[1]);
+        for (let k = 0; k < 6; k++) col3.push(...ROOF);
+      }
+      // posts every few metres along its long axis, wherever that runs under it
+      let sxx = 0, syy = 0, sxy = 0;
+      for (const [x, y] of ring) { sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); }
+      const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy), ax = Math.cos(ang), ay = Math.sin(ang);
+      const along = ring.map(([x, y]) => (x - mx) * ax + (y - my) * ay), s0 = Math.min(...along) + 2, s1 = Math.max(...along) - 2;
+      const n = Math.max(1, Math.round((s1 - s0) / 8));
+      for (let k = 0; k <= n; k++) {
+        const s = s1 > s0 ? s0 + ((s1 - s0) * k) / n : (s0 + s1) / 2, px = mx + ax * s, py = my + ay * s;
+        if (!inRing(ring, px, py)) continue;
+        const r = 0.1, base = cn.z - z0;
+        for (const [dx0, dy0, dx1, dy1] of [[-r, -r, r, -r], [r, -r, r, r], [r, r, -r, r], [-r, r, -r, -r]]) {
+          pos3.push(px + dx0, base, -(py + dy0), px + dx1, base, -(py + dy1), px + dx1, under, -(py + dy1), px + dx0, base, -(py + dy0), px + dx1, under, -(py + dy1), px + dx0, under, -(py + dy0));
+          for (let q = 0; q < 6; q++) col3.push(...POST);
+        }
+      }
+      add(pos3, col3);
     }
   }
 
