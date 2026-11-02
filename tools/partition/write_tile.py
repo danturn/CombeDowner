@@ -56,7 +56,8 @@ from shapely.geometry.polygon import orient
 from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
-from partition import MAP, ROOT, face_shape, once
+from gardens import NEUTRAL as GARDEN_NEUTRAL, STYLE as GARDEN_STYLE, pick
+from partition import MAP, ROOT, face_shape, once, zone_at
 from partition.openings import EDGE_STUB
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
@@ -75,6 +76,7 @@ BARRIER = {
     "hedge": "hedge", "hedge_low": "hedge_low", "fence": "fence", "wall": "wall",
     "railing": "railing", "retaining_wall": "retaining_wall", "brick_wall": "brick_wall",
     "dry_stone": "dry_stone", "wire_fence": "wire_fence", "guard_rail": "guard_rail",
+    "security_wall": "security_wall", "boundary_wall": "boundary_wall", "palisade": "palisade",
 }
 # The game's own heights, from `web/src/map.ts` BARRIER_HEIGHT. A barrier with no measured height uses
 # these, which is what the game would fall back to anyway - writing them makes the file explicit.
@@ -82,6 +84,7 @@ HEIGHT = {
     "wall": 0.9, "retaining_wall": 0.9, "fence": 1.2, "hedge": 1.3, "garden_wall": 0.9,
     "brick_wall_low": 0.75, "hedge_low": 1.0, "railing": 1.0, "stone_wall": 1.1, "brick_wall": 1.2,
     "dry_stone": 1.2, "wire_fence": 1.2, "guard_rail": 0.75,
+    "security_wall": 2.1, "boundary_wall": 1.9, "palisade": 1.8,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
 TUNNEL_HALF, TUNNEL_LEDGE = 2.6, 1.3    # the water and the towpath's ledge across a canal tunnel (tools/canal.py)
@@ -102,6 +105,7 @@ BARRIER_WIDTH = {
     "wall": 0.45, "retaining_wall": 0.5, "stone_wall": 0.45, "garden_wall": 0.35,
     "brick_wall": 0.3, "brick_wall_low": 0.3, "fence": 0.08, "hedge": 0.9, "hedge_low": 0.7,
     "railing": 0.05, "dry_stone": 0.6, "wire_fence": 0.05, "guard_rail": 0.1,
+    "security_wall": 0.25, "boundary_wall": 0.22, "palisade": 0.06,
 }
 # Metres of clearance kept between copied decoration and a barrier. A tree or a bin standing in a wall
 # is the same kind of wrong as one standing in a road, and the plank says both are placed later.
@@ -6040,24 +6044,23 @@ def _open_boundary(br, i, at, gap, ground):
     return out
 
 
-BACK_HEDGE_SHARE = 0.1   # the share of back yards hedged rather than fenced, as `gardens.py` rolls it
-
-
-def reroll_back_styles(part, parents, owners):
-    """The boundaries between gardens, and between a garden and open land, are a wooden fence or, for a
-    tenth of the blocks, a hedge, one or the other all round: every garden backing on to another round
-    a block, as `gardens.py` has it. Rolled on the block (pass 2's parent blocks, the same in every
-    square), so a block crossing a square's edge is the same either side of it. A fence or hedge a map
-    or the lidar shows stays what it is."""
+def reroll_back_styles(part, parents):
+    """The boundaries between gardens, and between a garden and open land, are one of the zone's
+    back boundaries all round a block (`gardens.STYLE`, as the old build rolls them: a wooden fence
+    or now and then a hedge in England, a masonry wall in Cape Town): every garden backing on to
+    another round a block. Rolled on the block (pass 2's parent blocks, the same in every square),
+    so a block crossing a square's edge is the same either side of it. A fence or hedge a map or
+    the lidar shows stays what it is."""
     tree = STRtree(parents) if parents else None
     keys = [tuple(round(c, 1) for c in g.bounds) for g in parents]
+    mixes = [GARDEN_STYLE.get(zone_at(*g.representative_point().coords[0]), GARDEN_NEUTRAL)[1] for g in parents]
 
     def block_of(pt):
         if tree is None:
             return None
         for k in np.atleast_1d(tree.query(pt)):
-            if parents[int(k)].contains(pt):
-                return keys[int(k)]
+            if parents[int(k)].covers(pt):
+                return int(k)
         return None
     for e in part["edges"]:
         sides = e.get("sides") or []
@@ -6065,12 +6068,12 @@ def reroll_back_styles(part, parents, owners):
         if not plots or any(s[0] == "corridor" for s in sides) or e["kind"] not in ("fence", "hedge") \
                 or e.get("source") not in ("parcel", "inferred"):
             continue
-        at = owners[plots[0]].representative_point() if plots[0] in owners else \
-            LineString([q[:2] for q in e["xy"]]).interpolate(0.5, normalized=True)
-        key = block_of(at)
-        if key is None:
+        # found by the boundary's own middle: a house stands in a hole of its block, so the house's
+        # own point is in no block at all
+        k = block_of(LineString([q[:2] for q in e["xy"]]).interpolate(0.5, normalized=True))
+        if k is None:
             continue
-        e["kind"] = "hedge" if random.Random(str(key)).random() < BACK_HEDGE_SHARE else "fence"
+        e["kind"] = pick(mixes[k], random.Random(str(keys[k])).random())
 
 
 def drop_walls_on_paving(part, T, base_br):
@@ -6082,7 +6085,8 @@ def drop_walls_on_paving(part, T, base_br):
         i, j = int((x - T["x0"]) / T["dx"]), int((y - T["y0"]) / T["dy"])
         return 0 <= i < T["nx"] and 0 <= j < T["ny"] and T["k"][j * T["nx"] + i] == "5"
     for e in part["edges"]:
-        if e["kind"] not in ("garden_wall", "fence", "hedge", "wall") or e.get("source") not in ("front", "parcel", "inferred"):
+        if e["kind"] not in ("garden_wall", "fence", "hedge", "wall", "security_wall", "boundary_wall", "palisade") \
+                or e.get("source") not in ("front", "parcel", "inferred"):
             continue
         xy = e["xy"]
         if not all(paved(*q[:2]) for q in xy[::max(1, len(xy) // 8)] + [xy[-1]]):
@@ -6105,7 +6109,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     size = Q.dx * Q.cells
     sq = (Q.x0 + ti * size, Q.y0 + tj * size, Q.x0 + (ti + 1) * size, Q.y0 + (tj + 1) * size)
     owners = owners_near(once_dir, sq)
-    reroll_back_styles(part, once.read_parents(once_dir, (sq[0] - 200, sq[1] - 200, sq[2] + 200, sq[3] + 200)), owners)
+    reroll_back_styles(part, once.read_parents(once_dir, (sq[0] - 200, sq[1] - 200, sq[2] + 200, sq[3] + 200)))
     rows = once.read_corridors(once_dir)
     near = box(*sq).buffer(FRONT_REACH)
     row_at = street_rows([e for e, *_ in rows if not e["path"] and LineString(e["line"]).intersects(near)])
