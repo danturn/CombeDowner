@@ -6045,12 +6045,12 @@ def _open_boundary(br, i, at, gap, ground):
 
 
 def reroll_back_styles(part, parents):
-    """The boundaries between gardens, and between a garden and open land, are one of the zone's
-    back boundaries all round a block (`gardens.STYLE`, as the old build rolls them: a wooden fence
-    or now and then a hedge in England, a masonry wall in Cape Town): every garden backing on to
-    another round a block. Rolled on the block (pass 2's parent blocks, the same in every square),
-    so a block crossing a square's edge is the same either side of it. A fence or hedge a map or
-    the lidar shows stays what it is."""
+    """The boundaries between gardens are one of the zone's back boundaries all round a block
+    (`gardens.STYLE`, as the old build rolls them: a wooden fence or now and then a hedge in
+    England, a masonry wall in Cape Town): every garden backing on to another round a block. Rolled
+    on the block (pass 2's parent blocks, the same in every square), so a block crossing a square's
+    edge is the same either side of it. A garden's edge against open land keeps the hedge the plots
+    gave it, and a fence or hedge a map or the lidar shows stays what it is."""
     tree = STRtree(parents) if parents else None
     keys = [tuple(round(c, 1) for c in g.bounds) for g in parents]
     mixes = [GARDEN_STYLE.get(zone_at(*g.representative_point().coords[0]), GARDEN_NEUTRAL)[1] for g in parents]
@@ -6065,7 +6065,7 @@ def reroll_back_styles(part, parents):
     for e in part["edges"]:
         sides = e.get("sides") or []
         plots = [s[1] for s in sides if s[0] == "plot" and len(s) > 1]
-        if not plots or any(s[0] == "corridor" for s in sides) or e["kind"] not in ("fence", "hedge") \
+        if not plots or any(s[0] != "plot" for s in sides) or e["kind"] not in ("fence", "hedge") \
                 or e.get("source") not in ("parcel", "inferred"):
             continue
         # found by the boundary's own middle: a house stands in a hole of its block, so the house's
