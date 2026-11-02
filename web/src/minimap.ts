@@ -705,6 +705,14 @@ export class Minimap {
     fieldEdge(g, map, P, BASE);
   }
 
+  /** The whole-map picture and its bounds in data metres, for maps with a wider map round them. */
+  picture(): { canvas: HTMLCanvasElement; x0: number; y0: number; x1: number; y1: number } | null {
+    const w = this.wide;
+    if (!w) return null;
+    const span = w.canvas.width * w.mpp;
+    return { canvas: w.canvas, x0: w.x0, y0: w.y1 - span, x1: w.x0 + span, y1: w.y1 };
+  }
+
   /** The wider map, on a canvas of its own about 6 m to the pixel, with the force field round it. */
   private drawWide(map: GameMap) {
     const W = map.wide!, canvas = document.createElement("canvas");

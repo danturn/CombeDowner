@@ -1,6 +1,8 @@
 // Saves a game map's own whole-map picture for the telemetry dashboard's "Where people go" map,
-// which has a tab for each map with a picture. Run it once per map with a wider map round it
-// (combe-down, bradford-on-avon, pembury).
+// which has a tab for each map with a picture. Only a manual fallback now: the game itself sends
+// the picture to the telemetry server when the server has none for that map or an older release's
+// (web/src/telemetry.ts, offerPicture). Use this for a server without its database, or to put a
+// picture into the telemetry repo's priv/static by hand.
 //
 //   node tools/telemetry_map.mjs [--url <game url>] [--out <folder>] [--map combe-down]
 //

@@ -483,7 +483,9 @@ phone, tablet or computer and the model of its graphics chip, the map, the game'
 race, ball or the mines start and stop, and at the end how smoothly the game ran (frame rate and how
 much it drew each frame). Every half minute it notes which 50 m square of the map you are in, without your name. Your
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
-many are in it. It never sends chat, voice or your address. Add `?telemetry=0` to the address to
+many are in it. Once per version of each map, a computer also sends the game's own picture of the whole map
+(nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
+never sends chat, voice or your address. Add `?telemetry=0` to the address to
 turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
 nothing at all.
 

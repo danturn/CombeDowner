@@ -298,6 +298,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
     game.relock = lock;
     Telemetry.play(toMap);
+    Telemetry.offerPicture(toMap, map.d.release, () => game?.mapPicture() ?? null);
     (window as any).__travelStage = "built";
     armTravel(game, code);
     game.player.sensitivity = 0.0022 * sensitivity;
@@ -330,6 +331,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   game = new Game(map, world, camera, net, name, code, known);
   game.relock = lock;
   Telemetry.play(id);
+  Telemetry.offerPicture(id, map.d.release, () => game?.mapPicture() ?? null);
   Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
   armTravel(game, code);

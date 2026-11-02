@@ -1380,6 +1380,9 @@ export class Game {
     return { x: p.x, y: -p.z, doing, view: view.fogFar };
   }
 
+  /** For telemetry.ts: the big map's whole-map picture, once it is drawn. */
+  mapPicture() { return this.minimap.picture(); }
+
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
