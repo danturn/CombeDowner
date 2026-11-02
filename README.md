@@ -640,10 +640,11 @@ then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 
 ## Play your own street
 
-Any place can be a map. `python3 -I tools/new_area.py add "Your Town" --radius 1500` finds it and
-puts it on the menu, and `python3 -I tools/new_area.py build your-town` downloads the open map data
-and builds it, which takes a quarter of an hour or so on a laptop. Then `cd web && npm run dev` and
-open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
+Any place can be a map. `python3 -I tools/new_area.py find "Your Town"` finds it,
+`python3 -I tools/new_area.py add "Your Town" --lat N --lon N --radius 1500` adds it as a test map
+(`--in-menu` puts it on the menu too), and `python3 -I tools/new_area.py build your-town` downloads
+the open map data and builds it, which takes a quarter of an hour or so on a laptop; `verify` and
+`shoot` check it. Then `cd web && npm run dev` and open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
 elsewhere they are guessed from the open map data's heights and floor counts. Wherever the data
 has them, buildings take OpenStreetMap's floor counts, roof shapes, wall materials and colours, a
 house with no energy certificate is built of what its neighbours' certificates say, and mapped

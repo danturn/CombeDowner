@@ -8,7 +8,7 @@ terrain. Some data is optional. The map still builds without it, just with more 
 |---|---|---|---|
 | Overture Maps | footprints, roads, paths, walls, water, woods, rock, heath, sand and marsh, place names | yes | worldwide |
 | Mapzen terrain tiles | ground height | yes (downloaded by the build) | worldwide |
-| Environment Agency lidar | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England |
+| Environment Agency lidar (England), Welsh Government lidar (Wales, DataMapWales; no last returns) | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England and Wales |
 | Meta / WRI canopy height | tree positions, hedges, shrubs | recommended | worldwide |
 | Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional | England and Wales |
 | OpenStreetMap | shops, pubs, cafés and offices, on the right building | recommended | worldwide |
@@ -17,9 +17,11 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
-`tools/new_area.py` does the registering and the build in order for an ordinary area, and the
-`new-area` skill (`.claude/skills/new-area/`) walks through it; `docs/own-area.md` says what a script
-cannot do for you.
+**To make a new map, follow the `new-area` skill (`.claude/skills/new-area/SKILL.md`)**: it runs
+`tools/new_area.py` (`check`, `find`, `add`, `build`, `verify`, `shoot`), which does everything
+below that an ordinary area needs, in order. This file is the background, and the manual steps
+the skill leaves to a person (energy certificates, parcels, canals, landmarks, publishing);
+`docs/own-area.md` says what a script cannot do for you.
 
 All raw data goes in `data/raw/<map id>/`, which git ignores. For a map with a wide area, a copy of
 what the build reads from it, small enough to keep, then goes in the repository, in `data/<map id>/`
