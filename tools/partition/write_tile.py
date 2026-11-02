@@ -2859,10 +2859,21 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
     Each is a piece narrower than 2r that runs along the other side on most of its edge, so a narrow
     pavement along its kerb stays, and the corner each leaves is rounded, as a kerb is laid."""
     others = list(others)
+    # a surface left as it was by the first round isn't worked out again in the second
+    kept = {}
+
+    def once(fn, A):
+        hit = kept.get((fn, id(A)))
+        if hit is None or hit[0] is not A:
+            hit = kept[(fn, id(A))] = (A, fn(A))
+        return hit[1]
 
     def pieces(A):
         thin = A.difference(A.buffer(-r).buffer(r + 0.01))
         return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most]
+
+    def edge_of(A):
+        return A.buffer(0.05)
 
     for _ in range(2):
         moved = False
@@ -2872,14 +2883,18 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
         for i, A in enumerate(others):
             if A.is_empty:
                 continue
-            give = [g for g in pieces(A) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+            give = [g for g in once(pieces, A) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
             if give:
                 g = unary_union(give)
                 others[i], road, moved = A.difference(g), road.union(g), True
-        edges = [A.buffer(0.05) for A in others]
+        edges = [once(edge_of, A) for A in others]
+        etree = STRtree(edges)
         given = [[] for _ in others]
         for g in pieces(road):
-            shared = [g.exterior.intersection(e).length for e in edges]
+            # an edge whose box misses the sliver shares none of it: its 0 is filled in unmeasured
+            shared = [0.0] * len(edges)
+            for k in sorted(int(k) for k in etree.query(g.exterior)):
+                shared[k] = g.exterior.intersection(edges[k]).length
             if shared and sum(shared) > 0.6 * g.exterior.length:
                 given[shared.index(max(shared))].append(g)
         for i, gs in enumerate(given):
