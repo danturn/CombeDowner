@@ -198,15 +198,20 @@ for t, g in layers:
         GT[j0:j1 + 1, i0:i1 + 1][win] = t
 
 # ---- buildings ----------------------------------------------------------------------
-cand = []
+cand, _kept = [], []
 for g, p in L("building"):
     for poly in polys(g):
         poly = poly.simplify(0.4)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
-        parts = wings(poly) if poly.area > 400 and p.get("class") not in ("church", "chapel") else [poly]
-        for w in parts:
-            if w.geom_type == "Polygon" and w.area >= 6:
-                cand.append((w, dict(p, _whole=poly.area, _whole_geom=poly) if len(parts) > 1 else p))
+        _kept.append((poly, p, poly.area > 400 and p.get("class") not in ("church", "chapel")))
+from pmap import pmap
+_big = [poly for poly, _, split in _kept if split]
+_winged = iter(pmap(wings, _big, chunksize=max(1, len(_big) // 256)))
+for poly, p, split in _kept:
+    parts = next(_winged) if split else [poly]
+    for w in parts:
+        if w.geom_type == "Polygon" and w.area >= 6:
+            cand.append((w, dict(p, _whole=poly.area, _whole_geom=poly) if len(parts) > 1 else p))
 print(f"buildings: {len(cand)} footprints")
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone)
 KINDS = ["detached", "semi", "terrace", "outbuilding", "shop", "institution", "flats", "church"]
@@ -430,7 +435,7 @@ out = dict(
     cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,
 )
 if any(limits): out["ms"] = limits
-json.dump(out, open(out_path, "w"), separators=(",", ":"))
+open(out_path, "w").write(json.dumps(out, separators=(",", ":")))
 TOPS.save()
 print(f"{len(blds)} buildings ({sum(1 for b in info if b['roof'])} pitched), {len(roads)} road pieces, {len(ponds)} water pieces, "
       f"{len(streams)} streams, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")
