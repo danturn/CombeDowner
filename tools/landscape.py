@@ -90,7 +90,7 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), 
 
     The door goes on the wall nearest the street that has open ground outside it: where that is a
     terrace's party wall, or a wall with an outhouse or a neighbour built against it, the next
-    nearest free wall takes it. A house with no free wall at all keeps its door on the nearest.
+    nearest free wall takes it. A house with no stretch of free wall at all has no door.
 
     mapped: the outlines as mapped, before a neighbour's was cut from them. The door, its colour and the
     bay window come from where they stood on those (see _as_mapped): each stays there wherever its wall
@@ -178,9 +178,12 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None, walls=(), 
             f = (k + 0.5) / n
         else:
             # no bay of any wall opens on to free ground (a house hemmed in by its neighbours and their
-            # extensions): the door goes where a stretch of wall does, the window there left out
+            # extensions): the door goes where a stretch of wall does, the window there left out; and
+            # where no stretch does either, the house has no door of its own to show, rather than one
+            # opening into the building next door
             spots = [(w, t / w[1]) for w in walls_round for t in np.arange(0.5, w[1] - 0.45, 0.25)]
-            w, f = next(((w, f) for w, f in spots if not built_on(w, f)), (walls_round[0], 0.5))
+            w, f = next(((w, f) for w, f in spots if not built_on(w, f)), (None, None))
+            if w is None: continue
             n = w[6]
             k = min(n - 1, int(f * n))
         a, L, ux, uy, nx, ny, n = w
