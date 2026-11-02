@@ -5610,6 +5610,9 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     def face_union(*classes):
         g = unary_union([face_shape(f).buffer(0) for f in part["faces"] if f["cls"] in classes and len(f["xy"]) > 2]
                         + ([paving] if paving is not None and "pavement" in classes else []) or [Polygon()])
+        if g.geom_type == "GeometryCollection":
+            # (a face buffered down to a line or a point leaves a collection, which has no edge)
+            g = unary_union([x for x in g.geoms if x.geom_type in ("Polygon", "MultiPolygon")] or [Polygon()])
         shapely.prepare(g)
         return g
 
