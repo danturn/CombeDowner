@@ -5989,14 +5989,14 @@ def _crossing_in(br, stretch, node, half):
         return best[1]
     # a gap already cut for the path: the ends of the boundary either side of it
     ends = []
-    for b in br:
+    for i, b in enumerate(br):
         if len(b["p"]) < 2:
             continue
         for e, n in ((b["p"][0], b["p"][1]), (b["p"][-1], b["p"][-2])):
             pt = Point(e[:2])
             if pt.distance(stretch) <= half + 0.6:
-                ends.append((pt, math.atan2(e[1] - n[1], e[0] - n[0])))
-    for (pa, aa), (pb, ab) in itertools.combinations(ends, 2):
+                ends.append((pt, math.atan2(e[1] - n[1], e[0] - n[0]), i))
+    for (pa, aa, _), (pb, ab, _) in itertools.combinations(ends, 2):
         mid = Point((pa.x + pb.x) / 2, (pa.y + pb.y) / 2)
         gap = pa.distance(pb)
         across = LineString([pa, pb])
@@ -6011,16 +6011,18 @@ def _crossing_in(br, stretch, node, half):
     if best is not None:
         return best[1]
     # the boundary on one side only (the other was never mapped, or was too short to stand): the gate
-    # hangs from its end, across the way
-    for pa, aa in ends:
+    # hangs across the way from its end, centred on the way, and where that end stands in the way
+    # itself the boundary is cut back to make room for it
+    for pa, aa, i in ends:
         ux, uy = math.cos(aa), math.sin(aa)
         reach = LineString([pa, (pa.x + ux * 2 * half, pa.y + uy * 2 * half)])
         if not reach.intersects(stretch):
             continue
-        mid = Point(pa.x + ux * half, pa.y + uy * half)
+        on = pa.distance(reach.intersection(stretch).representative_point())
+        mid = Point(pa.x + ux * on, pa.y + uy * on)
         d = mid.distance(node)
         if best is None or d < best[0]:
-            best = (d, ((mid.x, mid.y), aa, 2 * half, None))
+            best = (d, ((mid.x, mid.y), aa, 2 * half, i if on < half else None))
     return best[1] if best is not None else None
 
 
@@ -6029,6 +6031,11 @@ def _open_boundary(br, i, at, gap, ground):
     b = br[i]
     ln = LineString([q[:2] for q in b["p"]])
     s = ln.project(Point(at))
+    # (a gap round a point out past an end takes off only what of the run it reaches)
+    if s >= ln.length - 1e-6:
+        s = ln.length + Point(ln.coords[-1]).distance(Point(at))
+    elif s <= 1e-6:
+        s = -Point(ln.coords[0]).distance(Point(at))
     # (substring counts a negative distance from the far end, so a cut near an end is clamped)
     keep = [substring(ln, 0, s - gap / 2)] if s - gap / 2 > 0.1 else []
     keep += [substring(ln, s + gap / 2, ln.length)] if s + gap / 2 < ln.length - 0.1 else []

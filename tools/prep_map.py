@@ -1607,8 +1607,14 @@ if True:
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
             # the basins off it (a marina): canal.ts draws their water too, at their pound's level
             cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
-    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
+    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH, SHORE_DEPTH = 2.5, 1.5, 30.0, 0.4
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
+
+    _shore = []
+    def sea_shore():
+        """Within a grid step of the coast (not of a square's edge, where the sea runs on)."""
+        if not _shore: _shore.append(whole_sea.boundary.intersection(BM.buffer(QUAY_REACH + dx)).buffer(dx * 1.01))
+        return _shore[0]
     beaches = unary_union([q for g, p in L("land") if p.get("class") in ("beach", "sand") for q in whole_polys(g)] or [Point(1e9, 1e9)])
     # A river or a lake steps down only at a weir or a dam (OpenStreetMap's waterway=weir or dam, in
     # Overture's infrastructure): its water is cut there, so the water above and below lie at their
@@ -1714,6 +1720,13 @@ if True:
         whole = transform(proj, g)
         if not whole.intersects(BM): continue
         if not whole.is_valid: whole = shapely.make_valid(whole)
+        # a harbour's dock or basin mapped over the sea is the sea, which already stands there at sea
+        # level: only what reaches beyond it is its own, and that opens onto the sea at sea level
+        # rather than at the seabed under its mapped edge
+        joins_sea = getattr(A, "sea", None) is not None and not is_sea(p) and whole.intersects(whole_sea)
+        if joins_sea:
+            whole = whole.difference(whole_sea)
+            if whole.area < 1: continue
         # (a tank, a pool or a reservoir stands in its own walls: the game builds them, where its water
         # stands above the ground round it)
         tank = p.get("subtype") in ("human_made", "reservoir") or p.get("class") == "wastewater"
@@ -1733,6 +1746,7 @@ if True:
                     # (the lidar across a weir reads the water below it, not the level above)
                     bank = [(x, y) for x, y in rings[0] if not (weir_near is not None and shapely.intersects_xy(weir_near, x, y))] or rings[0]
                     wz = A.sea if at_sea else min(elev(x, y) for x, y in bank) + 0.1
+                    if joins_sea: wz = max(wz, A.sea)
                     entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz), **({"c": "canal"} if is_canal else {}),
                                  **({"k": "t"} if tank else {}))
                     water_all.append(entry)
@@ -1752,7 +1766,13 @@ if True:
                         elif at_sea:
                             # the harbour's quays stand straight up out of deep water, a metre and a
                             # half above it; a beach is left to run down into the sea
-                            grid[win][wet] = np.minimum(grid[win][wet], wz - QUAY_DEPTH)
+                            # (but only a little below it along the shore itself, so the ground the
+                            # game draws between the last wet point and the first dry one meets the
+                            # water at its edge rather than dipping under it)
+                            shore = shapely.intersects_xy(sea_shore(), GX[win], GY[win])
+                            blk = grid[win]
+                            blk[wet] = np.minimum(blk[wet], np.where(shore[wet], wz - SHORE_DEPTH, wz - QUAY_DEPTH))
+                            grid[win] = blk
                             qwin, quay = cover_xy(poly.buffer(QUAY_REACH, join_style=2), edge=True)
                             quay &= ~shapely.intersects_xy(whole_sea, GX[qwin], GY[qwin]) & ~shapely.contains_xy(beaches, GX[qwin], GY[qwin])
                             grid[qwin][quay] = np.maximum(grid[qwin][quay], wz + QUAY_HEIGHT)
