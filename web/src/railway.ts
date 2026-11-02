@@ -708,9 +708,7 @@ export class Railway {
                 // facet into the pier; and down past the ground the data records, as a wall's sides go
                 const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1 - WALL_SKIRT, hi = 0.2;
                 if (plan.bottom(sp) - M[2] - (plan.ground(sp) - M[2] - 1) < 0.3) continue;
-                // (stopping where another track's deck beside it begins, not standing on into its arches)
-                const [e0, e1] = [1, -1].map((w) => { const o = beside(ti, M, nx, ny, w); return o === null ? 2.4 : Math.max(0.3, Math.min(2.4, o - 2.4)); });
-                quad(P(M, -e1, lo), P(M, e0, lo), P(M, e0, hi), P(M, -e1, hi), STONE);
+                quad(P(M, -2.4, lo), P(M, 2.4, lo), P(M, 2.4, hi), P(M, -2.4, hi), STONE);
               }
             }
           }
