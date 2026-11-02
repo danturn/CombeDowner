@@ -321,8 +321,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   his brake, says nothing for a moment, then "I'm afraid that's a fail"). He watches your signals at
   every turn (← and →, or the arrow buttons), your speed against each street's real limit (the one on
   the sign by the speedo), whether you stop at the
-  end of a road, the kerb, which side of the road you're on and whether you look round (the mouse or
-  the stick) before you move off and before you turn. Hit anything and that's that. The same minor
+  end of a road, the kerb and which side of the road you're on, and reminds you about your mirrors
+  if you don't look round (the mouse or the stick), though he doesn't mark you down for it. Hit anything and that's that. The same minor
   fault four times over is a serious one. He'll ask you to pull up on the left on the way round and
   back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
   the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the

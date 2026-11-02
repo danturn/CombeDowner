@@ -6,8 +6,8 @@
 // and marks you as a real examiner would: up to fifteen minor faults is still a pass, and one serious
 // or dangerous fault is a fail on the spot. He's watching your signals at every turn, your speed
 // against the limit, whether you stop at the end of a road before pulling out, the kerb, your
-// position on the road, whether you look round before you move off and before you turn (that's the
-// mirrors: look about with the mouse or the stick), and, if you hit anything at all, that's that.
+// position on the road (he'll remind you about your mirrors if you don't look about with the mouse
+// or the stick, but doesn't mark it), and, if you hit anything at all, that's that.
 // The limit is the street's own, as the map has it (tools/maxspeed.py), or a guess by its kind where it has none.
 // Somewhere along the way he slaps the dashboard and shouts "Stop!", and he asks you to pull up on the
 // left, once on the way round and once back at the centre, and sees how close to the kerb you got.
@@ -564,7 +564,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
   let passedBy: string[] = [], tried: string[] = [];
 
   // the host's own
-  let phaseT = 0, stoppedT = 0, movingWasStopped = true, lastMirror = -1e9, yankT = -1e9, speedT = 0, speedCool = 0, sideT = 0, sideCool = 0, offT = 0, offSaid = false;
+  let phaseT = 0, stoppedT = 0, movingWasStopped = true, lastMirror = -1e9, mirNag = -1e9, yankT = -1e9, speedT = 0, speedCool = 0, sideT = 0, sideCool = 0, offT = 0, offSaid = false;
   let leftOnT = 0, din = 0, tellings = 0, idleT = 0, sendT = 0, said = new Set<string>();
   let stepSig = new Map<number, { ok: boolean; wrong: boolean; minV: number; judged: boolean; mirrored: boolean }>();
   let voiceCool = 0, quietT = 0, heardDriver = false, saidQuiet = false, driverShouting = false;
@@ -578,6 +578,8 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
   const say = (d: Record<string, unknown>) => { const m = { ...d, s: offer.seed }; if (w.isHost) job.event!(m, w.selfId); else w.send("qe", m); };
   const tell = (d: Record<string, unknown>) => { const m = { ...d, s: offer.seed }; w.send("qe", m); job.event!(m, w.selfId); };
   const speakLine = (x: string) => tell({ k: "say", x });
+  // turning the view round with the mouse at every junction is a chore, so a missed look is a reminder, not a fault
+  const nagMirrors = (now: number) => { if (now - mirNag > 30000) { mirNag = now; speakLine(Math.random() < 0.5 ? "Mirrors." : "Don't forget your mirrors."); } };
   const fault = (x: string, g: number) => {
     if (phase !== 2) return;
     // the same minor fault again and again is a serious one, as on a real test
@@ -694,7 +696,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
     if (stoppedT > 1) movingWasStopped = true;
     if (movingWasStopped && speed > 1.5) {
       movingWasStopped = false;
-      if (now - lastMirror > 7000) fault("Mirrors: moved off without looking round", 1);
+      if (now - lastMirror > 7000) nagMirrors(now);
     }
     const pt = ptAt(rt, prog), lim = pt.ms || limitOf(pt.c), mph = speed * MPH;
     // speed
@@ -713,7 +715,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
         if (car.signal === -st.dir && st.dir) j.wrong = true;
       }
       if (prog > st.s - 16 && prog < st.s + 2) j.minV = Math.min(j.minV, speed);
-      if (st.dir && !j.mirrored && prog > st.s - 15) { j.mirrored = true; if (now - lastMirror > 9000) fault(`Mirrors: turned ${st.dir > 0 ? "left" : "right"} without a look round`, 1); }
+      if (st.dir && !j.mirrored && prog > st.s - 15) { j.mirrored = true; if (now - lastMirror > 9000) nagMirrors(now); }
       if (prog > st.s + 5) {
         j.judged = true;
         const into = st.street ? ` into ${st.street}` : "";
