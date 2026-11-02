@@ -153,7 +153,7 @@ def main(argv):
     assert MAP == map_id
     from partition.city import squares
     from partition.measured import PATH as KEPT
-    from partition.write_tile import drop_edge_stubs, string_city_wires
+    from partition.write_tile import drop_edge_stubs, drop_edge_way_stubs, string_city_wires
     if not os.path.exists(KEPT):
         print(f"partition: no kept lidar for {map_id} ({os.path.relpath(KEPT, ROOT)}): guesses stand whether or not "
               "anything is seen there, and bridges take no ground from the survey (tools/mapdata.py pack adds it)",
@@ -197,7 +197,8 @@ def main(argv):
     # the map's data or the writer has changed
     tw = time.time()
     wt = os.path.join(HERE, "write_tile.py")
-    writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "string_city_wires"),
+    writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "drop_edge_way_stubs"),
+                                         (wt, "string_city_wires"),
                                          (os.path.join(HERE, "measured.py"), "missed")),
                           cache.file_digest(KEPT), cache.libraries())
     data = data_keys(map_id, src_dir, store, wanted)
@@ -263,11 +264,12 @@ def main(argv):
                   + ", ".join(f"{n} {v}" for n, v in sorted(c.items())), flush=True)
         done = [t for t in todo if t in kept or t in wrote]
         stubs = drop_edge_stubs(out_dir, done)
+        way_stubs = drop_edge_way_stubs(out_dir, done)
         loose_wires = string_city_wires(out_dir, done)
         for t in done:
             open(os.path.join(keys, name(t) + ".tile"), "w").write(wkey(t))
         print(f"partition: {len(done)} squares written in {time.time() - t0:.0f}s, {stubs} stubs at the edges dropped, "
-              f"{loose_wires} wires with no pole left out", flush=True)
+              f"{way_stubs} paths stopping at the edges dropped, {loose_wires} wires with no pole left out", flush=True)
         if missed and os.path.exists(KEPT):
             # a dozen or so are the far ends of paths the old build dipped for bridges of its own
             print(f"partition: {missed} points under bridges had no kept lidar ground"

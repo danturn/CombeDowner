@@ -4800,6 +4800,57 @@ def drop_edge_stubs(out_dir, squares):
     return gone
 
 
+WAY_STUB = 10.0        # metres: a path this short stopping at the square's edge, met by nothing over it, goes
+WAY_MEET = 1.5         # metres from a way over the edge that carries a path on
+
+
+def drop_edge_way_stubs(out_dir, squares):
+    """Once every square is written: a short piece of path stopping at the square's edge goes when
+    the next square has no way there for it to carry on into. Each square leaves out the stretches of
+    a footway lying along its own streets' pavements, and the edge cuts the footway into pieces too
+    short to be judged, so a few metres of it were left hanging at the edge. Returns how many went."""
+    def path(t):
+        return os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
+    lines = {}
+
+    def lines_of(t):
+        if t not in lines:
+            tile = json.load(open(path(t))) if os.path.exists(path(t)) else None
+            lines[t] = None if tile is None else [LineString([q[:2] for q in r["p"]]) for r in tile.get("rd") or []
+                                                  if len(r["p"]) > 1]
+        return lines[t]
+    gone = 0
+    for ti, tj in squares:
+        if not os.path.exists(path((ti, tj))):
+            continue
+        tile = json.load(open(path((ti, tj))))
+        x0, y0, x1, y1 = tile["b"]
+
+        def over(e):
+            """The squares across the edge an end lies on, built ones only."""
+            di = [1] * (abs(e[0] - x1) < 0.5) + [-1] * (abs(e[0] - x0) < 0.5) or [0]
+            dj = [1] * (abs(e[1] - y1) < 0.5) + [-1] * (abs(e[1] - y0) < 0.5) or [0]
+            return [(ti + a, tj + b) for a in di for b in dj if (a or b) and lines_of((ti + a, tj + b)) is not None]
+
+        def stub(r):
+            if r["c"] not in GAME_PATHS or len(r["p"]) < 2 or any(len(q) > 3 and q[3] for q in r["p"]):
+                return False
+            if sum(math.dist(a[:2], b[:2]) for a, b in zip(r["p"], r["p"][1:])) >= WAY_STUB:
+                return False
+            for e in (r["p"][0], r["p"][-1]):
+                nbs = over(e)
+                if nbs and not any(l.distance(Point(e[:2])) < WAY_MEET for t in nbs for l in lines_of(t)):
+                    return True
+            return False
+        rd = tile.get("rd") or []
+        keep = [r for r in rd if not stub(r)]
+        if len(keep) < len(rd):
+            gone += len(rd) - len(keep)
+            tile["rd"] = keep
+            json.dump(tile, open(path((ti, tj)), "w"), separators=(",", ":"))
+    return gone
+
+
 def string_city_wires(out_dir, squares):
     """Once every square is written: each wire hung from where its poles stand in the finished map,
     whichever square holds them (a span crosses a square's edge), and a wire whose pole is nowhere
