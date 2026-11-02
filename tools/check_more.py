@@ -147,10 +147,16 @@ def _unmask(m, pieces):
     if not near: return
     hide = lambda x, y: any(p.contains(Point(x, y)) for p in near)
     mid = lambda ring: (sum(q[0] for q in ring) / len(ring), sum(q[1] for q in ring) / len(ring))
+    gone = [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if hide(*mid(b["r"][0]))]
     m["bl"] = [b for b in m.get("bl") or [] if not hide(*mid(b["r"][0]))]
     m["wp"] = [w for w in m.get("wp") or [] if w.get("c") == "canal" or not all(hide(q[0], q[1]) for q in w["r"][0])]
+    # (a hidden building's door, bay window and sign go with it: setpieces.ts GONE_REACH)
+    kept = [LineString(b["r"][0] + b["r"][0][:1]) for b in m["bl"]]
+    def on_gone(x, y):
+        g = min((r.distance(Point(x, y)) for r in gone), default=9)
+        return g < 0.6 and not any(r.distance(Point(x, y)) < g for r in kept)
     for k in ("tr", "sb", "dr", "by", "sh"):
-        if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1])]
+        if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1]) and not (k in ("dr", "by", "sh") and on_gone(+q[0], +q[1]))]
     m["sp"] = [list(p.exterior.coords) for p in near for p in getattr(p, "geoms", [p])]
 
 
