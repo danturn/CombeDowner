@@ -8,7 +8,7 @@ terrain. Some data is optional. The map still builds without it, just with more 
 |---|---|---|---|
 | Overture Maps | footprints, roads, paths, walls, water, woods, place names | yes | worldwide |
 | Mapzen terrain tiles | ground height | yes (downloaded by the build) | worldwide |
-| Environment Agency lidar | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England |
+| Environment Agency lidar (England), Welsh Government lidar (Wales, DataMapWales; no last returns) | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England and Wales |
 | Meta / WRI canopy height | tree positions, hedges, shrubs | recommended | worldwide |
 | Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional | England and Wales |
 | OpenStreetMap | shops, pubs, cafés and offices, on the right building | recommended | worldwide |
