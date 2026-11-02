@@ -212,6 +212,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
     all of that.
+  - A running line at a thing's own level (not high over it on a viaduct, nor down in a cutting)
+    is laid before all of it: buildings are cut back off it, and nothing else stands on it or
+    inside a tunnel's mouth under its crown (`clear_of_line` and the corridors in `prep_map.py`;
+    `tools/trackclear.ts`, rule 21, checks it).
 
   The canal breaks this order on purpose: it cuts through the land. Its banks, coping, towpath,
   verges and retaining walls are designed once for the whole canal (`tools/canal.py`) and built

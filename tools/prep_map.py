@@ -274,7 +274,7 @@ def flag_ranges(p, key):
 
 
 from profiles import APPROACH, carry_profile, ease_grades, ease_kinks
-from railway import open_runs
+from railway import open_runs, portal_faces, BORE_LIT
 
 
 def level_structures(run, z, bridges, tunnels):
@@ -2210,6 +2210,42 @@ if _census or _cores:
           f"{sum(1 for pr in _got if pr['flats'])} blocks of flats, {sum(len(pr['near']) for pr in _got) // 2} pairs of houses sharing a wall; "
           f"conservation areas: {len(_cores)}, {sum(1 for pr in _got if pr['core'])} buildings in an old core "
           f"({sum(1 for pr in _got if pr['walls'])} with its walls from the data)")
+# A running line out in the open at a footprint's own level (not up on a viaduct high enough over
+# it, nor down in a cutting under it) is where the line is: no building stands across it. A footprint the line
+# only clips is cut back to clear a train; one it runs through (a station's roof over its tracks,
+# or an outline the data has astray) isn't built.
+LINE_CLEAR = 2.6      # metres either side of a track's middle kept clear of buildings
+LINE_OVER = 5.5       # metres up a line on a bridge must be for a building to fit under it (a unit in a viaduct's arch)
+_line_segs = []
+for t in rail_tracks:
+    p_ = t["p"]
+    for k_ in range(len(p_) - 1):
+        a_, b_ = p_[k_], p_[k_ + 1]
+        if a_[3] == 2 and b_[3] == 2: continue
+        if a_[3] == 2: a_ = [(a_[i] + b_[i]) / 2 for i in range(3)]
+        if b_[3] == 2: b_ = [(a_[i] + b_[i]) / 2 for i in range(3)]
+        _line_segs.append((a_, b_))
+_line_tree = shapely.STRtree([shapely.LineString([a_[:2], b_[:2]]) for a_, b_ in _line_segs]) if _line_segs else None
+
+
+def clear_of_line(poly):
+    if _line_tree is None: return poly
+    near = [_line_segs[int(j)] for j in _line_tree.query(poly.buffer(LINE_CLEAR))]
+    level = []
+    for a_, b_ in near:
+        m_ = shapely.LineString([a_[:2], b_[:2]]).intersection(poly.buffer(LINE_CLEAR))
+        if m_.is_empty: continue
+        c_ = m_.centroid
+        f_ = shapely.LineString([a_[:2], b_[:2]]).project(c_, normalized=True)
+        z_ = a_[2] + (b_[2] - a_[2]) * f_
+        if -4.0 < z_ - gelev0(c_.x, c_.y) < LINE_OVER: level.append(shapely.LineString([a_[:2], b_[:2]]).buffer(LINE_CLEAR, cap_style=2))
+    if not level: return poly
+    rest = poly.difference(unary_union(level))
+    parts = sorted(getattr(rest, "geoms", [rest]), key=lambda g: -g.area)
+    if not parts or parts[0].geom_type != "Polygon" or parts[0].area < max(12.0, 0.5 * poly.area): return None
+    return parts[0].simplify(0.25)
+
+
 for fi, (g, p) in enumerate(L("building")):
     for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
@@ -2220,6 +2256,8 @@ for fi, (g, p) in enumerate(L("building")):
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         # (a platform's canopy up on the viaduct is the railway's to draw: tools/railway.py)
         if any(poly.intersects(c) and poly.intersection(c).area > 0.5 * max(poly.area, c.area) for c in rail_canopies): continue
+        poly = clear_of_line(poly)
+        if poly is None: continue
         cand.append((poly, p))
 # buildings whose roofs stand at different levels in the lidar (a mansion between lower links
 # and wings, a house with a single-storey extension) are split where the levels change, and big
@@ -4013,15 +4051,52 @@ for a, b, lv in canal_open:
                                       (b[0] - nx_ * reach(b, 1), b[1] - ny_ * reach(b, 1)), (a[0] - nx_ * reach(a, 1), a[1] - ny_ * reach(a, 1))]).buffer(0.5))
 for w in out["wp"]:
     if len(w["r"][0]) >= 3: corridors.append(shapely.Polygon(w["r"][0], [tuple(map(tuple, h)) for h in w["r"][1:]]).buffer(0.8))
+# nor inside a railway tunnel's mouth, under its crown, where the ground's grid slopes down into the
+# cutting in front of the face (the game draws the bore there): only the hill over it is ground
+bored_low = []
+for fc in portal_faces(json.load(open(rail_file)).get("portals") or []) if os.path.exists(rail_file) else []:
+    if not (X0 - 30 <= fc["x"] <= X1 + 30 and Y0 - 30 <= fc["y"] <= Y1 + 30): continue
+    nx_, ny_ = -fc["uy"], fc["ux"]
+    low = []
+    for u in np.arange(0.0, BORE_LIT + 1.01, 1.0):
+        for v in np.arange(fc["v0"], fc["v1"] + 0.01, 1.0):
+            x_, y_ = fc["x"] + fc["ux"] * u + nx_ * v, fc["y"] + fc["uy"] * u + ny_ * v
+            if gelev(x_, y_) < fc["z"] + fc["crown"]: low.append(shapely.Point(x_, y_).buffer(0.75, quad_segs=2))
+    if low: bored_low.append(unary_union(low))
+corridors.extend(bored_low)
+if bored_low:
+    bl_ = unary_union(bored_low)
+    kept_rd, n_cut_rd = [], 0
+    for r in out["rd"]:
+        if r["c"] not in PATHS or len(r["p"]) < 2 or not bl_.intersects(shapely.LineString([q[:2] for q in r["p"]])):
+            kept_rd.append(r); continue
+        n_cut_rd += 1
+        rest = shapely.LineString([q[:2] for q in r["p"]]).difference(bl_)
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type == "LineString" and piece.length >= 1.0:
+                kept_rd.append(dict(r, p=[[r1(x_), r1(y_), r1(gelev(x_, y_))] for x_, y_ in piece.coords]))
+    out["rd"] = kept_rd
+    if n_cut_rd: print(f"railway: {n_cut_rd} paths cut back out of tunnel mouths")
 if corridors:
     ctree = shapely.STRtree(corridors)
     def clear_at(x, y):
         pt = shapely.Point(x, y)
         return any(corridors[int(k)].contains(pt) for k in ctree.query(pt))
+    def on_line(x, y, z):
+        if _line_tree is None: return False
+        pt = shapely.Point(x, y)
+        for j in _line_tree.query(pt.buffer(RAIL_HALF)):
+            a_, b_ = _line_segs[int(j)]
+            ln = shapely.LineString([a_[:2], b_[:2]])
+            if ln.distance(pt) >= RAIL_HALF: continue
+            f_ = ln.project(pt, normalized=True)
+            if -4.0 < a_[2] + (b_[2] - a_[2]) * f_ - z < 2.5: return True
+        return False
     before = (len(out["tr"]), len(out["sb"]), len(out["fx"]), len(out["br"]))
     out["tr"] = [q for q in out["tr"] if not clear_at(q[0], q[1])]
     out["sb"] = [q for q in out["sb"] if not clear_at(q[0], q[1])]
-    out["fx"] = [q for q in out["fx"] if q[0] == "car" or not clear_at(q[1], q[2])]     # (parked cars stand in the road on purpose)
+    # (parked cars stand in the road on purpose, but not on the railway where it crosses at its level)
+    out["fx"] = [q for q in out["fx"] if not (on_line(q[1], q[2], q[3]) if q[0] == "car" else clear_at(q[1], q[2]))]
     # walls: the pieces outside the corridors, and off the pavements, are kept, cut at their edge
     # (a wall at the back of the pavement stands just clear of it)
     for r in out["rd"]:
@@ -4044,18 +4119,22 @@ if corridors:
             cut_walls.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
     _trim_ends(cut_walls)      # (and those cut back stop where they meet another, as above)
     _undouble(cut_walls)       # (and no guessed fence ends up on another, or poking past one)
-    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end) is a
-    # post in the way, not a wall: it goes. Last, as taking out a doubled fence can leave one alone,
-    # and again until none is left, as a stub can be all that held up another.
+    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end, nor one of
+    # its own kind running on from it at one) is a post in the way, not a wall: it goes. Last, as
+    # taking out a doubled fence can leave one alone, and again until none is left, as a stub can be
+    # all that held up another.
     gate_ends = [shapely.Point(g[0], g[1]) for g in out.get("gt") or []] + [shapely.Point(g[2], g[3]) for g in out.get("gt") or []]
     n_cut = len(cut_walls)
     while True:
         ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in cut_walls] + gate_ends
         etree = shapely.STRtree(ends_) if ends_ else None
-        def _joined(k, pt):
-            return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in etree.query(pt.buffer(0.3)))
-        kept_ = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5
-                 or _joined(k, shapely.Point(b["p"][0][:2])) or _joined(k, shapely.Point(b["p"][-1][:2]))]
+        def _joined(k, pt, same=False):
+            return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 and (not same or int(j) < len(cut_walls) and cut_walls[int(j)]["c"] == cut_walls[k]["c"])
+                       for j in etree.query(pt.buffer(0.3)))
+        def _held(k, b):
+            a_, z_ = shapely.Point(b["p"][0][:2]), shapely.Point(b["p"][-1][:2])
+            return (_joined(k, a_) and _joined(k, z_)) or _joined(k, a_, True) or _joined(k, z_, True)
+        kept_ = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5 or _held(k, b)]
         if len(kept_) == len(cut_walls): break
         cut_walls = kept_
     out["br"] = cut_walls
