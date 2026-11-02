@@ -419,6 +419,14 @@ function cutFaces(sf: NonNullable<MapData["sf"]>, inside: (x: number, y: number)
 
 const FOOTPATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track"]);
 
+const GONE_REACH = 0.6;     // metres out from a wall that its door, bay window or sign stands
+
+function wallDist(x: number, y: number, a: number[], b: number[]): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L2)) : 0;
+  return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t);
+}
+
 export function inRing(ring: number[][], x: number, y: number): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -472,12 +480,14 @@ export function maskSetPieces(d: MapData) {
 
     // buildings whose middle is inside (noted, for the set piece to use their names), ponds wholly inside
     const hidden: PlaceCtx["hidden"] = [];
+    const gone: number[][][] = [];
     d.bl = d.bl.filter((b) => {
       const r = b.r[0];
       let x = 0, y = 0;
       for (const q of r) { x += q[0]; y += q[1]; }
       x /= r.length; y /= r.length;
       if (!hide(x, y)) return true;
+      gone.push(r);
       const [lx, lz] = local(x, y), q = r.map((p) => local(p[0], p[1])), qx = q.map((p) => p[0]), qz = q.map((p) => p[1]);
       hidden.push({ name: b.n, x: lx, z: lz, box: [Math.min(...qx), Math.max(...qx), Math.min(...qz), Math.max(...qz)], ground: b.g, top: b.g + b.h });
       return false;
@@ -487,10 +497,17 @@ export function maskSetPieces(d: MapData) {
     // the small things
     d.tr = d.tr.filter((q) => !hide(q[0], q[1]));
     if (d.sb) d.sb = d.sb.filter((q) => !hide(q[0], q[1]));
-    if (d.dr) d.dr = d.dr.filter((q) => !hide(q[0], q[1]));
-    if (d.by) d.by = d.by.filter((q) => !hide(+q[0], +q[1]));
+    // a hidden building's door, bay window and sign go with it, though they stand just outside the
+    // outline on its front: left, they hung in the air in front of the set piece
+    const ringDist = (r: number[][], x: number, y: number) => Math.min(...r.map((a, i) => wallDist(x, y, a, r[(i + 1) % r.length])));
+    const onGone = (x: number, y: number) => {
+      const g = Math.min(Infinity, ...gone.map((r) => ringDist(r, x, y)));
+      return g < GONE_REACH && !d.bl.some((b) => ringDist(b.r[0], x, y) < g);
+    };
+    if (d.dr) d.dr = d.dr.filter((q) => !hide(q[0], q[1]) && !onGone(q[0], q[1]));
+    if (d.by) d.by = d.by.filter((q) => !hide(+q[0], +q[1]) && !onGone(+q[0], +q[1]));
     if (d.sh) d.sh = d.sh.filter((q) => {
-      if (!hide(+q[0], +q[1])) return true;
+      if (!hide(+q[0], +q[1]) && !onGone(+q[0], +q[1])) return true;
       if (sp.pub && q[6] === "pub") { q[7] = 1; return true; }      // the pub's still here, under its own sign
       return false;
     });

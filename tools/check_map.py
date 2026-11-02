@@ -720,7 +720,8 @@ SEAM = 0.25    # map.ts roofSeams: the widest slit the game closes between two e
 def roof_seams(b):
     """map.ts roofSeams, in step with it: the strips the game draws to close a lidar roof's open
     edges, and how much of each open edge they leave open. Returns (strips, open edges), each open
-    edge [x0, y0, x1, y1, metres left open, whether it is a wall top]."""
+    edge [x0, y0, x1, y1, metres left open, whether it is a wall top]. Each strip's last item says
+    whether the game draws it (a slit under 5 cm it leaves shut as it is)."""
     m = b["rm"]
     v, t = m["v"], m["t"]
     n = len(v) // 3
@@ -757,8 +758,8 @@ def roof_seams(b):
             if w0 > SEAM or w1 > SEAM: continue
             cover[i].append((lo, hi))
             cover[j].append(tuple(sorted(((lo - sc) / (sd - sc) * M, (hi - sc) / (sd - sc) * M))))
-            if max(abs(g0), abs(g1), w0, w1) < 0.05: continue
-            strips.append((e0, e1, f1, f0))
+            # (the game leaves a slit this fine as it is, shut: it is still roof, not bare footprint)
+            strips.append((e0, e1, f1, f0, max(abs(g0), abs(g1), w0, w1) >= 0.05))
     opened = []
     for (ax, ay, az, bx, by, bz, wall), cv in zip(edges, cover):
         L = math.hypot(bx - ax, by - ay)
@@ -804,7 +805,7 @@ def roofs_whole(m, tag, note):
         past = U.difference(P.buffer(0.3)).area
         if past > 1: note("11 roof reaching past its walls", past, at, f"{past:.1f} m2")
         strips, opened = roof_seams(b)
-        pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q])).buffer(0.01) for q in strips]
+        pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q[:4]])).buffer(0.01) for q in strips]
         try: shut = shapely.union_all(pieces)
         except shapely.errors.GEOSException: shut = shapely.union_all(pieces, grid_size=0.01)
         bare = P.difference(shut).area

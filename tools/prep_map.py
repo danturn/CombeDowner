@@ -2526,10 +2526,13 @@ def give_way(cand, info, fresh):
     mapped again inside its terrace, two guesses at one semi) would stand walls and roofs inside each
     other. Where one lies within the other, the bigger has it cut out, as a courtyard or a notch, so
     each part stands on its own ground at its own height; where they only overlap, the overlap goes
-    from the smaller. An outline whose lidar roof is kept isn't cut (the roof is fitted to it), nor
-    is a pitched roof given a hole it would span, nor is an outline cut in two. A part standing inside
+    from the smaller (from the bigger where that would leave the smaller under half, and from the
+    smaller anyway where neither can otherwise). An outline whose lidar roof is kept isn't cut (the
+    roof is fitted to it), nor is a pitched roof given a hole it would span, nor is an outline cut in
+    two. A part standing inside
     another gets a courtyard of its own only where the lidar or the mapped heights put it higher or
-    lower than the rest; at the same height it is one roof, and the part is left out of the whole.
+    lower than the rest; at the same height it is one roof, and the part is left out of the whole,
+    as it is from one whose lidar roof is kept unless it stands clear above that roof (a tower).
     Returns how many were cut, and which parts were left out."""
     def known(n):
         return fresh[n] or cand[n][1].get("height") or cand[n][1].get("num_floors")
@@ -2549,14 +2552,24 @@ def give_way(cand, info, fresh):
             over = a.intersection(b).area
             if over < 0.5: continue
             big, small = (i, j) if a.area >= b.area else (j, i)
-            # (where they only overlap, the smaller gives way unless its lidar roof is kept, then the bigger)
-            order = [big] if over >= 0.8 * polys[small].area else [small, big]
-            for k in order:
-                rest = polys[k].difference(polys[small if k == big else big])
-                if is_faced(k) or rest.geom_type != "Polygon" or rest.area < 0.5 * polys[k].area: continue
+            within = over >= 0.8 * polys[small].area
+            # a part inside a building that can't make room for it (its lidar roof is kept, or a hole
+            # would cut it in two or open its pitched roof), at that building's height, is under its
+            # roof: its own roof stood in the same place, the two showing through each other. One
+            # standing clear above that roof is a tower, and stays.
+            under = within and not (known(small) and level(small)[0] > level(big)[1] + 1.0)
+            if under and is_faced(big):
+                merged.add(small)
+                continue
+            # (where they only overlap, the smaller gives way unless its lidar roof is kept, then the
+            # bigger; and where the bigger can't, the smaller does even down to a fifth of it)
+            order = [(big, 0.5)] if within else [(small, 0.5), (big, 0.5), (small, 0.2)]
+            for k, least in order:
+                o = small if k == big else big
+                rest = polys[k].difference(polys[o])
+                if is_faced(k) or rest.geom_type != "Polygon" or rest.area < least * polys[k].area: continue
                 if len(rest.interiors) > len(polys[k].interiors):
                     if info[k]["roof"]: continue
-                    o = small if k == big else big
                     if not (known(o) and known(k) and max(abs(x - y) for x, y in zip(level(o), level(k))) >= 1.0):
                         merged.add(o)
                         break
@@ -2566,6 +2579,8 @@ def give_way(cand, info, fresh):
                 cand[k] = (rest, cand[k][1])
                 cut += 1
                 break
+            else:
+                if under: merged.add(small)
     return cut, merged
 
 

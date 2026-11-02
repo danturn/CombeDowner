@@ -165,8 +165,10 @@ SEAM_PARTNER = 0.15    # metres: another face's point this near is the same seam
 
 def for_game(kept, lift):
     """A kept roof as the game reads it (map.ts RoofMesh), lifted by lift metres from the survey's
-    frame into the map's: the outline with its added points, and the roof."""
-    r1, r2_ = (lambda v: round(v, 1)), (lambda v: round(v, 2))
+    frame into the map's: the outline with its added points, and the roof. To the centimetre, as the
+    faces were worked out: rounded to the decimetre, a face's points on a long seam or a wall moved
+    apart from their partners and opened the roof there, or folded a thin face over the next."""
+    r1 = r2_ = lambda v: round(v, 2)
     v = [a for x, y, z in kept["v"] for a in (r1(x), r1(y), r2_(z + lift))]
     w = [r2_(a + (lift if k % 4 >= 2 else 0)) if k % 4 >= 2 else r1(a) for q in kept["w"] for k, a in enumerate(q)]
     z = [[r2_(a + lift) for pair in ring for a in pair] for ring in kept["z"]]
@@ -185,4 +187,15 @@ def for_game(kept, lift):
         d = np.hypot(xy[:, 0] - xy[i, 0], xy[:, 1] - xy[i, 1])
         if any(target.get(int(j)) != k for j in np.nonzero((d > 0) & (d <= SEAM_PARTNER))[0]): continue
         v[3 * i], v[3 * i + 1] = float(corners[k, 0]), float(corners[k, 1])
-    return rings, dict(v=v, t=[i for tri in kept["t"] for i in tri], w=w, z=z)
+    return rings, dict(v=v, t=[i for tri in kept["t"] if not _sliver(v, tri) for i in tri], w=w, z=z)
+
+
+SLIVER = 0.015      # metres: a face narrower than this, seen from above, is no face
+
+
+def _sliver(v, tri):
+    """Whether a roof triangle is too thin to see from above: one the survey's rounding left between
+    two points a centimetre apart. Drawn, its long edges stood open beside the faces either side."""
+    (ax, ay), (bx, by), (cx, cy) = ((v[3 * i], v[3 * i + 1]) for i in tri)
+    longest = max(math.hypot(bx - ax, by - ay), math.hypot(cx - bx, cy - by), math.hypot(ax - cx, ay - cy))
+    return longest == 0 or abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / longest < SLIVER
