@@ -221,6 +221,9 @@ for g, p in L("building"):
             if w.geom_type == "Polygon" and w.area >= 6:
                 cand.append((w, dict(p, _whole=poly.area, _whole_geom=poly) if len(parts) > 1 else p))
 print(f"buildings: {len(cand)} footprints")
+if os.path.exists(f"{src_dir}/heights.geojson"):
+    from buildings import surveyed_heights
+    surveyed_heights([c[0] for c in cand], [c[1] for c in cand], [(x[1]["height"], transform(proj, x[0]).buffer(0)) for x in L("heights")])
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone)
 KINDS = ["detached", "semi", "terrace", "outbuilding", "shop", "institution", "flats", "church"]
 WALLS = {"stone": 0, "brick": 1, "buff": 2, "render": 3, "paint": 4}

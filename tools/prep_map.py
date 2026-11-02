@@ -2408,6 +2408,12 @@ try:
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
     print("no lidar data:", e)
+# the heights layer: each roof's highest point as a survey measured it (tools/cct.py), where the lidar didn't
+if os.path.exists(f"{src_dir}/heights.geojson"):
+    from buildings import surveyed_heights
+    _todo = [i for i in range(len(cand)) if not (measured and measured[i])]
+    print(f"heights: {surveyed_heights([cand[i][0] for i in _todo], [cand[i][1] for i in _todo], [(p['height'], g) for p, g in _outlines('heights')])}"
+          f" of {len(cand)} buildings from the surveyed roofs")
 # wall materials from energy certificates, where the data is present (see tools/epc.py)
 certs = None
 try:
