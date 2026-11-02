@@ -2837,9 +2837,11 @@ def road_cracks(road, others, width=CRACK, most=3.0):
 
 KERB_POINT = 0.5      # metres: a point of paving or road narrower than twice this is the other's
 KERB_POINT_AREA = 8.0  # m2: a larger piece is a strip of its own (an island between two carriageways)
+KERB_SLIT = 0.25       # metres: half the width of paving anyone could stand on
+KERB_ISLAND = 0.9      # of its edge: an island narrower than 2 * KERB_POINT with the road all round it is the road's
 
 
-def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
+def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA, walls=None):
     """`road` and the paving round it (`others`: the pavements, a square's paving, the paths) with the
     points and slivers where they meet given to the other side: the tip of a pavement's corner at a
     slanting junction, a wedge of paving fanning into the road where two streets' strips cross, a
@@ -2848,9 +2850,12 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
     pavement along its kerb stays, and the corner each leaves is rounded, as a kerb is laid."""
     others = list(others)
 
-    def pieces(A):
+    def pieces(A, edge=None):
+        # (however long, a strip with the road all round it is too narrow to stand on: two
+        # carriageways mapped side by side leave one tapering to a needle at both ends)
         thin = A.difference(A.buffer(-r).buffer(r + 0.01))
-        return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most]
+        return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area and (
+            g.area < most or edge is not None and g.exterior.intersection(edge).length > KERB_ISLAND * g.exterior.length)]
 
     for _ in range(2):
         moved = False
@@ -2860,7 +2865,7 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
         for i, A in enumerate(others):
             if A.is_empty:
                 continue
-            give = [g for g in pieces(A) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+            give = [g for g in pieces(A, edge) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
             if give:
                 g = unary_union(give)
                 others[i], road, moved = A.difference(g), road.union(g), True
@@ -2876,6 +2881,20 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
                 road, others[i], moved = road.difference(g), others[i].union(g), True
         if not moved:
             break
+    if walls is not None and not walls.is_empty and not road.is_empty:
+        # a strip too narrow to walk on between the road and a wall is the road's, which runs on to the wall
+        edge, wall = road.buffer(0.05), walls.buffer(0.05)
+        both = edge.union(wall)
+        for i, A in enumerate(others):
+            if A.is_empty:
+                continue
+            thin = A.difference(A.buffer(-KERB_SLIT).buffer(KERB_SLIT + 0.01))
+            give = [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and g.area > 1e-4
+                    and g.exterior.intersection(both).length > KERB_ISLAND * g.exterior.length
+                    and g.exterior.intersection(edge).length > 0.3 * g.exterior.length]
+            if give:
+                g = unary_union(give)
+                others[i], road = A.difference(g), road.union(g)
     return road, others
 
 
@@ -3643,7 +3662,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         bare = _minus(bare, unary_union(kept or [Polygon()]))
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
         pave, plaza = _minus(pave, bare), _minus(plaza, bare)
-    road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path))
+    road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path), walls=unary_union(buildings) if buildings else None)
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
