@@ -4778,26 +4778,30 @@ def drop_edge_stubs(out_dir, squares):
     """Once every square is written: a short run kept because it touched the square's edge, and so
     should carry on in the next square, goes if the next square has nothing there. Each square's
     garden boundaries are worked out on their own, and near the edge two neighbours can disagree.
-    Returns how many went."""
-    walls = {}
+    Every square is judged against its neighbours as they were written, so the squares are worked
+    on side by side. Returns how many went."""
+    from pmap import pmap
+    path = lambda t: os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
+    squares = [tuple(t) for t in squares]
+    around = lambda t: [(t[0] + di, t[1] + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1) if di or dj]
+    near = sorted({n for t in squares for n in [t] + around(t)})
 
-    def ends_of(ti, tj):
-        if (ti, tj) not in walls:
-            path = os.path.join(out_dir, f"{ti}_{tj}.json")
-            tile = json.load(open(path)) if os.path.exists(path) else {}
-            walls[ti, tj] = ([LineString([q[:2] for q in b["p"]]) for b in tile.get("br") or [] if len(b["p"]) > 1]
-                             + [Point(g[k], g[k + 1]) for g in tile.get("gt") or [] for k in (0, 2)])
-        return walls[ti, tj]
+    def rows_of(t):
+        tile = json.load(open(path(t))) if os.path.exists(path(t)) else {}
+        return [b["p"] for b in tile.get("br") or [] if len(b["p"]) > 1], list(tile.get("gt") or [])
+    rows = dict(zip(near, pmap(rows_of, near)))
 
-    gone = 0
-    for ti, tj in squares:
-        path = os.path.join(out_dir, f"{ti}_{tj}.json")
-        if not os.path.exists(path):
-            continue
-        tile = json.load(open(path))
+    def ends_of(t):
+        runs, gates = rows[t]
+        return [LineString([q[:2] for q in p]) for p in runs] + [Point(g[k], g[k + 1]) for g in gates for k in (0, 2)]
+
+    def one(t):
+        if not os.path.exists(path(t)):
+            return 0
+        tile = json.load(open(path(t)))
         edge = box(*tile["b"]).exterior
-        mine = ends_of(ti, tj)
-        nexts = [w for di in (-1, 0, 1) for dj in (-1, 0, 1) if di or dj for w in ends_of(ti + di, tj + dj)]
+        mine = ends_of(t)
+        nexts = [w for n in around(t) for w in ends_of(n)]
         tree = STRtree(nexts) if nexts else None
 
         def loose(n, b):
@@ -4813,10 +4817,10 @@ def drop_edge_stubs(out_dir, squares):
         runs = [b for b in tile.get("br") or [] if len(b["p"]) > 1]
         keep = [b for n, b in enumerate(runs) if tree is None or not loose(n, b)]
         if len(keep) < len(runs):
-            gone += len(runs) - len(keep)
             tile["br"] = keep + [b for b in tile.get("br") or [] if len(b["p"]) <= 1]
-            json.dump(tile, open(path, "w"), separators=(",", ":"))
-    return gone
+            _write_json(path(t), tile)
+        return len(runs) - len(keep)
+    return sum(pmap(one, squares))
 
 
 WAY_STUB = 10.0        # metres: a path this short stopping at the square's edge, met by nothing over it, goes
@@ -4866,7 +4870,7 @@ def drop_edge_way_stubs(out_dir, squares):
         if len(keep) < len(rd):
             gone += len(rd) - len(keep)
             tile["rd"] = keep
-            json.dump(tile, open(path((ti, tj)), "w"), separators=(",", ":"))
+            _write_json(path((ti, tj)), tile)
     return gone
 
 
@@ -4875,44 +4879,67 @@ def string_city_wires(out_dir, squares):
     whichever square holds them (a span crosses a square's edge), and a wire whose pole is nowhere
     goes. Run over the written squares and their neighbours, whose wires can hang from them. Returns
     how many wires went."""
+    from pmap import pmap
+
     def path(t):
         return os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
-    tiles = {}
-
-    def tile_of(t):
-        if t not in tiles:
-            tiles[t] = json.load(open(path(t))) if os.path.exists(path(t)) else None
-        return tiles[t]
     near = lambda t: [(t[0] + di, t[1] + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
     todo = sorted({n for t in squares for n in near(t)})
-    gone = 0
+    every = sorted({n for u in todo for n in near(u)})
+
+    # only the poles and wires are read, so the squares are read side by side and only those whose
+    # poles or wires change are written again
+    def read(t):
+        if not os.path.exists(path(t)):
+            return None
+        tile = json.load(open(path(t)))
+        return tile.get("fx") or [], tile.get("wr")
+    got = dict(zip(every, pmap(read, every)))
+    fx, wr, changed = {}, {}, set()
     # a pole near a square's edge can be put up by both squares' builds, a little apart where each
     # saw the street: it stands once, in the first square, and the other's wires hang from that one
     first = {}
-    for t in sorted({n for u in todo for n in near(u)}):
-        tile = tile_of(t)
-        if tile is None:
+    for t in every:
+        if got[t] is None:
             continue
         keep = []
-        for r in tile.get("fx") or []:
+        for r in got[t][0]:
             if r[0] == "pole" and len(r) > 5:
                 if first.setdefault(r[5], t) != t:
                     continue
             keep.append(r)
-        if len(keep) < len(tile.get("fx") or []):
-            tile["fx"] = keep
-            json.dump(tile, open(path(t), "w"), separators=(",", ":"))
+        fx[t] = keep
+        if len(keep) < len(got[t][0]):
+            changed.add(t)
+    gone = 0
     for t in todo:
-        tile = tile_of(t)
-        if tile is None or not tile.get("wr"):
+        if got[t] is None or not got[t][1]:
             continue
-        poles = [r for n in near(t) if tile_of(n) is not None for r in tile_of(n).get("fx") or [] if r[0] == "pole"]
-        wr = string_wires(poles, tile["wr"])
-        if wr != tile["wr"]:
-            gone += len(tile["wr"]) - len(wr)
-            tile["wr"] = wr
-            json.dump(tile, open(path(t), "w"), separators=(",", ":"))
+        poles = [r for n in near(t) if got[n] is not None for r in fx[n] if r[0] == "pole"]
+        new = string_wires(poles, got[t][1])
+        if new != got[t][1]:
+            gone += len(got[t][1]) - len(new)
+            wr[t] = new
+            changed.add(t)
+
+    def write(t):
+        tile = json.load(open(path(t)))
+        if len(fx[t]) < len(tile.get("fx") or []):
+            tile["fx"] = fx[t]
+        if t in wr:
+            tile["wr"] = wr[t]
+        _write_json(path(t), tile)
+    pmap(write, sorted(changed))
     return gone
+
+
+def _write_json(path, d):
+    """A square's file written whole before it takes the old one's place, as other processes may be
+    reading it at the same time; `json.dumps` gives the same text as `json.dump`, four times faster."""
+    tmp = f"{path}.tmp{os.getpid()}"
+    with open(tmp, "w") as f:
+        f.write(json.dumps(d, separators=(",", ":")))
+    os.replace(tmp, path)
 
 
 DOOR_REACH = 25.0       # metres: how far a gate looks for the door it leads to
@@ -6335,7 +6362,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["cx"], cx_count = crossings(sq, rd, street_ground, points)
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
-    json.dump(tile, open(out, "w"), separators=(",", ":"))
+    open(out, "w").write(json.dumps(tile, separators=(",", ":")))
     if verbose:
         print(f"wrote {out}")
         print(f"  rd {len(rd)} records (one per corridor stretch), br {len(br)} runs, "
