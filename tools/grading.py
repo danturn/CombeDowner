@@ -21,6 +21,10 @@ import numpy as np
 # half that; a stretch is graded that much inside its steepest, less the little a stretch of road
 # may be over it anyway (tools/check_map.py)
 ROUNDING = 0.1
+# metres: a survey with no detail finer than this (terrain_detail) cannot see the gap under a
+# road's bridge, so two ways crossing it at different heights with no bridge in the data are the
+# grading cutting one through a bump in the survey, not one passing over the other
+COARSE = 8.0
 
 
 def terrain_detail(dem, px, least=1.3):
@@ -48,7 +52,7 @@ def terrain_detail(dem, px, least=1.3):
     return curv[-1][0] * px if curv else px
 
 
-def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, join=2.5, hard=1e4):
+def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, join=2.5, hard=1e4, layer=None, survey=None):
     """The graded heights of a network of roads.
 
     chains: lists of point ids along each road; xy[id], target[id] (the survey's height there);
@@ -62,11 +66,17 @@ def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, joi
     exact: like steepest, the steepest each stretch's kind of road may be; a stretch held to that is
     kept far enough inside it not to round over it (ROUNDING), and a gentler limit (the hill's)
     needn't be kept so closely.
+    layer: {id: True or False} for points that are (True) or are not (False) inside a tunnel; two
+    such points on different layers are never one junction, however close their heights (a road
+    crossing over a shallow tunnel at a point the data gives both). A point without one joins any.
+    survey: {id: height} to tell junctions apart by instead of target, where target has been evened
+    out along each road (a steep path's end, evened out, can stand metres off the street it meets).
     Returns {id: height}."""
     from scipy.optimize import linprog
     from scipy.sparse import coo_matrix
 
     key = lambda i: (round(xy[i][0] * 2), round(xy[i][1] * 2))
+    ref = target if survey is None else survey
     groups = {}
     node = {}
     count = 0
@@ -75,13 +85,16 @@ def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, joi
             if i in node:
                 continue
             here = groups.setdefault(key(i), [])
-            for n, h in here:
-                if abs(h - target[i]) < join:
+            lay = None if layer is None else layer.get(i)
+            for n, h, ls in here:
+                if abs(h - ref[i]) < join and (lay is None or not ls - {lay}):
                     node[i] = n
+                    if lay is not None:
+                        ls.add(lay)
                     break
             else:
                 node[i] = count
-                here.append((count, target[i]))
+                here.append((count, ref[i], set() if lay is None else {lay}))
                 count += 1
     nn = count
     if nn == 0:

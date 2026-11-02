@@ -561,9 +561,12 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         if q[0] != "bus" or not inner.contains(Point(q[1], q[2])): continue
         g = street_gap(q[1], q[2], btree, blines)
         if g > 6: note("15 bus stop away from the road", g, at(q[1], q[2]), f"{q[5] if len(q) > 5 else ''!r} {g:.0f} m from the kerb")
+    # (a crossing or a set of lights is on any carriageway: a busway, a motorway's slip road)
+    clines = [(ln, r) for ln, r in zip(rlines, roads) if r["c"] not in PATHS]
+    ctree = shapely.STRtree([l for l, _ in clines])
     for q in m.get("cx") or []:
         if not inner.contains(Point(q[0], q[1])): continue
-        g = street_gap(q[0], q[1], vtree, vlines)
+        g = street_gap(q[0], q[1], ctree, clines)
         if g > 1: note("15 crossing off the road", g, at(q[0], q[1]), f"{q[4]} {g:.0f} m off the carriageway")
     alls = [(ln, r) for ln, r in zip(rlines, roads)]
     for q in m.get("pb") or []:

@@ -5,7 +5,7 @@ dip under a bridge was missing. `prep_map.py` has the rules that make a road ris
 road, carry a bridge straight between its ends and dip what passes under it; they are run here over
 the partition's street edges instead of Overture's segments. `prep_map.py` is a script and cannot be
 imported, so `solve` is its bridge section ported rule for rule (in its order, with the same
-numbers), and the carrying, grade and kink rules are `profiles.py`, which both share. When
+numbers), and the carrying and kink rules are `profiles.py` and the grading `grading.py`, which both share. When
 `prep_map.py`'s rules change, change them here too.
 
 It has to be global: a dip under one bridge lowers every road that meets the road underneath, so
@@ -24,7 +24,8 @@ from shapely.ops import nearest_points, substring
 from shapely.strtree import STRtree
 
 import tunnels as TN
-from profiles import carry_profile, ease_grades, ease_kinks
+from grading import COARSE, grade
+from profiles import carry_profile, ease_kinks
 
 STEP = 4.0
 
@@ -41,8 +42,6 @@ CANAL_HEAD = 2.8     # metres of air over the water under a canal bridge (and en
 LOCK_REACH, BESIDE = 15.0, 8.0
 TOW_UP = 0.4      # the canal's banks stand this far above the water
 TOW_REACH = 6.0   # metres out from the water's edge that the towpath may run
-RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "living_street": 4,
-        "unclassified": 5, "pedestrian": 5, "service": 6, "unknown": 6}
 VERGE = 1.5       # metres in from a road's full width that a path must be to lie on top of it
 SIGMA = 6.0       # metres: how far along a road its heights are evened out
 GRADE = 0.18      # the steepest a road is laid where the hill under it is gentler than that
@@ -384,7 +383,7 @@ def by_a_lock(x, y, locks):
     return False
 
 
-def solve(pending, water_polys, rail_tracks, canal, elev, bm):
+def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
     """Decide the structures over a set of runs, changing their heights, `span` and `deck` in place.
 
     The rules are `prep_map.py`'s, in its order, with `tools/profiles.py` (shared with it) doing the
@@ -392,7 +391,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     deck, which marked spans are real bridges, the canal's bridges, every span carried straight, ways
     that cross at different heights, what dips under a bridge, the steepest each road may be, and
     paths afloat. Each run here is already a whole through-road, so `prep_map.py`'s `chains()` is each
-    run in turn. `canal` is the canal file's contents (or None), `bm` the map's box."""
+    run in turn. `canal` is the canal file's contents (or None), `bm` the map's box, `detail` the
+    finest scale the terrain has detail at (grading.terrain_detail)."""
     water_tree = STRtree(water_polys)
     rail_lines = [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1]
     rail_tracks = [t for t in rail_tracks if len(t["p"]) > 1]
@@ -433,7 +433,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 for i, h in r["tow"].items():
                     r["z"][i] = h
 
-    smooth_network(pending, chains, elev)
+    smooth_network(pending, chains, elev, detail)
 
     # an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
     # crosses over it is carried over as a bridge, with the cutting as wide as the road in it. Not
@@ -859,6 +859,11 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
             if o["tunnel_ranges"] and in_ranges([o["run"][i] for i in near_j], o["tunnel_ranges"]):
                 continue
             zk, zj = min(r["z"][i] for i in near_k), min(o["z"][i] for i in near_j)
+            if detail > COARSE:
+                # (where they cross, and each no lower than the survey there, which a way graded through a
+                # bump in it was cut from: grading.COARSE)
+                at = lambda w, near: w["z"][min(near, key=lambda i: math.dist(w["run"][i][:2], (x.x, x.y)))]
+                zk, zj = (max(at(w, near), elev(x.x, x.y)) for w, near in ((r, near_k), (o, near_j)))
             if abs(zk - zj) < 1.5:
                 continue
             (up, upi), (lo_, loi) = ((r, k), (o, j)) if zk > zj else ((o, j), (r, k))
@@ -875,7 +880,10 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     # road it crosses), is on a bridge there: the ground is the lower road's. (`prep_map.py` finds
     # these after the dips; here they come before, so what passes under is dipped for headroom too).
     # Over a bored tunnel the ground is the hill over its roof, and a way on it stays on the ground;
-    # and a path along the top of a cutting's side, over the road's verge, is beside it, not on it
+    # and a path along the top of a cutting's side, over the road's verge, is beside it, not on it.
+    # On a coarse survey (grading.COARSE) a road graded down through a bump in it (a building) is
+    # measured from the ground it was cut from, which the way crossing it still has; a fine one sees
+    # the gap under a footbridge, and the road under it is measured as it lies
     for k, r in enumerate(pending):
         if r["c"] in ("steps", "pedestrian"):
             continue
@@ -891,7 +899,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
                 m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
                 if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]):
                     continue
-                if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
+                below = max(o["z"][m_], elev(*o["run"][m_][:2])) if detail > COARSE else o["z"][m_]
+                if r["z"][i] - below >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                     r["span"].add(i)
                     r["solid"].add(i)
         # (and its bridge doesn't touch down for a point or two between them)
@@ -991,7 +1000,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     if dipped:
         carry_spans(True)
 
-    limit_grades(pending, chains, dips)
+    limit_grades(pending, chains, dips, detail)
 
     # 4. a path through the water (the data has no bridge) is a footbridge: its points well
     # inside a pond or river are a span, just above the water
@@ -1048,99 +1057,124 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm):
     return pending
 
 
-def smooth_network(pending, chains, elev):
-    """Roads rise and fall like roads, not like the survey's pixels: the main roads first, each
-    along its length by distance (about a dozen metres either way); where a lesser road meets one
-    already smoothed it takes that road's height there and eases into it; and no road is left
-    steeper than the hill it climbs, measured over 40 m, with a little to spare. Bridges and tunnels
-    keep the heights they were carried at. From prep_map.py's `smooth_network`."""
-    done = {}
+def _graded_roads(pending, chains):
+    """The chains that are graded: streets, pedestrian streets among them, not paths."""
+    return [ch for ch in chains if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"]
+
+
+def _tunnel_layer(pending, order):
+    """Which points of the graded chains are inside a street's tunnel (True) or not (False): a road
+    passing over a shallow tunnel meets the road in it at a point the data gives both, and the two
+    are not a junction. A chain's ends are left out, as they meet whatever they meet, except on a
+    shallow tunnel's stretch, mouths included: what the data joins there is carried over the
+    cutting as a bridge (the underpass rule), so it doesn't meet the road going in."""
     key = lambda q: (round(q[0] * 2), round(q[1] * 2))
-    order = []
-    for ch in chains:
-        c = pending[ch[0][0]]["c"]
-        if c in PATHS and c != "pedestrian":
-            continue
-        L = sum(math.dist(pending[k1]["run"][i1][:2], pending[k2]["run"][i2][:2]) for (k1, i1), (k2, i2) in zip(ch, ch[1:]))
-        order.append((RANK.get(c, 6), -L, ch))
-    order.sort(key=lambda o: (o[0], o[1]))
+    ways_at = collections.defaultdict(set)
+    for ch in order:
+        for k, i in ch:
+            ways_at[key(pending[k]["run"][i])].add(k)
+    inside, cutting = {}, set()
+    for k, r in enumerate(pending):
+        if r["tunnel_ranges"] and r["c"] not in PATHS:
+            tun = in_ranges(r["run"], r["tunnel_ranges"])
+            shared = set() if r["bored"] else {i for i in tun if ways_at[key(r["run"][i])] - {k}}
+            inside[k] = tunnel_inside(tun) | shared
+            cutting |= {(key(r["run"][i]), k) for i in shared}
+    under = collections.defaultdict(set)
+    for q, k in cutting:
+        under[q].add(k)
+    layer = {}
+    for ch in order:
+        for m, (k, i) in enumerate(ch):
+            q = key(pending[k]["run"][i])
+            if 0 < m < len(ch) - 1 or under[q] - {k}:
+                layer[(k, i)] = i in inside.get(k, ())
+    return layer
+
+
+def regrade(pending, order, xy, target, fixed, steep, detail, survey=None):
+    """The network graded (tools/grading.py) and written back to the roads, each then eased of sharp
+    changes of gradient between its junctions (a junction stays where the grading put it). From
+    prep_map.py's `regrade`."""
+    exact = [[STEEPEST.get(pending[k]["c"], 0.33) for k, _ in ch[:-1]] for ch in order]
+    graded = grade(order, xy, target, fixed, steep, detail, [RW.get(pending[ch[0][0]]["c"], 4) / 2 for ch in order], exact,
+                   layer=_tunnel_layer(pending, order), survey=survey)
+    key = lambda q: (round(q[0] * 2), round(q[1] * 2))
+    seen = collections.Counter(q for ch in order for q in {key(pending[k]["run"][i]) for k, i in ch})
+    for ch in order:
+        pts = [pending[k]["run"][i] for k, i in ch]
+        z = [graded[(k, i)] for k, i in ch]
+        d = [0.0]
+        for a, b in zip(pts, pts[1:]):
+            d.append(d[-1] + math.dist(a[:2], b[:2]))
+        held = [(k, i) in fixed or seen[key(pts[m][:2])] > 1 or m in (0, len(ch) - 1) for m, (k, i) in enumerate(ch)]
+        ease_kinks(z, d, held)
+        for m, (k, i) in enumerate(ch):
+            pending[k]["z"][i] = float(z[m])
+
+
+def smooth_network(pending, chains, elev, detail):
+    """Roads rise and fall like roads, not like the survey's pixels: each is evened out along its
+    length by distance (about a dozen metres either way), then the whole network is graded at once:
+    every junction at one height, no stretch steeper than its kind of road may be nor than the hill
+    it climbs (measured over 40 m, with a little to spare), and bumps narrower than the survey can
+    really see evened out. Bridges and tunnels keep the heights they were carried at. From
+    prep_map.py's `smooth_network`."""
+    order = _graded_roads(pending, chains)
     tun = {k: in_ranges(r["run"], r["tunnel_ranges"]) for k, r in enumerate(pending) if r["tunnel_ranges"]}
-    inside = {k: tunnel_inside(t) for k, t in tun.items() if pending[k]["c"] not in PATHS}
-    below = {}
-    for _, _, ch in order:
+    xy, target, fixed, steep, survey = {}, {}, {}, [], {}
+    for ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
         z = np.array([pending[k]["z"][i] for k, i in ch], dtype=float)
         n = len(ch)
-        fixed = np.array([i in pending[k]["span"] or i in tun.get(k, ()) for k, i in ch])
-        for m, q in enumerate(pts):
-            h = done.get(key(q))
-            # a road laid already, meeting this one there: unless it's well above or below (a
-            # bridge's deck and a road passing under it at a point the data happens to give both),
-            # or both run on through it with one inside a tunnel there (the other passes over)
-            if h is not None and 0 < m < n - 1 and below[key(q)] is not None and \
-                    below[key(q)] != (ch[m][1] in inside.get(ch[m][0], ())):
-                continue
-            if h is not None and abs(h - z[m]) < 2.5:
-                z[m] = h
-                fixed[m] = True
         d = np.zeros(n)
         for m in range(1, n):
             d[m] = d[m - 1] + math.dist(pts[m - 1][:2], pts[m][:2])
-        out = z.copy()
-        for m in range(n):
-            if fixed[m]:
+        for m, (k, i) in enumerate(ch):
+            xy[(k, i)] = pts[m][:2]
+            survey[(k, i)] = float(z[m])
+            if i in pending[k]["span"] or i in tun.get(k, ()):
+                target[(k, i)] = fixed[(k, i)] = float(z[m])
                 continue
             near = np.flatnonzero(np.abs(d - d[m]) < 3 * SIGMA)
             w = np.exp(-((d[near] - d[m]) ** 2) / (2 * SIGMA ** 2))
-            out[m] = float((w * z[near]).sum() / w.sum())
-        z = out
-        lim = np.zeros(max(0, n - 1))
+            target[(k, i)] = float((w * z[near]).sum() / w.sum())
+        lim = []
         for m in range(n - 1):
             dd = d[m + 1] - d[m]
             if dd < 0.01:
-                lim[m] = 0.0
+                lim.append(1.0)
                 continue
             (ax, ay), (bx, by) = pts[m][:2], pts[m + 1][:2]
             ux, uy = (bx - ax) / dd, (by - ay) / dd
             mx, my = (ax + bx) / 2, (ay + by) / 2
             hill = abs(elev(mx + ux * 20, my + uy * 20) - elev(mx - ux * 20, my - uy * 20)) / 40
-            lim[m] = min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)) * dd
-        ease_grades(z, d, lim, fixed)
-        ease_kinks(z, d, fixed)
-        for m, (k, i) in enumerate(ch):
-            pending[k]["z"][i] = float(z[m])
-            done[key(pts[m])] = float(z[m])
-            below[key(pts[m])] = (i in inside.get(k, ())) if 0 < m < n - 1 else None
+            lim.append(min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)))
+        steep.append(lim)
+    regrade(pending, order, xy, target, fixed, steep, detail, survey)
 
 
-def limit_grades(pending, chains, dips):
+def limit_grades(pending, chains, dips, detail):
     """No road steeper than its kind may be (STEEPEST), after the dips under bridges and the climbs
-    onto them: where one is, the ramp is lengthened, the bottom of each dip (and every bridge's deck,
-    and the towpath) staying where it is. From prep_map.py's `limit_grades`."""
+    onto them: the network is graded again, the bottom of each dip (and every bridge's deck, and the
+    towpath) staying where it is, so the ramps either side are lengthened and the roads meeting them
+    follow. From prep_map.py's `limit_grades`."""
     held = collections.defaultdict(set)
     for j, x in dips:
         for i, q in enumerate(pending[j]["run"]):
             if math.dist(q[:2], (x.x, x.y)) < 6:
                 held[j].add(i)
-    done, key = {}, lambda q: (round(q[0] * 2), round(q[1] * 2))
-    order = sorted((ch for ch in chains if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"),
-                   key=lambda ch: (RANK.get(pending[ch[0][0]]["c"], 6), -len(ch)))
+    order = _graded_roads(pending, chains)
+    xy, target, fixed, steep = {}, {}, {}, []
     for ch in order:
-        pts = [pending[k]["run"][i] for k, i in ch]
-        z = [pending[k]["z"][i] for k, i in ch]
-        meets = [key(q) in done and abs(done[key(q)] - h) < 2.5 for q, h in zip(pts, z)]
-        z = [done[key(q)] if m_ else h for q, h, m_ in zip(pts, z, meets)]
-        d = [0.0]
-        for a, b in zip(pts, pts[1:]):
-            d.append(d[-1] + math.dist(a[:2], b[:2]))
-        fixed = [m_ or i in pending[k]["span"] or i in pending[k]["deck"] or i in pending[k]["tow"] or i in held[k]
-                 for m_, (k, i) in zip(meets, ch)]
-        lim = [STEEPEST.get(pending[ch[m][0]]["c"], 0.33) * (d[m + 1] - d[m]) for m in range(len(ch) - 1)]
-        ease_grades(z, d, lim, fixed)
-        ease_kinks(z, d, fixed)
-        for q, (k, i), h in zip(pts, ch, z):
-            pending[k]["z"][i] = h
-            done.setdefault(key(q), h)
+        for k, i in ch:
+            r = pending[k]
+            xy[(k, i)] = r["run"][i][:2]
+            target[(k, i)] = r["z"][i]
+            if i in r["span"] or i in r["deck"] or i in r["tow"] or i in held[k]:
+                fixed[(k, i)] = r["z"][i]
+        steep.append([STEEPEST.get(pending[ch[m][0]]["c"], 0.33) for m in range(len(ch) - 1)])
+    regrade(pending, order, xy, target, fixed, steep, detail)
 
 
 def grow_marks(z, ground, span, deck, reach=3, forbid=()):
