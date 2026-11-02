@@ -4992,13 +4992,24 @@ def _way_in(mid, door_pts, dtree, houses, htree, road_area, walls=None, wtree=No
     return None
 
 
-def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=()):
+def doors_of(chosen, owners, doors):
+    """The doors in the walls of the chosen houses."""
+    shapes = [owners[bi] for bi in chosen if bi in owners]
+    if not shapes or not doors:
+        return set()
+    tree = STRtree(shapes)
+    return {k for k, d in enumerate(doors) if len(tree.query(Point(d[0], d[1]), predicate="dwithin", distance=1.0))}
+
+
+def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=(), strict=()):
     """Gates for the doors no gate leads to. The partition puts a gate on the plot edge nearest the
     house, and for a semi or a corner house that is often a side boundary, so the way out to the street
     from the door was a wall (a third of the doors on the village square). A door with no gate to reach
     gets one where the line straight out from it first meets a boundary, as the old build gave every
     front its gate opposite the house. doors_near: those just over the square's edge, whose doorsteps
-    are kept clear here too. Returns the new openings and the old gates they replace."""
+    are kept clear here too. strict: the doors a gate serves only when no other boundary stands
+    between them, as on gardens laid out from the house alone, whose side fences run on to the street.
+    Returns the new openings and the old gates they replace."""
     if not houses or not doors:
         return [], []
     houses = [h if h.is_valid else h.buffer(0) for h in houses]
@@ -5008,7 +5019,8 @@ def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=())
     edges = part["edges"]
     kept = [i for i, e in enumerate(edges) if e["kind"] != "none" and e["kind"] in BARRIER]
     lines = {i: LineString(edges[i]["xy"]) for i in kept}
-    etree = STRtree([lines[i] for i in kept])
+    edge_lines = [lines[i] for i in kept]
+    etree = STRtree(edge_lines)
     served, blind = set(), []
     for o in part.get("openings") or []:
         e = edges[o["edge"]] if o.get("edge") is not None and o["edge"] < len(edges) else None
@@ -5017,6 +5029,8 @@ def gates_for_doors(part, houses, doors, road_area=None, sq=None, doors_near=())
         line = LineString(e["xy"])
         mid = line.interpolate(min(max(o["t"], 0.0), line.length))
         k = _way_in(mid, door_pts, dtree, houses, htree, road_area)
+        if k in strict:
+            k = _way_in(mid, door_pts, dtree, houses, htree, road_area, edge_lines, etree)
         if k is not None:
             served.add(k)
         elif o["kind"] == "gate":
@@ -6327,7 +6341,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         shapely.prepare(wall_blocked)
         shapely.prepare(abutments)
     doors_near = tile.pop("drn", None) or []
-    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq, doors_near)
+    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq, doors_near,
+                                             doors_of(free, owners, tile.get("dr") or []))
     gone = {id(o) for o in wrong_side}
     part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
     # drives go beside the gates that are left, so none stands beside a gate that was taken out
