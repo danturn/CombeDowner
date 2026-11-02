@@ -1,0 +1,77 @@
+# Troubleshooting
+
+Find the row whose left column matches text you see in the output (search for it). Do what the
+right column says, once. If it fails again, or no row matches: STOP and show the user the last 20
+lines of output.
+
+"Rerun" always means the same command again. Every step is safe to rerun: downloads already done
+are kept, and squares already built are not built again.
+
+## check
+
+| IF you see | THEN |
+|---|---|
+| `FAIL python packages: missing` | Run the command printed after `->`. Then `python3 -I tools/new_area.py check` again. |
+| `error: externally-managed-environment` (from pip) | You ran `pip3 install` on the system Python. Run the `python3 -m venv ~/.venvs/combedowner && ...` command from the `check` line instead. |
+| `Failed building wheel for rasterio` or `gdal-config` | STOP: the user must install GDAL (`brew install gdal` on a Mac), then rerun the pip command. |
+| `FAIL web/node_modules` | `cd web && npm install && cd ..`, then `check` again. |
+| `FAIL git branch is main` | `git switch -c claude/map-<id>`, then `check` again. |
+
+## find and add
+
+| IF you see | THEN |
+|---|---|
+| `FAIL no place found` | Try the name with the county or country after it: `"<name>, Wiltshire"`, `"<name>, France"`. Still none: STOP. |
+| `HTTP Error 429` or `HTTP Error 403` (Nominatim) | Wait two minutes, rerun once. Still failing: STOP. |
+| `WARN could not reach Nominatim to check the country: assuming NON-UK` | Run `python3 -I tools/new_area.py remove <id>`, wait two minutes, then repeat Step 4. |
+| `FAIL '<id>' is already in tools/area.py` | Ask the user for another id. |
+
+## build
+
+| IF you see | THEN |
+|---|---|
+| `waiting for another build to finish` | Nothing: it waits by itself. Do not delete the lock. If it has waited over an hour it clears the lock itself. |
+| `BUILD FAIL missing packages` | Go back to SKILL.md Step 1. |
+| `BUILD FAIL at step download` with `HTTP Error 5`, `timed out`, `Connection reset`, `IncompleteRead` or `URLError` above it | A server dropped the connection. Wait two minutes and rerun `build`. A download that died leaves only a `.part` file, which is redone. |
+| `BUILD FAIL at step download` with `HTTP Error 404` for `environment.data.gov.uk` (lidar) | Rerun once (the lidar service sometimes answers "not found" for squares it has). Still failing: STOP. |
+| `BUILD FAIL at step download` with `overturemaps` or `pyarrow` in the error | Rerun once. Still failing: STOP. |
+| `Overpass` or `api.openstreetmap.org` with `429` or `504` | Wait five minutes and rerun. |
+| `BUILD FAIL at step squares` with `FAILED after` and `see <file>` | Read the last 20 lines of that `<file>`. `No module named`: go back to SKILL.md Step 1. `MemoryError` or `Killed`: STOP (the machine needs more memory). Anything else: rerun once, then STOP. |
+| `BUILD FAIL at step wide map` | Rerun once. Still failing: STOP. |
+| `BUILD FAIL at step lidar ground` | STOP. |
+| `BUILD FAIL at step minimap ground` | The squares are missing: rerun `build`. |
+| `WARN step railway failed` | Fine: the map has no railway. Report it. |
+| `WARN step pubs failed` | Fine: the pause menu's "Go to a pub" lists only the pubs signed in the squares. Report it. |
+| `WARN step district names failed` | Fine: the game names places after parks instead. Report it. |
+| `WARN step church towers failed` | Fine: churches have no measured towers. Report it. |
+| `epc: download the energy certificates ... by hand` | Not an error. Ignore it. |
+| `no lidar data`, `no EPC data` | Not an error outside England. In England, report it. |
+
+## verify
+
+| IF you see | THEN |
+|---|---|
+| `FAIL web/src/maps.ts has the map` | Step 4 did not finish. Run `python3 -I tools/new_area.py remove <id>`, then repeat from Step 4. |
+| `FAIL web/public/maps/<id>.json` or `FAIL squares:` or `FAIL ...-wide.json` or `FAIL ...-ground.json` | The build did not finish. Rerun `build`, then `verify`. |
+| `FAIL buildings in the squares: 0` | STOP: the place has no buildings in the data, or the centre is wrong. |
+| `FAIL check_map ran` | STOP, and show the user the line after `->`. |
+| `WARN clash check` | Carry on. Report the count and the three biggest rule lines. |
+| `FAIL git sees changes only to this map's files` | STOP. Something outside this map changed. Do not revert it yourself. |
+
+## shoot
+
+| IF you see | THEN |
+|---|---|
+| `FAIL npm run shoot finished` with `Cannot find module 'playwright'` | `cd web && npm install && cd ..`, then rerun `shoot`. |
+| `browserType.launch` or `Chromium distribution 'chrome' is not found` | STOP: the user must install Google Chrome. |
+| `FAIL <view>: loaded` (a view timed out) | Rerun `shoot` once. Still failing: report which view, carry on. |
+| `FAIL no page errors` | Report the `INFO page said:` lines. STOP. |
+| `404` lines for `-canal.json`, `-cable.json`, `-rail.json` or `-pubs.json` | Not an error: the map has none. |
+| `context=REAL` | STOP. Audio was not muted. Do not run any more browser commands. |
+| `WARN frame rate` | Report it. Not a failure. |
+
+## remove
+
+| IF you see | THEN |
+|---|---|
+| `FAIL <id> is committed to the repository` | STOP. Never remove a committed map. |

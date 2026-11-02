@@ -17,9 +17,11 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
-`tools/new_area.py` does the registering and the build in order for an ordinary area, and the
-`new-area` skill (`.claude/skills/new-area/`) walks through it; `docs/own-area.md` says what a script
-cannot do for you.
+**To make a new map, follow the `new-area` skill (`.claude/skills/new-area/SKILL.md`)**: it runs
+`tools/new_area.py` (`check`, `find`, `add`, `build`, `verify`, `shoot`), which does everything
+below that an ordinary area needs, in order. This file is the background, and the manual steps
+the skill leaves to a person (energy certificates, parcels, canals, landmarks, publishing);
+`docs/own-area.md` says what a script cannot do for you.
 
 All raw data goes in `data/raw/<map id>/`, which git ignores. For a map with a wide area, a copy of
 what the build reads from it, small enough to keep, then goes in the repository, in `data/<map id>/`

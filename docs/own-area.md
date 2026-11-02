@@ -1,8 +1,9 @@
 # Making your own area, without Claude
 
-The recipe is in `docs/new-area.md` and, for Claude Code users, the `new-area` skill
-(`.claude/skills/new-area/SKILL.md`). This note is about how far a plain script or a small web page
-could take someone who has neither, what stays hard, and what to build.
+The recipe is the `new-area` skill (`.claude/skills/new-area/SKILL.md`), written so that even a
+small model can follow it step by step; `docs/new-area.md` has the background. This note is about
+how far a plain script or a small web page could take someone who has neither, what stays hard,
+and what to build.
 
 ## What is already automatic
 
@@ -14,9 +15,13 @@ Every step after "decide where" is a command that takes the map id and nothing e
   `tools/pubs.py`, `tools/districts.py`;
 - check: `tools/check_map.py`.
 
-`tools/new_area.py` (added with this note) is the thin wrapper over that: `add "Place" --radius 1500`
-geocodes the name with Nominatim and writes the `MAPS` entry in `tools/area.py` and the menu line in
-`web/src/maps.ts`, and `build <id>` runs the steps in order. It adds no new logic, so it is cheap to keep true. Outside
+`tools/new_area.py` is the thin wrapper over that, with every answer printed as PASS or FAIL:
+`check` (is the machine ready), `find "Place"` (the five best matches, each with its UK or non-UK
+branch), `add "Place" --lat N --lon N --radius 1500` (writes the `MAPS` entry in `tools/area.py` and
+a test-map line in `web/src/maps.ts`), `build <id>` (the steps in order, with the time and memory
+of each), `verify <id>` (the files, the clash check, the sizes, and that nothing else changed),
+`shoot <id>` (four views it picks from the map, and the frame rate) and `remove <id>`. It adds no
+map-building logic, so it is cheap to keep true. Outside
 England it warns which sources the place will miss and builds without them (see below). I ran the whole thing for Frome, Somerset (radius 900 m).
 
 ## What a single script still cannot do for you
