@@ -28,18 +28,20 @@ export function watchLoading(canvas: HTMLCanvasElement) {
   box.hidden = true;
   document.body.append(box);
 
-  const t0 = performance.now();
-  let pending = -1, since = t0;
+  let pending = -1, since = performance.now(), shown = since, wasShown = true;
   setInterval(() => {
     const now = performance.now();
     const loading = (globalThis as any).__tilesPending as number | undefined;
     const p = loading === undefined ? undefined : loading + tileTrouble.missing;
     const menuLoading = !document.getElementById("loading")?.hidden;
+    // counted from when the loading line came up, which is again when the train takes you to another town
+    if (menuLoading && !wasShown) shown = now;
+    wasShown = menuLoading;
     // only fewer squares to wait for counts as getting on: one that failed and is tried again adds one
     // back. The clock starts afresh when squares are wanted after none were (a jump, a longer view).
     if (p === undefined || pending <= 0 || p < pending) since = now;
     pending = p ?? -1;
-    const waiting = menuLoading ? now - t0 : (p ?? 0) > 0 ? now - since : 0;
+    const waiting = menuLoading ? now - shown : (p ?? 0) > 0 ? now - since : 0;
     const lines: string[] = [];
     if (lost) lines.push("The graphics stopped working on this device (WebGL context lost). Reloading the page may help.");
     if (waiting > STALL * 1000) {

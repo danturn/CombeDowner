@@ -170,6 +170,17 @@ kbd {
 /* the black screen while a train takes you to another town: right over everything, then a word */
 #blackout { position: fixed; inset: 0; z-index: 20; background: #000; color: var(--paper); display: flex; align-items: center; justify-content: center; }
 #blackout p { margin: 0; font-family: var(--f-hud); letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.72); }
+/* arriving somewhere new (arrive.ts): the street's name sign on slate, over the view (but not the menus) until it's built */
+#arrive {
+  position: fixed; inset: 0; z-index: 8; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px;
+  background: radial-gradient(ellipse at center, #2a2d30, var(--black) 75%); transition: opacity 0.35s ease-out;
+}
+#arrive.lifting { opacity: 0; }
+#arrive .why { margin: 0; font: 700 clamp(15px, 4vw, 19px)/1.2 var(--f-hud); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); text-align: center; }
+#arrive .where { margin: 0; max-width: min(560px, 100%); padding: 12px 22px 10px; text-align: center; font-size: clamp(20px, 6vw, 32px); line-height: 1.1; overflow-wrap: anywhere; }
+#arrive .where:empty { display: none; }
+#arrive i { width: min(220px, 60vw); height: 9px; border-block: 3px solid var(--lines); transform-origin: left; animation: lines 1.1s ease-in-out infinite; }
+@keyframes lines { from { transform: scaleX(0); } 60% { transform: scaleX(1); opacity: 1; } to { transform: scaleX(1); opacity: 0; } }
 .music { display: flex; gap: 10px; align-items: center; }
 /* the wardrobe, over the pause menu (wardrobe.ts) */
 #wardrobe { z-index: 11; }

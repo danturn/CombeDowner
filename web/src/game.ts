@@ -61,6 +61,9 @@
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 //   Someone over a race's line or out of it, waiting for the others (race.ts), says so in their position
 //   updates ("rw"), and the host lets nothing hurt them; killed out of it, they come back once it's over.
+// - Arriving somewhere new (arrive.ts: the start, a respawn, a jump across the map, another town), the
+//   view is covered until the streets there are built. That's your own screen's business, but while it's
+//   up you're held still and send the same "rw", so nothing hurts you before you can see.
 // - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so,
 //   and everyone says when they're busy on a job, so the host can hold the Flag Lads off while all are.
@@ -168,6 +171,7 @@ import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
 import * as Yours from "./yours";
 import * as Paper from "./paper";
+import { Arrival, type ArrivalKind } from "./arrive";
 
 const TOWN: Record<string, string> = { "combe-down": "Bath" };
 
@@ -326,7 +330,7 @@ interface StateExtra {
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
-  rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts): the host lets nothing hurt them
+  rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts), or arriving (arrive.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
   vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
   ft?: number;         // the host's switches for the zones, the strange objects and the challenges (features.ts)
@@ -485,6 +489,7 @@ export class Game {
   private readonly listeners = new AbortController();
   private life = 0;                                 // goes up on each respawn, so stale hits are ignored
   private deadFor = 0;
+  private arrival: Arrival;                         // the cover while the streets where you've landed are built
   private killer = "";
   private sendT = 0;
   private sbT = 0;
@@ -588,6 +593,7 @@ export class Game {
     known: string[] = [],
     carry?: GameCarry,
   ) {
+    this.arrival = new Arrival(world, (kind, x, z) => this.arrivalWords(kind, x, z));
     this.known = new Set(known);
     if (carry) {
       // travelling to another town: the same game carries on, so what says who's who and how the
@@ -810,6 +816,7 @@ export class Game {
     const pl = carry?.arriveAt ? this.world.railway?.platform(carry.arriveAt) : null;
     const arrival = carry ? (pl ? { x: pl.centre[0], z: -pl.centre[1], yaw: Math.PI } : carry.at) : undefined;
     this.respawn(arrival ?? up ?? at ?? this.savedSpot());
+    this.arrival.next(carry ? "travel" : "start");
     if (at && !up) this.player.pitch = at.pitch;
     addEventListener("pagehide", () => this.saveSpot(), { signal: this.listeners.signal });
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); }, { signal: this.listeners.signal });
@@ -1490,6 +1497,9 @@ export class Game {
     });
   }
 
+  /** Nothing may hurt you: out of a race and watching the others finish, or still arriving (arrive.ts). */
+  private sheltered() { return this.quests.waiting() || this.arrival.up; }
+
   private respawn(at?: { x: number; z: number; yaw: number }) {
     if (this.ride) this.getOut();
     this.dismount();
@@ -1519,6 +1529,7 @@ export class Game {
     this.binoculars = false;
     this.claimed.clear();
     this.life++;
+    this.arrival.next("respawn");
     this.blood.stop(this.net.selfId);
     this.sendState();
     if (this.isMatchHost) this.applyRespawn(this.net.selfId, this.life);
@@ -2334,7 +2345,7 @@ export class Game {
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
     if (GANG.includes(by) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
-    if (id === this.net.selfId ? this.quests.waiting() : this.remotes.get(id)?.waiting) return;   // out of a race, watching the others finish
+    if (id === this.net.selfId ? this.sheltered() : this.remotes.get(id)?.waiting) return;   // out of a race watching the others finish, or arriving
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
       target.alive = false;
@@ -3992,7 +4003,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.quests.waiting(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -4085,7 +4096,7 @@ export class Game {
       // no mouse captured (an iPad with a keyboard, a touch screen): the arrow keys look round instead of walking
       p.arrowsWalk = !this.freeMode;
       if (this.freeMode) this.arrowLook(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !this.reveal.on && !placeNow());
-      p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
+      p.update(dt, this.active && this.alive && !this.arrival.up && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
@@ -4118,7 +4129,7 @@ export class Game {
     this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
+    else if (this.active && this.alive && !this.arrival.up && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
@@ -4303,6 +4314,25 @@ export class Game {
       else this.hello(this.hostId);   // keeps the host's name list fresh
     }
     this.updateHud(dt);
+    const covered = this.arrival.up;
+    this.arrival.update(dt, p.pos.x, p.pos.z);
+    if (this.arrival.up !== covered) this.sendState();   // sheltered or not: the host hears at once
+  }
+
+  /** What the cover says as you arrive at scene (x, z) (arrive.ts): the town, then the street. */
+  private arrivalWords(kind: ArrivalKind, x: number, z: number) {
+    const town = this.placeName(), street = this.whereName(x, z);
+    return { why: kind === "start" ? `Welcome to ${town}` : `Arriving at ${kind === "travel" ? mapName(this.mapId) : town}`, where: street || town };
+  }
+
+  /** On a street: its name; off the streets: the place you're in; otherwise the nearest street. */
+  private whereName(x: number, z: number): string {
+    let best = "", bd = 30;
+    for (const s of this.streets) {
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d < bd) { bd = d; best = s.n; }
+    }
+    return bd > 10 ? this.placeAt(x, -z)?.n ?? best : best;
   }
 
   /** Steer and kick or bowl, if you're lined up on a ball. */
@@ -4511,13 +4541,7 @@ export class Game {
     this.placeT -= dt;
     if (this.placeT <= 0) {
       this.placeT = 0.5;
-      // on a street: its name; off the streets: the place you're in; otherwise the nearest street
-      let best = "", bd = 30;
-      for (const s of this.streets) {
-        const d = Math.hypot(s.x - p.pos.x, s.z - p.pos.z);
-        if (d < bd) { bd = d; best = s.n; }
-      }
-      if (bd > 10) best = this.placeAt(p.pos.x, -p.pos.z)?.n ?? best;
+      const best = this.whereName(p.pos.x, p.pos.z);
       const edge = this.map.fieldEdge(p.pos.x, p.pos.z), aloft = this.quests.aloft();
       const where = $("where");
       say(where, aloft ? "" : edge < 25 ? "Force field: you can't go further" : best);
@@ -4711,7 +4735,7 @@ export class Game {
     } else this.rideFrom = null;
     const board = $("scoreboard");
     // by the clock rather than frames, so a slow machine doesn't keep it up for longer
-    if (this.dailyT < 0 && this.active) { this.dailyT = performance.now() + (this.joinNews ? 20000 : 12000); board.classList.add("join"); board.hidden = false; }
+    if (this.dailyT < 0 && this.active && !this.arrival.up) { this.dailyT = performance.now() + (this.joinNews ? 20000 : 12000); board.classList.add("join"); board.hidden = false; }
     if (this.dailyT > 0 && (performance.now() > this.dailyT || !$("pause").hidden)) { this.dailyT = 0; board.hidden = true; board.classList.remove("join"); }
     if (!board.hidden) this.daily.draw($("daily"));
     this.drawDaily();
@@ -4870,6 +4894,7 @@ export class Game {
   /** leave: true (the default) also drops the connection, for closing the game. Travelling passes
    *  false: only this map's world is torn down, and the voice links and the room stay. */
   dispose(leave = true) {
+    this.arrival.dispose();
     this.unEarn();
     this.wings.dispose();
     this.records.dispose();

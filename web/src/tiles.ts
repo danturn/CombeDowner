@@ -23,6 +23,7 @@ import { clearClimb } from "./theclimb";
 // and dropped once it's further than view.drop; and no more than SQUARES of them, the nearest, with
 // a few more kept once built, so walking along the edge of one doesn't build and drop it by turns.
 const BUDGET = 6;        // milliseconds of setting up and building a frame
+const RUSH = 24;         // and while the view's covered on arriving somewhere
 const SPARE = 2;         // squares kept built past the budget
 // A phone or tablet takes one square at a time: each one being read briefly takes several times its
 // file's size in memory, and Chrome on Android closes the page outright when it runs short.
@@ -56,6 +57,24 @@ interface Tile {
   tries?: number; failedAt?: number;
 }
 
+/** Whether a count of squares still to come (tiles.ts's pending, or arrive.ts's few close by) has
+ *  stayed at nought for a few frames and a little while: the last square built is drawn and on the
+ *  graphics card by then, not just finished. The screenshot tool (tools/shoot.mjs) waits on the same
+ *  test, through globalThis.__calm. */
+export class Calm {
+  private frames = 0;
+  private since = -1;
+  constructor(private wantFrames: number, private wantMs: number) {}
+  /** Call once a frame with the count; true once it has been nought long enough. */
+  still(n: number, now = performance.now()): boolean {
+    if (n > 0) { this.since = -1; this.frames = 0; return false; }
+    if (this.since < 0) this.since = now;
+    return ++this.frames >= this.wantFrames && now - this.since >= this.wantMs;
+  }
+  reset() { this.since = -1; this.frames = 0; }
+}
+(globalThis as any).__calm = (frames: number, ms: number) => new Calm(frames, ms);
+
 /** A response's text, calling alive() as each piece of it arrives. */
 async function textOf(r: Response, alive: () => void): Promise<string> {
   if (!r.body) return r.text();
@@ -86,6 +105,8 @@ export class Tiles {
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
+  /** Build in bigger slices a frame, while nobody can see the frame rate (arrive.ts's cover is up). */
+  rush = false;
 
   /** build: a square's scenery, a slice at a time, into the group given; free: let go of a group half built. */
   constructor(private core: GameMap, private scene: THREE.Scene,
@@ -114,6 +135,24 @@ export class Tiles {
       }
     return ready;
   }
+
+  /** How many squares within r of scene (x, z) aren't loaded and built yet (leaving out any that
+   *  wouldn't load): what someone just set down there has to wait for to see the streets round them. */
+  unbuiltNear(x: number, z: number, r: number): number {
+    const I = this.core.tileIndex!, S = I.cells * I.dx, u = x - I.x0, v = -z - I.y0;
+    let n = 0;
+    for (let ti = Math.floor((u - r) / S); ti <= Math.floor((u + r) / S); ti++)
+      for (let tj = Math.floor((v - r) / S); tj <= Math.floor((v + r) / S); tj++) {
+        const k = tileKey(ti, tj), t = this.live.get(k);
+        if (!this.exists.has(k) || t?.failed || t?.world) continue;
+        if (Math.hypot(Math.max(0, ti * S - u, u - (ti + 1) * S), Math.max(0, tj * S - v, v - (tj + 1) * S)) <= r) n++;
+      }
+    return n;
+  }
+
+  /** Look for the squares round us on the next update rather than at the next of its regular looks:
+   *  after a jump, so the ones there start loading straight away. */
+  look() { this.wait = 0; }
 
   /** others: where everyone else is (scene coords), for the host; leave it empty otherwise. */
   update(px: number, pz: number, dt: number, others: { x: number; z: number }[] = []) {
@@ -177,7 +216,7 @@ export class Tiles {
     // (when the spike probe is watching, how this frame's update was spent: see tools/spikeprobe.mjs)
     const T = (globalThis as any).__tileTimes as { setup: number; build: number; worlds: number } | undefined;
     if (T) { T.setup = T.build = T.worlds = 0; }
-    const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? BUDGET);
+    const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? (this.rush ? RUSH : BUDGET));
     const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.near && !t.world))).sort((a, b) => first(a) - first(b));
     for (const t of work) {
       while (!busy()) {
