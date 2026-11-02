@@ -396,12 +396,14 @@ def _squared(side, front, polys, bend=2.0, reach=5.0, rounds=30):
             pos[m] = [nx, ny]; moved += 1
         if not moved: break
     # no stretch through a house: a corner that makes one goes back where it was
+    inner = {}
+    shrunk = lambda k: inner[k] if k in inner else inner.setdefault(k, polys[k].buffer(-0.3))
     for _ in range(3):
         bad = set()
         for ch in chains:
             for a, b in zip(ch, ch[1:]):
                 seg = LineString([pos[a], pos[b]])
-                if houses is not None and seg.length > 0 and any(polys[int(k)].buffer(-0.3).intersects(seg) for k in houses.query(seg)):
+                if houses is not None and seg.length > 0 and any(shrunk(int(k)).intersects(seg) for k in houses.query(seg)):
                     bad.update(m for m in (a, b) if m not in held)
         if not bad: break
         for m in bad: pos[m] = list(home[m])

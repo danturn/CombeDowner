@@ -587,7 +587,7 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
                     line = best[1]
             # clipped to the block, so its ends land on the block's far side (a building or a
             # corridor) and never in open land: the growth cap below keeps it only the yard's back
-            line = line.intersection(block.buffer(1.0))
+            line = line.intersection(_buffered(block, 1.0))
             if line.is_empty or line.length < 1:
                 continue
             if line.geom_type == "MultiLineString":
@@ -628,7 +628,7 @@ def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
         depth = max(float(np.dot(v - c, -f)) for v in vs)
         half = max(abs(float(np.dot(v - c, a))) for v in vs) + CAP_OVERHANG
         m = c - f * (depth + GARDEN)
-        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(block.buffer(0.5))
+        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(_buffered(block, 0.5))
         parts = [seg] if seg.geom_type == "LineString" else \
             [x for x in getattr(seg, "geoms", []) if x.geom_type == "LineString"]
         for x in parts:
@@ -871,16 +871,70 @@ def _directions(line, d):
     return v / n[:, None]
 
 
-def _twin_stretches(line, held, tree, ways_tree, ways):
+def _along(line, d):
+    """The points `d` metres along `line`, as shapely.line_interpolate_point gives them, to the bit:
+    the same sums in the same order as GEOS makes them, but walking the line once for every distance
+    rather than from its start for each one."""
+    d = np.asarray(d, float)
+    d = np.where(d < 0, line.length + d, d)
+    xy = shapely.get_coordinates(line)
+    dx, dy = xy[1:, 0] - xy[:-1, 0], xy[1:, 1] - xy[:-1, 1]
+    seg = np.sqrt(dx * dx + dy * dy)
+    run = np.concatenate([[0.0], np.add.accumulate(seg)])
+    k = np.searchsorted(run[1:], d, side="right")
+    kk = np.minimum(k, len(seg) - 1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        frac = (d - run[kk]) / seg[kk]
+        p0, p1 = xy[kk], xy[kk + 1]
+        out = np.where((frac <= 0)[:, None], p0,
+                       np.where((frac >= 1)[:, None], p1, (p1 - p0) * frac[:, None] + p0))
+    out[k >= len(seg)] = xy[-1]
+    out[d <= 0] = xy[0]
+    return out
+
+
+def _segment_ends(line):
+    xy = shapely.get_coordinates(line)
+    return xy[:-1], xy[1:]
+
+
+def _near_pairs(pts, lines, dist, ends=_segment_ends):
+    """(point, line) index pairs within `dist`, as STRtree(lines).query(pts, "dwithin") finds them but
+    tested against the lines' segments, each with a box of its own: a long boundary is then no longer
+    measured whole from every point near its box. A line is within reach of a point when one of its
+    segments is, so the pairs are the same; only their order differs, and a point's pairs decide
+    together whether it is twinned, whatever their order. Segments boxed further than `dist` from every
+    point can pair with none, so they are left out before the index is built. `ends(line)` gives a
+    line's segments as (starts, ends), and may remember them for a line asked about again."""
+    none = np.zeros(0, int), np.zeros(0, int)
+    if not len(lines) or not len(pts):
+        return none
+    got = [ends(l) for l in lines]
+    a = np.concatenate([g[0] for g in got])
+    b = np.concatenate([g[1] for g in got])
+    which = np.repeat(np.arange(len(lines)), [len(g[0]) for g in got])
+    x0, y0, x1, y1 = shapely.total_bounds(pts)
+    m = dist + 1.0
+    near = ((np.minimum(a[:, 0], b[:, 0]) <= x1 + m) & (np.maximum(a[:, 0], b[:, 0]) >= x0 - m)
+            & (np.minimum(a[:, 1], b[:, 1]) <= y1 + m) & (np.maximum(a[:, 1], b[:, 1]) >= y0 - m))
+    if not near.any():
+        return none
+    segs = shapely.linestrings(np.stack([a[near], b[near]], axis=1))
+    pi, si = STRtree(segs).query(pts, predicate="dwithin", distance=dist)
+    pairs = np.unique(pi * len(lines) + which[near][si])
+    return pairs // len(lines), pairs % len(lines)
+
+
+def _twin_stretches(line, held, ways_tree, ways, ends=_segment_ends):
     """The stretches of `line`, as (start, end) metres along it, that run within TWIN of a line in
     `held` and in nearly the same direction, with no mapped way between the two."""
     L = line.length
     if L < TWIN_MIN:
         return []
     d = np.linspace(0.0, L, max(2, int(L / TWIN_STEP) + 1))
-    pts = shapely.line_interpolate_point(line, d)
+    pts = shapely.line_interpolate_point(line, d) if shapely.has_z(line) else shapely.points(_along(line, d))
     hit = np.zeros(len(d), bool)
-    pi, hi = tree.query(pts, predicate="dwithin", distance=TWIN)
+    pi, hi = _near_pairs(pts, held, TWIN, ends)
     mine = np.zeros((len(d), 2))
     near = np.unique(pi)
     if len(near):
@@ -973,24 +1027,35 @@ def _one_boundary(ranked, ways=(), net=None):
     def bound(i):
         out = []
         for l in kept[i]:
+            # most lines lie wholly in the net or wholly out of it, and the prepared tests answer
+            # those far sooner than cutting the line against the whole net
+            if net is not None and not net.intersects(l):
+                continue
             g = l if net is None or net.contains(l) else l.intersection(net)
             out += [p for p in getattr(g, "geoms", [g]) if p.geom_type == "LineString" and p.length > 0.05]
         bounding[i] = out
     for i in kept:
         bound(i)
+    # a held line is asked about by every line near it, so its segments are taken out once
+    seg_ends = {}
+
+    def ends(l):
+        if id(l) not in seg_ends:
+            seg_ends[id(l)] = (l, *_segment_ends(l))
+        return seg_ends[id(l)][1:]
     out = []
     for n, part in enumerate(rest):
         i = len(first) + n
-        cand = [int(j) for j in tree.query(part.buffer(TWIN)) if int(j) < i]
-        held = [g for j in sorted(cand) for g in bounding.get(j, [])]
+        cand = tree.query(part.buffer(TWIN))
+        held = [g for j in np.sort(cand[cand < i]) for g in bounding.get(int(j), [])]
         if not held:
             kept[i] = [part]; bound(i); out.append((part, [part], None, tagged[n][0]))
             continue
-        local = STRtree(held)
-        runs = _twin_stretches(part, held, local, ways_tree, ways)
+        runs = _twin_stretches(part, held, ways_tree, ways, ends)
         if not runs:
             kept[i] = [part]; bound(i); out.append((part, [part], None, tagged[n][0]))
             continue
+        local = STRtree(held)
         L = part.length
         keep, at = [], 0.0
         for a, b in runs:

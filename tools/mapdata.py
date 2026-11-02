@@ -397,19 +397,30 @@ def pack(map_id, raw, only=None):
 
 
 def unpack(map_id, raw):
+    from concurrent.futures import ThreadPoolExecutor
     src = data_dir(map_id)
     os.makedirs(os.path.join(raw, "epc"), exist_ok=True)
-    for layer in OVERTURE + OTHER:
-        path = os.path.join(src, f"{layer}.geojson.xz")
-        if os.path.exists(path):
-            with open(os.path.join(raw, f"{layer}.geojson"), "wb") as f: f.write(lzma.decompress(open(path, "rb").read()))
-    for name in ("certificates", "non-domestic", "uprn"):
-        path = os.path.join(src, "epc", f"{name}.csv.xz")
-        if os.path.exists(path):
-            with open(os.path.join(raw, "epc", f"{name}.csv"), "wb") as f: f.write(lzma.decompress(open(path, "rb").read()))
-    for zoom, folder in TERRAIN.items():
-        unpack_terrain(os.path.join(src, f"terrain{zoom}.zip"), zoom, os.path.join(raw, folder))
+    jobs = [(os.path.join(src, f"{layer}.geojson.xz"), os.path.join(raw, f"{layer}.geojson")) for layer in OVERTURE + OTHER]
+    jobs += [(os.path.join(src, "epc", f"{name}.csv.xz"), os.path.join(raw, "epc", f"{name}.csv"))
+             for name in ("certificates", "non-domestic", "uprn")]
+    # lzma and zlib let go of the interpreter while they work, so the files come out side by side
+    with ThreadPoolExecutor(os.cpu_count() or 4) as pool, ThreadPoolExecutor(os.cpu_count() or 4) as pngs:
+        waits = [pool.submit(_unxz, a, b) for a, b in jobs if os.path.exists(a)]
+        for zoom, folder in TERRAIN.items():
+            unpack_terrain(os.path.join(src, f"terrain{zoom}.zip"), zoom, os.path.join(raw, folder), pngs)
+        for w in waits: w.result()
     print(f"{map_id}: unpacked into {raw}; the measurements are read from {measured_dir(map_id)}")
+
+
+def _unxz(path, out):
+    _write_if_new(out, lzma.decompress(open(path, "rb").read()))
+
+
+def _write_if_new(out, data):
+    """A file left untouched, with its old time, when it already holds the same: the square builds
+    take a file whose time has changed as a new one, and build again from it."""
+    if os.path.exists(out) and os.path.getsize(out) == len(data) and open(out, "rb").read() == data: return
+    with open(out, "wb") as f: f.write(data)
 
 
 def pack_epc(raw, out):
@@ -481,16 +492,22 @@ def pack_terrain(folder, zoom, path):
     print(f"terrain {zoom}: {len(files)} tiles, {sum(os.path.getsize(f) for f in files) / 1e6:.1f} MB -> {os.path.getsize(path) / 1e6:.1f} MB")
 
 
-def unpack_terrain(path, zoom, folder):
+def unpack_terrain(path, zoom, folder, pool=None):
     from PIL import Image
     if not os.path.exists(path): return
     z = read_zip(path)
     tiles, d = from_npy(z["tiles.npy"]), from_npy(z["heights.npy"]).astype(np.int64)
     v = np.cumsum(np.cumsum(d, axis=1), axis=2)
     os.makedirs(folder, exist_ok=True)
-    for (tx, ty), t in zip(tiles.tolist(), v):
+    def save(tx, ty, t):
         rgb = np.stack([(t >> 16) & 255, (t >> 8) & 255, t & 255], axis=-1).astype(np.uint8)
-        Image.fromarray(rgb, "RGB").save(os.path.join(folder, f"{zoom}_{tx}_{ty}.png"))
+        buf = io.BytesIO()
+        Image.fromarray(rgb, "RGB").save(buf, "PNG")
+        _write_if_new(os.path.join(folder, f"{zoom}_{tx}_{ty}.png"), buf.getvalue())
+    if pool is None:
+        for (tx, ty), t in zip(tiles.tolist(), v): save(tx, ty, t)
+        return
+    for w in [pool.submit(save, tx, ty, t) for (tx, ty), t in zip(tiles.tolist(), v)]: w.result()
 
 
 if __name__ == "__main__":
