@@ -1336,8 +1336,11 @@ if afloat: carry_spans(True)      # (the footbridges too)
 # drawn over the road down in it, or a path whose bridge the data stops short of the road it
 # crosses), is on a bridge there: the ground is the lower road's. Over a bored tunnel the ground is
 # the hill over its roof, and a way on it stays on the ground; and a path along the top of a
-# cutting's side, over the road's verge, is beside it, not on it
+# cutting's side, over the road's verge, is beside it, not on it. A road graded down through a bump
+# in the survey (a building in a coarse one) is measured from the ground it was cut from, which the
+# way crossing it still has; a road dipped under a bridge is measured from its dip
 stacked = 0
+dipped_at = {(j, i) for j, x in dips for i, q in enumerate(pending[j]["run"]) if math.dist(q[:2], (x.x, x.y)) < 6}
 for k, r in enumerate(pending):
     if r["c"] in PATHS and r["c"] in ("steps", "pedestrian"): continue
     for j in road_tree.query(road_lines[k].buffer(4.0)):
@@ -1351,7 +1354,8 @@ for k, r in enumerate(pending):
             if line_.distance(pt) > half_: continue
             m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
             if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]): continue
-            if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
+            below = o["z"][m_] if (int(j), m_) in dipped_at else max(o["z"][m_], elev(*o["run"][m_][:2]))
+            if r["z"][i] - below >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                 r["span"].add(i); r.setdefault("solid", set()).add(i); stacked += 1
 if stacked: print(f"bridges: {stacked} road points lying over another road well below them carried as bridges")
 
