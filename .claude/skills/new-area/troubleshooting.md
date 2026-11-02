@@ -35,7 +35,7 @@ are kept, and squares already built are not built again.
 | `BUILD FAIL at step download` with `HTTP Error 5`, `timed out`, `Connection reset`, `IncompleteRead` or `URLError` above it | A server dropped the connection. Wait two minutes and rerun `build`. A download that died leaves only a `.part` file, which is redone. |
 | `BUILD FAIL at step download` with `HTTP Error 404` for `environment.data.gov.uk` (lidar) | Rerun once (the lidar service sometimes answers "not found" for squares it has). Still failing: STOP. |
 | `BUILD FAIL at step download` with `overturemaps` or `pyarrow` in the error | Rerun once. Still failing: STOP. |
-| `Overpass` or `api.openstreetmap.org` with `429` or `504` | Wait five minutes and rerun. |
+| `Overpass unavailable (HTTP Error 502 ...); using the main API` (or 429, 504) | Not an error: it falls back by itself. Only if the step then ends in `BUILD FAIL`: wait five minutes and rerun. |
 | `BUILD FAIL at step squares` with `FAILED after` and `see <file>` | Read the last 20 lines of that `<file>`. `No module named`: go back to SKILL.md Step 1. `MemoryError` or `Killed`: STOP (the machine needs more memory). Anything else: rerun once, then STOP. |
 | `BUILD FAIL at step wide map` | Rerun once. Still failing: STOP. |
 | `BUILD FAIL at step lidar ground` | STOP. |
@@ -44,7 +44,7 @@ are kept, and squares already built are not built again.
 | `WARN step pubs failed` | Fine: the pause menu's "Go to a pub" lists only the pubs signed in the squares. Report it. |
 | `WARN step district names failed` (often `HTTP Error 502` or `504` from Overpass) | Fine: the game names places after parks instead. Once Step 7 is done, rerun `build` once (about a minute: nothing is downloaded or built again); if it fails again, report it. |
 | `WARN step church towers failed` | Fine: churches have no measured towers. Report it. |
-| `epc: download the energy certificates ... by hand` | Not an error. Ignore it. |
+| `epc: download the energy certificates ... by hand` | Not an error. Ignore it. Energy certificates are by hand only; mention them in "What it lacks". |
 | `no lidar data`, `no EPC data` | Not an error outside England. In England, report it. |
 
 ## verify

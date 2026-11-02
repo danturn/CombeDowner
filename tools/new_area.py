@@ -105,13 +105,16 @@ def region_of(lon, lat):
     return addr.get("ISO3166-2-lvl4") or addr.get("country_code", "").upper()
 
 
+MANUAL = {"epc", "parcels"}     # never fetched by build: they need a hand download (and the parcels only serve Bath's partition)
+
+
 def warn_missing(region):
-    have = COVERS.get(region, set())
-    missing = [why for src, why in ENGLISH.items() if src not in have]
-    if not missing: return
-    print(f"{region or 'this place'} is outside England, so the map will be built without:", flush=True)
-    for why in missing: print(f"  - {why}")
-    print("Buildings are guessed from Overture's and OpenStreetMap's heights and floor counts and the area's zones instead.")
+    have = COVERS.get(region, set()) - MANUAL
+    print(f"The map will be built without:", flush=True)
+    for src, why in ENGLISH.items():
+        if src not in have: print(f"  - {why}" + (" [by hand only]" if src in MANUAL and src in COVERS.get(region, set()) else ""))
+    if "lidar" not in have:
+        print("Buildings are guessed from Overture's and OpenStreetMap's heights and floor counts and the area's zones instead.")
 
 
 def ground_height(lon, lat, z=12):
@@ -276,7 +279,7 @@ def run_steps(steps, dry, lock=None):
         if dry: continue
         before = resource.getrusage(resource.RUSAGE_CHILDREN)
         t0 = time.time()
-        code = subprocess.run(cmd, cwd=ROOT).returncode
+        code = subprocess.run(cmd, cwd=ROOT, env=dict(os.environ, PYTHONUNBUFFERED="1")).returncode
         after = resource.getrusage(resource.RUSAGE_CHILDREN)
         cpu = (after.ru_utime + after.ru_stime) - (before.ru_utime + before.ru_stime)
         mb = after.ru_maxrss / (1 if sys.platform == "darwin" else 1 / 1024) / 1e6

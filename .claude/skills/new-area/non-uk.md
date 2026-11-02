@@ -28,7 +28,7 @@ fetches everything below by itself.
 
 These are expected, not faults. Put them in the report's "What it lacks".
 
-## Never by this skill (STOP and tell the user it needs a person)
+## Never by this skill (if the user asks for one: STOP and tell them it needs a person)
 
 Zones (local house styles: Cape Town has `cbd`, `bokaap`, `cape`), landmarks and set pieces, a
 canal, a cable car, the sea level.

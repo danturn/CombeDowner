@@ -30,7 +30,7 @@ counts, and their roofs are guessed. That is expected, not a fault.
   (`STEP lidar ground`), and the squares and the wide map are built a second time
   (`STEP squares again`, `STEP wide map again`). This happens once per map; a rerun skips it.
 
-## Never by this skill (STOP and tell the user it needs a person)
+## Never by this skill (if the user asks for one: STOP and tell them it needs a person)
 
 - **Energy certificates** (wall materials, bungalows; England and Wales): need an account at
   get-energy-performance-data.communities.gov.uk and a manual download. `docs/new-area.md`,

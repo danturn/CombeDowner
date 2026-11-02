@@ -34,6 +34,45 @@ Bath; a new map never sets it.
 - Zones, landmarks and set pieces: `docs/new-area.md` section 4.
 - The sea level for a coastal map (`sea=` in `tools/area.py`, as Cape Town).
 
+## One shape for every map
+
+Dan's rule: the pack is self-sufficient and every map has the same format. The inputs vary; the
+shape they are turned into does not.
+
+- Every map's pack (`data/<id>/`) has the same common layers, whatever the source: ground heights,
+  building and object heights, tree canopy, buildings, ways (streets, paths, railway), water, land
+  use and cover, named places, and the optional extras (businesses, pubs, house types, old cores).
+- Each source has its own step that converts it into that shape before packing: the EA's lidar,
+  Wales's lidar, a city's or a country's own data abroad, and the worldwide fallbacks (Mapzen
+  terrain, Meta / WRI canopy, Overture's and OpenStreetMap's heights and floor counts).
+- The build reads only the common layers, never a source's own format.
+- A pack rebuilds with no network: `tools/mapdata.py unpack <id>`, then the build without
+  `--measure`, must give the same map offline.
+
+For a weak agent the rule is one line: **fill every common layer; use the best source for the
+place, else the fallback.** `new_area.py build` does this; adding a new source is a person's job.
+
+Where today's tools fall short of it (2 November 2026):
+
+- There is no written list of the common layers. Today the shape is whatever `tools/mapdata.py`
+  happens to pack: Overture-shaped GeoJSON layers, terrain tiles (`terrain14.zip`, `terrain15.zip`,
+  which carry the lidar's ground where `tools/lidar_ground.py` has run), and per-square
+  `measured/<ti>_<tj>.zip` holding what the lidar and the canopy map said about each footprint
+  and the canopy. Another branch (`claude/cape-town-citydata`) may propose the list.
+- Building and object heights are only a layer where there is lidar: `measured/` holds per-footprint
+  survey results, keyed by footprint, not a height surface. Without lidar, heights come from tags
+  inside the building layer, so the "object heights" layer is missing rather than filled by a
+  fallback.
+- Some packed layers are UK formats, not common ones: `epc/` (energy certificate CSVs),
+  `census.geojson` (TS044 counts), `conservation.geojson`, `parcels.geojson`, `listed.geojson`,
+  `measured/towers.json` (lidar only), and `measured/partition.zip` (Bath only).
+- Wales's lidar has no last returns, so its `measured/` lacks what the EA's last-return model
+  gives; nothing fills that from a fallback.
+- `tools/districts.py` reads OpenStreetMap live and is not packed, so district names need the
+  network to rebuild.
+- `new_area.py` does not pack (`mapdata.py pack` is a separate, publishing-time step), and nothing
+  yet checks that a pack rebuilds offline to the same files.
+
 ## Open country (moorland, forest, reservoirs)
 
 Nothing in the steps assumes a town. In open country:

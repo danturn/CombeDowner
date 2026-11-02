@@ -10,8 +10,12 @@ steps, and do not run any command that is not written here or in a file this ski
 read. When a step says STOP, stop and ask the user; do not try to fix it yourself.
 
 Everything runs from the repository root (the folder holding `tools/` and `web/`). Run each command
-exactly as written, replacing only the placeholders in angle brackets: `<id>`, `<name>`, `<lat>`,
-`<lon>`, `<radius>`.
+exactly as written, replacing only the placeholders in angle brackets:
+
+- `<name>`: the place exactly as the user gave it in Step 0 (e.g. `Lacock, Wiltshire`);
+- `<title>`: the name the game shows: the chosen match's first line from Step 2, without the number and dot in front, up to its first
+  comma (e.g. `Lacock`);
+- `<id>`, `<radius>`: from Step 0; `<lat>`, `<lon>`: from Step 2.
 
 ## Hard rules (always)
 
@@ -26,6 +30,11 @@ exactly as written, replacing only the placeholders in angle brackets: `<id>`, `
 7. Do not `git commit` or `git push` unless the user tells you to.
 8. Never edit `tools/*.py` other than through the commands here. A map that builds badly is
    reported to the user, not fixed in the tools.
+9. Every map has the same common layers (ground heights, building and object heights, tree canopy,
+   buildings, ways, water, land use, places), whatever the place. `build` fills every layer with
+   the best source for the place, else the worldwide fallback. You never choose sources and never
+   leave a layer out. If a step asks you to add a source by hand, STOP: that is work for a person
+   (`reference.md`, "One shape for every map").
 
 ## STOP list: stop and ask the user when
 
@@ -113,7 +122,7 @@ lack, and which credits it needs.
 Without the menu (the default):
 
 ```sh
-python3 -I tools/new_area.py add "<name>" --id <id> --radius <radius> --lat <lat> --lon <lon>
+python3 -I tools/new_area.py add "<title>" --id <id> --radius <radius> --lat <lat> --lon <lon>
 ```
 
 If the user said yes to the menu in Step 0, add ` --in-menu` to the end of that command.
@@ -209,7 +218,7 @@ IF `SHOOT FAIL`: read `troubleshooting.md`, find the `FAIL` line in it, and do w
 Write the report in this shape, filling in from what the commands printed:
 
 ```
-Your map of <name> is built: id <id>, radius <radius> m, <N> squares.
+Your map of <title> is built: id <id>, radius <radius> m, <N> squares.
 
 Play it: cd web && npm run dev, then open http://localhost:5173/?map=<id>
 (Shift+F3 in the game copies a link to where you stand.)
