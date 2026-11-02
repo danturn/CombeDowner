@@ -273,7 +273,7 @@ def flag_ranges(p, key):
     return out
 
 
-from profiles import APPROACH, carry_profile, ease_grades, ease_kinks
+from profiles import APPROACH, carry_profile, ease_kinks
 from grading import grade, terrain_detail
 
 
@@ -643,8 +643,6 @@ def chains():
 # stretch steeper than its kind of road may be, nor steeper than the hill it climbs (measured over
 # 40 m, with a little to spare, or 1 in 5.5 where the hill's gentler), and bumps narrower than the
 # survey can really see evened out. Bridges and tunnels keep the heights they're carried at.
-RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "living_street": 4,
-        "unclassified": 5, "pedestrian": 5, "service": 6, "unknown": 6}
 SIGMA = 6.0          # metres: how far along a road its heights are evened out
 GRADE = 0.18         # the steepest a road is laid where the hill under it is gentler than that
 # and the steepest each kind of road is laid whatever the hill: Bath's main roads climb at 1 in 8
@@ -1240,31 +1238,23 @@ if dipped: carry_spans(True)      # (a road dipped beside a bridge of its own ha
 
 def limit_grades():
     """No road steeper than its kind may be (STEEPEST), after the dips under bridges and the
-    climbs onto them: where one is, the ramp is lengthened, the bottom of each dip (and every
-    bridge's deck, and the towpath) staying where it is."""
+    climbs onto them: the network is graded again (regrade), the bottom of each dip (and every
+    bridge's deck, and the towpath) staying where it is, so the ramps either side are lengthened
+    and the roads meeting them follow."""
     held = defaultdict(set)
     for j, x in dips:
         for i, q in enumerate(pending[j]["run"]):
             if math.dist(q[:2], (x.x, x.y)) < 6: held[j].add(i)
-    # (the main roads first, and a lesser road held where it meets one already eased, as in smooth_network)
-    done, key = {}, lambda q: (round(q[0] * 2), round(q[1] * 2))
-    order = sorted((ch for ch in chains() if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"),
-                   key=lambda ch: (RANK.get(pending[ch[0][0]]["c"], 6), -len(ch)))
+    order = [ch for ch in chains() if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"]
+    xy, target, fixed, steep = {}, {}, {}, []
     for ch in order:
-        pts = [pending[k]["run"][i] for k, i in ch]
-        z = [pending[k]["z"][i] for k, i in ch]
-        meets = [key(q) in done and abs(done[key(q)] - h) < 2.5 for q, h in zip(pts, z)]
-        z = [done[key(q)] if m_ else h for q, h, m_ in zip(pts, z, meets)]
-        d = [0.0]
-        for a, b in zip(pts, pts[1:]): d.append(d[-1] + math.dist(a[:2], b[:2]))
-        fixed = [m_ or i in pending[k]["span"] or i in pending[k]["deck"] or i in pending[k]["tow"] or i in held[k] for m_, (k, i) in zip(meets, ch)]
-        lim = [STEEPEST.get(pending[ch[m][0]]["c"], 0.33) * (d[m + 1] - d[m]) for m in range(len(ch) - 1)]
-        ease_grades(z, d, lim, fixed)
-        ease_kinks(z, d, fixed)
-        for q, (k, i), h in zip(pts, ch, z):
-            pending[k]["z"][i] = h
-            done.setdefault(key(q), h)
-
+        for k, i in ch:
+            r = pending[k]
+            xy[(k, i)] = r["run"][i][:2]
+            target[(k, i)] = r["z"][i]
+            if i in r["span"] or i in r["deck"] or i in r["tow"] or i in held[k]: fixed[(k, i)] = r["z"][i]
+        steep.append([STEEPEST.get(pending[ch[m][0]]["c"], 0.33) for m in range(len(ch) - 1)])
+    regrade(order, xy, target, fixed, steep)
 
 limit_grades()
 
