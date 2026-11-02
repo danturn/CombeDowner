@@ -32,7 +32,7 @@ and roof levels, and the canopy) is read from that file instead (one square's me
 tools/mapdata.py), and neither is needed; with --measure, they are worked out from the lidar and
 the canopy map as usual and written to that file. Both build exactly the same map.
 """
-from collections import defaultdict
+from collections import Counter, defaultdict
 import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
@@ -274,6 +274,7 @@ def flag_ranges(p, key):
 
 
 from profiles import APPROACH, carry_profile, ease_grades, ease_kinks
+from grading import grade, terrain_detail
 
 
 def level_structures(run, z, bridges, tunnels):
@@ -634,13 +635,14 @@ def chains():
 
 
 # Roads rise and fall like roads, not like the survey's pixels: the survey has walls, kerbs and
-# banks in it, a metre or two up or down within a few metres along a street. So once every road is
-# in, the network is smoothed as a whole, the main roads first: each road along its length (the
-# pieces the data splits it into joined up), by distance, over about a dozen metres either way;
-# where a lesser road meets one already smoothed (a side street at a junction, a crossroads) it
-# takes that road's height there and eases into it; and no road is left steeper than the hill it
-# climbs, measured over 40 m, with a little to spare (or 1 in 5.5, where the hill's gentler).
-# Bridges and tunnels keep the heights they're carried at.
+# banks in it, a metre or two up or down within a few metres along a street, and a coarse survey
+# (no lidar) has buildings in it and the slope of the hillside a road runs across. So once every
+# road is in, each is evened out along its length (the pieces the data splits it into joined up),
+# by distance, over about a dozen metres either way, and then the whole network is graded at once
+# (tools/grading.py): every junction at one height, each road as near that as it can be with no
+# stretch steeper than its kind of road may be, nor steeper than the hill it climbs (measured over
+# 40 m, with a little to spare, or 1 in 5.5 where the hill's gentler), and bumps narrower than the
+# survey can really see evened out. Bridges and tunnels keep the heights they're carried at.
 RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "living_street": 4,
         "unclassified": 5, "pedestrian": 5, "service": 6, "unknown": 6}
 SIGMA = 6.0          # metres: how far along a road its heights are evened out
@@ -650,54 +652,64 @@ GRADE = 0.18         # the steepest a road is laid where the hill under it is ge
 # Hodshill), and only drives and yards more, up to 1 in 3
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
+# metres: bumps in a road's survey narrower than about four times this are evened out
+# (measured over all of the map's terrain, not just this square's, so every square grades alike)
+DETAIL = terrain_detail([np.asarray(Image.open(os.path.join(cache, f)).convert("RGB")).astype(float) @ [256, 1, 1 / 256]
+                         for f in sorted(os.listdir(cache)) if f.startswith(f"{Z}_") and f.endswith(".png")] or DEM,
+                        156543.03 * math.cos(math.radians(lat0)) / 2 ** Z)
+print(f"terrain: detail down to {DETAIL:.0f} m")
 
 
 def smooth_network():
-    done = {}
-    key = lambda q: (round(q[0] * 2), round(q[1] * 2))
-    order = []
-    for ch in chains():
-        c = pending[ch[0][0]]["c"]
-        if c in PATHS and c != "pedestrian": continue
-        L = sum(math.dist(pending[k1]["run"][i1][:2], pending[k2]["run"][i2][:2]) for (k1, i1), (k2, i2) in zip(ch, ch[1:]))
-        order.append((RANK.get(c, 6), -L, ch))
-    order.sort(key=lambda o: (o[0], o[1]))
+    order = [ch for ch in chains() if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"]
     tun = {k: in_ranges(r["run"], r["tunnel_ranges"]) for k, r in enumerate(pending) if r["tunnel_ranges"]}
-    for _, _, ch in order:
+    xy, target, fixed, steep = {}, {}, {}, []
+    for ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
         z = np.array([pending[k]["z"][i] for k, i in ch], dtype=float)
         n = len(ch)
-        fixed = np.array([i in pending[k]["span"] or i in tun.get(k, ()) for k, i in ch])
-        for m, q in enumerate(pts):
-            h = done.get(key(q))
-            # (a road laid already, meeting this one there: unless it's well above or below, a
-            # bridge's deck and a road passing under it at a point the data happens to give both)
-            if h is not None and abs(h - z[m]) < 2.5: z[m] = h; fixed[m] = True
+        hold = [i in pending[k]["span"] or i in tun.get(k, ()) for k, i in ch]
         d = np.zeros(n)
         for m in range(1, n): d[m] = d[m - 1] + math.dist(pts[m - 1][:2], pts[m][:2])
-        # evened out along it, by distance (the fixed points pull their neighbours, and keep their own)
-        out = z.copy()
-        for m in range(n):
-            if fixed[m]: continue
+        for m, (k, i) in enumerate(ch):
+            xy[(k, i)] = pts[m][:2]
+            if hold[m]:
+                target[(k, i)] = fixed[(k, i)] = float(z[m])
+                continue
             near = np.flatnonzero(np.abs(d - d[m]) < 3 * SIGMA)
             w = np.exp(-((d[near] - d[m]) ** 2) / (2 * SIGMA ** 2))
-            out[m] = float((w * z[near]).sum() / w.sum())
-        z = out
-        # no steeper than the hill (over 40 m) it climbs
-        lim = np.zeros(max(0, n - 1))
+            target[(k, i)] = float((w * z[near]).sum() / w.sum())
+        lim = []
         for m in range(n - 1):
             dd = d[m + 1] - d[m]
-            if dd < 0.01: lim[m] = 0.0; continue
+            if dd < 0.01: lim.append(1.0); continue
             (ax, ay), (bx, by) = pts[m][:2], pts[m + 1][:2]
             ux, uy = (bx - ax) / dd, (by - ay) / dd
             mx, my = (ax + bx) / 2, (ay + by) / 2
             hill = abs(elev(mx + ux * 20, my + uy * 20) - elev(mx - ux * 20, my - uy * 20)) / 40
-            lim[m] = min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)) * dd
-        ease_grades(z, d, lim, fixed)
-        ease_kinks(z, d, fixed)
+            lim.append(min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)))
+        steep.append(lim)
+    regrade(order, xy, target, fixed, steep)
+
+
+graded_key = lambda q: (round(q[0] * 2), round(q[1] * 2))
+
+
+def regrade(order, xy, target, fixed, steep):
+    """The network graded (tools/grading.py) and written back to the roads, each then eased of
+    sharp changes of gradient between its junctions (a junction stays where the grading put it)."""
+    exact = [[STEEPEST.get(pending[k]["c"], 0.33) for k, _ in ch[:-1]] for ch in order]
+    graded = grade(order, xy, target, fixed, steep, DETAIL, exact=exact)
+    seen = Counter(q for ch in order for q in {graded_key(pending[k]["run"][i]) for k, i in ch})
+    for ch in order:
+        pts = [pending[k]["run"][i] for k, i in ch]
+        z = [graded[(k, i)] for k, i in ch]
+        d = [0.0]
+        for a, b in zip(pts, pts[1:]): d.append(d[-1] + math.dist(a[:2], b[:2]))
+        held = [(k, i) in fixed or seen[graded_key(pts[m][:2])] > 1 or m in (0, len(ch) - 1) for m, (k, i) in enumerate(ch)]
+        ease_kinks(z, d, held)
         for m, (k, i) in enumerate(ch):
             pending[k]["z"][i] = float(z[m])
-            done[key(pts[m])] = float(z[m])
 
 
 smooth_network()

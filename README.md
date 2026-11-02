@@ -614,7 +614,11 @@ open `?map=your-town`. It works anywhere: in England the lidar gives the real ro
 elsewhere they are guessed from the open map data's heights and floor counts. Wherever the data
 has them, buildings take OpenStreetMap's floor counts, roof shapes, wall materials and colours, a
 house with no energy certificate is built of what its neighbours' certificates say, and mapped
-street lamps stand where they really are. [docs/own-area.md](docs/own-area.md) says what you will need installed
+street lamps stand where they really are. Away from the lidar the terrain is a coarse survey from
+space, with buildings and trees in it, so the streets are graded as roads are built: the whole
+network at once, every junction at one height, no street steeper than its kind of road may be
+where the hill allows, and the ground cut and banked to them. On the lidar the streets stay where
+it measured them. [docs/own-area.md](docs/own-area.md) says what you will need installed
 and what the script can't do for you. If you use Claude Code, ask it to make a map of your area and
 it follows the `new-area` skill.
 
