@@ -124,7 +124,8 @@ MAPS = {
     "cape-town": dict(
         # a map outside the UK: the detailed middle is the city centre, the Bo-Kaap and Gardens round
         # the Company's Garden; the wide circle takes in the V&A Waterfront, Signal Hill, Lion's
-        # Head, the top of Table Mountain and Devil's Peak
+        # Head and Table Mountain, and runs round the back of Devil's Peak through Woodstock,
+        # Observatory, Mowbray, Rosebank and UCT to Newlands and the top of Kirstenbosch
         name="Cape Town",
         centre=(18.4175, -33.9265),    # lon, lat: the Company's Garden
         field=1000,
@@ -141,9 +142,9 @@ MAPS = {
         z0=0,                                # sea level
         sea=0.0,                             # Table Bay's level: the ground below it is under the sea
         wide=dict(
-            field=3300,                      # 6.6 km across
-            field_centre=(-500, -450),
-            half=3700,
+            field=5380,                      # 10.8 km across: the first circle all inside it, and Newlands Stadium
+            field_centre=(1085, -1798),
+            half=5780,                       # the same 400 m of scenery past the field as before
         ),
     ),
     "bradford-on-avon": dict(
