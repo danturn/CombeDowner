@@ -1,8 +1,8 @@
 // The railways (laid out by tools/railway.py): Brunel's Great Western main line through Bath Spa
 // and Oldfield Park, and the line down the Limpley Stoke valley past Dundas that joins it at
 // Bathampton. Ballast, sleepers and rails on a bank down to the ground, bridges on arches or girders with no pier in what passes
-// under them, stone mouths on the tunnels, and the
-// station platforms. InterCity 125s run the main line and Sprinters the valley line, stopping at
+// under them, stone mouths on the tunnels (one face for tracks going in side by side, as high as
+// the hill over it), and the station platforms, with the canopies over those up on a viaduct. InterCity 125s run the main line and Sprinters the valley line, stopping at
 // the stations (an InterCity only where a platform is long enough for it, as at Bath Spa), keeping left and sounding their horns at anyone near the line. Stand on the line
 // and one will run you down; get up on the roof of one and it'll take you with it.
 //
@@ -43,7 +43,11 @@ export interface RailData {
   tracks: { n: string; p: number[][] }[];
   routes: { n: string; t: number[][]; st: [number, string][]; both: number; k?: number; to?: string; via?: string[]; on?: number }[];
   platforms: { n: string; r: number[][]; z: number; no?: string }[];
+  /** Tunnel mouths: [x, y, z, angle into the hill, and the ground over the tunnel just inside, where the data gives it]. */
   portals: number[][];
+  /** Canopies over platforms up off the ground, at the platform's top z; t: 1 on an outline only
+   *  left out of the squares, not drawn. */
+  canopies?: { r: number[][]; z: number; t?: number }[];
   /** Journeys on to another map (tools/railway.py's LINKS): which line carries on, the station
    *  there, and how long the ride takes on the real line. */
   links?: { line: string; station: string; to: string; to_station: string; secs: number }[];
@@ -66,6 +70,12 @@ const CHUNK = 150;                   // track points to a mesh (fewer, longer me
 const BANK_DEPTH = 5, BANK_SLOPE = 1.5;     // metres down, and out per metre down
 const BANK_REACH = 2.3 + BANK_DEPTH * BANK_SLOPE;
 const WALL_SKIRT = 3;                       // metres a solid bridge stretch's sides go below its recorded ground
+// A tunnel mouth's face: its arches' crown over the rails (no lower than a train needs), how high
+// it stands where the hill is deep, how far it runs on past its outer
+// arches into the cutting's sides, and the mouths that open in one face: two tracks side by side,
+// facing the same way, under one arch if theirs would meet, else each under its own.
+const PORTAL_CROWN = 7, PORTAL_LEAST = 5, PORTAL_TOP = 9, PORTAL_WING = 6.4, PORTAL_R = 3.6;
+const PORTAL_TURN = 0.35, PORTAL_DEPTH = 2.5, PORTAL_SIDE = 16;
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
 // reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
 // CANOPY_SHORT gets none; one LONG_PLATFORM or more gets two, at the 2nd and 4th of five parts.
@@ -651,18 +661,34 @@ export class Railway {
     // tunnel mouths: a stone face with the arch, black inside
     const pos: number[] = [], col: number[] = [];
     const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => { pos.push(...a, ...b, ...c, ...a, ...c, ...d); for (let q = 0; q < 6; q++) col.push(...cc); };
-    for (const [x, y, z, ang] of this.d.portals) {
-      const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, R = 3.6, spring = 3.4, base = z - z0;
+    for (const g of headwalls(this.d.portals)) {
+      const { x, y, ux, uy, base: zb, bores, cover } = g, nx = -uy, ny = ux, base = zb - z0, D = 1.2;
       const P = (u: number, v: number, h: number) => [x + ux * u + nx * v, base + h, -(y + uy * u + ny * v)];
-      const arch = (v: number) => (Math.abs(v) < R ? spring + Math.sqrt(R * R - v * v) : -1);
-      for (let v = -10; v < 10 - 1e-6; v += 0.5) {
-        const w = v + 0.5;
-        for (const u of [0, 1.2]) quad(P(u, v, arch(v)), P(u, w, arch(w)), P(u, w, 9), P(u, v, 9), STONE);
-        quad(P(0, v, 9), P(0, w, 9), P(1.2, w, 9), P(1.2, v, 9), STONE);
-        if (Math.abs(v) < R && Math.abs(w) <= R) quad(P(1.2, v, arch(v)), P(1.2, w, arch(w)), P(14, w, arch(w)), P(14, v, arch(v)), DARK);
+      // up to the ground over it, not standing up out of the hill, but always high enough over its
+      // arches for a train to go under them
+      // (ground too shallow over it for a train to fit under says the data's tunnel is doubtful, and
+      // the face is built as it always was)
+      const fits = cover !== undefined && cover >= PORTAL_LEAST + 0.6;
+      const crown = fits ? Math.min(PORTAL_CROWN, cover - 0.6) : PORTAL_CROWN;
+      const top = fits ? Math.min(PORTAL_TOP, Math.max(crown + 0.8, cover)) : PORTAL_TOP;
+      const arches = bores.map(([c, hw]) => { const spring = Math.max(2.4, crown - hw); return { c, hw, spring, rise: crown - spring }; });
+      const v0 = arches[0].c - arches[0].hw - PORTAL_WING, v1 = arches[arches.length - 1].c + arches[arches.length - 1].hw + PORTAL_WING;
+      // every arch's edges are breaks, so its sides stand plumb
+      const vs = new Set<number>([v0, v1]);
+      for (let v = v0; v < v1; v += 0.5) vs.add(v);
+      for (const a of arches) { vs.add(a.c - a.hw); vs.add(a.c + a.hw); }
+      const cuts = [...vs].sort((a, b) => a - b);
+      for (let k = 0; k + 1 < cuts.length; k++) {
+        const v = cuts[k], w = cuts[k + 1], m = (v + w) / 2, a = arches.find((q) => Math.abs(m - q.c) < q.hw), open = a !== undefined;
+        const lo = (q: number) => (a ? a.spring + a.rise * Math.sqrt(Math.max(0, 1 - ((q - a.c) / a.hw) ** 2)) : -1);
+        for (const u of [0, D]) quad(P(u, v, lo(v)), P(u, w, lo(w)), P(u, w, top), P(u, v, top), STONE);
+        quad(P(0, v, top), P(0, w, top), P(D, w, top), P(D, v, top), STONE);
+        if (open) quad(P(0, v, lo(v)), P(0, w, lo(w)), P(D, w, lo(w)), P(D, v, lo(v)), DARK);
       }
-      for (const s of [R, -R]) quad(P(0.6, s, 0), P(14, s, 0), P(14, s, spring), P(0.6, s, spring), DARK);
-      quad(P(1.2, -R, 0.2), P(1.2, R, 0.2), P(1.2, R, spring + R), P(1.2, -R, spring + R), DARK);   // the dark beyond
+      for (const a of arches) {
+        for (const s of [a.c - a.hw, a.c + a.hw]) quad(P(0, s, 0), P(D, s, 0), P(D, s, a.spring), P(0, s, a.spring), DARK);
+        quad(P(D, a.c - a.hw, 0.2), P(D, a.c + a.hw, 0.2), P(D, a.c + a.hw, crown), P(D, a.c - a.hw, crown), DARK);   // the dark beyond
+      }
     }
     add(pos, col);
     // the platforms: paving on top, brick down the sides, and along the edge by the track a pale
@@ -1250,6 +1276,38 @@ function bedAt(d: number, h: number): number | null {
   if (d <= 2.3) return h + 0.25 - ((d - 1.6) / 0.7) * 0.55;
   if (d <= BANK_REACH) return h - 0.3 - (d - 2.3) / BANK_SLOPE;
   return null;
+}
+
+/** The tunnel mouths grouped into the faces they open in: each face's middle at its outermost mouth,
+ *  the way into the hill, the rails' height, its bores as [offset across, half width], and how high
+ *  the ground over it stands above the rails, if known. */
+function headwalls(portals: number[][]) {
+  const groups: number[][][] = [];
+  for (const m of portals) {
+    const g = groups.find((g) => g.some((o) => {
+      const turn = Math.abs(Math.atan2(Math.sin(m[3] - o[3]), Math.cos(m[3] - o[3])));
+      const dx = m[0] - o[0], dy = m[1] - o[1], ux = Math.cos(o[3]), uy = Math.sin(o[3]);
+      return turn < PORTAL_TURN && Math.abs(dx * ux + dy * uy) < PORTAL_DEPTH && Math.abs(dy * ux - dx * uy) < PORTAL_SIDE;
+    }));
+    if (g) g.push(m); else groups.push([m]);
+  }
+  return groups.map((g) => {
+    const ang = Math.atan2(g.reduce((a, m) => a + Math.sin(m[3]), 0), g.reduce((a, m) => a + Math.cos(m[3]), 0));
+    const ux = Math.cos(ang), uy = Math.sin(ang);
+    const cx = g.reduce((a, m) => a + m[0], 0) / g.length, cy = g.reduce((a, m) => a + m[1], 0) / g.length;
+    const along = g.map((m) => (m[0] - cx) * ux + (m[1] - cy) * uy), across = g.map((m) => (m[1] - cy) * ux - (m[0] - cx) * uy).sort((a, b) => a - b);
+    const out = Math.min(...along), base = Math.min(...g.map((m) => m[2]));
+    const bores: number[][] = [];
+    let a = across[0], b = across[0];
+    for (const v of across.slice(1)) {
+      if (v - b < 2 * PORTAL_R + 1) { b = v; continue; }
+      bores.push([(a + b) / 2, (b - a) / 2 + PORTAL_R]); a = b = v;
+    }
+    bores.push([(a + b) / 2, (b - a) / 2 + PORTAL_R]);
+    const grounds = g.filter((m) => m[4] !== undefined).map((m) => m[4]);
+    const cover = grounds.length ? grounds.reduce((s, h) => s + h, 0) / grounds.length - base : undefined;
+    return { x: cx + ux * out, y: cy + uy * out, ux, uy, base, bores, cover };
+  });
 }
 
 function segDist(a: number[], b: number[], x: number, y: number): number {

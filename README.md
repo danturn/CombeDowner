@@ -38,7 +38,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. You can walk the
   whole line without falling through it: along its viaducts, up its grassy embankments, and on to
-  the platforms, which are walled down to the ground under a station on a viaduct. Where the map
+  the platforms, which are walled down to the ground under a station on a viaduct, with the
+  canopies the map data has over them on posts (not as blocks standing up from the street below).
+  A railway tunnel's mouth is one stone face for the tracks going in side by side, under one arch
+  or an arch each, and stands only as high as the hill it's cut into lets it; walls the map draws
+  across the cutting stop at the line. Where the map
   data has a level crossing (the footpath over the main line at Ferry Lane, Bathampton, or Bridge
   Street at Greenland Mills in Bradford-on-Avon), the way crosses the line at grade on a deck between
   the rails, with red lights on posts either side; everywhere else a path stops at the line. A

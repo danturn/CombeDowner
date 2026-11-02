@@ -27,7 +27,10 @@ the map centre and heights in metres above sea level:
   the departure boards: SERVICES), and, on a line that carries on to another map (LINKS), whether this
   route's trains do ("on": 1 if the linked station is the last they call at here, so they go on there).
 - platforms: [{"n": station, "r": [[x, y], ...] the edge, "z": the platform's top, "no": its number, if the data has one}].
-- portals: [[x, y, z, angle]] tunnel mouths, the angle pointing into the hill (east is 0, north a quarter turn).
+- canopies: [{"r": [[x, y], ...] the outline, "z": the platform's top}] the canopies over platforms up off the ground,
+  and "t": 1 on an outline that is left out of the squares but not drawn (the station's whole extent, or one canopy again).
+- portals: [[x, y, z, angle, ground]] tunnel mouths, the angle pointing into the hill (east is 0, north a quarter turn),
+  and the ground's height over the tunnel just inside it.
 """
 import json, math, os, sys
 import numpy as np
@@ -93,6 +96,11 @@ SERVICES = {
     ],
 }
 EDGE = 60            # a track end this near the circle's edge is where trains come and go
+CANOPY_REACH = 1.5  # metres past a platform's edge its canopy may overhang the track
+CANOPY_SHARE = 0.5  # how much of a footprint over a raised platform makes it the platform's canopy
+CANOPY_TRACK = 8.0  # metres of track under an outline that make it the station's extent rather than a canopy
+CANOPY_RAISED = 2.0 # metres a platform stands over the ground for what's on it not to stand on the ground
+COVER_AT = (4, 6, 8, 10, 12)   # metres into a tunnel from its mouth that the ground over it is read at
 SHORT_TUNNEL = 50    # metres: a tunnel shorter than this is something going over the line, and has no mouths
 ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
              "living_street": 2.5, "service": 1.8, "unknown": 2}     # half a road's width (the rest are paths: 1.5)
@@ -518,7 +526,11 @@ def main():
                 if 0 <= m < len(p) and p[m][3] != 2:
                     # the mouth faces out of the hill, from the tunnel's end toward the open track
                     ang = math.atan2(p[k][1] - p[m][1], p[k][0] - p[m][0])
-                    portals.append([r1((p[k][0] + p[m][0]) / 2), r1((p[k][1] + p[m][1]) / 2), r1((p[k][2] + p[m][2]) / 2), round(ang, 3)])
+                    x, y = (p[k][0] + p[m][0]) / 2, (p[k][1] + p[m][1]) / 2
+                    # the ground over the tunnel a few metres in, past the slope down into the cutting,
+                    # which the face stands as high as
+                    over = sorted(T.elev(x + math.cos(ang) * u, y + math.sin(ang) * u) for u in COVER_AT)[len(COVER_AT) // 2]
+                    portals.append([r1(x), r1(y), r1((p[k][2] + p[m][2]) / 2), round(ang, 3), r1(over)])
 
     out_d = dict(
         tracks=[dict(n=t["n"], p=[[r1(q[0]), r1(q[1]), round(q[2], 2), q[3]] + ([r1(T.elev(q[0], q[1]))] if q[3] == 1 else []) for q in t["p"]])
