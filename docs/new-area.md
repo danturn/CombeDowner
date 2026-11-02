@@ -210,6 +210,29 @@ For a map kept in the repository, pack the two files with the rest
 and add their rows to `data/$MAP/README.md` (copy them from `data/combe-down/README.md`).
 Licence: Open Government Licence v3; the attributions are in `data/combe-down/README.md`.
 
+### The City of Cape Town's own data (inside the City)
+
+A map anywhere inside the City of Cape Town gets the City's open data (its Open Data Policy: free
+for any use, credit "City of Cape Town") in place of the lidar, by the same layers the UK maps
+have, so the build reads it as it reads theirs:
+
+- the ground: the Ground Level Map's 2 m contours (from the 2018-19 lidar), filled in between
+  into a 2 m grid and laid over the terrain tiles, as `tools/lidar_ground.py` lays the lidar's
+  ground (Mapzen's tiles still hold out at sea and past the City, and the two meet smoothly);
+- the buildings' heights: the City's 2D Building Footprints, each roof measured from the air, as
+  the heights layer (`heights.geojson`: an outline in degrees and its roof's highest point above
+  the ground, `height`, in metres). Any survey of roof heights can go in this layer;
+- the trees: the City's Tree Canopies outlines, as the crowns layer beside the canopy height map
+  (`canopy/crowns.geojson`), which keeps the trees to the crowns it outlines.
+
+```sh
+python3 -I tools/fetch.py $MAP --only city                     # or tools/cct.py $MAP fetch, heights, crowns
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force   # (fetches the terrain tiles)
+python3 -I tools/cct.py $MAP ground                            # the contours' ground into the tiles
+```
+
+then measure and pack as usual (the crowns go into the canopy kept in `measured/`).
+
 ### OpenStreetMap businesses (recommended)
 
 ```sh

@@ -8,13 +8,16 @@ Used for: tree positions and heights (every local maximum of the canopy becomes 
 spotting hedges along garden boundaries.
 
 Where the Environment Agency lidar covers the map, refine() swaps in its heights for trees: the
-surveyed surface less the bare ground, at 1 m, so each crown has its real height and spread.
+surveyed surface less the bare ground, at 1 m, so each crown has its real height and spread. Where
+a survey has outlined the crowns (crowns.geojson beside the tile: tools/cct.py), outline() keeps
+the trees to them.
 """
-import glob, math, os
+import glob, json, math, os
 from types import SimpleNamespace
 import numpy as np
 
 R = 6378137.0
+DOME, TALLEST = 0.8, 12.0       # a crown outlined but not measured: metres up per metre in from its edge, and at most
 
 
 class Canopy:
@@ -41,6 +44,45 @@ class Canopy:
             self.h = h[0].astype(np.float32)
             win = SimpleNamespace(row_off=round((t.f - ref.f) / ref.e), col_off=round((t.c - ref.c) / ref.a))
         self._place(t.c, t.a, t.f, t.e, int(win.row_off), int(win.col_off), to_model)
+        crowns = os.path.join(folder, "crowns.geojson")
+        if os.path.exists(crowns): self.outline(json.load(open(crowns)))
+
+    def outline(self, layer):
+        """Where a survey has outlined the crowns (the common crowns layer: tools/cct.py), the trees
+        are its crowns: outside them, within the box it surveyed, the canopy is no taller than the
+        growth it left out (hedges and shrubs stay); inside, a crown the height map has too low
+        stands at least at the survey's least height, rising towards its middle."""
+        from PIL import Image, ImageDraw
+        W, S, E, N = layer["bbox"]
+        lo, top = layer["low"], layer["least"]
+        ny, nx = self.h.shape
+        mx = lambda lon: math.radians(lon) * R
+        my = lambda lat: math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * R
+        to_px = lambda lon, lat: ((mx(lon) - self.x0) / self.dx, (my(lat) - self.y0) / self.dy)
+        x0p, y0p = to_px(W, N)
+        x1p, y1p = to_px(E, S)
+        if x1p < 0 or y1p < 0 or x0p > nx or y0p > ny: return
+        lon_of = lambda X: math.degrees((self.x0 + X * self.dx) / R)
+        lat_of = lambda Y: math.degrees(2 * math.atan(math.exp((self.y0 + Y * self.dy) / R)) - math.pi / 2)
+        W_, E_, N_, S_ = lon_of(0), lon_of(nx), lat_of(0), lat_of(ny)
+        img = Image.new("1", (nx, ny), 0)
+        d = ImageDraw.Draw(img)
+        for f in layer["features"]:
+            fw, fs, fe, fn = f["bbox"]
+            if fe < W_ or fw > E_ or fn < S_ or fs > N_: continue
+            g = f["geometry"]
+            for poly in ([g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]):
+                for k, ring in enumerate(poly):
+                    pts = [to_px(lon, lat) for lon, lat in ring]
+                    if len(pts) >= 3: d.polygon(pts, fill=1 if k == 0 else 0)
+        inside = np.asarray(img, dtype=bool)
+        surveyed = np.zeros_like(inside)
+        surveyed[max(0, int(math.ceil(y0p))):max(0, int(y1p)), max(0, int(math.ceil(x0p))):max(0, int(x1p))] = True
+        # a crown the height map misses is domed from its edge, so each has a top of its own to be a tree
+        from scipy import ndimage
+        dome = np.minimum(top + ndimage.distance_transform_edt(inside) * self.px * DOME, TALLEST)
+        h = self.h
+        self.h = np.where(surveyed, np.where(inside, np.maximum(h, dome), np.minimum(h, lo)), h).astype(np.float32)
 
     def _place(self, x0, dx, y0, dy, row0, col0, to_model):
         """Where the window is: its mercator origin and pixel size (dy < 0), where it starts in the

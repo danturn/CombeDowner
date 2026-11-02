@@ -147,6 +147,31 @@ def _form(size):
     return 0 if size == 1 else 1 if size == 2 else 2
 
 
+def surveyed_heights(polys, props, outlines):
+    """The heights layer (a survey of each roof's highest point above the ground, in model metres:
+    [(height, outline)]) onto the footprints: a footprint the surveyed roofs cover at least half of
+    takes their height, the area-weighted median where it covers several, as its "height", marked
+    "_surveyed" so it is believed over a floor count. Returns how many were given one."""
+    if not outlines: return 0
+    tree = STRtree([g for _, g in outlines])
+    given = 0
+    for poly, p in zip(polys, props):
+        pieces = []
+        for k in tree.query(poly):
+            h, g = outlines[int(k)]
+            a = poly.intersection(g).area
+            if a > 0: pieces.append((h, a))
+        if sum(a for _, a in pieces) < 0.5 * poly.area: continue
+        pieces.sort()
+        half, run = sum(a for _, a in pieces) / 2, 0.0
+        for h, a in pieces:
+            run += a
+            if run >= half: break
+        p["height"], p["_surveyed"] = h, True
+        given += 1
+    return given
+
+
 def priors(polys, props, certs, keys, zones, default_zone, census, cores):
     """What the census and the conservation areas say of each footprint, for classify, as
     dict(flats=..., near=[...], core=..., walls=...) per footprint.
@@ -672,7 +697,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             eaves = 8.5
             tall = 1      # one row of tall windows, not a house's storeys
         elif zone in CAPE:
-            eaves = cape_eaves(kind, zone, floors, ml, r_group)
+            eaves = cape_eaves(kind, zone, 0 if p.get("_surveyed") else floors, ml, r_group)
         elif kind == "institution" and zone in BATH and floors:
             tall = max(2, floors)
             eaves = tall * 3.5
@@ -727,7 +752,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         # the lidar, they beat the area's guesses (median error 0.98 m against 1.13 m)
         m = measured[i] if measured else None
         if not m and zone not in CAPE and kind not in ("outbuilding", "church"):
-            if floors: eaves = floors * STOREY.get(kind, STOREY_HOUSE) + 0.2
+            if p.get("_surveyed"): eaves = max(2.2, ml * (0.97 if kind in ("flats", "institution", "shop") else 0.8))
+            elif floors: eaves = floors * STOREY.get(kind, STOREY_HOUSE) + 0.2
             elif ml and ml > 2.5: eaves = ml
             if tall: tall = max(1, round((eaves - 0.8) / 3.5))
         if cls == "bungalow" and kind not in ("outbuilding", "church", "institution"):
