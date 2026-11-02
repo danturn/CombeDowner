@@ -437,6 +437,10 @@ def stretch_samples(t0, t1, corners):
 # next square, which doesn't hold that house, runs its own piece on to the edge, so refusing a corner
 # this small left the street with a gap at the seam
 EDGE_GRAZE = 0.5
+# fractions tried, widest first, for a street run on narrower past a house to the square's edge: the
+# pavements give way first, then the carriageway, down to EDGE_LEAST metres
+EDGE_NARROW = ((0.5, 1.0), (0.0, 1.0), (0.0, 0.75), (0.0, 0.5))
+EDGE_LEAST = 2.5
 
 
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,
@@ -535,6 +539,19 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             ww, vv = (piece[1], piece[2]) if piece is not None else (ww, vv)
             band = lambda q: LineString(q).buffer(ww / 2 + max(vv), cap_style="flat").intersection(house_area).area
             return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + EDGE_GRAZE
+        def narrowed(piece, pts):
+            """The last stretch from `piece` on to the square's edge (`pts`), where the street at its
+            own width would reach further over a house than the piece did: as narrow as keeps it off
+            the house, so the street still meets the next square's at the seam."""
+            if math.dist(*pts) < 0.05:
+                return None
+            w, v = piece[1], list(piece[2])
+            for fp, fw in EDGE_NARROW:
+                vv, ww = [x * fp for x in v[:2]] + v[2:], max(min(w, EDGE_LEAST), w * fw)
+                if no_closer(None, pts, ww, vv):
+                    return (pts, ww, vv)
+            return None
+
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             # (the faces stop at the square's edge, so a point by it can't be measured across; the
@@ -545,8 +562,12 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                                       faces[0], faces[1], house_area, tall if r.get("tagged") else None)
                 if len(ch[0]) > 4 and no_closer(pieces[0], [xy[0]] + list(pieces[0][0])):
                     pieces[0] = ([xy[0]] + list(pieces[0][0]), *pieces[0][1:])
+                elif len(ch[0]) > 4 and (pc := narrowed(pieces[0], [xy[0], pieces[0][0][0]])) is not None:
+                    pieces.insert(0, pc)
                 if len(ch[-1]) > 4 and no_closer(pieces[-1], list(pieces[-1][0]) + [xy[-1]]):
                     pieces[-1] = (list(pieces[-1][0]) + [xy[-1]], *pieces[-1][1:])
+                elif len(ch[-1]) > 4 and (pc := narrowed(pieces[-1], [pieces[-1][0][-1], xy[-1]])) is not None:
+                    pieces.append(pc)
             elif fit:
                 pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area,
                                       tall if r.get("tagged") else None)
@@ -2850,9 +2871,11 @@ def road_cracks(road, others, width=CRACK, most=3.0):
 
 KERB_POINT = 0.5      # metres: a point of paving or road narrower than twice this is the other's
 KERB_POINT_AREA = 8.0  # m2: a larger piece is a strip of its own (an island between two carriageways)
+KERB_SLIT = 0.25       # metres: half the width of paving anyone could stand on
+KERB_ISLAND = 0.9      # of its edge: an island narrower than 2 * KERB_POINT with the road all round it is the road's
 
 
-def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
+def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA, walls=None):
     """`road` and the paving round it (`others`: the pavements, a square's paving, the paths) with the
     points and slivers where they meet given to the other side: the tip of a pavement's corner at a
     slanting junction, a wedge of paving fanning into the road where two streets' strips cross, a
@@ -2861,9 +2884,12 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
     pavement along its kerb stays, and the corner each leaves is rounded, as a kerb is laid."""
     others = list(others)
 
-    def pieces(A):
+    def pieces(A, edge=None):
+        # (however long, a strip with the road all round it is too narrow to stand on: two
+        # carriageways mapped side by side leave one tapering to a needle at both ends)
         thin = A.difference(A.buffer(-r).buffer(r + 0.01))
-        return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most]
+        return [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area and (
+            g.area < most or edge is not None and g.exterior.intersection(edge).length > KERB_ISLAND * g.exterior.length)]
 
     for _ in range(2):
         moved = False
@@ -2873,7 +2899,7 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
         for i, A in enumerate(others):
             if A.is_empty:
                 continue
-            give = [g for g in pieces(A) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+            give = [g for g in pieces(A, edge) if g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
             if give:
                 g = unary_union(give)
                 others[i], road, moved = A.difference(g), road.union(g), True
@@ -2889,7 +2915,36 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA):
                 road, others[i], moved = road.difference(g), others[i].union(g), True
         if not moved:
             break
+    if walls is not None and not walls.is_empty and not road.is_empty:
+        # a strip too narrow to walk on between the road and a wall is the road's, which runs on to the wall
+        edge, wall = road.buffer(0.05), walls.buffer(0.05)
+        both = edge.union(wall)
+        for i, A in enumerate(others):
+            if A.is_empty:
+                continue
+            thin = A.difference(A.buffer(-KERB_SLIT).buffer(KERB_SLIT + 0.01))
+            give = [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and g.area > 1e-4
+                    and g.exterior.intersection(both).length > KERB_ISLAND * g.exterior.length
+                    and g.exterior.intersection(edge).length > 0.3 * g.exterior.length]
+            if give:
+                g = unary_union(give)
+                others[i], road = A.difference(g), road.union(g)
     return road, others
+
+
+def thin_to(A, B, r=KERB_POINT, most=KERB_POINT_AREA):
+    """`A` less its slivers lying along `B`, and `B` with them: a hairline of path left along a
+    pavement's edge where the two were cut apart is that pavement."""
+    if A.is_empty or B.is_empty:
+        return A, B
+    edge = B.buffer(0.05)
+    thin = A.difference(A.buffer(-r).buffer(r + 0.01))
+    give = [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most
+            and g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+    if not give:
+        return A, B
+    g = unary_union(give)
+    return A.difference(g), B.union(g)
 
 
 ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
@@ -3656,7 +3711,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         bare = _minus(bare, unary_union(kept or [Polygon()]))
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
         pave, plaza = _minus(pave, bare), _minus(plaza, bare)
-    road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path))
+    road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path), walls=unary_union(buildings) if buildings else None)
+    path, pave = thin_to(path, pave)
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
