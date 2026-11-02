@@ -20,6 +20,10 @@ const CELLS = touch ? 120 : 160;
 const NEAR = 10, FAR = 60000;
 const REBUILD = 150;     // metres the player moves before the cells to draw are worked out again
 const ROCK = new THREE.Color("#8a877f"), WATER = new THREE.Color("#46718a");
+const SEA_REACH = 55000;     // metres from the middle of the map to the edges of the sea past it
+// (metres off over which the sea is lost in the haze: all of it well before its edge or the depth
+// range's, from anywhere on the map, so the edge never shows as a line under the sky)
+const SEA_HAZE = [6000, 24000];
 
 export interface Backdrop {
   /** Follow the player, the sun and the fog; dark: how far into a tunnel they are (0 to 1). */
@@ -78,7 +82,7 @@ export function buildBackdrop(map: GameMap, scene: THREE.Scene, palette: THREE.C
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b], k) => {
     const v = nx * ny + k;
-    pos.set([mx + a * 40000, sea > -Infinity ? sea - 0.5 : floor - 50, -(my + b * 40000)], v * 3);
+    pos.set([mx + a * SEA_REACH, sea > -Infinity ? sea - 0.5 : floor - 50, -(my + b * SEA_REACH)], v * 3);
     nor.set([0, 1, 0], v * 3);
     col.set([WATER.r, WATER.g, WATER.b], v * 3);
   });
@@ -136,6 +140,9 @@ export function buildBackdrop(map: GameMap, scene: THREE.Scene, palette: THREE.C
         float h = 0.06 + 0.8 * (1.0 - exp(-distance(vW, cameraPosition) / 14000.0));
         vec3 c = mix(vCol, vCol * vec3(0.74, 0.88, 1.25), smoothstep(0.0, 0.35, h));
         h = max(h, 0.6 * (1.0 - smoothstep(fogFar, fogFar * 1.3 + 250.0, vDepth)));
+        // and the sea is lost in it altogether before its far edge, so it meets the sky's own
+        // haze at the horizon rather than stopping in a straight line under it
+        h = max(h, smoothstep(${SEA_HAZE[0].toFixed(1)}, ${SEA_HAZE[1].toFixed(1)}, distance(vW.xz, cameraPosition.xz)));
         gl_FragColor = vec4(mix(c, haze, h), 1.0);
       }`,
   });

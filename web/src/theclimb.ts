@@ -234,6 +234,7 @@ export function clearClimb(core: GameMap, d: MapData) {
   };
   d.tr = d.tr.filter((q) => !off(q[0], q[1]));
   if (d.sb) d.sb = d.sb.filter((q) => !off(q[0], q[1]));
+  if (d.rk) d.rk = d.rk.filter((q) => !off(q[0], q[1]));
   if (d.fx) d.fx = d.fx.filter((q) => !off(+q[1], +q[2]));
   if (d.wr) d.wr = d.wr.filter((q) => !off(q[0], q[1]) && !off(q[3], q[4]));
 }

@@ -26,6 +26,7 @@ from shapely.ops import substring, unary_union, voronoi_diagram
 
 HOUSES = {"detached", "semi", "terrace"}
 DEPTH = {"detached": 22, "semi": 20, "terrace": 16}   # how far a garden reaches from the house
+STREET_REACH = 80.0     # metres: the furthest a house with a garden stands from a street or lane
 # front boundary, side and back boundary, per zone; each is a list of (style, weight) (the side and
 # back one is rolled for a whole back yard, so a hedged yard is kept rare)
 STYLE = {
@@ -102,9 +103,13 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     near = lambda g, parts, t: unary_union([parts[int(k)] for k in t.query(g)])
     front, side, gates, drives = [], [], [], []
     plot_of, street_of = {}, {}
+    ftree = shapely.STRtree(facing) if facing else None
     for i, p in enumerate(polys):
         b = info[i]
         if b["kind"] not in HOUSES or i not in cells: continue
+        # a building no street comes near (a hut on a mountain top, a cafe in a park) is nobody's
+        # home with a garden round it, whatever its size makes it look like
+        if ftree is None or not len(ftree.query(p, predicate="dwithin", distance=STREET_REACH)): continue
         plot = unary_union(cells[i]).intersection(_reach(p, DEPTH[b["kind"]]))
         streets = near(plot, corridor_parts, ctree)
         if not streets.is_empty: plot = plot.difference(streets)

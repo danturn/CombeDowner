@@ -73,7 +73,7 @@ def clear(ctx, d):
     if not areas: return
     zone = shapely.union_all(areas)
     inside = lambda x, y: zone.contains(Point(x, y))
-    for k, (ix, iy) in dict(tr=(0, 1), sb=(0, 1), dr=(0, 1), by=(0, 1), fx=(1, 2), sh=(0, 1)).items():
+    for k, (ix, iy) in dict(tr=(0, 1), sb=(0, 1), rk=(0, 1), dr=(0, 1), by=(0, 1), fx=(1, 2), sh=(0, 1)).items():
         if d.get(k): d[k] = [q for q in d[k] if not inside(q[ix], q[iy])]
     for k in ("gt", "fp", "dv"):
         if d.get(k): d[k] = [q for q in d[k] if not inside((q[0] + q[2]) / 2, (q[1] + q[3]) / 2)]

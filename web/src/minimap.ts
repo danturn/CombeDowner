@@ -629,9 +629,9 @@ export class Minimap {
     g.fillRect(0, 0, BASE, BASE);
     const cw = T.dx / this.mpp + 0.6, ch = T.dy / this.mpp + 0.6;
     for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
-      const k = +T.k[j * T.nx + i];
-      if (!k) continue;
-      g.fillStyle = GROUND[k];
+      const k = T.k.charCodeAt(j * T.nx + i) - 48;
+      if (!(k > 0)) continue;
+      g.fillStyle = GROUND[k] ?? GROUND[0];
       const [px, py] = P(T.x0 + i * T.dx, T.y0 + j * T.dy);
       g.fillRect(px - cw / 2, py - ch / 2, cw, ch);
     }
@@ -744,7 +744,7 @@ export class Minimap {
       kc.width = i1 - i0 + 1; kc.height = j1 - j0 + 1;
       const kg = kc.getContext("2d")!, img = kg.createImageData(kc.width, kc.height);
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-        const col = parseInt(GROUND[W.k[j * W.nx + i]].slice(1), 16), o = ((j1 - j) * kc.width + (i - i0)) * 4;
+        const col = parseInt((GROUND[W.k[j * W.nx + i]] ?? GROUND[0]).slice(1), 16), o = ((j1 - j) * kc.width + (i - i0)) * 4;
         img.data[o] = col >> 16; img.data[o + 1] = (col >> 8) & 255; img.data[o + 2] = col & 255; img.data[o + 3] = 255;
       }
       kg.putImageData(img, 0, 0);

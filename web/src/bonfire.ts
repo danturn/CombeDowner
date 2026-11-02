@@ -133,6 +133,7 @@ export function clearCourt(d: MapData) {
   // the small things
   d.tr = d.tr.filter((q) => !clear(q[0], q[1]));
   if (d.sb) d.sb = d.sb.filter((q) => !clear(q[0], q[1]));
+  if (d.rk) d.rk = d.rk.filter((q) => !clear(q[0], q[1]));
   if (d.dr) d.dr = d.dr.filter((q) => !clear(q[0], q[1]));
   if (d.fx) d.fx = d.fx.filter((q) => !clear(+q[1], +q[2]));
   if (d.gt) d.gt = d.gt.filter((q) => !clear((+q[0] + +q[2]) / 2, (+q[1] + +q[3]) / 2));

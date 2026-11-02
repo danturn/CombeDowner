@@ -156,15 +156,19 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   };
 
   // ---- the tufts --------------------------------------------------------------------------
-  // per kind of ground: chance of a tuft, height in metres, and flowers (meadows)
-  const KIND: Record<number, { p: number; h: number; flowers: number }> = {
+  // per kind of ground: chance of a tuft, height in metres, and flowers (meadows); w: how wide a tuft
+  // spreads for its height (heath grows in low, wiry clumps), dry: how many of them are browned off
+  const KIND: Record<number, { p: number; h: number; flowers: number; w?: number; dry?: number }> = {
     0: { p: 0.8, h: 0.24, flowers: 0.02 },   // gardens and verges
     1: { p: 0.95, h: 0.13, flowers: 0 },     // sports pitches: mown
     2: { p: 0.22, h: 0.3, flowers: 0 },      // woodland floor: sparse
     3: { p: 1, h: 0.42, flowers: 0.1 },      // farmland and meadow: long, with buttercups and daisies
     4: { p: 0.75, h: 0.22, flowers: 0.03 },  // cemetery
     7: { p: 0.3, h: 0.16, flowers: 0 },      // playgrounds
+    9: { p: 0.95, h: 0.24, flowers: 0.05, w: 1.4, dry: 0.35 },  // heath and scrub: low wiry clumps (none on bare rock or sand)
+    11: { p: 1, h: 0.75, flowers: 0 },                          // wetland: rushes
   };
+  const DRY = new THREE.Color("#6f6549");
   const base = tuftGeo();
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const uPlayer = { value: new THREE.Vector3() };
@@ -205,19 +209,20 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
       // terrain kind at the nearest ground vertex
       const ti = Math.round((x - T.x0) / T.dx), tj = Math.round((y - T.y0) / T.dy);
       if (ti < 0 || tj < 0 || ti >= T.nx || tj >= T.ny) continue;
-      const k = +T.k[tj * T.nx + ti], spec = KIND[k];
+      const k = T.k.charCodeAt(tj * T.nx + ti) - 48, spec = KIND[k];
       if (!spec) continue;
       // patchy: thick in places, thin in others
       const patch = 0.55 + 0.45 * Math.sin(x * 0.11 + Math.sin(z * 0.07) * 2) * Math.sin(z * 0.13 + x * 0.05);
       if (r3 > spec.p * patch + 0.12 || !free(x, y)) continue;
       const h = spec.h * (0.6 + 0.8 * hash2(i * n + a, j * n + b, 4)) * (0.75 + 0.5 * patch);
-      const wd = 0.8 + hash2(i * n + a, j * n + b, 5) * 0.7;
+      const wd = (0.8 + hash2(i * n + a, j * n + b, 5) * 0.7) * (spec.w ?? 1);
       q.setFromAxisAngle(up, r1 * 6.28);
       m4.compose(ps.set(x, groundAt(x, z) - 0.02, z), q, sc.set(wd, h, wd));
       mesh.setMatrixAt(count, m4);
       const tint = 0.95 + 0.3 * hash2(i * n + a, j * n + b, 6);
       colour.copy(kinds[k] ?? kinds[0]).multiplyScalar(tint * 1.05);
       colour.g *= 1.04 + 0.08 * patch;
+      if (spec.dry) colour.lerp(DRY, spec.dry * hash2(i * n + a, j * n + b, 8));
       mesh.setColorAt(count, colour);
       const fl = hash2(i * n + a, j * n + b, 7);
       flower.setX(count, fl < spec.flowers ? (fl < spec.flowers * 0.45 ? 2 : 1) : 0);

@@ -2641,7 +2641,7 @@ def _triangles(poly):
 
 
 GREEN_LANDUSE = {"park", "grass", "garden", "flowerbed", "grave_yard", "playground", "recreation_ground"}
-GREEN_KINDS = set("12347")     # the grid's pitches, woodland, farmland, cemetery and playgrounds
+GREEN_KINDS = set("1234789:;")     # the grid's pitches, woodland, farmland, cemetery, playgrounds and wild ground (tools/wild.py)
 
 
 def green_ground(sq):

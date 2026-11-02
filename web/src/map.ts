@@ -78,6 +78,7 @@ export interface MapData {
   lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
   dr?: number[][];              // front doors: x, y, ground, angle, colour, window bays on its wall
   sb?: number[][];              // shrubs: x, y, ground, height
+  rk?: number[][];              // boulders on bare rock: x, y, ground, size (tools/wild.py)
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
@@ -623,6 +624,8 @@ export class GameMap {
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s); this.cFoot.push(z - this.z0);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
     }
+    // a boulder bigger than a step is solid too
+    for (const [x, y, z, s] of d.rk ?? []) if (s >= 0.9) this.addPost(x, y, 0.4 * s, z - this.z0 + 0.5 * s, z - this.z0);
     // the cable car's platforms to stand on, and its stations' pillars and towers' legs
     for (const b of this.cable?.solids() ?? []) {
       this.addBox(b.x, b.y, b.a, 0, b.hl, b.hw, b.top);

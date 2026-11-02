@@ -6,7 +6,7 @@ terrain. Some data is optional. The map still builds without it, just with more 
 
 | Data | What it gives | Needed? | Coverage |
 |---|---|---|---|
-| Overture Maps | footprints, roads, paths, walls, water, woods, place names | yes | worldwide |
+| Overture Maps | footprints, roads, paths, walls, water, woods, rock, heath, sand and marsh, place names | yes | worldwide |
 | Mapzen terrain tiles | ground height | yes (downloaded by the build) | worldwide |
 | Environment Agency lidar | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England |
 | Meta / WRI canopy height | tree positions, hedges, shrubs | recommended | worldwide |
@@ -504,15 +504,21 @@ changed for every area at once.
    the conservation areas have been downloaded, they decide first (`buildings.priors`, above):
    which homes are blocks of flats, which houses standing a little apart share a wall, and the old
    core's walls, parapets and railings.
-7. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
+7. **Wild ground** (`wild.py`): the land layer's bare rock, scree and cliffs, heath and scrub,
+   beaches and sand, wetland and grassland are each their own kind of ground, under the streets,
+   paths and buildings and never inside a garden. Overture's satellite land cover fills in open
+   country the land layer hasn't mapped, but never near a building or a street, nor inside any
+   land use but a national park or nature reserve. Boulders are scattered over the bare rock last,
+   clear of everything else.
+8. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
    present, tree heights and crowns come from it, with roofs and thin things removed. Trunks are
    kept off roads and pavements.
-8. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
+9. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
    and hedges, gates, doors, driveways and parked cars. A car that would clash with a wall or a
    building is left out. Each house wall is divided into equal window bays, centred on the wall
    (one window if there's only room for one, none if there isn't); the front door takes the
    middle of a bay, and the game leaves out the ground-floor window behind a door or shopfront.
-9. **Shop signs** (`shops.py`): businesses come from OpenStreetMap, which usually maps them on
+10. **Shop signs** (`shops.py`): businesses come from OpenStreetMap, which usually maps them on
    the building itself, so its outline picks the building. A non-domestic energy certificate
    placed by its UPRN marks the exact premises, and moves a business mapped only as a point
    nearby. Food hygiene ratings add pubs, cafés and takeaways OpenStreetMap is missing, and an
@@ -523,7 +529,7 @@ changed for every area at once.
    the business's own street, skipping party walls; several businesses in one building share the
    wall. A landmark pack can rename a business to what is over the door (`SIGN_NAMES`) or drop
    one (`SIGN_SKIP`).
-10. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
+11. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
 
 The output is one JSON file per map, which the game loads (`web/src/map.ts` describes every field).
 

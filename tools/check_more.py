@@ -164,7 +164,7 @@ def _unmask(m, pieces):
     mid = lambda ring: (sum(q[0] for q in ring) / len(ring), sum(q[1] for q in ring) / len(ring))
     m["bl"] = [b for b in m.get("bl") or [] if not hide(*mid(b["r"][0]))]
     m["wp"] = [w for w in m.get("wp") or [] if w.get("c") == "canal" or not all(hide(q[0], q[1]) for q in w["r"][0])]
-    for k in ("tr", "sb", "dr", "by", "sh"):
+    for k in ("tr", "sb", "rk", "dr", "by", "sh"):
         if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1])]
     m["sp"] = [list(p.exterior.coords) for p in near for p in getattr(p, "geoms", [p])]
 
@@ -509,6 +509,7 @@ def land_and_water(m, waters, ground, note, at, sq, f):
 def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_deck, pts, hits, inner):
     fx = m.get("fx") or []
     groups = (("tree", [q[:3] for q in m.get("tr") or []], 0.6), ("shrub", [q[:3] for q in m.get("sb") or []], 0.6),
+              ("boulder", [q[:3] for q in m.get("rk") or []], 0.6),
               ("street item", [q[1:4] for q in fx if q[0] != "car"], 0.4), ("parked car", [q[1:4] for q in fx if q[0] == "car"], 0.4))
     for kind, items, tol in groups:
         if not items: continue

@@ -27,11 +27,11 @@ case by case:
     a boat over the water, and the ground under the span is dug below the water; a path on its
     towpath is level with the coping (tools/canal.py's banks, web/src/works.ts); and nothing runs
     through one of its tunnels below the arch (a street over one is on its cover).
- 8. The corridors are clear: no tree, shrub, street item (parked cars aside) or wall stands in a
+ 8. The corridors are clear: no tree, shrub, boulder, street item (parked cars aside) or wall stands in a
     road's carriageway, on the railway, in the water or in the canal's channel.
  9. Things on the ground fit together: every gate has a wall or fence at both sides; no two walls,
     fences or hedges run on top of each other; a front path goes through a garden boundary only at
-    a gate; no tree, shrub or street item stands on a wall or inside a building; no building
+    a gate; no tree, shrub, boulder or street item stands on a wall or inside a building; no building
     stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
     pavement); and where the road and the paving meet, neither pokes a point or a sliver into the
     other (check_more.slivers).
@@ -353,6 +353,9 @@ def main():
         sb = m.get("sb") or []
         for q, s in zip(sb, standing([q[:2] for q in sb])):
             if s: note("8 shrub in a corridor", 1, (tag, round(q[0]), round(q[1])), "shrub")
+        rk = m.get("rk") or []
+        for q, s in zip(rk, standing([q[:2] for q in rk])):
+            if s: note("8 boulder in a corridor", 1, (tag, round(q[0]), round(q[1])), "boulder")
         fx = [q for q in m.get("fx") or [] if q[0] != "car"]
         for q, s in zip(fx, standing([q[1:3] for q in fx])):
             if s: note("8 street item in a corridor", 1, (tag, round(q[1]), round(q[2])), str(q[0]))
@@ -615,7 +618,7 @@ def fit_together(m, tag, note, f=None):
                 if not any(gate_pts[int(j)].distance(h) < 1.0 for j in gtree.query(h.buffer(1.0))):
                     note("9 front path through a wall", 1, (tag, round(h.x if h.geom_type == "Point" else q[0]), round(h.y if h.geom_type == "Point" else q[1])), bars[int(k)]["c"])
     # trees, shrubs and street items on a wall or indoors
-    for kind, items, xy in (("tree", m["tr"], lambda q: q[:2]), ("shrub", m.get("sb") or [], lambda q: q[:2]),
+    for kind, items, xy in (("tree", m["tr"], lambda q: q[:2]), ("shrub", m.get("sb") or [], lambda q: q[:2]), ("boulder", m.get("rk") or [], lambda q: q[:2]),
                             ("street item", [q for q in m.get("fx") or [] if q[0] != "car"], lambda q: q[1:3])):
         pts = shapely.points(np.asarray([xy(q) for q in items], float).reshape(-1, 2))
         inside = set(indoors.query(pts, predicate="within")[0].tolist()) if len(items) else set()
@@ -654,7 +657,7 @@ def fit_together(m, tag, note, f=None):
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.3) for q in m.get("dv") or []])
     if ways:
         wtree = shapely.STRtree(ways)
-        for kind, items in (("tree", m["tr"]), ("shrub", m.get("sb") or [])):
+        for kind, items in (("tree", m["tr"]), ("shrub", m.get("sb") or []), ("boulder", m.get("rk") or [])):
             if not items: continue
             pts = shapely.points(np.asarray([q[:2] for q in items], float).reshape(-1, 2))
             for n in sorted(set(wtree.query(pts, predicate="within")[0].tolist())):

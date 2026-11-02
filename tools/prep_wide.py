@@ -174,8 +174,22 @@ def flat_ring(pts):
 
 # ---- ground types per vertex ----------------------------------------------------------
 # as in prep_map.py: 0 grass, 1 pitch, 2 wood floor, 3 farmland/meadow, 4 cemetery,
-# 5 hard standing, 6 flowerbed, 7 playground
+# 5 hard standing, 6 flowerbed, 7 playground, and the wild ground's (tools/wild.py)
+import wild
 GT = np.zeros(grid.shape, dtype=np.uint8)
+
+
+def cover_xy(poly):
+    x0, y0, x1, y1 = poly.bounds
+    i0, i1 = max(0, int((x0 - X0) / dx)), min(nx - 1, int((x1 - X0) / dx) + 1)
+    j0, j1 = max(0, int((y0 - Y0) / dx)), min(ny - 1, int((y1 - Y0) / dx) + 1)
+    win = (slice(j0, max(j0, j1 + 1)), slice(i0, max(i0, i1 + 1)))
+    return win, shapely.contains_xy(poly, GX[win], GY[win])
+
+
+for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)):
+    win, inn = cover_xy(poly)
+    GT[win][inn] = t
 layers = []
 for g, p in L("land_use"):
     t = {"pitch": 1, "green": 1, "tee": 1, "fairway": 1, "farmland": 3, "meadow": 3, "grass": 3, "cemetery": 4, "retail": 5,
@@ -185,9 +199,8 @@ for g, p in L("infrastructure"):
     if p.get("class") == "parking" and g.geom_type.endswith("Polygon"): layers.append((5, g))
 for g, p in L("land"):
     if p.get("subtype") == "forest" and g.geom_type.endswith("Polygon"): layers.append((2, g))
-# open country that nothing maps is farmland: the satellite land cover says where it's crops or grass
-for g, p in L("land_cover"):
-    if p.get("subtype") in ("crop", "grass") and g.geom_type.endswith("Polygon"): layers.insert(0, (3, g))
+# (open country that nothing maps is meadow, heath, rock or marsh as the satellite land cover says:
+# wild.fill, once the buildings and streets are known)
 everywhere = box(X0, Y0, X1, Y1)
 for t, g in layers:
     for poly in polys(g, everywhere):
@@ -386,6 +399,9 @@ for r in roads:
         pts.append((x / 10, y / 10))
     if len(pts) > 1: road_lines.append(shapely.LineString(pts).buffer(4.5))
 road_tree = shapely.STRtree(road_lines)
+# the satellite land cover's wild ground, out in the open country (as in the squares)
+_from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [c[0] for c in cand], road_lines)
+print(f"wild ground: {', '.join(f'{int((GT == k).sum())} points of {n}' for k, n in wild.NAMES.items())} ({_from_cover} from the land cover)")
 trees = []
 TILE = 2000.0
 bx0, by0, bx1, by1 = region.bounds

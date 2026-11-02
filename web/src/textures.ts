@@ -227,6 +227,77 @@ export function groundDetail(): THREE.CanvasTexture {
   return pixelTex(c, 256, 256, 16, 75);
 }
 
+/**
+ * The wild ground's detail, one grey in each channel, drawn over twice the grass's stretch: red is
+ * bare rock (slabs split by cracks, with lichen), green is heath and scrub (dark clumps on lighter
+ * stony earth), blue is sand (fine grain in wind ripples). world.ts mixes them by the ground's kind.
+ */
+export function wildDetail(): THREE.CanvasTexture {
+  const N = 256, out = new Uint8ClampedArray(N * N * 4);
+  const layer = (seed: number, draw: (g: CanvasRenderingContext2D, r: () => number) => void, ch: number) => {
+    const [, g] = canvas(N, N);
+    draw(g, rng(seed));
+    const d = g.getImageData(0, 0, N, N).data;
+    for (let i = 0; i < N * N; i++) out[i * 4 + ch] = d[i * 4];
+  };
+  // (big shapes are drawn nine times over, a whole tile apart, so those crossing an edge wrap round)
+  const wrap = (g: CanvasRenderingContext2D, f: () => void) => {
+    for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) { g.save(); g.translate(ox, oy); f(); g.restore(); }
+  };
+  const grey = (l: number, a = 1) => `rgba(${l | 0},${l | 0},${l | 0},${a})`;
+  layer(13, (g, r) => {
+    g.fillStyle = grey(190); g.fillRect(0, 0, N, N);
+    const slabs = Array.from({ length: 26 }, () => [r() * N, r() * N, 18 + r() * 40, 150 + r() * 90, r() * 3]);
+    wrap(g, () => {
+      for (const [x, y, s, l, a] of slabs) {
+        g.fillStyle = grey(l, 0.8);
+        g.beginPath();
+        for (let k = 0; k < 6; k++) {
+          const t = a + (k / 6) * Math.PI * 2, rr = s * (0.6 + 0.4 * Math.abs(Math.sin(k * 2.3 + a)));
+          g.lineTo(x + Math.cos(t) * rr, y + Math.sin(t) * rr * 0.7);
+        }
+        g.fill();
+      }
+    });
+    // cracks: a few wandering lines, not the outline of every slab, or it looks paved
+    for (let i = 0; i < 14; i++) {
+      let x = r() * N, y = r() * N, a = r() * Math.PI * 2;
+      g.strokeStyle = grey(90, 0.8); g.lineWidth = 1 + r();
+      g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 8; k++) { a += (r() - 0.5) * 1.2; x += Math.cos(a) * 9; y += Math.sin(a) * 9; g.lineTo(x, y); }
+      g.stroke();
+    }
+    for (let i = 0; i < 2500; i++) { g.fillStyle = grey(120 + r() * 135, 0.6); g.fillRect(r() * N, r() * N, 1 + r() * 2, 1 + r() * 2); }
+    for (let i = 0; i < 60; i++) { g.fillStyle = grey(235, 0.5); g.beginPath(); g.ellipse(r() * N, r() * N, 2 + r() * 4, 1.5 + r() * 3, r() * 3, 0, Math.PI * 2); g.fill(); }
+  }, 0);
+  layer(29, (g, r) => {
+    g.fillStyle = grey(215); g.fillRect(0, 0, N, N);
+    for (let i = 0; i < 3000; i++) { g.fillStyle = grey(160 + r() * 95, 0.7); g.fillRect(r() * N, r() * N, 1 + r() * 2, 1 + r() * 2); }
+    const clumps = Array.from({ length: 150 }, () => [r() * N, r() * N, 4 + r() * 11, 115 + r() * 55, 0.7 + r() * 0.3, r() * 3]);
+    wrap(g, () => {
+      for (const [x, y, s, l, sq, a] of clumps) {
+        g.fillStyle = grey(l, 0.85);
+        g.beginPath(); g.ellipse(x, y, s, s * sq, a, 0, Math.PI * 2); g.fill();
+        g.fillStyle = grey(l + 50, 0.5);
+        g.beginPath(); g.ellipse(x - s * 0.25, y - s * 0.3, s * 0.45, s * 0.35, 0, 0, Math.PI * 2); g.fill();
+      }
+    });
+    for (let i = 0; i < 2500; i++) { g.fillStyle = grey(100 + r() * 60, 0.8); g.fillRect(r() * N, r() * N, 1, 2 + r() * 3); }
+  }, 1);
+  layer(41, (g, r) => {
+    g.fillStyle = grey(225); g.fillRect(0, 0, N, N);
+    for (let y = 0; y < N; y += 2) for (let x = 0; x < N; x += 4) {
+      const l = 220 + 10 * Math.sin(((y + 6 * Math.sin((x / N) * Math.PI * 4)) / N) * Math.PI * 2 * 8);
+      g.fillStyle = grey(l, 0.6); g.fillRect(x, y, 4, 2);
+    }
+    for (let i = 0; i < 5000; i++) { g.fillStyle = grey(175 + r() * 80, 0.7); g.fillRect(r() * N, r() * N, 1, 1); }
+  }, 2);
+  for (let i = 0; i < N * N; i++) out[i * 4 + 3] = 255;
+  const [c, g] = canvas(N, N);
+  g.putImageData(new ImageData(out, N, N), 0, 0);
+  return pixelTex(c, N, N, 16, 76);
+}
+
 /** Smooth, tileable value noise (0 to 1 in red), for large-scale mottling of the ground. */
 export function mottle(): THREE.CanvasTexture {
   const N = 64, G = 8, r = rng(91);
