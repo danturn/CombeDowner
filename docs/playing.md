@@ -144,13 +144,20 @@ After dark its backlight glows blue-green so you can still read it.
 
 ## Menus, settings and the debug panel
 
+**The menus** are pages of BathText '91, a teletext service: the main menu is page 100, filling the
+screen beside the crest of Bath, the pause menu is 101, Settings 200, Link a device 300, the
+wardrobe 400 and the trophy cabinet 500, each with the time ticking over in its top corner. Green
+buttons go on, red ones leave, and links to other pages are listed with their page numbers.
+
 **Full screen** is in the pause menu (Esc opens it and Esc again closes it, or II on a touch screen). In Chrome and Edge, Esc then
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
 deli too. Safari and Firefox leave full screen when you press Esc.
 
 **The big cards** that stop you to read them (a job's end card, a race's or a trail's results, the
 opening poster of a treasure hunt or a Wanted bounty, the night out's front page, the driving
-test's report) each have a × in the top right corner to put them away. Esc puts one away too
+test's report) come up as cuttings torn out of the Chronicle, each with the paper's masthead and
+the section it's from along the top (Stop Press, Sport, Motoring, Wanted). Each has a × in the
+top right corner to put it away. Esc puts one away too
 (without leaving full screen in Chrome and Edge), as does Options on a pad, and with a mouse a click
 anywhere off the card puts it away and goes straight back to aiming. While one's up the mouse is
 let go, so you can click its buttons. Leave it and it still goes by itself after a while.

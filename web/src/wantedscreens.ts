@@ -1,5 +1,6 @@
 // A Wanted poster's own screens, built from the treasure trail's boxes and paper (trailscreens.ts)
-// in the poster's red: the splash when the bounty starts (the poster itself, with his features as
+// in the poster's red, the splash and the poster as cuttings from the Chronicle's police notices
+// (cutting.ts): the splash when the bounty starts (the poster itself, with his features as
 // pictures and his round of stops, the clock, and how to catch him), the same poster brought back
 // on the job control, which keeps up with what the witnesses have said, and the
 // little card beside the crosshair while you're looking at one of the men dressed like him, ticking
@@ -13,6 +14,7 @@ import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
 import { modal } from "./modal";
 import { box, fadeAfter, put } from "./trailscreens";
+import { cutFlag, tearOff } from "./cutting";
 
 export const RED = "#e04848";
 
@@ -44,7 +46,8 @@ function style() {
 .wsc.wsc .note{font:600 clamp(12px,2.2vmin,16px)/1.2 Georgia,serif;color:#1b1b1d;text-align:left;margin-top:3px}
 .wsc.wsc .note b{color:#8a1a14}
 .wsc.wsc ul{max-width:760px}
-.wsc.wsc .clock{font-weight:800;font-size:clamp(15px,3vmin,22px);color:#ffd84a}
+.wsc.wsc .clock{font-weight:700;font-size:clamp(15px,3vmin,22px);color:var(--red,#ffd84a);text-align:center}
+.wsc.wsc .cut .paper::before{content:'\\2702  Cut out and keep: police notice'}
 .wsc-tag{position:fixed;left:calc(50% + 96px);top:calc(50% + 58px);pointer-events:none;z-index:6;
   font-family:'Barlow Condensed',Impact,sans-serif;color:#fff;text-shadow:0 2px 0 #000;background:rgba(8,14,20,.82);border-left:4px solid var(--v,#ffd84a);
   padding:4px 8px 5px;max-width:min(240px,40vw)}
@@ -150,7 +153,8 @@ export function wantedSplash(o: (PosterInfo & { clock: string; rules: string[]; 
   style();
   missionCardDrop();
   splashEl ??= box("tsc-splash wsc");
-  put(splashEl, `<div class="band"><div class="kind">Wanted · a bounty</div><div class="clock">${o.clock}</div>${posterHtml(o)}`
+  tearOff(splashEl);
+  put(splashEl, `<div class="band cut">${cutFlag("Wanted · a bounty")}<div class="clock">${o.clock}</div>${posterHtml(o)}`
     + `<ul>${o.rules.map((r) => `<li>${r}</li>`).join("")}</ul><div class="again">${o.again}</div></div>`);
   const el = splashEl;
   modal(el, () => el.querySelector<HTMLElement>(".band") ?? el, () => wantedSplash(null));
@@ -166,7 +170,8 @@ export function wantedPoster(o: (PosterInfo & { foot: string }) | null) {
   style();
   if (splashUp()) wantedSplash(null);
   cardEl ??= box("tsc-card wsc");
-  put(cardEl, `<div class="band">${posterHtml(o)}${o.foot ? `<div class="small">${o.foot}</div>` : ""}</div>`);
+  tearOff(cardEl);
+  put(cardEl, `<div class="band cut">${cutFlag("Wanted")}${posterHtml(o)}${o.foot ? `<div class="small">${o.foot}</div>` : ""}</div>`);
 }
 
 // ---- the man you're looking at ---------------------------------------------------------------------------

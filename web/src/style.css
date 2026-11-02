@@ -1,6 +1,9 @@
 /* Look and feel: a game HUD dressed in Bath and council street furniture. Carved Bath-stone
-   street-name signs, the bronze ring of the city's wayfinding maps, double yellow lines,
-   Penalty Charge Notices, and council web forms (GOV.UK-style buttons, yellow focus). */
+   street-name signs, the bronze ring of the city's wayfinding maps, double yellow lines and
+   Penalty Charge Notices. The menus are pages of BathText '91, a teletext service (".tt", below),
+   and the cards that stop you to read them are cuttings from the Chronicle (cutting.ts). The
+   council web form underneath (GOV.UK-style buttons, yellow focus) is still the mines' and the
+   deli's. */
 :root {
   color-scheme: dark;
   --ink: #f4f1ea;
@@ -187,6 +190,148 @@ kbd {
 /* the pub menu borrows the big map, over the pause menu; its hint keeps one height so the map never shifts under the pointer */
 .music .hint { flex: 1; min-width: 0; }
 .music button { padding: 6px 12px; font-size: 14px; }
+
+/* ---- BathText '91: the menus as pages of a teletext service (teletext.ts) ----------------------
+   Black pages, teletext's eight colours, chunky letters, double-height titles on coloured bands, a
+   header row with the page number and a ticking clock, and the buttons as the Fastext keys (green
+   to go on, red to leave, yellow and cyan for the rest). Links to other pages read like the index:
+   "Settings ........ 200". Scoped to .tt, so the mines' and the deli's menus keep their own look. */
+.card.tt {
+  --paper: #000; --paper-ink: #fff; --paper-muted: #0ff; --paper-line: #00f; --paper-bg: #00f;
+  --link: #0ff; --danger: #ff2a2a; --accent: #ff0; --green: #0f0;
+  position: relative; background: #000; color: #fff; font-family: VT323, ui-monospace, Menlo, Consolas, monospace;
+  font-size: 21px; line-height: 1.15; font-synthesis: none; text-shadow: 0 0 3px rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 2px #000, 0 18px 50px rgba(0, 0, 0, 0.7); animation: tt-on 0.3s steps(3) both;
+}
+/* the picture tube's scan lines, over everything and taking no clicks */
+.card.tt::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+  background: repeating-linear-gradient(rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
+}
+@keyframes tt-on { from { opacity: 0; filter: brightness(2.5); } }
+@keyframes tt-blink { 50% { opacity: 0; } }
+.ttbar { display: flex; flex-wrap: wrap; gap: 0 1.4ch; align-items: baseline; padding: 8px 14px 2px; font-size: 22px; color: #fff; white-space: nowrap; }
+.ttbar .ttname { color: #ff0; }
+.ttbar .ttdate { margin-left: auto; }
+.ttbar .ttclock { color: #ff0; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) { .ttbar .ttno, .ttbar .ttdate { display: none; } .ttbar .ttclock { margin-left: auto; } }
+/* a title in double-height letters on a blue band, with a strip of yellow and blue blocks under it */
+.tttitle {
+  position: relative; margin: 0; padding: 6px 12px 16px; background: #00f; color: #ff0; font: inherit; font-size: 30px;
+  letter-spacing: 0.06em; text-transform: uppercase; overflow: hidden; text-shadow: 0 0 4px rgba(255, 255, 0, 0.35);
+}
+.tttitle::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 10px; background: conic-gradient(#ff0 25%, #00f 0 50%, #ff0 0 75%, #00f 0) 0 0 / 12px 10px; }
+.ttdh { display: inline-block; line-height: 1; transform: scaleY(2); transform-origin: 0 0; margin-bottom: 1em; }
+.card.tt > .tttitle { margin: 8px 16px 0; }
+.card.tt .cardbody { gap: 12px; padding: 12px 16px 18px; }
+.card.tt :is(h1, h2, h3, b, strong, legend, dt, label .q, .q) { font-weight: 400; }
+.card.tt label, .card.tt .check, .card.tt .slider, .card.tt .inset, .card.tt p { font-size: 21px; }
+.card.tt label .q, .card.tt .q, .card.tt .maps legend { color: #ff0; font-size: 23px; }
+.card.tt .hint, .card.tt label .hint { color: #0ff; font-size: 19px; }
+.card.tt .err { color: #ff2a2a; font-size: 21px; }
+.card.tt .inset { border-left-color: #f0f; }
+.card.tt .credit { color: #0ff; font-size: 16px; line-height: 1.2; border-top: 2px solid #00f; }
+.card.tt .buildlabel { font: inherit; font-size: 16px; color: #f0f; margin: -6px 0 0; }
+.card.tt #loading { color: #0ff; }
+.card.tt #loading::before { width: 0.55em; height: 0.9em; border: 0; border-radius: 0; background: #ff0; vertical-align: -0.1em; animation: tt-blink 1s steps(1) infinite; }
+.card.tt details summary { color: #0ff; text-decoration: none; font-size: 21px; }
+.card.tt details[open] .keys { border-left-color: #00f; }
+.card.tt .keys { font-size: 19px; }
+.card.tt kbd { font: inherit; font-size: 19px; text-transform: uppercase; background: #00f; color: #fff; border: 0; border-radius: 0; padding: 0 5px; }
+/* typing in: yellow letters on black over a cyan line, blue while you're in it */
+.card.tt input:not([type=checkbox]):not([type=radio]):not([type=range]), .card.tt textarea, .card.tt .pick select {
+  font: inherit; font-size: 24px; background: #000; color: #ff0; border: 0; border-bottom: 2px solid #0ff; border-radius: 0; padding: 4px 6px; caret-color: #ff0;
+}
+.card.tt textarea { font-size: 16px; color: #0f0; border: 2px solid #0ff; }
+.card.tt .pick select { color: #fff; border: 2px solid #0ff; font-size: 21px; }
+.card.tt select option { background: #000; color: #fff; }
+.card.tt input::placeholder { color: #088; opacity: 1; }
+.card.tt input:not([type=checkbox]):not([type=radio]):not([type=range]):focus, .card.tt textarea:focus, .card.tt .pick select:focus { outline: 0; box-shadow: none; background: #00f; }
+.card.tt input.code { letter-spacing: 0.2em; }
+.card.tt input.code::placeholder { letter-spacing: 0.04em; }
+.card.tt .invite input { font-size: 18px; }
+.card.tt .invite button { white-space: nowrap; flex: none; }
+.card.tt input[type=checkbox] {
+  appearance: none; -webkit-appearance: none; width: 22px; height: 22px; border: 2px solid #0ff; background: #000; cursor: pointer; border-radius: 0;
+}
+.card.tt input[type=checkbox]:checked { background: #0f0; box-shadow: inset 0 0 0 3px #000; }
+.card.tt input[type=checkbox]:focus-visible, .card.tt input.padfocus { outline: 3px solid #ff0; outline-offset: 2px; }
+.card.tt input[type=range] { accent-color: #ff0; }
+.card.tt .setgroup .val { color: #ff0; }
+.card.tt .mapopt small { color: #0ff; font-size: 18px; }
+/* the buttons: Fastext keys */
+.card.tt button {
+  font: inherit; font-size: 23px; line-height: 1; letter-spacing: 0.04em; text-transform: uppercase; text-shadow: none;
+  padding: 9px 14px 7px; background: #00f; color: #fff; border: 0; border-radius: 0; box-shadow: none; top: 0;
+}
+.card.tt button:hover { background: #00f; outline: 2px solid #fff; outline-offset: 2px; }
+.card.tt button.primary, .card.tt button.primary:hover { background: #0f0; color: #000; }
+.card.tt button.warning, .card.tt button.warning:hover { background: #f00; color: #fff; }
+.card.tt .row button:not(.primary):not(.warning):nth-child(odd) { background: #ff0; color: #000; }
+.card.tt .row button:not(.primary):not(.warning):nth-child(even) { background: #0ff; color: #000; }
+.card.tt button:focus-visible, .card.tt button.padfocus { outline: 3px solid #fff; outline-offset: 3px; box-shadow: none; }
+.card.tt button:not(.primary):not(.warning):not(.wardtile):is(:focus-visible, .padfocus) { background: #ff0; color: #000; }
+/* links to other pages, as the index lists them: "Settings ........ 200" */
+.card.tt .cardbody > button:not(.primary):not(.warning), .card.tt button.settingsbtn {
+  display: flex; align-items: baseline; width: 100%; align-self: stretch; padding: 3px 4px; background: none; color: #0ff; text-align: left; font-size: 23px;
+}
+.card.tt .cardbody > button:not(.primary):not(.warning)::before, .card.tt button.settingsbtn::before {
+  content: ""; order: 1; flex: 1; min-width: 2ch; margin: 0 0.6ch; border-bottom: 3px dotted rgba(0, 255, 255, 0.55);
+}
+.card.tt .cardbody > button:not(.primary):not(.warning)::after, .card.tt button.settingsbtn::after { content: attr(data-page); order: 2; color: #fff; }
+.card.tt .cardbody > button:not(.primary):not(.warning):not([data-page])::before { visibility: hidden; }
+.card.tt #paperbtn2::after { content: "102"; }
+.card.tt .cardbody > button:not(.primary):not(.warning):hover, .card.tt button.settingsbtn:hover { background: #00f; color: #fff; outline: 0; }
+.card.tt .cardbody > button:not(.primary):not(.warning):is(:focus-visible, .padfocus)::after,
+.card.tt button.settingsbtn:is(:focus-visible, .padfocus)::after { color: #000; }
+.card.tt .cardbody > button.warning { align-self: flex-start; }
+.card.tt .music button { padding: 6px 12px 4px; font-size: 20px; }
+/* recent rooms, the link code, the wardrobe and the trophy cabinet */
+.card.tt .recentgo { background: #00f; color: #fff; }
+.card.tt .recentgo b { font-family: inherit; color: #ff0; }
+.card.tt .recentgo span, .card.tt .recentgo small { color: #0ff; font-size: 18px; }
+.card.tt .recentgo small.recentdone { color: #0f0; }
+.card.tt .newsdot { color: #000; border-radius: 0; font-size: 16px; }
+.card.tt .recentx { background: #f00; color: #fff; }
+.card.tt .linkcode { font-family: inherit; font-size: clamp(48px, 14vw, 72px); color: #ff0; }
+.card.tt .linkbody input.code { font-size: 32px; }
+.card.tt .pubbar { display: flex; gap: 12px; align-items: center; padding: 10px 18px 16px; }
+.card.tt .pubbar .hint { flex: 1; min-width: 0; }
+.card.tt .wardview { background: linear-gradient(#0000a8, #000); }
+.card.tt .wardlist h3, .card.tt .trbody h3 { color: #ff0; font-size: 23px; font-weight: 400; }
+.card.tt .wardtile { font-size: 19px; text-transform: none; padding: 6px 10px 5px; border: 2px solid #00f; background: #000; color: #fff; }
+.card.tt .wardtile small { font-size: 16px; color: #0ff; }
+.card.tt .wardtile.on { background: #ff0; color: #000; border-color: #fff; }
+.card.tt .wardtile.on small { color: #000; }
+.card.tt .wardtile.locked { background: #000; color: #088; border-color: #088; }
+.card.tt .trpct b { font-family: inherit; font-size: 60px; color: #ff0; }
+.card.tt .trpct span, .card.tt .trbits, .card.tt .trbody h3 small { color: #0ff; font-size: 19px; }
+.card.tt .trbits b { color: #fff; }
+.card.tt .trtile { border-color: #00f; }
+.card.tt .trtile b { font-size: 19px; }
+.card.tt .trtile small { font-size: 16px; color: #0ff; }
+.card.tt .trtile.got { background: #000; box-shadow: none; border-color: var(--tc); }
+.card.tt .trtile.got b { color: var(--tc); }
+.card.tt .setgroup { border-top: 0; padding-top: 4px; }
+.card.tt .setgroup legend { width: 100%; padding: 3px 8px 1px; background: #0ff; color: #000; font-size: 22px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.card.tt .setgroup .hint { font-size: 18px; }
+/* the main menu fills the screen: the crest of Bath on the left, the menu on the right, a gutter between */
+#menu.ttscreen { padding: 0; background: #000; place-items: stretch; }
+#menu .card.tt {
+  width: 100%; max-width: 1180px; min-height: 100%; margin: 0 auto; box-shadow: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 560px); grid-template-rows: auto 1fr; column-gap: clamp(32px, 6vw, 96px);
+}
+#menu .ttbar { grid-column: 1 / -1; }
+#menu .cardbody { align-content: start; padding-top: 20px; }
+.ttside { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px 16px; }
+.ttcrest { display: block; height: min(64vh, 620px); width: auto; max-width: 100%; object-fit: contain; image-rendering: pixelated; }
+.ttmotto { margin: 0; padding: 4px 14px 2px; background: #f00; color: #fff; font-size: 26px; letter-spacing: 0.3em; }
+@media (max-width: 820px) {
+  #menu .card.tt { grid-template-columns: minmax(0, 1fr); }
+  .ttside { flex-direction: row; padding: 12px 16px 0; gap: 14px; }
+  .ttcrest { height: 110px; }
+  .ttmotto { font-size: 20px; }
+}
 
 /* ---- HUD ---------------------------------------------------------------------------------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; font-family: var(--f-hud); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
@@ -572,7 +717,6 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
 @keyframes slap { from { transform: rotate(-12deg) scale(1.4); opacity: 0; } }
 .pcn-head { background: var(--black); color: #fff; padding: 10px 14px 8px; display: grid; }
 .pcn-head span { font-family: var(--f-hud); font-size: 30px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; }
-.pcn-head small { color: var(--lines); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 3px; }
 .pcn dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; padding: 14px; font-size: 14px; }
 .pcn dt { font-weight: 700; color: var(--paper-muted); }
 .pcn dd { margin: 0; }
@@ -597,7 +741,7 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
 #hud:has(#touch:not([hidden])) #scoreboard.join { pointer-events: none; }
 #scoreboard.join .daily { max-width: none; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
 .daily {
-  --news: #f1ead8; --news-ink: #1a1714; --news-muted: #5c544a; --news-rule: #1a1714;
+  --news: #f5f2e9; --news-ink: #1a1714; --news-muted: #5c544a; --news-rule: #1a1714;
   padding: 10px 18px 14px; max-width: 460px; text-align: left; background: var(--news); color: var(--news-ink);
   font-family: "Old Standard TT", Georgia, "Times New Roman", serif; text-shadow: none;
 }
@@ -605,9 +749,16 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
 #scoreboard:not(.join) .daily { order: 3; min-height: 0; overflow: hidden; margin: 10px 12px; max-width: none; }
 .card .daily { border: 1px solid var(--paper-line); }
 .chron-ears { display: flex; justify-content: space-between; font-size: 11px; font-style: italic; color: var(--news-muted); }
-.chron-mast {
-  font-family: UnifrakturMaguntia, "Old English Text MT", "Old English", fantasy, serif; font-size: clamp(28px, 9vw, 42px);
-  line-height: 1; text-align: center; white-space: nowrap; margin: 2px 0 6px;
+.chron-mast { font-size: clamp(34px, 10vw, 48px); line-height: 1; text-align: center; white-space: nowrap; margin: 2px 0 6px; }
+/* the masthead, as the real paper's: navy, a small "The Bath" tucked in over a big, heavy "Chronicle"
+   (cutting.ts writes it, for the paper and its cuttings alike) */
+.chron-mark {
+  position: relative; display: inline-block; padding-top: 0.12em; font-family: Ultra, "Old Standard TT", Georgia, serif; font-weight: 400;
+  color: #1d2c5e; line-height: 0.95; letter-spacing: -0.01em; white-space: nowrap; text-shadow: none;
+}
+.chron-mark small {
+  position: absolute; left: 21.5%; top: 12%; font-family: "Old Standard TT", Georgia, serif; font-weight: 700; font-size: max(0.27em, 9px);
+  line-height: 1; letter-spacing: 0;
 }
 .chron-folio {
   display: flex; justify-content: space-between; gap: 8px; padding: 3px 0 2px; margin-bottom: 8px;
@@ -638,7 +789,7 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
 #chronicle { z-index: 12; }
 @media (min-width: 721px) and (max-height: 820px) {
   .daily { padding: 6px 16px 8px; }
-  .chron-mast { font-size: 44px; margin: 0 0 4px; }
+  .chron-mast { font-size: 48px; margin: 0 0 4px; }
   .chron-cols { font-size: 13px; line-height: 1.3; }
   .daily li { padding: 2px 0; font-size: 14px; }
   .daily-flags, .chron-box { margin-top: 6px; }

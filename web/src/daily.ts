@@ -17,6 +17,7 @@ import { esc, hash, rng } from "./quests";
 import { award, tally } from "./trophies";
 import { show } from "./show";
 import type { News } from "./paper";
+import { chronMark, chroniclePlace } from "./cutting";
 
 /** Something you did that a mission might count. */
 export type DailyKind = "flags" | "pub" | "ladder" | "job" | "ride" | "combo" | "trap" | "pint" | "naughty";
@@ -82,6 +83,7 @@ export class Daily {
   constructor(private say: (text: string, secs: number) => void, private status: () => string,
     private place: () => string, private newsPage: () => News) {
     sink = (k, n) => this.add(k, n);
+    chroniclePlace(place);
     this.load();
   }
 
@@ -133,7 +135,7 @@ export class Daily {
     const n = this.news;
     const flags = this.status();
     return `<div class="chron-ears"><span>Est. 1760</span><span>Price: free</span></div>`
-      + `<div class="chron-mast">The ${esc(place)} Chronicle</div>`
+      + `<div class="chron-mast">${chronMark(place)}</div>`
       + `<div class="chron-folio"><span>${dateline()}</span><span>Today in ${esc(place)}</span></div>`
       + `<div class="chron-cols"><div class="chron-main">`
       + `<div class="daily-head">Today's jobs</div><ul>${rows}</ul>`

@@ -12,6 +12,7 @@
 // "lk" messages only ever go round a link room, never a game.
 import { connect, type Net } from "./net";
 import * as Saves from "./saves";
+import { PAGE, ttBar, ttTitle } from "./teletext";
 
 const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const LEN = 6;
@@ -48,9 +49,7 @@ export function openLink(done: () => void) {
   sheet?.remove();
   const body = el("div", { className: "cardbody linkbody" });
   sheet = el("div", { id: "link", className: "overlay" },
-    el("div", { className: "card" },
-      el("header", { className: "masthead" }, el("span", { className: "mark" }), el("span", {}, "Bath & North East Somerset", el("b", {}, "Link a device"))),
-      body));
+    el("div", { className: "card tt", innerHTML: ttBar(PAGE.link) + ttTitle("Link a device") }, body));
   sheet.setAttribute("role", "dialog");
   document.body.append(sheet);
   const close = () => { hangUp(); sheet?.remove(); sheet = null; };

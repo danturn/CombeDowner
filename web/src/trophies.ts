@@ -13,6 +13,7 @@ import { RIDES } from "./rides";
 import * as SFX from "./audio";
 import { WEARABLES, has as wearing } from "./wardrobe";
 import * as Paper from "./paper";
+import { PAGE, ttBar, ttTitle } from "./teletext";
 
 export type Tier = "bronze" | "silver" | "gold";
 export const CATEGORIES = ["Jobs", "Races", "Trails", "Seagulls", "Wanted", "Riding & tricks", "Exploring", "Bath landmarks", "Fighting"] as const;
@@ -369,8 +370,8 @@ export function openCabinet(closed: () => void) {
       + `</div></section>`;
   }).join("");
   const bits = c.parts.map((p) => `<span>${esc(p.name)} <b>${p.have}${p.total ? ` / ${p.total}` : ""}</b></span>`).join("");
-  page.innerHTML = `<div class="card trcard">
-    <header class="masthead"><span class="mark" aria-hidden="true"></span><span>Bath &amp; North East Somerset<b>Trophy cabinet</b></span></header>
+  page.innerHTML = `<div class="card tt trcard">
+    ${ttBar(PAGE.trophies)}${ttTitle("Trophy cabinet")}
     <div class="trtop"><div class="trpct"><b>${c.pct}%</b><span>of Bath done</span></div><div class="trbits">${bits}</div></div>
     <div class="trbody">${cats}</div>
     <div class="pubbar"><p class="hint">${c.parts[0].have} of ${LIST.length} trophies. Bronze, silver and gold; dim ones are still to win.</p><button type="button" class="trback">Back</button></div>

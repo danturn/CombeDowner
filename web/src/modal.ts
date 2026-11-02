@@ -55,9 +55,6 @@ function style() {
 .mdl-x{position:absolute;top:6px;right:6px;z-index:2;width:38px;height:38px;padding:0;margin:0;pointer-events:auto;cursor:pointer;
   display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;background:rgba(8,14,20,.75);color:#fff;
   font:800 24px/1 'Barlow Condensed',Impact,sans-serif;text-shadow:none;box-shadow:0 2px 6px rgba(0,0,0,.5)}
-/* the banners fade out at their ends: in where they're solid */
-:is(.msc-end,.rsc) .band>.mdl-x{right:calc(15% + 6px)}
-.msc-sheet .band .stamp{right:58px}
 .mdl-x:hover,.mdl-x:focus-visible{background:#fff;color:#08131a}
 @media (pointer:coarse){.mdl-x{width:46px;height:46px;font-size:28px}}`;
   document.head.appendChild(s);
