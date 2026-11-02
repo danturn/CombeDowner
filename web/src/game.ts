@@ -120,6 +120,7 @@ import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RU
 import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
 import { missionActive, missionCardUp } from "./missionscreens";
+import { modal, modalClicked } from "./modal";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
 import { CatState, Cats, ESCAPE } from "./cats";
@@ -798,7 +799,7 @@ export class Game {
     Yours.scarsFrom(() => this.scars?.marks() ?? []);
     Paper.begin(this.map, this.mapId, this.placeName(), this.room, (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
     this.joinNews = Paper.firstToday() && Paper.hasNews();
-    $("scoreboard").onclick = () => this.putAwayDaily();
+    $("scoreboard").onclick = () => { if (this.dailyT > 0) { this.closeDaily(); modalClicked(); } };
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -4706,14 +4707,21 @@ export class Game {
     } else this.rideFrom = null;
     const board = $("scoreboard");
     // by the clock rather than frames, so a slow machine doesn't keep it up for longer
-    if (this.dailyT < 0 && this.active) { this.dailyT = performance.now() + (this.joinNews ? 20000 : 12000); board.classList.add("join"); board.hidden = false; }
-    if (this.dailyT > 0 && (performance.now() > this.dailyT || !$("pause").hidden)) { this.dailyT = 0; board.hidden = true; board.classList.remove("join"); }
+    if (this.dailyT < 0 && this.active) {
+      this.dailyT = performance.now() + (this.joinNews ? 20000 : 12000); board.classList.add("join"); board.hidden = false;
+      // a card to read: its × puts it away, as Esc does, and the mouse is let go while it's up (modal.ts)
+      modal(board, () => board, () => this.closeDaily(), () => this.dailyT > 0 && board.classList.contains("join"));
+    }
+    if (this.dailyT > 0 && (performance.now() > this.dailyT || !$("pause").hidden)) this.closeDaily();
     if (!board.hidden) this.daily.draw($("daily"));
     this.drawDaily();
   }
 
-  /** Put away the paper you get on joining (at the next frame). */
-  putAwayDaily() { if (this.dailyT > 0) this.dailyT = performance.now(); }
+  /** Put away the paper you get on joining (a tap on a touch screen or a trackpad's click). */
+  putAwayDaily() { if (this.dailyT > 0) this.closeDaily(); }
+
+  /** Put away the paper you get on joining, now. */
+  private closeDaily() { this.dailyT = 0; $("scoreboard").hidden = true; $("scoreboard").classList.remove("join"); }
 
   /** The Chronicle's own sheet over the pause menu, if it's open. */
   drawDaily() { if (!$("chronicle").hidden) this.daily.draw($("chrondaily")); }
@@ -4772,7 +4780,7 @@ export class Game {
     el.textContent = text;
     this.toastT = secs;
     // the panel of today's jobs you get on joining sits behind the toast: a toast puts it away
-    if (this.dailyT > 0) { this.dailyT = 0; $("scoreboard").hidden = true; $("scoreboard").classList.remove("join"); }
+    if (this.dailyT > 0) this.closeDaily();
   }
 
   /** What the jobs (quests.ts) can see of the game and do in it. */

@@ -13,6 +13,7 @@ import { RIDES } from "./rides";
 import * as SFX from "./audio";
 import { WEARABLES, has as wearing } from "./wardrobe";
 import * as Paper from "./paper";
+import { closeButton } from "./modal";
 
 export type Tier = "bronze" | "silver" | "gold";
 export const CATEGORIES = ["Jobs", "Races", "Trails", "Seagulls", "Wanted", "Riding & tricks", "Exploring", "Bath landmarks", "Fighting"] as const;
@@ -379,6 +380,7 @@ export function openCabinet(closed: () => void) {
   const close = () => { page?.remove(); page = null; closed(); };
   page.addEventListener("shut", close);
   page.querySelector(".trback")!.addEventListener("click", close);
+  closeButton(page.querySelector<HTMLElement>(".trcard")!, close);
 }
 
 let cabStyled = false;

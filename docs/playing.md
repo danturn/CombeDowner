@@ -148,12 +148,14 @@ After dark its backlight glows blue-green so you can still read it.
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
 deli too. Safari and Firefox leave full screen when you press Esc.
 
-**The big cards** that stop you to read them (a job's end card, a race's or a trail's results, the
-opening poster of a treasure hunt or a Wanted bounty, the night out's front page, the driving
-test's report) each have a × in the top right corner to put them away. Esc puts one away too
-(without leaving full screen in Chrome and Edge), as does Options on a pad, and with a mouse a click
-anywhere off the card puts it away and goes straight back to aiming. While one's up the mouse is
-let go, so you can click its buttons. Leave it and it still goes by itself after a while.
+**Every card and sheet** over the game has a × in its top right corner to put it away. The ones
+that come up by themselves (the Chronicle's front page when you join, a job's end card, a race's or
+a trail's results, the opening poster of a treasure hunt or a Wanted bounty, the night out's front
+page, the driving test's report, the Art Gallery's verdict, the fly-over when a zone opens) also
+go on Esc (without leaving full screen in Chrome and Edge) or Options on a pad, and with a mouse a
+click anywhere off the card puts it away and goes straight back to aiming. While one's up the mouse
+is let go, so you can click its buttons. Leave it and it still goes by itself after a while.
+Settings, the wardrobe, the trophy cabinet and linking a device have the × too, and Esc closes them.
 
 **Settings**, on the main menu and in the pause menu, is remembered on that computer:
 

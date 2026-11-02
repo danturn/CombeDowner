@@ -1,10 +1,14 @@
-// The big cards that stop you to read them (a mission's end card, a race's or a trail's results,
-// a treasure hunt's or a bounty's opening poster, the night out's front page, the driving test's
-// report): each gets a × in its top right corner to put it away, and Esc (or a pad's Options
-// button) puts the top one away too. While one is up the mouse is let go, as it is for the big
-// map, so you can click the × or its buttons with an ordinary pointer; a click anywhere off the
-// card puts it away and takes the mouse back for aiming. The cards still go by themselves in time
-// if you leave them, and then the next click takes the mouse back.
+// Every card and sheet over the game has a × in its top right corner to put it away.
+//
+// The cards that come up by themselves and stop you to read them (the Chronicle's front page on
+// joining, a mission's end card, a race's or a trail's results, a treasure hunt's or a bounty's
+// opening poster, the night out's front page, the driving test's report, the Art Gallery's verdict,
+// the fly-over when a zone opens) go through modal(): Esc (or a pad's Options button) puts the top
+// one away too, and while one is up the mouse is let go, as it is for the big map, so you can click
+// the × or its buttons with an ordinary pointer. A click anywhere off the card puts it away and
+// takes the mouse back for aiming. They still go by themselves in time if you leave them, and then
+// the next click takes the mouse back. The sheets over the pause menu (Settings, the wardrobe, the
+// trophy cabinet, linking a device) just get the × (closeButton), as the mouse is free there already.
 //
 // In full screen Chrome and Edge let the game keep Esc (fullscreen.ts), so a tap of Esc here only
 // puts the card away and full screen stays; Safari and Firefox always leave full screen on Esc.
@@ -19,6 +23,9 @@ interface Open {
   /** The card itself: a click off it puts it away. */
   card: () => HTMLElement;
   close: () => void;
+  /** Whether it's still up as a card, if that's more than being on show (the paper on joining
+   *  shares its panel with the scores). */
+  up?: () => boolean;
 }
 
 const open: Open[] = [];
@@ -29,7 +36,7 @@ let watch = 0;
 /** main.ts: how to take the mouse back once the last card's gone (from a click, or not). */
 export function onModalRelock(fn: (byClick: boolean) => void) { relock = fn; }
 
-const live = (o: Open) => o.el.isConnected && !o.el.hidden && !o.el.classList.contains("out");
+const live = (o: Open) => o.el.isConnected && !o.el.hidden && !o.el.classList.contains("out") && (!o.up || o.up());
 
 function prune(byClick = false) {
   for (let i = open.length - 1; i >= 0; i--) if (!live(open[i])) open.splice(i, 1);
@@ -52,14 +59,17 @@ function style() {
   styled = true;
   const s = document.createElement("style");
   s.textContent = `
-.mdl-x{position:absolute;top:6px;right:6px;z-index:2;width:38px;height:38px;padding:0;margin:0;pointer-events:auto;cursor:pointer;
+button.mdl-x.mdl-x{position:absolute;top:6px;right:6px;z-index:2;width:38px;height:38px;padding:0;margin:0;pointer-events:auto;cursor:pointer;
   display:flex;align-items:center;justify-content:center;border-radius:50%;border:2px solid #fff;background:rgba(8,14,20,.75);color:#fff;
   font:800 24px/1 'Barlow Condensed',Impact,sans-serif;text-shadow:none;box-shadow:0 2px 6px rgba(0,0,0,.5)}
 /* the banners fade out at their ends: in where they're solid */
-:is(.msc-end,.rsc) .band>.mdl-x{right:calc(15% + 6px)}
+:is(.msc-end,.rsc) .band>button.mdl-x.mdl-x{right:calc(15% + 6px)}
 .msc-sheet .band .stamp{right:58px}
-.mdl-x:hover,.mdl-x:focus-visible{background:#fff;color:#08131a}
-@media (pointer:coarse){.mdl-x{width:46px;height:46px;font-size:28px}}`;
+#scoreboard:not(.join)>.mdl-x{display:none}
+#scoreboard.join>button.mdl-x.mdl-x{top:10px;right:10px}
+button.mdl-x.mdl-x:active{top:6px}
+button.mdl-x.mdl-x:hover,button.mdl-x.mdl-x:focus-visible{background:#fff;color:#08131a;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+@media (pointer:coarse){button.mdl-x.mdl-x{width:46px;height:46px;font-size:28px}}`;
   document.head.appendChild(s);
 }
 
@@ -85,11 +95,11 @@ export function closeButton(card: HTMLElement, close: () => void) {
 /** A card that waits for you has come up: give it its ×, let the mouse go, and take Esc for it.
  *  card is where the × goes (found afresh each time, as a card's words can be written over); close
  *  puts it away. Calling it again for a card already up just puts its × back. */
-export function modal(el: HTMLElement, card: () => HTMLElement, close: () => void) {
+export function modal(el: HTMLElement, card: () => HTMLElement, close: () => void, up?: () => boolean) {
   closeButton(card(), close);
   const had = open.find((o) => o.el === el);
-  if (had) { had.card = card; had.close = close; }
-  else open.push({ el, card, close });
+  if (had) { had.card = card; had.close = close; had.up = up; }
+  else open.push({ el, card, close, up });
   // a pad keeps the mouse, as it does over the big map: its Options button puts the card away
   if (document.pointerLockElement && !padInUse()) { freed = true; document.exitPointerLock(); }
   if (!watch) watch = window.setInterval(() => prune(), 250);   // for cards that go by themselves
@@ -114,6 +124,12 @@ export function closeModals(byClick = false) {
   while (open.length) open.pop()!.close();
   prune(byClick);
 }
+
+// A card that came up while the mouse was still being captured (the paper on joining, as the click
+// on Play takes the mouse): let it go again, so the card's × can be clicked.
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement && !padInUse() && modalUp()) { freed = true; document.exitPointerLock(); }
+});
 
 // Esc puts the top card away before anything else hears it, so it doesn't pause the game too (or,
 // in full screen in Chrome and Edge, let go of the mouse). Over the pause menu it's the menu's.

@@ -3,7 +3,7 @@
 // card with the zone's name and anything else it opens, then comes back; when the last zone opens,
 // a long, high circle over the whole map. The
 // paths are worked out from the spot and the map's own size, so they work on any map. E, Space,
-// Enter, a click or a tap skips it. While it plays, you stand still and the HUD is out of the way.
+// Enter, a click or a tap skips it, and so do the card's × and Esc. While it plays, you stand still and the HUD is out of the way.
 //
 // Who decides what: nothing goes over the network. Each player's screen plays it when the host's
 // word on the sockets (oddments.ts) says a milestone has just been reached, so everyone in the
@@ -11,6 +11,7 @@
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { ctl } from "./controls";
+import { modal } from "./modal";
 import * as SFX from "./audio";
 import { view } from "./view";
 
@@ -110,6 +111,8 @@ export class Reveal {
     el.querySelector("button")!.textContent = skip;
     el.addEventListener("pointerdown", (e) => { e.preventDefault(); this.skip(); });
     hud.appendChild(el);
+    // its × puts the card away and ends the fly-over, as Esc does (modal.ts)
+    modal(el, () => el.querySelector<HTMLElement>(".rvcard") ?? el, () => this.end());
     hud.classList.add("reveal");
     document.body.classList.add("reveal");
     this.el = el;
