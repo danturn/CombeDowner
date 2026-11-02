@@ -1434,8 +1434,12 @@ same as main):
   optional layer (`partition.OPTIONAL`): the plots follow the blocks and the house fronts, the
   Georgian railings rule goes on eaves alone, and a bridge's kind goes by what it carries and
   crosses. Bradford-on-Avon (Wiltshire) and Hackney (Hackney and the four boroughs its wide box
-  crosses into) now have both, fetched 2 November 2026 (`tools/parcels.py` takes every council's
-  download at once); Cape Town never will, so it relies on the fallback.
+  crosses into) have their parcels fetched (2 November 2026; `tools/parcels.py` takes every
+  council's download at once) but not packed: built with them, Bradford-on-Avon gave 1,417 front
+  paths against the fallback's 1,754 and the old build's 2,368 (a house parcel that stops at the
+  front wall leaves no front garden), and Hackney's back boundaries went to 148 km of hedge
+  against the old build's 62. Their listed railings and walls are packed. Cape Town never will
+  have parcels, so it relies on the fallback.
 - [ ] **The zone names in the partition are still a table.** `settle.OPEN_FRONT_ZONES` (`"bath"`:
   no guessed fronts in the city centre) and `SUBURB_FRONTS`, and `plots.FRONT` for zones with no
   mix of their own, name Bath's zones. Every other map's zones fall through to their mixes in
