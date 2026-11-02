@@ -619,7 +619,9 @@ Cape Town has its own page too, `cape-town.html`: the first map outside the UK, 
 data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
 counts and the area's character). It runs from the V&A Waterfront through the city centre, the
 painted houses of the Bo-Kaap and Gardens to the top of Table Mountain, which you can see from
-anywhere on the map, and you can ride the cableway up it. Hand-made set pieces stand in for the
+anywhere on the map, and you can ride the cableway up it. Round the back of Devil's Peak it goes on
+through Woodstock, Salt River, Observatory and Mowbray, past UCT and Rosebank to Newlands, its
+forest and the rugby stadium, and the top of Kirstenbosch. Hand-made set pieces stand in for the
 Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, the Clock Tower, the Cape
 Wheel and Zeitz MOCAA. Its houses stand behind high plastered walls and steel palisades, with
 masonry walls between the plots, as Cape Town's do. Table Bay and the harbour are sea, held at sea level (`sea` in
