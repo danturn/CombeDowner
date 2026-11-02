@@ -62,7 +62,7 @@ from partition.openings import EDGE_STUB
 from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
-from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
+from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts, unregistered
 from partition.standing import Standing
 from partition.straighten import straighten
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
@@ -4449,7 +4449,7 @@ def _outside_blocked(line, blocked, floor):
 
 
 def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None, blocked=None,
-                    measured=None, houses=(), paths=(), guess_blocked=None):
+                    measured=None, houses=(), paths=(), guess_blocked=None, free=()):
     """`br` and `gt` together, from one interval list per edge.
 
     The game builds a wall from the `br` points as one continuous run and never subtracts `gt` from it
@@ -4478,7 +4478,6 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             open_by_edge.setdefault(o.get("edge"), []).append(o)
 
     node_shift = junction_shifts(part, corridor_faces)
-    registered = registered_plots(part)
 
     for eid, e in enumerate(part["edges"]):
         if e["kind"] == "none" or e["kind"] not in BARRIER:
@@ -4486,7 +4485,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         style = BARRIER[e["kind"]]
         height = HEIGHT.get(style, 1.2)
         seen = e.get("source") == "evidence" or e.get("support", 0) >= SUPPORT
-        guessed = guessed_between(e, registered) and not seen
+        guessed = guessed_between(e, free) and not seen
         rank = (e.get("source") == "evidence" or (e.get("source") == "front" and e.get("support", 0) >= SUPPORT),
                 e.get("source") == "front",
                 round(LineString(e["xy"]).length, 1), eid)
@@ -6116,22 +6115,17 @@ def _open_boundary(br, i, at, gap, ground):
     return out
 
 
-def registered_plots(part):
-    """The plots a registered parcel bounds: their gardens follow the survey's lines, so the
-    guesses between them are left as the plots drew them."""
-    return {tuple(sd) for e in part["edges"] if e.get("source") == "parcel"
-            for sd in e.get("sides") or () if sd[0] == "plot"}
-
-
-def guessed_between(e, registered):
+def guessed_between(e, free):
     """Whether `e` is a boundary between gardens, or a garden's back against open land, that only a
-    rule drew, round plots no registered parcel bounds: drawn as the old build drew its guesses."""
+    rule drew, between plots on land no registered parcel reaches (`settle.unregistered`): drawn
+    as the old build drew its guesses."""
     sides = e.get("sides") or ()
-    return (e.get("source") == "inferred" and not any(sd[0] == "corridor" for sd in sides)
-            and not any(tuple(sd) in registered for sd in sides if sd[0] == "plot"))
+    plots = [sd[1] for sd in sides if sd[0] == "plot" and len(sd) > 1]
+    return (e.get("source") == "inferred" and plots and not any(sd[0] == "corridor" for sd in sides)
+            and all(bi in free for bi in plots))
 
 
-def reroll_back_styles(part, parents):
+def reroll_back_styles(part, parents, free=()):
     """The boundaries between gardens are one of the zone's back boundaries all round a block
     (`gardens.STYLE`, as the old build rolls them: a wooden fence or now and then a hedge in
     England, a masonry wall in Cape Town): every garden backing on to another round a block. Rolled
@@ -6141,7 +6135,6 @@ def reroll_back_styles(part, parents):
     plots no parcel bounds, whatever that evidence was). A fence or hedge a map or the lidar shows stays
     what it is."""
     tree = STRtree(parents) if parents else None
-    registered = registered_plots(part)
     keys = [tuple(round(c, 1) for c in g.bounds) for g in parents]
     mixes = [GARDEN_STYLE.get(zone_at(*g.representative_point().coords[0]), GARDEN_NEUTRAL)[1] for g in parents]
 
@@ -6159,7 +6152,7 @@ def reroll_back_styles(part, parents):
             continue
         # round plots no parcel bounds a guessed boundary's kind was only the square's commonest
         # evidence (in Cape Town the map's plain walls), so it is rolled whatever it is
-        if e["kind"] not in ("fence", "hedge") and not guessed_between(e, registered):
+        if e["kind"] not in ("fence", "hedge") and not guessed_between(e, free):
             continue
         if e["source"] == "parcel" and any(s[0] != "plot" for s in sides):
             continue        # a registered garden's edge against open land keeps the hedge the plots gave it
@@ -6204,11 +6197,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     size = Q.dx * Q.cells
     sq = (Q.x0 + ti * size, Q.y0 + tj * size, Q.x0 + (ti + 1) * size, Q.y0 + (tj + 1) * size)
     owners = owners_near(once_dir, sq)
-    reroll_back_styles(part, once.read_parents(once_dir, (sq[0] - 200, sq[1] - 200, sq[2] + 200, sq[3] + 200)))
     rows = once.read_corridors(once_dir)
     near = box(*sq).buffer(FRONT_REACH)
     row_at = street_rows([e for e, *_ in rows if not e["path"] and LineString(e["line"]).intersects(near)])
     evidence = load_evidence(sq)
+    free = unregistered(owners, evidence)
+    reroll_back_styles(part, once.read_parents(once_dir, (sq[0] - 200, sq[1] - 200, sq[2] + 200, sq[3] + 200)), free)
     streets = unary_union([face_shape(f).buffer(0) for f in part["faces"]
                            if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2] or [Polygon()])
     shapely.prepare(streets)
@@ -6355,7 +6349,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                          blocked=wall_blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
                                          paths=[(LineString([q[:2] for q in r["p"]]), r.get("w", 1.8) / 2) for r in rd
                                                 if r["c"] in GAME_PATHS and len(r["p"]) > 1],
-                                         guess_blocked=abutments)
+                                         guess_blocked=abutments, free=free)
 
     br = take_mapped_styles(br, evidence.styled)
     fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)

@@ -413,7 +413,7 @@ def side_wall_lines(geoms, fbt, parcel_of):
     return out
 
 
-def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None, memo=None):
+def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None, memo=None, free=None):
     """Candidate division lines for a block. From each shared wall between two houses, and from each
     free side wall of a detached or end house, a line square to the house's front running back from
     the wall to the block's far side. Between houses that do not share a wall, the perpendicular
@@ -431,11 +431,11 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
         line = _back(block, m, back)
         if not line.is_empty:
             lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
-        # Without a registered parcel nothing else divides the ground in front of a row of houses,
+        # Without registered parcels nothing else divides the ground in front of a row of houses,
         # so the whole front of a block was one face: too long to be any one house's garden, it
         # was open land, and the houses lost their fronts, gates and paths. The side wall of a
-        # house with no parcel carries on forwards to the street as well, so it has a front garden.
-        if parcel_of[i] is None:
+        # house on unregistered land carries on forwards to the street as well, so it has a front.
+        if free is not None and free[i]:
             line = _back(block, m, -back)
             if not line.is_empty:
                 lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
@@ -468,8 +468,8 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
 def _half_plane(line, pt, size=4000.0, whole=False):
     """A large polygon on pt's side of line. `whole` makes it the true half-plane, running on past
     the line's ends: without it the polygon is only as wide as the line is long, so a house standing
-    beyond the end of its back line had no garden left at all. Only houses without a registered
-    parcel take the true one, so the plots the parcels shape stay as they were."""
+    beyond the end of its back line had no garden left at all. Only houses on land no registered
+    parcel reaches take the true one, so the plots the parcels shape stay as they were."""
     if line.geom_type == "MultiLineString":
         line = max(line.geoms, key=lambda g: g.length)
     c = list(line.coords)
@@ -523,7 +523,7 @@ def _through(block, p, d, geoms, inset=None):
     return unary_union(out) if len(out) > 1 else (out[0] if out else LineString())
 
 
-def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reach=2 * GARDEN):
+def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reach=2 * GARDEN, free=None):
     """One line for the back of a yard where two rows of houses back on to each other: the evidence
     line if one runs along the gap, else the line midway between the two rows, parallel to the
     longer row. A pair of houses back on to each other when each one's front points away from the
@@ -556,8 +556,8 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
             if any(g2.intersects(gap) for g2 in geoms if g2 is not g and g2 is not h):
                 continue
             mid = (c + other) / 2
-            free = parcel_of is None or (parcel_of[i] is None and parcel_of[j] is None)
-            if free:
+            pair_free = free is not None and free[i] and free[j]
+            if pair_free:
                 # the back of a yard is one line for every pair of houses backing on to it: a pair
                 # whose gap a back line already crosses takes that one, or each pair drew its own a
                 # metre or two from the last and left a strip of nobody's ground between them
@@ -591,7 +591,7 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
             if line.is_empty or line.length < 1:
                 continue
             if line.geom_type == "MultiLineString":
-                if parcel_of is None or (parcel_of[i] is None and parcel_of[j] is None):
+                if pair_free:
                     # the stretch of the yard's back between the two houses, not the longest
                     # stretch of the line anywhere in the block, which can lie past other houses
                     line = min(line.geoms, key=lambda g: g.distance(mid_point(mid)))
@@ -599,11 +599,11 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
                     line = max(line.geoms, key=lambda g: g.length)
             if line.geom_type != "LineString":
                 continue
-            if free and min(line.distance(g), line.distance(h)) < BACK_CLEAR:
+            if pair_free and min(line.distance(g), line.distance(h)) < BACK_CLEAR:
                 continue                    # the two stand offset, and a back line between them runs into one
             out[inside[i][0]] = line
             out[inside[j][0]] = line
-            if free:
+            if pair_free:
                 found.append(line)
     return out
 
@@ -1328,14 +1328,20 @@ def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion
     parcel_of = [parcels.index_of(g) if parcels is not None else None for g in geoms]
     # a house in a parcel of its own needs no inferred division: the parcel's edge is its boundary
     covered = {i for i, k in zip(gidx, parcel_of) if k is not None}
-    # with no registered parcel the house is all there is to go by, so every line laid from its
-    # front runs square to its walls
-    fbt = [f if k is not None else square_to(f, axes[i]) for f, i, k in zip(fbt, gidx, parcel_of)]
+    # A house on land no registered parcel reaches has only itself to go by: every line laid from
+    # its front runs square to its walls, and its garden is laid out as the old build's were. One
+    # with a parcel near is left as the parcels shape it (an unregistered shed among registered
+    # gardens is not a house of its own on open ground).
+    free = [k is None and not (parcels is not None and parcels.tree is not None
+                               and len(parcels.tree.query(g, predicate="dwithin", distance=GARDEN)))
+            for g, k in zip(geoms, parcel_of)]
+    fbt = [square_to(f, axes[i]) if fr else f for f, i, fr in zip(fbt, gidx, free)]
 
     cuts, back_cuts, caps = [], [], []
     if inside:
         cuts = house_divisions(region, geoms, fbt, parcel_of, par_lines, par_tree,
-                               parcels.__dict__.setdefault("_memo", {}) if parcels is not None else None)
+                               parcels.__dict__.setdefault("_memo", {}) if parcels is not None else None,
+                               free=free)
         if not cuts and not par_lines:
             pts = []
             for b in geoms:
@@ -1345,7 +1351,7 @@ def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion
                     p = bd.interpolate(k / n, normalized=True); pts.append((p.x, p.y))
             vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=region.buffer(5), only_edges=True)
             cuts = [vedges.intersection(region.buffer(1))]
-        backs = back_lines(region, inside, fbt, evidence_lines, ev_tree, parcel_of)
+        backs = back_lines(region, inside, fbt, evidence_lines, ev_tree, parcel_of, free=free)
         back_cuts = list({(round(b.bounds[0], 2), round(b.bounds[1], 2),
                           round(b.bounds[2], 2), round(b.bounds[3], 2)): b for b in backs.values()}.values())
         caps = garden_caps(region, geoms, gidx, fbt, backs, skip=covered)
@@ -1392,7 +1398,7 @@ def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion
     net = unary_union([f.boundary for f in (recut or faces)]).buffer(0.02)
     shapely.prepare(net)
     return dict(btree0=btree0, inside=inside, ev=ev, geoms=geoms, gidx=gidx, fbt=fbt, par_lines=par_lines,
-                par_tree=par_tree, parcel_of=parcel_of, covered=covered, cuts=cuts, back_cuts=back_cuts,
+                par_tree=par_tree, parcel_of=parcel_of, free=free, covered=covered, cuts=cuts, back_cuts=back_cuts,
                 caps=caps, backs=backs, lines=lines, faces=faces, pieces=pieces, side_a=side_a,
                 side_b=side_b, adj=adj, street=street, front_pl=front_pl, front_lines=front_lines,
                 recut=recut, net=net)
@@ -1488,7 +1494,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     for k, g in inside:
         r = g.buffer(GARDEN + FACE_PAD, join_style="mitre")
         if k in backs:
-            r = r.intersection(_half_plane(backs[k], g.centroid, whole=parcel_of[gidx.index(k)] is None))
+            r = r.intersection(_half_plane(backs[k], g.centroid, whole=cut["free"][gidx.index(k)]))
         reach[k] = r
     # where a house's title is registered, its plot may not leave that parcel: the parcel is the
     # reach's own limit, so a plot is the parcel the house stands in divided among the houses in it
