@@ -48,14 +48,17 @@ def terrain_detail(dem, px, least=1.3):
     return curv[-1][0] * px if curv else px
 
 
-def grade(chains, xy, target, fixed, steepest, scale, exact=None, join=2.5, hard=1e4):
+def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, join=2.5, hard=1e4):
     """The graded heights of a network of roads.
 
     chains: lists of point ids along each road; xy[id], target[id] (the survey's height there);
     fixed: {id: height} for points that keep theirs (a bridge's deck, a tunnel's floor); steepest:
     for each chain, the steepest grade allowed for each of its stretches. Points from different
     chains at the same place (to half a metre) are one junction, unless their survey heights are
-    `join` metres apart or more (a road passing under a bridge).
+    `join` metres apart or more (a road passing under a bridge). half: each chain's half width;
+    with it, two loose points of the network whose carriageways overlap (the two legs of a hairpin
+    bend, two roads side by side) are one surface, held within their grade of each other across
+    the gap, unless the survey has them `join` metres apart (a lane along the top of a cutting).
     exact: like steepest, the steepest each stretch's kind of road may be; a stretch held to that is
     kept far enough inside it not to round over it (ROUNDING), and a gentler limit (the hill's)
     needn't be kept so closely.
@@ -116,6 +119,27 @@ def grade(chains, xy, target, fixed, steepest, scale, exact=None, join=2.5, hard
             d2 = float(np.hypot(xy[ic][0] - xy[ib][0], xy[ic][1] - xy[ib][1]))
             if d1 >= 0.5 and d2 >= 0.5 and len({a, b, c}) == 3:
                 bends.append((a, b, c, d1, d2))
+    if half is not None:
+        import shapely
+        reach = np.zeros(nn)
+        lim = np.zeros(nn)
+        where = np.zeros((nn, 2))
+        for ch, h, g in zip(chains, half, steepest):
+            for m, i in enumerate(ch):
+                n = node[i]
+                reach[n] = max(reach[n], h)
+                lim[n] = max(lim[n], g[min(m, len(g) - 1)] if g else 0.25)
+                where[n] = xy[i]
+        loose = np.isinf(lo)
+        pts = shapely.points(where)
+        tree = shapely.STRtree(pts)
+        a_, b_ = tree.query(pts, predicate="dwithin", distance=2 * reach.max())
+        for a, b in zip(a_.tolist(), b_.tolist()):
+            if a >= b or not (loose[a] and loose[b]) or (a, b) in edges or abs(tz[a] - tz[b]) >= join:
+                continue
+            d = float(np.hypot(*(where[a] - where[b])))
+            if 0.5 <= d < reach[a] + reach[b]:
+                edges[(a, b)] = (d, (max(lim[a], lim[b]), True))
     ne, nb = len(edges), len(bends)
     # variables: z, above, below (each point's height off its survey), slack (each stretch's
     # height past its steepest), bend (each point's change of gradient)

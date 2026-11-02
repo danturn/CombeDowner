@@ -697,7 +697,7 @@ def regrade(order, xy, target, fixed, steep):
     """The network graded (tools/grading.py) and written back to the roads, each then eased of
     sharp changes of gradient between its junctions (a junction stays where the grading put it)."""
     exact = [[STEEPEST.get(pending[k]["c"], 0.33) for k, _ in ch[:-1]] for ch in order]
-    graded = grade(order, xy, target, fixed, steep, DETAIL, exact=exact)
+    graded = grade(order, xy, target, fixed, steep, DETAIL, [RW.get(pending[ch[0][0]]["c"], 4) / 2 for ch in order], exact)
     seen = Counter(q for ch in order for q in {graded_key(pending[k]["run"][i]) for k, i in ch})
     for ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
