@@ -665,7 +665,11 @@ them wherever it covers them. Tree canopy from Meta and
 World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
-Agency (Open Government Licence). Listed railings and walls contain Historic England data ©
+Agency (Open Government Licence). Plot boundaries in England from HM Land Registry's INSPIRE Index
+Polygons: this information is subject to Crown copyright and database rights 2026 and is reproduced
+with the permission of HM Land Registry; the polygons (including the associated geometry, namely x, y
+co-ordinates) are subject to Crown copyright and database rights 2026 Ordnance Survey AC0000851063.
+Listed railings and walls contain Historic England data ©
 Historic England 2026 (Open Government Licence). House types from the 2021 Census: source, Office
 for National Statistics, licensed under the Open Government Licence v3.0. Conservation areas from
 planning.data.gov.uk: © Historic England 2026 and the local planning authorities (Open Government
