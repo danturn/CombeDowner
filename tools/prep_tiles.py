@@ -1,6 +1,6 @@
 """Build the whole of Bath round a detailed map as tiles, at the detailed map's level of detail.
 
-Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--shard k/n] [--only ti,tj ...]
+Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--shard k/n] [--no-partition] [--only ti,tj ...]
        python3 -I tools/prep_tiles.py <map> <dir> <out dir> --partition-only [--only ti,tj ...]
 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
@@ -36,11 +36,13 @@ loads it first), and <out dir>/tiles.json, which says how the tiles are laid out
  "dx": the grid spacing; "cells": grid cells per tile side; "z0": the height every tile's
  terrain is measured from; "tiles": [[ti, tj], ...]}.
 
-For Combe Down (the one map the partition is written for), the squares prep_map.py builds go into
-<dir>/partition/prep/ instead, and the last stage, tools/partition/stage.py, lays the ground out as
-a partition and writes the game's squares into <out dir> from them (see there). With --shard the
-squares are built but the partition isn't, as it needs every square: gather the shares' prep/
-folders on one machine, then run --partition-only there.
+The squares prep_map.py builds go into <dir>/partition/prep/ instead, and the last stage,
+tools/partition/stage.py, lays the ground out as a partition and writes the game's squares into
+<out dir> from them (see there). With --shard the squares are built but the partition isn't, as it
+needs every square: gather the shares' prep/ folders on one machine, then run --partition-only
+there. With --no-partition (or for a map tools/area.py marks partition=False) prep_map.py's squares
+go straight into <out dir> as the game's, as every map was built before the partition: for
+comparing the two.
 """
 import hashlib, json, math, os, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
@@ -52,7 +54,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from mapdata import measured_dir
 from stitch import boundaries, path_clear
-from partition.stage import partitioned, prep_dir
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
@@ -107,6 +108,8 @@ def main():
     if measure: args.remove("--measure")
     partition_only = "--partition-only" in args
     if partition_only: args.remove("--partition-only")
+    unpartitioned = "--no-partition" in args
+    if unpartitioned: args.remove("--no-partition")
     jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
@@ -119,6 +122,9 @@ def main():
         only = [tuple(int(v) for v in a.split(",")) for a in args[k + 1:]]
         del args[k:]
     map_id, src_dir, out_dir = args[:3]
+    # the partition's modules read the map when first imported
+    os.environ["CD_MAP"] = map_id
+    from partition.stage import partitioned, prep_dir
     A = area(map_id, wide=True)
     G = A.squares
     D, X0, Y0 = G.dx, G.x0, G.y0
@@ -134,7 +140,7 @@ def main():
             if 0 <= ti <= 2 and 0 <= tj <= 2 or box(*tile_box(ti, tj)).intersects(circle): tiles.append((ti, tj))
     print(f"{len(tiles)} tiles of {size:.1f} m, {CELLS} cells of {D:.4f} m")
     os.makedirs(out_dir, exist_ok=True)
-    staged = partitioned(map_id)
+    staged = partitioned(map_id) and not unpartitioned
     # prep_map's squares for a partitioned map are only the partition's starting point, so they're
     # kept out of the game's folder
     prep_out = prep_dir(src_dir) if staged else out_dir

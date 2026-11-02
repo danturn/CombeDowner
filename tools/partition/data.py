@@ -21,7 +21,7 @@ import numpy as np
 from shapely.geometry import LineString, box
 from shapely.strtree import STRtree
 
-from . import KX, KY, LON0, LAT0, MAP, Q, ROOT
+from . import KX, KY, LON0, LAT0, MAP, OPTIONAL, Q, ROOT
 from .corridors import REACH
 
 SIZE = Q.dx * Q.cells
@@ -29,10 +29,6 @@ SIZE = Q.dx * Q.cells
 # the layers, read once per process and kept as the raw JSON features so a window can be taken from
 # them without re-decoding. `_FEATURES` holds {"layer": (features, [(minx, miny, maxx, maxy) lon/lat])}
 _FEATURES = {}
-
-
-# layers the passes can run without: the plots then follow the evidence alone
-OPTIONAL = ("parcels", "listed", "osm-detail")
 
 
 def _lonlat_bounds(g):

@@ -14,8 +14,9 @@ two things from it, and both are kept in `data/<map>/measured/partition.zip`:
   ground point asked for outside that is counted (`missed`), and the stage says so: pack again.
 
 `python3 -I tools/mapdata.py pack <map> <raw dir>` packs it, from the lidar in `<raw dir>/lidar`
-and the passes in `<raw dir>/partition/once` (the map build makes both). Nothing here is decided
-over the network.
+and the passes in `<raw dir>/partition/once` (the map build makes both). A map with no lidar, or
+none packed yet, has no such file: every answer is then "not seen". Nothing here is decided over
+the network.
 """
 import io
 import json
