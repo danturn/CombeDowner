@@ -38,11 +38,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. You can walk the
   whole line without falling through it: along its viaducts, up its grassy embankments, and on to
-  the platforms, which are walled down to the ground under a station on a viaduct, with the
+  the platforms, which stand on a row of dark arches under a station on a viaduct, with the
   canopies the map data has over them on posts (not as blocks standing up from the street below).
+  The stonework is textured in the area's own material: Bath stone in Bath, London stock brick in
+  Hackney. Tracks running side by side over a viaduct share one deck at one height, on piers in
+  line with each other's, and a line that passes under another has the headroom for a train.
   A railway tunnel's mouth is one stone face for the tracks going in side by side, under one arch
-  or an arch each, and stands only as high as the hill it's cut into lets it; walls the map draws
-  across the cutting stop at the line. Where the map
+  or an arch each, and stands only as high as the hill it's cut into lets it; its bore is lined
+  in stone, the track running in, until it fades to dark a few metres in. Walls the map draws
+  across the cutting stop at the line, and no building, parked car, bench or path stands on a
+  running line or inside a tunnel's mouth. A siding or a line the data ends stops at red buffers.
+  Where the map
   data has a level crossing (the footpath over the main line at Ferry Lane, Bathampton, or Bridge
   Street at Greenland Mills in Bradford-on-Avon), the way crosses the line at grade on a deck between
   the rails, with red lights on posts either side; everywhere else a path stops at the line. A

@@ -75,7 +75,13 @@ const WALL_SKIRT = 3;                       // metres a solid bridge stretch's s
 // arches into the cutting's sides, and the mouths that open in one face: two tracks side by side,
 // facing the same way, under one arch if theirs would meet, else each under its own.
 const PORTAL_CROWN = 7, PORTAL_LEAST = 5, PORTAL_TOP = 9, PORTAL_WING = 6.4, PORTAL_R = 3.6;
-const PORTAL_TURN = 0.35, PORTAL_DEPTH = 2.5, PORTAL_SIDE = 16;
+const PORTAL_TURN = 0.35, PORTAL_DEPTH = 2.5, PORTAL_SIDE = 16, PORTAL_STAGGER = 9;
+const PORTAL_CLEAR = 2.2;    // metres a face's wing stops short of another track's middle
+const PORTAL_PAIR = 2.9;     // metres a bore over two tracks reaches past each one's middle: their ballast and a narrow cess
+// A platform up on a viaduct (more than ARCADE_LEAST over the ground) stands on arches along its
+// outer sides: one every ARCADE_BAY metres, its piers ARCADE_PIER wide, the dark under it ARCADE_DEEP in.
+export const ARCADE_LEAST = 4.5, ARCADE_BAY = 8, ARCADE_PIER = 1.6, ARCADE_DEEP = 1.0;
+const BORE_LIT = 11;         // metres into a bore its stone lining is seen before it is dark (its track goes in about as far)
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
 // reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
 // CANOPY_SHORT gets none; one LONG_PLATFORM or more gets two, at the 2nd and 4th of five parts.
@@ -254,6 +260,15 @@ export function compact(pos: number[], col: number[]): THREE.BufferGeometry {
   return g;
 }
 
+/** What the railway's brick and stone is built of, from what the town round it is built of
+ *  (world.ts): Bath stone, red brick or London stock brick at data (x, y), and each one's material. */
+export type MasonKind = "s" | "k" | "y";
+export interface Masonry { kind(x: number, y: number): MasonKind; material(kind: MasonKind): THREE.Material }
+// each kind's colour, tinting its texture (stock brick's texture is coloured already), and how much
+// lighter or darker each part of the work is than the plain walling
+const MASON_TINT: Record<MasonKind, number[]> = { s: [0.9, 0.8, 0.62], k: [0.68, 0.4, 0.3], y: [0.93, 0.91, 0.86] };
+const MASON_UV = 3.4;        // metres to one repeat of a wall texture (textures.ts wall(): a bay one storey high)
+
 export class Railway {
   /** Whether trains keep their doors shut at the station at scene (x, z) (it isn't open yet: zones.ts). */
   shutAt: (x: number, z: number) => boolean = () => false;
@@ -272,12 +287,15 @@ export class Railway {
   /** The carriages near the player: solid, and you can stand on them. */
   readonly near: Car[] = [];
   private hitAt = -1e9;
+  /** Where a line just stops, short of the edge of the map's railway, with buffers across it: [x, y]. */
+  readonly buffers: number[][] = [];
 
   /** `need`: the headroom wanted under the line at data (x, y) by what passes under it, and where no pier may stand. */
   /** `ground`: the ground's own detail texture, for the banks to look like the grass round them. */
   /** setPiece: whether a set piece stands at data (x, y), drawing its own station there (landmarks/setpieces.ts). */
+  /** masonry: what its brick and stone is made of; left out (the map checks), flat colours. */
   constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, private need: Need = () => 0, private groundTex: THREE.Texture | null = null,
-    private setPiece: (x: number, y: number) => boolean = () => false) {
+    private setPiece: (x: number, y: number) => boolean = () => false, private masonry: Masonry | null = null) {
     this.geos = trainModels();
     this.doorGeos = this.geos.map((g, i) => doorModels(i, g));
     this.build();
@@ -532,15 +550,50 @@ export class Railway {
       const sp = g.boundingSphere!;
       this.far.push({ o: m, x: sp.center.x, z: sp.center.z, r: sp.radius + 650 });
     };
+    // brick and stone: textured in what the town is built of, each piece's grain running along its
+    // face (or laid flat on a top or an underside), drawn a kind at a time
+    const role = new Map<number[], number>();
+    const mason = () => {
+      const by = new Map<MasonKind, { pos: number[]; col: number[]; uv: number[] }>();
+      const put = (a: number[], b: number[], c: number[], d: number[], f: number, fa: number, fb: number) => {
+        const mx = (a[0] + c[0]) / 2, my = -(a[2] + c[2]) / 2, k = this.masonry!.kind(mx, my);
+        const B = by.get(k) ?? by.set(k, { pos: [], col: [], uv: [] }).get(k)!, T = MASON_TINT[k];
+        const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+        const nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+        const nl = Math.hypot(nx, ny, nz) || 1, flat = Math.abs(ny) > 0.7 * nl, tl = Math.hypot(nx, nz) || 1, tx = -nz / tl, tz = nx / tl;
+        const uv = (p: number[]) => (flat ? [p[0] / MASON_UV, p[2] / MASON_UV] : [(p[0] * tx + p[2] * tz) / MASON_UV, p[1] / MASON_UV]);
+        const ca = T.map((t) => Math.min(1, t * f * fa)), cb = T.map((t) => Math.min(1, t * f * fb));
+        B.pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+        B.col.push(...ca, ...ca, ...cb, ...ca, ...cb, ...cb);
+        for (const p of [a, b, c, a, c, d]) B.uv.push(...uv(p));
+      };
+      const flush = () => {
+        for (const [k, B] of by) {
+          if (!B.pos.length) continue;
+          const g = compact(B.pos, B.col);
+          g.setAttribute("uv", new THREE.Float32BufferAttribute(B.uv, 2));
+          const m = new THREE.Mesh(g, this.masonry!.material(k));
+          m.receiveShadow = true;
+          this.group.add(m);
+          const sp = g.boundingSphere!;
+          this.far.push({ o: m, x: sp.center.x, z: sp.center.z, r: sp.radius + 650 });
+        }
+        by.clear();
+      };
+      return { put, flush };
+    };
     const C = (hex: string) => { const k = new THREE.Color(hex); return [k.r, k.g, k.b]; };
     const BANK = C("#6e7f4c"), BALLAST = C("#7b746a"), SLEEPER = C("#4a3d31"), RAIL = C("#6f6a62"), RAILTOP = C("#c4c1ba"), BRICK = C("#8a5a44"), STONE = C("#c3ae84"), DARK = C("#2a2622"), GIRDER = C("#6f7b7c");
     const STONE_IN = C("#b19c74"), BAND = C("#d3c19a"), CAP = C("#dccfae"), VOUSSOIR = C("#cdb88e"), VOUSSOIR2 = C("#b8a27a"), SOFFIT = C("#9c8a68"), GIRDER2 = C("#859092"), UNDER = C("#5a6264");
+    for (const [c, f] of [[STONE, 1], [STONE_IN, 0.9], [BAND, 1.08], [CAP, 1.14], [VOUSSOIR, 1.06], [VOUSSOIR2, 0.93], [SOFFIT, 0.78], [BRICK, 1]] as const) role.set(c, f);
     const lerp3 = (a: number[], b: number[], f: number) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
     const twin = { piers: [] as number[][], ends: [] as number[][], girders: [] as number[][] };
     // Two tracks side by side on one viaduct share its deck: between them there's no parapet, only
     // the deck carried across to halfway, closed down to its own underside there in case the two
-    // stand at different heights. `beside` is how far off the other track is on side w, if one is.
-    const SHARED = 5;
+    // stand at different heights; nearer than JOINED, running together into a set of points, each
+    // track's deck covers the other's side, so neither has a parapet there standing across the
+    // other's rails. `beside` is how far off the other track is on side w, if one is.
+    const SHARED = 5, JOINED = 3;
     const decks = new Map<string, number[][]>();
     this.d.tracks.forEach((t, ti) => t.p.forEach((q, k) => {
       if (k + 1 >= t.p.length || q[3] !== 1 || t.p[k + 1][3] !== 1) return;
@@ -557,7 +610,7 @@ export class Railway {
             const f = ((M[0] - a[0]) * vx + (M[1] - a[1]) * vy) / l2;
             if (f < 0 || f > 1) continue;
             const ox = a[0] + vx * f - M[0], oy = a[1] + vy * f - M[1], across = (ox * nx + oy * ny) * w, d = Math.hypot(ox, oy);
-            if (across > 0.9 * d && d > 3 && d < SHARED && (best === null || d < best)) best = d;
+            if (across > 0.9 * d && d > 0.3 && d < SHARED && (best === null || d < best)) best = d;
           }
       return best;
     };
@@ -565,26 +618,29 @@ export class Railway {
       const p = t.p, plan = bridgePlan(p, this.need, twin), m = plan.marks();
       twin.piers.push(...m.piers); twin.ends.push(...m.ends); twin.girders.push(...m.girders);
       for (let k0 = 0; k0 < p.length - 1; k0 += CHUNK) {
-        const pos: number[] = [], col: number[] = [], bpos: number[] = [], bcol: number[] = [];
+        const pos: number[] = [], col: number[] = [], bpos: number[] = [], bcol: number[] = [], ms = mason();
         const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
+          if (this.masonry && role.has(cc)) { ms.put(a, b, c, d, role.get(cc)!, 1, 1); return; }
           const [P, Q] = cc === BANK ? [bpos, bcol] : [pos, col];
           P.push(...a, ...b, ...c, ...a, ...c, ...d); for (let q = 0; q < 6; q++) Q.push(...cc);
         };
         for (let k = k0; k < Math.min(p.length - 1, k0 + CHUNK); k++) {
           const a = p[k], b = p[k + 1];
-          if (a[3] === 2 && b[3] === 2) continue;      // in a tunnel: the hill hides it
+          // in a tunnel the hill hides it, but for the first stretch in, seen through the mouth
+          const inside = a[3] === 2 && b[3] === 2;
+          if (inside && !(p[k - 1] && p[k - 1][3] !== 2) && !(p[k + 2] && p[k + 2][3] !== 2)) continue;
           const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
           const P = (q: number[], off: number, h: number) => [q[0] + nx * off, q[2] - z0 + h, -(q[1] + ny * off)];
           const bank = (A: number[], B: number[]) => {
             for (const s of [1, -1]) quad(P(A, 2.3 * s, -0.3), P(B, 2.3 * s, -0.3), P(B, BANK_REACH * s, -0.3 - BANK_DEPTH), P(A, BANK_REACH * s, -0.3 - BANK_DEPTH), BANK);
           };
-          for (let i = Math.floor((Math.min(a[0], b[0]) - BANK_REACH) / 16); i <= Math.floor((Math.max(a[0], b[0]) + BANK_REACH) / 16); i++)
+          if (!inside) for (let i = Math.floor((Math.min(a[0], b[0]) - BANK_REACH) / 16); i <= Math.floor((Math.max(a[0], b[0]) + BANK_REACH) / 16); i++)
             for (let j = Math.floor((Math.min(-a[1], -b[1]) - BANK_REACH) / 16); j <= Math.floor((Math.max(-a[1], -b[1]) + BANK_REACH) / 16); j++)
               (this.cells.get(`${i},${j}`) ?? this.cells.set(`${i},${j}`, []).get(`${i},${j}`)!).push([ti, k]);
           // ballast with sloping shoulders, sleepers, then the two rails
           quad(P(a, -1.6, 0.25), P(b, -1.6, 0.25), P(b, 1.6, 0.25), P(a, 1.6, 0.25), BALLAST);
           for (const s of [1, -1]) quad(P(a, 1.6 * s, 0.25), P(b, 1.6 * s, 0.25), P(b, 2.3 * s, -0.3), P(a, 2.3 * s, -0.3), BALLAST);
-          if (a[3] !== 1 || b[3] !== 1) bank(a, b);
+          if ((a[3] !== 1 || b[3] !== 1) && !inside) bank(a, b);
           for (let u = 0; u < l; u += 1.5) {
             const f0 = u / l, f1 = Math.min(1, (u + 0.25) / l);
             const A = [a[0] + dx * f0, a[1] + dy * f0, a[2] + (b[2] - a[2]) * f0], B = [a[0] + dx * f1, a[1] + dy * f1, a[2] + (b[2] - a[2]) * f1];
@@ -608,6 +664,7 @@ export class Railway {
               for (const w of [1, -1]) {
                 const other = reach[w > 0 ? 0 : 1];
                 if (other !== null) {
+                  if (other <= JOINED) continue;      // running together into the points: the other's deck is this side's
                   const h = other / 2;
                   quad(P(A, 1.6 * w, 0.25), P(B, 1.6 * w, 0.25), P(B, h * w, 0.25), P(A, h * w, 0.25), BALLAST);
                   quad(P(A, h * w, 0.25), P(B, h * w, 0.25), P(B, h * w, lowB), P(A, h * w, lowA), steel ? UNDER : SOFFIT);
@@ -639,7 +696,7 @@ export class Railway {
                   }
                 }
               }
-              const wide = reach.map((o) => (o === null ? 2.4 : o / 2));
+              const wide = reach.map((o) => (o === null || o <= JOINED ? 2.4 : o / 2));
               quad(P(A, -wide[1], lowA), P(B, -wide[1], lowB), P(B, wide[0], lowB), P(A, wide[0], lowA), steel ? UNDER : SOFFIT);
             }
             // the faces of the piers and abutments under each span's two ends
@@ -651,48 +708,127 @@ export class Railway {
                 // facet into the pier; and down past the ground the data records, as a wall's sides go
                 const f = (sp - plan.s[k]) / l, M = lerp3(a, b, f), lo = plan.ground(sp) - M[2] - 1 - WALL_SKIRT, hi = 0.2;
                 if (plan.bottom(sp) - M[2] - (plan.ground(sp) - M[2] - 1) < 0.3) continue;
-                quad(P(M, -2.4, lo), P(M, 2.4, lo), P(M, 2.4, hi), P(M, -2.4, hi), STONE);
+                // (stopping where another track's deck beside it begins, not standing on into its arches)
+                const [e0, e1] = [1, -1].map((w) => { const o = beside(ti, M, nx, ny, w); return o === null ? 2.4 : Math.max(0.3, Math.min(2.4, o - 2.4)); });
+                quad(P(M, -e1, lo), P(M, e0, lo), P(M, e0, hi), P(M, -e1, hi), STONE);
               }
             }
           }
         }
         add(pos, col);
         addBank(bpos, bcol);
+        ms.flush();
       }
     });
-    // tunnel mouths: a stone face with the arch, black inside
-    const pos: number[] = [], col: number[] = [];
-    const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => { pos.push(...a, ...b, ...c, ...a, ...c, ...d); for (let q = 0; q < 6; q++) col.push(...cc); };
+    // tunnel mouths: a stone face with a ring of voussoirs round each arch, and the bore lined in
+    // stone going on into the hill, its track with it, the daylight dying away a few metres in
+    const pos: number[] = [], col: number[] = [], pm = mason();
+    const quad = (a: number[], b: number[], c: number[], d: number[], cc: number[], dd = cc) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      col.push(...cc, ...cc, ...dd, ...cc, ...dd, ...dd);
+    };
+    // (masonry, its light f at the first two corners and g at the last two)
+    const stone = (a: number[], b: number[], c: number[], d: number[], cc: number[], f = 1, g = f) => {
+      if (this.masonry && role.has(cc)) pm.put(a, b, c, d, role.get(cc)!, f, g);
+      else quad(a, b, c, d, f === 1 && g === 1 ? cc : lerp3(DARK, cc, f), lerp3(DARK, cc, g));
+    };
+    const BORE_FLOOR = C("#4a453e");
+    // the line out in the open, each stretch into a tunnel only as far as its mouth: no face's wing
+    // may stand across another track there (one whose mouth is further in, or that passes by)
+    const open: number[][] = [];
+    for (const t of this.d.tracks) for (let k = 0; k + 1 < t.p.length; k++) {
+      const a = t.p[k], b = t.p[k + 1];
+      if (a[3] === 2 && b[3] === 2) continue;
+      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+      open.push(a[3] === 2 ? [...m, ...b.slice(0, 3)] : b[3] === 2 ? [...a.slice(0, 3), ...m] : [...a.slice(0, 3), ...b.slice(0, 3)]);
+    }
     for (const g of headwalls(this.d.portals)) {
-      const { x, y, ux, uy, base: zb, bores, cover } = g, nx = -uy, ny = ux, base = zb - z0, D = 1.2;
+      const { x, y, ux, uy, base: zb, bores, cover, depth } = g, nx = -uy, ny = ux, base = zb - z0, D = FACE_THICK;
       const P = (u: number, v: number, h: number) => [x + ux * u + nx * v, base + h, -(y + uy * u + ny * v)];
       // up to the ground over it, not standing up out of the hill, but always high enough over its
       // arches for a train to go under them
       // (ground too shallow over it for a train to fit under says the data's tunnel is doubtful, and
-      // the face is built as it always was)
-      const fits = cover !== undefined && cover >= PORTAL_LEAST + 0.6;
-      const crown = fits ? Math.min(PORTAL_CROWN, cover - 0.6) : PORTAL_CROWN;
-      const top = fits ? Math.min(PORTAL_TOP, Math.max(crown + 0.8, cover)) : PORTAL_TOP;
-      const arches = bores.map(([c, hw]) => { const spring = Math.max(2.4, crown - hw); return { c, hw, spring, rise: crown - spring }; });
-      const v0 = arches[0].c - arches[0].hw - PORTAL_WING, v1 = arches[arches.length - 1].c + arches[arches.length - 1].hw + PORTAL_WING;
+      // the face is built as it always was, its bore no deeper than the face, so it can't show
+      // through the shallow ground behind)
+      const { crown, top, deep, arches } = boreShape(cover, depth, bores);
+      const left = arches[0].c - arches[0].hw, right = arches[arches.length - 1].c + arches[arches.length - 1].hw;
+      let v0 = left - PORTAL_WING, v1 = right + PORTAL_WING;
+      for (const q of open) {
+        const ua = (q[0] - x) * ux + (q[1] - y) * uy, ub = (q[3] - x) * ux + (q[4] - y) * uy;
+        if (Math.max(ua, ub) < -0.3 || Math.min(ua, ub) > D + 0.3 || Math.abs((q[2] + q[5]) / 2 - zb) > 6) continue;
+        const f = Math.abs(ub - ua) < 1e-6 ? 0.5 : Math.min(1, Math.max(0, (D / 2 - ua) / (ub - ua)));
+        const vc = (q[0] + (q[3] - q[0]) * f - x) * nx + (q[1] + (q[4] - q[1]) * f - y) * ny;
+        if (vc < left - 0.5) v0 = Math.max(v0, vc + PORTAL_CLEAR);
+        else if (vc > right + 0.5) v1 = Math.min(v1, vc - PORTAL_CLEAR);
+      }
+      v0 = Math.min(v0, left - 0.8); v1 = Math.max(v1, right + 0.8);
       // every arch's edges are breaks, so its sides stand plumb
       const vs = new Set<number>([v0, v1]);
       for (let v = v0; v < v1; v += 0.5) vs.add(v);
       for (const a of arches) { vs.add(a.c - a.hw); vs.add(a.c + a.hw); }
       const cuts = [...vs].sort((a, b) => a - b);
       for (let k = 0; k + 1 < cuts.length; k++) {
-        const v = cuts[k], w = cuts[k + 1], m = (v + w) / 2, a = arches.find((q) => Math.abs(m - q.c) < q.hw), open = a !== undefined;
+        const v = cuts[k], w = cuts[k + 1], m = (v + w) / 2, a = arches.find((q) => Math.abs(m - q.c) < q.hw);
         const lo = (q: number) => (a ? a.spring + a.rise * Math.sqrt(Math.max(0, 1 - ((q - a.c) / a.hw) ** 2)) : -1);
-        for (const u of [0, D]) quad(P(u, v, lo(v)), P(u, w, lo(w)), P(u, w, top), P(u, v, top), STONE);
-        quad(P(0, v, top), P(0, w, top), P(D, w, top), P(D, v, top), STONE);
-        if (open) quad(P(0, v, lo(v)), P(0, w, lo(w)), P(D, w, lo(w)), P(D, v, lo(v)), DARK);
+        for (const u of [0, D]) stone(P(u, v, lo(v)), P(u, w, lo(w)), P(u, w, top), P(u, v, top), STONE);
+        stone(P(0, v, top), P(0, w, top), P(D, w, top), P(D, v, top), CAP);
       }
+      const light = (u: number) => Math.max(0, 1 - Math.min(1, (u / deep) ** 0.7));
+      const shade = (u: number, c: number[]) => lerp3(DARK, c, light(u));
       for (const a of arches) {
-        for (const s of [a.c - a.hw, a.c + a.hw]) quad(P(0, s, 0), P(D, s, 0), P(D, s, a.spring), P(0, s, a.spring), DARK);
-        quad(P(D, a.c - a.hw, 0.2), P(D, a.c + a.hw, 0.2), P(D, a.c + a.hw, crown), P(D, a.c - a.hw, crown), DARK);   // the dark beyond
+        const at = (t: number, out: number) => [a.c + (a.hw + out) * Math.cos(t), a.spring + (a.rise + out) * Math.sin(t)];
+        const N = Math.max(10, Math.round((Math.PI * (a.hw + a.rise)) / 2 / 0.8));
+        // the ring of voussoirs standing a hair proud of the face, and the quoins down the jambs
+        for (let i = 0; i < N; i++) {
+          const t0 = Math.PI * (1 - i / N), t1 = Math.PI * (1 - (i + 1) / N);
+          const [p0, p1, q1, q0] = [at(t0, 0), at(t1, 0), at(t1, 0.6), at(t0, 0.6)];
+          stone(P(-0.04, p0[0], p0[1]), P(-0.04, p1[0], p1[1]), P(-0.04, q1[0], q1[1]), P(-0.04, q0[0], q0[1]), i % 2 ? VOUSSOIR : VOUSSOIR2);
+        }
+        for (const [s, o] of [[a.c - a.hw, -1], [a.c + a.hw, 1]]) for (let h = 0, i = 0; h < a.spring - 0.05; h += 0.7, i++) {
+          const h1 = Math.min(a.spring, h + 0.7), wd = i % 2 ? 0.45 : 0.75;
+          stone(P(-0.04, s, h), P(-0.04, s + o * wd, h), P(-0.04, s + o * wd, h1), P(-0.04, s, h1), i % 2 ? VOUSSOIR2 : VOUSSOIR);
+        }
+        // the bore: its vault and walls in stone, darkening into the hill, its floor, and dark beyond
+        const lo = (q: number) => a.spring + a.rise * Math.sqrt(Math.max(0, 1 - ((q - a.c) / a.hw) ** 2));
+        const n = Math.max(8, Math.round((2 * a.hw) / 0.6));
+        for (let u0 = 0; u0 < deep - 1e-6; u0 += 1.5) {
+          const u1 = Math.min(deep, u0 + 1.5), l0 = light(u0), l1 = light(u1);
+          for (let i = 0; i < n; i++) {
+            const v = a.c - a.hw + (2 * a.hw * i) / n, w = a.c - a.hw + (2 * a.hw * (i + 1)) / n;
+            stone(P(u0, v, lo(v)), P(u0, w, lo(w)), P(u1, w, lo(w)), P(u1, v, lo(v)), SOFFIT, l0, l1);
+          }
+          for (const s of [a.c - a.hw, a.c + a.hw]) stone(P(u0, s, 0), P(u0, s, a.spring), P(u1, s, a.spring), P(u1, s, 0), STONE_IN, l0, l1);
+          quad(P(u0, a.c - a.hw, 0.1), P(u0, a.c + a.hw, 0.1), P(u1, a.c + a.hw, 0.1), P(u1, a.c - a.hw, 0.1), shade(u0, BORE_FLOOR), shade(u1, BORE_FLOOR));
+        }
+        quad(P(deep, a.c - a.hw, 0), P(deep, a.c + a.hw, 0), P(deep, a.c + a.hw, crown), P(deep, a.c - a.hw, crown), DARK);
       }
     }
+    // buffers where a line stops with no track going on from it, short of the edge of the map's
+    // railway (a siding, or a line the data ends): a red beam on two posts across the rails
+    const reach = Math.max(...this.d.tracks.flatMap((t) => t.p.map((q) => Math.hypot(q[0], q[1]))));
+    const BEAM = C("#b3261e"), POSTS = C("#2e2b28"), HEAD = C("#1c1c1c");
+    this.d.tracks.forEach((t, ti) => {
+      for (const [q, r] of [[t.p[0], t.p[1]], [t.p[t.p.length - 1], t.p[t.p.length - 2]]]) {
+        if (!r || q[3] === 2 || Math.hypot(q[0], q[1]) > reach - 40) continue;
+        if (this.d.tracks.some((o, oi) => oi !== ti && o.p.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 2.5))) continue;
+        this.buffers.push([q[0], q[1]]);
+        const l = Math.hypot(q[0] - r[0], q[1] - r[1]) || 1, ux = (q[0] - r[0]) / l, uy = (q[1] - r[1]) / l, nx = -uy, ny = ux;
+        const P = (u: number, v: number, h: number) => [q[0] - ux * u + nx * v, q[2] - z0 + h, -(q[1] - uy * u + ny * v)];
+        const box = (u0: number, u1: number, v0: number, v1: number, h0: number, h1: number, c: number[]) => {
+          quad(P(u0, v0, h0), P(u0, v1, h0), P(u0, v1, h1), P(u0, v0, h1), c); quad(P(u1, v0, h0), P(u1, v1, h0), P(u1, v1, h1), P(u1, v0, h1), c);
+          quad(P(u0, v0, h0), P(u1, v0, h0), P(u1, v0, h1), P(u0, v0, h1), c); quad(P(u0, v1, h0), P(u1, v1, h0), P(u1, v1, h1), P(u0, v1, h1), c);
+          quad(P(u0, v0, h1), P(u1, v0, h1), P(u1, v1, h1), P(u0, v1, h1), c);
+        };
+        for (const v of [-GAUGE, GAUGE]) {
+          box(0.6, 0.8, v - 0.1, v + 0.1, 0.3, 1.25, POSTS);
+          quad(P(0.7, v - 0.08, 1.2), P(0.7, v + 0.08, 1.2), P(2.2, v + 0.08, 0.45), P(2.2, v - 0.08, 0.45), POSTS);
+          box(0.3, 0.6, v + Math.sign(v) * 0.15 - 0.15, v + Math.sign(v) * 0.15 + 0.15, 0.9, 1.15, HEAD);
+        }
+        box(0.6, 0.85, -1.05, 1.05, 0.85, 1.25, BEAM);
+      }
+    });
     add(pos, col);
+    pm.flush();
     // the platforms: paving on top, brick down the sides, and along the edge by the track a pale
     // stone coping, the buff studded strip to warn you off it and the yellow line to stand behind
     const tracks2 = this.d.tracks.map((t) => t.p);
@@ -715,24 +851,58 @@ export class Railway {
       // it stops as high as it ever did: an arch under the line beside it ends at its wall.
       let low = top - 4;
       for (const p of tracks2) for (const q of p) if (q[3] === 1 && q[4] !== undefined && q[0] > x0 - 10 && q[0] < x1 + 10 && q[1] > y0 - 10 && q[1] < y1 + 10) low = Math.min(low, q[4] - z0 - 0.3);
-      let over = Infinity;
+      let over = Infinity, along = 0;
+      const plm = mason();
+      const wallQuad = (a: number[], b: number[], c: number[], d: number[], cc: number[]) => {
+        if (this.masonry && role.has(cc)) { plm.put(a, b, c, d, role.get(cc)!, 1, 1); return; }
+        pos2.push(...a, ...b, ...c, ...a, ...c, ...d);
+        for (let k = 0; k < 6; k++) col2.push(...cc);
+      };
       for (let q = 0; q < ring.length; q++) {
         const A = ring[q], B = ring[(q + 1) % ring.length];
         const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
         const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
         const byTrack = near.some(([a, b]) => segDist(a, b, mx, my) < 3.4);
-        const n = Math.max(1, Math.ceil(len / 3));
-        for (let u = 0; u < n; u++) {
-          const P0 = [A[0] + ((B[0] - A[0]) * u) / n, A[1] + ((B[1] - A[1]) * u) / n], P1 = [A[0] + ((B[0] - A[0]) * (u + 1)) / n, A[1] + ((B[1] - A[1]) * (u + 1)) / n];
+        const inx = (-(B[1] - A[1]) / (len || 1)) * (area > 0 ? 1 : -1), iny = ((B[0] - A[0]) / (len || 1)) * (area > 0 ? 1 : -1);
+        // A platform up on a viaduct stands on arches like the viaduct's own along its outer sides,
+        // each opening dark under it, rather than on one blank wall down to the ground
+        const arcade = !byTrack && len > ARCADE_BAY && top - low > ARCADE_LEAST;
+        const cuts = new Set<number>([0, len]);
+        for (let t = 0; t < len; t += arcade ? 0.75 : 3) cuts.add(t);
+        if (arcade) for (let k = Math.ceil(along / ARCADE_BAY) * ARCADE_BAY; k < along + len; k += ARCADE_BAY) for (const e of [k, k + ARCADE_PIER]) if (e > along && e < along + len) cuts.add(e - along);
+        // (and a pier at each corner, so no opening is left without its side where the edge turns)
+        if (arcade) { cuts.add(ARCADE_PIER); cuts.add(len - ARCADE_PIER); }
+        const corner = (t: number) => Math.abs(t - ARCADE_PIER) < 1e-3 || Math.abs(t - (len - ARCADE_PIER)) < 1e-3;
+        const ts = [...cuts].sort((a, b) => a - b);
+        for (let i = 0; i + 1 < ts.length; i++) {
+          const t0 = ts[i], t1 = ts[i + 1];
+          if (t1 - t0 < 1e-3) continue;
+          const P0 = [A[0] + ((B[0] - A[0]) * t0) / len, A[1] + ((B[1] - A[1]) * t0) / len], P1 = [A[0] + ((B[0] - A[0]) * t1) / len, A[1] + ((B[1] - A[1]) * t1) / len];
           // (only what passes under it, not a street running alongside whose reach just touches its edge)
-          const ix = (-(B[1] - A[1]) / (len || 1)) * (area > 0 ? 1 : -1) * 1.5, iy = ((B[0] - A[0]) / (len || 1)) * (area > 0 ? 1 : -1) * 1.5;
-          const mid = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2], under = this.need(mid[0] + ix, mid[1] + iy);
+          const mid = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2], under = this.need(mid[0] + inx * 1.5, mid[1] + iny * 1.5);
           const headroom = under > 0 ? Math.max(under, this.need(P0[0], P0[1]), this.need(P1[0], P1[1]), this.need(mid[0], mid[1])) : 0;
           const foot = headroom > 0 ? Math.max(top - 4, low + 0.3 + headroom) : Math.min(top - 4, low);
           if (headroom > 0) over = Math.min(over, foot);
-          pos2.push(P0[0], top, -P0[1], P1[0], top, -P1[1], P1[0], foot, -P1[1], P0[0], top, -P0[1], P1[0], foot, -P1[1], P0[0], foot, -P0[1]);
-          for (let k = 0; k < 6; k++) col2.push(...BRICK);
+          const W = (Q: number[], h: number, inward = 0) => [Q[0] + inx * inward, h, -(Q[1] + iny * inward)];
+          const bay = (t: number) => (((along + t) % ARCADE_BAY) + ARCADE_BAY) % ARCADE_BAY;
+          const open = arcade && headroom === 0 && bay((t0 + t1) / 2) > ARCADE_PIER && t0 > ARCADE_PIER - 1e-3 && t1 < len - ARCADE_PIER + 1e-3;
+          if (!open) { wallQuad(W(P0, top), W(P1, top), W(P1, foot), W(P0, foot), BRICK); continue; }
+          // an arch: the wall over it, its soffit back to the dark under the platform, and a jamb where it meets a pier
+          const span = ARCADE_BAY - ARCADE_PIER, spring = foot + (top - foot) * 0.35, rise = Math.min(span / 2, top - spring - 1.2);
+          const arch = (t: number) => { const x = Math.min(span, Math.max(0, (bay(t) || ARCADE_BAY) - ARCADE_PIER)) / span * 2 - 1; return spring + rise * Math.sqrt(Math.max(0, 1 - x * x)); };
+          const h0 = arch(t0 + 1e-4), h1 = arch(t1 - 1e-4);
+          wallQuad(W(P0, top), W(P1, top), W(P1, h1), W(P0, h0), BRICK);
+          wallQuad(W(P0, h0), W(P1, h1), W(P1, h1, ARCADE_DEEP), W(P0, h0, ARCADE_DEEP), SOFFIT);
+          pos2.push(...W(P0, h0, ARCADE_DEEP), ...W(P1, h1, ARCADE_DEEP), ...W(P1, foot, ARCADE_DEEP), ...W(P0, h0, ARCADE_DEEP), ...W(P1, foot, ARCADE_DEEP), ...W(P0, foot, ARCADE_DEEP));
+          for (let k = 0; k < 6; k++) col2.push(...DARK);
+          for (const [t, h] of [[t0, h0], [t1, h1]] as const) {
+            const b = bay(t);
+            if (Math.abs(b - ARCADE_PIER) > 1e-3 && Math.abs(b) > 1e-3 && Math.abs(b - ARCADE_BAY) > 1e-3 && !corner(t)) continue;
+            const Q = [A[0] + ((B[0] - A[0]) * t) / len, A[1] + ((B[1] - A[1]) * t) / len];
+            wallQuad(W(Q, foot), W(Q, foot, ARCADE_DEEP), W(Q, h, ARCADE_DEEP), W(Q, h), STONE_IN);
+          }
         }
+        along += len;
         // an edge by the track (its middle within a rail's width of a train's side): its strips,
         // laid inward (the ring's inside is to the left going round anticlockwise)
         if (len < 0.5 || !byTrack) continue;
@@ -747,6 +917,7 @@ export class Railway {
       // over a road or path its walls stop at the headroom, so it has an underside there, like a bridge's
       if (over < Infinity) for (let q = 0; q < surf.count; q++) { pos2.push(surf.getX(q), over, surf.getZ(q)); col2.push(...SOFFIT); }
       add(pos2, col2);
+      plm.flush();
       this.plat.push({ n: pl.n, no: pl.no ?? "", r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
     }
     // the canopies over the platforms up off the ground: a flat roof on a row of posts down its middle
@@ -1314,15 +1485,38 @@ function bedAt(d: number, h: number): number | null {
 }
 
 /** The tunnel mouths grouped into the faces they open in: each face's middle at its outermost mouth,
- *  the way into the hill, the rails' height, its bores as [offset across, half width], and how high
- *  the ground over it stands above the rails, if known. */
+ *  the way into the hill, the rails' height, its bores as [offset across, half width], how high
+ *  the ground over it stands above the rails, if known, and how far in behind it the deepest mouth is. */
+const FACE_THICK = 1.2;
+
+function boreShape(cover: number | undefined, depth: number, bores: number[][]) {
+  const fits = cover !== undefined && cover >= PORTAL_LEAST + 0.6;
+  const crown = fits ? Math.min(PORTAL_CROWN, cover - 0.6) : PORTAL_CROWN;
+  const top = fits ? Math.min(PORTAL_TOP, Math.max(crown + 0.8, cover)) : PORTAL_TOP;
+  const deep = Math.max(fits ? BORE_LIT : FACE_THICK + 0.3, depth + 2);     // (on past the mouth furthest in)
+  const arches = bores.map(([c, hw]) => { const spring = Math.max(2.4, crown - hw); return { c, hw, spring, rise: crown - spring }; });
+  return { crown, top, deep, arches };
+}
+
+/** Each railway bore's mouth, for the terrain shader to leave the hill out of as far in as the
+ *  bore is lined (world.ts): its middle at the face, the way in, the rails' height, half its
+ *  width, how high it is and how deep it's drawn, in data coordinates. */
+export function railMouths(d: RailData): { x: number; y: number; ux: number; uy: number; z: number; hw: number; crown: number; deep: number }[] {
+  return headwalls(d.portals ?? []).flatMap(({ x, y, ux, uy, base, bores, cover, depth }) => {
+    const { crown, deep } = boreShape(cover, depth, bores);
+    return bores.map(([c, hw]) => ({ x: x - uy * c, y: y + ux * c, ux, uy, z: base, hw, crown, deep }));
+  });
+}
+
 function headwalls(portals: number[][]) {
   const groups: number[][][] = [];
   for (const m of portals) {
     const g = groups.find((g) => g.some((o) => {
       const turn = Math.abs(Math.atan2(Math.sin(m[3] - o[3]), Math.cos(m[3] - o[3])));
       const dx = m[0] - o[0], dy = m[1] - o[1], ux = Math.cos(o[3]), uy = Math.sin(o[3]);
-      return turn < PORTAL_TURN && Math.abs(dx * ux + dy * uy) < PORTAL_DEPTH && Math.abs(dy * ux - dx * uy) < PORTAL_SIDE;
+      const along = Math.abs(dx * ux + dy * uy), side = Math.abs(dy * ux - dx * uy);
+      // (mouths too near side by side for a bore each go in one face however far apart the data puts them along)
+      return turn < PORTAL_TURN && side < PORTAL_SIDE && (along < PORTAL_DEPTH || (side < 2 * PORTAL_R + 1 && along < PORTAL_STAGGER));
     }));
     if (g) g.push(m); else groups.push([m]);
   }
@@ -1334,14 +1528,15 @@ function headwalls(portals: number[][]) {
     const out = Math.min(...along), base = Math.min(...g.map((m) => m[2]));
     const bores: number[][] = [];
     let a = across[0], b = across[0];
+    const bore = (a: number, b: number) => [(a + b) / 2, (b - a) / 2 + (b > a ? PORTAL_PAIR : PORTAL_R)];
     for (const v of across.slice(1)) {
       if (v - b < 2 * PORTAL_R + 1) { b = v; continue; }
-      bores.push([(a + b) / 2, (b - a) / 2 + PORTAL_R]); a = b = v;
+      bores.push(bore(a, b)); a = b = v;
     }
-    bores.push([(a + b) / 2, (b - a) / 2 + PORTAL_R]);
+    bores.push(bore(a, b));
     const grounds = g.filter((m) => m[4] !== undefined).map((m) => m[4]);
     const cover = grounds.length ? grounds.reduce((s, h) => s + h, 0) / grounds.length - base : undefined;
-    return { x: cx + ux * out, y: cy + uy * out, ux, uy, base, bores, cover };
+    return { x: cx + ux * out, y: cy + uy * out, ux, uy, base, bores, cover, depth: Math.max(...along) - out };
   });
 }
 

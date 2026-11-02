@@ -76,7 +76,7 @@ function markTri(mask: Uint8Array, W: number, H: number, ax: number, ay: number,
  */
 export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
   time: { value: number }, roadWidth: (r: { c: string; w?: number }) => number, paths: Set<string>, kerbed: Set<string>, pavement: number,
-  rail: number[][][] = []): Generator<void, Grass> {
+  rail: number[][][] = [], bare: number[][][] = []): Generator<void, Grass> {
   const T = D.t;
   const touch = navigator.maxTouchPoints > 1;
   const RADIUS = touch ? 26 : 42, CELL = 8, STEP = touch ? 0.62 : 0.5;   // STEP: spacing between tufts
@@ -121,6 +121,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   }
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
   for (const t of D.tn ?? []) for (const [end, k] of [[t.p.slice(0, 6), 0], [t.p.slice(-6), t.p.length - 1]] as const) line(end, 2 * boreHalf(t, k) + 1);
+  for (const r of bare) fillRings([r]);
   // nor on a square's street and path faces, kerbs and all: their outlines here, their insides below
   const faced = !!D.sf && (typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips");
   if (faced) { const V = D.sf!.v; for (const e of D.sf!.e) line(Array.from(e.i, (i) => [V[3 * i], V[3 * i + 1]]), 0.8); }

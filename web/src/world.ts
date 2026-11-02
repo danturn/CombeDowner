@@ -20,7 +20,7 @@ import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
 import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
-import { Railway } from "./railway";
+import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
@@ -307,6 +307,33 @@ function run<T>(g: Generator<void, T>): T {
   return r.value;
 }
 
+/** The railway's brick and stone in what the town round it is built of: the walls most of the
+ *  buildings within a few hundred metres have (Bath stone, red brick or London stock), Bath stone
+ *  where there are none to go by. */
+/** The railway's tunnel mouths near a square (railway.ts railMouths, worked out once for the map). */
+function railMouthsIn(S: Shared, T: { x0: number; y0: number; nx: number; ny: number; dx: number; dy: number }): ReturnType<typeof railMouths> {
+  return ((S.railMouths ?? []) as ReturnType<typeof railMouths>).filter((m) =>
+    m.x > T.x0 - 30 && m.x < T.x0 + (T.nx - 1) * T.dx + 30 && m.y > T.y0 - 30 && m.y < T.y0 + (T.ny - 1) * T.dy + 30);
+}
+
+const MASON_MATS: Partial<Record<MasonKind, THREE.Material>> = {};
+function railMasonry(map: GameMap): Masonry {
+  const seen = new Map<string, MasonKind>();
+  return {
+    kind(x, y) {
+      const key = `${Math.floor(x / 100)},${Math.floor(y / 100)}`;
+      let k = seen.get(key);
+      if (k) return k;
+      const n: Record<MasonKind, number> = { s: 0, k: 0, y: 0 };
+      for (const b of map.wide?.buildingsNear(Math.floor(x / 100) * 100 + 50, Math.floor(y / 100) * 100 + 50, 300) ?? []) if (b.m === "s" || b.m === "k" || b.m === "y") n[b.m]++;
+      k = n.y > n.s && n.y >= n.k ? "y" : n.k > n.s ? "k" : "s";
+      seen.set(key, k);
+      return k;
+    },
+    material: (k) => (MASON_MATS[k] ??= new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide })),
+  };
+}
+
 /** Walls whose windows light up after dark (world.update turns the glow up at night): some windows and not
  *  others, picked by which window it is on the wall, which storey, and the building's colour. */
 const GLOWING: THREE.MeshLambertMaterial[] = [];
@@ -431,6 +458,7 @@ const WEIR_STREAKS = [[0.09, 0.21, 0.28], [0.16, 0.3, 0.37], [0.11, 0.25, 0.32],
 function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
   if (core) S.railTracks = map.railData?.tracks.map((t) => t.p) ?? [];
+  if (core) S.railMouths = map.railData ? railMouths(map.railData) : [];
   const D = map.d, T = D.t, Z0 = map.z0;
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
@@ -709,6 +737,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // and none inside the canal's tunnels, so you see through them from portal to portal
   const bores = canalBores(map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null), map.z0, T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy);
   mouth.a.push(...bores.a); mouth.b.push(...bores.b);
+  // and none inside a railway tunnel's lined mouth (the hill over it stays whole)
+  for (const m of railMouthsIn(S, T)) {
+    mouth.a.push(new THREE.Vector4(m.x, -m.y, m.ux, -m.uy));
+    mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, m.crown + 0.6, m.hw, m.deep));
+  }
   const ownTerr = !S.terrMat || mouth.a.length > 0 || !!works;
   const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
   // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
@@ -1751,7 +1784,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
   const railCentre = map.d.centre as [number, number] | undefined;
   const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail(),
-    railCentre ? (x, y) => setPieceAt(railCentre, x, y) : undefined) : null;
+    railCentre ? (x, y) => setPieceAt(railCentre, x, y) : undefined, railMasonry(map)) : null;
   if (railway) S.railBank = (x: number, z: number) => railway.bankAt(x, z);
   if (railway) { map.floors.push((x, z, y) => railway.floor(x, z, y)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
@@ -2559,7 +2592,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- grass round the player ---------------------------------------------------------------
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
   mark("grass-build");
-  const grass: Grass = T.nx ? yield* buildGrass(scene, D, S.railBank ? (x: number, z: number) => Math.max(drawnGround(x, z), S.railBank(x, z)) : drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE, S.railTracks ?? []) : { update() {} };
+  const grass: Grass = T.nx ? yield* buildGrass(scene, D, S.railBank ? (x: number, z: number) => Math.max(drawnGround(x, z), S.railBank(x, z)) : drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE, S.railTracks ?? [],
+    railMouthsIn(S, T).map((m) => [[0, -m.hw], [m.deep, -m.hw], [m.deep, m.hw], [0, m.hw]].map(([u, v]) => [m.x + m.ux * u - m.uy * v, m.y + m.uy * u + m.ux * v]))) : { update() {} };
   yield;
 
   mark("grass");
