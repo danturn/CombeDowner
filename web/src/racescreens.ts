@@ -16,8 +16,6 @@ import { modal, modalClicked } from "./modal";
 import { cutFlag, tearOff } from "./cutting";
 
 const COLOUR = "#3ec7e8";
-const PODIUM = ["", "#ffd23a", "#dfe5ea", "#e0975a"];
-export const MEDAL_COLOUR: Record<string, string> = { author: "#7ff0ff", gold: "#ffd23a", silver: "#dfe5ea", bronze: "#e0975a" };
 const CARD_SECS = 8;
 
 let styled = false;
@@ -62,53 +60,32 @@ body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility
 .rsc-flip.l{left:14px}.rsc-flip.r{right:14px}
 .rsc-end{inset:0;justify-content:center;background:radial-gradient(ellipse at center,rgba(4,8,12,.55),rgba(4,8,12,.8));pointer-events:auto;transition:opacity .5s}
 .rsc-end.out{opacity:0}
-.rsc-end .rcard{width:min(640px,94vw);max-height:94vh;overflow:hidden;padding:clamp(10px,2.2vmin,18px) clamp(14px,3vmin,26px) clamp(14px,2.6vmin,22px);
-  text-align:center;animation:rsc-card .6s cubic-bezier(.2,1.3,.4,1) both}
-.rsc-end .cut-sec{background:color-mix(in srgb,var(--rc,${COLOUR}) 50%,#111)}
-.rsc-end .kind{font-weight:700;font-size:clamp(11px,2.2vmin,14px);letter-spacing:.16em;text-transform:uppercase;color:var(--red)}
-.rsc-end .title{font-weight:700;font-size:clamp(28px,6.4vmin,50px);line-height:1.02;text-wrap:balance}
-.rsc-end.dnf .title{color:var(--red)}
-.rsc-end .rrow{display:flex;align-items:center;justify-content:center;gap:clamp(12px,4vmin,36px);margin:6px 0}
-.rsc-end .place{font-family:Ultra,'Old Standard TT',serif;font-weight:400;font-size:clamp(60px,14vmin,124px);line-height:.9;color:var(--navy);animation:rsc-punch .8s cubic-bezier(.15,1.5,.4,1) .2s both}
-.rsc-end .place sup{font-size:.4em}
-.rsc-end .time{font-weight:700;font-size:clamp(30px,7vmin,60px);line-height:1;font-variant-numeric:tabular-nums}
-.rsc-end .medal{position:relative;overflow:hidden;width:clamp(74px,16vmin,128px);height:clamp(74px,16vmin,128px);border-radius:50%;flex:none;
-  display:flex;align-items:center;justify-content:center;font:700 clamp(13px,2.8vmin,21px) 'Old Standard TT',Georgia,serif;letter-spacing:.06em;color:#20160a;text-shadow:0 1px 0 #fff8;
-  border:4px solid #0006;box-shadow:0 0 0 2px var(--ink),0 3px 8px rgba(0,0,0,.35);background:radial-gradient(circle at 35% 30%,#fff,var(--m) 45%,#5a4a2a 110%);
-  animation:rsc-medal .9s cubic-bezier(.2,1.6,.4,1) .45s both}
-.rsc-end .medal::after{content:'';position:absolute;inset:-40%;background:linear-gradient(115deg,transparent 40%,#fffb 50%,transparent 60%);animation:rsc-shine 2.4s ease-in-out 1.2s infinite}
-.rsc-end .medal.none{--m:#c9c2b0;color:var(--muted);text-shadow:none;border-style:dashed}
-.rsc-end .medal.none::after{display:none}
-.rsc-end .line{font-size:clamp(14px,2.8vmin,20px);font-style:italic;margin-top:2px}
-.rsc-end .best{display:inline-block;margin:4px 0;padding:2px 10px;font-weight:700;font-size:clamp(16px,3.6vmin,26px);letter-spacing:.06em;text-transform:uppercase;color:var(--red);border:3px solid var(--red);rotate:-3deg}
-.rsc-end .stats{display:flex;flex-wrap:wrap;justify-content:center;gap:0;margin:8px 0 4px;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
-.rsc-end .stat{padding:4px 12px 3px;min-width:72px}
-.rsc-end .stat+.stat{border-left:1px solid var(--ink)}
-.rsc-end .stat .v{font-weight:700;font-size:clamp(17px,3.4vmin,25px);line-height:1;font-variant-numeric:tabular-nums}
-.rsc-end .stat .k{font-weight:700;font-size:clamp(9px,1.7vmin,11px);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.rsc-end .podium{display:flex;align-items:flex-end;justify-content:center;gap:6px;margin:8px 0 2px;height:clamp(64px,13vmin,110px)}
-.rsc-end .step{width:clamp(80px,18vmin,140px);display:flex;flex-direction:column;justify-content:flex-end;font-weight:700;font-size:clamp(12px,2.4vmin,16px)}
-.rsc-end .step .small{font-weight:400;font-style:italic;color:var(--muted)}
-.rsc-end .step i{display:block;font-style:normal;color:#20160a;font-size:clamp(16px,3.4vmin,24px);padding-top:2px;border:1px solid var(--ink);border-bottom:0}
-.rsc-end table{margin:4px auto 0;border-collapse:collapse;font-weight:700;font-size:clamp(13px,2.6vmin,17px);font-variant-numeric:tabular-nums}
-.rsc-end td{padding:1px 8px;text-align:left;border-bottom:1px dotted var(--muted)}
+.rsc-end .rcard{width:min(520px,94vw);max-height:94vh;overflow:auto;padding:16px 24px 20px;animation:cut-in .4s ease-out both}
+.rsc-end .kind{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.rsc-end .title{font-weight:700;font-size:clamp(28px,6vmin,40px);line-height:1.05;margin:2px 0 10px;text-wrap:balance}
+.rsc-end .lead{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.rsc-end .place,.rsc-end .time{font-weight:700;font-size:clamp(28px,6.4vmin,42px);line-height:1;font-variant-numeric:tabular-nums}
+.rsc-end .place sup{font-size:.5em}
+.rsc-end .medal{margin-left:auto;font-size:16px;font-style:italic;white-space:nowrap}
+.rsc-end .lines{margin:8px 0 0;font-size:16px;line-height:1.4}
+.rsc-end .cut b{color:var(--ink)}
+.rsc-end table{width:100%;margin:14px 0 0;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.rsc-end caption{text-align:left;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding-bottom:4px}
+.rsc-end td{padding:4px 0;border-bottom:1px solid #d6cfbe;text-align:left}
+.rsc-end td.n{width:2.2em;color:var(--muted)}
 .rsc-end td.t{text-align:right}
-.rsc-end tr.me td{color:var(--navy);background:rgba(29,44,94,.08)}
-.rsc-end tr.dnf td{color:var(--muted);font-weight:400}
-.rsc-end .reward{font-weight:700;font-size:clamp(14px,2.8vmin,19px);color:#8a5a00;margin-top:6px}
-.rsc-end .go{display:flex;justify-content:center;gap:10px;margin-top:12px}
-.rsc-end button{pointer-events:auto;font:700 clamp(15px,3vmin,20px) 'Old Standard TT',Georgia,serif;letter-spacing:.06em;text-transform:uppercase;
-  padding:6px 18px 5px;color:var(--ink);background:transparent;border:2px solid var(--ink);cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
-.rsc-end button.main{background:var(--navy);border-color:var(--navy);color:#fff}
-.rsc-end button .fill{position:absolute;left:0;bottom:0;height:3px;background:#fff;animation:rsc-fill ${CARD_SECS}s linear both}
-@media (max-height:600px){.rsc-end .podium{display:none}.rsc-end .stats{margin:4px 0 2px}}
+.rsc-end tr.me td{font-weight:700}
+.rsc-end tr.dnf td{color:var(--muted)}
+.rsc-end .stats{margin-top:10px;font-size:13px;color:var(--muted)}
+.rsc-end .stats b{color:var(--ink)}
+.rsc-end .reward{margin-top:4px;font-size:14px;font-weight:700}
+.rsc-end .go{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.rsc-end button{pointer-events:auto;font:700 15px 'Old Standard TT',Georgia,serif;letter-spacing:.02em;text-transform:none;padding:7px 16px 6px;
+  color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:0;cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
+.rsc-end button.main{background:var(--ink);color:#f5f2e9}
+.rsc-end button small{font-weight:400;opacity:.7}
+.rsc-end button .fill{position:absolute;left:0;bottom:0;height:2px;background:#f5f2e9;animation:rsc-fill ${CARD_SECS}s linear both}
 @keyframes rsc-punch{0%{transform:scale(2.6);opacity:0}25%{transform:scale(.92);opacity:1}40%{transform:scale(1.04)}70%{transform:scale(1);opacity:1}100%{transform:scale(.96);opacity:0}}
-.rsc-end .place{animation-name:rsc-in}
-@keyframes rsc-in{0%{transform:scale(2.6);opacity:0}60%{transform:scale(.94);opacity:1}100%{transform:none;opacity:1}}
-@keyframes rsc-card{from{transform:translateY(40vh) scale(.8);opacity:0}to{transform:none;opacity:1}}
-@keyframes rsc-medal{from{transform:scale(0) rotate(-200deg)}to{transform:none}}
-@keyframes rsc-shine{0%{transform:translateX(-60%)}45%,100%{transform:translateX(60%)}}
-@keyframes rsc-blink{to{opacity:.4}}
 @keyframes rsc-dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 @keyframes rsc-fill{from{width:100%}to{width:0}}`;
   document.head.appendChild(s);
@@ -230,23 +207,20 @@ export function summary(o: Summary, again?: () => void) {
   const e = document.createElement("div");
   e.className = `rsc rsc-end${o.dnf ? " dnf" : ""}`;
   if (o.colour) e.style.setProperty("--rc", o.colour);
-  const medal = o.medal
-    ? `<div class="medal" style="--m:${MEDAL_COLOUR[o.medal] ?? "#ffd23a"}">${esc((o.medalWord ?? o.medal).toUpperCase())}</div>`
-    : `<div class="medal none">${esc((o.medalWord ?? (o.dnf ? "DNF" : "No medal")).toUpperCase())}</div>`;
-  const place = o.place ? `<div class="place">${nth(o.place)}</div>` : "";
-  const podium = o.podium && o.podium.length > 1
-    ? `<div class="podium">${[1, 0, 2].filter((k) => o.podium![k]).map((k) => `<div class="step"><span>${esc(o.podium![k].name)}</span><span class="small">${esc(o.podium![k].time)}</span><i style="background:${PODIUM[k + 1]};height:${[100, 72, 52][k]}%">${k + 1}</i></div>`).join("")}</div>`
+  // one results line (place, time, medal), what that means in a line or two, the table, and the numbers small
+  const word = o.medalWord ?? (o.medal ? `${o.medal[0].toUpperCase()}${o.medal.slice(1)} medal` : o.dnf ? "Did not finish" : "No medal");
+  const list = o.rows && o.rows.length > 1 ? o.rows : o.podium && o.podium.length > 1 ? o.podium : null;
+  const table = list
+    ? `<table><caption>Results</caption>${list.slice(0, 10).map((r: { name: string; time: string; me?: boolean; dnf?: boolean }, k) => `<tr class="${r.me ? "me" : ""}${r.dnf ? " dnf" : ""}"><td class="n">${r.dnf ? "–" : `${k + 1}.`}</td><td>${esc(r.name)}</td><td class="t">${esc(r.time)}</td></tr>`).join("")}</table>`
     : "";
-  const table = o.rows && o.rows.length > 1
-    ? `<table>${o.rows.slice(0, 10).map((r, k) => `<tr class="${r.me ? "me" : ""}${r.dnf ? " dnf" : ""}"><td>${r.dnf ? "–" : `${k + 1}.`}</td><td>${esc(r.name)}</td><td class="t">${esc(r.time)}</td></tr>`).join("")}</table>`
-    : "";
+  const lines = [...o.lines.map(esc), ...(o.best ? [`<b>${esc(o.best)}</b>`] : [])];
   const ok = ctl("jump"), more = again ? ctl("again") : "";
   tearOff(e);
   e.innerHTML = `<div class="rcard cut">${cutFlag("Sport")}<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div>`
-    + `<div class="rrow">${place}<div><div class="time">${esc(o.time)}</div>${o.lines.map((l) => `<div class="line">${esc(l)}</div>`).join("")}</div>${medal}</div>`
-    + (o.best ? `<div class="best">${esc(o.best)}</div>` : "")
-    + `<div class="stats">${o.stats.map((s) => `<div class="stat"><div class="v">${esc(s.v)}</div><div class="k">${esc(s.k)}</div></div>`).join("")}</div>`
-    + podium + table
+    + `<div class="lead">${o.place ? `<span class="place">${nth(o.place)}</span>` : ""}<span class="time">${esc(o.time)}</span><span class="medal">${esc(word)}</span></div>`
+    + (lines.length ? `<p class="lines">${lines.join("<br>")}</p>` : "")
+    + table
+    + (o.stats.length ? `<div class="stats">${o.stats.map((x) => `${esc(x.k)} <b>${esc(x.v)}</b>`).join(" &nbsp;·&nbsp; ")}</div>` : "")
     + (o.reward ? `<div class="reward">${esc(o.reward)}</div>` : "")
     + `<div class="go">${again ? `<button type="button" class="again">Again <small>(${esc(more)})</small></button>` : ""}<button type="button" class="main">Continue <small>(${esc(ok)})</small><span class="fill"></span></button></div></div>`;
   layer().appendChild(e);

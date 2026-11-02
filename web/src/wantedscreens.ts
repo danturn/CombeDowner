@@ -46,8 +46,7 @@ function style() {
 .wsc.wsc .note{font:600 clamp(12px,2.2vmin,16px)/1.2 Georgia,serif;color:#1b1b1d;text-align:left;margin-top:3px}
 .wsc.wsc .note b{color:#8a1a14}
 .wsc.wsc ul{max-width:760px}
-.wsc.wsc .clock{font-weight:700;font-size:clamp(15px,3vmin,22px);color:var(--red,#ffd84a);text-align:center}
-.wsc.wsc .cut .paper::before{content:'\\2702  Cut out and keep: police notice'}
+.wsc.wsc .clock{font-weight:700;font-size:clamp(15px,3vmin,20px);color:var(--ink,#ffd84a)}
 .wsc-tag{position:fixed;left:calc(50% + 96px);top:calc(50% + 58px);pointer-events:none;z-index:6;
   font-family:'Barlow Condensed',Impact,sans-serif;color:#fff;text-shadow:0 2px 0 #000;background:rgba(8,14,20,.82);border-left:4px solid var(--v,#ffd84a);
   padding:4px 8px 5px;max-width:min(240px,40vw)}

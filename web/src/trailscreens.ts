@@ -10,7 +10,7 @@
 // Nothing here goes over the network: trail.ts says what to show from what it already knows. A
 // Wanted poster's screens (wantedscreens.ts) are built from the same boxes and paper, and share the
 // call-out, in the poster's red. The splash and the clue card are cuttings from the Chronicle
-// (cutting.ts), with the clue as a coupon to cut out and keep; the offer and the call-out stay
+// (cutting.ts), with the clue in a dashed box as a coupon would be; the offer and the call-out stay
 // banners over the game.
 import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
@@ -58,23 +58,22 @@ function style() {
 .tsc-offer .price{font-weight:800;font-size:clamp(16px,3.2vmin,24px);color:#ffd84a;margin-top:4px}
 .tsc-offer .go{font-weight:800;font-size:clamp(15px,3vmin,22px);margin-top:6px}
 .tsc-offer .go b{color:#fff;background:var(--rc);color:#14100a;padding:0 6px;text-shadow:none}
-/* the splash and the clue card as cuttings: newsprint words, and the clue a coupon with a dotted line to cut along */
-.rsc .band.cut{background:none;box-shadow:none;text-align:left;animation:cut-in .5s cubic-bezier(.2,1.3,.4,1) both}
-.tsc .cut .head{font-family:'Old Standard TT',Georgia,serif;font-weight:700;font-size:clamp(26px,5.6vmin,46px);letter-spacing:0;text-transform:none;line-height:1.02;text-align:center}
-.tsc .cut .look{font-weight:400;text-align:center}
-.tsc .cut .look b{color:var(--red)}
-.tsc .cut .small{color:var(--muted);font-style:italic;text-align:center}
+/* the splash and the clue card as cuttings: newsprint words, and the clue in a dashed box, as a coupon */
+.rsc .band.cut{background:none;box-shadow:none;text-align:left;padding:16px 24px 18px;animation:cut-in .4s ease-out both}
+.tsc .cut .head{font-family:'Old Standard TT',Georgia,serif;font-weight:700;font-size:clamp(26px,5.4vmin,40px);letter-spacing:0;text-transform:none;line-height:1.05}
+.tsc .cut .look{font-weight:400;font-size:clamp(15px,2.8vmin,20px)}
+.tsc .cut .look b{color:var(--ink)}
+.tsc .cut .small{color:var(--muted);font-style:italic;font-weight:400}
 .tsc .cut .small b{color:var(--ink)}
-.tsc .cut .paper{background:#fffdf6;color:var(--ink);border:2px dashed var(--ink);box-shadow:none;position:relative;margin-top:16px}
-.tsc .cut .paper::before{content:'\\2702  Cut out and keep';position:absolute;left:14px;top:-.8em;padding:0 6px;background:#f3efe2;font:italic 400 13px/1.4 'Old Standard TT',Georgia,serif;letter-spacing:0;color:var(--muted)}
-.tsc .cut .paper .ctag{font-family:'Old Standard TT',Georgia,serif;color:var(--red)}
-.tsc .cut ul{color:var(--ink);font-weight:400;columns:2 260px;column-gap:22px}
+.tsc .cut .paper{max-width:none;margin:12px 0 10px;background:none;color:var(--ink);border:1px dashed var(--ink);box-shadow:none}
+.tsc .cut .paper .ctag{font-family:'Old Standard TT',Georgia,serif;font-weight:400;letter-spacing:.12em;color:var(--muted)}
+.tsc .cut ul{max-width:none;margin:0;color:var(--ink);font-weight:400;font-size:clamp(13px,2.4vmin,16px)}
 .tsc .cut li{break-inside:avoid}
-.tsc .cut .again{color:var(--navy);font-weight:700;text-align:center}
+.tsc .cut .again{color:var(--ink);font-weight:400;font-style:italic;font-size:14px;margin-top:8px}
 .tsc .cut .again b{color:var(--ink)}
-.rsc .cut b{color:var(--red)}
-.tsc .cut li::before{color:var(--ink)}
-.tsc .cut .cut-sec{background:color-mix(in srgb,var(--rc) 55%,#111)}
+.rsc .cut b{color:var(--ink)}
+.tsc .cut .paper b{color:var(--ink)}
+.tsc .cut li::before{content:'\\2013  ';color:var(--muted)}
 @media (max-height:520px){.tsc-splash{top:2%}.tsc ul{font-size:12px}.tsc .paper{margin:6px auto 4px;padding:6px 12px 8px}.tsc-offer{top:4%}}
 @keyframes tsc-in{from{transform:scale(1.6);opacity:0}to{transform:none;opacity:1}}
 @keyframes tsc-pulse{to{transform:scale(1.06)}}`;

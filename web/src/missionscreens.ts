@@ -103,35 +103,30 @@ function style() {
 /* the end card, the report and the front page: cuttings from the Chronicle (cutting.ts gives them the paper) */
 .msc-end{inset:0;top:0;justify-content:center}
 .msc-end canvas{position:absolute;inset:0;width:100%;height:100%}
-.msc .band.cut{width:min(560px,92vw);padding:12px 22px 18px;background:none;box-shadow:none;animation:cut-in .5s cubic-bezier(.2,1.3,.4,1) both}
-.msc-end .title{font-weight:700;font-size:clamp(28px,5.4vw,46px);line-height:1.02;letter-spacing:0;text-align:center;text-wrap:balance;margin:2px 0 4px}
-.msc-end .kicker{font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:var(--red)}
-.msc-end.failed .kicker{color:var(--muted)}
-.msc-end .cut>:not(.cut-flag){text-align:center}
-.msc-end .place{font-family:Ultra,'Old Standard TT',serif;font-weight:400;font-size:clamp(64px,15vw,130px);line-height:1;color:var(--navy);animation:msc-pop 1.2s ease-in-out .4s infinite alternate}
-.msc-end .place sup{font-size:.4em}
-.msc-end .gold{background:linear-gradient(#f0c419,#b07d00 60%,#7a5200);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 2px 0 var(--ink))}
-.msc-end .time{font-weight:700;font-size:clamp(22px,4.6vw,40px);margin-top:4px;line-height:1.1}
-.msc-end .time.small{font-size:clamp(16px,3vw,22px);font-weight:400;font-style:italic}
-.msc-end .medal{font-weight:700;font-size:clamp(17px,3.4vw,26px);color:#8a5a00;margin-top:4px}
-.msc-end .best{display:inline-block;margin-top:8px;padding:2px 10px;font-weight:700;font-size:clamp(16px,3.4vw,24px);letter-spacing:.06em;text-transform:uppercase;color:var(--red);border:3px solid var(--red);rotate:-3deg}
-.msc-end table{margin:10px auto 0;border-collapse:collapse;font-weight:700;font-size:clamp(14px,3vw,19px);font-variant-numeric:tabular-nums}
-.msc-end td{padding:2px 10px;text-align:left;border-bottom:1px dotted var(--muted)}
+.msc .band.cut{width:min(520px,92vw);padding:16px 24px 20px;background:none;box-shadow:none;text-align:left;animation:cut-in .4s ease-out both}
+.msc-end .title{font-weight:700;font-size:clamp(26px,5vw,38px);line-height:1.05;letter-spacing:0;margin:2px 0 10px;text-wrap:balance}
+.msc-end .lead{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.msc-end .place,.msc-end .time{font-weight:700;font-size:clamp(28px,6vw,40px);line-height:1;font-variant-numeric:tabular-nums}
+.msc-end .place sup{font-size:.5em}
+.msc-end .medal{margin-left:auto;font-size:16px;font-style:italic;white-space:nowrap}
+.msc-end .lines{margin:8px 0 0;font-size:16px;line-height:1.4}
+.msc-end table{width:100%;margin:14px 0 0;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.msc-end td{padding:4px 0;border-bottom:1px solid #d6cfbe;text-align:left}
+.msc-end td.n{width:2.2em;color:var(--muted)}
 .msc-end td.t{text-align:right}
-.msc-end td .sw{display:inline-block;width:.7em;height:.7em;margin-right:6px;border:1px solid var(--ink);vertical-align:-1px}
-.msc-end tr.me td{color:var(--navy);background:rgba(29,44,94,.08)}
+.msc-end tr.me td{font-weight:700}
 .msc-night{top:4%}
 .msc-night .band.cut{width:min(660px,94vw);margin:0 auto;padding:12px 22px 16px;max-height:90vh;overflow:hidden}
-.msc-night .kind{font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--red)}
+.msc-night .kind{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .msc-night .title{font-weight:700;font-size:clamp(26px,5.4vw,44px);line-height:1.02;letter-spacing:0;margin:2px 0 4px;text-wrap:balance}
 .msc-night .by{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .msc-night .stand{font-weight:700;font-size:clamp(14px,2.8vw,18px);line-height:1.25;margin:6px 0}
 .msc-night p{font-size:clamp(12px,2.4vw,15px);line-height:1.3;margin:4px 0}
-.msc-night .small{display:flex;gap:12px;border-top:3px double var(--ink);margin-top:8px;padding-top:6px}
+.msc-night .small{display:flex;gap:12px;border-top:1px solid var(--ink);margin-top:10px;padding-top:8px}
 .msc-night .small div{flex:1;font-size:clamp(11px,2.2vw,14px);line-height:1.25}
 .msc-night .small div+div{border-left:1px solid var(--ink);padding-left:12px}
 .msc-night .small h4{margin:0 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.14em}
-.msc-sheet .stamp{position:absolute;right:24px;bottom:12px;transform:rotate(-12deg);font:700 clamp(24px,5.4vw,42px) 'Old Standard TT',Georgia,serif;letter-spacing:.08em;text-transform:uppercase;border:4px double;padding:0 10px;opacity:.82}
+.msc-sheet .verdict{font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;margin:8px 0 0}
 @media (max-width:700px),(max-height:500px){.msc-night .small{flex-direction:column;gap:4px}.msc-night{top:2%}
   .msc-start,.msc-stage{bottom:calc(50% + 22px)}
   #hud:has(#mprog:not([hidden])) :is(.msc-start,.msc-stage){width:clamp(240px,calc(100vw - 2 * (min(240px,100vw - 170px) + 40px)),760px)}
@@ -290,14 +285,15 @@ export function missionEnd(o: MissionEnd): EndHandle {
   band.className = "band cut";
   tearOff(el);
   const [main, ...rest] = o.lines;
+  // a time (or a race place) goes on the results line with the medal; a line that's just words goes with the rest
+  const big = !!(o.big || o.lead);
+  const text = [...(big ? rest : o.lines)].map(esc);
+  if (o.medal && !big) text.push(esc(o.medal));
+  if (o.best) text.push(`<b>${esc(o.best)}</b>`);
   band.innerHTML = cutFlag(win ? "Stop press" : "In brief")
-    + `<div class="kicker">${win ? "Job done" : "Not this time"}</div>`
     + `<div class="title">${esc(o.title)}</div>`
-    + (o.big ? `<div class="place${o.gold ? " gold" : ""}">${o.big}</div>` : "")
-    + (main ? `<div class="time${o.big || o.lead ? "" : " small"}">${esc(main)}</div>` : "")
-    + rest.map((l) => `<div class="time small">${esc(l)}</div>`).join("")
-    + (o.medal ? `<div class="medal">${esc(o.medal)}</div>` : "")
-    + (o.best ? `<div class="best">${esc(o.best)}</div>` : "");
+    + (big ? `<div class="lead">${o.big ? `<span class="place">${o.big}</span>` : ""}${main ? `<span class="time">${esc(main)}</span>` : ""}${o.medal ? `<span class="medal">${esc(o.medal)}</span>` : ""}</div>` : "")
+    + (text.length ? `<p class="lines">${text.join("<br>")}</p>` : "");
   const table = document.createElement("div");
   band.appendChild(table);
   el.appendChild(band);
@@ -308,7 +304,7 @@ export function missionEnd(o: MissionEnd): EndHandle {
   const bits: Bit[] = [];
   const rows = (r: EndRow[]) => {
     table.innerHTML = r.length > 1 || (r.length && !r[0].me)
-      ? `<table>${r.slice(0, 8).map((x, k) => `<tr class="${x.me ? "me" : ""}"><td>${k + 1}.</td><td><i class="sw" style="background:${x.colour}"></i>${esc(x.name)}</td><td class="t">${esc(x.time)}</td></tr>`).join("")}</table>`
+      ? `<table>${r.slice(0, 8).map((x, k) => `<tr class="${x.me ? "me" : ""}"><td class="n">${k + 1}.</td><td>${esc(x.name)}</td><td class="t">${esc(x.time)}</td></tr>`).join("")}</table>`
       : "";
   };
   const burst = () => {
@@ -360,12 +356,12 @@ export function missionEnd(o: MissionEnd): EndHandle {
   return handle;
 }
 
-/** A form filled in at the end (the driving test's report): a heading, a big stamp across it, and
- *  sections of lines. Lines are plain text. */
+/** A form filled in at the end (the driving test's report): a heading, the result, and sections of
+ *  lines. Lines are plain text. */
 export function missionSheet(o: { kind: string; title: string; who: string; stamp: string; good: boolean; sections: { head: string; lines: string[] }[]; foot?: string; life?: number }) {
   const colour = o.good ? "#1f6a33" : "#a3201c";
   putCard("msc-night msc-sheet", `${cutFlag("Motoring")}<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div><div class="by">${esc(o.who)}</div>`
-    + `<div class="stamp" style="color:${colour};border-color:${colour}">${esc(o.stamp)}</div>`
+    + `<div class="verdict" style="color:${colour}">Result: ${esc(o.stamp)}</div>`
     + `<div class="small">${o.sections.map((x) => `<div><h4>${esc(x.head)}</h4>${x.lines.length ? x.lines.map((l) => esc(l)).join("<br>") : "None"}</div>`).join("")}</div>`
     + (o.foot ? `<div class="stand">${esc(o.foot)}</div>` : ""), o.life ?? 14, colour, true);
 }
