@@ -23,7 +23,7 @@
 // sends it: once the game has settled, in the browser's idle time, it asks the server which
 // release of this map its picture is from, and if the server has none or an older one, sends the
 // picture (a PNG of the map, nothing about the player) with its bounds and the map's release. The
-// server decides whether to keep it. Each browser does this at most once per map release, and only
+// server decides whether to keep it. Each browser stops offering once the server has that release, and only
 // on a computer, which draws the picture at full size.
 
 import type { WebGLRenderer } from "three";
@@ -179,9 +179,10 @@ async function sendPicture(base: string, id: string, release: string, key: strin
   } else if (r.status !== 404) return;
   const blob = await new Promise<Blob | null>((done) => pic.canvas.toBlob(done, "image/png"));
   if (!blob) return;
-  try { localStorage.setItem(key, release); } catch { return; }
   const q = new URLSearchParams({ x0: String(pic.x0), y0: String(pic.y0), x1: String(pic.x1), y1: String(pic.y1), v: release });
-  await fetch(`${base}/maps/${encodeURIComponent(id)}?${q}`, { method: "POST", body: blob });
+  const sent = await fetch(`${base}/maps/${encodeURIComponent(id)}?${q}`, { method: "POST", body: blob });
+  // only once the server has it, so a server that can't take pictures yet is asked again next time
+  if (sent.status === 204 || sent.status === 409) try { localStorage.setItem(key, release); } catch { /* storage may be blocked */ }
 }
 
 /** Release a is newer than b, the way the server reckons it: runs of digits compare as numbers. */
