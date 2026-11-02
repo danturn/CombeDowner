@@ -528,6 +528,14 @@ def towpath(run, z, snap=True, bridged=()):
 
 # every road run first, with its heights and what's marked on it; then the underpasses, so the
 # roads over them are spans; then the roads are written out and the ground flattened under them
+# a road by the sea is up on the quay, as the ground there is (the water, below), never down on the
+# sea floor or the harbour's water that the survey has under it
+QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
+quayside = None
+if getattr(A, "sea", None) is not None:
+    quayside = unary_union([q for g, p in L("water") if p.get("subtype") == "ocean" and p.get("class") != "sea"
+                            for q in whole_polys(g, box(*(ROAD_BOX or BM.bounds)).buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
+    shapely.prepare(quayside)
 pending = []
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
@@ -564,6 +572,9 @@ for g, p in L("segment"):
             # the survey's heights, the structures carried straight between the road at their ends
             # (the roads are smoothed as a network once they're all in: smooth_network)
             z = [elev(x, y) for x, y, _ in run]
+            if quayside is not None:
+                by_sea = shapely.dwithin(quayside, shapely.points([q[:2] for q in run]), QUAY_REACH)
+                z = [max(h, A.sea + QUAY_HEIGHT) if w else h for h, w in zip(z, by_sea)]
             z = level_structures(run, z, bridge_ranges, tunnel_ranges)
             for i in in_ranges(run, tunnel_ranges):
                 for ts, zs_ in floors:
@@ -1605,7 +1616,6 @@ if True:
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
             # the basins off it (a marina): canal.ts draws their water too, at their pound's level
             cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
-    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
     beaches = unary_union([q for g, p in L("land") if p.get("class") in ("beach", "sand") for q in whole_polys(g)] or [Point(1e9, 1e9)])
     # A river or a lake steps down only at a weir or a dam (OpenStreetMap's waterway=weir or dam, in
