@@ -6049,8 +6049,9 @@ def reroll_back_styles(part, parents):
     (`gardens.STYLE`, as the old build rolls them: a wooden fence or now and then a hedge in
     England, a masonry wall in Cape Town): every garden backing on to another round a block. Rolled
     on the block (pass 2's parent blocks, the same in every square), so a block crossing a square's
-    edge is the same either side of it. A garden's edge against open land keeps the hedge the plots
-    gave it, and a fence or hedge a map or the lidar shows stays what it is."""
+    edge is the same either side of it. A registered garden's edge against open land keeps the hedge
+    the plots gave it; a guessed one took the square's commonest evidence, so it is rolled too. A
+    fence or hedge a map or the lidar shows stays what it is."""
     tree = STRtree(parents) if parents else None
     keys = [tuple(round(c, 1) for c in g.bounds) for g in parents]
     mixes = [GARDEN_STYLE.get(zone_at(*g.representative_point().coords[0]), GARDEN_NEUTRAL)[1] for g in parents]
@@ -6065,9 +6066,11 @@ def reroll_back_styles(part, parents):
     for e in part["edges"]:
         sides = e.get("sides") or []
         plots = [s[1] for s in sides if s[0] == "plot" and len(s) > 1]
-        if not plots or any(s[0] != "plot" for s in sides) or e["kind"] not in ("fence", "hedge") \
+        if not plots or any(s[0] == "corridor" for s in sides) or e["kind"] not in ("fence", "hedge") \
                 or e.get("source") not in ("parcel", "inferred"):
             continue
+        if e["source"] == "parcel" and any(s[0] != "plot" for s in sides):
+            continue        # a registered garden's edge against open land keeps the hedge the plots gave it
         # found by the boundary's own middle: a house stands in a hole of its block, so the house's
         # own point is in no block at all
         k = block_of(LineString([q[:2] for q in e["xy"]]).interpolate(0.5, normalized=True))
