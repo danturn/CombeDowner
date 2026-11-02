@@ -1433,8 +1433,9 @@ same as main):
 - [ ] **No parcels, no listed buildings, no OpenStreetMap bridges outside Bath.** Each is an
   optional layer (`partition.OPTIONAL`): the plots follow the blocks and the house fronts, the
   Georgian railings rule goes on eaves alone, and a bridge's kind goes by what it carries and
-  crosses. Bradford-on-Avon and Hackney are in England and Wales and could have parcels and listed
-  buildings fetched (`tools/parcels.py`); Cape Town never will.
+  crosses. Bradford-on-Avon (Wiltshire) and Hackney (Hackney and the four boroughs its wide box
+  crosses into) now have both, fetched 2 November 2026 (`tools/parcels.py` takes every council's
+  download at once); Cape Town never will, so it relies on the fallback.
 - [ ] **The zone names in the partition are still a table.** `settle.OPEN_FRONT_ZONES` (`"bath"`:
   no guessed fronts in the city centre) and `SUBURB_FRONTS`, and `plots.FRONT` for zones with no
   mix of their own, name Bath's zones. Every other map's zones fall through to their mixes in

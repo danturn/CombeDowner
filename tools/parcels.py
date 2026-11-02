@@ -1,6 +1,8 @@
 """Convert HM Land Registry's INSPIRE Index Polygons into a wide-area layer for a game map.
 
-Usage: python3 -I tools/parcels.py <map> <in.zip or .gml> <out.geojson> [wide]
+Usage: python3 -I tools/parcels.py <map> <in.zip or .gml> [more ...] <out.geojson> [wide]
+
+A map across a council's border takes each council's download, one after another.
 
 Writes the registered freehold property extents that touch the map's area, as the other wide
 `.geojson` layers are kept (tools/mapdata.py). The download is one zip per local authority from
@@ -63,8 +65,11 @@ def bounds(rings):
 
 def main():
     from pyproj import Transformer
-    src = area(sys.argv[1], wide=sys.argv[4:] == ["wide"])
-    in_path, out_path = sys.argv[2], sys.argv[3]
+    args = sys.argv[2:]
+    wide = args[-1] == "wide"
+    if wide: args = args[:-1]
+    src = area(sys.argv[1], wide=wide)
+    in_paths, out_path = args[:-1], args[-1]
     from lidar import bng_transformer
     # (it stops the build if PROJ can't reach the OSTN15 grid, which the reverse needs as well)
     to_bng = bng_transformer()
@@ -77,7 +82,7 @@ def main():
     bw, bs, be, bn = min(es), min(ns), max(es), max(ns)
 
     feats, seen, tried = [], 0, 0
-    for insp, rings in members(gml_stream(in_path)):
+    for insp, rings in (m for path in in_paths for m in members(gml_stream(path))):
         tried += 1
         if not rings:
             continue
