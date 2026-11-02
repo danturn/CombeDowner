@@ -3,7 +3,7 @@ sources, into the raw dir the builds read: the start of rebuilding the repositor
 map data from scratch (tools/mapdata.py). For an ordinary rebuild none of this is needed:
 tools/mapdata.py unpack gives the same data from the repository.
 
-Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation]
+Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,city]
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
@@ -16,7 +16,10 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
   in the repository was made;
 - census, conservation (England and Wales, and England): the 2021 Census's accommodation types for
   each output area, and the conservation areas (tools/census.py, tools/conservation.py), which say
-  what the houses are where the map data doesn't (buildings.priors). Both are open APIs.
+  what the houses are where the map data doesn't (buildings.priors). Both are open APIs;
+- city (a map inside the City of Cape Town): the City's 2 m contours, measured roof heights and
+  tree crowns (tools/cct.py), turned into the heights layer and the crowns beside the canopy map.
+  The contours' ground goes into the terrain tiles once a build has fetched them (cct.py ground).
 The HM Land Registry parcels (INSPIRE Index Polygons) have to be fetched by hand, one zip per local
 authority: `tools/parcels.py` converts the download to `parcels.geojson` in the wide dir (see
 docs/new-area.md). They are optional: without them the partition build divides blocks by rule.
@@ -163,6 +166,13 @@ def main():
     for name, regions in (("census", ("GB-ENG", "GB-WLS")), ("conservation", ("GB-ENG",))):
         if want(name) and region in regions and not os.path.exists(os.path.join(raw, f"{name}.geojson")):
             run(os.path.join(TOOLS, f"{name}.py"), map_id, None, os.path.join(raw, f"{name}.geojson"), "wide")
+    import cct
+    if want("city") and cct.covers(A):
+        cct.fetch(A, raw)
+        cct.heights(A, raw)
+        cct.crowns(A, raw)
+        print("city: once a build has fetched the terrain tiles, lay the contours' ground over them: "
+              f"python3 -I tools/cct.py {map_id} ground {raw}")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
         print(f"epc: download the energy certificates and OS Open UPRN by hand into {os.path.join(raw, 'epc')} (see docs/new-area.md)")
 
