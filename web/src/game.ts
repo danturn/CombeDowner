@@ -3413,7 +3413,9 @@ export class Game {
     if (this.carrier && !helm) {
       const was = this.player.pos.clone();
       this.carry();
-      this.camera.position.add(this.player.pos.clone().sub(was));
+      const moved = this.player.pos.clone().sub(was);
+      this.camera.position.add(moved);
+      this.weapon.carried(moved);
     }
     const before = this.carrier?.m;
     this.findCarrier();
