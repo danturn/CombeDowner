@@ -178,7 +178,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
-  one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car,
+  one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car (in through a passage in the engine house at the back of each station, up steps where the platform stands above the ground),
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field takes in
   the town and the fields round it, down Trowbridge Road past the canal bridge at Widbrook to the marina; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
@@ -493,7 +493,9 @@ phone, tablet or computer and the model of its graphics chip, the map, the game'
 race, ball or the mines start and stop, and at the end how smoothly the game ran (frame rate and how
 much it drew each frame). Every half minute it notes which 50 m square of the map you are in, without your name. Your
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
-many are in it. It never sends chat, voice or your address. Add `?telemetry=0` to the address to
+many are in it. Once per version of each map, a computer also sends the game's own picture of the whole map
+(nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
+never sends chat, voice or your address. Add `?telemetry=0` to the address to
 turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
 nothing at all.
 

@@ -1,6 +1,8 @@
 // Saves a game map's own whole-map picture for the telemetry dashboard's "Where people go" map,
-// which has a tab for each map with a picture. Run it once per map with a wider map round it
-// (combe-down, bradford-on-avon); a map without one (pembury) has no picture to save.
+// which has a tab for each map with a picture. Only a manual fallback now: the game itself sends
+// the picture to the telemetry server when the server has none for that map or an older release's
+// (web/src/telemetry.ts, offerPicture). Use this for a server without its database, or to put a
+// picture into the telemetry repo's priv/static by hand.
 //
 //   node tools/telemetry_map.mjs [--url <game url>] [--out <folder>] [--map combe-down]
 //
@@ -12,6 +14,7 @@
 import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
+import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -20,8 +23,11 @@ for (let i = 0; i < args.length; i += 2) opt[args[i].replace(/^--/, "")] = args[
 
 const req = process.env.PW ? createRequire(import.meta.url) : createRequire(WEB + "package.json");
 const { chromium } = req(process.env.PW ?? "playwright");
-const browser = await chromium.launch({ channel: "chrome", headless: true, args: process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu", "--mute-audio"] : ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--mute-audio"] });
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const browser = await chromium.launch({ channel: "chrome", headless: true, args: process.platform === "darwin" ? [...MUTED_ARGS, "--use-angle=metal", "--enable-gpu"] : [...MUTED_ARGS, "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
+const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+await silenceContext(context);
+const page = await context.newPage();
+await silence(page);
 await page.goto(`${opt.url}?${new URLSearchParams({ map: opt.map })}`);
 await page.waitForFunction(() => window.__game && !document.getElementById("solo")?.disabled, null, { timeout: 180000 });
 await page.evaluate(() => document.getElementById("solo").click());
@@ -30,6 +36,7 @@ const got = await page.evaluate(() => {
   const w = window.__game().minimap.wide, size = w.canvas.width, span = size * w.mpp;
   return { png: w.canvas.toDataURL("image/png"), bounds: [w.x0, w.y1 - span, w.x0 + span, w.y1] };
 });
+console.log(await silenceNote(page));
 await browser.close();
 
 fs.mkdirSync(opt.out, { recursive: true });

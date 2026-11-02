@@ -1380,6 +1380,9 @@ export class Game {
     return { x: p.x, y: -p.z, doing, view: view.fogFar };
   }
 
+  /** For telemetry.ts: the big map's whole-map picture, once it is drawn. */
+  mapPicture() { return this.minimap.picture(); }
+
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
@@ -3413,7 +3416,9 @@ export class Game {
     if (this.carrier && !helm) {
       const was = this.player.pos.clone();
       this.carry();
-      this.camera.position.add(this.player.pos.clone().sub(was));
+      const moved = this.player.pos.clone().sub(was);
+      this.camera.position.add(moved);
+      this.weapon.carried(moved);
     }
     const before = this.carrier?.m;
     this.findCarrier();

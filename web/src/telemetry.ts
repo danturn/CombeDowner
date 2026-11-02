@@ -18,6 +18,13 @@
 // minute, sent without the name. Everything extra is counted in memory and rides along with the
 // normal batches; the one-second look at what the player is doing is a timer, not part of the
 // game's frame.
+//
+// The dashboard draws where people go over each map's own whole-map picture (minimap.ts). The game
+// sends it: once the game has settled, in the browser's idle time, it asks the server which
+// release of this map its picture is from, and if the server has none or an older one, sends the
+// picture (a PNG of the map, nothing about the player) with its bounds and the map's release. The
+// server decides whether to keep it. Each browser stops offering once the server has that release, and only
+// on a computer, which draws the picture at full size.
 
 import type { WebGLRenderer } from "three";
 import { site as thisSite } from "./features";
@@ -136,6 +143,60 @@ export function play(id: string) {
   if (!on) return;
   map = id;
   try { add("start", { map, name: name(), device: device(), v: String(__BUILD__) }); } catch { /* never reaches the game */ }
+}
+
+const PICTURE_SETTLE_MS = 20_000, PICTURE_RETRY_MS = 10_000, PICTURE_TRIES = 30, PICTURE_SIZE = 2048;
+let picturing = "";
+
+type Picture = { canvas: HTMLCanvasElement; x0: number; y0: number; x1: number; y1: number };
+
+/** Sends this map's whole-map picture to the server if it hasn't one from this release (see the top). */
+export function offerPicture(id: string, release: string, look: () => Picture | null) {
+  init();
+  if (!on || !release || picturing === id) return;
+  picturing = id;
+  const key = "cd-tpic:" + id;
+  try { if (localStorage.getItem(key) === release) return; } catch { return; }
+  const base = URL_!.replace(/\/e\/?$/, "");
+  const idle = (f: () => void) => { if ("requestIdleCallback" in window) requestIdleCallback(f, { timeout: 10_000 }); else setTimeout(f, 0); };
+  let tries = 0;
+  const attempt = () => idle(() => {
+    if (map !== id) { picturing = ""; return; }
+    const pic = look();
+    if (!pic) { if (++tries < PICTURE_TRIES) setTimeout(attempt, PICTURE_RETRY_MS); return; }
+    // touch devices draw it at half size: leave it to a computer
+    if (pic.canvas.width < PICTURE_SIZE) return;
+    sendPicture(base, id, release, key, pic).catch(() => {});
+  });
+  setTimeout(attempt, PICTURE_SETTLE_MS);
+}
+
+async function sendPicture(base: string, id: string, release: string, key: string, pic: Picture) {
+  const r = await fetch(`${base}/maps/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+  if (r.ok) {
+    const had = (await r.json())?.version;
+    if (typeof had === "string" && !newer(release, had)) { try { localStorage.setItem(key, release); } catch { /* storage may be blocked */ } return; }
+  } else if (r.status !== 404) return;
+  const blob = await new Promise<Blob | null>((done) => pic.canvas.toBlob(done, "image/png"));
+  if (!blob) return;
+  const q = new URLSearchParams({ x0: String(pic.x0), y0: String(pic.y0), x1: String(pic.x1), y1: String(pic.y1), v: release });
+  const sent = await fetch(`${base}/maps/${encodeURIComponent(id)}?${q}`, { method: "POST", body: blob });
+  // only once the server has it, so a server that can't take pictures yet is asked again next time
+  if (sent.status === 204 || sent.status === 409) try { localStorage.setItem(key, release); } catch { /* storage may be blocked */ }
+}
+
+/** Release a is newer than b, the way the server reckons it: runs of digits compare as numbers. */
+function newer(a: string, b: string): boolean {
+  const pa = a.match(/\d+|\D+/g) ?? [], pb = b.match(/\d+|\D+/g) ?? [];
+  for (let i = 0; ; i++) {
+    const x = pa[i], y = pb[i];
+    if (x === undefined) return false;
+    if (y === undefined) return true;
+    if (x === y) continue;
+    const nx = /^\d/.test(x), ny = /^\d/.test(y);
+    if (nx && ny) return +x > +y;
+    return nx === ny ? x > y : ny;
+  }
 }
 
 /** A mini-game or mode begins (a race, a ball to kick, the mines). */

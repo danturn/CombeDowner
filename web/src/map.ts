@@ -420,7 +420,9 @@ export class GameMap {
     for (let k = 0; k < T.h.length; k++) this.hgt[k] = T.h[k] / 10;
     // the cable car: laid on the ground, with the trees, hedges and furniture cleared out of its way
     if (cableData?.st?.length === 2) {
-      this.cable = new CableLine(cableData, (x, z) => this.ground(x, z));
+      const near = (d.bl ?? []).filter((b) => cableData.st.some(([, x, y]) => Math.hypot(b.r[0][0][0] - x, b.r[0][0][1] - y) < 200));
+      const built = (x: number, y: number) => [...near, ...(this.wide?.buildingsNear(x, y, 1) ?? [])].some((b) => inRing(b.r[0], x, y));
+      this.cable = new CableLine(cableData, (x, z) => this.ground(x, z), built);
       this.cable.clear(d);
     }
     // the railway and the canal, for the walls to be cut at as they are at the streets

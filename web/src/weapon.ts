@@ -913,6 +913,15 @@ export class Weapon {
   private bars: Partial<Record<BarsKind, THREE.Group>> = {};
   private barsShake = 0;
 
+  /** The view's been carried on by d after the gun was put in front of it this frame (standing on
+   *  something that moves, game.ts): the gun, the radio and the handlebars go with it, or they'd be
+   *  drawn a frame behind the view and shake as the frame times vary. */
+  carried(d: THREE.Vector3) {
+    this.model.position.add(d);
+    this.radioHand.position.add(d);
+    for (const g of Object.values(this.bars)) g.position.add(d);
+  }
+
   /**
    * On a bike, a BMX or a scooter: its handlebars below you, pointing the way the ride's going and
    * turned a little as you steer (heading: which way the ride points; steer: how far you're turning
