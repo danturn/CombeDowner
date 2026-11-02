@@ -548,7 +548,7 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
                     line = best[1]
             # clipped to the block, so its ends land on the block's far side (a building or a
             # corridor) and never in open land: the growth cap below keeps it only the yard's back
-            line = line.intersection(block.buffer(1.0))
+            line = line.intersection(_buffered(block, 1.0))
             if line.is_empty or line.length < 1:
                 continue
             if line.geom_type == "MultiLineString":
@@ -580,7 +580,7 @@ def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
         depth = max(float(np.dot(v - c, -f)) for v in vs)
         half = max(abs(float(np.dot(v - c, a))) for v in vs) + CAP_OVERHANG
         m = c - f * (depth + GARDEN)
-        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(block.buffer(0.5))
+        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(_buffered(block, 0.5))
         parts = [seg] if seg.geom_type == "LineString" else \
             [x for x in getattr(seg, "geoms", []) if x.geom_type == "LineString"]
         for x in parts:
