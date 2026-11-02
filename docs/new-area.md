@@ -279,13 +279,13 @@ canal to the levels those files give; then:
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 ```
 
-For Combe Down's Bath, that same command then lays the ground out as a partition
-(`tools/partition/stage.py`, "Rebuild a map" in the README). It runs for a map marked
-`partition=True` in `tools/area.py`; a new map doesn't have it, and is built by `prep_map.py` alone.
-To give one the partition it needs the Land Registry's parcels (below) and the lidar, then a build,
-then `tools/mapdata.py pack`, which keeps what the partition reads from the lidar
-(`data/$MAP/measured/partition.zip`); `tools/partition/` still reads `CD_MAP` for its map, and has
-only been tried on Bath.
+That same command then lays the ground out as a partition (`tools/partition/stage.py`, "Rebuild a
+map" in the README), for every map. It uses whatever the map has: the Land Registry's parcels
+(below; England and Wales only) for where the plots' boundaries run, else the blocks and the houses'
+fronts; the lidar's wall runs (England) beside the mapped walls; and, once a build with the lidar
+has run `tools/mapdata.py pack`, what the partition reads from the lidar itself
+(`data/$MAP/measured/partition.zip`). None of them is needed. `--no-partition` builds the squares
+with `prep_map.py` alone, into the game's folder, to compare.
 
 For the squares' shop signs, download OpenStreetMap and the food hygiene ratings for the wide
 circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`, and the same with

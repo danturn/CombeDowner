@@ -513,17 +513,23 @@ python3 -I tools/ground_kinds.py $MAP
 ```
 
 `prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
-ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
-street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
-city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
-an edge between two of them. Each garden has one style of front and the gardens round a block one
+ground of the whole map out as one partition (`tools/partition/stage.py`), for every map, not just
+Bath: every bit of ground is a street, a pavement, a garden plot, a path or open land, the streets
+are fitted once across the whole city, the plots follow the Land Registry's parcels where the map
+has them (England and Wales) and the blocks and the houses' fronts everywhere else, and every wall,
+fence, hedge and gate stands on an edge between two of them. A map without the lidar's wall runs
+(outside England) has only its mapped walls and the guessed boundaries; one without the kept lidar
+(`partition.zip`, below) keeps every guess whether or not anything is seen standing there.
+`--no-partition` builds `prep_map.py`'s squares straight into the game's folder instead, as every
+map was built before, to compare the two. Each garden has one style of front and the gardens round a block one
 of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
 Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
 railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
 streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
-What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
+What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip` (Bath's
+only, so far).
 The churches' towers and spires are measured from the lidar by `tools/towers.py` and kept in
 `data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh.
 

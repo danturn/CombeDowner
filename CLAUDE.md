@@ -226,11 +226,12 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   meeting them at their height, no steeper than the hill), as the railway is (`tools/railway.py`;
   the levelling both share is `tools/profiles.py`).
 
-  Then, for Bath, the **partition** lays all of that out again as one partition of the ground,
+  Then, for every map, the **partition** lays all of that out again as one partition of the ground,
   the last stage of `tools/prep_tiles.py` (`tools/partition/stage.py`): the streets are fitted
   once across the whole city (`tools/partition/once.py`, `corridors.py`), their heights,
   bridges and tunnels worked out together (`tools/structures.py`, `profiles.py`), the blocks
-  divided into plots that follow the Land Registry's parcels (`plots.py`), and every boundary,
+  divided into plots that follow the Land Registry's parcels where a map has them (`plots.py`;
+  elsewhere the blocks and the houses' fronts), and every boundary,
   gate, front path and the ground under the roads written into each square from those
   (`write_tile.py`), over `prep_map.py`'s square for everything else. So the streets, plots,
   garden boundaries and road heights the game shows come from there, and new rules for them go

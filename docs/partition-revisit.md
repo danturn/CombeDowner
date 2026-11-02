@@ -1421,3 +1421,36 @@ same as main):
 - [ ] **A stream through a tunnel is left out inside its bore** (`world.ts outsideBores`): the
   footway culvert at -2781,-2464 carries one, and draped on the ground it climbed into the arch
   and over the headwall. Trade-off: no water is drawn on the tube's floor.
+
+## Every map through the partition (2 November)
+
+- [ ] **No kept lidar is no longer an error.** `stage.py` used to stop when
+  `data/<map>/measured/partition.zip` was missing, so a lost file could not quietly change Bath. It
+  now builds without it (no guess dropped for nothing standing near it, no survey ground under a
+  bridge) and says so on its first line, because only Bath has one. Hackney has the raw lidar in
+  another worktree and could be packed (`tools/mapdata.py pack pembury ...`); Bradford-on-Avon's is
+  partial; Cape Town has none.
+- [ ] **No parcels, no listed buildings, no OpenStreetMap bridges outside Bath.** Each is an
+  optional layer (`partition.OPTIONAL`): the plots follow the blocks and the house fronts, the
+  Georgian railings rule goes on eaves alone, and a bridge's kind goes by what it carries and
+  crosses. Bradford-on-Avon and Hackney are in England and Wales and could have parcels and listed
+  buildings fetched (`tools/parcels.py`); Cape Town never will.
+- [ ] **The zone names in the partition are still a table.** `settle.OPEN_FRONT_ZONES` (`"bath"`:
+  no guessed fronts in the city centre) and `SUBURB_FRONTS`, and `plots.FRONT` for zones with no
+  mix of their own, name Bath's zones. Every other map's zones fall through to their mixes in
+  `gardens.STYLE`, so nothing breaks, but Cape Town's `cbd` keeps guessed fronts where a house
+  stands back more than 1.5 m. Building cover within 120 m tells the old city apart from the rest
+  of Bath (median 0.30 in the `bath` zone, 0.07 in the suburbs, 0.19 in the Georgian streets), so a
+  cover threshold could replace the zone, but it would change Bath's centre and needs a look first.
+- [ ] **A way with no width of its own** (most of Hackney's and Bradford-on-Avon's minor streets
+  and paths) is given its class's width in the writer (`write_tile.way_width`), as `prep_map.py`
+  does; before, a bridge over one stopped the square being written.
+- [ ] **Short path stubs at a square's edge** (`drop_edge_way_stubs`): under 10 m, ending on the
+  edge with no way within 1.5 m over it, they go once every square is written. Cape Town had 105
+  such ways stopping at an edge, 81 of them stubs; a real path running on over the edge always has
+  its other piece there, so none should be lost.
+- [ ] **Roads under Cape Town's elevated freeways kink** (rule 1, 21 → 121, nearly all round the
+  Foreshore's interchanges in 2_2, 2_1, 1_2): the partition's profile keeps a street at its
+  through-road height while a point of it follows the base square's ground, which `prep_map.py` dug
+  for its own underpass. A matter for the road profiles (claude/road-grading), not for threading
+  the map.
