@@ -8,7 +8,7 @@ import { Need, railNeed } from "./railbridge";
 import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
-import { sky as skyNow } from "./daylight";
+import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
 import { Culler, show, traverseAll } from "./cull";
 import { buildVegetation } from "./trees";
@@ -468,6 +468,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core) S.railTracks = map.railData?.tracks.map((t) => t.p) ?? [];
   if (core) S.railMouths = map.railData ? railMouths(map.railData) : [];
   const D = map.d, T = D.t, Z0 = map.z0;
+  if (core) setLatitude(D.centre?.[1] ?? 51);
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
   // the scene itself never moves, so it needn't make everything in it work out its place afresh each frame (stayPut)

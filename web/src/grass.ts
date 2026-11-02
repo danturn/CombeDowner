@@ -1,7 +1,8 @@
-// Grass: tufts of blades on the lawns, verges, pitches and meadows around the player, swaying in
-// the wind and shrinking into the ground towards the edge of a circle that follows the player.
-// The ground is split into cells; cells that come into range are filled, cells left behind are
-// reused. A coarse mask keeps grass off buildings, roads, paths, driveways and water.
+// Grass: tufts of blades on the lawns, verges, pitches and meadows around the player, and low
+// flowering shrubs on heath and scrub, swaying in the wind and shrinking into the ground towards
+// the edge of a circle that follows the player. The ground is split into cells; cells that come
+// into range are filled, cells left behind are reused. A coarse mask keeps grass off buildings,
+// roads, paths, driveways and water.
 import * as THREE from "three";
 import { boreHalf, type MapData } from "./map";
 
@@ -12,9 +13,12 @@ function hash2(i: number, j: number, k: number) {
   return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
 }
 
+// What each vertex of a tuft belongs to, so one mesh can hold both a grass tuft and a heath shrub
+// and show whichever its instance is (the rest shrinks to nothing)
+const BLADE = 0, HEAD = 1, BUSH = 2, BLOOM = 3;
+
 /** A tuft of bent, tapering blades (and a flower head, shown only on flowering tufts). */
-function tuftGeo() {
-  const pos: number[] = [], col: number[] = [], head: number[] = [];
+function bladeParts(pos: number[], col: number[], nor: number[], part: number[]) {
   const BLADES = 6;
   for (let b = 0; b < BLADES; b++) {
     const a = (b / BLADES) * Math.PI * 2 + hash2(b, 1, 2) * 0.8, d = 0.03 + hash2(b, 3, 4) * 0.13;
@@ -31,21 +35,79 @@ function tuftGeo() {
     col.push(shadeR, shadeR, shadeR, shadeR, shadeR, shadeR, shadeM, shadeM, shadeM,
       shadeR, shadeR, shadeR, shadeM, shadeM, shadeM, shadeM, shadeM, shadeM,
       shadeM, shadeM, shadeM, shadeM, shadeM, shadeM, shadeT, shadeT, shadeT);
-    for (let k = 0; k < 9; k++) head.push(0);
+    for (let k = 0; k < 9; k++) part.push(BLADE);
   }
   // flower head: a little pyramid on a stalk-height point above the blades
   const fy = 0.95, fr = 0.06;
   const top = [0.02, fy + 0.04, 0], ring = [0, 1, 2, 3].map((k) => [0.02 + Math.cos(k * Math.PI / 2) * fr, fy, Math.sin(k * Math.PI / 2) * fr]);
   for (let k = 0; k < 4; k++) {
     pos.push(...ring[k], ...ring[(k + 1) % 4], ...top);
-    for (let v = 0; v < 3; v++) { col.push(1, 1, 1); head.push(1); }
+    for (let v = 0; v < 3; v++) { col.push(1, 1, 1); part.push(HEAD); }
   }
+  // lit like the ground it grows from, so the lawn and the blades match
+  while (nor.length < pos.length) nor.push(0, 1, 0);
+}
+
+/**
+ * A heath shrub, a metre across and a metre high before scaling: three rounded, lumpy mounds of
+ * twigs and leaves run together, dark underneath and mottled light and dark over the top, lit as
+ * rounded (unlike the grass) so a hillside of them reads as bushes. In flower, the tops of the mounds
+ * take the bloom's colour and specks of it stand out of them (aPart above BUSH: how much bloom).
+ */
+function bushParts(pos: number[], col: number[], nor: number[], part: number[]) {
+  const SEG = 5, specks: number[][] = [];
+  const lumps = [[0, -0.05, 0.42, 1], [0.24, 0.16, 0.32, 0.74], [-0.24, 0.14, 0.3, 0.8]];
+  lumps.forEach(([cx, cz, r, hh], L) => {
+    const at = (ring: number, s: number) => {
+      const a = ((s % SEG) + ring * 0.5) / SEG * Math.PI * 2, j = 0.8 + 0.4 * hash2(L, ring * SEG + (s % SEG), 31);
+      const [rr, y] = ring === 0 ? [r * 0.85, 0] : [r * j, hh * (0.5 + 0.12 * (j - 1))];
+      return [cx + Math.cos(a) * rr, y, cz + Math.sin(a) * rr, ring, s % SEG];
+    };
+    const apex = [cx + (hash2(L, 1, 32) - 0.5) * r * 0.4, hh, cz + (hash2(L, 2, 32) - 0.5) * r * 0.4, 2, 0];
+    const vert = (p: number[]) => {
+      const [x, y, z, ring, s] = p, rnd = hash2(L * 7 + ring, s, 34);
+      pos.push(x, y, z);
+      const nx = (x - cx) / r, ny = y / hh + 0.15, nz = (z - cz) / r, l = Math.hypot(nx, ny, nz);
+      nor.push(nx / l, ny / l, nz / l);
+      const shade = ring === 0 ? 0.42 : ring === 1 ? 0.62 + 0.4 * rnd : 1.05;
+      col.push(shade, shade, shade);
+      part.push(BUSH + (ring === 0 ? 0 : ring === 1 ? 0.25 * rnd : 0.45));
+    };
+    for (let s = 0; s < SEG; s++) {
+      const a0 = at(0, s), a1 = at(0, s + 1), b0 = at(1, s), b1 = at(1, s + 1);
+      vert(a0); vert(b1); vert(a1);
+      vert(a0); vert(b0); vert(b1);
+      vert(b0); vert(apex); vert(b1);
+      if (hash2(L, s, 33) < 0.6) specks.push([(b0[0] * 2 + apex[0]) / 3, (b0[1] * 2 + apex[1]) / 3, (b0[2] * 2 + apex[2]) / 3, cx, cz]);
+    }
+  });
+  // specks of bloom: small pyramids standing out of the upper faces
+  for (const [x, y, z, cx, cz] of specks) {
+    const ox = x - cx, oz = z - cz, l = Math.hypot(ox, oz) || 1, s = 0.09;
+    const base = [0, 1, 2].map((m) => { const a = m * 2.094 + x * 9; return [x + Math.cos(a) * s, y - 0.02, z + Math.sin(a) * s]; });
+    const tip = [x + (ox / l) * 0.08, y + 0.1, z + (oz / l) * 0.08];
+    // (each face wound and lit facing outwards: seen from behind, a double-sided face is lit as if
+    // facing away, and a speck showed as a black hole in the bush)
+    for (let m = 0; m < 3; m++) {
+      let a = base[m], b = base[(m + 1) % 3];
+      const n = new THREE.Vector3().crossVectors(new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), new THREE.Vector3(tip[0] - a[0], tip[1] - a[1], tip[2] - a[2])).normalize();
+      const out = new THREE.Vector3((a[0] + b[0]) / 2 - x, 0.5, (a[2] + b[2]) / 2 - z);
+      if (n.dot(out) < 0) { [a, b] = [b, a]; n.negate(); }
+      for (const q of [a, b, tip]) { pos.push(...q); nor.push(n.x, n.y, n.z); col.push(1, 1, 1); part.push(BLOOM); }
+    }
+  }
+}
+
+/** One instance's shape, by which parts it has: grass, shrubs or both (a cell where heath meets grass). */
+function tuftGeo(grass: boolean, bush: boolean) {
+  const pos: number[] = [], col: number[] = [], nor: number[] = [], part: number[] = [];
+  if (grass) bladeParts(pos, col, nor, part);
+  if (bush) bushParts(pos, col, nor, part);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  // lit like the ground it grows from, so the lawn and the blades match
-  g.setAttribute("normal", new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-  g.setAttribute("aHead", new THREE.Float32BufferAttribute(head, 1));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute("aPart", new THREE.Float32BufferAttribute(part, 1));
   return g;
 }
 
@@ -157,42 +219,56 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
 
   // ---- the tufts --------------------------------------------------------------------------
   // per kind of ground: chance of a tuft, height in metres, and flowers (meadows); w: how wide a tuft
-  // spreads for its height (heath grows in low, wiry clumps), dry: how many of them are browned off
-  const KIND: Record<number, { p: number; h: number; flowers: number; w?: number; dry?: number }> = {
+  // spreads for its height, dry: how many of them are browned off; bush: how many of the places a
+  // tuft could go have a shrub instead (heath: they're wider, so fewer of them cover the ground)
+  const KIND: Record<number, { p: number; h: number; flowers: number; w?: number; dry?: number; bush?: number }> = {
     0: { p: 0.8, h: 0.24, flowers: 0.02 },   // gardens and verges
     1: { p: 0.95, h: 0.13, flowers: 0 },     // sports pitches: mown
     2: { p: 0.22, h: 0.3, flowers: 0 },      // woodland floor: sparse
     3: { p: 1, h: 0.42, flowers: 0.1 },      // farmland and meadow: long, with buttercups and daisies
     4: { p: 0.75, h: 0.22, flowers: 0.03 },  // cemetery
     7: { p: 0.3, h: 0.16, flowers: 0 },      // playgrounds
-    9: { p: 0.95, h: 0.24, flowers: 0.05, w: 1.4, dry: 0.35 },  // heath and scrub: low wiry clumps (none on bare rock or sand)
+    9: { p: 0.95, h: 0.4, flowers: 0.5, w: 0.7, dry: 0.3, bush: 0.55 },  // heath and scrub: low rounded shrubs, many in flower
     11: { p: 1, h: 0.75, flowers: 0 },                          // wetland: rushes
   };
-  const DRY = new THREE.Color("#6f6549");
-  const base = tuftGeo();
+  const DRY = new THREE.Color("#6f6549"), LEAF = new THREE.Color("#4c5a33");
+  // heath in flower: heather's purples and pinks, and fynbos's yellows, pinks and whites, in drifts
+  const BLOOMS = ["#8f4fa0", "#b0559a", "#d87fae", "#e3c23a", "#f0ece0", "#e0913a"].map((c) => new THREE.Color(c));
+  const glsl = (c: THREE.Color) => `vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)})`;
+  const shapes = { grass: tuftGeo(true, false), bush: tuftGeo(false, true), both: tuftGeo(true, true) };
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const uPlayer = { value: new THREE.Vector3() };
+  // aFlower: for a grass tuft 0 (none), 1 (buttercup) or 2 (daisy); for a shrub 10 + its bloom (0 none)
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
     shader.uniforms.uPlayer = uPlayer;
-    shader.vertexShader = `uniform float uTime; uniform vec3 uPlayer; attribute float aHead; attribute float aFlower;\n` + shader.vertexShader
+    shader.vertexShader = `uniform float uTime; uniform vec3 uPlayer; attribute float aPart; attribute float aFlower;\n` + shader.vertexShader
       .replace("#include <color_vertex>", `#include <color_vertex>
-        if (aHead > 0.5) vColor = aFlower > 1.5 ? vec3(1.0, 1.0, 0.95) : vec3(1.0, 0.82, 0.12);`)
+        float bush = step(9.5, aFlower), fl = aFlower - 10.0 * bush;
+        vec3 bloom = vec3(1.0);
+        ${BLOOMS.map((c, k) => `${k ? "else " : ""}if (fl < ${k + 1.5}) bloom = ${glsl(c)};`).join("\n        ")}
+        if (aPart > ${HEAD - 0.5} && aPart < ${HEAD + 0.5}) vColor = fl > 1.5 ? vec3(1.0, 1.0, 0.95) : vec3(1.0, 0.82, 0.12);
+        else if (aPart > ${BLOOM - 0.5}) vColor = bloom;
+        else if (aPart > ${BUSH - 0.01} && fl > 0.5) vColor = mix(vColor, bloom * color.r, (aPart - ${BUSH.toFixed(1)}) * 1.4);`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         vec3 iPos = instanceMatrix[3].xyz;
         // shrink into the ground towards the edge of the circle, so there's no hard border
         float fade = 1.0 - smoothstep(${(RADIUS * 0.6).toFixed(1)}, ${(RADIUS - 2).toFixed(1)}, distance(iPos.xz, uPlayer.xz));
         transformed.y *= fade;
-        // flower heads only on flowering tufts
-        transformed *= 1.0 - aHead * step(aFlower, 0.5);
-        float bend = position.y * position.y;
+        // only this instance's own parts (a grass tuft or a shrub), and flowers only where it flowers
+        float isBush = step(9.5, aFlower), flw = step(0.5, aFlower - 10.0 * isBush);
+        float own = aPart < ${BUSH - 0.5} ? 1.0 - isBush : isBush;
+        if (aPart > ${HEAD - 0.5} && aPart < ${HEAD + 0.5} || aPart > ${BLOOM - 0.5}) own *= flw;
+        transformed *= own;
+        float bend = position.y * position.y * (1.0 - 0.8 * isBush);
         float ph = uTime * 1.7 + iPos.x * 0.35 + iPos.z * 0.27;
-        transformed.x += bend * (0.12 * sin(ph) + 0.05 * sin(ph * 2.9 + iPos.z));
-        transformed.z += bend * (0.08 * cos(ph * 0.7) + 0.04 * sin(ph * 3.3 + iPos.x));`);
+        transformed.x += own * bend * (0.12 * sin(ph) + 0.05 * sin(ph * 2.9 + iPos.z));
+        transformed.z += own * bend * (0.08 * cos(ph * 0.7) + 0.04 * sin(ph * 3.3 + iPos.x));`);
   };
 
   const CAP = Math.ceil((CELL / STEP) ** 2);
-  interface Cell { i: number; j: number; mesh: THREE.InstancedMesh; flower: THREE.InstancedBufferAttribute }
+  type Shape = keyof typeof shapes;
+  interface Cell { i: number; j: number; mesh: THREE.InstancedMesh; flower: THREE.InstancedBufferAttribute; geos: Partial<Record<Shape, THREE.BufferGeometry>> }
   const cells = new Map<number, Cell>();
   const spare: Cell[] = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
@@ -202,7 +278,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   const fill = (cell: Cell) => {
     const { i, j, mesh, flower } = cell;
     const n = Math.round(CELL / STEP);
-    let count = 0;
+    let count = 0, bushes = 0, tufts = 0;
     for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) {
       const r1 = hash2(i * n + a, j * n + b, 1), r2 = hash2(i * n + a, j * n + b, 2), r3 = hash2(i * n + a, j * n + b, 3);
       const x = i * CELL + (a + r1) * STEP, z = j * CELL + (b + r2) * STEP, y = -z;
@@ -214,39 +290,64 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
       // patchy: thick in places, thin in others
       const patch = 0.55 + 0.45 * Math.sin(x * 0.11 + Math.sin(z * 0.07) * 2) * Math.sin(z * 0.13 + x * 0.05);
       if (r3 > spec.p * patch + 0.12 || !free(x, y)) continue;
-      const h = spec.h * (0.6 + 0.8 * hash2(i * n + a, j * n + b, 4)) * (0.75 + 0.5 * patch);
-      const wd = (0.8 + hash2(i * n + a, j * n + b, 5) * 0.7) * (spec.w ?? 1);
+      const H = (k2: number) => hash2(i * n + a, j * n + b, k2);
+      const isBush = !!spec.bush;
+      if (isBush && H(9) > spec.bush!) continue;
+      const h = spec.h * (0.6 + 0.8 * H(4)) * (0.75 + 0.5 * patch);
+      const wd = (0.8 + H(5) * 0.7) * (spec.w ?? 1);
       q.setFromAxisAngle(up, r1 * 6.28);
-      m4.compose(ps.set(x, groundAt(x, z) - 0.02, z), q, sc.set(wd, h, wd));
+      m4.compose(ps.set(x, groundAt(x, z) - (isBush ? 0.06 : 0.02), z), q, sc.set(wd, h, wd));
       mesh.setMatrixAt(count, m4);
-      const tint = 0.95 + 0.3 * hash2(i * n + a, j * n + b, 6);
+      const tint = 0.95 + 0.3 * H(6);
       colour.copy(kinds[k] ?? kinds[0]).multiplyScalar(tint * 1.05);
       colour.g *= 1.04 + 0.08 * patch;
-      if (spec.dry) colour.lerp(DRY, spec.dry * hash2(i * n + a, j * n + b, 8));
+      if (isBush) colour.lerp(LEAF, 0.3 + 0.5 * H(11));
+      if (spec.dry) colour.lerp(DRY, spec.dry * H(8));
       mesh.setColorAt(count, colour);
-      const fl = hash2(i * n + a, j * n + b, 7);
-      flower.setX(count, fl < spec.flowers ? (fl < spec.flowers * 0.45 ? 2 : 1) : 0);
+      const fl = H(7);
+      if (isBush) {
+        // each drift of heath mostly one colour, a few of the others mixed in
+        const drift = Math.floor(hash2(Math.floor(x / 23), Math.floor(z / 23), 12) * BLOOMS.length);
+        const bloom = H(13) < 0.75 ? drift : Math.floor(H(14) * BLOOMS.length);
+        flower.setX(count, 10 + (fl < spec.flowers ? bloom + 1 : 0));
+        bushes++;
+      } else {
+        flower.setX(count, fl < spec.flowers ? (fl < spec.flowers * 0.45 ? 2 : 1) : 0);
+        tufts++;
+      }
       count++;
     }
     mesh.count = count;
+    // the cheapest shape that has what this cell grows: most cells are all grass or all heath
+    mesh.geometry = shapeFor(cell, bushes ? (tufts ? "both" : "bush") : "grass");
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     flower.needsUpdate = true;
     mesh.computeBoundingSphere();
   };
 
+  const shapeFor = (cell: Cell, shape: Shape) => {
+    let g = cell.geos[shape];
+    if (!g) {
+      g = new THREE.BufferGeometry();
+      for (const name of ["position", "color", "normal", "aPart"]) g.setAttribute(name, shapes[shape].getAttribute(name));
+      g.setAttribute("aFlower", cell.flower);
+      cell.geos[shape] = g;
+    }
+    return g;
+  };
+
   const make = (i: number, j: number): Cell => {
     const reuse = spare.pop();
     if (reuse) { reuse.i = i; reuse.j = j; reuse.mesh.visible = true; return reuse; }
-    const geo = new THREE.BufferGeometry();
-    for (const name of ["position", "color", "normal", "aHead"]) geo.setAttribute(name, base.getAttribute(name));
     const flower = new THREE.InstancedBufferAttribute(new Float32Array(CAP), 1);
-    geo.setAttribute("aFlower", flower);
-    const mesh = new THREE.InstancedMesh(geo, mat, CAP);
+    const cell: Cell = { i, j, mesh: null!, flower, geos: {} };
+    const mesh = new THREE.InstancedMesh(shapeFor(cell, "grass"), mat, CAP);
     mesh.setColorAt(0, colour.set(1, 1, 1));
     mesh.receiveShadow = true;
     scene.add(mesh);
-    return { i, j, mesh, flower };
+    cell.mesh = mesh;
+    return cell;
   };
 
   let ci = NaN, cj = NaN;

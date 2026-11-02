@@ -140,18 +140,24 @@ const out: Sky = {
   hemiSky: new THREE.Color(), hemiGround: new THREE.Color(), hemiI: 0, fog: new THREE.Color(), top: new THREE.Color(), night: 0,
 };
 
+// +1 where the midday sun is in the south (Bath), -1 south of the equator, where it's in the north
+let south = 1;
+
+/** Put the sun on the right side of the sky for a map at this latitude. */
+export function setLatitude(lat: number) { south = lat < 0 ? -1 : 1; }
+
 /** The sky now (the same object each time, refilled). */
 export function sky(): Sky {
-  // the sun's hour angle: 0 when it's due south, at one o'clock (British Summer Time); it rises in
-  // the east (+x) and sets in the west
+  // the sun's hour angle: 0 when it's due south (due north in Cape Town), at one o'clock; it rises
+  // in the east (+x) and sets in the west
   const h = (timeOfDay() - 13 / 24) * Math.PI * 2;
   // a long summer-ish day: it's up from six in the morning till eight at night, so six is sunrise
   // and half seven a low golden sun going down
   const up = 0.82 * Math.cos(h) + 0.22;
-  out.sun.set(-Math.sin(h) * 0.9, up, 0.35 + 0.45 * Math.cos(h)).normalize();
-  // by night the moon, opposite the sun and high in the south
+  out.sun.set(-Math.sin(h) * 0.9, up, south * (0.35 + 0.45 * Math.cos(h))).normalize();
+  // by night the moon, opposite the sun and high on the sun's side of the sky
   if (out.sun.y >= 0) out.light.copy(out.sun);
-  else out.light.set(-out.sun.x * 0.6, Math.max(0.35, -out.sun.y), 0.5).normalize();
+  else out.light.set(-out.sun.x * 0.6, Math.max(0.35, -out.sun.y), south * 0.5).normalize();
   const e = out.sun.y;
   let i = 0;
   while (i < KC.length - 2 && e > KC[i + 1][0]) i++;

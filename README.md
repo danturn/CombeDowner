@@ -71,9 +71,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so
   each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
   wall rather than in one slope of road.
-  Open country is the ground the map data says it is, not lawn: bare grey rock with boulders, rough
-  brown-green heath and scrub, sand on the beaches and rushes in a marsh, from the map down to the
-  minimap and the mountains on the skyline.
+  Open country is the ground the map data says it is, not lawn: bare grey rock with boulders, heath
+  and scrub grown as low rounded shrubs, many in flower (drifts of heather purple and pink, and
+  fynbos yellow, pink and white), sand on the beaches and rushes in a marsh, from the map down to the
+  minimap and the mountains on the skyline. South of the equator (Cape Town) the sun crosses the
+  northern sky, so slopes facing north are the sunny ones.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions; bus shelters only at the stops that have one, and the
