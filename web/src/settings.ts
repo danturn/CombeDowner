@@ -21,6 +21,7 @@ import * as SFX from "./audio";
 import type { DebugPanel } from "./debug";
 import { mine, progressionDefault, setProgression } from "./features";
 import { resetPadSettings } from "./gamepad";
+import { closeButton } from "./modal";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
 import { quality } from "./quality";
 import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
@@ -162,6 +163,7 @@ export function settingsPage(h: Hooks) {
   const open = () => { show(); el.hidden = false; $("setdone").focus(); };
   const close = () => { el.hidden = true; };
   $("setdone").onclick = close;
+  closeButton(el.querySelector<HTMLElement>(".card") ?? el, close);
   for (const id of ["settingsbtn", "settingsbtn2"]) $(id).onclick = open;
   // keep taps on the page from reaching the game's touch controls underneath
   el.addEventListener("pointerdown", (e) => e.stopPropagation());

@@ -14,6 +14,7 @@
 import * as THREE from "three";
 import { Avatar, ball, box, part, shell, type Piece } from "./avatar";
 import { PAGE, ttBar, ttTitle } from "./teletext";
+import { closeButton } from "./modal";
 
 export type Slot = "head" | "face" | "back";
 export const SLOTS: Slot[] = ["head", "face", "back"];
@@ -318,6 +319,7 @@ export function openWardrobe(colour: string, seed: string, changed: () => void, 
   };
   shut = close;
   page.querySelector(".wardback")!.addEventListener("click", close);
+  closeButton(page.querySelector<HTMLElement>(".wardcard")!, close);
   // you, turning round slowly, in what you've got on
   try {
     const canvas = page.querySelector<HTMLCanvasElement>(".wardview")!;

@@ -286,6 +286,13 @@ kbd {
 .card.tt button.settingsbtn:is(:focus-visible, .padfocus)::after { color: #000; }
 .card.tt .cardbody > button.warning { align-self: flex-start; }
 .card.tt .music button { padding: 6px 12px 4px; font-size: 20px; }
+/* the × (modal.ts) as a red block at the end of the header row, clear of the clock */
+.card.tt > button.mdl-x.mdl-x {
+  top: 4px; right: 4px; z-index: 4; width: 36px; height: 30px; border: 0; border-radius: 0; box-shadow: none; outline: 0;
+  background: #f00; color: #fff; font: inherit; font-size: 26px; line-height: 1;
+}
+.card.tt > button.mdl-x.mdl-x:is(:hover, :focus-visible, .padfocus) { background: #ff0; color: #000; box-shadow: none; }
+.card.tt:has(> .mdl-x) .ttbar { padding-right: 50px; }
 /* recent rooms, the link code, the wardrobe and the trophy cabinet */
 .card.tt .recentgo { background: #00f; color: #fff; }
 .card.tt .recentgo b { font-family: inherit; color: #ff0; }

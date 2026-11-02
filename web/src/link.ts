@@ -11,6 +11,7 @@
 // have said yes, and a device only listens to the first other device to turn up with the code. The
 // "lk" messages only ever go round a link room, never a game.
 import { connect, type Net } from "./net";
+import { closeButton } from "./modal";
 import * as Saves from "./saves";
 import { PAGE, ttBar, ttTitle } from "./teletext";
 
@@ -44,6 +45,12 @@ let net: Net | null = null;
 
 function hangUp() { net?.leave(); net = null; }
 
+let shut: (() => void) | null = null;
+// Esc closes the sheet, as its × does, before anything else hears the key
+addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && sheet && shut) { e.stopImmediatePropagation(); e.preventDefault(); shut(); }
+}, true);
+
 /** Open the sheet. done: what to do once something's been brought in (main.ts reloads the page). */
 export function openLink(done: () => void) {
   sheet?.remove();
@@ -53,6 +60,8 @@ export function openLink(done: () => void) {
   sheet.setAttribute("role", "dialog");
   document.body.append(sheet);
   const close = () => { hangUp(); sheet?.remove(); sheet = null; };
+  shut = close;
+  closeButton(sheet.querySelector<HTMLElement>(".card")!, close);
   const show = (...kids: (Node | string)[]) => body.replaceChildren(...kids);
   const finish = (r: { rooms: number; keys: number }) => {
     hangUp();
