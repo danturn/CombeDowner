@@ -143,6 +143,10 @@ MIN_PIECE = 0.5
 MIN_CUT_PIECE = 0.8
 # Metres of canal bank, and of railway either side of the track, that a wall may not stand in.
 RAIL_HALF = 4.5
+# Metres either side of the track that its bed and ballast cover (web/src/railway.ts).
+RAIL_BED = 2.3
+# Metres a deck stands over the track to be a bridge over the railway rather than a way beside it.
+RAIL_OVER = 3.0
 CANAL_MARGIN = 0.8
 WATER_MARGIN = 0.8
 
@@ -1843,6 +1847,31 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
     def flagged(q, *flags):
         return len(q) > 3 and q[3] in flags
 
+    # the track's bed where it runs on the ground: no way laid beside it, nor a deck beside it, moves
+    # its ground (a path dug or decked beside an embankment took the bed's ground down with it); only
+    # a bridge high over the track opens the ground under it. Half a cell more than the bed, as the
+    # ground the track reads between the grid's points is the bed's, and no further than its last
+    # point on the ground (past it, a way passes under the railway's bridge).
+    bed = RAIL_BED + T["dx"] / 2
+    bed_runs = [[t["p"][i] for i in st] for t in rails
+                for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}) if len(st) >= 2]
+    bed_z = np.full(grid.shape, np.nan)
+    for run in bed_runs:
+        got = _grid_points(T, run, bed)
+        if got is not None:
+            W, gx, gy = got
+            line = LineString([q[:2] for q in run])
+            on = shapely.contains_xy(line.buffer(bed, cap_style="flat"), gx, gy)
+            cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
+            blk = bed_z[W]
+            blk[on] = np.fmax(blk[on], np.interp([line.project(Point(x, y)) for x, y in zip(gx[on], gy[on])], cum, [q[2] for q in run]))
+
+    def beside_bed(W, at, deck):
+        """Which of the grid points `at` (a mask of window W) are on the track's bed with the deck
+        `deck` over them no higher than a bridge over the railway."""
+        z = bed_z[W][at]
+        return ~np.isnan(z) & (deck < z + RAIL_OVER)
+
     for r in rd:
         p = r["p"]
         span = {i for i, q in enumerate(p) if flagged(q, 1)}
@@ -1862,6 +1891,11 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
             lo = np.clip(t.astype(int), 0, len(inner) - 2)
             zs = np.array([q[2] for q in inner])
             deck = zs[lo] + (zs[lo + 1] - zs[lo]) * (t - lo)
+            keep = ~beside_bed(W, inn, deck)
+            inn[inn] = keep
+            if not inn.any():
+                continue
+            t, deck = t[keep], deck[keep]
             blk = protect[W]; blk[inn] = True
             blk = grid[W]; blk[inn] = np.minimum(blk[inn], deck - 0.6)
             blk = seen[W]; blk[inn] = np.fmin(blk[inn], _surveyed_under(lambda x, y: ground_at(T, x, y, split=False), p, st, gx[inn], gy[inn]))
@@ -1887,6 +1921,11 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
             s_ = np.array([line.project(Point(x, y)) for x, y in zip(gx[inn], gy[inn])])
             cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
             under = np.interp(s_, cum, [q[2] for q in run]) - HUMP_DEPTH
+            keep = ~beside_bed(W, inn, under + HUMP_DEPTH)
+            inn[inn] = keep
+            if not inn.any():
+                continue
+            s_, under = s_[keep], under[keep]
             vals = grid[W][inn]
             open_ = s_[under - vals > OPEN_ROOM]
             if not len(open_):
@@ -1975,10 +2014,10 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
             # them, so the hill laid over the tunnel's roof doesn't ease back over its floor)
             r["_lay"] = lay | {tuple(q[:2]) for q in p if not flagged(q, 1, 2) and not (in_tube and in_tube(*q[:3]))
                                and any(math.dist(q[:2], m) < PORTAL for m in mouths)}
-    for t in rails:
-        for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}):
-            if len(st) >= 2:
-                hold([t["p"][i] for i in st], RAIL_HALF)
+    for run in bed_runs:
+        hold(run, RAIL_HALF)
+    # (and under its bed, as under a carriageway, nothing laid beside it wins)
+    flat_w[~np.isnan(bed_z)] = 0.0
     # (a path carried over from the base tile has no profile of ours, but was dipped all the same:
     # one that passes under a bridge is dug for where it lies buried in the ground near it)
     spans = [(LineString([a[:2], b[:2]]), r) for r in rd for a, b in zip(r["p"], r["p"][1:]) if flagged(a, 1) and flagged(b, 1)]
@@ -3746,6 +3785,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         key = (round(x, 2), round(y, 2), on_ground)
         if key not in at:
             k = None if on_ground else nearest(x, y)
+            # (paving no street reaches, a sliver paved between houses well back from it, lies on the
+            # ground: levelled with the street it stood metres off the ground under the houses)
+            if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
+                k = None
             if k is None:
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)

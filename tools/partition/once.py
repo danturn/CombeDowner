@@ -424,7 +424,10 @@ def pass_structures(out, raw, terrain, log=print):
     It is one step over every edge because a dip under a bridge lowers the roads that meet the one
     underneath, so no square can decide it from its own streets. Each edge is walked every 4 m, as
     the old build walked a road, with the raw ground as its starting height (`structures.py`)."""
-    from . import MAP, ROOT, Terrain
+    import math
+    from PIL import Image
+    from . import LAT0, MAP, ROOT, Terrain
+    from grading import terrain_detail
     from structures import chain_edges, make_run, solve, split_back
     edges = read_graph(out)
     bb = map_bbox()
@@ -439,8 +442,12 @@ def pass_structures(out, raw, terrain, log=print):
     rail, canal = side("rail"), side("canal")
     t = time.time()
     pending = [make_run(c, ground) for c in chain_edges(edges)]
+    # (over all of the map's terrain, as prep_map.py measures it, so both grade alike)
+    detail = terrain_detail([np.asarray(Image.open(os.path.join(terrain, f)).convert("RGB")).astype(float) @ [256, 1, 1 / 256]
+                             for f in sorted(os.listdir(terrain)) if f.startswith("15_") and f.endswith(".png")],
+                            156543.03 * math.cos(math.radians(LAT0)) / 2 ** 15)
     log(f"  structures: {len(edges)} edges in {len(pending)} through-roads walked in {time.time() - t:.0f}s")
-    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb))
+    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb), detail)
     rows = {}
     for r in pending:
         rows.update(split_back(r))

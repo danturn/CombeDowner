@@ -275,7 +275,7 @@ def flag_ranges(p, key):
 
 from profiles import APPROACH, carry_profile, ease_kinks
 from railway import open_runs, portal_faces, BORE_LIT
-from grading import grade, terrain_detail
+from grading import COARSE, grade, terrain_detail
 
 
 def level_structures(run, z, bridges, tunnels):
@@ -1149,6 +1149,11 @@ for k, r in enumerate(pending):
         if r["tunnel_ranges"] and in_ranges([r["run"][i] for i in near_k], r["tunnel_ranges"]): continue     # (in a tunnel: under the hill)
         if o["tunnel_ranges"] and in_ranges([o["run"][i] for i in near_j], o["tunnel_ranges"]): continue
         zk, zj = min(r["z"][i] for i in near_k), min(o["z"][i] for i in near_j)
+        if DETAIL > COARSE:
+            # (where they cross, and each no lower than the survey there, which a way graded through a
+            # bump in it was cut from: grading.COARSE)
+            at = lambda w, near: w["z"][min(near, key=lambda i: math.dist(w["run"][i][:2], (x.x, x.y)))]
+            zk, zj = (max(at(w, near), elev(x.x, x.y)) for w, near in ((r, near_k), (o, near_j)))
         if abs(zk - zj) < 1.5: continue
         (up, upi), (lo_, loi) = ((r, k), (o, j)) if zk > zj else ((o, j), (r, k))
         reach = RW.get(lo_["c"], 4) / 2 + 2.5
