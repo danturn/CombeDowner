@@ -146,6 +146,12 @@ export interface World {
   /** Keep the squares of Bath within r of scene (x, z) loaded from now on (where everyone starts),
    *  and say whether they all are yet: their ground and walls, if not yet their scenery. */
   hold(x: number, z: number, r: number): boolean;
+  /** How many squares of the map within r of scene (x, z) are still to load and build (tiles.ts). */
+  unbuilt(x: number, z: number, r: number): number;
+  /** Start on the squares round wherever we are now, straight away: after a jump. */
+  look(): void;
+  /** Build the squares in bigger slices a frame, while the view is covered (arrive.ts). */
+  rush: boolean;
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
   canal: Canal | null;
   railway: Railway | null;
@@ -2720,6 +2726,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, pavement: pavementAll, vehicles, fieldLook: fieldMat, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
+    unbuilt: (x, z, r) => tiles?.unbuiltNear(x, z, r) ?? 0,
+    look: () => tiles?.look(),
+    get rush() { return tiles?.rush ?? false; },
+    set rush(on: boolean) { if (tiles) tiles.rush = on; },
     get tunnel() { return dark; },
     get indoors() { return indoors; },
     set indoors(on: boolean) { indoors = on; },
