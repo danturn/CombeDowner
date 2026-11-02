@@ -44,7 +44,7 @@ there. With --no-partition (or for a map tools/area.py marks partition=False) pr
 go straight into <out dir> as the game's, as every map was built before the partition: for
 comparing the two.
 """
-import hashlib, json, math, os, subprocess, sys, time, gzip
+import hashlib, json, math, os, re, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import shapely
@@ -81,6 +81,27 @@ def files(*roots):
             sub[:] = sorted(s for s in sub if not s.startswith("."))
             out += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".")]
     return out
+
+
+def imported(script):
+    """The tool modules `script` reads, followed through their imports by reading them (an import
+    inside a function counts too), every module of a package it imports (the landmarks are loaded by
+    name), sorted: so a change to a tool a square doesn't use (the checks, the pubs) builds nothing."""
+    seen, todo = set(), [os.path.abspath(script)]
+    while todo:
+        p = todo.pop()
+        if p in seen: continue
+        seen.add(p)
+        text, here = open(p).read(), os.path.dirname(p)
+        for name in re.findall(r"^\s*(?:from|import)\s+(\w+)", text, re.M) + \
+                [n.strip().split(".")[0] for g in re.findall(r"^\s*import\s+([\w, .]+)$", text, re.M) for n in g.split(",")]:
+            for d in {TOOLS, here}:
+                if os.path.exists(os.path.join(d, f"{name}.py")): todo.append(os.path.join(d, f"{name}.py"))
+                if os.path.isdir(os.path.join(d, name)) and name != "__pycache__":
+                    todo += [os.path.join(d, name, n) for n in os.listdir(os.path.join(d, name)) if n.endswith(".py")]
+        todo += [os.path.join(here, f"{n}.py") for n in re.findall(r"^\s*from\s+\.(\w+)", text, re.M)
+                 if os.path.exists(os.path.join(here, f"{n}.py"))]
+    return sorted(os.path.normpath(p) for p in seen)
 
 
 def stamp(paths):
@@ -218,7 +239,7 @@ def main():
     t0 = time.time()
     # this file is in the cut, and prep_map never reads the partition's tools
     partition_tools = (os.path.join(TOOLS, "partition") + os.sep, os.path.join(TOOLS, "structures.py"))
-    tools = digest([p for p in files(TOOLS) if p.endswith(".py") and p != os.path.abspath(__file__) and not p.startswith(partition_tools)])
+    tools = digest([p for p in imported(os.path.join(TOOLS, "prep_map.py")) if p != os.path.abspath(__file__) and not p.startswith(partition_tools)])
     shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
@@ -309,22 +330,25 @@ def clear_doorsteps_unpartitioned(built, out_of):
     """On a map the partition doesn't lay out, open each square's walls and fences in front of its
     doors and those just over its edge, as the partition does, and drop the doors over the edge it
     was given for that. Returns how many square files had a boundary opened."""
+    from pmap import pmap
+    return sum(pmap(lambda t: _doorsteps_one(out_of(t)), built))
+
+
+def _doorsteps_one(path):
     from partition.write_tile import clear_doorsteps, ground_at
-    opened = 0
-    for t in built:
-        d = json.load(open(out_of(t)))
-        if "drn" not in d: continue
-        near = d.pop("drn")
-        br = d.get("br") or []
-        new_br, new_gt = clear_doorsteps(br, d.get("gt") or [], (d.get("dr") or []) + near,
-                                         lambda x, y, T=d["t"]: ground_at(T, x, y))
-        if new_br != br:
-            opened += 1
-            d["br"] = new_br
-            if "gt" in d: d["gt"] = new_gt
-        tmp = out_of(t) + ".tmp"
-        json.dump(d, open(tmp, "w"), separators=(",", ":"))
-        os.replace(tmp, out_of(t))
+    d = json.load(open(path))
+    if "drn" not in d: return False
+    near = d.pop("drn")
+    br = d.get("br") or []
+    new_br, new_gt = clear_doorsteps(br, d.get("gt") or [], (d.get("dr") or []) + near,
+                                     lambda x, y, T=d["t"]: ground_at(T, x, y))
+    opened = new_br != br
+    if opened:
+        d["br"] = new_br
+        if "gt" in d: d["gt"] = new_gt
+    tmp = path + ".tmp"
+    open(tmp, "w").write(json.dumps(d, separators=(",", ":")))
+    os.replace(tmp, path)
     return opened
 
 
@@ -333,41 +357,50 @@ def clear_seams(built, tiles, out_of):
     path laid across a neighbouring square's wall, fence or hedge, where they meet at the seam between
     two squares, in the squares just built and the ones round them.
     Returns how many square files were written again."""
-    near = {(t[0] + a, t[1] + b) for t in built for a in (-1, 0, 1) for b in (-1, 0, 1)} & tiles
-    loaded = {}
-    def load(t):
-        if t not in loaded: loaded[t] = json.load(open(out_of(t))) if os.path.exists(out_of(t)) else None
-        return loaded[t]
-    changed = 0
-    for t in sorted(near):
+    from pmap import pmap
+    near = sorted({(t[0] + a, t[1] + b) for t in built for a in (-1, 0, 1) for b in (-1, 0, 1)} & tiles)
+    load = lambda t: json.load(open(out_of(t))) if t in tiles and os.path.exists(out_of(t)) else None
+    around = lambda t: [(t[0] + a, t[1] + b) for a in (-1, 0, 1) for b in (-1, 0, 1) if a or b]
+    # Squares are cleared in order, and a square sees the front paths of the neighbours cleared
+    # before it as they were left. A square's own paths depend only on walls and gateways, which
+    # nothing here changes, so they are worked out first, all at once, then the shrubs.
+    def paths_of(t):
         d = load(t)
-        if not d: continue
-        ways, br, gt = [], [], list(d.get("gt", []))
-        for a in (-1, 0, 1):
-            for b in (-1, 0, 1):
-                o = load((t[0] + a, t[1] + b)) if (a or b) and (t[0] + a, t[1] + b) in tiles else None
-                if not o: continue
-                ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.0) for q in o.get("gt", [])]
-                ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.9) for q in o.get("fp", [])]
-                ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.5) for q in o.get("dv", [])]
-                br += o.get("br", []); gt += o.get("gt", [])
-        sb, fp = d.get("sb", []), d.get("fp", [])
-        if ways and sb:
-            wt = shapely.STRtree(ways)
-            sb = [q for q in sb if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
-        # and a front path laid across a neighbour's wall, fence or hedge (anywhere but in a gateway)
-        # goes, as it does within a square
+        if not d: return None
+        br, gt = [], list(d.get("gt", []))
+        for n in around(t):
+            o = load(n)
+            if o: br += o.get("br", []); gt += o.get("gt", [])
+        fp = d.get("fp", [])
         if fp and br:
             idx = boundaries(br, gt)
             fp = [q for q in fp if path_clear(q, idx)]
-        if len(sb) == len(d.get("sb", [])) and len(fp) == len(d.get("fp", [])): continue
+        return fp
+    cleared = dict(zip(near, pmap(paths_of, near)))
+
+    def shrubs_of(t):
+        d = load(t)
+        if not d: return False
+        ways = []
+        for n in around(t):
+            o = load(n)
+            if not o: continue
+            fp = cleared[n] if n < t and n in cleared and "fp" in o else o.get("fp", [])
+            ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.0) for q in o.get("gt", [])]
+            ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.9) for q in fp]
+            ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.5) for q in o.get("dv", [])]
+        sb, fp = d.get("sb", []), cleared[t]
+        if ways and sb:
+            wt = shapely.STRtree(ways)
+            sb = [q for q in sb if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
+        if len(sb) == len(d.get("sb", [])) and len(fp) == len(d.get("fp", [])): return False
         if "sb" in d: d["sb"] = sb
         if "fp" in d: d["fp"] = fp
         tmp = out_of(t) + ".tmp"
-        json.dump(d, open(tmp, "w"), separators=(",", ":"))
+        open(tmp, "w").write(json.dumps(d, separators=(",", ":")))
         os.replace(tmp, out_of(t))
-        changed += 1
-    return changed
+        return True
+    return sum(pmap(shrubs_of, near))
 
 
 def write_header(A, G, path, village):
