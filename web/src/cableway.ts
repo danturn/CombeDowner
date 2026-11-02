@@ -214,6 +214,8 @@ export class CableLine {
 /** One of a cabin's solid parts: the floor, a wall or the roof. */
 class Part_ implements Mover {
   x = 0; z = 0; y = 0; top = 0; waist = 0;
+  /** How far round from the line a piece of a turning floor lies. */
+  turn = 0;
   constructor(public a: number, readonly hl: number, readonly hw: number, readonly du: number, readonly dw: number, readonly lo: number, readonly mid: number, readonly hi: number) {}
 }
 
@@ -221,6 +223,8 @@ class Cabin {
   readonly group = new THREE.Group();
   readonly doors: THREE.Mesh[] = [];
   readonly floor: Part_;
+  /** All the floor's pieces (a round floor is several, the first being floor). */
+  readonly floors: Part_[];
   readonly parts: Part_[];
   readonly sides: Part_[];
   /** A round cabin's turning floor, and how far round it has turned. */
@@ -236,19 +240,27 @@ class Cabin {
     // the roof is to stand on: its underside counts as out of reach, or a jump inside would put your head
     // in it and the roof would shove you out sideways (the ceiling stops you instead: see headroom)
     if (K.round) {
-      // a round cabin stands on a square inside its circle, and is walled by eight straight pieces,
-      // the two facing the platforms being its doors
+      // a round cabin is walled by eight straight pieces, the two facing the platforms being its
+      // doors. Its floor is a fan of strips, together as round as the cabin: a square would leave
+      // a ring inside the walls with nothing under it, to drop through as it turned under you
       const R = CAB.hw, sq = R * 0.72;
-      this.floor = new Part_(a, sq, sq, 0, 0, -0.35, 0, 0);
+      const N = 8, reach = R - 0.05;
+      this.floors = Array.from({ length: N }, (_, k) => {
+        const f = new Part_(a, reach, reach * Math.tan(Math.PI / (2 * N)), 0, 0, -0.35, 0, 0);
+        f.turn = (k * Math.PI) / N;
+        return f;
+      });
+      this.floor = this.floors[0];
       const walls = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
         const f = (k * Math.PI) / 4;
         return new Part_(a - f, T, R * 0.42, Math.cos(f) * (R - T), Math.sin(f) * (R - T), 0, 1, H);
       });
       this.sides = [walls[2], walls[6]];
-      this.parts = [this.floor, ...walls, new Part_(a, sq, sq, 0, 0, H + 1.2, H + 0.2, H + 0.2)];
+      this.parts = [...this.floors, ...walls, new Part_(a, sq, sq, 0, 0, H + 1.2, H + 0.2, H + 0.2)];
       return;
     }
     this.floor = new Part_(a, CAB.hl, CAB.hw, 0, 0, -0.35, 0, 0);
+    this.floors = [this.floor];
     const ends = [-1, 1].map((k) => new Part_(a, T, CAB.hw, k * (CAB.hl - T), 0, 0, 1, H));
     this.sides = [-1, 1].map((k) => new Part_(a, CAB.hl, T, 0, k * (CAB.hw - T), 0, 1, H));
     const roof = new Part_(a, CAB.hl, CAB.hw, 0, 0, H + 1.2, H + 0.2, H + 0.2);
@@ -329,7 +341,7 @@ export class Cableway {
       // square to the platform at each end (and anyone standing on it turns with it: game.ts carry)
       if (round) {
         c.spin = (2 * Math.PI * (c.s - A.dock)) / (B.dock - A.dock);
-        c.floor.a = L.a + c.spin;
+        for (const f of c.floors) f.a = L.a + c.spin + f.turn;
         c.turn!.rotation.y = c.spin;
       }
       // the doors take a second and a half to slide, worked out from the clock like everything else
@@ -397,12 +409,12 @@ export class Cableway {
 
   /** How high your feet can get in the cabin whose floor m is, before your head hits the ceiling. */
   headroom(m: Mover): number | null {
-    return this.cabins.some((c) => c.floor === m) ? m.top + this.line.k.cab.h - 1.8 : null;
+    return this.cabins.some((c) => c.floors.includes(m as Part_)) ? m.top + this.line.k.cab.h - 1.8 : null;
   }
 
   /** Is m the floor of a cabin, and if so where's it heading? (For the toast when you get in.) */
   cabinOf(m: Mover): { docked: number; to: string } | null {
-    const c = this.cabins.find((k) => k.floor === m);
+    const c = this.cabins.find((k) => k.floors.includes(m as Part_));
     if (!c) return null;
     const st = this.line.stations;
     // at a station it's about to go to the other one; on the way, it's going wherever it's going
