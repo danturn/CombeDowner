@@ -432,6 +432,10 @@ def stretch_samples(t0, t1, corners):
 # next square, which doesn't hold that house, runs its own piece on to the edge, so refusing a corner
 # this small left the street with a gap at the seam
 EDGE_GRAZE = 0.5
+# fractions tried, widest first, for a street run on narrower past a house to the square's edge: the
+# pavements give way first, then the carriageway, down to EDGE_LEAST metres
+EDGE_NARROW = ((0.5, 1.0), (0.0, 1.0), (0.0, 0.75), (0.0, 0.5))
+EDGE_LEAST = 2.5
 
 
 def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None, tall=None, carried=None, roof=None,
@@ -530,6 +534,19 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             ww, vv = (piece[1], piece[2]) if piece is not None else (ww, vv)
             band = lambda q: LineString(q).buffer(ww / 2 + max(vv), cap_style="flat").intersection(house_area).area
             return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + EDGE_GRAZE
+        def narrowed(piece, pts):
+            """The last stretch from `piece` on to the square's edge (`pts`), where the street at its
+            own width would reach further over a house than the piece did: as narrow as keeps it off
+            the house, so the street still meets the next square's at the seam."""
+            if math.dist(*pts) < 0.05:
+                return None
+            w, v = piece[1], list(piece[2])
+            for fp, fw in EDGE_NARROW:
+                vv, ww = [x * fp for x in v[:2]] + v[2:], max(min(w, EDGE_LEAST), w * fw)
+                if no_closer(None, pts, ww, vv):
+                    return (pts, ww, vv)
+            return None
+
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             # (the faces stop at the square's edge, so a point by it can't be measured across; the
@@ -540,8 +557,12 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                                       faces[0], faces[1], house_area, tall if r.get("tagged") else None)
                 if len(ch[0]) > 4 and no_closer(pieces[0], [xy[0]] + list(pieces[0][0])):
                     pieces[0] = ([xy[0]] + list(pieces[0][0]), *pieces[0][1:])
+                elif len(ch[0]) > 4 and (pc := narrowed(pieces[0], [xy[0], pieces[0][0][0]])) is not None:
+                    pieces.insert(0, pc)
                 if len(ch[-1]) > 4 and no_closer(pieces[-1], list(pieces[-1][0]) + [xy[-1]]):
                     pieces[-1] = (list(pieces[-1][0]) + [xy[-1]], *pieces[-1][1:])
+                elif len(ch[-1]) > 4 and (pc := narrowed(pieces[-1], [pieces[-1][0][-1], xy[-1]])) is not None:
+                    pieces.append(pc)
             elif fit:
                 pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area,
                                       tall if r.get("tagged") else None)
