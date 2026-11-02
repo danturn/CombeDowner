@@ -1454,3 +1454,28 @@ same as main):
   through-road height while a point of it follows the base square's ground, which `prep_map.py` dug
   for its own underpass. A matter for the road profiles (claude/road-grading), not for threading
   the map.
+- [ ] **Back boundaries roll from each zone's own mix, and the roll now runs.** `reroll_back_styles`
+  looked a block up by its owner house's point, which stands in a hole of its block, so it never
+  found one, even in Bath: the guessed fences and hedges between gardens kept whatever the square's
+  commonest evidence was (in Hackney, hedges all round). It now finds the block by the boundary's
+  middle and rolls from `gardens.STYLE`'s back mix for the zone, as the old build does. A
+  registered (parcel) garden's edge against open land is left alone: rolling those too turned most
+  of Bath's hedges into fences (1,1: 19.7 km of hedge to 4.5 km), and the plots made them hedges on
+  purpose. A guessed edge against open land is rolled, because its kind was only the square's
+  commonest evidence (in Hackney, where a back yard often meets unassigned land, thick hedges
+  across the yards). Bath's sample squares move by a kilometre or so between fence and hedge.
+- [ ] **Cape Town's own boundary kinds** (`security_wall`, `boundary_wall`, `palisade`) were not
+  among the writer's barrier kinds, so they were dropped without a word (409 km of back walls and
+  every guessed front). They are now written with the game's heights and widths, guessed fronts of
+  those kinds follow the same rules as Bath's, and the walls count as walls in `settle.py`.
+- [ ] **Fewer front paths and gates where there are no parcels** (Bradford-on-Avon 2,368 front
+  paths to 1,193, Cape Town 8,330 to 5,510, Hackney 4,827 to 4,550). On Bradford-on-Avon's 1,1, of
+  the 363 doors the old build gave a path and the partition does not, 167 face land the plots left
+  as open (a `parcel-nothing` edge between the street and open land: the house's front garden was
+  never made a plot), and 44 an open front. Letting an open front keep its path brought back only 3,
+  so the cause is the plots: without registered parcels, a house set back from its street often
+  gets no plot reaching the street. Worth a look in `plots.py` before these maps are rebuilt for
+  good.
+- [ ] **Stepped back fences in Bradford-on-Avon.** Without parcels, a back boundary between
+  gardens follows the blocks' division in short square steps, where the old build's straightening
+  (a fence wandering under 3 m drawn straight) made one run. Bath's parcels hide this.
