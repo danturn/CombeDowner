@@ -2228,7 +2228,28 @@ for t in rail_tracks:
 _line_tree = shapely.STRtree([shapely.LineString([a_[:2], b_[:2]]) for a_, b_ in _line_segs]) if _line_segs else None
 
 
+# Inside a railway tunnel's mouth, under its crown, where the ground's grid slopes down into the
+# cutting in front of the face (the game draws the bore there), nothing stands: only the hill over
+# it is ground
+bored_low = []
+for fc in portal_faces(json.load(open(rail_file)).get("portals") or []) if os.path.exists(rail_file) else []:
+    if not (X0 - 30 <= fc["x"] <= X1 + 30 and Y0 - 30 <= fc["y"] <= Y1 + 30): continue
+    nx_, ny_ = -fc["uy"], fc["ux"]
+    low = []
+    for u in np.arange(0.0, BORE_LIT + 1.01, 1.0):
+        for v in np.arange(fc["v0"], fc["v1"] + 0.01, 1.0):
+            x_, y_ = fc["x"] + fc["ux"] * u + nx_ * v, fc["y"] + fc["uy"] * u + ny_ * v
+            if gelev(x_, y_) < fc["z"] + fc["crown"]: low.append(shapely.Point(x_, y_).buffer(0.75, quad_segs=2))
+    if low: bored_low.append(unary_union(low))
+_bored = unary_union(bored_low) if bored_low else None
+
+
 def clear_of_line(poly):
+    if _bored is not None and _bored.intersects(poly):
+        rest = poly.difference(_bored)
+        parts = sorted(getattr(rest, "geoms", [rest]), key=lambda g: -g.area)
+        if not parts or parts[0].geom_type != "Polygon" or parts[0].area < max(12.0, 0.5 * poly.area): return None
+        poly = parts[0].simplify(0.25)
     if _line_tree is None: return poly
     near = [_line_segs[int(j)] for j in _line_tree.query(poly.buffer(LINE_CLEAR))]
     level = []
@@ -4051,18 +4072,7 @@ for a, b, lv in canal_open:
                                       (b[0] - nx_ * reach(b, 1), b[1] - ny_ * reach(b, 1)), (a[0] - nx_ * reach(a, 1), a[1] - ny_ * reach(a, 1))]).buffer(0.5))
 for w in out["wp"]:
     if len(w["r"][0]) >= 3: corridors.append(shapely.Polygon(w["r"][0], [tuple(map(tuple, h)) for h in w["r"][1:]]).buffer(0.8))
-# nor inside a railway tunnel's mouth, under its crown, where the ground's grid slopes down into the
-# cutting in front of the face (the game draws the bore there): only the hill over it is ground
-bored_low = []
-for fc in portal_faces(json.load(open(rail_file)).get("portals") or []) if os.path.exists(rail_file) else []:
-    if not (X0 - 30 <= fc["x"] <= X1 + 30 and Y0 - 30 <= fc["y"] <= Y1 + 30): continue
-    nx_, ny_ = -fc["uy"], fc["ux"]
-    low = []
-    for u in np.arange(0.0, BORE_LIT + 1.01, 1.0):
-        for v in np.arange(fc["v0"], fc["v1"] + 0.01, 1.0):
-            x_, y_ = fc["x"] + fc["ux"] * u + nx_ * v, fc["y"] + fc["uy"] * u + ny_ * v
-            if gelev(x_, y_) < fc["z"] + fc["crown"]: low.append(shapely.Point(x_, y_).buffer(0.75, quad_segs=2))
-    if low: bored_low.append(unary_union(low))
+# nor inside a railway tunnel's mouth (bored_low, above)
 corridors.extend(bored_low)
 if bored_low:
     bl_ = unary_union(bored_low)
