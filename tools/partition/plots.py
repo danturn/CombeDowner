@@ -823,6 +823,24 @@ def _directions(line, d):
     return v / n[:, None]
 
 
+def _near_pairs(pts, lines, dist):
+    """(point, line) index pairs within `dist`, as STRtree(lines).query(pts, "dwithin") finds them but
+    tested against the lines' segments, each with a box of its own: a long boundary is then no longer
+    measured whole from every point near its box. A line is within reach of a point when one of its
+    segments is, so the pairs are the same; only their order differs, and a point's pairs decide
+    together whether it is twinned, whatever their order."""
+    arr = np.empty(len(lines), dtype=object)
+    arr[:] = lines
+    xy, which = shapely.get_coordinates(arr, return_index=True)
+    joined = np.nonzero(which[1:] == which[:-1])[0]
+    if not len(joined) or not len(pts):
+        return np.zeros(0, int), np.zeros(0, int)
+    segs = shapely.linestrings(np.stack([xy[joined], xy[joined + 1]], axis=1))
+    pi, si = STRtree(segs).query(pts, predicate="dwithin", distance=dist)
+    pairs = np.unique(pi * len(lines) + which[joined][si])
+    return pairs // len(lines), pairs % len(lines)
+
+
 def _twin_stretches(line, held, tree, ways_tree, ways):
     """The stretches of `line`, as (start, end) metres along it, that run within TWIN of a line in
     `held` and in nearly the same direction, with no mapped way between the two."""
@@ -832,7 +850,7 @@ def _twin_stretches(line, held, tree, ways_tree, ways):
     d = np.linspace(0.0, L, max(2, int(L / TWIN_STEP) + 1))
     pts = shapely.line_interpolate_point(line, d)
     hit = np.zeros(len(d), bool)
-    pi, hi = tree.query(pts, predicate="dwithin", distance=TWIN)
+    pi, hi = _near_pairs(pts, held, TWIN)
     mine = np.zeros((len(d), 2))
     near = np.unique(pi)
     if len(near):
