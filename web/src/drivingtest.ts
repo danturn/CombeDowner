@@ -56,6 +56,8 @@ const DRIVE = new Set(["primary", "secondary", "tertiary", "residential", "uncla
 const DECENT = new Set(["primary", "secondary", "tertiary"]);
 /** How keen the route is to go down each kind of street. */
 const LIKE: Record<string, number> = { primary: 0.6, secondary: 0.9, tertiary: 1.2, residential: 1, unclassified: 0.7, living_street: 0.2 };
+/** Streets signed under 15 mph are private estates and the like, too slow to drive on a keyboard: a last resort. */
+const like = (e: Edge, or: number) => (LIKE[e.c] ?? or) * (e.ms && e.ms < 15 ? 0.02 : 1);
 /** The limit a street with none on the map is taken to have. */
 const limitOf = (c: string) => (c === "residential" || c === "unclassified" || c === "living_street" ? 20 : 30);
 
@@ -187,7 +189,7 @@ function homeway(g: Graph, from: number, to: number, banned: Set<string>, used: 
     for (const e of g.out[n]) {
       const k = `${n}>${e.to}`;
       if (banned.has(k)) continue;
-      const nd = d + e.len * (used.has(k) ? 5 : 1) / (LIKE[e.c] ?? 0.5);
+      const nd = d + e.len * (used.has(k) ? 5 : 1) / like(e, 0.5);
       if (nd < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, nd); back.set(e.to, n); push(nd, e.to); }
     }
   }
@@ -219,7 +221,7 @@ function routeOf(c: Centre, seed: number): Route | null {
       const opts = g.out[j].filter((o) => o.to !== p).map((o) => ({ o, ch: chainFrom(g, j, o) }))
         .filter((q) => q.ch && g.nb[q.ch.end].size >= 2) as { o: Edge; ch: NonNullable<ReturnType<typeof chainFrom>> }[];
       if (!opts.length) { ok = false; break; }
-      const wts = opts.map((q) => (used.has(`${j}>${q.o.to}`) ? 0.03 : 1) * (LIKE[q.o.c] ?? 0.3));
+      const wts = opts.map((q) => (used.has(`${j}>${q.o.to}`) ? 0.03 : 1) * like(q.o, 0.3));
       let pick = r() * wts.reduce((a, b) => a + b, 0), k = 0;
       while (k < opts.length - 1 && (pick -= wts[k]) > 0) k++;
       path.push(...opts[k].ch.nodes.slice(1));
