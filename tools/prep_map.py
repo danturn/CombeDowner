@@ -1605,8 +1605,14 @@ if True:
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
             # the basins off it (a marina): canal.ts draws their water too, at their pound's level
             cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
-    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
+    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH, SHORE_DEPTH = 2.5, 1.5, 30.0, 0.4
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
+
+    _shore = []
+    def sea_shore():
+        """Within a grid step of the coast (not of a square's edge, where the sea runs on)."""
+        if not _shore: _shore.append(whole_sea.boundary.intersection(BM.buffer(QUAY_REACH + dx)).buffer(dx * 1.01))
+        return _shore[0]
     beaches = unary_union([q for g, p in L("land") if p.get("class") in ("beach", "sand") for q in whole_polys(g)] or [Point(1e9, 1e9)])
     # A river or a lake steps down only at a weir or a dam (OpenStreetMap's waterway=weir or dam, in
     # Overture's infrastructure): its water is cut there, so the water above and below lie at their
@@ -1758,7 +1764,13 @@ if True:
                         elif at_sea:
                             # the harbour's quays stand straight up out of deep water, a metre and a
                             # half above it; a beach is left to run down into the sea
-                            grid[win][wet] = np.minimum(grid[win][wet], wz - QUAY_DEPTH)
+                            # (but only a little below it along the shore itself, so the ground the
+                            # game draws between the last wet point and the first dry one meets the
+                            # water at its edge rather than dipping under it)
+                            shore = shapely.intersects_xy(sea_shore(), GX[win], GY[win])
+                            blk = grid[win]
+                            blk[wet] = np.minimum(blk[wet], np.where(shore[wet], wz - SHORE_DEPTH, wz - QUAY_DEPTH))
+                            grid[win] = blk
                             qwin, quay = cover_xy(poly.buffer(QUAY_REACH, join_style=2), edge=True)
                             quay &= ~shapely.intersects_xy(whole_sea, GX[qwin], GY[qwin]) & ~shapely.contains_xy(beaches, GX[qwin], GY[qwin])
                             grid[qwin][quay] = np.maximum(grid[qwin][quay], wz + QUAY_HEIGHT)
