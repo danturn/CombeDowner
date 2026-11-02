@@ -1712,6 +1712,13 @@ if True:
         whole = transform(proj, g)
         if not whole.intersects(BM): continue
         if not whole.is_valid: whole = shapely.make_valid(whole)
+        # a harbour's dock or basin mapped over the sea is the sea, which already stands there at sea
+        # level: only what reaches beyond it is its own, and that opens onto the sea at sea level
+        # rather than at the seabed under its mapped edge
+        joins_sea = getattr(A, "sea", None) is not None and not is_sea(p) and whole.intersects(whole_sea)
+        if joins_sea:
+            whole = whole.difference(whole_sea)
+            if whole.area < 1: continue
         # (a tank, a pool or a reservoir stands in its own walls: the game builds them, where its water
         # stands above the ground round it)
         tank = p.get("subtype") in ("human_made", "reservoir") or p.get("class") == "wastewater"
@@ -1731,6 +1738,7 @@ if True:
                     # (the lidar across a weir reads the water below it, not the level above)
                     bank = [(x, y) for x, y in rings[0] if not (weir_near is not None and shapely.intersects_xy(weir_near, x, y))] or rings[0]
                     wz = A.sea if at_sea else min(elev(x, y) for x, y in bank) + 0.1
+                    if joins_sea: wz = max(wz, A.sea)
                     entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz), **({"c": "canal"} if is_canal else {}),
                                  **({"k": "t"} if tank else {}))
                     water_all.append(entry)
