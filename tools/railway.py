@@ -249,7 +249,9 @@ def main():
         # the hill above it, so the tunnels are left out of the evening and laid straight after it
         bridge = [q[3] == 1 for q in p]
         tunnel = [q[3] == 2 for q in p]
-        carry_profile(z, d, bridge, [True] * n)
+        # (a bridge running from the very end of a piece starts at the height of the line it leaves,
+        # as at a junction on a viaduct, not down at the survey's ground under it)
+        carry_profile(z, d, bridge, [True] * n, fixed=(pinned[0], pinned[-1]))
         even = list(z)
         for i in range(n):
             if bridge[i] or tunnel[i]: continue
