@@ -2898,6 +2898,21 @@ def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA, walls=None):
     return road, others
 
 
+def thin_to(A, B, r=KERB_POINT, most=KERB_POINT_AREA):
+    """`A` less its slivers lying along `B`, and `B` with them: a hairline of path left along a
+    pavement's edge where the two were cut apart is that pavement."""
+    if A.is_empty or B.is_empty:
+        return A, B
+    edge = B.buffer(0.05)
+    thin = A.difference(A.buffer(-r).buffer(r + 0.01))
+    give = [g for g in getattr(thin, "geoms", [thin]) if g.geom_type == "Polygon" and 1e-4 < g.area < most
+            and g.exterior.intersection(edge).length > 0.6 * g.exterior.length]
+    if not give:
+        return A, B
+    g = unary_union(give)
+    return A.difference(g), B.union(g)
+
+
 ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
 ALONG_LEAST = 4.0      # metres of a path's strip along a pavement before it is taken for that pavement
 ALONG_STEP = 0.4       # metres a footway beside a pavement may lie off its street's level and still be paved as it
@@ -3663,6 +3678,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         # (with no pavement of its own, the partition's pavement beside it was taken for a square's paving)
         pave, plaza = _minus(pave, bare), _minus(plaza, bare)
     road, (pave, plaza, path) = neat_kerbs(road, (pave, plaza, path), walls=unary_union(buildings) if buildings else None)
+    path, pave = thin_to(path, pave)
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
