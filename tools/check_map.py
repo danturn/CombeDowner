@@ -368,6 +368,7 @@ def main():
         return found
 
     check_more.watertight(root, map_id)      # (once, here, so every worker shares it)
+    check_more.trackclear(root, map_id)
     if "--tiles" in args:
         check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
     check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])

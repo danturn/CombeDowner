@@ -30,6 +30,11 @@
     stands on a lip more than 0.3 m over the open ground behind it. Each place's score is its area in
     m2. Only when web/dist has been built (each run reads the maps as they are now); CD_OVERROAD=0
     leaves it out.
+21. Nothing stands in a train's way (tools/trackclear.ts runs the game's own web/src/railway.ts and
+    walks every line out in the open, and into each tunnel mouth, through the space a train fills):
+    no face of the railway itself (a tunnel face without an opening big enough, a parapet, pier or
+    platform wall across a track) and none of the squares' buildings, walls, fences, hedges, gates,
+    trees or street furniture across it; and no line just stops out in the open with nothing at its end.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
@@ -109,6 +114,16 @@ def _set_pieces(centre):
 def watertight(root, map_id):
     """Rule 19's findings over the whole map, from tools/watertight.ts bundled with the game's code;
     none if that can't be run. Called once before the squares are checked, so it runs only once."""
+    return _railway_check("watertight.ts", root, map_id)
+
+
+def trackclear(root, map_id):
+    """Rule 21's findings over the whole map, from tools/trackclear.ts, as watertight's."""
+    return _railway_check("trackclear.ts", root, map_id)
+
+
+@functools.lru_cache(maxsize=4)
+def _railway_check(script, root, map_id):
     here = os.path.dirname(os.path.abspath(__file__))
     web = os.path.join(os.path.dirname(here), "web")
     try:
@@ -116,7 +131,7 @@ def watertight(root, map_id):
                              "--loader=ts", "--log-level=error",
                              "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"
                              "globalThis.document={createElement:()=>({getContext:()=>new Proxy({},{get:()=>()=>({})})})};"],
-                            input=open(os.path.join(here, "watertight.ts")).read(), cwd=web, capture_output=True, text=True, check=True).stdout
+                            input=open(os.path.join(here, script)).read(), cwd=web, capture_output=True, text=True, check=True).stdout
         with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
             f.write(js); f.flush()
             return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
@@ -307,7 +322,7 @@ def square(m, tag, note, f):
             dz = q[2] - float(ground(ox, oy))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
-    for w in watertight(root, map_id):
+    for w in watertight(root, map_id) + trackclear(root, map_id):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     for w in overroad(root, map_id, OVERROAD_ONLY[0]):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
