@@ -274,6 +274,7 @@ def flag_ranges(p, key):
 
 
 from profiles import APPROACH, carry_profile, ease_grades, ease_kinks
+from railway import open_runs
 
 
 def level_structures(run, z, bridges, tunnels):
@@ -3994,8 +3995,9 @@ corridors = []
 for r in out["rd"]:
     if len(r["p"]) > 1 and r["c"] not in PATHS: corridors.append(shapely.LineString([q[:2] for q in r["p"]]).buffer((r["w"] if "pv" in r else RW.get(r["c"], 4)) / 2, cap_style=2))
 for t in rail_tracks:
-    pts = [q[:2] for q in t["p"] if q[3] != 2 and X0 - 20 <= q[0] <= X1 + 20 and Y0 - 20 <= q[1] <= Y1 + 20]
-    if len(pts) > 1: corridors.append(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))
+    for run in open_runs(t["p"]):
+        pts = [q for q in run if X0 - 20 <= q[0] <= X1 + 20 and Y0 - 20 <= q[1] <= Y1 + 20]
+        if len(pts) > 1: corridors.append(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))
 for seg, lv, half in canal_runs:
     corridors.append(seg.buffer(half + 0.8, cap_style=2))
 # and nothing on the canal's banks or their verges (web/src/works.ts lays them)

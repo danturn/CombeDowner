@@ -58,6 +58,7 @@ from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
+from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
@@ -5701,9 +5702,10 @@ def blocked_ground(rd, tile, rail_tracks, canal, sq):
                     # stops 0.2 m short of the pavement's back edge: a wall standing there is a front wall
                     parts.append(line.buffer(side * (r["w"] / 2.0 + pv - 0.2), cap_style="flat", single_sided=True))
     for t in rail_tracks:
-        run = [q[:2] for q in t["p"] if q[3] != 2 and x0 - 20 <= q[0] <= x1 + 20 and y0 - 20 <= q[1] <= y1 + 20]
-        if len(run) > 1:
-            parts.append(LineString(run).buffer(RAIL_HALF, cap_style="flat"))
+        for whole in open_runs(t["p"]):
+            run = [q for q in whole if x0 - 20 <= q[0] <= x1 + 20 and y0 - 20 <= q[1] <= y1 + 20]
+            if len(run) > 1:
+                parts.append(LineString(run).buffer(RAIL_HALF, cap_style="flat"))
     for run in (canal or {}).get("runs", []):
         pts = [q for q in run["p"] if x0 - 20 <= q[0] <= x1 + 20 and y0 - 20 <= q[1] <= y1 + 20]
         for a, b in zip(pts, pts[1:]):

@@ -103,6 +103,25 @@ TOUCH = 0.5          # metres: track ends this near are joined
 TOY_MATCH = 1.5      # metres: an Overture segment this near toy track along most of it is that track
 
 
+def open_runs(p):
+    """Each stretch of a track's points [x, y, z, flag, ...] that is out in the open (not in a tunnel),
+    as [x, y] points, run on to the tunnel mouths at its ends: halfway to the first point inside,
+    where the mouths stand (`portals` below)."""
+    runs, run = [], []
+    for k, q in enumerate(p):
+        if q[3] == 2:
+            if run:
+                run.append([(run[-1][0] + q[0]) / 2, (run[-1][1] + q[1]) / 2])
+                runs.append(run)
+                run = []
+            continue
+        if not run and k > 0 and p[k - 1][3] == 2:
+            run.append([(p[k - 1][0] + q[0]) / 2, (p[k - 1][1] + q[1]) / 2])
+        run.append(list(q[:2]))
+    if run: runs.append(run)
+    return runs
+
+
 def toy_track(src, proj):
     """Where a miniature railway runs (OpenStreetMap's railway=miniature, in osm-rail.geojson):
     Overture has it as rail of no known gauge, like a real line, so it would be built full size.
@@ -520,4 +539,5 @@ def main():
     print(f"{len(tracks)} tracks, {len(out_routes)} routes, {len(platforms)} platforms, {len(portals)} tunnel mouths -> {out} ({os.path.getsize(out) // 1024} KB)")
 
 
-main()
+if __name__ == "__main__":
+    main()

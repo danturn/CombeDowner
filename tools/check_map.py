@@ -50,6 +50,7 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_more   # rules 12 on (tools/check_more.py)
+from railway import open_runs
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -330,8 +331,10 @@ def main():
         corr = [l.buffer((r.get("w") or RW.get(r["c"], 4)) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
         b = m["b"]
         for pts in rail_pts:
-            run = [q[:2] for q in pts if q[3] != 2 and b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
-            if len(run) > 1: corr.append(LineString(run).buffer(4.5, cap_style=2))
+            # (each stretch out in the open on its own: over a tunnel is the hill, not the line)
+            for whole in open_runs(pts):
+                run = [q for q in whole if b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
+                if len(run) > 1: corr.append(LineString(run).buffer(4.5, cap_style=2))
         if canal:
             for run in canal["runs"]:
                 pts = [q for q in run["p"] if b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
