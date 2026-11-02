@@ -78,6 +78,8 @@ SLIVER_THIN = 0.25      # metres: a face whose area/perimeter is under this is a
 CAP_OVERHANG = 6.0      # metres: a garden cap reaches this far past its house's corners
 BACK_ROWS = 8.0         # metres: two rows closer than this back on to each other
 BACK_CLEAR = 1.0        # metres a guessed back line keeps from the two houses it lies between
+SAME_LINE = 0.5         # metres: two division lines this near each other somewhere,
+SAME_WAY = math.cos(math.radians(3))   # and running this nearly the same way, are one line
 JOIN_ANGLE = 10.0       # degrees: evidence runs this close to collinear join into one line
 JOIN_GAP = 8.0          # metres: and within this of each other
 EXTEND = 3.0            # metres an evidence line is carried on past each end so it closes faces
@@ -413,6 +415,15 @@ def side_wall_lines(geoms, fbt, parcel_of):
     return out
 
 
+def _way_of(line):
+    """The unit direction from a line's first point to its last (its longest piece's, if in pieces)."""
+    if line.geom_type == "MultiLineString":
+        line = max(line.geoms, key=lambda g: g.length)
+    a, b = np.array(line.coords[0][:2]), np.array(line.coords[-1][:2])
+    d = b - a
+    return d / (np.hypot(*d) or 1.0)
+
+
 def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None, memo=None, free=None):
     """Candidate division lines for a block. From each shared wall between two houses, and from each
     free side wall of a detached or end house, a line square to the house's front running back from
@@ -427,18 +438,39 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
     tree = STRtree(geoms)
     lines = []
     walls = []
+    laid = []
+
+    def once(found):
+        # In a terrace the two walls of a party wall each give a line a few centimetres from the
+        # other's, at a hair's different angle, and over a long block a fan of them criss-cross it
+        # into slivers (Cape Town: one block of 61 terraced houses cut into 17,000 faces under
+        # 0.1 m2). On land the house alone lays out, a line running the same way as one already
+        # laid and meeting or nearly meeting it is that line, and is laid once.
+        out = []
+        for ln in found:
+            box_ = ln.envelope.buffer(SAME_LINE)
+            u = _way_of(ln)
+            if any(o.envelope.intersects(box_) and abs(float(np.dot(u, w))) > SAME_WAY
+                   and o.distance(ln) < SAME_LINE for o, w in laid):
+                continue
+            laid.append((ln, u))
+            out.append(ln)
+        return out
+
     for i, m, back, shared in side_wall_lines(geoms, fbt, parcel_of):
+        fr = free is not None and free[i]
         line = _back(block, m, back)
         if not line.is_empty:
-            lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+            got = _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+            lines += once(got) if fr else got
         # Without registered parcels nothing else divides the ground in front of a row of houses,
         # so the whole front of a block was one face: too long to be any one house's garden, it
         # was open land, and the houses lost their fronts, gates and paths. The side wall of a
         # house on unregistered land carries on forwards to the street as well, so it has a front.
-        if free is not None and free[i]:
+        if fr:
             line = _back(block, m, -back)
             if not line.is_empty:
-                lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+                lines += once(_uncovered(block, line, parcel_lines, par_tree, Point(m), memo))
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
         # in index order, not the index's order: `near` below breaks a distance tie by which house it
@@ -457,11 +489,15 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
             near = j if h.distance(Point(m)) < g.distance(Point(m)) else i
             f = fbt[near]
             b = f if abs(np.dot(gap, f)) < 0.7 else np.array([-f[1], f[0]])
+            pair_free = free is not None and free[i] and free[j]
+            if pair_free and b is not f and np.dot(fbt[i], fbt[j]) < -0.5:
+                continue                     # two houses back to back: their yard's back line divides them
             if not walls:
                 walls.append(unary_union([g.boundary for g in geoms]).buffer(-0.05))
             line = _through(block, m, b, geoms, walls[0])
             if not line.is_empty:
-                lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+                got = _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+                lines += once(got) if pair_free else got
     return [l for l in lines if not l.is_empty and l.length > 1]
 
 
