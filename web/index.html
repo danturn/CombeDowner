@@ -268,9 +268,11 @@
       <header class="ttbar"><span class="ttp">P200</span><span class="ttname">BathText '91</span><span class="ttno">200</span><span class="ttdate"></span><span class="ttclock"></span></header>
       <div class="cardbody settingsbody">
         <h2 class="tttitle"><span class="ttdh">Settings</span></h2>
-        <p class="hint">Kept on this computer, so they're the same next time you play.</p>
-        <fieldset class="setgroup">
-          <legend>Picture</legend>
+        <p class="hint" id="sethint">Kept on this computer, so they're the same next time you play.</p>
+        <!-- the index of the groups below: each opens on a page of its own (settings.ts) -->
+        <div id="setindex"></div>
+        <fieldset class="setgroup" data-page="201">
+          <legend>Video</legend>
           <label class="check"><input id="set-auto" type="checkbox" checked> Automatic (draw distance, resolution and shadows kept smooth for this device)</label>
           <label class="pick">Draw distance <select id="set-view"></select></label>
           <p class="hint">How far you can see. Further looks better but is slower.</p>
@@ -281,11 +283,11 @@
           <label class="check"><input id="set-fx" type="checkbox" checked> Retro look (colour grade and dither)</label>
           <label class="check"><input id="set-debug" type="checkbox"> Debug info and frame rate (F3)</label>
         </fieldset>
-        <fieldset class="setgroup">
+        <fieldset class="setgroup" data-page="202">
           <legend>Controls</legend>
           <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
         </fieldset>
-        <fieldset class="setgroup padsettings" hidden>
+        <fieldset class="setgroup padsettings" data-page="203" hidden>
           <legend>Controller</legend>
           <label class="slider">Look speed, side to side <input id="pad-lookx" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
           <label class="slider">Look speed, up and down <input id="pad-looky" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
@@ -296,14 +298,14 @@
           <p class="hint" data-padhint>Buttons: choose one with {ok}, then press the button to put it on ({back} calls it off). A button can do one thing on a tap and another on a hold. Options and the sticks stay put.</p>
           <div class="padbuttons"></div>
         </fieldset>
-        <fieldset class="setgroup">
+        <fieldset class="setgroup" data-page="204">
           <legend>Play</legend>
           <label class="check"><input id="set-passive" type="checkbox"> Passive mode</label>
           <p class="hint">Nothing comes for anyone: no cats, naughty boys, rugby or cricket teams, Flag Lads, Bendy or seagull muck. Other players can still shoot you. It's for the whole game, and the host's setting is the one that counts.</p>
           <label class="check"><input id="set-progression" type="checkbox"> Progression</label>
           <p class="hint">The map opens a part at a time, with strange objects to find and team challenges to unlock. If the host has it on, it's on for everyone in the game.</p>
         </fieldset>
-        <fieldset class="setgroup">
+        <fieldset class="setgroup" data-page="205">
           <legend>Sound</legend>
           <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
           <label class="slider">Sound effects volume <input id="sfx" type="range" min="0" max="1" step="0.05" value="1"></label>
@@ -311,6 +313,7 @@
           <label class="slider">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
         </fieldset>
         <div class="row">
+          <button id="setback" type="button" hidden>Back</button>
           <button id="setdone" type="button" class="primary">Done</button>
           <button id="setreset" type="button">Reset to defaults</button>
         </div>

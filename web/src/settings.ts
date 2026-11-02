@@ -1,5 +1,7 @@
 // The Settings page: one place for how the game looks, feels and sounds, opened from the main menu
-// and the pause menu. Everything on it is kept in this browser's localStorage, so it's the same
+// and the pause menu. It opens on an index (BathText page 200: teletext.ts) of its groups, Video,
+// Controls, Controller (once a pad's been seen), Play and Sound, and each opens on a page of its own
+// (201 to 205) with Back to the index; Esc goes back a page, and the × closes it all. Everything on it is kept in this browser's localStorage, so it's the same
 // next time you play on this computer (each under the key it has always used: cd-res, cd-sens,
 // cd-music and so on, so settings chosen before there was a page carry over). Nothing here goes
 // over the network.
@@ -7,7 +9,7 @@
 // Passive mode also has a tickbox of its own on the main menu, under the game name, kept in step with this one.
 // Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
-// Picture: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
+// Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
 // used by game.ts), shadows, and the debug panel (debug.ts, also F3). Choosing a distance, resolution or
 // shadows yourself turns automatic off. Controls: mouse sensitivity, and
 // once a controller's been seen, its own look speeds, dead zone, turn boost and rumble (gamepad.ts keeps those).
@@ -160,16 +162,44 @@ export function settingsPage(h: Hooks) {
     show();
   };
 
-  const open = () => { show(); el.hidden = false; $("setdone").focus(); };
+  // the index, and a page for each group: only one shows at a time
+  const groups = [...el.querySelectorAll<HTMLFieldSetElement>("fieldset.setgroup")];
+  const index = $("setindex"), back = $("setback"), done = $("setdone"), reset = $("setreset"), hint = $("sethint");
+  const title = el.querySelector<HTMLElement>(".tttitle .ttdh"), pageNo = [el.querySelector(".ttbar .ttp"), el.querySelector(".ttbar .ttno")];
+  let at: HTMLFieldSetElement | null = null;
+  const page = (g: HTMLFieldSetElement | null) => {
+    const from = at;
+    at = g;
+    for (const f of groups) f.classList.toggle("on", f === g);
+    index.hidden = hint.hidden = reset.hidden = !!g;
+    back.hidden = !g;
+    const n = g?.dataset.page ?? "200";
+    if (pageNo[0]) pageNo[0].textContent = `P${n}`;
+    if (pageNo[1]) pageNo[1].textContent = n;
+    if (title) title.textContent = g ? `Settings: ${g.querySelector("legend")?.textContent ?? ""}` : "Settings";
+    if (g) { back.focus(); return; }
+    // the index, written afresh each time: the Controller page is only there once a pad's been seen
+    index.replaceChildren(...groups.filter((f) => !f.hidden).map((f) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "settingsbtn"; b.dataset.page = f.dataset.page ?? "";
+      b.textContent = f.querySelector("legend")?.textContent ?? "";
+      b.onclick = () => page(f);
+      return b;
+    }));
+    const was = [...index.children].find((b) => (b as HTMLElement).dataset.page === from?.dataset.page) as HTMLElement | undefined;
+    (was ?? (index.firstElementChild as HTMLElement | null) ?? done).focus();
+  };
+  back.onclick = () => page(null);
+  const open = () => { show(); el.hidden = false; page(null); };
   const close = () => { el.hidden = true; };
   $("setdone").onclick = close;
   closeButton(el.querySelector<HTMLElement>(".card") ?? el, close);
   for (const id of ["settingsbtn", "settingsbtn2"]) $(id).onclick = open;
   // keep taps on the page from reaching the game's touch controls underneath
   el.addEventListener("pointerdown", (e) => e.stopPropagation());
-  // Esc closes the page, back to the menu it was opened from, before the game sees the key
+  // Esc goes back to the index from a group, or closes the page from the index, before the game sees the key
   addEventListener("keydown", (e) => {
-    if (e.code === "Escape" && !el.hidden) { e.stopImmediatePropagation(); e.preventDefault(); close(); }
+    if (e.code === "Escape" && !el.hidden) { e.stopImmediatePropagation(); e.preventDefault(); if (at) page(null); else close(); }
   }, true);
   return {
     setRes: (i: number) => h.post.setResolution(i, false),

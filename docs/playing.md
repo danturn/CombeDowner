@@ -145,7 +145,7 @@ After dark its backlight glows blue-green so you can still read it.
 ## Menus, settings and the debug panel
 
 **The menus** are pages of BathText '91, a teletext service: the main menu is page 100, filling the
-screen beside the crest of Bath, the pause menu is 101, Settings 200, Link a device 300, the
+screen beside the crest of Bath, the pause menu is 101, Settings 200 (its pages 201 to 205), Link a device 300, the
 wardrobe 400 and the trophy cabinet 500, each with the time ticking over in its top corner. Green
 buttons go on, red ones leave, and links to other pages are listed with their page numbers.
 
@@ -166,9 +166,11 @@ click anywhere off the card puts it away and goes straight back to aiming. While
 is let go, so you can click its buttons. Leave it and it still goes by itself after a while.
 Settings, the wardrobe, the trophy cabinet and linking a device have the × too, and Esc closes them.
 
-**Settings**, on the main menu and in the pause menu, is remembered on that computer:
+**Settings**, on the main menu and in the pause menu, is remembered on that computer. It opens on a
+list of its pages (Video, Controls, Controller once a pad's been seen, Play and Sound); pick one to
+open it, and Back or Esc takes you back to the list:
 
-- Picture: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
+- Video: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
   debug panel.
