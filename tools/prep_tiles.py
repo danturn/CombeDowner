@@ -44,7 +44,7 @@ there. With --no-partition (or for a map tools/area.py marks partition=False) pr
 go straight into <out dir> as the game's, as every map was built before the partition: for
 comparing the two.
 """
-import hashlib, json, math, os, subprocess, sys, time, gzip
+import hashlib, json, math, os, re, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import shapely
@@ -81,6 +81,27 @@ def files(*roots):
             sub[:] = sorted(s for s in sub if not s.startswith("."))
             out += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".")]
     return out
+
+
+def imported(script):
+    """The tool modules `script` reads, followed through their imports by reading them (an import
+    inside a function counts too), every module of a package it imports (the landmarks are loaded by
+    name), sorted: so a change to a tool a square doesn't use (the checks, the pubs) builds nothing."""
+    seen, todo = set(), [os.path.abspath(script)]
+    while todo:
+        p = todo.pop()
+        if p in seen: continue
+        seen.add(p)
+        text, here = open(p).read(), os.path.dirname(p)
+        for name in re.findall(r"^\s*(?:from|import)\s+(\w+)", text, re.M) + \
+                [n.strip().split(".")[0] for g in re.findall(r"^\s*import\s+([\w, .]+)$", text, re.M) for n in g.split(",")]:
+            for d in {TOOLS, here}:
+                if os.path.exists(os.path.join(d, f"{name}.py")): todo.append(os.path.join(d, f"{name}.py"))
+                if os.path.isdir(os.path.join(d, name)) and name != "__pycache__":
+                    todo += [os.path.join(d, name, n) for n in os.listdir(os.path.join(d, name)) if n.endswith(".py")]
+        todo += [os.path.join(here, f"{n}.py") for n in re.findall(r"^\s*from\s+\.(\w+)", text, re.M)
+                 if os.path.exists(os.path.join(here, f"{n}.py"))]
+    return sorted(os.path.normpath(p) for p in seen)
 
 
 def stamp(paths):
@@ -218,7 +239,7 @@ def main():
     t0 = time.time()
     # this file is in the cut, and prep_map never reads the partition's tools
     partition_tools = (os.path.join(TOOLS, "partition") + os.sep, os.path.join(TOOLS, "structures.py"))
-    tools = digest([p for p in files(TOOLS) if p.endswith(".py") and p != os.path.abspath(__file__) and not p.startswith(partition_tools)])
+    tools = digest([p for p in imported(os.path.join(TOOLS, "prep_map.py")) if p != os.path.abspath(__file__) and not p.startswith(partition_tools)])
     shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
