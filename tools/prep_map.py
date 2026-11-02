@@ -2753,18 +2753,30 @@ def _to_the_shops(roads):
             line = shapely.LineString([a[:2], b[:2]])
             if line.length < 0.5: seg.append(list(was)); continue
             here = []
+            road = line.buffer(half, cap_style=2)
             for k, s in enumerate((1, -1)):           # left, then right, looking along the points
-                strip = lambda v: line.buffer(s * (half + v), single_sided=True, cap_style=2).difference(line.buffer(half, cap_style=2))
+                strip = lambda v: line.buffer(s * (half + v), single_sided=True, cap_style=2).difference(road)
+                steps, v = [], was[k]
+                while v < was[k] + DOOR_REACH:
+                    steps.append(v); v += 0.5
+                # the widest strip's neighbours are all any narrower one can touch, so the trees are
+                # asked once and each step only measures the overlaps
+                widest = strip(steps[-1] + 0.5)
+                near_cars = [int(j) for j in car_tree.query(widest) if cars[int(j)][0] != me]
+                car_geoms = np.array([cars[j][1] for j in near_cars], dtype=object)
+                near_fp = [int(j) for j in fp_tree.query(widest)]
+                fp_geoms = np.array([footprints[j] for j in near_fp], dtype=object)
                 # the pavement grows out from its kerb until it meets a building: if that's a shop,
                 # it reaches its front
                 v, met = was[k], None
-                while v < was[k] + DOOR_REACH and met is None:
-                    g = strip(v + 0.5)
-                    if any(cars[int(j)][0] != me and cars[int(j)][1].intersection(g).area > 0.1 for j in car_tree.query(g)):
+                for i, v in enumerate(steps):
+                    g = widest if i == len(steps) - 1 else strip(v + 0.5)
+                    if len(near_cars) and (shapely.area(shapely.intersection(car_geoms, g)) > 0.1).any():
                         met = []; break
-                    hit = [int(j) for j in fp_tree.query(g) if footprints[int(j)].intersection(g).area > 0.1]
-                    if hit: met = hit
-                    else: v += 0.5
+                    hit = [near_fp[j] for j in np.nonzero(shapely.area(shapely.intersection(fp_geoms, g)) > 0.1)[0]] if len(near_fp) else []
+                    if hit: met = hit; break
+                else:
+                    v += 0.5
                 # (None: an opening between the buildings, such as an alley's mouth)
                 here.append(None if met is None else v if met and all(shopfront[j] for j in met) else was[k])
             seg.append(here)
@@ -4066,7 +4078,7 @@ if corridors:
     print(f"gates: {n_open} left open where their wall was cut off the road or the pavement")
     gone = (before[0] - len(out["tr"]), before[1] - len(out["sb"]), before[2] - len(out["fx"]))
     print(f"corridors: {gone[0]} trees, {gone[1]} shrubs and {gone[2]} street items taken off the roads, the railway and the water; {before[3]} wall runs cut to {len(out['br'])}")
-json.dump(out, open(out_path, "w"), separators=(",", ":"))
+open(out_path, "w").write(json.dumps(out, separators=(",", ":")))
 if STORE is not None: STORE.save()
 print(f"terrain {out['t']['nx']}x{out['t']['ny']} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
