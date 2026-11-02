@@ -881,8 +881,9 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
     # these after the dips; here they come before, so what passes under is dipped for headroom too).
     # Over a bored tunnel the ground is the hill over its roof, and a way on it stays on the ground;
     # and a path along the top of a cutting's side, over the road's verge, is beside it, not on it.
-    # A road graded down through a bump in the survey (a building in a coarse one) is measured from
-    # the ground it was cut from, which the way crossing it still has
+    # On a coarse survey (grading.COARSE) a road graded down through a bump in it (a building) is
+    # measured from the ground it was cut from, which the way crossing it still has; a fine one sees
+    # the gap under a footbridge, and the road under it is measured as it lies
     for k, r in enumerate(pending):
         if r["c"] in ("steps", "pedestrian"):
             continue
@@ -898,7 +899,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
                 m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
                 if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]):
                     continue
-                below = max(o["z"][m_], elev(*o["run"][m_][:2]))
+                below = max(o["z"][m_], elev(*o["run"][m_][:2])) if detail > COARSE else o["z"][m_]
                 if r["z"][i] - below >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                     r["span"].add(i)
                     r["solid"].add(i)
@@ -1064,19 +1065,40 @@ def _graded_roads(pending, chains):
 def _tunnel_layer(pending, order):
     """Which points of the graded chains are inside a street's tunnel (True) or not (False): a road
     passing over a shallow tunnel meets the road in it at a point the data gives both, and the two
-    are not a junction. A chain's ends are left out, as they meet whatever they meet."""
-    inside = {k: tunnel_inside(in_ranges(r["run"], r["tunnel_ranges"])) for k, r in enumerate(pending)
-              if r["tunnel_ranges"] and r["c"] not in PATHS}
-    return {(k, i): i in inside.get(k, ()) for ch in order for m, (k, i) in enumerate(ch) if 0 < m < len(ch) - 1}
+    are not a junction. A chain's ends are left out, as they meet whatever they meet, except on a
+    shallow tunnel's stretch, mouths included: what the data joins there is carried over the
+    cutting as a bridge (the underpass rule), so it doesn't meet the road going in."""
+    key = lambda q: (round(q[0] * 2), round(q[1] * 2))
+    ways_at = collections.defaultdict(set)
+    for ch in order:
+        for k, i in ch:
+            ways_at[key(pending[k]["run"][i])].add(k)
+    inside, cutting = {}, set()
+    for k, r in enumerate(pending):
+        if r["tunnel_ranges"] and r["c"] not in PATHS:
+            tun = in_ranges(r["run"], r["tunnel_ranges"])
+            shared = set() if r["bored"] else {i for i in tun if ways_at[key(r["run"][i])] - {k}}
+            inside[k] = tunnel_inside(tun) | shared
+            cutting |= {(key(r["run"][i]), k) for i in shared}
+    under = collections.defaultdict(set)
+    for q, k in cutting:
+        under[q].add(k)
+    layer = {}
+    for ch in order:
+        for m, (k, i) in enumerate(ch):
+            q = key(pending[k]["run"][i])
+            if 0 < m < len(ch) - 1 or under[q] - {k}:
+                layer[(k, i)] = i in inside.get(k, ())
+    return layer
 
 
-def regrade(pending, order, xy, target, fixed, steep, detail):
+def regrade(pending, order, xy, target, fixed, steep, detail, survey=None):
     """The network graded (tools/grading.py) and written back to the roads, each then eased of sharp
     changes of gradient between its junctions (a junction stays where the grading put it). From
     prep_map.py's `regrade`."""
     exact = [[STEEPEST.get(pending[k]["c"], 0.33) for k, _ in ch[:-1]] for ch in order]
     graded = grade(order, xy, target, fixed, steep, detail, [RW.get(pending[ch[0][0]]["c"], 4) / 2 for ch in order], exact,
-                   layer=_tunnel_layer(pending, order))
+                   layer=_tunnel_layer(pending, order), survey=survey)
     key = lambda q: (round(q[0] * 2), round(q[1] * 2))
     seen = collections.Counter(q for ch in order for q in {key(pending[k]["run"][i]) for k, i in ch})
     for ch in order:
@@ -1100,7 +1122,7 @@ def smooth_network(pending, chains, elev, detail):
     prep_map.py's `smooth_network`."""
     order = _graded_roads(pending, chains)
     tun = {k: in_ranges(r["run"], r["tunnel_ranges"]) for k, r in enumerate(pending) if r["tunnel_ranges"]}
-    xy, target, fixed, steep = {}, {}, {}, []
+    xy, target, fixed, steep, survey = {}, {}, {}, [], {}
     for ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
         z = np.array([pending[k]["z"][i] for k, i in ch], dtype=float)
@@ -1110,6 +1132,7 @@ def smooth_network(pending, chains, elev, detail):
             d[m] = d[m - 1] + math.dist(pts[m - 1][:2], pts[m][:2])
         for m, (k, i) in enumerate(ch):
             xy[(k, i)] = pts[m][:2]
+            survey[(k, i)] = float(z[m])
             if i in pending[k]["span"] or i in tun.get(k, ()):
                 target[(k, i)] = fixed[(k, i)] = float(z[m])
                 continue
@@ -1128,7 +1151,7 @@ def smooth_network(pending, chains, elev, detail):
             hill = abs(elev(mx + ux * 20, my + uy * 20) - elev(mx - ux * 20, my - uy * 20)) / 40
             lim.append(min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)))
         steep.append(lim)
-    regrade(pending, order, xy, target, fixed, steep, detail)
+    regrade(pending, order, xy, target, fixed, steep, detail, survey)
 
 
 def limit_grades(pending, chains, dips, detail):

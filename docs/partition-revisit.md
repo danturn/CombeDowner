@@ -1449,11 +1449,49 @@ same as main):
   edge with no way within 1.5 m over it, they go once every square is written. Cape Town had 105
   such ways stopping at an edge, 81 of them stubs; a real path running on over the edge always has
   its other piece there, so none should be lost.
-- [ ] **Roads under Cape Town's elevated freeways kink** (rule 1, 21 → 121, nearly all round the
-  Foreshore's interchanges in 2_2, 2_1, 1_2): the partition's profile keeps a street at its
-  through-road height while a point of it follows the base square's ground, which `prep_map.py` dug
-  for its own underpass. A matter for the road profiles (claude/road-grading), not for threading
-  the map.
+- [x] **Roads under Cape Town's elevated freeways kink** (rule 1, 21 → 121 on the first 53
+  squares). claude/road-grading's network grading in `prep_map.py` took most of it (23 on the
+  combined build), and `structures.py` now grades the partition's streets the same way
+  (`grading.grade`, with a road in a shallow tunnel never joined to one passing over it). On
+  the first 53 squares rule 1 goes 218 → 119 (too steep 180 → 78, off its ground 15 → 11, kinked
+  23 → 30: the extra kinks are on F.W. de Klerk and Nelson Mandela Boulevards where a held point
+  keeps the graded profile and its neighbours follow the base square's ground). Still open: those
+  seven, and the coarse survey's grading evening out a real ramp (a service loop down under Helen
+  Suzman Boulevard in 1_3 now stays level, and is drawn as a bridge over nothing).
+- [x] **Ways crossing on a coarse survey are not bridges because grading cut one through a bump.**
+  Rule 2f (both builders) inferred a bridge wherever two ways crossed 1.5 m apart; on a survey with
+  no detail finer than `grading.COARSE` (Cape Town's, 16 m) a street graded through a hillside
+  came out metres under a path crossing it at grade, and the steps and streets round it were dug
+  down under the "bridge" (Newlands' Bantry and Biskop Steps 4 m under the houses beside them).
+  There each way is now measured where they cross, from no lower than the survey there. Bath,
+  Hackney and Bradford-on-Avon (3 m) keep the old rule. On a coarse survey rule 2g also measures
+  the lower road from the ground it was graded from; on a fine one that lost a real footbridge in
+  Bath (0_3, by Walcot Street), so there it keeps the graded height.
+- [x] **A path joined to a road where it goes into its cutting** (Bath 0_3, the footbridge by
+  Walcot Street, drawn as a bridge over nothing): the data gives a pedestrian way and a service
+  road in a shallow tunnel one point, and the network grading made it a junction, pulling the
+  bridge's end down to the road. Points on a shallow tunnel's stretch, its mouths too, are never
+  one junction with another way the data puts there (the underpass rule carries that way over
+  the cutting anyway).
+- [x] **A steep path's end graded off the street it meets** (Bath 3_2, a pedestrian ramp into a
+  square, 0.8 m off the footways there): the grading told junctions apart by heights already
+  evened out along each road, and a steep path's evened end stood 3 m off the street's, so the
+  two were taken for a crossing at different levels. `grading.grade` now takes the unevened
+  heights for that test (`survey`); `prep_map.py` still passes none, so the old build is as it was.
+- [x] **Hackney's track off its ground** (rule 6, 6 → 17): a footway beside an embankment, dug as
+  wide as a verge (or decked beside the track), took the track bed's ground down 1.5-2.5 m with
+  it. `lay_ground` now holds the bed (2.3 m and half a grid cell, to its last point on the ground)
+  as it holds a carriageway, and a deck cuts it only when it stands a bridge's height over the
+  track. Hackney 17 → 8 (the old build's 6, and 2_1's rail bridge marked 4 m short of the passage
+  under it).
+- [x] **Paving no street reaches stood metres off the ground** (Cape Town's building floating):
+  a sliver paved between houses took the level of the nearest street up to 40 m away, so a
+  terrace stood 3 m over it. Paving beyond a street's reach (and a wall's width more) now lies on
+  the ground. Rule 9's "path strip along a pavement" rises a little (Bath 34 → 49) because such
+  paving is now level with the paths beside it, where before it stood a step apart.
+- [x] **Crossings off the road** (Cape Town 0 → 24): the crossings are on the busway, a slip road
+  and the motorway, which the old build didn't have or called primary. The check counted only its
+  own list of vehicle classes; it now takes any carriageway.
 - [ ] **Back boundaries roll from each zone's own mix, and the roll now runs.** `reroll_back_styles`
   looked a block up by its owner house's point, which stands in a hole of its block, so it never
   found one, even in Bath: the guessed fences and hedges between gardens kept whatever the square's

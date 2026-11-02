@@ -52,7 +52,7 @@ def terrain_detail(dem, px, least=1.3):
     return curv[-1][0] * px if curv else px
 
 
-def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, join=2.5, hard=1e4, layer=None):
+def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, join=2.5, hard=1e4, layer=None, survey=None):
     """The graded heights of a network of roads.
 
     chains: lists of point ids along each road; xy[id], target[id] (the survey's height there);
@@ -69,11 +69,14 @@ def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, joi
     layer: {id: True or False} for points that are (True) or are not (False) inside a tunnel; two
     such points on different layers are never one junction, however close their heights (a road
     crossing over a shallow tunnel at a point the data gives both). A point without one joins any.
+    survey: {id: height} to tell junctions apart by instead of target, where target has been evened
+    out along each road (a steep path's end, evened out, can stand metres off the street it meets).
     Returns {id: height}."""
     from scipy.optimize import linprog
     from scipy.sparse import coo_matrix
 
     key = lambda i: (round(xy[i][0] * 2), round(xy[i][1] * 2))
+    ref = target if survey is None else survey
     groups = {}
     node = {}
     count = 0
@@ -84,14 +87,14 @@ def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, joi
             here = groups.setdefault(key(i), [])
             lay = None if layer is None else layer.get(i)
             for n, h, ls in here:
-                if abs(h - target[i]) < join and (lay is None or not ls - {lay}):
+                if abs(h - ref[i]) < join and (lay is None or not ls - {lay}):
                     node[i] = n
                     if lay is not None:
                         ls.add(lay)
                     break
             else:
                 node[i] = count
-                here.append((count, target[i], set() if lay is None else {lay}))
+                here.append((count, ref[i], set() if lay is None else {lay}))
                 count += 1
     nn = count
     if nn == 0:
