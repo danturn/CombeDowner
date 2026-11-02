@@ -9,7 +9,10 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
 - lidar: the Environment Agency's 1 m LIDAR Composite DTM, First Return DSM and Last Return DSM
   for every OS 5 km square the full-detail squares stand on (each a plain download of about 75 MB,
-  unzipped into lidar/dtm/, lidar/dsm/ and lidar/last/; about 3 GB in all);
+  unzipped into lidar/dtm/, lidar/dsm/ and lidar/last/; about 3 GB in all), and in Wales the Welsh
+  Government's 1 m DTM and DSM (2020-23), 1 km tiles of about 3 MB each listed by DataMapWales's
+  tile catalogue, into the same folders. A map on the border gets both; the EA has no Welsh squares
+  and Wales no last returns (they are optional);
 - canopy: the Meta / WRI canopy height tile over the map's centre (about 290 MB);
 - osm, fsa: OpenStreetMap's businesses (and its streets' widths and pavements) and the Food Standards Agency's hygiene ratings
   (tools/osm.py, tools/fsa.py). These are the live data, so they will have changed since the copy
@@ -30,7 +33,7 @@ Then, to measure and pack it all (tools/mapdata.py):
   python3 -I tools/prep_wide.py <map> <raw dir> web/public/maps/<map>-wide.json --measure
   python3 -I tools/mapdata.py pack <map> <raw dir>
 """
-import math, os, subprocess, sys, time, urllib.request, zipfile
+import json, math, os, subprocess, sys, time, urllib.error, urllib.request, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
@@ -38,6 +41,9 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 LIDAR = "https://environment.data.gov.uk/tiles/collections/survey/{kind}/2022/1/{square}"
 KINDS = {"dtm": "lidar_composite_dtm", "dsm": "lidar_composite_first_return_dsm", "last": "lidar_composite_last_return_dsm"}
+WALES = ("https://datamap.gov.wales/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature"
+         "&typeNames=geonode:welsh_government_lidar_tile_catalogue_2020_2023&outputFormat=application/json"
+         "&count=10000&bbox={e0},{n0},{e1},{n1},urn:ogc:def:crs:EPSG::27700")
 CANOPY = "https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/{q}.tif"
 REACH = 250         # metres past the full-detail squares that the lidar is fetched for (they measure 210 m past their edges)
 
@@ -52,7 +58,13 @@ def os_square(e, n):
     return f"{letter(l1)}{letter(l2)}{int(e % 100000) // 5000 * 5:02d}{int(n % 100000) // 5000 * 5:02d}"
 
 
-def lidar_squares(A):
+def lidar_box(A):
+    """The British National Grid box (e0, n0, e1, n1) the lidar is fetched over: the full-detail
+    squares and REACH round them, as lidar_squares works it out."""
+    return lidar_squares(A, box_only=True)
+
+
+def lidar_squares(A, box_only=False):
     """Every OS 5 km square under the full-detail squares (tools/prep_tiles.py) or within REACH
     of them: what their buildings and trees are measured over."""
     from shapely.geometry import Point, box
@@ -73,7 +85,26 @@ def lidar_squares(A):
                 for x, y in ((x0 + f, y0 - REACH), (x0 + f, y0 + size + REACH), (x0 - REACH, y0 + f), (x0 + size + REACH, y0 + f)):
                     xs.append(x / kx + lon0); ys.append(y / ky + lat0)
     e, n = bng_transformer().transform(xs, ys)
+    if box_only: return min(e), min(n), max(e), max(n)
     return sorted({os_square(a, b) for a, b in zip(e, n)})
+
+
+def wales_lidar(A, raw):
+    """The Welsh Government's 1 m DTM and DSM tiles over the lidar's box, into lidar/dtm/ and lidar/dsm/.
+    Returns how many tiles Wales has there (none for a map wholly in England)."""
+    e0, n0, e1, n1 = lidar_box(A)
+    with urllib.request.urlopen(WALES.format(e0=int(e0), n0=int(n0), e1=int(e1) + 1, n1=int(n1) + 1), timeout=120) as r:
+        tiles = json.load(r)["features"]
+    if tiles: print(f"lidar: {len(tiles)} Welsh 1 km tiles")
+    for t in tiles:
+        for kind in ("dtm", "dsm"):
+            link = t["properties"].get(f"{kind}_link")
+            if not link: continue
+            folder = os.path.join(raw, "lidar", kind)
+            os.makedirs(folder, exist_ok=True)
+            path = os.path.join(folder, "wales-" + os.path.basename(link))
+            if not os.path.exists(path): fetch("https://" + link.removeprefix("https://"), path)
+    return len(tiles)
 
 
 def quadkey(lon, lat, z=9):
@@ -120,7 +151,10 @@ def main():
         for t in LAYERS:
             path = os.path.join(raw, f"{t}.geojson")
             if not os.path.exists(path): run(os.path.join(TOOLS, "download.py"), map_id, t, path, "wide")
-    if want("lidar"):
+    region = getattr(A, "region", "GB-ENG")
+    if want("lidar") and region in ("GB-ENG", "GB-WLS"):
+        # the Welsh tiles first: in Wales the EA's squares are missing, so those are let go there
+        welsh = wales_lidar(A, raw)
         squares = lidar_squares(A)
         print(f"lidar: {len(squares)} squares: {' '.join(squares)}")
         for sq in squares:
@@ -130,7 +164,15 @@ def main():
                 done = os.path.join(folder, f".{sq}")
                 if os.path.exists(done): continue
                 z = os.path.join(raw, "lidar", f"{sq}-{kind}.zip")
-                if not os.path.exists(z): fetch(LIDAR.format(kind=name, square=sq), z)
+                if not os.path.exists(z):
+                    try:
+                        # in Wales a "not found" is a Welsh square, not the EA's service stumbling
+                        fetch(LIDAR.format(kind=name, square=sq), z, tries=1 if welsh else 4)
+                    except urllib.error.HTTPError as e:
+                        if e.code != 404 or not welsh: raise
+                        print(f"lidar: {sq} {kind} is not in the EA's survey (in Wales: the Welsh tiles cover it)")
+                        open(done, "w").close()
+                        continue
                 with zipfile.ZipFile(z) as f:
                     for n in f.namelist():
                         if n.lower().endswith(".tif"):
@@ -159,7 +201,6 @@ def main():
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
     # the census's output areas cover England and Wales, the conservation areas England
-    region = getattr(A, "region", "GB-ENG")
     for name, regions in (("census", ("GB-ENG", "GB-WLS")), ("conservation", ("GB-ENG",))):
         if want(name) and region in regions and not os.path.exists(os.path.join(raw, f"{name}.geojson")):
             run(os.path.join(TOOLS, f"{name}.py"), map_id, None, os.path.join(raw, f"{name}.geojson"), "wide")

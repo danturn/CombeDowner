@@ -134,9 +134,6 @@ next: python3 -I tools/new_area.py build <id>
 | `FAIL ... has changed shape` | STOP. |
 | The `BRANCH:` differs from Step 2 | STOP. |
 
-Then check: `git diff --stat` must show exactly `tools/area.py` and `web/src/maps.ts` changed
-(plus files you already had changed before you started). Anything else: STOP.
-
 ## Step 5. Download and build (10 to 40 minutes)
 
 ```sh
@@ -185,8 +182,11 @@ is not there: STOP.
 python3 -I tools/new_area.py shoot <id>
 ```
 
-It picks four views by itself (the centre, the centre from the air, the main street, the edge),
-builds the game and shoots them in a muted headless Chrome.
+It picks the views by itself, builds the game and shoots them in a muted headless Chrome:
+`centre` (eye height), `centre-air` (from 90 m up), `road` (the biggest road near the centre,
+looking along it: a main street in a town, a lane or track in open country; left out if there is
+no road) and `edge` (near the edge of the play area, looking in). A view that would stand in a lake
+or reservoir is moved onto its southern shore. You do not choose views.
 
 Success: the last lines are `SHOOT PASS` and `look at each picture: shots/<id>/*.png`, and one line
 reads `audio: ... context=Silent`. If that line says `context=REAL`: STOP.
@@ -197,7 +197,8 @@ line: what you see. Any of these is a problem to report (not to fix):
 - the picture is all one colour, or all sky, or all fog;
 - buildings float in the air or are sunk to their roofs;
 - the ground is flat blue water where there should be land (the height `z0` is wrong);
-- no buildings at all in `centre-air`.
+- no buildings at all in `centre-air`, but only if `verify` did not print `INFO only N buildings`
+  (open country, moorland or forest has few or none, and that is fine).
 
 The `frame rate:` line: `PASS` is 20 fps or more. `WARN` means slow on this machine; report it.
 
@@ -213,13 +214,14 @@ Your map of <name> is built: id <id>, radius <radius> m, <N> squares.
 Play it: cd web && npm run dev, then open http://localhost:5173/?map=<id>
 (Shift+F3 in the game copies a link to where you stand.)
 
-What it has: <for UK England: real roofs, heights and church towers from the lidar, the census's
-house types, conservation areas, pubs with hygiene ratings; for elsewhere: buildings, roads,
-water, trees and terrain from worldwide open data>.
+What it has: <England: real roofs, heights, church towers and ground from the lidar, the census's
+house types, conservation areas, pubs with hygiene ratings. Wales: the same lidar from the Welsh
+Government, the census's house types, hygiene ratings. Elsewhere: buildings, roads, water, trees
+and terrain from worldwide open data>.
 What it lacks: <copy the "will be built without" list that add printed, plus any WARN step>.
 Clash check: <total> rule failures over <N> squares (<per> per square).
 Frame rate in the screenshots: lowest <N> fps.
-Screenshots: shots/<id>/ (centre, centre-air, main-street, edge): <one line each>.
+Screenshots: shots/<id>/ (centre, centre-air, road, edge): <one line each>.
 Sizes: <the three SIZE lines>.
 
 Nothing is committed. The new files are web/public/maps/<id>*, data/<id>/, and the edits to

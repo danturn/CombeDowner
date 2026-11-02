@@ -11,17 +11,20 @@ and which credits it needs.
 | region | What the build downloads (on top of the worldwide sources in non-uk.md) | What the map lacks |
 |---|---|---|
 | `GB-ENG` (England) | Environment Agency lidar (real roofs, eaves, garden walls, church towers, the true ground), 2021 Census house types, conservation areas, food hygiene ratings | energy certificates and Land Registry parcels (both by hand only; see "Never by this skill" below) |
-| `GB-WLS` (Wales) | 2021 Census house types, food hygiene ratings | lidar (Wales publishes its own on another site the tools don't read), conservation areas, energy certificates, parcels |
+| `GB-WLS` (Wales) | the Welsh Government's 1 m lidar (DTM and DSM, 2020-23, from DataMapWales: real roofs, heights, church towers, the true ground), 2021 Census house types, food hygiene ratings | the lidar's last returns (so trees over roofs are judged from the canopy map alone), conservation areas, energy certificates, parcels |
 | `GB-SCT` (Scotland) | food hygiene ratings | lidar, census, conservation areas, energy certificates, parcels |
 | `GB-NIR` (Northern Ireland) | food hygiene ratings | lidar, census, conservation areas, energy certificates, parcels |
 
 Without lidar, buildings take their heights from OpenStreetMap's and Overture's heights and floor
 counts, and their roofs are guessed. That is expected, not a fault.
 
-## What happens in an English build that does not happen elsewhere
+## What happens in an English or Welsh build that does not happen elsewhere
 
 - The lidar is about 3 x 75 MB per Ordnance Survey 5 km square, and a map touches 2 to 6 squares.
-  It is most of the download time.
+  It is most of the download time. In Wales it comes as 1 km tiles of about 3 MB each (DTM and DSM),
+  25 to 50 for a small map.
+- A map near the border gets both: the EA's squares for the English side and the Welsh tiles for
+  the Welsh side (`lidar: <square> ... is not in the EA's survey` lines are expected then).
 - Church towers are measured from the lidar (`STEP church towers`).
 - After the first build of the squares and the wide map, the terrain takes the lidar's ground
   (`STEP lidar ground`), and the squares and the wide map are built a second time
@@ -47,6 +50,9 @@ tiles. See non-uk.md for the exact lines.
 UK additions, all Open Government Licence v3:
 
 - Environment Agency lidar: "© Environment Agency copyright and/or database right. All rights reserved." (England)
+- Welsh Government lidar (Wales): "Contains public sector information licensed under the Open
+  Government Licence v3.0: Welsh Government LiDAR 2020-2023 (DataMapWales)". The catalogue gives no
+  wording of its own; this is the OGL's standard acknowledgement with the source named.
 - Food Standards Agency hygiene ratings: "Food Standards Agency, Open Government Licence".
 - 2021 Census (England and Wales): "Source: Office for National Statistics licensed under the Open
   Government Licence v.3.0. Contains OS data © Crown copyright and database right <year>".

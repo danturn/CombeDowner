@@ -42,7 +42,7 @@ are kept, and squares already built are not built again.
 | `BUILD FAIL at step minimap ground` | The squares are missing: rerun `build`. |
 | `WARN step railway failed` | Fine: the map has no railway. Report it. |
 | `WARN step pubs failed` | Fine: the pause menu's "Go to a pub" lists only the pubs signed in the squares. Report it. |
-| `WARN step district names failed` | Fine: the game names places after parks instead. Report it. |
+| `WARN step district names failed` (often `HTTP Error 502` or `504` from Overpass) | Fine: the game names places after parks instead. Once Step 7 is done, rerun `build` once (about a minute: nothing is downloaded or built again); if it fails again, report it. |
 | `WARN step church towers failed` | Fine: churches have no measured towers. Report it. |
 | `epc: download the energy certificates ... by hand` | Not an error. Ignore it. |
 | `no lidar data`, `no EPC data` | Not an error outside England. In England, report it. |
@@ -53,7 +53,8 @@ are kept, and squares already built are not built again.
 |---|---|
 | `FAIL web/src/maps.ts has the map` | Step 4 did not finish. Run `python3 -I tools/new_area.py remove <id>`, then repeat from Step 4. |
 | `FAIL web/public/maps/<id>.json` or `FAIL squares:` or `FAIL ...-wide.json` or `FAIL ...-ground.json` | The build did not finish. Rerun `build`, then `verify`. |
-| `FAIL buildings in the squares: 0` | STOP: the place has no buildings in the data, or the centre is wrong. |
+| `FAIL in the squares: 0 buildings, 0 roads and paths, 0 pieces of water` | STOP: the data is empty there, or the centre is wrong. |
+| `INFO only N buildings` | Not an error: open country. Carry on. |
 | `FAIL check_map ran` | STOP, and show the user the line after `->`. |
 | `WARN clash check` | Carry on. Report the count and the three biggest rule lines. |
 | `FAIL git sees changes only to this map's files` | STOP. Something outside this map changed. Do not revert it yourself. |
@@ -65,8 +66,8 @@ are kept, and squares already built are not built again.
 | `FAIL npm run shoot finished` with `Cannot find module 'playwright'` | `cd web && npm install && cd ..`, then rerun `shoot`. |
 | `browserType.launch` or `Chromium distribution 'chrome' is not found` | STOP: the user must install Google Chrome. |
 | `FAIL <view>: loaded` (a view timed out) | Rerun `shoot` once. Still failing: report which view, carry on. |
-| `FAIL no page errors` | Report the `INFO page said:` lines. STOP. |
-| `404` lines for `-canal.json`, `-cable.json`, `-rail.json` or `-pubs.json` | Not an error: the map has none. |
+| `WARN page errors: N` | Carry on. Copy the `INFO page said: error: ...` lines into the report. |
+| `INFO page said: error: Failed to load resource: ... status of 404` | Not an error: an optional file (`-canal.json`, `-cable.json` and the like) the map has none of. |
 | `context=REAL` | STOP. Audio was not muted. Do not run any more browser commands. |
 | `WARN frame rate` | Report it. Not a failure. |
 
