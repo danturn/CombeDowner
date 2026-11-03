@@ -14,6 +14,7 @@ building materials, the conservation areas' and the area's zones, and garden plo
 | File | What | From | Licence |
 |---|---|---|---|
 | `building`, `segment`, `water`, `land_use`, `land`, `land_cover`, `place`, `infrastructure` `.geojson.xz` | Overture Maps' layers for the wide circle, release 2026-09-23.1, without the properties no tool reads and the outlines no square reads (`prep_tiles.SKIP`) | `tools/download.py` | ODbL (© OpenStreetMap contributors, Overture Maps Foundation, Microsoft) and CDLA Permissive 2.0: see overturemaps.org/attribution |
+| `footprints.geojson.xz` | Empty: the buildings Overture's layer leaves out (`tools/footprints.py`), from the sources `tools/area.py` lists for the map, and this map lists none | | |
 | `osm.geojson.xz` | OpenStreetMap's shops, pubs, offices and named buildings, downloaded 1 November 2026 | `tools/osm.py` | ODbL, © OpenStreetMap contributors |
 | `osm-roads.geojson.xz` | OpenStreetMap's streets and paths with their widths, lanes and pavements (`sidewalk`), downloaded 1 November 2026 | `tools/osm.py ... wide roads` | ODbL, © OpenStreetMap contributors |
 | `osm-detail.geojson.xz` | OpenStreetMap's street furniture and other small details, downloaded 1 November 2026 | `tools/osm.py ... wide detail` | ODbL, © OpenStreetMap contributors |

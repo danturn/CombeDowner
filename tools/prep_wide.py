@@ -135,7 +135,10 @@ def gelev(x, y):
 
 
 # ---- helpers ------------------------------------------------------------------------
-L = lambda f: [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+def L(f):
+    got = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+    # the footprints the buildings layer lacks (tools/footprints.py) are buildings like any other
+    return got + L("footprints") if f == "building" and os.path.exists(f"{src_dir}/footprints.geojson") else got
 name = lambda p: (p.get("names") or {}).get("primary") or ""
 
 

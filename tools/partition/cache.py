@@ -35,6 +35,14 @@ def sha(data):
     return hashlib.sha1(data if isinstance(data, bytes) else data.encode()).hexdigest()
 
 
+def footprints_file(raw):
+    """The footprints the buildings layer lacks (tools/footprints.py), which every reader of the
+    buildings takes with them."""
+    from . import MAP, ROOT as R
+    p = os.path.join(raw, "footprints.geojson")
+    return p if os.path.exists(p) else os.path.join(R, "data", MAP, "footprints.geojson.xz")
+
+
 def file_digest(path):
     if not os.path.exists(path):
         return "missing"
@@ -235,12 +243,17 @@ class Layers:
             self._layers[name] = (np.zeros((0, 4)), [])
             return self._layers[name]
         whole = file_digest(path)
+        if name == "building":
+            whole = sha(whole + file_digest(footprints_file(self.raw)))
         saved = os.path.join(self.cache_dir, "layers", f"{name}-{whole}.npz") if self.cache_dir else None
         if saved and os.path.exists(saved):
             z = np.load(saved)
             self._layers[name] = (z["env"], list(z["dig"]))
             return self._layers[name]
         feats = json.load(lzma.open(path) if path.endswith(".xz") else open(path))["features"]
+        if name == "building" and os.path.exists(footprints_file(self.raw)):
+            fp = footprints_file(self.raw)
+            feats = feats + json.load(lzma.open(fp) if fp.endswith(".xz") else open(fp))["features"]
         env = np.array([_lonlat_bounds(f["geometry"]) for f in feats], float).reshape(-1, 4)
         dig = [sha(json.dumps(f, sort_keys=True)) for f in feats]
         if saved:

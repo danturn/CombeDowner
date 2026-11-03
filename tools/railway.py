@@ -593,7 +593,8 @@ def main():
     # the line), so it's the platform's canopy, at the platform's height, and the squares leave it out.
     canopies = []
     raised = [(poly.buffer(CANOPY_REACH), r1(level[n or k] + 0.9)) for k, (n, poly, _) in enumerate(plats) if level.get(n or k) is not None]
-    for f in json.load(open(os.path.join(src, "building.geojson")))["features"]:
+    for f in [f for l in ("building", "footprints") if os.path.exists(os.path.join(src, f"{l}.geojson"))
+              for f in json.load(open(os.path.join(src, f"{l}.geojson")))["features"]]:
         g = proj(shape(f["geometry"]))
         if not g.geom_type.endswith("Polygon") or not g.intersects(circle): continue
         for poly in getattr(g, "geoms", [g]):

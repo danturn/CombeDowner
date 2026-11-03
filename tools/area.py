@@ -9,7 +9,10 @@ Every tool takes a map id (a key of MAPS) and reads its settings with area(map_i
   centre, first match wins, and default_zone for everywhere else (see buildings.py);
 - view (x, y): what the menu backdrop circles around;
 - region (optional): ISO 3166-2 code, which decides which regional sources tools/new_area.py fetches
-  (England's if not given);
+  (England's if not given), and country (optional): ISO 3166-1 alpha-3;
+- footprints (optional): the sources of the buildings the buildings layer leaves out, best first
+  (tools/footprints.py): "survey" (the heights layer's outlines) and "google" (Google Open
+  Buildings, for the map's country); none if not given;
 - village (optional): what the middle 3 x 3 squares are called, where the map is named for more;
 - landmarks (optional): the name of its landmark pack in tools/landmarks/ (the map id if not given);
 - wide (optional): a much bigger circle round the detailed map. When a map has one, the force field
@@ -136,6 +139,8 @@ MAPS = {
         spawn="Company's Garden",
         default_zone="cape",                 # Gardens, Oranjezicht, Tamboerskloof, Vredehoek and Green Point
         region="ZA-WC",                      # ISO 3166-2: none of England's sources (tools/new_area.py)
+        country="ZAF",
+        footprints=("survey", "google"),     # OpenStreetMap is thin through Newlands and the southern suburbs
         z0=0,                                # sea level
         sea=0.0,                             # Table Bay's level: the ground below it is under the sea
         wide=dict(

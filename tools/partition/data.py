@@ -62,6 +62,8 @@ def _features(raw, name):
             feats = []
         else:
             feats = json.load(lzma.open(packed))["features"]
+        if name == "building":
+            feats = feats + _features(raw, "footprints")[0]
         # each feature's lon/lat envelope, computed once, so a window can be answered without
         # projecting anything: this is what keeps a worker to a window rather than the whole city
         bounds = [_lonlat_bounds(f["geometry"]) for f in feats]

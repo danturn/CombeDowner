@@ -225,6 +225,8 @@ def L(f):
     steps read the same layer; the properties are copied each time, so no step sees another's changes."""
     if f not in _layers:
         _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+        # the footprints the buildings layer lacks (tools/footprints.py) are buildings like any other
+        if f == "building" and os.path.exists(f"{src_dir}/footprints.geojson"): _layers[f] += L("footprints")
     return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
 
 
