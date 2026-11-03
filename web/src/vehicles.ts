@@ -926,8 +926,8 @@ export class Vehicle implements Mover {
     // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
     const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
     this.drift = !over && !S.crush && (kick || (this.drift && (hold || (hand && Math.hypot(vf, vl) > 0.5))));
-    // at speed it's a slide round the corner, turning as the wheel says, not a spin on the spot
-    if (this.drift && !fast) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
+    // at speed the nose still whips round as fast, while the car slides on the way it was going (below)
+    if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
     this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
     const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
     // the back wheels follow the front ones round a corner: the body turns about its back axle,
