@@ -1,7 +1,6 @@
 // Snapshots: a little picture of somewhere in the world, taken with the game's own renderer from a
 // camera put wherever it's wanted, and inked like an old explorer's sketch (sepia, a dark edge and
-// a paper border). The treasure trail (trail.ts) uses one as a picture clue: the view from near the
-// tin, to recognise. Taking one draws the scene once more into a corner of the screen just before
+// a paper border). The Chronicle (paper.ts) uses one as the photo for its lead story. Taking one draws the scene once more into a corner of the screen just before
 // the frame is drawn over it, so it costs one extra small render and nothing after.
 //
 // Who decides what: nobody. Each player takes their own pictures; nothing goes over the network.

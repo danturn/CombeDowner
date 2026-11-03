@@ -1,28 +1,30 @@
-// A Wanted poster's own screens, built from the treasure trail's boxes and paper (trailscreens.ts)
-// in the poster's red, the splash and the poster as cuttings from the Chronicle's police notices
-// (cutting.ts): the splash when the bounty starts (the poster itself, with how he looks as
-// pictures, his round of stops, the goes you have left, the clock, and how to catch him), and the
-// same poster brought back on the job control. The call-outs are the trail's (callout), and the end
-// is the race results card (racescreens.ts summary). The splash waits for you to read it, with a ×
+// A Wanted poster's own screens, in the race screens' look (racescreens.ts) and the poster's red,
+// the splash and the poster as cuttings from the Chronicle's police notices (cutting.ts): the
+// splash when the bounty starts (the poster itself, with how he looks as pictures, his round of
+// stops, the goes you have left, the clock, and how to catch him), the same poster brought back on
+// the job control, and a call-out banner across the middle when he gets away. The end is the race
+// results card (racescreens.ts summary). The splash waits for you to read it, with a ×
 // to put it away (Esc too), and the mouse let go while it's up (modal.ts).
 //
 // The pictures are drawn here as little SVGs, so there's nothing to load. Nothing here goes over the
 // network: wanted.ts says what to show from what it already knows.
+import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
 import { modal } from "./modal";
-import { box, fadeAfter, put } from "./trailscreens";
+import { style as raceStyle } from "./racescreens";
 import { cutFlag, tearOff } from "./cutting";
 
 export const RED = "#e04848";
 
 let styled = false;
 function style() {
+  raceStyle();
   if (styled) return;
   styled = true;
   const s = document.createElement("style");
   s.textContent = `
 .wsc.wsc{--rc:${RED}}
-.wsc.wsc .paper{font-size:clamp(14px,2.6vmin,19px);padding:6px 14px 10px;max-width:760px}
+.wsc.wsc .paper{font-size:clamp(14px,2.6vmin,19px);padding:6px 14px 10px}
 .wsc.wsc .wanted{font:900 clamp(30px,7vmin,58px)/.9 'Barlow Condensed',Impact,sans-serif;letter-spacing:.14em;color:#8a1a14;text-align:center}
 .wsc.wsc .who{font:800 clamp(18px,3.8vmin,30px)/1.05 'Barlow Condensed',Impact,sans-serif;text-align:center;color:#1b1b1d;margin:2px 0 4px}
 .wsc.wsc .cols{display:flex;gap:14px;align-items:flex-start;justify-content:center}
@@ -41,13 +43,71 @@ function style() {
 .wsc.wsc .arrow{font-size:1.3em;color:#7a2a12}
 .wsc.wsc .note{font:600 clamp(12px,2.2vmin,16px)/1.2 Georgia,serif;color:#1b1b1d;text-align:left;margin-top:3px}
 .wsc.wsc .note b{color:#8a1a14}
-.wsc.wsc ul{max-width:760px}
 .wsc.wsc .clock{font-weight:700;font-size:clamp(15px,3vmin,20px);color:var(--ink,#ffd84a)}
 @media (max-height:520px){.wsc.wsc .cols{gap:8px}.wsc.wsc .note{font-size:12px}.wsc.wsc .wanted{font-size:28px}.wsc.wsc .who{font-size:17px;margin:0 0 2px}
   .wsc.wsc .feat{width:52px}.wsc.wsc .feat svg{width:38px;height:38px}.wsc.wsc .stop svg{width:28px;height:28px}
   .wsc.wsc .note ~ .note{display:none}.wsc.wsc ul{font-size:11.5px;line-height:1.2;margin-top:3px}.wsc.wsc .again{font-size:13px;margin-top:2px}
-  .tsc-splash.wsc .paper{margin:4px auto 2px}.tsc-splash.wsc .clock{font-size:13px}}`;
+  .wsc-splash .clock{font-size:13px}}
+.wsc{transition:opacity .6s}
+.wsc.out{opacity:0}
+.wsc .band{animation:wsc-in .45s cubic-bezier(.2,1.5,.4,1) both}
+.wsc-splash{top:7%}
+.wsc-splash .band{width:min(840px,96vw);padding:12px 18px 14px}
+.wsc .paper{margin:10px auto 6px;box-sizing:border-box;background:#f4ecd4;color:#1b1b1d;text-shadow:none;
+  border:2px solid #000;box-shadow:0 0 0 3px var(--rc),0 8px 24px #000a;font-weight:600;font-family:Georgia,serif;line-height:1.25}
+.wsc ul{list-style:none;margin:6px auto 0;padding:0;text-align:left;font-weight:600;font-size:clamp(13px,2.5vmin,19px);line-height:1.3;color:#dde6ec}
+.wsc li{padding-left:1.1em;text-indent:-1.1em}
+.wsc li::before{content:'\\25B8  ';color:var(--rc)}
+.wsc .again{font-weight:800;font-size:clamp(14px,2.8vmin,21px);color:#ffd84a;margin-top:6px}
+.wsc .again b{color:#fff}
+.wsc-card{top:6%}
+.wsc-card .band{width:min(720px,96vw)}
+.wsc-call{top:27%}
+.wsc-call .head{color:#ffd84a;animation:wsc-pulse .5s ease-in-out 3 alternate}
+/* the splash and the poster as cuttings: newsprint words, and the poster in a dashed box, as a coupon */
+.rsc .band.cut{background:none;box-shadow:none;text-align:left;padding:16px 24px 18px;animation:cut-in .4s ease-out both}
+.wsc .cut .small{color:var(--muted);font-style:italic;font-weight:400}
+.wsc .cut .small b{color:var(--ink)}
+.wsc .cut .paper{max-width:none;margin:12px 0 10px;background:none;color:var(--ink);border:1px dashed var(--ink);box-shadow:none}
+.wsc .cut ul{max-width:none;margin:0;color:var(--ink);font-weight:400;font-size:clamp(13px,2.4vmin,16px)}
+.wsc .cut li{break-inside:avoid}
+.wsc .cut .again{color:var(--ink);font-weight:400;font-style:italic;font-size:14px;margin-top:8px}
+.wsc .cut .again b{color:var(--ink)}
+.rsc .cut b{color:var(--ink)}
+.wsc .cut li::before{content:'\\2013  ';color:var(--muted)}
+@media (max-height:520px){.wsc-splash{top:2%}.wsc ul{font-size:12px}.wsc .paper{padding:6px 12px 8px}}
+@keyframes wsc-in{from{transform:scale(1.6);opacity:0}to{transform:none;opacity:1}}
+@keyframes wsc-pulse{to{transform:scale(1.06)}}`;
   document.head.appendChild(s);
+}
+
+const layer = () => document.getElementById("hud") ?? document.body;
+
+function box(cls: string): HTMLDivElement {
+  style();
+  const e = document.createElement("div");
+  e.className = `rsc wsc ${cls}`;
+  e.hidden = true;
+  layer().appendChild(e);
+  return e;
+}
+
+const written = new WeakMap<HTMLElement, string>();
+/** Write a box, only when its words change: written afresh it would play its entrance again. */
+function put(e: HTMLElement, html: string) {
+  html = ctlText(html);
+  if (written.get(e) !== html) { written.set(e, html); e.innerHTML = html; }
+  e.classList.remove("out");
+  e.hidden = false;
+}
+
+/** Fade a box out after secs, unless it's put up again first. */
+function fadeAfter(e: HTMLElement, secs: number, timer: { t: number }) {
+  clearTimeout(timer.t);
+  timer.t = window.setTimeout(() => {
+    e.classList.add("out");
+    timer.t = window.setTimeout(() => { e.hidden = true; }, 600);
+  }, secs * 1000);
 }
 
 // ---- the pictures ------------------------------------------------------------------------------------
@@ -112,7 +172,7 @@ export function wantedSplash(o: (PosterInfo & { clock: string; rules: string[]; 
   if (!o) { clearTimeout(splashT.t); if (splashEl) splashEl.hidden = true; return; }
   style();
   missionCardDrop();
-  splashEl ??= box("tsc-splash wsc");
+  splashEl ??= box("wsc-splash");
   tearOff(splashEl);
   put(splashEl, `<div class="band cut">${cutFlag("Wanted · a bounty")}<div class="clock">${o.clock}</div>${posterHtml(o)}`
     + `<ul>${o.rules.map((r) => `<li>${r}</li>`).join("")}</ul><div class="again">${o.again}</div></div>`);
@@ -129,9 +189,24 @@ export function wantedPoster(o: (PosterInfo & { foot: string }) | null) {
   if (!o) { if (cardEl && !cardEl.hidden) cardEl.hidden = true; return; }
   style();
   if (splashUp()) wantedSplash(null);
-  cardEl ??= box("tsc-card wsc");
+  cardEl ??= box("wsc-card");
   tearOff(cardEl);
   put(cardEl, `<div class="band cut">${cutFlag("Wanted")}${posterHtml(o)}${o.foot ? `<div class="small">${o.foot}</div>` : ""}</div>`);
+}
+
+// ---- the call-out ------------------------------------------------------------------------------------
+
+let callEl: HTMLDivElement | null = null;
+const callT = { t: 0 };
+
+/** A banner across the middle for a few seconds. */
+export function callout(head: string, sub: string, secs = 3.5, colour = RED) {
+  callEl ??= box("wsc-call");
+  callEl.style.setProperty("--rc", colour);
+  // written afresh each time, so a second call-out punches in like the first
+  written.delete(callEl);
+  put(callEl, `<div class="band"><div class="head">${head}</div><div class="rsub">${sub}</div></div>`);
+  fadeAfter(callEl, secs, callT);
 }
 
 /** Everything of the bounty's down (it's over). */

@@ -104,7 +104,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
   and, when you're playing alone, a moment of slow-motion.
 - **The Flag Lads have a brew while you're busy.** When everyone in the room is on a job, a race,
-  a trail, the bonfire or any other minigame (alone, just you), the flags stop creeping and
+  the bonfire or any other minigame (alone, just you), the flags stop creeping and
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
   haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
@@ -125,11 +125,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
   screen) brings the poster back, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
-  hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
+  hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
-  has a biscuit tin (a short trail from the bar); the Gaffer cuffed, and his phone gives away the
-  square the Flag Lads are eyeing next; a chest dug up, and the flyer in it starts a race back to
-  the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
+  says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
+  away the square the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
   Races take entries (a big banner says who's in and counts down; on your own in the room it goes
@@ -147,22 +146,6 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
-  Treasure trails open with a big splash saying what you're after, any clock, how the search circle
-  works and the first clue, large (the big map, or the Clue button on a touch screen, brings the clue back), and end
-  on a results card like a race's. They don't give the answer away (no distances or compass from two
-  stars, and no search circle unless you ask a local: E shows what the hint gives and costs, and only
-  a second E pays; three hints a tin, each circle smaller and always with the tin well inside, and it
-  never shrinks by itself, with a countdown on your card to the next) and, together, have no clock:
-  each leg is worth three brass stars, and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
-  you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
-  look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
-  pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up by holding use or the Clue button, and talks
-  the others in), bearings (two look-outs, each showing whoever's up there a gold line
-  on the ground towards the tin; it's where they cross), clues split in two
-  (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
-  church bell or a busker's tune to follow by ear, a plaque whose table rules out all but one of the
-  tins round the corner, and twin tins to open in quick succession (with friends, or on your own if you're fast).
   Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
   pavement; if it's tight by the board, the board says where) and puts everyone in the middle of it.
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
@@ -170,11 +153,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   waves is always a box of rounds: more spare rifle rounds for everyone, instead of an upgrade.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
-  and it drops. A trail race lost to K leaves a hole and
-  her note, a riddle to where she hid the rosette within 150 m: dig at the right mound (hold E). A race
+  and it drops. A race
   nobody finished leaves a smug ghost: press E on the line and reach the last gate before it does. A
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
-  till 90% is covered. Bigger rooms get more to do: more ties, gates, mounds and tag, and
+  till 90% is covered. Bigger rooms get more to do: more ties, gates and tag, and
   tougher guards. Put one right for a prize.
 - **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
   flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.

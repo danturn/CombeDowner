@@ -144,7 +144,6 @@ import { Quests, type Perch, type QuestWorld } from "./quests";
 import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
 import "./wanted";
-import { myRosettes } from "./trail";
 import "./race";
 import "./gulls";
 import "./stunts";
@@ -567,7 +566,6 @@ export class Game {
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   readonly night: NightOut;                        // jobs that lead into each other, and last orders
   readonly scars: Scars;                           // what losing has left about the town today
-  private trailLines = new Map<string, number[]>();   // the treasure trail's bearing lines, on your own map alone
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
   private announcer = new Announcer();             // the station announcements (announce.ts)
   private joinNews = false;                         // the once-a-day showing of the Chronicle on joining stays up longer
@@ -1605,13 +1603,6 @@ export class Game {
     if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").innerHTML = text; }
   }
 
-  private setTrailLine(key: string | null, pts: number[] | null) {
-    if (!key) this.trailLines.clear();
-    else if (pts) this.trailLines.set(key, pts);
-    else this.trailLines.delete(key);
-    this.minimap.pencil = [...this.trailLines.values()].map((p) => ({ pts: p, colour: "#ffd84a", dash: true }));
-  }
-
   /** A pad's button while the map's up: true if the map took it. */
   mapPad(b: number, down: boolean): boolean {
     if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
@@ -1853,13 +1844,13 @@ export class Game {
   wearChanged() { this.hello(); }
 
   private hello(to?: string, ask = false) {
-    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket; wr: what you're wearing (wardrobe.ts)
+    // wr: what you're wearing (wardrobe.ts)
     // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
     const p = this.net.peers().filter((id) => this.known.has(id));
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p }, to);
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, wr: myWear(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, wr: myWear(), p }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string; wr?: string }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number; wr?: string }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
@@ -1882,7 +1873,6 @@ export class Game {
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
-    r.avatar.setRosettes(String(d?.ro ?? ""));
     r.avatar.setWear(String(d?.wr ?? ""));
     // they've come back to our map (they took the train back): draw them again
     if (this.elsewhere.has(from)) {
@@ -4877,7 +4867,6 @@ export class Game {
       circle: (key, c) => this.quests.circle(key, c),
       ride: (kind) => { this.giveRide(kind); if (!this.riding) this.toggleRide(); },
       reward: (what) => { if ((RIDES as readonly string[]).includes(what)) this.giveRide(what as RideKind); },
-      announce: () => this.hello(),
       moveTo: (x, z, yaw) => {
         if (this.ride) this.getOut();
         this.letGo();
@@ -4896,8 +4885,6 @@ export class Game {
       hear: (x, y, z) => this.hear(x, y, z),
       dust: (x, y, z, nx, nz) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 80) this.effects.dust(new THREE.Vector3(x, y, z), new THREE.Vector3(nx, 0, nz)); },
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
-      pencil: (key, pts) => this.setTrailLine(key, pts),
-      wipe: () => this.setTrailLine(null, null),
       body: () => this.player,
       stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
       pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },

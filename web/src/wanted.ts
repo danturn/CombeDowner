@@ -34,8 +34,7 @@
 import * as SFX from "./audio";
 import { FEAT_ARITY, NAUGHTY, CRICKET, RUGBY, SOCIETY, look, withFeats } from "./naughtyboys";
 import { summary } from "./racescreens";
-import { callout } from "./trailscreens";
-import { wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
+import { callout, wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { inSafeZone } from "./safezones";

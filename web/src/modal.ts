@@ -1,7 +1,7 @@
 // Every card and sheet over the game has a × in its top right corner to put it away.
 //
 // The cards that come up by themselves and stop you to read them (the Chronicle's front page on
-// joining, a mission's end card, a race's or a trail's results, a treasure hunt's or a bounty's
+// joining, a mission's end card, a race's results, a bounty's
 // opening poster, the night out's front page, the driving test's report, the Art Gallery's verdict,
 // the fly-over when a zone opens) go through modal(): Esc (or a pad's Options button) puts the top
 // one away too, and while one is up the mouse is let go, as it is for the big map, so you can click

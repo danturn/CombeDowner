@@ -1041,7 +1041,7 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
 #hud:has(#touch:not([hidden])) #t-torch { position: static; grid-area: torch; }
 #hud:has(#touch:not([hidden])) #t-fire { align-self: center; }
 #hud:has(#touch:not([hidden])) :is(#t-bino, #t-torch, #t-radio, #t-view) { width: 46px; height: 46px; font-size: 12px; }
-/* a job's own buttons (Poster, Clue, Dig, Again), in a column beside the minimap */
+/* a job's own buttons (Poster, Again), in a column beside the minimap */
 #textra { position: absolute; right: calc(22px + 168px + 16px + var(--sr, 0px)); top: 56px; display: flex; flex-direction: column; gap: 8px; }
 
 @media (max-width: 700px), (max-height: 500px) {
