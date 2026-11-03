@@ -237,16 +237,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down through the lock above. Barrels lost make a worse result. With four or more of you a second
   boat comes up the flight the other way, sharing the water and the locks.
 - **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
-  steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
-  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
+  steepest stretch of street on the map, 100 to 200 metres of it (in Bath, Perrymead, Hodshill,
+  Rosemount Lane and the like; Whiteheads Lane in Bradford-on-Avon; Longmarket Street in Cape Town),
+  and it has to be pushed to the top. It stands
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
-  to start. E (Use) at its back puts your hands to it (you lean in low, your hands flat on the panel,
-  shoving on each heave and shaking when you tire, with the road and the hill either side) and you go with it, looking about as you like, till you press E
+  to start. E (Use) at its back puts your hands to it, and the view eases out behind you so you see
+  yourself bent to it with your mates and the bus going up the hill; you go with it, looking about as you like, till you press E
   again or step back (S). Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
   sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
-  right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
-  too late, a good heave). It counts for more when you all heave together. Steady shoving soon tires,
+  on it for a surge, or shout "HEAVE!" into your mic. The bar shows how close you need to be: dead
+  on, in the thin green band, is PERFECT! and shoves it on hard; in the yellow is Good; in the orange,
+  a bit early or late, it's scrappy and does hardly anything; and further off you've missed, lose your
+  grip for a moment and it drops back. A shout gets a little more leeway than a press. Heaving
+  together counts for more the better you each time it: a beat you all get perfect is PERFECT
+  TOGETHER! and a big extra shove, while a beat most of you botch lets it slip back. Steady shoving soon tires,
   so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
   from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
   own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
