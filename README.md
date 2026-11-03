@@ -113,9 +113,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
-- **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, dressed as the
-  poster shows (a coloured jacket, maybe a hat, a bag or a dog), doing his round of a pub, a park
-  and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
+- **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
+  of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
   you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the
   screen), and a paintball hit winds him. Get right up to him and press E (the pad's use button, or
   Use on a touch screen) to cuff him. Fall 80 m behind for a few seconds, or let a chase go past two
