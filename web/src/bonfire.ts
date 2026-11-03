@@ -637,6 +637,13 @@ export class Bonfire {
 
   // ---- your E key ----
 
+  /** Where the bundle E would pick up is, so the game can tell whether you're looking at it; or null. */
+  useAt(me: Player): { x: number; y: number; z: number } | null {
+    if (!this.ready || !me.alive || !this.wanted() || this.carriers.has(me.id)) return null;
+    const i = this.bundleAt(me);
+    return i < 0 ? null : { x: this.spots[i].x, y: this.spots[i].y + 0.3, z: this.spots[i].z };
+  }
+
   /** E: pick up the bundle at your feet. Returns true if E was for that. */
   use(me: Player, isHost: boolean): boolean {
     if (!this.ready || !me.alive || !this.wanted() || this.carriers.has(me.id) || performance.now() - this.asked < 700) return false;

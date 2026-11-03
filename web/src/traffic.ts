@@ -874,13 +874,13 @@ export class Traffic {
   }
 
   /** A car that's stopped or crawling within reach of (x, z): its number and what it is. */
-  nearest(x: number, z: number, y: number, reach: number): { n: number; name: string } | null {
-    let best: { n: number; name: string } | null = null, bd = reach;
+  nearest(x: number, z: number, y: number, reach: number): { n: number; name: string; x: number; z: number } | null {
+    let best: { n: number; name: string; x: number; z: number } | null = null, bd = reach;
     for (const c of this.cars.values()) {
       if (c.wreck || c.v > 5 || Math.abs(c.y - y) > 2.5) continue;
       const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
       const d = Math.hypot(Math.max(0, Math.abs(dx * cs - dz * sn) - c.hl), Math.max(0, Math.abs(dx * sn + dz * cs) - c.hw));
-      if (d < bd) { bd = d; best = { n: c.n, name: c.name }; }
+      if (d < bd) { bd = d; best = { n: c.n, name: c.name, x: c.x, z: c.z }; }
     }
     return best;
   }
