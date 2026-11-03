@@ -601,7 +601,11 @@ without them (a row keeps its old roofs where the new ones don't fit the survey 
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
-walls or too tall, faces lying over each other and buildings standing in each other.
+walls or too tall, faces lying over each other and buildings standing in each other. Every roof is
+solid where it's drawn: you stand on the strips closing the slits between its faces, walk into its
+steps rather than through them, land on it however fast you fall, and stand on a building that
+reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run
+without a browser) drops a player on every point of a sample of roofs in each square to check.
 
 In England and Wales the 2021 Census says how many homes in each street are flats, terraced,
 semi-detached or detached, and the build follows it wherever the map data doesn't say, so a street
