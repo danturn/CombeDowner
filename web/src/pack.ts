@@ -134,11 +134,19 @@ export async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return gunzipSync(bytes);
 }
 
+let offMain: ((bytes: Uint8Array) => Promise<any>) | null = null;
+/** Where the game reads a whole file off the main thread (parsesquare.ts sets it); without it,
+ *  fetchPacked reads it here. */
+export function readOffMain(f: (bytes: Uint8Array) => Promise<any>) { offMain = f; }
+
 /** A packed map file fetched and read, or null if there isn't one. Where only the JSON is there
  *  (a tool serving the map folder before the packs are made), that is read instead. */
 export async function fetchPacked(url: string, init?: RequestInit): Promise<any | null> {
   const res = await fetch(url, init).catch(() => null);
-  if (res?.ok && !/text\/html/.test(res.headers?.get?.("content-type") ?? "")) return unpack(await gunzip(new Uint8Array(await res.arrayBuffer())));
+  if (res?.ok && !/text\/html/.test(res.headers?.get?.("content-type") ?? "")) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return offMain ? offMain(bytes) : unpack(await gunzip(bytes));
+  }
   const json = url.replace(/\.pack\.gz$/, ".json");
   if (json === url) return null;
   const r2 = await fetch(json, init).catch(() => null);

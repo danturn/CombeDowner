@@ -46,7 +46,7 @@ export async function bundleGame(entry, src = path.join(WEB, "src")) {
   const esbuild = createRequire(path.join(WEB, "package.json"))("esbuild");
   const viteOnly = { name: "vite-only", setup(b) {
     b.onResolve({ filter: /\?worker/ }, (a) => ({ path: a.path, namespace: "stub" }));
-    b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "export default class { postMessage() {} terminate() {} }", loader: "js" }));
+    b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "export default class { constructor() { throw new Error(\"no workers in Node\"); } }", loader: "js" }));
   } };
   const out = path.join(os.tmpdir(), `node_game_${process.pid}_${Date.now()}.mjs`);
   await esbuild.build({ stdin: { contents: entry, resolveDir: path.resolve(src), loader: "ts" }, nodePaths: [path.join(WEB, "node_modules")], bundle: true, platform: "node", format: "esm", outfile: out, logLevel: "error", plugins: [viteOnly],

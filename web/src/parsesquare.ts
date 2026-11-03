@@ -9,6 +9,7 @@
 // Nothing here goes over the network: it reads the file the game already fetches.
 import ParseSquare from "./parsesquare.worker?worker&inline";
 import { readSquare } from "./sfpack";
+import { readOffMain } from "./pack";
 
 /** The message a square's worker sends back: the square it is, and the object or what went wrong. */
 export interface Parsed {
@@ -115,3 +116,7 @@ export class SquareParser {
     this.live = 0;
   }
 }
+
+// the whole-city map and the ground kinds are read the same way, off the main thread, as the game starts
+const files = new SquareParser(1, 5000);
+readOffMain((bytes) => files.parse(0, 0, bytes).then((p) => { if (p.error !== undefined) throw new Error(p.error); return p.data; }));
