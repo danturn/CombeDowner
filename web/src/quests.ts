@@ -366,6 +366,8 @@ const IN_BATH = 9;             // and this many anywhere else in the force field
 const VILLAGE = 1300;          // metres from Firs Field that count as round the village
 const SHOWN = 360;             // a noticeboard is built when you're this close, and taken down past SHOWN + 60
 const READ = 7;                // how close to read it
+const BOARD_MID = 1.55, BOARD_HALF = 0.75;  // the poster's height up the board, and half its width, for looking at it
+const LOOK_AT = 0.17;                      // radians off its edge that still count as looking at it, as for E (game.ts)
 const TAKE = 3.2;              // and to take it
 const DONE_KEY = "cd-jobs-done";
 
@@ -664,9 +666,20 @@ export class Quests {
 
   /** Stood reading a noticeboard (the Chronicle's pinned up on every one). */
   atBoard(): boolean {
+    const p = this.readingPost();
+    return !!p && !p.kind.challenge;
+  }
+
+  /** The noticeboard you're stood at and looking at: its poster only comes up when it's what you're
+   *  reading, not whenever you walk past within reach. */
+  private readingPost(): Post | undefined {
     const me = this.w.me();
     const p = me.alive ? this.postAt(me.x, me.z, READ) : undefined;
-    return !!p && !p.kind.challenge;
+    if (!p) return undefined;
+    const l = this.w.look(), y = p.wait ? me.y + 1 : (p.y ?? me.y) + BOARD_MID;
+    const dx = p.x - l.x, dy = y - l.y, dz = p.z - l.z, d = Math.hypot(dx, dy, dz) || 1e-6;
+    const off = Math.acos(Math.max(-1, Math.min(1, (dx * l.dx + dy * l.dy + dz * l.dz) / d))) - Math.atan2(BOARD_HALF, d);
+    return off < LOOK_AT ? p : undefined;
   }
 
   private distTo(p: Post, x: number, z: number) { return p.wait ? p.wait.dist(x, z) : Math.hypot(p.x - x, p.z - z); }
@@ -950,7 +963,7 @@ export class Quests {
         this.stageKey = st.key;
       } else if (!st && this.stageKey === null) this.stageKey = "";
     } else missionClear("job");
-    const p = this.postAt(me.x, me.z, READ);
+    const p = this.readingPost();
     let poster = "";
     if (p && this.job?.offer.seed !== p.offer.seed) {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
