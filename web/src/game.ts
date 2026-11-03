@@ -112,7 +112,7 @@ import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
+import { clockAt, clockLink, dawnSkip, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say, setHidden, setStyle } from "./show";
@@ -823,14 +823,14 @@ export class Game {
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     this.listen("hello", (d, from) => this.onHello(d, from));
-    // the debug panel's "+3 hours" (daylight.ts): the host moves the game's clock on and tells
-    // everyone; anyone else asks the host
+    // the game's clock (daylight.ts): the host's, set at dawn when their game started and moved on
+    // by the debug panel or a train journey, goes to everyone; anyone else asks the host to move it
     this.listen("clk", here((d, from) => {
       if (!Array.isArray(d) || typeof d[1] !== "number") return;
       if (d[0] === "add" && this.isHost) { setSkip(getSkip() + d[1]); this.net.send("clk", ["set", getSkip()]); }
       else if (d[0] === "set" && from === this.hostId && !this.isHost) setSkip(d[1]);
     }));
-    setSkip(carry?.skip ?? 0);   // a new game starts on the shared time, until its host says otherwise; a journey keeps it
+    setSkip(carry?.skip ?? dawnSkip());   // a new game starts at dawn, until its host says otherwise; a journey keeps its clock
     clockLink.ask = (h) => {
       if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
       else this.net.send("clk", ["add", h], this.hostId);
@@ -1869,6 +1869,7 @@ export class Game {
     }
     // someone whose game has just started: tell them where the vehicles are
     if (d?.ask && this.vhKnown) this.net.send("vh", this.vehicles.snapshot(), from);
+    if (d?.ask && this.isHost) this.net.send("clk", ["set", getSkip()], from);
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }

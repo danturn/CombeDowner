@@ -75,7 +75,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and scrub grown as low rounded shrubs, many in flower (drifts of heather purple and pink, and
   fynbos yellow, pink and white), sand on the beaches and rushes in a marsh, from the map down to the
   minimap and the mountains on the skyline. South of the equator (Cape Town) the sun crosses the
-  northern sky, so slopes facing north are the sunny ones.
+  northern sky, so slopes facing north are the sunny ones. A whole day goes by every 24 minutes,
+  and the game always opens, and every new game starts, at seven in the morning with the sun just
+  up; everyone in a game sees the same time.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions; bus shelters only at the stops that have one, and the
