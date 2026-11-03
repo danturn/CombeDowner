@@ -164,8 +164,8 @@ export class Lineup {
     }
     const spot = this.spots[k];
     if (was && this.mine && Math.hypot(spot.x - this.mine.x, spot.z - this.mine.z) < 0.5) return;
-    this.mine = spot;
     if (!this.w.me().alive) return;
+    this.mine = spot;
     this.w.reset?.();
     this.w.moveTo(spot.x, spot.z, spot.yaw);
     this.cfg.ready?.(this.offer, this.w);
