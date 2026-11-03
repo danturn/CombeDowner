@@ -15,8 +15,8 @@ The main track is Dan's: stay byte-identical and get the speed by reordering, re
 refactoring, so that shared work is done once. The (c) items are listed separately, as an option.
 
 Everything here was measured at `937402f5` (the combined branch with build-speed merged), in the
-worktree `cd-onepass` on branch `claude/one-pass-plan`. The prototypes on that branch are not
-merged.
+worktree `cd-onepass` on branch `claude/one-pass-plan`. The prototypes (A1, A2, G2) are now
+merged; "As landed" below has their timings on the rebuilt maps.
 
 ## The short answer
 
@@ -45,6 +45,28 @@ guesses with the partition's own answers, which is (c).
 
 Cape Town is a different case. Its partition is dominated by one bug-shaped cost (the "giant
 block", below), and fixing that is the biggest single saving on any map.
+
+## As landed (on `7c215cc9`, every map rebuilt)
+
+A1, A2 and G2 were brought onto `7c215cc9`, the commit with every map rebuilt. With the A1 change
+below, every file under `web/public/maps` and `data/<map>` comes out byte-identical to that
+commit's, on all four maps. Each map was built cold (fresh unpack, empty store) with the README's
+full command, under `slot.sh --both`. Times are wall seconds / CPU seconds (user + sys):
+
+| map | `7c215cc9` | A1 + A2 + G2 | A1 with the squares niced, + A2 + G2 |
+|---|---|---|---|
+| Bradford-on-Avon | 116 / 741 | 98 / 713 | 114 / 801 |
+| Hackney | 218 / 1,717 | 210 / 1,835 | 224 / 1,865 |
+| Cape Town | 1,271 / 12,983 | 1,361 / 11,652 | 1,063 / 11,304 |
+| Bath | 729 / 8,235 | 785 / 8,109 | 779 / 8,324 |
+
+On this commit, A1 as prototyped slowed the big maps. Both phases use every core, so the passes
+(the longer road) lost the CPU they needed to prep_map's squares. On Cape Town, `pieces` went from
+91 s to 309 s and `structures` from 406 s to 687 s. prep_map's squares now run at `nice 10` while
+the passes run beside them. That makes Cape Town 16% faster than before. Bath is no faster: its
+divide is better balanced than it was on `937402f5`, so there are few idle cores for the squares to
+fill. The small maps are within run-to-run noise. Other agents share the machine outside the slots,
+so take a single run's time to within about 5–10%.
 
 ## How it was measured
 
