@@ -2033,7 +2033,7 @@ export class Game {
         const them = DECKED[c?.kind ?? NAUGHTY] ?? DECKED[NAUGHTY];
         const how = d.w === RUN ? "ran over" : d.w === BLAST ? "sent flying" : d.m ? "decked" : gore() ? anyOf(NAUGHTY_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
+        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true, c?.kind); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
       }
     }
     if (d.k === "kdmg" || d.k === "kkill") {
