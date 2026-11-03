@@ -265,7 +265,7 @@ def main():
         with open(log, "w") as f:
             earlier = ["--buildings-from", out_of(t)] if keep and os.path.exists(out_of(t)) else []
             measured = ["--measure" if measure else "--measured", os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")]
-            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier, *measured],
+            r = subprocess.run([*yield_to_passes, sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier, *measured],
                                stdout=f, stderr=subprocess.STDOUT)
         secs = time.time() - t0
         if r.returncode == 0 and os.path.exists(tmp):
@@ -282,8 +282,14 @@ def main():
     # the busiest squares start first, so the pool doesn't end waiting on one
     size = lambda t: sum(os.path.getsize(os.path.join(split_of(t), n)) for n in os.listdir(split_of(t))
                          if n.endswith(".geojson")) if os.path.isdir(split_of(t)) else 0
+    passes, yield_to_passes = None, []
+    if staged and shard is None:
+        passes = subprocess.Popen(partition_cmd(map_id, src_dir, out_dir, only, jobs) + ["--passes-only"])
+        # the passes are the longer road, so the squares take the cores they leave idle
+        yield_to_passes = ["nice", "-n", "10"]
     with ThreadPoolExecutor(jobs) as pool:
         list(pool.map(build, sorted(todo, key=lambda t: -size(t))))
+    print(f"prep_map's squares built in {time.time() - start:.0f}s", flush=True)
 
     # ---- across the seams: a shrub one square planted where its neighbour's gate, front path or
     # drive comes in goes, so the way through stays clear from square to square
@@ -305,7 +311,7 @@ def main():
     # ---- the partition, over every square prep_map has built -------------------------------------
     stage_failed = 0
     if staged and shard is None:
-        stage_failed = run_partition(map_id, src_dir, out_dir, only, jobs)
+        stage_failed = passes.wait() or subprocess.run(partition_cmd(map_id, src_dir, out_dir, only, jobs) + ["--passes-done"]).returncode
     elif staged:
         print(f"partition: not run on a share of the squares; gather the shares' {prep_out} and run --partition-only")
 
@@ -321,10 +327,13 @@ def main():
     if failed or stage_failed: sys.exit(1)
 
 
-def run_partition(map_id, src_dir, out_dir, only, jobs):
+def partition_cmd(map_id, src_dir, out_dir, only, jobs):
     cmd = [sys.executable, "-I", os.path.join(TOOLS, "partition", "stage.py"), map_id, src_dir, out_dir, "--jobs", str(jobs)]
-    if only: cmd += ["--only", *(f"{a},{b}" for a, b in only)]
-    return subprocess.run(cmd).returncode
+    return cmd + (["--only", *(f"{a},{b}" for a, b in only)] if only else [])
+
+
+def run_partition(map_id, src_dir, out_dir, only, jobs):
+    return subprocess.run(partition_cmd(map_id, src_dir, out_dir, only, jobs)).returncode
 
 
 def clear_doorsteps_unpartitioned(built, out_of):
