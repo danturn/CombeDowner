@@ -375,6 +375,16 @@ const $ = (id: string) => document.getElementById(id)!;
  *  itself, and the street outside is found on the way. rating: its food hygiene rating, 0 to 5. */
 interface Pub { name: string; x: number; z: number; yaw?: number; rating: number | null }
 
+// IDKFA, typed anywhere in play (not in a text box): a full load of rounds. One listener for the
+// page, pointed at whichever game is running, as the train builds a new Game for each town.
+let onIdkfa: (() => void) | null = null, idkfaTyped = "";
+addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) || e.key.length !== 1) return;
+  idkfaTyped = (idkfaTyped + e.key.toLowerCase()).slice(-5);
+  if (idkfaTyped === "idkfa") { idkfaTyped = ""; onIdkfa?.(); }
+});
+
 export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
@@ -622,6 +632,7 @@ export class Game {
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
+    onIdkfa = () => { if (!this.alive) return; this.weapon.fillUp(); SFX.pickup("ammo"); this.toast("IDKFA: very happy ammo added", 2.5); };
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
     // your Progression setting may have changed on the menu since the page opened
     setFeatures(myFeatures);
@@ -4192,7 +4203,8 @@ export class Game {
     const lining = this.sports.lining, filming = this.broadcast.on;
     if (this.useKey) {
       this.useKey = false;
-      if (!this.useHeld()) { const c = this.useChoice().pick; if (c) this.useOn(c); }
+      if (this.quests.enter()) { /* into a minigame while its entries are open, wherever you are */ }
+      else if (!this.useHeld()) { const c = this.useChoice().pick; if (c) this.useOn(c); }
     }
     // (a door found in a square that's just loaded goes on the maps)
     if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
@@ -4739,10 +4751,12 @@ export class Game {
     const stop = !ride && this.alive ? this.stopNear() : null;
     if (stop !== this.busStop) this.busMenu = 0;   // walked off: the menu goes
     const acts = (h: string) => h.includes("{use}") || h.includes("{again}");
+    // a minigame's entries open: E enters it, whatever you're in
+    const entry = this.quests.entering() ? this.quests.jobHint() : "";
     const job = !ride ? this.jobFirst() : "", odds = !ride ? this.invasion.hint() || this.scars.hint() : "";
     const goal = this.sports.goalCall, aloft = this.balloons.aboard >= 0;
     // what you're in or on, or a job on the go, has E to itself: nothing else is offered
-    const inUse = !!ride || !!tape || !!job || acts(odds) || goal || aloft || !!this.basket || !!helm;
+    const inUse = !!entry || !!ride || !!tape || !!job || acts(odds) || goal || aloft || !!this.basket || !!helm;
     const { pick, also } = inUse ? { pick: null, also: null } : this.useChoice();
     // something new in your hands: say what to do with it, for a moment
     const slotNow = this.carrying();
@@ -4754,7 +4768,8 @@ export class Game {
     // with nothing for E to do here, what there is to know: the job's word, the noticeboard's, the bonfire's
     const said = !ride ? this.quests.jobHint() || this.quests.board()?.text || odds : "";
     const wood = !ride && !car && this.alive ? this.oddments.hint(who) || this.bonfire.hint(who) : "";
-    const text = ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>{use}</b> to get out`
+    const text = entry ? entry
+      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>{use}</b> to get out`
       : tape ? tape
       : job ? job
       : acts(odds) ? odds
@@ -4993,6 +5008,23 @@ export class Game {
         this.sendState();
       },
       riding: () => (this.riding && this.alive ? this.held : null),
+      reset: () => {
+        if (this.ride) this.getOut();
+        if (this.balloons.aboard >= 0) this.balloons.leave(true);
+        if (this.basket) this.leaveBasket();
+        if (this.riding) this.dismount(false);
+        if (this.ladders.carriers.has(this.net.selfId)) this.askLadder({ op: "drop" });
+        if (this.oddments.carrying(this.net.selfId)) this.oddments.drop(this.woodMe(), this.isHost);
+        this.player.ladder = null;
+        this.aiming = this.binoculars = false;
+      },
+      heal: (id) => {
+        const s = this.entry(id);
+        if (!this.isHost || !s.alive || s.hp >= 100) return;
+        s.hp = 100;
+        if (id === this.net.selfId) this.hp = 100;
+        this.sendScores();
+      },
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
       ammo: (n) => {
         this.weapon.reserve = Math.min(MAX_RESERVE, this.weapon.reserve + n);

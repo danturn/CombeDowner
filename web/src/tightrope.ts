@@ -15,7 +15,8 @@
 // worries at each balloon on its own. More players means more walkers, a longer rope, a higher
 // climb and gustier wind.
 //
-// Who decides what: the host says when everyone's gathered and who does what ("go"), runs the
+// Who decides what: the host says when everyone who entered (lineup.ts) is gathered and who does
+// what ("go"), runs the
 // balloons nobody's flying and the drift of the pair ("b", "rig"), says whose turn it is, keeps the
 // team's lives ("lv" when one's lost, "back" when a faller's put back in the queue), and says when
 // it's won or out of lives ("down"). Each pilot flies their own balloon and says where it is ("b"). The walker
@@ -34,6 +35,7 @@ import type { GameMap } from "./map";
 import { openGround } from "./oddments";
 import { hearts, missionEnd } from "./missionscreens";
 import { hash, rng, shuffled, esc, type Card, type Job, type Perch, type QuestWorld, type Waiting } from "./quests";
+import { ring } from "./lineup";
 
 const COLOUR = "#e8743b";
 const GATHER = 40;             // how near the middle counts as being there
@@ -245,7 +247,14 @@ registerChallenge({
     ];
   },
   waiting({ offer, spots, w }) { return waitingPair(offer.seed, spots, w); },
-  start({ offer, spots, w }) {
+  // gathered on the grass, looking at the balloons
+  lineup: {
+    spots: ({ spots, w }, n) => {
+      const a = spots[1] ?? spots[0], b = spots[2] ?? a;
+      return ring(w.map, spots[0].x, spots[0].z, n, 2.4, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
+    },
+  },
+  start({ offer, spots, w, cast }) {
     const map = w.map, me = w.selfId, R0 = rng(offer.seed);
     const { cx0, cz0, ax, az, px, pz, yaw } = rig(spots);
     const designs = shuffled(R0, Array.from({ length: BALLOON_DESIGNS }, (_, k) => k)).slice(0, 2);
@@ -554,7 +563,7 @@ registerChallenge({
         if (job.done) return;
         const here = present();
         if (phase === "gather") {
-          const ps = w.players().filter((p) => p.alive);
+          const ps = w.players().filter((p) => p.alive && cast.includes(p.id));
           const near = ps.filter((p) => Math.hypot(p.x - cx0, p.z - cz0) < GATHER);
           gather = { near: near.length, all: ps.length };
           if (near.length) firstT += dt; else firstT = 0;
@@ -674,7 +683,8 @@ registerChallenge({
       card(): Card {
         const total = walkers.length, done = crossed.size;
         if (phase === "gather") {
-          const { near, all } = gather.all ? gather : { near: w.players().filter((p) => Math.hypot(p.x - cx0, p.z - cz0) < GATHER).length, all: w.players().length };
+          const mine = w.players().filter((p) => cast.includes(p.id));
+          const { near, all } = gather.all ? gather : { near: mine.filter((p) => Math.hypot(p.x - cx0, p.z - cz0) < GATHER).length, all: mine.length };
           return { line: `Everyone to ${esc(offer.where || "the field")}`, sub: "The balloons go up once you're all there", progress: `${near} / ${all}` };
         }
         const lv = hearts(lives, most);

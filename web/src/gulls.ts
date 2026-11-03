@@ -5,7 +5,7 @@
 // out on the nearest open ground (a green, a square, a wide pavement: clear and flat all round, with
 // sky above, found by asking the map; up to 150 m off if it's tight by the board, and the board says
 // where), with three tourists on them (one more for each extra player), each with a sandwich of three
-// bites. Everyone is put in the middle of the ring, facing a tourist, and each tourist has a pin over
+// bites. Everyone who entered (lineup.ts) is put in the middle of the ring, and each tourist has a pin over
 // them, seen through anything, green to red as their sandwich goes and flashing while a gull's after
 // it; the ring is on the maps too. The tourists are people (gullfolk.ts): they point out gulls
 // coming in, wave their arms and shoo one that comes for them (or beckon you over if you're far
@@ -50,16 +50,17 @@
 //
 // Losing leaves no mark on the town: the gulls just go.
 //
-// Who decides what: the host picks where the benches go, runs the gulls, the tourists, the waves
-// and Big Lad, and sends their state round about 10 times a second as "qe" (with what just
-// happened, for the sounds and feathers); everyone else draws that, smoothed. Shots at gulls,
-// shouts, stares, chips and crates go to the host as "qe" from whoever did them. Where seagull muck
-// lands goes round, and each player sees for themselves whether it got them. Each player moves
-// themselves into the middle when the benches' place first comes round, and tops up their own gun
-// when the ammo pack comes round (an effect older pages don't know, so they just don't). What's in
-// a wave and where it's from go round with the state, for the banner. The tourists' moods and lines
-// are each screen's own, from the state. A go of your own (Backspace afterwards) runs it all on
-// your machine and sends nothing.
+// Who decides what: the host sets the benches out where the poster puts them, runs the gulls, the
+// tourists, the waves and Big Lad, and sends their state round about 10 times a second as "qe"
+// (with what just happened, for the sounds and feathers); everyone else draws that, smoothed. Shots
+// at gulls, shouts, stares, chips and crates go to the host as "qe" from whoever did them. Where
+// seagull muck lands goes round, and each player sees for themselves whether it got them. Where the
+// benches go comes from the poster alone, so lineup.ts puts everyone who entered in the middle of
+// them before the host has set them out. Each player tops up their own gun when the ammo pack comes
+// round (an effect older pages don't know, so they just don't). What's in a wave and where it's
+// from go round with the state, for the banner. The tourists' moods and lines are each screen's
+// own, from the state. A go of your own (Backspace afterwards) runs it all on your machine and
+// sends nothing.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { ball, box, part, type Piece } from "./avatar";
@@ -69,6 +70,7 @@ import { type Mood, Sitters } from "./gullfolk";
 import { clearSpot } from "./haunts";
 import { type Card, type Job, type Offer, type PostSpot, type Quarry, type QuestWorld, type Rng, compassWord, esc, far, hash, registerJob, rng, starText } from "./quests";
 import { count as wardCount, earn } from "./wardrobe";
+import { ring } from "./lineup";
 import type { Follow } from "./weapon";
 
 const COLOUR = "#8fd0f0";
@@ -197,7 +199,9 @@ registerJob({
     }
     return said ? `<p>It's tight round here, so the benches go out on open ground ${esc(said)}: you start in the middle of them.</p>` : "";
   },
-  start: (o, w, _started, _by, local) => new Seagulls(o, w, !!local),
+  // everyone in the middle of the benches, facing out at them
+  lineup: { spots: (o, w, n) => { const c = benchesAt(w.map, o); return ring(w.map, c.x, c.z, n, 1.8, "out"); } },
+  start: (o, w, _started, _by, local, cast) => new Seagulls(o, w, local, cast),
 });
 
 function bestAt(where: string): number {
@@ -212,6 +216,25 @@ function keepBest(where: string, score: number) {
 
 /** A test for whether a spot's clear of the streets round (x, z): not in a building or a wall, and
  *  off the carriageway (footpaths are fine), so the benches go on a pavement, a green or a square. */
+/** Where the ring of benches goes: the nearest open ground, or failing that the roomiest spot round
+ *  the board, as best it can. The same from the poster on every screen. */
+function benchesAt(map: GameMap, o: Offer): { x: number; z: number } {
+  const open = openGround(map, o.x, o.z);
+  if (open) return open;
+  let cx = o.x, cz = o.z;
+  const ok = spotTest(map, cx, cz, 50), r = rng(o.seed ^ 0xbe5c);
+  const a0 = r() * Math.PI * 2;
+  let best = -1;
+  for (const d of [8, 12, 16, 5, 20]) for (let k = 0; k < 10; k++) {
+    const a = a0 + (k / 10) * Math.PI * 2, x = o.x + Math.cos(a) * d, z = o.z + Math.sin(a) * d;
+    let n = ok(x, z) ? 2 : 0;
+    for (let m = 0; m < 12; m++) if (ok(x + Math.cos(m * 0.52) * RING, z + Math.sin(m * 0.52) * RING)) n++;
+    if (n > best) { best = n; cx = x; cz = z; }
+  }
+  if (best < 2) { const c = clearSpot(map, cx, cz, 10); if (c) { cx = c[0]; cz = c[1]; } }
+  return { x: cx, z: cz };
+}
+
 function spotTest(map: GameMap, x: number, z: number, r: number) {
   // the carriageway's pieces, filed by 16 m square so each test only looks at those nearby
   const B = 16, near = new Map<number, number[][]>();
@@ -536,10 +559,10 @@ class Seagulls implements Job {
   private shoutT = 0;
   private seenTourists = "";
   private badges: THREE.Points;      // one over each tourist, seen through anything, so you can find them
-  private placed = false;            // you've been put in the middle of the benches
+  private placed = false;            // the benches' place has come round
   private markedAt = "";
 
-  constructor(readonly offer: Offer, private w: QuestWorld, private local: boolean) {
+  constructor(readonly offer: Offer, private w: QuestWorld, private local: boolean, private cast: string[]) {
     this.r = rng(offer.seed ^ 0x5eaf00d);
     this.mod = offer.mode ?? 0;
     this.S = { w: 0, ph: 0, t: FIRST, sc: 0, cx: offer.x, cz: offer.z, tr: [], up: [], ch: 0, chip: null, loud: false, clean: true, bc: true, won: false, wa: 0, wn: [] };
@@ -594,23 +617,10 @@ class Seagulls implements Job {
 
   private setUp() {
     const w = this.w, S = this.S, r = this.r;
-    const open = openGround(w.map, this.offer.x, this.offer.z);
-    let cx = open?.x ?? this.offer.x, cz = open?.z ?? this.offer.z;
+    const { x: cx, z: cz } = benchesAt(w.map, this.offer);
     const ok = spotTest(w.map, cx, cz, 50);
-    if (!open) {
-      // nowhere properly open near: the roomiest spot round the board, as best it can
-      const a0 = r() * Math.PI * 2;
-      let best = -1;
-      for (const d of [8, 12, 16, 5, 20]) for (let k = 0; k < 10; k++) {
-        const a = a0 + (k / 10) * Math.PI * 2, x = this.offer.x + Math.cos(a) * d, z = this.offer.z + Math.sin(a) * d;
-        let n = ok(x, z) ? 2 : 0;
-        for (let m = 0; m < 12; m++) if (ok(x + Math.cos(m * 0.52) * RING, z + Math.sin(m * 0.52) * RING)) n++;
-        if (n > best) { best = n; cx = x; cz = z; }
-      }
-      if (best < 2) { const c = clearSpot(w.map, cx, cz, 10); if (c) { cx = c[0]; cz = c[1]; } }
-    }
     S.cx = cx; S.cz = cz;
-    this.players = this.local ? 1 : Math.max(1, w.players().length);
+    this.players = this.local ? 1 : Math.max(1, this.cast.length);
     const n = Math.min(6, 3 + this.players - 1) + (this.mod === 1 ? 1 : 0);
     // the benches round it, spread out, on the spots that are off the street
     const free = Array.from({ length: 24 }, (_, m) => (m / 24) * Math.PI * 2).filter((a) => ok(cx + Math.cos(a) * RING, cz + Math.sin(a) * RING));
@@ -1484,7 +1494,7 @@ class Seagulls implements Job {
     }
   }
 
-  /** Once the benches are out: the maps' marker on them, and everyone put in the middle. */
+  /** Once the benches are out: the maps' marker on them, and a word if they're away from the board. */
   private settle() {
     const S = this.S, w = this.w;
     if (!S.tr.length) return;
@@ -1496,18 +1506,9 @@ class Seagulls implements Job {
     }
     if (this.placed) return;
     this.placed = true;
-    // someone joining part way through finds their own way there
     if (S.w !== 0 || S.ph !== 0 || S.t < FIRST - 4) return;
     const said = whereSaid(w, this.offer.x, this.offer.z, S.cx, S.cz);
     if (said) w.toast(`Too tight by the noticeboard: the benches are out on open ground ${said}`, 4);
-    if (!w.me().alive) return;
-    const ids = this.local ? [w.selfId] : w.players().map((p) => p.id).sort();
-    const n = ids.length, a = (Math.max(0, ids.indexOf(w.selfId)) / n) * Math.PI * 2 + 0.4, d = n > 1 ? 1.8 : 0;
-    let x = S.cx + Math.cos(a) * d, z = S.cz + Math.sin(a) * d;
-    if (w.map.blocked(x, z, 0.4)) { x = S.cx; z = S.cz; }
-    const off = (t: Tourist) => Math.abs(Math.atan2(Math.sin(Math.atan2(t.z - S.cz, t.x - S.cx) - a), Math.cos(Math.atan2(t.z - S.cz, t.x - S.cx) - a)));
-    const facing = S.tr.filter((t) => !t.gone).sort((p, q) => off(p) - off(q))[0];
-    w.moveTo(x, z, facing ? Math.atan2(x - facing.x, z - facing.z) : 0);
   }
 
   host(dt: number) { if (!this.local) this.run(dt); }
