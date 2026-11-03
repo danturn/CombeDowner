@@ -2,14 +2,10 @@
 // lost (not one called off), or a pub the Flag Lads kept, leaves something behind where it happened:
 // - a pub kept by the Flag Lads: a cocky "WE RUN THIS" banner hung high outside, signed by the Gaffer
 //   (who has picked up a new trait for winning, in invasion.ts), with lads guarding it;
-// - a treasure trail race lost to K: a hole where she dug up the chest, with her note ("Too slow. — K");
 // - a race nobody finished: skid marks, and the winner's smug ghost idling on the line;
 // - anything else (a Wanted man who got away): his tag sprayed on the pavement.
 // Each one is a rematch of its own, suited to what was lost:
 // - banner: shoot every cable tie holding it up (small targets, up near the top) and it comes down;
-// - trail: K's note gives a riddle to where she hid the rosette she nicked, within 150 m; dig (hold E)
-//   at the right mound (the note's clue is plain compass directions and a distance, and the
-//   nearer you get the warmer the note gets);
 // - race: E on the line sets the smug ghost off along the streets through its gates; reach the last
 //   gate before it does;
 // - tag: hold fire (the touch fire button too) with the crosshair on the tag to spray over it, with
@@ -20,8 +16,6 @@
 // do and more to find, not more health on anything, except that the guards get a little tougher:
 // - banner: 3 + c cable ties (4 alone, 8 at most), guarded by 2 lads plus 1 for every 3 players,
 //   each with 25% more health for every other player;
-// - trail: the note's distance is 70 + 25c m (150 at most), and there are c - 1 other mounds that
-//   are only molehills (5 at most), in other directions;
 // - race: c gates (4 at most), 110 m apart along the streets; the ghost runs 5.2 m/s;
 // - tag: 2.4 + 0.8 (c - 1) m wide (6.4 at most).
 // Scars go on the maps as a grey "!", and they all go at midnight GMT, with the Flag Lads' season.
@@ -36,7 +30,7 @@
 // shared ones (cut ties, sprayed paint) goes round as "scr" with k "hit" so a team
 // can split the work, and the host sends it to a joiner; the host also brings the banner's guards
 // (naughtyboys.ts) once someone's near, and sends them home when it's put right. A page that
-// doesn't know "scr", or "hit", just sees no scars, or no progress. The race and the digging are
+// doesn't know "scr", or "hit", just sees no scars, or no progress. The race against the ghost is
 // yours alone: only the claim goes round.
 // Each player's morning paper (paper.ts) notes the scars it hears of and the ones put right, and
 // the big map rings the squares that have one (yours.ts).
@@ -53,7 +47,7 @@ import { gateModel, ghostModel } from "./race";
 import { type RacePath, along, racePath } from "./raceroute";
 import * as Paper from "./paper";
 
-export type ScarKind = "pub" | "trail" | "race" | "tag";
+export type ScarKind = "pub" | "race" | "tag";
 interface Scar { id: number; k: ScarKind; x: number; z: number; n: string; day: number; c: number }
 
 export interface ScarWorld {
@@ -81,8 +75,7 @@ export interface ScarWorld {
 const KEY = "cd-scars";           // plus the room and the day, so each room keeps its own and old days can go
 const MAX = 12;               // scars kept at once; the oldest goes first
 const SHOWN = 260;            // built this close, and taken down past SHOWN + 40
-const REACH = 4;              // how close to start digging or press E at one
-const WORK = 3;               // seconds of digging
+const REACH = 4;              // how close to press E at one
 const COLOUR = "#9a3b3b";
 const DAY = 24 * 3600 * 1000;
 const today = () => Math.floor(Date.now() / DAY);
@@ -99,8 +92,6 @@ const SPRAY_COLOUR = "#27d3ff";
 const ties = (c: number) => Math.min(8, 3 + c);
 const guardsFor = (c: number) => 2 + Math.floor(c / 3);
 const guardHp = (c: number) => Math.round(50 * (1 + 0.25 * (c - 1)));
-const decoysFor = (c: number) => Math.min(5, c - 1);
-const clueDist = (c: number) => Math.min(150, 70 + 25 * c);
 const gatesFor = (c: number) => Math.min(4, c);
 const tagWidth = (c: number) => Math.min(6.4, 2.4 + 0.8 * (c - 1));
 
@@ -111,28 +102,19 @@ const bits = (m: number) => { let n = 0; for (; m; m &= m - 1) n++; return n; };
 /** A job kind (quests.ts) as the kind of mark it leaves, or null for none (Seagull Attack's gulls
  *  just go). */
 export function scarKindOf(job: string): ScarKind | null {
-  return job === "gulls" ? null : job === "trail" ? "trail" : job === "race" ? "race" : "tag";
+  return job === "gulls" ? null : job === "race" ? "race" : "tag";
 }
 
 const VERB: Record<ScarKind, [string, string]> = {
   pub: ["Cut down the Flag Lads' banner", "cut down the Flag Lads' banner"],
-  trail: ["Find where K hid the rosette", "found K's rosette"],
   race: ["Beat the smug ghost", "beat the smug ghost"],
   tag: ["Spray over the tag", "sprayed over the tag"],
 };
 const SAID: Record<ScarKind, (n: string) => string> = {
   pub: (n) => `The Flag Lads kept ${n.split("|")[0]}, and they've hung a banner up high to say so`,
-  trail: () => "K dug up the chest first, and left a hole and a note",
   race: () => "The race's winner is idling on the line, looking smug",
   tag: (n) => `Lost "${n}", and there's a tag sprayed on the pavement to rub it in`,
 };
-
-// where K says to go: eight points of the compass, as a clue, and as a direction on the ground
-const WAYS = [
-  "straight at the Pole Star", "where the sun rises in June", "into the sunrise", "between sunrise and noon, in December",
-  "with the midday sun in your face", "where the sun sinks in December", "into the sunset", "where the sun sets in June",
-];
-const warmth = (d: number) => (d < 8 ? "scorching" : d < 25 ? "hot" : d < 60 ? "warm" : d < 120 ? "cool" : "cold");
 
 function lambert(c: string) { return new THREE.MeshLambertMaterial({ color: c }); }
 
@@ -176,21 +158,18 @@ interface View {
   tgts?: Tgt[];
   loc?: Float32Array;                       // targets' places in the group, to put right when one's gone
   tie?: THREE.InstancedMesh; banner?: THREE.Object3D;
-  mounds?: THREE.InstancedMesh; mx?: Float32Array; mTry?: number;
   gate?: THREE.Group[]; gateT?: number;
   ov?: CanvasRenderingContext2D; ovTex?: THREE.CanvasTexture; ovDirty?: boolean; wide?: number;
   extra: THREE.Object3D[];
 }
 
-const M4 = new THREE.Matrix4(), Q4 = new THREE.Quaternion(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3(0, 0, 0);
+const M4 = new THREE.Matrix4(), Q4 = new THREE.Quaternion(), P3 = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3(0, 0, 0);
 const DIR = new THREE.Vector3();
 
 export class Scars {
   private list: Scar[] = [];
   private views = new Map<number, View>();
-  private work: { id: number; t: number; i: number } | null = null;
   private near: Scar | null = null;
-  private nearI = -1;                         // the mound within reach, if the scar has them
   private focus: Scar | null = null;          // the scar the hint's about
   private t = 0;
   private gone = new Set<number>();   // put right today: kept so a stale copy can't bring one back
@@ -205,7 +184,6 @@ export class Scars {
   private outT = 0;
   private lastHiss = -1;
   private lastSpray = -1;
-  private riddles = new Map<number, string>();
   private hk = -1;
   private ht = "";
 
@@ -326,10 +304,9 @@ export class Scars {
   private drop(id: number) {
     this.list = this.list.filter((s) => s.id !== id);
     this.unbuild(id);
-    this.prog.delete(id); this.paint.delete(id); this.routes.delete(id); this.riddles.delete(id);
+    this.prog.delete(id); this.paint.delete(id); this.routes.delete(id);
     const gd = this.guards.get(id);
     if (gd) { for (const g of gd) this.w.naughtyBoys.release(g.i, g.gen); this.guards.delete(id); }
-    if (this.work?.id === id) this.work = null;
     if (this.run?.id === id) this.run = null;
   }
 
@@ -337,7 +314,7 @@ export class Scars {
   marks() { return this.list.map((s) => ({ x: s.x, z: s.z, what: SAID[s.k](s.n) })); }
 
   /** The maps' grey "!" for each. */
-  spots(): JobSpot[] { return this.list.map((s) => ({ x: s.x, z: s.z, colour: COLOUR, glyph: "!", label: s.k === "trail" ? `${VERB[s.k][0]}: ${this.riddle(s)}` : VERB[s.k][0] })); }
+  spots(): JobSpot[] { return this.list.map((s) => ({ x: s.x, z: s.z, colour: COLOUR, glyph: "!", label: VERB[s.k][0] })); }
 
   // ---- targets: cable ties ----------------------------------------------------------
 
@@ -463,36 +440,6 @@ export class Scars {
     if (p.covN >= p.inkN * COVER) { this.outbox.length = 0; this.claim(s.id); }
   }
 
-  // ---- K's riddle -------------------------------------------------------------------------------
-
-  /** Which way K's rosette is from the hole, and how far. */
-  private clue(s: Scar) {
-    const r = rng(hash("clue", s.id));
-    return { way: Math.floor(r() * 8), dist: Math.round(clueDist(s.c) / 10) * 10 };
-  }
-  private riddle(s: Scar) {
-    let t = this.riddles.get(s.id);
-    if (!t) {
-      const c = this.clue(s);
-      this.riddles.set(s.id, (t = `"Too slow. Go ${c.dist} metres ${WAYS[c.way]}, and dig where the earth's been turned. — K"`));
-    }
-    return t;
-  }
-
-  /** The mounds: the real one first, then the molehills, each in a way of its own. */
-  private moundsOf(s: Scar): [number, number][] {
-    const c = this.clue(s), r = rng(hash("moles", s.id)), out: [number, number][] = [];
-    const put = (way: number, d: number) => {
-      const a = (way * Math.PI) / 4, x = s.x + Math.sin(a) * d, z = s.z - Math.cos(a) * d;
-      const at = clearSpot(this.w.map, x, z, 8) ?? [x, z];
-      out.push([at[0], at[1]]);
-    };
-    put(c.way, c.dist);
-    const others = [0, 1, 2, 3, 4, 5, 6, 7].filter((w) => w !== c.way).sort(() => r() - 0.5);
-    for (let k = 0; k < decoysFor(s.c); k++) put(others[k], Math.max(40, c.dist + (r() - 0.5) * 60));
-    return out;
-  }
-
   // ---- the ghost ----------------------------------------------------------------------------------
 
   private routeOf(s: Scar): Route {
@@ -542,7 +489,7 @@ export class Scars {
       this.gone.clear(); this.prune(); this.save();
     }
     const me = this.w.me();
-    this.near = null; this.nearI = -1; this.focus = null;
+    this.near = null; this.focus = null;
     let best = 1e9, bestF = 1e9;
     for (const s of this.list) {
       const d = Math.hypot(s.x - me.x, s.z - me.z), v = this.views.get(s.id);
@@ -551,30 +498,12 @@ export class Scars {
       const view = this.views.get(s.id);
       if (view) this.animate(s, view, dt);
       if (!me.alive) continue;
-      const seen = s.k === "pub" ? 45 : s.k === "trail" ? 14 : s.k === "race" ? 8 : 16;
-      let reach = s.k === "race" ? REACH + 1 : s.k === "trail" ? 0 : REACH, ni = -1, dd = d;
-      if (view && s.k === "trail" && view.mx) {
-        const m = this.prog.get(s.id) ?? 0;
-        dd = 1e9; reach = REACH;
-        for (let i = 0; i < view.mx.length / 2; i++) {
-          const h = Math.hypot(view.mx[i * 2] - me.x, view.mx[i * 2 + 1] - me.z);
-          if (!(m & (1 << i)) && h < dd) { ni = i; dd = h; }
-        }
-      }
-      if (dd < reach && dd < best) { best = dd; this.near = s; this.nearI = ni; }
+      const seen = s.k === "pub" ? 45 : s.k === "race" ? 8 : 16;
+      const reach = s.k === "race" ? REACH + 1 : REACH;
+      if (d < reach && d < best) { best = d; this.near = s; }
       if (d < seen && d < bestF) { bestF = d; this.focus = s; }
     }
     if (this.near && !this.focus) this.focus = this.near;
-    if (this.work) {
-      const s = this.list.find((o) => o.id === this.work!.id);
-      if (!s || this.near !== s || this.nearI !== this.work.i) { this.work = null; }
-      else if ((this.work.t += dt) >= WORK) {
-        const i = this.work.i;
-        this.work = null;
-        if (i === 0) this.claim(s.id);
-        else { this.prog.set(s.id, (this.prog.get(s.id) ?? 0) | (1 << i)); this.w.toast("Just a molehill. Try another mound", 3); const v = this.views.get(s.id); if (v) this.mounded(s, v); }
-      }
-    }
     if (this.run) this.racing(dt, me);
     if ((this.outT -= dt) <= 0) {
       this.outT = 0.4;
@@ -630,17 +559,6 @@ export class Scars {
     if (s.k === "pub") {
       key = 1 + bits(m);
       if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Shoot the cable ties holding the banner up: ${bits(m)} of ${ties(s.c)} cut`; }
-    } else if (s.k === "trail") {
-      if (this.work) { key = 200 + Math.round((this.work.t / WORK) * 10); if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Digging… ${Math.round((this.work.t / WORK) * 100)}%`; } }
-      else if (this.nearI >= 0) { key = 300; if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = "Hold <b>{use}</b> to dig here"; } }
-      else {
-        const me = this.w.me(), v = this.views.get(s.id), real = v?.mx ? Math.hypot(v.mx[0] - me.x, v.mx[1] - me.z) : 1e9;
-        key = 400 + (real < 150 ? Math.floor(real / 5) : 500);
-        if (this.hk !== key * 1000 + s.id % 1000) {
-          this.hk = key * 1000 + s.id % 1000;
-          this.ht = `K's note: ${esc(this.riddle(s))}${real < 150 ? ` (${warmth(real)})` : ""}`;
-        }
-      }
     } else if (s.k === "race") {
       if (this.run) {
         const rt = this.routeOf(s), ahead = Math.round(rt.goal / GHOST_SPEED - this.run.t);
@@ -658,11 +576,10 @@ export class Scars {
     return this.ht;
   }
 
-  /** E pressed: start digging, or set the ghost off. */
+  /** E pressed: set the ghost off. */
   use(): boolean {
     const s = this.near;
-    if (!s || this.work) return false;
-    if (s.k === "trail" && this.nearI >= 0) { this.work = { id: s.id, t: 0, i: this.nearI }; SFX.dig(); return true; }
+    if (!s) return false;
     if (s.k === "race" && !this.run) {
       this.run = { id: s.id, t: 0, next: 0 };
       SFX.counterTick();
@@ -674,9 +591,7 @@ export class Scars {
 
   private animate(s: Scar, v: View, dt: number) {
     if (v.ghost && !(this.run?.id === s.id)) { v.ghost.position.y = 0.05 + Math.sin(this.t * 3) * 0.05; v.ghost.rotation.y = Math.sin(this.t * 0.7) * 0.4; }
-    if (s.k === "trail") {
-      if (!v.mounds && ((v.mTry = (v.mTry ?? 0) - dt) <= 0)) { v.mTry = 1; this.mounded(s, v); }
-    } else if (s.k === "race" && v.gate && (v.gateT = (v.gateT ?? 0) - dt) <= 0) {
+    if (s.k === "race" && v.gate && (v.gateT = (v.gateT ?? 0) - dt) <= 0) {
       v.gateT = 0.5;
       const rt = this.routeOf(s);
       v.gate.forEach((g, k) => { g.position.y = this.w.map.ground(rt.gates[k].x, rt.gates[k].z); g.visible = !this.run || k >= this.run.next; });
@@ -685,30 +600,13 @@ export class Scars {
 
   // ---- building -----------------------------------------------------------------------------------
 
-  /** The trail's mounds, once the ground they're on has loaded. */
-  private mounded(s: Scar, v: View) {
-    const pts = this.moundsOf(s);
-    if (!pts.every((p) => this.w.map.detailedAt(p[0], p[1]))) return;
-    const m = this.prog.get(s.id) ?? 0;
-    if (!v.mounds) {
-      v.mounds = new THREE.InstancedMesh(new THREE.SphereGeometry(0.8, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), lambert("#5b4632"), pts.length);
-      v.mx = new Float32Array(pts.length * 2);
-      v.g.add(v.mounds);
-    }
-    pts.forEach((p, i) => {
-      v.mx![i * 2] = p[0]; v.mx![i * 2 + 1] = p[1];
-      v.mounds!.setMatrixAt(i, M4.compose(P3.set(p[0] - s.x, this.w.map.ground(p[0], p[1]) - v.g.position.y, p[1] - s.z), Q4.identity(), m & (1 << i) ? ZERO : S3.set(1, 0.45, 1)));
-    });
-    v.mounds.instanceMatrix.needsUpdate = true;
-  }
-
   private build(s: Scar) {
     const map = this.w.map, y0 = map.ground(s.x, s.z), g = new THREE.Group(), r = rng(s.id);
     const ground = (x: number, z: number) => map.ground(x, z);
     const ban = s.k === "pub" ? bannerSpot(map, s.x, s.z) : null;
     g.position.set(ban ? ban.x : s.x, ban ? map.ground(ban.x, ban.z) : y0, ban ? ban.z : s.z);
     // things scattered on the ground are laid on it where they fall, so only the rest is turned about
-    if (s.k !== "race" && s.k !== "trail") g.rotation.y = r() * Math.PI * 2;
+    if (s.k !== "race") g.rotation.y = r() * Math.PI * 2;
     if (ban) g.rotation.y = ban.yaw;
     const v: View = { g, extra: [] };
     const cs = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
@@ -736,20 +634,6 @@ export class Scars {
       v.tie = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: "#ffd23a" }), n);
       g.add(v.tie);
       this.refresh(s, v, this.prog.get(s.id) ?? 0);
-    } else if (s.k === "trail") {
-      const hole = new THREE.Mesh(new THREE.CircleGeometry(0.75, 16), new THREE.MeshBasicMaterial({ color: "#1c140c" }));
-      hole.rotation.x = -Math.PI / 2; hole.position.y = 0.04;
-      const heap = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), lambert("#5b4632"));
-      heap.scale.y = 0.45; heap.position.set(1.3, 0, 0.2);
-      const stick = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.1, 0.05), lambert("#5a3d22"));
-      stick.position.set(-1, 0.55, 0);
-      const note = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.36), new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, map: lettering(256, 184, "#f4ecd4", [
-        { t: "Too slow.", font: "italic 700 48px Georgia, serif", c: "#222", y: 70 },
-        { t: "— K", font: "italic 600 40px Georgia, serif", c: "#7a1b1b", y: 132 },
-      ]) }));
-      note.position.set(-1, 1.05, 0.04);
-      g.add(hole, heap, stick, note);
-      this.mounded(s, v);
     } else if (s.k === "race") {
       g.add(scatter(r, 10, 6, [0.22, 0.01, 2.6], "#1a1a1a", ground, s.x, s.z));
       const ghostG = new THREE.Group();
@@ -819,6 +703,6 @@ export class Scars {
     for (const id of [...this.views.keys()]) this.unbuild(id);
     for (const gd of this.guards.values()) for (const g of gd) this.w.naughtyBoys.release(g.i, g.gen);
     this.guards.clear();
-    this.work = null; this.run = null;
+    this.run = null;
   }
 }

@@ -1,7 +1,7 @@
 // Jobs: things to do round Bath, a fresh set every game day (every 24 minutes). Each one is put up
 // on a noticeboard somewhere real (outside a pub, in a park or a square), with a ring of light at
 // its foot and a badge in the job's colour on the maps. Walk up to one to read it, and press E to
-// take it on: a Wanted poster, a treasure trail, a race and so on (each in its own file, which
+// take it on: a Wanted poster, a race, Seagull Attack and so on (each in its own file, which
 // registers itself here with registerJob).
 //
 // Who decides what: nobody, mostly. Where today's jobs are and what each one asks comes from the
@@ -11,9 +11,10 @@
 // seed. Every one starts the same way (lineup.ts): its entries open for everyone in the game,
 // then whoever entered is put in its game area for a title card and a countdown, and at GO the job
 // itself starts, knowing who's in. One job runs at a time; if two people take different jobs at
-// once, the first one taken wins. Taking a job, entering it, its line-up, its steps (a clue found,
+// once, the first one taken wins. Taking a job, entering it, its line-up, its steps (a wave beaten,
 // someone over the line) and calling it off (from the pause menu) all go round as "qe". The host
-// tells anyone who joins what job is on, who's in and how far it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
+// tells anyone who joins what job is on, who's in and how far it's got. Anything a job needs run
+// for it (a Wanted man and his crew) the host runs, through
 // the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
 // The job control (J, a hold of the pad's touchpad, Poster on a touch screen) brings back the
@@ -135,8 +136,6 @@ export interface QuestWorld {
   circle(key: string, c: Circle | null): void;
   /** Hand yourself a ride and get on it (the start of a race). */
   ride(kind: RideKind): void;
-  /** Say hello to everyone again, with anything new about you (a rosette from a trail). */
-  announce?(): void;
   /** Move yourself there (the start of a race), facing yaw. */
   moveTo(x: number, z: number, yaw: number): void;
   /** What you're riding, if you're on a ride. */
@@ -155,10 +154,6 @@ export interface QuestWorld {
   hear?(x: number, y: number, z: number): [number, number];
   /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
   dust?(x: number, y: number, z: number, nx: number, nz: number): void;
-  /** A line pencilled onto your own big map (scene x, z pairs), by key, or null to rub it out. */
-  pencil?(key: string, pts: number[] | null): void;
-  /** Rub out every pencil line on the map. */
-  wipe?(): void;
   /** Your own body, for a job that moves you itself (The Climb's holds: theclimb.ts). */
   body?(): Player;
   /** Where the stick (a pad's or the touch screen's) is pushed, -1..1 each way, x to the right. */
@@ -218,7 +213,7 @@ export interface Card {
   line: string; sub?: string; bar?: number;
   /** How far you've got in a few characters ("2 / 5"), and the clock if the job has one. */
   progress?: string; timer?: string;
-  /** Where the job has got to (a wave, a clue): when key changes everyone gets a banner. */
+  /** Where the job has got to (a wave, a checkpoint): when key changes everyone gets a banner. */
   stage?: { key: string; title: string; sub?: string; colour?: string; life?: number };
 }
 
@@ -231,12 +226,12 @@ export interface Offer {
   title: string; blurb: string; reward: string;
   x: number; z: number; where: string;     // the noticeboard, and the place it's at
   mode?: number;                            // anything else the kind needs, as a number
-  /** A follow-up job's own shape (nightout.ts): how many legs a trail has, where a race finishes, and a line to open the poster (html). */
-  legs?: number; to?: { n: string; x: number; z: number }; say?: string;
+  /** A follow-up job's own shape (nightout.ts): where a race finishes, and a line to open the poster (html). */
+  to?: { n: string; x: number; z: number }; say?: string;
 }
 
 /** What goes round for a follow-up job: everything about it that the seed doesn't give. */
-export type Link = Pick<Offer, "kind" | "seed" | "stars" | "title" | "x" | "z" | "where" | "mode" | "legs" | "to" | "say">;
+export type Link = Pick<Offer, "kind" | "seed" | "stars" | "title" | "x" | "z" | "where" | "mode" | "to" | "say">;
 
 /** A job someone's taken, running on every player's screen. */
 /** Anything a job that's over has left standing in the road for a while (a lost bus where it came to
@@ -257,7 +252,7 @@ export interface Job {
   /** E pressed: return true if the job used it. hint(): what E would do, if anything. */
   use?(): boolean;
   hint?(): string;
-  /** E's use isn't about anything in front of you just now (going again, asking a local), so
+  /** E's use isn't about anything in front of you just now (going again after a race), so
    *  anything else E could do where you stand comes first. */
   aside?(): boolean;
   /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
@@ -274,7 +269,7 @@ export interface Job {
   shoot?(q: Quarry, power: number): void;
   /** A boss of the job's own for the boss bar (Big Lad): its name and how much fight is left, 0..1. */
   bossBar?(): { name: string; fill: number } | null;
-  /** The job's poster or clue brought back up (the job control); false if it has none. */
+  /** The job's poster brought back up (the job control); false if it has none. */
   recall?(): boolean;
   /** Take down anything the job put up. */
   end(): void;
@@ -957,7 +952,7 @@ export class Quests {
   indoors(): boolean { return !!this.job && !!this.job.indoors?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
-  /** The job control: the running job's poster or clue again. */
+  /** The job control: the running job's poster again. */
   recall(): boolean { return !!this.job && !this.job.done && !!this.job.recall?.(); }
 
   /** On a touch screen, the Poster button, while the running job has one to bring back. */

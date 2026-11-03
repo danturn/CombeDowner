@@ -1,11 +1,9 @@
 // The night out: jobs that lead into each other, so an evening has a shape. When something is done,
 // a related follow-up comes up nearby within the minute, as a poster on the spot or a phone call:
-//  - a pub won back: the landlord has found a biscuit tin, a short three-leg trail from the pub
-//    (trail.ts) with a chest at the end;
+//  - a pub won back: the landlord says last one to the next pub buys, a race (race.ts) from his pub
+//    to the nearest other pub far enough off to be worth it;
 //  - the Gaffer cuffed: his phone gives away the square the Flag Lads are eyeing next (a call, with a
 //    marker on it);
-//  - a trail's chest dug up: a flyer in it says "Last one back to the pub buys", a race (race.ts)
-//    from the chest to the pub the trail began at, or the nearest pub;
 //  - Seagull Attack won: a tourist's tip-off, and a marker on a ladder crew putting flags up
 //    (invasion.ts).
 // A Gaffer who gets away is tomorrow's Wanted poster as ever (wanted.ts), and goes on the night's card.
@@ -22,8 +20,7 @@
 // Who decides what: the host. It hears each ending (quests.ts on every screen, invasion.ts through
 // its own messages), decides what follows and sends it as "no": a link (a kind, a seed, a place and
 // a few numbers) for a poster, which every screen builds into the same ordinary job, or a place and
-// some words for a call. The jobs scale as they always do (a trail's legs by who is in the room, a
-// race's entries, the crew sent out). The host also sends its small state (how many things are done,
+// some words for a call. The jobs scale as they always do (a race's entries, the crew sent out). The host also sends its small state (how many things are done,
 // the pubs won back, the Gaffers who got away) whenever it changes and to anyone who joins, so
 // whoever takes over as host carries the night on. An older page ignores "no" and sees none of it.
 import * as SFX from "./audio";
@@ -41,7 +38,7 @@ const ARRIVED = 40;              // someone gets to a call's marker this close a
 const QUIET = 25;                // seconds with nothing going on before last orders is called
 const WAIT = [12, 18];           // seconds after something ends before the follow-up
 const TICK = 0.5;
-const MIN_RACE = 250;            // a race from the chest to a pub nearer than this isn't worth the bother
+const MIN_RACE = 250;            // a race to a pub nearer than this isn't worth the bother
 const PURPLE = "#b45cff", GOLD = "#ffd84a";
 
 interface Spot { n: string; x: number; z: number }
@@ -51,13 +48,14 @@ const finite = (...v: unknown[]) => v.every((n) => typeof n === "number" && Numb
 const text = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : "");
 const life = (v: unknown, def: number) => Math.max(1, Math.min(300, finite(v) ? (v as number) : def));
 
-/** A follow-up's link as it came over the network: only what a trail or a race poster can be built from. */
+/** A follow-up's link as it came over the network: only what a race poster can be built from (an
+ *  older page's other kinds are ignored). */
 function linkOf(l: any): Link | null {
-  if (!l || (l.kind !== "trail" && l.kind !== "race") || !finite(l.seed, l.stars, l.x, l.z)) return null;
+  if (!l || l.kind !== "race" || !finite(l.seed, l.stars, l.x, l.z)) return null;
   const to = l.to && finite(l.to.x, l.to.z) ? { n: text(l.to.n, 60), x: l.to.x as number, z: l.to.z as number } : undefined;
   return {
     kind: l.kind, seed: l.seed, stars: Math.max(1, Math.min(3, Math.round(l.stars))), title: text(l.title, 80), x: l.x, z: l.z, where: text(l.where, 60),
-    mode: finite(l.mode) ? l.mode : 0, legs: finite(l.legs) ? Math.max(3, Math.min(8, Math.round(l.legs))) : undefined, to, say: text(l.say, 300),
+    mode: finite(l.mode) ? l.mode : 0, to, say: text(l.say, 300),
   };
 }
 
@@ -83,8 +81,7 @@ export class NightOut {
     if (!this.w.isHost || !d.won) return;
     const at = { x: d.x ?? o.x, z: d.z ?? o.z };
     this.deed(at);
-    if (o.kind === "trail") this.later(() => this.chestRace(o, at));
-    else if (o.kind === "gulls") this.later(() => this.crewTip(at));
+    if (o.kind === "gulls") this.later(() => this.crewTip(at));
   }
 
   /** The Flag Lads' side of things, from invasion.ts, on every screen. */
@@ -97,7 +94,7 @@ export class NightOut {
     if (what === "won") {
       const pub = { n: text(d.name, 60), x: at.x, z: at.z }, seen = this.tally.find((p) => p.n === pub.n);
       if (seen) seen.c++; else this.tally.push({ ...pub, c: 1 });
-      this.later(() => this.biscuitTin(pub));
+      this.later(() => this.pubRace(pub));
     } else if (what === "cuffed") this.later(() => this.flagTip(at, text(d.n, 40)));
   }
 
@@ -112,20 +109,13 @@ export class NightOut {
 
   // ---- what follows (host) --------------------------------------------------------------------------
 
-  private biscuitTin(pub: Spot) {
+  private pubRace(from: Spot) {
+    const pub = this.nearestPub(from.x, from.z, MIN_RACE);
+    if (!pub) return;
     this.post({
-      kind: "trail", seed: hash("night tin", pub.n, Date.now()), stars: 1, title: "The landlord's biscuit tin", x: pub.x, z: pub.z, where: pub.n, mode: 0, legs: 3,
-      say: `The landlord of ${pub.n} has found his late wife's biscuit tin behind the bar. "Her favourite walk," he says. "Three tins, and a chest at the end."`,
-    }, `The landlord at ${pub.n} has a biscuit tin for you: a poster's gone up outside`);
-  }
-
-  private chestRace(o: Offer, at: { x: number; z: number }) {
-    const pub = this.nearestPub(o.x, o.z);
-    if (!pub || Math.hypot(pub.x - at.x, pub.z - at.z) < MIN_RACE) return;
-    this.post({
-      kind: "race", seed: hash("night race", pub.n, Date.now()), stars: 1, title: `Last one back to ${pub.n} buys`, x: at.x, z: at.z, where: "the chest", to: pub,
-      say: `The flyer in the chest says: "Last one back to ${pub.n} buys."`,
-    }, `A flyer in the chest: last one back to ${pub.n} buys. A race poster's gone up here`);
+      kind: "race", seed: hash("night race", pub.n, Date.now()), stars: 1, title: `Last one to ${pub.n} buys`, x: from.x, z: from.z, where: from.n, to: pub,
+      say: `The landlord of ${from.n} is buying the first round, at ${pub.n}: "Last one there gets the next."`,
+    }, `The landlord at ${from.n} says last one to ${pub.n} buys: a race poster's gone up outside`);
   }
 
   private flagTip(from: { x: number; z: number }, gaffer: string) {
@@ -279,9 +269,9 @@ export class NightOut {
 
   // ---- places ---------------------------------------------------------------------------------------------
 
-  private nearestPub(x: number, z: number): Spot | null {
+  private nearestPub(x: number, z: number, beyond = 0): Spot | null {
     let best: Spot | null = null, d = Infinity;
-    for (const p of this.w.pubs()) { const k = Math.hypot(p.x - x, p.z - z); if (k < d) { d = k; best = { n: p.name, x: p.x, z: p.z }; } }
+    for (const p of this.w.pubs()) { const k = Math.hypot(p.x - x, p.z - z); if (k < d && k >= beyond) { d = k; best = { n: p.name, x: p.x, z: p.z }; } }
     return best;
   }
 

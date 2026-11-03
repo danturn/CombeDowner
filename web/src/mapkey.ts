@@ -33,7 +33,6 @@ const SECTION_FEATURE: [string, Feature][] = [["Challenges", "challenges"]];
 /** A few words on what each kind of job is, by its id. */
 const JOB_NOTES: Record<string, string> = {
   race: "ride to a place across town against the clock",
-  trail: "follow the clues to the treasure",
   wanted: "track down a ringleader",
   gulls: "see off the seagulls",
 };
@@ -54,7 +53,7 @@ function sections(): [string, Row[]][] {
     label: "Several jobs together", note: "{map.mark} it to tell them apart",
     icon: (g, s) => clusterIcon(g, s / 2, s / 2, s / 17, 3, "#e0a526"),
   }, {
-    layer: "search", label: "Where to search", note: "a job's clue or last sighting",
+    layer: "search", label: "Where to search", note: "a Wanted man's last sighting",
     icon: (g, s) => {
       g.beginPath(); g.arc(s / 2, s / 2, s * 0.36, 0, Math.PI * 2);
       g.fillStyle = "rgba(224,165,38,0.2)"; g.fill();

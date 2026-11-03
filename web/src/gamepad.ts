@@ -536,7 +536,7 @@ export class GamepadControls {
     for (let i = 0; i < down.length; i++) if (!down[i] && this.was[i]) page?.button(i, false);
 
     const p = page?.player() ?? null;
-    if (playing && page && p && !document.getElementById("tinlock")) {
+    if (playing && page && p) {
       this.unfocus();
       let [mx, my] = stick(ax[0] ?? 0, ax[1] ?? 0);
       if (page.driving()) {
@@ -591,13 +591,6 @@ export class GamepadControls {
     if (dir !== this.navDir) { this.navDir = dir; this.navT = REPEAT_FIRST; step = dir; }
     else if (dir >= 0 && (this.navT -= dt) <= 0) { this.navT = REPEAT; step = dir; }
 
-    // the tin's combination lock keeps the keyboard to itself: the pad turns its wheels by the arrows
-    if (document.getElementById("tinlock")) {
-      if (step >= 0) tap(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"][step]);
-      if (pressed(B.cross)) tap("Enter");
-      if (pressed(B.circle)) tap("Escape");
-      return;
-    }
     if (pressed(B.circle)) { tap("Escape"); return; }
     if (pressed(B.options)) {
       const resume = document.getElementById("resume");

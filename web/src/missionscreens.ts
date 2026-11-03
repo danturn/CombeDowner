@@ -184,8 +184,8 @@ export function missionProgress(o: MissionProgress) {
     if (flashKey && key) { panel.classList.remove("fresh"); void panel.offsetWidth; panel.classList.add("fresh"); }
     flashKey = key;
   }
-  // in parts, so the clock ticking doesn't rebuild the clue line: a picture in it (a treasure hunt's
-  // sketch) would be thrown away and decoded again every second, and flash
+  // in parts, so the clock ticking doesn't rebuild the job's line: a picture in it would be thrown
+  // away and decoded again every second, and flash
   if (panel.childElementCount !== 3) panel.replaceChildren(document.createElement("div"), document.createElement("div"), document.createElement("div"));
   const [a, b, c] = panel.children as unknown as HTMLElement[];
   show(a, top);
@@ -220,7 +220,7 @@ export function missionCardDrop() { dropCard(); }
 /** A title or stage card has the space over the crosshair: call-outs wait till it's gone, as they
  *  do for a race's countdown, rather than land on top of it. */
 export function missionCardUp() {
-  if (document.querySelector(".tsc-call:not([hidden]):not(.out)")) return true;   // a trail's or a bounty's call-out (trailscreens.ts)
+  if (document.querySelector(".wsc-call:not([hidden]):not(.out)")) return true;   // a bounty's call-out (wantedscreens.ts)
   return !!card && !card.classList.contains("out") && (card.classList.contains("msc-start") || card.classList.contains("msc-stage"));
 }
 

@@ -8,8 +8,7 @@
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
-// and its checkpoints (race.ts) are drawn on every map while it's on, and the pencil lines
-// (signals.ts) on the big map. The big map also washes the squares you've cleared faintly green and
+// and its checkpoints (race.ts) are drawn on every map while it's on. The big map also washes the squares you've cleared faintly green and
 // puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear, and
 // a pint on every pub to go to or mark (pubmap.ts), faint till you zoom in so they don't crowd out the rest;
 // one with a job or a stop on top of it is moved out beside that, with a line back, so both can be picked.
@@ -129,7 +128,7 @@ function routeLine(g: CanvasRenderingContext2D, b: BusLine, P: (x: number, z: nu
   g.restore();
 }
 
-/** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
+/** An area to search (a Wanted poster's last-seen circle): scene x, z, r metres. */
 export interface Circle { x: number; z: number; r: number; colour: string; pulse?: boolean }
 /** A race's way along the streets (scene x, z pairs) and its checkpoints, from the next one on
  *  (gates, x, z pairs; the first drawn biggest), ending at the finish. */
@@ -400,25 +399,6 @@ function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: numb
 
 /** The point-of-interest marker, centred on (x, y), k pixels to the unit (about 11 units across):
  *  a dark disc ringed in bright cyan with a white star in it. */
-/** A line on the big map (scene x, z pairs); dashed: one the game pencilled in. */
-export interface PencilLine { pts: number[]; colour: string; dash?: boolean }
-
-/** Pencil lines, a little rough, as if drawn on the map by hand. */
-function drawPencil(g: CanvasRenderingContext2D, lines: PencilLine[], P: (x: number, z: number) => number[], dpr: number) {
-  g.lineCap = g.lineJoin = "round";
-  for (const l of lines) {
-    if (l.pts.length < 4) continue;
-    g.setLineDash(l.dash ? [8 * dpr, 6 * dpr] : []);
-    for (const [w, col] of [[5 * dpr, "rgba(14,16,18,0.6)"], [2.4 * dpr, l.colour]] as const) {
-      g.strokeStyle = col; g.lineWidth = w;
-      g.beginPath();
-      for (let i = 0; i < l.pts.length; i += 2) { const [x, y] = P(l.pts[i], l.pts[i + 1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
-      g.stroke();
-    }
-  }
-  g.setLineDash([]);
-}
-
 export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
   sprite(g, x, y, 13 * k + 2, `spot|${k}`, false, (s, x, y) => drawSpotIcon(s, x, y, k));
 }
@@ -574,8 +554,6 @@ export class Minimap {
   routes: RouteLine[] = [];
   /** The zones not open yet, the wall round the ones that are, and each zone's name (zones.ts), scene coordinates. */
   zones: ZoneView | null = null;
-  /** The trail's bearing lines on the big map. */
-  pencil: PencilLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
   /** The squares you've cleared, today's scars and the pubs you've won back (yours.ts), for the big map. */
@@ -931,7 +909,6 @@ export class Minimap {
       if (n >= 4) { const [fx, fy] = P(r.pts[n - 2], r.pts[n - 1]); this.hit(fx, fy, 8 * dpr, r.pts[n - 2], r.pts[n - 1], "Race finish", "gate"); }
     }
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
-    drawPencil(g, this.pencil, P, dpr);
     // opened to go to a pub, the pints go over everything else
     const pintsOnTop = on("pubs") && this.pinsBold;
     if (on("pubs") && !pintsOnTop) this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));

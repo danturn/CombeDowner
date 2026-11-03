@@ -1,6 +1,6 @@
 // Frames of prompts named from the table of controls (web/src/controls.ts), on a made-up pad (a
 // stubbed navigator.getGamepads) and on a touch screen, in a muted headless Chrome: Push the Bus
-// (taking the call, and its job card), a balloon's basket and its flight, and a tin's lock.
+// (taking the call, and its job card), and a balloon's basket and its flight.
 // Checks each prompt names the pad's button or the touch word, not a key.
 //
 //   cd web && npx vite build --logLevel error && cd .. && node tools/prompt_probe.mjs <out folder>
@@ -119,19 +119,6 @@ try {
       await page.screenshot({ path: `${OUT}/${mode}-balloon.png` });
     } else check(`${mode}: found a balloon`, false, "none on the map");
 
-    // ---- a tin's lock (a treasure trail's), as it opens over the game ----
-    const lk = await page.evaluate(() => {
-      const g = window.__game(), q = g.quests;
-      try { q.take({ kind: "trail", seed: 4321, stars: 2, title: "Treasure trail", blurb: "", reward: "", x: g.player.pos.x, z: g.player.pos.z, where: "" }); } catch (e) { return String(e); }
-      const lock = q.job?.lock;
-      if (!lock) return "no lock";
-      lock.show({ ask: "How many windows on the front of the pub?", code: [1, 2, 3], onOpen() {}, onJam() {} });
-      return "ok";
-    });
-    await wait(500);
-    const lt = await text("tinlock");
-    check(`${mode}: the tin lock shows its controls for the input`, lk === "ok" && !RAW.test(lt), `${lk}: ${lt.replace(/\n/g, " / ").slice(0, 160)}`);
-    await page.screenshot({ path: `${OUT}/${mode}-tinlock.png` });
     silent.push(`${mode}: ${await silenceNote(page)}`);
   }
 } finally {

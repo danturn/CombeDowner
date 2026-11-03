@@ -204,14 +204,11 @@ function mergeOne(k: string, mine: string | null, theirs: string, personal: bool
   if (k === "cd-race-daily") return num(b?.s) > num(a?.s) ? theirs : num(b?.s) < num(a?.s) ? undefined : out({ s: a.s, t: num(a.t) > 0 && num(b.t) > 0 ? Math.min(a.t, b.t) : num(a.t) || num(b.t), n: Math.max(num(a.n), num(b.n)) });
   if (k.startsWith("cd-stunt-") || k === "cd-bounties") return num(b) > num(a) ? theirs : undefined;
   if (k === "cd-gulls-best") return out(eachBest(a, b));
-  if (k === "cd-trail-k") return out(eachBest(a, b, true));
   if (k === "combedowner.rideBests") {
     const r: Record<string, any> = { ...(isObj(a) ? a : {}) };
     if (isObj(b)) for (const [ride, v] of Object.entries(b)) r[ride] = eachBest(r[ride], v);
     return out(r);
   }
-  if (k === "cd-rosettes") return [...mine + theirs].filter((c) => "gsb".includes(c)).sort((x, y) => "gsb".indexOf(x) - "gsb".indexOf(y)).slice(0, 3).join("");
-  if (k === "cd-trail-daily-stars") return out(sameDay(a, b, (x, y) => ({ day: x.day, best: Math.max(num(x.best), num(y.best)) })));
   if (k === "cd-jobs-done") return out(sameDay(a, b, (x, y) => ({ day: x.day, seeds: [...new Set([...(x.seeds ?? []), ...(y.seeds ?? [])])] })));
   if (k === "cd-daily") return out(sameDay(a, b, (x, y) => ({ day: x.day, got: Array.isArray(x.got) && Array.isArray(y.got) ? x.got.map((n: any, i: number) => Math.max(num(n), num(y.got[i]))) : x.got })));
   if (k === "cd-trophies") return out(mergeTrophies(a, b));
