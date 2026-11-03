@@ -1402,7 +1402,7 @@ export class Minimap {
     if (this.size !== Math.round(css * dpr)) { this.size = Math.round(css * dpr); c.width = c.height = this.size; }
     const S = this.size, R = S / 2, g = this.ctx;
     const key = this.drawKey(x, z, yaw, dpr, blips, mates);
-    if (key === this.drawn) return;
+    if (key && key === this.drawn) return;
     this.drawn = key;
     const scale = R / RANGE;                       // screen px per metre
     g.setTransform(1, 0, 0, 1, 0, 0);
