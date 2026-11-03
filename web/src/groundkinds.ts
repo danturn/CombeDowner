@@ -3,6 +3,7 @@
 // (tools/ground_kinds.py). The whole-city map's own ground is 12 m to the patch, which looks blocky;
 // this is drawn over it wherever there's a square, before any square has loaded. Nothing about it
 // goes over the network: every player loads the same file.
+import { fetchPacked, packedName } from "./pack";
 
 /** The minimap's colour for each kind of ground, by its character in the maps' ground grids ('0' up;
  *  the wild ground's rock, heath, sand and wetland after the town's, tools/wild.py). */
@@ -57,8 +58,7 @@ export class GroundKinds {
 
 export async function loadGroundKinds(url: string): Promise<GroundKinds | null> {
   // a map without squares has no file (some servers send a page instead)
-  const res = await fetch(url).catch(() => null);
-  const data = res?.ok ? await res.json().catch(() => null) : null;
+  const data = await fetchPacked(packedName(url)).catch(() => null);
   return data?.sq ? new GroundKinds(data) : null;
 }
 

@@ -28,7 +28,8 @@ for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].
 fs.mkdirSync(opt.out, { recursive: true });
 
 // where to look from: every 500 m square of Bath with a bridge (or a railway bridge) in it
-const maps = path.join(opt.dist, "maps");
+// (the map's JSON: the built game carries only the packs, web/src/pack.ts)
+const maps = path.join(WEB, "public", "maps");
 const cells = new Map();
 const note = (x, y) => { const k = `${Math.floor(x / 500)},${Math.floor(y / 500)}`; if (!cells.has(k)) cells.set(k, [(Math.floor(x / 500) + 0.5) * 500, (Math.floor(y / 500) + 0.5) * 500]); };
 for (const f of [path.join(maps, `${opt.map}.json`), ...fs.readdirSync(path.join(maps, opt.map)).filter((f) => /^-?\d+_-?\d+\.json$/.test(f)).map((f) => path.join(maps, opt.map, f))]) {

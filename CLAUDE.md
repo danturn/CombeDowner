@@ -176,7 +176,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
   `docs/new-area.md`). The village is the middle 3 x 3 squares, loaded like the rest: all are
   `web/public/maps/combe-down/<ti>_<tj>.json` (as the partition stage writes them, below), streamed in round the player, and
-  `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. `map.ts` loads them and answers ground height,
+  `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. The game
+  downloads the squares, `-wide.json` and `-ground.json` packed (`src/pack.ts`; every build packs
+  them with `tools/pack_squares.mjs` and checks each reads back exactly as its JSON); the JSON is
+  what's committed and what the tools read. `map.ts` loads them and answers ground height,
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
