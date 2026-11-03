@@ -443,6 +443,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.
 
+- **E uses what you're looking at**: with two things in reach at once (a strange object by a
+  noticeboard, a ladder by a car), E (or Use) goes for the one under the crosshair, or the nearest
+  when you're looking at neither, and the prompt always says which, with "or look at…" for the
+  other. Whatever you're in or on (a car, a basket, a boat's tiller), or a job's own use like
+  cuffing someone, still comes first.
+
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
   knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; the
   buttons follow Call of Duty: Warzone's defaults: Cross jumps, Square reloads on a tap and uses on a

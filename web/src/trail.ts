@@ -1484,6 +1484,11 @@ class Trail implements Job {
     for (const h of this.halvesOf(n)) this.showRing(n, h);
   }
 
+  aside() {
+    const s = this.t.legs[this.mine], me = this.w.me();
+    return !this.near && !(this.pacing(this.mine) && s && Math.hypot(s.x - me.x, s.z - me.z) < 160);
+  }
+
   use() {
     if (this.done) return false;
     if (this.near && !this.pacing(this.near.tin.n)) { this.open(this.near.tin); return true; }
