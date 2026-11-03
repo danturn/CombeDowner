@@ -293,6 +293,10 @@ export class GameMap {
   readonly tiles = new Map<number, GameMap>();
   /** Goes up each time a square is loaded or dropped, so anything worked out from them knows to look again. */
   tilesVersion = 0;
+  /** How far this square's buildings reach out past its own edge (each is kept whole in the square
+   *  holding most of it), and the most of that among the squares loaded here. */
+  reach = 0;
+  private tileReach = 0;
   /** Parked cars out in the squares that someone has got in (TILE_CAR numbers): they stay gone when their square loads again. */
   readonly takenTileCars = new Set<number>();
   // the detailed terrain grid's far edges (data coords)
@@ -397,6 +401,11 @@ export class GameMap {
     d.b ??= [0, 0, 0, 0];
     for (const k of ["bl", "rd", "wp", "wl", "br", "tr"] as const) d[k] ??= [];
     this.d = d;
+    if (d.tile) for (const b of d.bl) {
+      const v = b.rm?.v ?? [];
+      for (const [x, y] of b.r[0]) this.reach = Math.max(this.reach, d.b[0] - x, x - d.b[2], d.b[1] - y, y - d.b[3]);
+      for (let i = 0; i < v.length; i += 3) this.reach = Math.max(this.reach, d.b[0] - v[i], v[i] - d.b[2], d.b[1] - v[i + 1], v[i + 1] - d.b[3]);
+    }
     this.canalData = canalData;
     this.railData = railData;
     const T = d.t;
@@ -578,8 +587,43 @@ export class GameMap {
       const top = b.rm ? roofMeshTop(b) - this.z0 : b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
       for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
+      // under a lidar roof a wall stands as high as the roof over it (a gable, or the higher house
+      // in a stepped row), so it's only over once you're up on the roof there, not at the eaves
+      if (b.rm) {
+        let i = first;
+        b.r.forEach((ring, ri) => ring.forEach((_, k) => {
+          const za = b.rm!.z[ri]?.[2 * k], zb = b.rm!.z[ri]?.[2 * k + 1];
+          if (za !== undefined && zb !== undefined) { this.sTop[i] = za - this.z0; this.sTopB[i] = zb - this.z0; this.sRoof[i] = Infinity; }
+          i++;
+        }));
+      }
+      // a pitched roof's gable end standing up from the flat roof of the same house beyond it (a
+      // gable over an outside wall has that wall)
+      if (!b.rm) for (const roof of roofsFit(b)) {
+        const q = roof.q, eave = b.g - this.z0 + b.h, ridge = eave + roof.rp;
+        const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
+        for (const [k, a, c] of [[0, q[0], q[3]], [1, q[1], q[2]]] as const) {
+          if (roof.hp[k]) continue;
+          const mx = (a[0] + c[0]) / 2, my = (a[1] + c[1]) / 2, out = (k ? 0.5 : -0.5) / L;
+          if (!inRing(b.r[0], mx + ux * out, my + uy * out)) continue;
+          this.addSeg(a[0], -a[1], mx, -my, eave, 0, eave, ridge);
+          this.addSeg(mx, -my, c[0], -c[1], ridge, 0, eave, eave);
+        }
+      }
+      // the steps in a lidar roof, from the higher part's edge down to the lower part, as world.ts
+      // draws them: without these you'd walk on from the lower part into the roof above it
+      const sm = b.rm ? roofSeams(b) : [];
+      for (let i = 0; i < sm.length; i += 12) {
+        const ex = sm[i + 6] - sm[i], ey = sm[i + 7] - sm[i + 1], ez = sm[i + 8] - sm[i + 2], fx = sm[i + 9] - sm[i + 3], fy = sm[i + 10] - sm[i + 4], fz = sm[i + 11] - sm[i + 5];
+        const nx = ey * fz - ez * fy, ny = ez * fx - ex * fz, nz = ex * fy - ey * fx, n = Math.hypot(nx, ny, nz);
+        if (n < 1e-6 || Math.abs(nz) / n > 0.7) continue;
+        const za = Math.max(sm[i + 2], sm[i + 11]) - this.z0, zb = Math.max(sm[i + 5], sm[i + 8]) - this.z0;
+        const foot = Math.min(sm[i + 2], sm[i + 5], sm[i + 8], sm[i + 11]) - this.z0;
+        this.addSeg(sm[i], -sm[i + 1], sm[i + 3], -sm[i + 4], za, 0, foot, zb);
+      }
       // and which squares it covers, for standing on its roof
       const xs = b.r[0].map((p) => p[0]), zs = b.r[0].map((p) => -p[1]);
+      for (let i = 0; i < (b.rm?.v.length ?? 0); i += 3) { xs.push(b.rm!.v[i]); zs.push(-b.rm!.v[i + 1]); }
       const i0 = Math.floor(Math.min(...xs) / CELL), i1 = Math.floor(Math.max(...xs) / CELL);
       const j0 = Math.floor(Math.min(...zs) / CELL), j1 = Math.floor(Math.max(...zs) / CELL);
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) push(this.bCells, key(i, j), bi);
@@ -805,6 +849,7 @@ export class GameMap {
   /** A square has finished loading (tiles.ts): it joins in, less any of its cars already taken. */
   addTile(key: number, m: GameMap) {
     this.tiles.set(key, m);
+    this.tileReach = Math.max(this.tileReach, m.reach);
     this.tilesVersion++;
     for (const i of this.takenTileCars) { const [tk, k] = GameMap.tileCar(i); if (tk === key) m.takeCar(k); }
   }
@@ -842,16 +887,19 @@ export class GameMap {
       const b = this.blocks[k];
       on(b.x, b.z, b.a, b.hl, b.hw, b.top);
     }
-    for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      const h = this.roofAt(this.d.bl[bi], x, -z);
-      if (h > g && h <= y + 0.5) g = h;
-    }
+    g = this.roofsOver(x, z, y, g);
     for (const k of this.pieceCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const p = this.pieces[k], dx = x - p.x, dy = -z - p.y;
       g = standOn(p.sh, dx * p.c + dy * p.s, dx * p.s - dy * p.c, p.y0, g, y);
     }
     const tile = this.tileAt(x, z);
-    if (tile) return Math.max(g, tile.floor(x, z, y));     // a full-detail square has its own roofs, bridges and parked cars
+    if (tile) {
+      // a full-detail square has its own roofs, bridges and parked cars, and a building from the
+      // square next door can reach over it
+      g = Math.max(g, tile.floor(x, z, y));
+      for (const t of this.tilesReaching(x, z, 0)) if (t !== tile) g = t.roofsOver(x, z, y, g);
+      return g;
+    }
     const dk = this.deck(x, z, y);
     if (dk !== null && dk > g) g = dk;
     if (this.wide && !this.inGrid(x, z)) {
@@ -929,6 +977,25 @@ export class GameMap {
     return false;
   }
 
+  /** The loaded squares with something of theirs within r of scene (x, z): those whose buildings
+   *  reach out of them as well as those it's in. */
+  tilesReaching(x: number, z: number, r: number): GameMap[] {
+    if (!this.tileReach) return this.tilesNear(x, z, r);
+    return this.tilesNear(x, z, r + this.tileReach).filter((t) => {
+      const [x0, y0, x1, y1] = t.d.b, far = r + t.reach;
+      return x >= x0 - far && x <= x1 + far && -z >= y0 - far && -z <= y1 + far;
+    });
+  }
+
+  /** The highest of g and this map's building roofs at scene (x, z) that feet at y stand on or step up to. */
+  roofsOver(x: number, z: number, y: number, g: number): number {
+    for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const h = this.roofAt(this.d.bl[bi], x, -z);
+      if (h > g && h <= y + 0.5) g = h;
+    }
+    return g;
+  }
+
   /** The loaded squares within r of scene (x, z). */
   tilesNear(x: number, z: number, r: number): GameMap[] {
     const I = this.tileIndex, out: GameMap[] = [];
@@ -970,9 +1037,12 @@ export class GameMap {
   /** How high building b's roof is over (x, y) (data coords), or -Infinity if that's not inside it.
    * As world.ts builds it: flat at the eaves, or pitched over its roof rectangle, hipped at either end. */
   private roofAt(b: Building, x: number, y: number): number {
+    // a lidar roof is stood on wherever it's drawn, even where it hangs out past the walls
+    const mesh = b.rm ? roofMeshAt(b, x, y) : null;
+    if (mesh !== null) return mesh - this.z0;
     if (!inRing(b.r[0], x, y) || b.r.slice(1).some((ring) => inRing(ring, x, y))) return -Infinity;
     const eave = b.g - this.z0 + b.h;
-    if (b.rm) return (roofMeshAt(b, x, y) ?? b.g + b.h) - this.z0;
+    if (b.rm) return (roofMeshNear(b, x, y) ?? b.g + b.h) - this.z0;
     let top = eave;
     for (const roof of roofsFit(b)) {
       const q = roof.q;
@@ -1232,7 +1302,7 @@ export class GameMap {
       let block = this.pushStatic(pos, y, r), moved = block > -Infinity;
       this.lastBlock = Math.max(this.lastBlock, block);
       // the full-detail squares round this map (only ever the ones loaded near the player)
-      for (const tm of this.tilesNear(pos.x, pos.z, r)) {
+      for (const tm of this.tilesReaching(pos.x, pos.z, r)) {
         block = tm.pushStatic(pos, y, r);
         if (block > -Infinity) { moved = true; this.lastBlock = Math.max(this.lastBlock, block); }
       }
@@ -1381,7 +1451,7 @@ export class GameMap {
     let best = this.wallsHit(ox, oy, oz, dx, dy, dz, maxDist);
     // the full-detail squares the ray passes over
     const ex = ox + dx * maxDist, ez = oz + dz * maxDist;
-    for (const tm of this.tilesNear((ox + ex) / 2, (oz + ez) / 2, Math.hypot(ex - ox, ez - oz) / 2)) {
+    for (const tm of this.tilesReaching((ox + ex) / 2, (oz + ez) / 2, Math.hypot(ex - ox, ez - oz) / 2)) {
       const h = tm.wallsHit(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist);
       if (h && (!best || h.dist < best.dist)) best = h;
     }
@@ -1622,21 +1692,56 @@ export function roofsFit(b: Building): Roof[] {
   fits.set(b, out);
   return out;
 }
-/** The height above sea level of building b's roof faces over (x, y), or null off them. */
+/** The height above sea level of building b's roof over (x, y) as world.ts draws it, or null off it:
+ *  the highest of its faces and of the strips roofSeams lays across the slits between them, since
+ *  a slit left out here drops you through a roof that looks whole. */
 export function roofMeshAt(b: Building, x: number, y: number): number | null {
-  const m = b.rm;
-  if (!m) return null;
-  const v = m.v, t = m.t;
-  for (let i = 0; i < t.length; i += 3) {
-    const a = 3 * t[i], c = 3 * t[i + 1], e = 3 * t[i + 2];
-    const d = (v[c + 1] - v[e + 1]) * (v[a] - v[e]) + (v[e] - v[c]) * (v[a + 1] - v[e + 1]);
+  if (!b.rm) return null;
+  const v = roofSurface(b);
+  let best: number | null = null;
+  for (let i = 0; i < v.length; i += 9) {
+    const d = (v[i + 4] - v[i + 7]) * (v[i] - v[i + 6]) + (v[i + 6] - v[i + 3]) * (v[i + 1] - v[i + 7]);
     if (Math.abs(d) < 1e-9) continue;
-    const l1 = ((v[c + 1] - v[e + 1]) * (x - v[e]) + (v[e] - v[c]) * (y - v[e + 1])) / d;
-    const l2 = ((v[e + 1] - v[a + 1]) * (x - v[e]) + (v[a] - v[e]) * (y - v[e + 1])) / d;
+    const l1 = ((v[i + 4] - v[i + 7]) * (x - v[i + 6]) + (v[i + 6] - v[i + 3]) * (y - v[i + 7])) / d;
+    const l2 = ((v[i + 7] - v[i + 1]) * (x - v[i + 6]) + (v[i] - v[i + 6]) * (y - v[i + 7])) / d;
     const l3 = 1 - l1 - l2;
-    if (l1 >= -1e-4 && l2 >= -1e-4 && l3 >= -1e-4) return l1 * v[a + 2] + l2 * v[c + 2] + l3 * v[e + 2];
+    if (l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4) continue;
+    const h = l1 * v[i + 2] + l2 * v[i + 5] + l3 * v[i + 8];
+    if (best === null || h > best) best = h;
   }
-  return null;
+  return best;
+}
+/** The height of building b's roof at the edge of it nearest (x, y), if that's within half a metre:
+ *  for a crack the faces' rounding leaves open, which you'd otherwise drop into. */
+function roofMeshNear(b: Building, x: number, y: number): number | null {
+  const v = roofSurface(b);
+  let best = 0.5, z: number | null = null;
+  for (let i = 0; i < v.length; i += 9) for (const [a, c] of [[i, i + 3], [i + 3, i + 6], [i + 6, i]]) {
+    const ux = v[c] - v[a], uy = v[c + 1] - v[a + 1], l2 = ux * ux + uy * uy || 1;
+    const t = Math.min(1, Math.max(0, ((x - v[a]) * ux + (y - v[a + 1]) * uy) / l2));
+    const d = Math.hypot(v[a] + ux * t - x, v[a + 1] + uy * t - y);
+    if (d < best) { best = d; z = v[a + 2] + (v[c + 2] - v[a + 2]) * t; }
+  }
+  return z;
+}
+const surfaces = new WeakMap<Building, number[]>();
+/** Building b's lidar roof as triangles to stand on (x, y, height, nine numbers each): its faces and
+ *  the seam strips that lie down (world.ts draws the ones standing up as walls). */
+function roofSurface(b: Building): number[] {
+  let out = surfaces.get(b);
+  if (out) return out;
+  const m = b.rm!, v = m.v, t = m.t;
+  out = [];
+  for (let i = 0; i < t.length; i += 3) for (let k = 0; k < 3; k++) out.push(v[3 * t[i + k]], v[3 * t[i + k] + 1], v[3 * t[i + k] + 2]);
+  const s = roofSeams(b);
+  for (let i = 0; i < s.length; i += 12) {
+    const ex = s[i + 6] - s[i], ey = s[i + 7] - s[i + 1], ez = s[i + 8] - s[i + 2], fx = s[i + 9] - s[i + 3], fy = s[i + 10] - s[i + 4], fz = s[i + 11] - s[i + 5];
+    const nx = ey * fz - ez * fy, ny = ez * fx - ex * fz, nz = ex * fy - ey * fx, n = Math.hypot(nx, ny, nz);
+    if (n < 1e-6 || Math.abs(nz) / n <= 0.7) continue;
+    out.push(...s.slice(i, i + 9), ...s.slice(i, i + 3), ...s.slice(i + 6, i + 12));
+  }
+  surfaces.set(b, out);
+  return out;
 }
 /** The highest point of building b's roof faces, above sea level. */
 export function roofMeshTop(b: Building): number {
@@ -1650,6 +1755,7 @@ export function roofFit(b: Building): Roof | null {
   return roofsFit(b)[0] ?? null;
 }
 
+const seamsOf = new WeakMap<Building, number[]>();
 const SEAM = 0.25;    // metres: the widest slit closed between two edges lying along each other
 /** Where building b's roof faces leave an open edge, the strips that close it (four corners, x, y
  *  and height above sea level each, twelve numbers a strip). The map's roofs come with walls in
@@ -1660,6 +1766,8 @@ const SEAM = 0.25;    // metres: the widest slit closed between two edges lying 
 export function roofSeams(b: Building): number[] {
   const m = b.rm;
   if (!m) return [];
+  const known = seamsOf.get(b);
+  if (known) return known;
   const v = m.v, t = m.t, n = v.length / 3, uses = new Map<number, number>();
   for (let i = 0; i < t.length; i += 3) for (const [a, c] of [[t[i], t[i + 1]], [t[i + 1], t[i + 2]], [t[i + 2], t[i]]]) {
     const k = Math.min(a, c) * n + Math.max(a, c);
@@ -1699,6 +1807,7 @@ export function roofSeams(b: Building): number[] {
       for (let k = 0; k + 1 < cuts.length; k++) out.push(...onE(cuts[k]), ...onE(cuts[k + 1]), ...onF(cuts[k + 1]), ...onF(cuts[k]));
     }
   }
+  seamsOf.set(b, out);
   return out;
 }
 

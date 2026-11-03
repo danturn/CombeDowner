@@ -42,7 +42,8 @@ case by case:
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
-    tunnel mouths, pubs and wires, boats, the railway's holes, and what is drawn over the streets.
+    tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, and
+    whether roofs are solid to stand on.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
@@ -375,6 +376,7 @@ def main():
     if "--tiles" in args:
         check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
     check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])
+    check_more.roofs_solid(root, map_id, check_more.OVERROAD_ONLY[0])
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check

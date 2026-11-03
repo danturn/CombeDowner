@@ -35,6 +35,11 @@
     no face of the railway itself (a tunnel face without an opening big enough, a parapet, pier or
     platform wall across a track) and none of the squares' buildings, walls, fences, hedges, gates,
     trees or street furniture across it; and no line just stops out in the open with nothing at its end.
+22. Roofs are solid (tools/roof_probe.mjs runs the game's own map.ts and player.ts on a sample of
+    each square's buildings, CD_ROOFS_PER of them, 40 unless set): a player dropped on any point of
+    a roof as world.ts draws it, slowly or falling fast on a slow frame, stands on it at the drawn
+    height; no part of an outline is left with no roof over it; and walking across a roof never
+    takes you down into it. CD_ROOFS=0 leaves it out.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
@@ -135,6 +140,21 @@ def _railway_check(script, root, map_id):
         with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
             f.write(js); f.flush()
             return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
+
+
+@functools.lru_cache(maxsize=2)
+def roofs_solid(root, map_id, only=None):
+    """Rule 22's findings over the squares given (all if None), from tools/roof_probe.mjs; none if
+    it can't be run. Called once before the squares are checked."""
+    if os.environ.get("CD_ROOFS") == "0": return []
+    here = os.path.dirname(os.path.abspath(__file__))
+    args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
+            "--per", os.environ.get("CD_ROOFS_PER", "40")]
+    if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
+    try:
+        return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
         return []
 
@@ -330,7 +350,7 @@ def square(m, tag, note, f):
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
     for w in watertight(root, map_id) + trackclear(root, map_id):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
-    for w in overroad(root, map_id, OVERROAD_ONLY[0]):
+    for w in overroad(root, map_id, OVERROAD_ONLY[0]) + roofs_solid(root, map_id, OVERROAD_ONLY[0]):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)

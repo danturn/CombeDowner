@@ -336,7 +336,7 @@ export class Player {
   forgetJump() { this.wantJump = false; this.jumpBuf = 0; }
 
   /** The ground under the feet, or a tunnel's floor when they're in one. */
-  private under(x: number, z: number) { return this.map.floor ? this.map.floor(x, z, this.pos.y) : this.map.ground(x, z); }
+  private under(x: number, z: number, y = this.pos.y) { return this.map.floor ? this.map.floor(x, z, y) : this.map.ground(x, z); }
 
   spawn(x: number, z: number, yaw = Math.random() * Math.PI * 2) {
     this.pos.set(x, this.map.ground(x, z), z);
@@ -511,7 +511,9 @@ export class Player {
 
   /** Feet against what's under them: landing, stepping up, or sticking to the ground going downhill. */
   private land(y0: number) {
-    const g = this.under(this.pos.x, this.pos.z);
+    // coming down, whatever was under the feet at the start of the frame counts: falling fast (or
+    // on a slow frame) can carry you more than a step past a roof in one go
+    const g = this.under(this.pos.x, this.pos.z, Math.max(y0, this.pos.y));
     if (this.pos.y <= g && !this.onGround && this.vel.y > 0) {
       // rising past the edge of a roof, a car or a step: carry on up and come down on it, rather
       // than being stopped dead on it mid-jump (but never inside the ground itself)
