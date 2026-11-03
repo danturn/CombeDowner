@@ -1438,12 +1438,99 @@ export class GameMap {
     return [x, z];
   }
 
-  /** True if a circle at (x, z) touches a building, wall or tree, or ground kept clear. */
+  /** True if a circle at (x, z) touches a building, wall or tree, or ground kept clear, or stands
+   *  inside a building (where no wall is near enough to touch, the middle of a big one, but nobody
+   *  put there could get out). */
   blocked(x: number, z: number, r: number): boolean {
     if (this.keepClear.some((k) => Math.hypot(k.x - x, k.z - z) < k.r + r)) return true;
     const p = { x, z };
     this.collide(p, ANY_HEIGHT, r);
-    return Math.hypot(p.x - x, p.z - z) > 1e-3;
+    return Math.hypot(p.x - x, p.z - z) > 1e-3 || this.indoors(x, z);
+  }
+
+  /** collide(), from where you are (from) to where you're going (pos), in steps shorter than r, so
+   *  that nothing quick (a ride downhill, a lad legging it, a slow frame on a phone) goes clean
+   *  through a wall in one stride and ends up inside. lastBlock is the tallest thing met on the way. */
+  sweep(from: { x: number; z: number }, pos: { x: number; z: number }, y: number, r: number, skip?: Mover, pass?: (m: Mover) => boolean): { x: number; z: number } {
+    const dx = pos.x - from.x, dz = pos.z - from.z, n = Math.min(16, Math.ceil(Math.hypot(dx, dz) / (r * 0.7)));
+    if (n <= 1) return this.collide(pos, y, r, skip, pass);
+    const p = { x: from.x, z: from.z };
+    let block = -1;
+    for (let k = 0; k < n; k++) {
+      p.x += dx / n; p.z += dz / n;
+      this.collide(p, y, r, skip, pass);
+      block = Math.max(block, this.lastBlock);
+    }
+    this.lastBlock = block;
+    pos.x = p.x; pos.z = p.z;
+    return pos;
+  }
+
+  /** The outline of the building that has feet at y at scene (x, z) shut in: inside its walls, or in
+   *  one of its courtyards, below its roof (on the roof is fine) and not down a tunnel under it. Here,
+   *  in a loaded square, or in the wider map where no square is loaded; null if they're free. */
+  shutIn(x: number, z: number, y: number): number[][] | null {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.shutIn(x, z, y);
+    const cell = this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL)));
+    const wide = this.wide && !this.inGrid(x, z) ? this.wide.buildingsNear(x, -z, 0) : [];
+    if (!cell?.length && !wide.length) return null;
+    if (y < this.ground(x, z) - 1.5) return null;   // in a tunnel under it
+    const caught = (b: Building) => {
+      if (!inRing(b.r[0], x, -z)) return false;
+      const roof = this.roofAt(b, x, -z);
+      // (a courtyard: shut in up to the eaves)
+      return y < (roof > -Infinity ? roof : b.g - this.z0 + b.h) - 0.8;
+    };
+    for (const bi of cell ?? []) if (caught(this.d.bl[bi])) return this.d.bl[bi].r[0];
+    for (const b of wide) if (caught(b)) return b.r[0];
+    return null;
+  }
+
+  /** Feet at y shut in a building (through a wall, shoved by a car, or a square of Bath loading in
+   *  round them): out to the nearest clear spot outside it, r from anything. True if they were moved. */
+  unstick(pos: { x: number; z: number }, y: number, r: number): boolean {
+    const ring = this.shutIn(pos.x, pos.z, y);
+    if (!ring) return false;
+    const free = (x: number, z: number) => this.fieldEdge(x, z) > r && !this.indoors(x, z);
+    // out through the nearest of its walls, just past it, a step further, or further still (there may
+    // be a fence or a neighbour's wall right outside): the nearest that's clear
+    const tries: [number, number, number][] = [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], ax = a[0], az = -a[1], vx = b[0] - ax, vz = -b[1] - az, l = Math.hypot(vx, vz);
+      if (l < 0.05) continue;
+      const t = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / (l * l)));
+      const cx = ax + vx * t, cz = az + vz * t;
+      let nx = -vz / l, nz = vx / l;
+      if (inRing(ring, cx + nx * 0.05, -(cz + nz * 0.05))) { nx = -nx; nz = -nz; }
+      for (const o of [r + 0.15, r + 0.8, r + 2]) tries.push([Math.hypot(cx - pos.x, cz - pos.z) + o, cx + nx * o, cz + nz * o]);
+    }
+    tries.sort((p, q) => p[0] - q[0]);
+    let best: [number, number] | null = null;
+    for (const [, x, z] of tries) {
+      if (!free(x, z)) continue;
+      // (nudged off anything there, as walking into it would)
+      const p = this.collide({ x, z }, this.ground(x, z), r);
+      if (free(p.x, p.z)) { best = [p.x, p.z]; break; }
+    }
+    // hemmed in on every side (the middle of a block): the nearest clear ground round about
+    for (let d = 3; !best && d <= 60; d += 3) for (let k = 0, n = Math.ceil(d * 2); k < n && !best; k++) {
+      const a = (k / n) * Math.PI * 2, x = pos.x + Math.cos(a) * d, z = pos.z + Math.sin(a) * d;
+      if (free(x, z) && !this.blocked(x, z, r)) best = [x, z];
+    }
+    if (!best) return false;
+    pos.x = best[0]; pos.z = best[1];
+    return true;
+  }
+
+  /** Someone on foot going from (fx, fz) to pos, their feet lift above the ground: kept out of the
+   *  buildings. Walking or hopping into one, they stay where they were; already shut in one (put
+   *  there, or a square loading in round them), they're put outside it. True if they were stopped. */
+  keepOut(fx: number, fz: number, pos: { x: number; z: number }, lift: number, r: number): boolean {
+    if (!this.shutIn(pos.x, pos.z, this.ground(pos.x, pos.z) + lift)) return false;
+    if (!this.shutIn(fx, fz, this.ground(fx, fz) + lift)) { pos.x = fx; pos.z = fz; return true; }
+    this.unstick(pos, this.ground(pos.x, pos.z) + lift, r);
+    return true;
   }
 
   /** First solid thing hit by a ray from o along unit vector d, within maxDist. */

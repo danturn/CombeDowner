@@ -3,15 +3,20 @@
 // crosshair, with call-outs held back till it's gone), a panel with the goal and how far you've got
 // that stays up all the way through, a banner for each stage (a wave, a clue, a checkpoint), and a
 // card at the end that is a party for a win and a quiet one for a loss. All drawn here on the page
-// over the game, in the look of the HUD and the race finish banner, in the HUD's own layer so they
-// go when it does.
+// over the game, in the HUD's own layer so they go when it does: the title card, the panel and the
+// banners in the look of the HUD, and the cards that wait for you (the end card, the driving test's
+// report and the night out's front page) as cuttings torn from the Chronicle (cutting.ts).
 //
-// Nothing here ever takes a click, and nothing goes over the network: each player's screen draws
+// The banners take no clicks. The end card, the report and the front page wait for you to read
+// them (modal.ts): each has a × to put it away, Esc does too, and the mouse is let go while it's up.
+// Nothing goes over the network: each player's screen draws
 // them from the events that player already gets (quests.ts, race.ts, bonfire.ts). The panel is
 // written only when its words change, and the cards run on timers, not frames (only the confetti
 // has a frame loop, and only while it is falling).
 import { show } from "./show";
 import { ctlText } from "./controls";
+import { modal } from "./modal";
+import { cutFlag, cutFront, tearOff } from "./cutting";
 
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
 const ACCENT = "#3ec7e8";
@@ -95,37 +100,33 @@ function style() {
 :is(.msc-start,.msc-stage) .title{font-size:clamp(26px,4.6vw,46px)}
 :is(.msc-start,.msc-stage) .goal{font-size:clamp(15px,2.4vw,22px)}
 .msc-stage .title{font-size:clamp(24px,4.4vw,40px)}
+/* the end card, the report and the front page: cuttings from the Chronicle (cutting.ts gives them the paper) */
 .msc-end{inset:0;top:0;justify-content:center}
 .msc-end canvas{position:absolute;inset:0;width:100%;height:100%}
-.msc-end .band{position:relative}
-.msc-end .flag{height:14px;margin:0 auto 6px;max-width:520px;background:repeating-conic-gradient(#111 0 25%,#f4f4f2 0 50%) 0 0/14px 14px}
-.msc-end .flag.b{margin:8px auto 0}
-.msc-end.failed .band{background:linear-gradient(90deg,transparent,rgba(20,10,12,.85) 15%,rgba(20,10,12,.85) 85%,transparent);animation-name:msc-fade}
-.msc-end.failed .title{color:#ff8a80}
-.msc-end .place{font-weight:900;font-size:clamp(72px,18vw,170px);line-height:.9;animation:msc-pop 1.2s ease-in-out .4s infinite alternate}
-.msc-end .place sup{font-size:.4em}
-.msc-end .gold{background:linear-gradient(#fff6b0,#ffc520 55%,#c47a00);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 4px 0 #000)}
-.msc-end .time{font-weight:800;font-size:clamp(26px,6vw,56px);margin-top:4px}
-.msc-end .time.small{font-size:clamp(18px,3.6vw,28px);font-weight:700}
-.msc-end .medal{font-weight:700;font-size:clamp(18px,4vw,30px);color:#ffd84a}
-.msc-end .best{font-weight:800;font-size:clamp(18px,4vw,28px);color:#58e06a;animation:msc-blink .5s steps(2) infinite}
-.msc-end table{margin:10px auto 0;border-collapse:collapse;font-weight:700;font-size:clamp(15px,3.4vw,22px);text-shadow:0 1px 2px #000}
-.msc-end td{padding:1px 10px;text-align:left}
-.msc-end td.t{text-align:right;font-variant-numeric:tabular-nums}
-.msc-end tr.me td{color:${ACCENT}}
-.msc-night{top:5%}
-.msc-night .band{max-width:min(660px,94vw);margin:0 auto;padding:12px 18px 14px;background:#efe6cf;color:#1b1b1d;text-shadow:none;text-align:left;
-  font-family:Georgia,serif;border:2px solid #1b1b1d;max-height:90vh;overflow:hidden}
-.msc-night .kind{color:#8a2a1f;text-align:center;font-family:'Barlow Condensed',Impact,sans-serif}
-.msc-night .title{font-family:'Barlow Condensed',Impact,sans-serif;font-size:clamp(26px,5.4vw,46px);line-height:1;text-align:center;margin:2px 0 4px}
-.msc-night .by{font-style:italic;font-size:clamp(12px,2.4vw,15px);text-align:center;color:#555}
+.msc .band.cut{width:min(520px,92vw);padding:16px 24px 20px;background:none;box-shadow:none;text-align:left;animation:cut-in .4s ease-out both}
+.msc-end .title{font-weight:700;font-size:clamp(26px,5vw,38px);line-height:1.05;letter-spacing:0;margin:2px 0 10px;text-wrap:balance}
+.msc-end .lead{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.msc-end .place,.msc-end .time{font-weight:700;font-size:clamp(28px,6vw,40px);line-height:1;font-variant-numeric:tabular-nums}
+.msc-end .place sup{font-size:.5em}
+.msc-end .medal{margin-left:auto;font-size:16px;font-style:italic;white-space:nowrap}
+.msc-end .lines{margin:8px 0 0;font-size:16px;line-height:1.4}
+.msc-end table{width:100%;margin:14px 0 0;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.msc-end td{padding:4px 0;border-bottom:1px solid #d6cfbe;text-align:left}
+.msc-end td.n{width:2.2em;color:var(--muted)}
+.msc-end td.t{text-align:right}
+.msc-end tr.me td{font-weight:700}
+.msc-night{top:4%}
+.msc-night .band.cut{width:min(660px,94vw);margin:0 auto;padding:12px 22px 16px;max-height:90vh;overflow:hidden}
+.msc-night .kind{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.msc-night .title{font-weight:700;font-size:clamp(26px,5.4vw,44px);line-height:1.02;letter-spacing:0;margin:2px 0 4px;text-wrap:balance}
+.msc-night .by{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .msc-night .stand{font-weight:700;font-size:clamp(14px,2.8vw,18px);line-height:1.25;margin:6px 0}
 .msc-night p{font-size:clamp(12px,2.4vw,15px);line-height:1.3;margin:4px 0}
-.msc-night .small{display:flex;gap:10px;border-top:1px solid #1b1b1d;margin-top:8px;padding-top:6px}
+.msc-night .small{display:flex;gap:12px;border-top:1px solid var(--ink);margin-top:10px;padding-top:8px}
 .msc-night .small div{flex:1;font-size:clamp(11px,2.2vw,14px);line-height:1.25}
-.msc-night .small h4{margin:0 0 2px;font-size:1em;text-transform:uppercase;letter-spacing:.06em;color:#8a2a1f}
-.msc-sheet .band{position:relative}
-.msc-sheet .stamp{position:absolute;right:18px;top:14px;transform:rotate(-12deg);font:800 clamp(26px,6vw,48px) 'Barlow Condensed',Impact,sans-serif;letter-spacing:.08em;border:4px solid;padding:0 10px;opacity:.85}
+.msc-night .small div+div{border-left:1px solid var(--ink);padding-left:12px}
+.msc-night .small h4{margin:0 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.14em}
+.msc-sheet .verdict{font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;margin:8px 0 0}
 @media (max-width:700px),(max-height:500px){.msc-night .small{flex-direction:column;gap:4px}.msc-night{top:2%}
   .msc-start,.msc-stage{bottom:calc(50% + 22px)}
   #hud:has(#mprog:not([hidden])) :is(.msc-start,.msc-stage){width:clamp(240px,calc(100vw - 2 * (min(240px,100vw - 170px) + 40px)),760px)}
@@ -216,13 +217,17 @@ export function missionCardUp() {
   return !!card && !card.classList.contains("out") && (card.classList.contains("msc-start") || card.classList.contains("msc-stage"));
 }
 
-function putCard(cls: string, html: string, life: number, colour: string) {
+/** waits: it's a card to read rather than a banner, with a × and the mouse let go (modal.ts). */
+function putCard(cls: string, html: string, life: number, colour: string, waits = false) {
   style();
   dropCard();
   const el = (card = document.createElement("div"));
   el.className = `msc ${cls}`;
-  el.innerHTML = `<div class="band" style="box-shadow:inset 0 -3px 0 ${colour}">${html}</div>`;
+  // a card that waits is a cutting from the paper; a banner keeps its line of the job's colour
+  el.innerHTML = waits ? `<div class="band cut">${html}</div>` : `<div class="band" style="box-shadow:inset 0 -3px 0 ${colour}">${html}</div>`;
+  if (waits) tearOff(el);
   layer().appendChild(el);
+  if (waits) modal(el, () => el.querySelector<HTMLElement>(".band") ?? el, () => { if (card === el) dropCard(); });
   cardTimer = window.setTimeout(() => {
     el.classList.add("out");
     cardTimer = window.setTimeout(() => { if (card === el) dropCard(); }, FADE * 1000);
@@ -266,7 +271,7 @@ interface Bit { x: number; y: number; vx: number; vy: number; a: number; va: num
 
 let ending: { remove(): void } | null = null;
 
-/** The card at the end: confetti for a win, a quiet one for a loss. It goes by itself. */
+/** The card at the end: confetti for a win, a quiet one for a loss. It goes by itself, or on its ×. */
 export function missionEnd(o: MissionEnd): EndHandle {
   style();
   dropCard();
@@ -277,26 +282,29 @@ export function missionEnd(o: MissionEnd): EndHandle {
   const canvas = document.createElement("canvas");
   if (win) el.appendChild(canvas);
   const band = document.createElement("div");
-  band.className = "band";
+  band.className = "band cut";
+  tearOff(el);
   const [main, ...rest] = o.lines;
-  band.innerHTML = (win ? `<div class="flag"></div>` : "")
-    + `<div class="title" style="${win ? `color:${o.colour ?? ACCENT}` : ""}">${esc(o.title)}</div>`
-    + (o.big ? `<div class="place${o.gold ? " gold" : ""}">${o.big}</div>` : "")
-    + (main ? `<div class="time${o.big || o.lead ? "" : " small"}">${esc(main)}</div>` : "")
-    + rest.map((l) => `<div class="time small">${esc(l)}</div>`).join("")
-    + (o.medal ? `<div class="medal">${esc(o.medal)}</div>` : "")
-    + (o.best ? `<div class="best">${esc(o.best)}</div>` : "");
+  // a time (or a race place) goes on the results line with the medal; a line that's just words goes with the rest
+  const big = !!(o.big || o.lead);
+  const text = [...(big ? rest : o.lines)].map(esc);
+  if (o.medal && !big) text.push(esc(o.medal));
+  if (o.best) text.push(`<b>${esc(o.best)}</b>`);
+  band.innerHTML = cutFlag(win ? "Stop press" : "In brief")
+    + `<div class="title">${esc(o.title)}</div>`
+    + (big ? `<div class="lead">${o.big ? `<span class="place">${o.big}</span>` : ""}${main ? `<span class="time">${esc(main)}</span>` : ""}${o.medal ? `<span class="medal">${esc(o.medal)}</span>` : ""}</div>` : "")
+    + (text.length ? `<p class="lines">${text.join("<br>")}</p>` : "");
   const table = document.createElement("div");
   band.appendChild(table);
-  if (win) band.insertAdjacentHTML("beforeend", `<div class="flag b"></div>`);
   el.appendChild(band);
   layer().appendChild(el);
+  modal(el, () => band, () => remove());
 
   let dead = false, age = 0, bursts = 0;
   const bits: Bit[] = [];
   const rows = (r: EndRow[]) => {
     table.innerHTML = r.length > 1 || (r.length && !r[0].me)
-      ? `<table>${r.slice(0, 8).map((x, k) => `<tr class="${x.me ? "me" : ""}"><td>${k + 1}.</td><td style="color:${x.me ? "" : x.colour}">${esc(x.name)}</td><td class="t">${esc(x.time)}</td></tr>`).join("")}</table>`
+      ? `<table>${r.slice(0, 8).map((x, k) => `<tr class="${x.me ? "me" : ""}"><td class="n">${k + 1}.</td><td>${esc(x.name)}</td><td class="t">${esc(x.time)}</td></tr>`).join("")}</table>`
       : "";
   };
   const burst = () => {
@@ -348,19 +356,19 @@ export function missionEnd(o: MissionEnd): EndHandle {
   return handle;
 }
 
-/** A form filled in at the end (the driving test's report): a heading, a big stamp across it, and
- *  sections of lines. Lines are plain text. */
+/** A form filled in at the end (the driving test's report): a heading, the result, and sections of
+ *  lines. Lines are plain text. */
 export function missionSheet(o: { kind: string; title: string; who: string; stamp: string; good: boolean; sections: { head: string; lines: string[] }[]; foot?: string; life?: number }) {
   const colour = o.good ? "#1f6a33" : "#a3201c";
-  putCard("msc-night msc-sheet", `<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div><div class="by">${esc(o.who)}</div>`
-    + `<div class="stamp" style="color:${colour};border-color:${colour}">${esc(o.stamp)}</div>`
+  putCard("msc-night msc-sheet", `${cutFlag("Motoring")}<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div><div class="by">${esc(o.who)}</div>`
+    + `<div class="verdict" style="color:${colour}">Result: ${esc(o.stamp)}</div>`
     + `<div class="small">${o.sections.map((x) => `<div><h4>${esc(x.head)}</h4>${x.lines.length ? x.lines.map((l) => esc(l)).join("<br>") : "None"}</div>`).join("")}</div>`
-    + (o.foot ? `<div class="stand">${esc(o.foot)}</div>` : ""), o.life ?? 14, colour);
+    + (o.foot ? `<div class="stand">${esc(o.foot)}</div>` : ""), o.life ?? 14, colour, true);
 }
 
 /** The night out's front page (nightout.ts): a newspaper card over the game, written by paper.ts. Items' text is html already escaped. */
 export function missionNight(o: { pub: string; head: string; stand: string; by: string; body: string[]; items: { head: string; text: string }[] }) {
-  putCard("msc-night", `<div class="kind">Last orders at ${esc(o.pub)}</div><div class="title">${esc(o.head)}</div><div class="by">${esc(o.by)}</div>`
+  putCard("msc-night", `${cutFront(`Last orders at ${esc(o.pub)}`)}<div class="title">${esc(o.head)}</div><div class="by">${esc(o.by)}</div>`
     + `<div class="stand">${esc(o.stand)}</div>${o.body.map((p) => `<p>${esc(p)}</p>`).join("")}`
-    + `<div class="small">${o.items.map((i) => `<div><h4>${i.head}</h4>${i.text}</div>`).join("")}</div>`, 16, "#8a2a1f");
+    + `<div class="small">${o.items.map((i) => `<div><h4>${i.head}</h4>${i.text}</div>`).join("")}</div>`, 16, "#8a2a1f", true);
 }

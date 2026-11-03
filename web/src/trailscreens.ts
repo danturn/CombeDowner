@@ -5,13 +5,18 @@
 // anything's paid), and the call-out when a search circle draws in. Its end card is the race
 // results card (racescreens.ts summary) in the trail's colour.
 //
-// All drawn on the page in the HUD's layer, sized by the screen, and none of it takes a click.
+// All drawn on the page in the HUD's layer and sized by the screen. Only the splash takes a click:
+// it waits for you to read it, with a × to put it away (Esc too), and the mouse let go (modal.ts).
 // Nothing here goes over the network: trail.ts says what to show from what it already knows. A
 // Wanted poster's screens (wantedscreens.ts) are built from the same boxes and paper, and share the
-// call-out, in the poster's red.
+// call-out, in the poster's red. The splash and the clue card are cuttings from the Chronicle
+// (cutting.ts), with the clue in a dashed box as a coupon would be; the offer and the call-out stay
+// banners over the game.
 import { ctlText } from "./controls";
 import { missionCardDrop } from "./missionscreens";
+import { modal } from "./modal";
 import { style as raceStyle, touchUp } from "./racescreens";
+import { cutFlag, tearOff } from "./cutting";
 
 const GOLD = "#e0a526";
 
@@ -53,6 +58,22 @@ function style() {
 .tsc-offer .price{font-weight:800;font-size:clamp(16px,3.2vmin,24px);color:#ffd84a;margin-top:4px}
 .tsc-offer .go{font-weight:800;font-size:clamp(15px,3vmin,22px);margin-top:6px}
 .tsc-offer .go b{color:#fff;background:var(--rc);color:#14100a;padding:0 6px;text-shadow:none}
+/* the splash and the clue card as cuttings: newsprint words, and the clue in a dashed box, as a coupon */
+.rsc .band.cut{background:none;box-shadow:none;text-align:left;padding:16px 24px 18px;animation:cut-in .4s ease-out both}
+.tsc .cut .head{font-family:'Old Standard TT',Georgia,serif;font-weight:700;font-size:clamp(26px,5.4vmin,40px);letter-spacing:0;text-transform:none;line-height:1.05}
+.tsc .cut .look{font-weight:400;font-size:clamp(15px,2.8vmin,20px)}
+.tsc .cut .look b{color:var(--ink)}
+.tsc .cut .small{color:var(--muted);font-style:italic;font-weight:400}
+.tsc .cut .small b{color:var(--ink)}
+.tsc .cut .paper{max-width:none;margin:12px 0 10px;background:none;color:var(--ink);border:1px dashed var(--ink);box-shadow:none}
+.tsc .cut .paper .ctag{font-family:'Old Standard TT',Georgia,serif;font-weight:400;letter-spacing:.12em;color:var(--muted)}
+.tsc .cut ul{max-width:none;margin:0;color:var(--ink);font-weight:400;font-size:clamp(13px,2.4vmin,16px)}
+.tsc .cut li{break-inside:avoid}
+.tsc .cut .again{color:var(--ink);font-weight:400;font-style:italic;font-size:14px;margin-top:8px}
+.tsc .cut .again b{color:var(--ink)}
+.rsc .cut b{color:var(--ink)}
+.tsc .cut .paper b{color:var(--ink)}
+.tsc .cut li::before{content:'\\2013  ';color:var(--muted)}
 @media (max-height:520px){.tsc-splash{top:2%}.tsc ul{font-size:12px}.tsc .paper{margin:6px auto 4px;padding:6px 12px 8px}.tsc-offer{top:4%}}
 @keyframes tsc-in{from{transform:scale(1.6);opacity:0}to{transform:none;opacity:1}}
 @keyframes tsc-pulse{to{transform:scale(1.06)}}`;
@@ -110,14 +131,17 @@ export interface SplashInfo {
 let splashEl: HTMLDivElement | null = null;
 const splashT = { t: 0 };
 
-/** The big card when a trail starts; it goes by itself after secs. Null takes it down now. */
+/** The big card when a trail starts; it goes by itself after secs, or on its ×. Null takes it down now. */
 export function splash(o: SplashInfo | null, secs = 16) {
   if (!o) { clearTimeout(splashT.t); if (splashEl) splashEl.hidden = true; return; }
   missionCardDrop();   // it says all the title card would, and more
   splashEl ??= box("tsc-splash");
-  put(splashEl, `<div class="band"><div class="kind">Treasure hunt</div><div class="head">${esc(o.name)}</div>`
+  tearOff(splashEl);
+  put(splashEl, `<div class="band cut">${cutFlag("Treasure hunt")}<div class="head">${esc(o.name)}</div>`
     + `<div class="look">${o.find}</div><div class="small">${o.clock}</div>${paper(o.tag, o.clue)}`
     + `<ul>${o.rules.map((r) => `<li>${r}</li>`).join("")}</ul><div class="again">${againText()}</div></div>`);
+  const el = splashEl;
+  modal(el, () => el.querySelector<HTMLElement>(".band") ?? el, () => splash(null));
   fadeAfter(splashEl, secs, splashT);
 }
 export const splashUp = () => !!splashEl && !splashEl.hidden && !splashEl.classList.contains("out");
@@ -131,7 +155,8 @@ export function clueCard(o: { tag: string; clue: string; foot: string } | null) 
   if (!o) { if (cardEl && !cardEl.hidden) cardEl.hidden = true; return; }
   if (splashUp()) splash(null);
   cardEl ??= box("tsc-card");
-  put(cardEl, `<div class="band">${paper(o.tag, o.clue)}${o.foot ? `<div class="small">${o.foot}</div>` : ""}</div>`);
+  tearOff(cardEl);
+  put(cardEl, `<div class="band cut">${cutFlag("Treasure hunt")}${paper(o.tag, o.clue)}${o.foot ? `<div class="small">${o.foot}</div>` : ""}</div>`);
 }
 
 // ---- asking a local ----------------------------------------------------------------------------------------

@@ -130,6 +130,13 @@ side allow, with a pavement a kerb high only where there is one. Every garden ha
 wall, gate and path to the door, with one fence or hedge between it and each neighbour. Jump at a
 wall up to 2.6 m high and you pull yourself up onto it.
 
+Nobody ends up inside a house. However fast you go (flat out downhill on a ride, or in a car, on a
+slow phone), you can't pass through a wall, and the naughty boys, the cats and Bendy won't hop over
+the back wall of a house dug into the hill and drop down inside it. If you're somehow shut in a
+building anyway (shoved in by a car, a part of the map loading in round you, or dropping into a
+courtyard off a roof), you're put straight out on the nearest clear ground, and so is anyone else.
+Standing on a roof is fine.
+
 ### Day and night
 
 Day turns to night and back every 24 minutes, the same for everyone since it comes from the clock.
@@ -144,13 +151,33 @@ After dark its backlight glows blue-green so you can still read it.
 
 ## Menus, settings and the debug panel
 
+**The menus** are pages of BathText '91, a teletext service: the main menu is page 100, filling the
+screen beside the crest of Bath, the pause menu is 101, Settings 200 (its pages 201 to 205), Link a device 300, the
+wardrobe 400 and the trophy cabinet 500, each with the time ticking over in its top corner. Green
+buttons go on, red ones leave, and links to other pages are listed with their page numbers.
+
 **Full screen** is in the pause menu (Esc opens it and Esc again closes it, or II on a touch screen). In Chrome and Edge, Esc then
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
 deli too. Safari and Firefox leave full screen when you press Esc.
 
-**Settings**, on the main menu and in the pause menu, is remembered on that computer:
+**Every card and sheet** over the game has a × in its top right corner to put it away. The cards
+that stop you to read them (a job's end card, a race's or a trail's results, the opening poster of
+a treasure hunt or a Wanted bounty, the night out's front page, the driving test's report) come up
+as cuttings torn out of the Chronicle, each with the paper's masthead and the section it's from
+along the top (Stop Press, Sport, Motoring, Wanted). The ones
+that come up by themselves (the Chronicle's front page when you join, a job's end card, a race's or
+a trail's results, the opening poster of a treasure hunt or a Wanted bounty, the night out's front
+page, the driving test's report, the Art Gallery's verdict, the fly-over when a zone opens) also
+go on Esc (without leaving full screen in Chrome and Edge) or Options on a pad, and with a mouse a
+click anywhere off the card puts it away and goes straight back to aiming. While one's up the mouse
+is let go, so you can click its buttons. Leave it and it still goes by itself after a while.
+Settings, the wardrobe, the trophy cabinet and linking a device have the × too, and Esc closes them.
 
-- Picture: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
+**Settings**, on the main menu and in the pause menu, is remembered on that computer. It opens on a
+list of its pages (Video, Controls, Controller once a pad's been seen, Play and Sound); pick one to
+open it, and Back or Esc takes you back to the list:
+
+- Video: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
   debug panel.
@@ -240,7 +267,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | D-pad | up: the torch; down: ride; left binoculars, right mark the spot (in the Driving Test's back seat: up and down the radio, left the station, right the window) | left and right indicate (wave, at a helm) |
 | Create, held | the scores | the scores |
 | Touchpad | tap: the map (on it: Cross marks, Triangle finds you, Circle closes); hold: the job's poster again (a Wanted bounty) | the map |
-| Options | pause | pause |
+| Options | pause (with a big card up: put it away) | pause |
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
@@ -451,7 +478,8 @@ bound and where it calls, which platform, and how long till it's due, all on the
 same time as the sky and your watch, so a train every few real minutes is one every few hours).
 The station speakers announce each train in GWR's own words ("Platform two for the fourteen twenty
 Great Western Railway service to Westbury, calling at..."), again as it approaches, and now and then
-remind you to "See it. Say it. Sorted." Anyone near a station hears them, and nobody else. After
+remind you to "See it. Say it. Sorted." You hear them on the platforms and just round the station, fading as
+you walk off, and an announcement stops once you're out of earshot. After
 dark the lamps under the canopies light the platforms. Stand on any platform
 and the middle of the screen tells you the next train from it too.
 
@@ -704,8 +732,8 @@ At the end comes a results card: your place in big podium colours, your time, yo
 shine on it (or DNF), your best on the route ("NEW BEST!" if you beat it), how far you were off
 gold, and a few things from the run (top speed, boosts, slipstream, barges), with the podium and
 everyone's standings in a room race (anyone who didn't finish at the bottom), any prize, and a
-fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or for
-about 8 seconds; Again (use: E or □, or Backspace) goes again. On your own you get it as soon as
+fanfare that suits it. It stays till you press Continue (Space, Cross on a pad, or tap it) or its
+×, or for about 8 seconds; Again (use: E or □, or Backspace) goes again. On your own you get it as soon as
 you're over the line or out. In a room race, over the line or out of it while others are still
 riding, you wait where you stopped, held still and safe from harm (killed, you come back once it's
 over), and watch the others from behind: Q and E or the arrow keys switch who (d-pad ← and →

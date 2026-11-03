@@ -434,7 +434,9 @@ export class Bendy {
     this.vx += (dirX * speed - this.vx) * k; this.vz += (dirZ * speed - this.vz) * k;
     const nx = this.x + this.vx * dt, nz = this.z + this.vz * dt;
     // he steps over garden walls and fences without noticing
-    const p = this.map.collide({ x: nx, z: nz }, this.y + 1.3, RADIUS);
+    const p = this.map.sweep(this, { x: nx, z: nz }, this.y + 1.3, RADIUS);
+    // (but never into a house: his lamp would be no use to him in there)
+    this.map.keepOut(this.x, this.z, p, 0, RADIUS);
     if ((dirX || dirZ) && Math.hypot(p.x - this.x, p.z - this.z) < speed * dt * 0.3) {
       if ((this.stuckT += dt) > 1.5) { this.stuckT = 0; this.goT = 0; }   // stuck: somewhere else, then
     } else this.stuckT = 0;

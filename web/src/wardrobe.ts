@@ -13,6 +13,8 @@
 // checked: it's only clothes.
 import * as THREE from "three";
 import { Avatar, ball, box, part, shell, type Piece } from "./avatar";
+import { PAGE, ttBar, ttTitle } from "./teletext";
+import { closeButton } from "./modal";
 
 export type Slot = "head" | "face" | "back";
 export const SLOTS: Slot[] = ["head", "face", "back"];
@@ -275,8 +277,8 @@ export function openWardrobe(colour: string, seed: string, changed: () => void, 
   page = document.createElement("div");
   page.id = "wardrobe";
   page.className = "overlay";
-  page.innerHTML = `<div class="card wardcard">
-    <header class="masthead"><span class="mark" aria-hidden="true"></span><span>Bath &amp; North East Somerset<b>Wardrobe</b></span></header>
+  page.innerHTML = `<div class="card tt wardcard">
+    ${ttBar(PAGE.wardrobe)}${ttTitle("Wardrobe")}
     <div class="wardbody"><canvas class="wardview" width="240" height="320" aria-label="You, in what you're wearing"></canvas><div class="wardlist"></div></div>
     <div class="pubbar"><p class="hint wardcount"></p><button type="button" class="wardback">Back</button></div>
   </div>`;
@@ -317,6 +319,7 @@ export function openWardrobe(colour: string, seed: string, changed: () => void, 
   };
   shut = close;
   page.querySelector(".wardback")!.addEventListener("click", close);
+  closeButton(page.querySelector<HTMLElement>(".wardcard")!, close);
   // you, turning round slowly, in what you've got on
   try {
     const canvas = page.querySelector<HTMLCanvasElement>(".wardview")!;

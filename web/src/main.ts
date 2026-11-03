@@ -34,6 +34,7 @@ import * as Saves from "./saves";
 import { mine } from "./features";
 import { openLink } from "./link";
 import { easelUp, onEaselRelock } from "./easel";
+import { closeModals, modalUp, onModal, onModalRelock } from "./modal";
 import { Unlit } from "./unlit";
 import { Trackpad } from "./trackpad";
 
@@ -405,6 +406,7 @@ function lockFailed() {
 function lock() {
   closeWardrobe();
   closeCabinet();
+  closeModals();
   if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
@@ -418,6 +420,12 @@ function lock() {
 }
 document.addEventListener("pointerlockerror", lockFailed);
 onEaselRelock(lock);
+// the last big card gone: a click on its × takes the mouse back; Esc can't (the browser won't capture
+// the mouse from a key), nor can a card going by itself, so then the next click does it
+onModalRelock((byClick) => {
+  if (!game?.active || freeMode || !$("pause").hidden || game.mapOpen || easelUp() || document.pointerLockElement === canvas) return;
+  if (byClick) lock(); else $("clickhint").hidden = false;
+});
 /** The pause menu's Trophies button says how much of Bath you've done. */
 function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
@@ -448,7 +456,8 @@ document.addEventListener("pointerlockchange", () => {
   const locked = document.pointerLockElement === canvas;
   if (!game || freeMode) return;
   // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
-  if (!locked && (game.mapOpen || easelUp())) { $("clickhint").hidden = true; return; }
+  // and so does a big card that waits for you (modal.ts)
+  if (!locked && (game.mapOpen || easelUp() || modalUp())) { $("clickhint").hidden = true; return; }
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -462,6 +471,10 @@ document.addEventListener("pointerlockchange", () => {
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
   if (!$("pause").hidden || game.mapOpen || easelUp()) return;
+  // a big card's up with the mouse let go: its × and buttons take clicks as usual, and a click off
+  // it puts it away and takes the mouse back
+  if (modalUp() && onModal(e.target)) return;
+  if (modalUp()) closeModals(true);
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)

@@ -46,6 +46,7 @@ import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
+import { modal, modalClicked } from "./modal";
 import { SET_PIECES } from "./landmarks/setpieces";
 import { speak } from "./posh";
 import { esc, hash, rng, type Card, type Job, type QuestWorld, type Waiting } from "./quests";
@@ -1011,7 +1012,7 @@ registerChallenge({
           <div style="font:900 22px Georgia,serif;color:${colour};border:3px solid ${colour};padding:2px 10px;transform:rotate(-6deg)">${v.won ? "A SUCCESS" : "PANNED"}</div></div>
         <div style="text-align:center;margin-top:8px;font:italic 13px Georgia,serif;color:#444">${ctlText("<b>{use}</b> or a tap to look round the show: the marks are on the cards")}</div>`;
       document.body.appendChild(el);
-      // put away by use (job.use), a click or a tap on it, Esc, Enter or Space, or the mouse let go
+      // put away by use (job.use), a click or a tap on it or its ×, Esc, Enter or Space
       const stop = (cardStop = new AbortController()), sig = { capture: true, signal: stop.signal };
       el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); dismissCard(); }, { signal: stop.signal });
       addEventListener("keydown", (e) => {
@@ -1019,9 +1020,10 @@ registerChallenge({
         e.preventDefault(); e.stopImmediatePropagation();
         if (!e.repeat) dismissCard();
       }, sig);
-      // a click with the mouse captured (or the pad's trigger) puts it away rather than firing a shot
-      addEventListener("mousedown", (e) => { e.stopImmediatePropagation(); dismissCard(); }, sig);
-      document.addEventListener("pointerlockchange", () => { if (!document.pointerLockElement) dismissCard(); }, { signal: stop.signal });
+      // a click (or the pad's trigger) puts it away rather than firing a shot, and takes the mouse back
+      addEventListener("mousedown", (e) => { e.stopImmediatePropagation(); dismissCard(); modalClicked(); }, sig);
+      // a card to read: a × to put it away too, and the mouse let go while it's up (modal.ts)
+      modal(el, () => el, () => dismissCard());
     }
 
     function dismissCard() {

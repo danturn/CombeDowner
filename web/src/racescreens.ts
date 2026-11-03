@@ -1,19 +1,21 @@
 // A race's own screens, big and in the middle, on top of the screens every mission shares
 // (missionscreens.ts): the banner while the racers gather and line up, the 3, 2, 1, GO! with its
 // start lights, the banner while you watch the others after you've finished or come off, and the
-// results card at the end, which stays up till you carry on. A treasure trail's screens share the
+// results card at the end, which stays up till you carry on: a cutting from the Chronicle's sports
+// pages (cutting.ts), with the race's colour on its section tab. A treasure trail's screens share the
 // look (trailscreens.ts), and its end card is this results card in the trail's colour.
 //
 // All drawn on the page in the HUD's layer and sized by the screen, so they work the same on a
 // phone. Nothing here goes over the network: race.ts says what to show from what it already knows.
-// The only things that take a press are the results card (Continue, Again) and the buttons to
-// switch who you're watching on a touch screen.
+// The only things that take a press are the results card (Continue, Again, and its × to put it
+// away: it lets the mouse go while it's up, modal.ts) and the buttons to switch who you're watching
+// on a touch screen.
 import { ctl, isKey } from "./controls";
 import { missionCardDrop } from "./missionscreens";
+import { modal, modalClicked } from "./modal";
+import { cutFlag, tearOff } from "./cutting";
 
 const COLOUR = "#3ec7e8";
-const PODIUM = ["", "#ffd23a", "#dfe5ea", "#e0975a"];
-export const MEDAL_COLOUR: Record<string, string> = { author: "#7ff0ff", gold: "#ffd23a", silver: "#dfe5ea", bronze: "#e0975a" };
 const CARD_SECS = 8;
 
 let styled = false;
@@ -58,53 +60,32 @@ body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility
 .rsc-flip.l{left:14px}.rsc-flip.r{right:14px}
 .rsc-end{inset:0;justify-content:center;background:radial-gradient(ellipse at center,rgba(4,8,12,.55),rgba(4,8,12,.8));pointer-events:auto;transition:opacity .5s}
 .rsc-end.out{opacity:0}
-.rsc-end .rcard{width:min(680px,94vw);max-height:94vh;overflow:hidden;box-sizing:border-box;padding:clamp(10px,2.4vmin,22px) clamp(12px,3vmin,28px);
-  background:linear-gradient(rgba(10,18,26,.94),rgba(6,10,14,.94));border:2px solid var(--rc,${COLOUR});box-shadow:0 0 0 4px #000,0 12px 40px #000;
-  animation:rsc-card .6s cubic-bezier(.2,1.5,.4,1) both}
-.rsc-end.dnf .rcard{border-color:#ff5a4e}
-.rsc-end .flag{height:12px;margin:0 auto 6px;background:repeating-conic-gradient(#111 0 25%,#f4f4f2 0 50%) 0 0/12px 12px}
-.rsc-end .kind{font-weight:700;font-size:clamp(12px,2.4vmin,17px);letter-spacing:.2em;text-transform:uppercase;color:var(--rc,${COLOUR})}
-.rsc-end .title{font-weight:900;font-size:clamp(30px,7vmin,58px);line-height:1;letter-spacing:.04em;text-transform:uppercase}
-.rsc-end.dnf .title{color:#ff8a80}
-.rsc-end .rrow{display:flex;align-items:center;justify-content:center;gap:clamp(12px,4vmin,40px);margin:6px 0}
-.rsc-end .place{font-weight:900;font-size:clamp(70px,17vmin,150px);line-height:.85;animation:rsc-punch .8s cubic-bezier(.15,1.5,.4,1) .2s both}
-.rsc-end .place sup{font-size:.4em}
-.rsc-end .time{font-weight:800;font-size:clamp(34px,8vmin,72px);line-height:1;font-variant-numeric:tabular-nums}
-.rsc-end .medal{position:relative;overflow:hidden;width:clamp(78px,17vmin,140px);height:clamp(78px,17vmin,140px);border-radius:50%;flex:none;
-  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(14px,3vmin,24px);letter-spacing:.06em;color:#20160a;text-shadow:0 1px 0 #fff8;
-  border:4px solid #0008;box-shadow:0 0 0 3px #000,0 0 30px var(--m);background:radial-gradient(circle at 35% 30%,#fff,var(--m) 45%,#5a4a2a 110%);
-  animation:rsc-medal .9s cubic-bezier(.2,1.6,.4,1) .45s both}
-.rsc-end .medal::after{content:'';position:absolute;inset:-40%;background:linear-gradient(115deg,transparent 40%,#fffb 50%,transparent 60%);animation:rsc-shine 2.4s ease-in-out 1.2s infinite}
-.rsc-end .medal.none{--m:#556;color:#ccd;text-shadow:none;box-shadow:0 0 0 3px #000}
-.rsc-end .medal.none::after{display:none}
-.rsc-end .line{font-weight:700;font-size:clamp(15px,3.2vmin,24px);margin-top:2px}
-.rsc-end .best{font-weight:900;font-size:clamp(20px,4.4vmin,34px);color:#58e06a;animation:rsc-blink .5s steps(2) infinite}
-.rsc-end .stats{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 0 4px}
-.rsc-end .stat{background:#ffffff12;border:1px solid #ffffff26;padding:3px 10px 2px;min-width:72px}
-.rsc-end .stat .v{font-weight:800;font-size:clamp(18px,3.8vmin,28px);line-height:1;font-variant-numeric:tabular-nums}
-.rsc-end .stat .k{font-weight:700;font-size:clamp(10px,1.9vmin,13px);letter-spacing:.12em;text-transform:uppercase;color:#9fb0bc}
-.rsc-end .podium{display:flex;align-items:flex-end;justify-content:center;gap:6px;margin:8px 0 2px;height:clamp(64px,13vmin,110px)}
-.rsc-end .step{width:clamp(80px,18vmin,140px);display:flex;flex-direction:column;justify-content:flex-end;font-weight:800;font-size:clamp(12px,2.4vmin,17px)}
-.rsc-end .step i{display:block;font-style:normal;color:#20160a;text-shadow:none;font-size:clamp(16px,3.4vmin,26px);padding-top:2px}
-.rsc-end table{margin:4px auto 0;border-collapse:collapse;font-weight:700;font-size:clamp(13px,2.6vmin,19px)}
-.rsc-end td{padding:0 8px;text-align:left}
-.rsc-end td.t{text-align:right;font-variant-numeric:tabular-nums}
-.rsc-end tr.me td{color:var(--rc,${COLOUR})}
-.rsc-end tr.dnf td{color:#9aa}
-.rsc-end .reward{font-weight:700;font-size:clamp(14px,2.8vmin,20px);color:#ffd84a;margin-top:6px}
-.rsc-end .go{display:flex;justify-content:center;gap:10px;margin-top:10px}
-.rsc-end button{pointer-events:auto;font:800 clamp(16px,3.2vmin,22px) 'Barlow Condensed',Impact,sans-serif;letter-spacing:.08em;text-transform:uppercase;
-  padding:6px 18px 5px;color:#fff;background:#ffffff14;border:2px solid var(--rc,${COLOUR});cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
-.rsc-end button.main{background:var(--rc,${COLOUR});color:#08131a}
-.rsc-end button .fill{position:absolute;left:0;bottom:0;height:3px;background:#fff;animation:rsc-fill ${CARD_SECS}s linear both}
-@media (max-height:600px){.rsc-end .podium{display:none}.rsc-end .stats{margin:4px 0 2px}.rsc-end .flag{display:none}}
+.rsc-end .rcard{width:min(520px,94vw);max-height:94vh;overflow:auto;padding:16px 24px 20px;animation:cut-in .4s ease-out both}
+.rsc-end .kind{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.rsc-end .title{font-weight:700;font-size:clamp(28px,6vmin,40px);line-height:1.05;margin:2px 0 10px;text-wrap:balance}
+.rsc-end .lead{display:flex;align-items:baseline;gap:16px;padding:8px 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.rsc-end .place,.rsc-end .time{font-weight:700;font-size:clamp(28px,6.4vmin,42px);line-height:1;font-variant-numeric:tabular-nums}
+.rsc-end .place sup{font-size:.5em}
+.rsc-end .medal{margin-left:auto;font-size:16px;font-style:italic;white-space:nowrap}
+.rsc-end .lines{margin:8px 0 0;font-size:16px;line-height:1.4}
+.rsc-end .cut b{color:var(--ink)}
+.rsc-end table{width:100%;margin:14px 0 0;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.rsc-end caption{text-align:left;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding-bottom:4px}
+.rsc-end td{padding:4px 0;border-bottom:1px solid #d6cfbe;text-align:left}
+.rsc-end td.n{width:2.2em;color:var(--muted)}
+.rsc-end td.t{text-align:right}
+.rsc-end tr.me td{font-weight:700}
+.rsc-end tr.dnf td{color:var(--muted)}
+.rsc-end .stats{margin-top:10px;font-size:13px;color:var(--muted)}
+.rsc-end .stats b{color:var(--ink)}
+.rsc-end .reward{margin-top:4px;font-size:14px;font-weight:700}
+.rsc-end .go{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.rsc-end button{pointer-events:auto;font:700 15px 'Old Standard TT',Georgia,serif;letter-spacing:.02em;text-transform:none;padding:7px 16px 6px;
+  color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:0;cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
+.rsc-end button.main{background:var(--ink);color:#f5f2e9}
+.rsc-end button small{font-weight:400;opacity:.7}
+.rsc-end button .fill{position:absolute;left:0;bottom:0;height:2px;background:#f5f2e9;animation:rsc-fill ${CARD_SECS}s linear both}
 @keyframes rsc-punch{0%{transform:scale(2.6);opacity:0}25%{transform:scale(.92);opacity:1}40%{transform:scale(1.04)}70%{transform:scale(1);opacity:1}100%{transform:scale(.96);opacity:0}}
-.rsc-end .place{animation-name:rsc-in}
-@keyframes rsc-in{0%{transform:scale(2.6);opacity:0}60%{transform:scale(.94);opacity:1}100%{transform:none;opacity:1}}
-@keyframes rsc-card{from{transform:translateY(40vh) scale(.8);opacity:0}to{transform:none;opacity:1}}
-@keyframes rsc-medal{from{transform:scale(0) rotate(-200deg)}to{transform:none}}
-@keyframes rsc-shine{0%{transform:translateX(-60%)}45%,100%{transform:translateX(60%)}}
-@keyframes rsc-blink{to{opacity:.4}}
 @keyframes rsc-dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 @keyframes rsc-fill{from{width:100%}to{width:0}}`;
   document.head.appendChild(s);
@@ -218,7 +199,7 @@ export interface Summary {
 
 let card: { remove(): void } | null = null;
 
-/** The card at the end of a race: it punches in, and stays till Continue (or about 8 s). again: the
+/** The card at the end of a race: it punches in, and stays till Continue or its × (or about 8 s). again: the
  *  Again button's go, if there is one. */
 export function summary(o: Summary, again?: () => void) {
   style();
@@ -226,22 +207,20 @@ export function summary(o: Summary, again?: () => void) {
   const e = document.createElement("div");
   e.className = `rsc rsc-end${o.dnf ? " dnf" : ""}`;
   if (o.colour) e.style.setProperty("--rc", o.colour);
-  const medal = o.medal
-    ? `<div class="medal" style="--m:${MEDAL_COLOUR[o.medal] ?? "#ffd23a"}">${esc((o.medalWord ?? o.medal).toUpperCase())}</div>`
-    : `<div class="medal none">${esc((o.medalWord ?? (o.dnf ? "DNF" : "No medal")).toUpperCase())}</div>`;
-  const place = o.place ? `<div class="place" style="color:${PODIUM[o.place] ?? "#fff"}">${nth(o.place)}</div>` : "";
-  const podium = o.podium && o.podium.length > 1
-    ? `<div class="podium">${[1, 0, 2].filter((k) => o.podium![k]).map((k) => `<div class="step"><span>${esc(o.podium![k].name)}</span><span class="small">${esc(o.podium![k].time)}</span><i style="background:${PODIUM[k + 1]};height:${[100, 72, 52][k]}%">${k + 1}</i></div>`).join("")}</div>`
+  // one results line (place, time, medal), what that means in a line or two, the table, and the numbers small
+  const word = o.medalWord ?? (o.medal ? `${o.medal[0].toUpperCase()}${o.medal.slice(1)} medal` : o.dnf ? "Did not finish" : "No medal");
+  const list = o.rows && o.rows.length > 1 ? o.rows : o.podium && o.podium.length > 1 ? o.podium : null;
+  const table = list
+    ? `<table><caption>Results</caption>${list.slice(0, 10).map((r: { name: string; time: string; me?: boolean; dnf?: boolean }, k) => `<tr class="${r.me ? "me" : ""}${r.dnf ? " dnf" : ""}"><td class="n">${r.dnf ? "–" : `${k + 1}.`}</td><td>${esc(r.name)}</td><td class="t">${esc(r.time)}</td></tr>`).join("")}</table>`
     : "";
-  const table = o.rows && o.rows.length > 1
-    ? `<table>${o.rows.slice(0, 10).map((r, k) => `<tr class="${r.me ? "me" : ""}${r.dnf ? " dnf" : ""}"><td>${r.dnf ? "–" : `${k + 1}.`}</td><td>${esc(r.name)}</td><td class="t">${esc(r.time)}</td></tr>`).join("")}</table>`
-    : "";
+  const lines = [...o.lines.map(esc), ...(o.best ? [`<b>${esc(o.best)}</b>`] : [])];
   const ok = ctl("jump"), more = again ? ctl("again") : "";
-  e.innerHTML = `<div class="rcard">${o.dnf ? "" : `<div class="flag"></div>`}<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div>`
-    + `<div class="rrow">${place}<div><div class="time">${esc(o.time)}</div>${o.lines.map((l) => `<div class="line">${esc(l)}</div>`).join("")}</div>${medal}</div>`
-    + (o.best ? `<div class="best">${esc(o.best)}</div>` : "")
-    + `<div class="stats">${o.stats.map((s) => `<div class="stat"><div class="v">${esc(s.v)}</div><div class="k">${esc(s.k)}</div></div>`).join("")}</div>`
-    + podium + table
+  tearOff(e);
+  e.innerHTML = `<div class="rcard cut">${cutFlag("Sport")}<div class="kind">${esc(o.kind)}</div><div class="title">${esc(o.title)}</div>`
+    + `<div class="lead">${o.place ? `<span class="place">${nth(o.place)}</span>` : ""}<span class="time">${esc(o.time)}</span><span class="medal">${esc(word)}</span></div>`
+    + (lines.length ? `<p class="lines">${lines.join("<br>")}</p>` : "")
+    + table
+    + (o.stats.length ? `<div class="stats">${o.stats.map((x) => `${esc(x.k)} <b>${esc(x.v)}</b>`).join(" &nbsp;·&nbsp; ")}</div>` : "")
     + (o.reward ? `<div class="reward">${esc(o.reward)}</div>` : "")
     + `<div class="go">${again ? `<button type="button" class="again">Again <small>(${esc(more)})</small></button>` : ""}<button type="button" class="main">Continue <small>(${esc(ok)})</small><span class="fill"></span></button></div></div>`;
   layer().appendChild(e);
@@ -265,8 +244,9 @@ export function summary(o: Summary, again?: () => void) {
     else if (again && (k.code === "Backspace" || isKey(k.code, "use"))) { k.preventDefault(); k.stopImmediatePropagation(); remove(); again(); }
   };
   addEventListener("keydown", onKey, true);
-  e.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", remove);
-  e.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { remove(); again?.(); });
+  e.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", () => { remove(); modalClicked(); });
+  e.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { remove(); again?.(); modalClicked(); });
+  modal(e, () => e.querySelector<HTMLElement>(".rcard") ?? e, remove);
   const timer = window.setTimeout(remove, CARD_SECS * 1000);
 }
 

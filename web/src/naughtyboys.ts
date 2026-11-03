@@ -863,19 +863,19 @@ export class NaughtyBoys {
 
     const nx = c.x + c.vx * dt, nz = c.z + c.vz * dt;
     // while hopping a wall, low walls and fences don't block
-    let p = this.map.collide({ x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
+    let p = this.map.sweep(c, { x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
+    const roundIt = () => { c.detour = (c.detour > 0 ? 1 : -1) * (Math.random() < 0.3 ? -1 : 1) * (0.9 + Math.random() * 0.7); c.detourT = 0.8 + Math.random(); };
     if (spd > 1 && c.hop === 0) {
       const want = spd * dt, prog = ((p.x - c.x) * dirX + (p.z - c.z) * dirZ) / want;
       if (prog < 0.35) {
-        const over = this.map.collide({ x: nx, z: nz }, c.y + 1.05, RADIUS);
-        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6) { p = over; c.hopV = 4.2; c.hop = 0.001; }
-        else if ((c.stuckT += dt) > 0.5) {
-          c.stuckT = 0;
-          c.detour = (c.detour > 0 ? 1 : -1) * (Math.random() < 0.3 ? -1 : 1) * (0.9 + Math.random() * 0.7);
-          c.detourT = 0.8 + Math.random();
-        }
+        const over = this.map.sweep(c, { x: nx, z: nz }, c.y + 1.05, RADIUS);
+        // (not over the back wall of a house dug into the hill, though, and down inside it)
+        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.ground(over.x, over.z))) { p = over; c.hopV = 4.2; c.hop = 0.001; }
+        else if ((c.stuckT += dt) > 0.5) { c.stuckT = 0; roundIt(); }
       } else c.stuckT = Math.max(0, c.stuckT - dt);
     }
+    // never into a building, and out of one he's somehow in
+    if (this.map.keepOut(c.x, c.z, p, c.hop, RADIUS) && c.detourT <= 0) roundIt();
     c.vx = ((p.x - c.x) / dt) * 0.9 + c.vx * 0.1;
     c.vz = ((p.z - c.z) / dt) * 0.9 + c.vz * 0.1;
     c.x = p.x; c.z = p.z;
@@ -905,12 +905,12 @@ export class NaughtyBoys {
     } else { const k = Math.exp(-4 * dt); c.vx *= k; c.vz *= k; }
     if (Math.hypot(c.vx, c.vz) < 0.05) { c.y = this.map.ground(c.x, c.z) + c.hop; return; }
     const nx = c.x + c.vx * dt, nz = c.z + c.vz * dt;
-    let p = this.map.collide({ x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
+    let p = this.map.sweep(c, { x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
     if (run > 1 && c.hop === 0) {
       const want = Math.hypot(c.vx, c.vz) * dt, prog = ((p.x - c.x) * c.fleeX + (p.z - c.z) * c.fleeZ) / want;
       if (prog < 0.35) {
-        const over = this.map.collide({ x: nx, z: nz }, c.y + 1.05, RADIUS);
-        if (((over.x - c.x) * c.fleeX + (over.z - c.z) * c.fleeZ) / want > 0.6) { p = over; c.hopV = 4.2; c.hop = 0.001; }
+        const over = this.map.sweep(c, { x: nx, z: nz }, c.y + 1.05, RADIUS);
+        if (((over.x - c.x) * c.fleeX + (over.z - c.z) * c.fleeZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.ground(over.x, over.z))) { p = over; c.hopV = 4.2; c.hop = 0.001; }
         else {
           // something big in the way: veer off round it, always the same side
           if (!c.detour) c.detour = Math.random() < 0.5 ? -1 : 1;
@@ -918,6 +918,12 @@ export class NaughtyBoys {
           [c.fleeX, c.fleeZ] = [c.fleeX * cs - c.fleeZ * sn, c.fleeX * sn + c.fleeZ * cs];
         }
       }
+    }
+    // never into a building: off along the front of it instead
+    if (this.map.keepOut(c.x, c.z, p, c.hop, RADIUS)) {
+      if (!c.detour) c.detour = Math.random() < 0.5 ? -1 : 1;
+      const a = c.detour * 6 * dt, cs = Math.cos(a), sn = Math.sin(a);
+      [c.fleeX, c.fleeZ] = [c.fleeX * cs - c.fleeZ * sn, c.fleeX * sn + c.fleeZ * cs];
     }
     c.x = p.x; c.z = p.z;
     if (c.hop > 0) {

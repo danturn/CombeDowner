@@ -429,20 +429,23 @@ export class Cats {
     }
     const nx = c.x + c.vx * dt, nz = c.z + c.vz * dt;
     // cats are over walls and fences like they aren't there
-    let p = this.map.collide({ x: nx, z: nz }, c.y + (c.hop > 0 ? 1.1 : 0), RADIUS);
+    let p = this.map.sweep(c, { x: nx, z: nz }, c.y + (c.hop > 0 ? 1.1 : 0), RADIUS);
+    const roundIt = () => {
+      if (!t && c.fleeT <= 0) c.wanderT = 0;
+      c.detour = (c.detour > 0 ? 1 : -1) * (Math.random() < 0.3 ? -1 : 1) * (0.9 + Math.random() * 0.7);
+      c.detourT = 0.6 + Math.random() * 0.8;
+    };
     if (spd > 0.5 && onGround) {
       const want = Math.max(1e-3, Math.hypot(c.vx, c.vz) * dt), prog = ((p.x - c.x) * dirX + (p.z - c.z) * dirZ) / want;
       if (prog < 0.4) {
-        const over = this.map.collide({ x: nx, z: nz }, c.y + 1.1, RADIUS);
-        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6) { p = over; c.hopV = 4.6; c.hop = 0.001; }
-        else if ((c.stuckT += dt) > 0.4) {
-          c.stuckT = 0;
-          if (!t && c.fleeT <= 0) c.wanderT = 0;
-          c.detour = (c.detour > 0 ? 1 : -1) * (Math.random() < 0.3 ? -1 : 1) * (0.9 + Math.random() * 0.7);
-          c.detourT = 0.6 + Math.random() * 0.8;
-        }
+        const over = this.map.sweep(c, { x: nx, z: nz }, c.y + 1.1, RADIUS);
+        // (but not over the back wall of a house dug into the hill and down inside it)
+        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.ground(over.x, over.z))) { p = over; c.hopV = 4.6; c.hop = 0.001; }
+        else if ((c.stuckT += dt) > 0.4) { c.stuckT = 0; roundIt(); }
       } else c.stuckT = Math.max(0, c.stuckT - dt);
     }
+    // never into a building, and out of one it's somehow in
+    if (this.map.keepOut(c.x, c.z, p, c.hop, RADIUS) && c.detourT <= 0) roundIt();
     if (onGround) {
       c.vx = ((p.x - c.x) / dt) * 0.9 + c.vx * 0.1;
       c.vz = ((p.z - c.z) / dt) * 0.9 + c.vz * 0.1;
