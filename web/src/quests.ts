@@ -242,6 +242,9 @@ export interface Job {
   /** E pressed: return true if the job used it. hint(): what E would do, if anything. */
   use?(): boolean;
   hint?(): string;
+  /** E's use isn't about anything in front of you just now (going again after a race), so
+   *  anything else E could do where you stand comes first. */
+  aside?(): boolean;
   /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
   naughtyBoyDown?(i: number, by: string): void;
   card(): Card;
@@ -684,25 +687,43 @@ export class Quests {
     return best;
   }
 
-  /** What E does here, for the prompt in the middle of the screen; empty if nothing. */
-  hint(): string {
-    const me = this.w.me();
-    if (!me.alive) return "";
-    const h = this.job && !this.job.done ? this.job.hint?.() : "";
-    if (h) return h;
-    const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
-    if (!p) return "";
-    if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
-    if (this.job?.offer.seed === p.offer.seed) return "";
-    if (this.job && !this.local) return "Finish or call off your job first";
-    return p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
+  /** What the running job's own use does, for the prompt; empty if nothing. It comes before
+   *  anything else E might do (game.ts). */
+  jobHint(): string {
+    return this.w.me().alive && this.job && !this.job.done ? this.job.hint?.() ?? "" : "";
   }
 
-  /** Use pressed. Returns true if it was for a job. */
-  use(): boolean {
+  /** Whether the running job's use can wait for anything else E could do here (Job.aside). */
+  jobAside(): boolean { return !!this.job && !this.job.done && !!this.job.aside?.(); }
+
+  /** Use pressed, for the running job. Returns true if it was for that. */
+  jobUse(): boolean {
+    return this.w.me().alive && !!this.job && !this.job.done && !!this.job.use?.();
+  }
+
+  /** The noticeboard (or a challenge's waiting thing) you're stood at: where to look at it, how far
+   *  it is, what the prompt says, and whether E would take it. */
+  board(): { x: number; y: number; z: number; d: number; text: string; can: boolean; challenge: boolean } | null {
+    const me = this.w.me();
+    if (!me.alive) return null;
+    const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
+    if (!p) return null;
+    const done = this.doneSeeds.has(p.offer.seed), busy = !!this.job && !this.local;
+    const text = done ? "Done today. New jobs tomorrow" : busy ? (this.job?.offer.seed === p.offer.seed ? "" : "Finish or call off your job first")
+      : p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
+    const d = this.distTo(p, me.x, me.z);
+    if (!p.wait) return { x: p.x, y: p.view ? p.y + 1.6 : me.y + 1.2, z: p.z, d, text, can: !done && !busy, challenge: !!p.kind.challenge };
+    // a challenge's thing can stand off from its spot (a bus moved up the road): look for its
+    // nearest side down the slope of its distance, and a little in from it
+    const e = 0.25, gx = (p.wait.dist(me.x + e, me.z) - p.wait.dist(me.x - e, me.z)) / (2 * e), gz = (p.wait.dist(me.x, me.z + e) - p.wait.dist(me.x, me.z - e)) / (2 * e);
+    const g = Math.hypot(gx, gz) || 1;
+    return { x: me.x - (gx / g) * (d + 1), y: me.y + 1.2, z: me.z - (gz / g) * (d + 1), d, text, can: !done && !busy, challenge: true };
+  }
+
+  /** E at the noticeboard you're stood at: take its job. Returns true if it did. */
+  takeBoard(): boolean {
     const me = this.w.me();
     if (!me.alive) return false;
-    if (this.job && !this.job.done && this.job.use?.()) return true;
     const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
     if (!p || (this.job && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
     this.take(p.wait?.stamp ? { ...p.offer, mode: p.wait.stamp() } : p.offer);
