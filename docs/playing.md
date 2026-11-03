@@ -130,6 +130,13 @@ side allow, with a pavement a kerb high only where there is one. Every garden ha
 wall, gate and path to the door, with one fence or hedge between it and each neighbour. Jump at a
 wall up to 2.6 m high and you pull yourself up onto it.
 
+Nobody ends up inside a house. However fast you go (flat out downhill on a ride, or in a car, on a
+slow phone), you can't pass through a wall, and the naughty boys, the cats and Bendy won't hop over
+the back wall of a house dug into the hill and drop down inside it. If you're somehow shut in a
+building anyway (shoved in by a car, a part of the map loading in round you, or dropping into a
+courtyard off a roof), you're put straight out on the nearest clear ground, and so is anyone else.
+Standing on a roof is fine.
+
 ### Day and night
 
 Day turns to night and back every 24 minutes, the same for everyone since it comes from the clock.

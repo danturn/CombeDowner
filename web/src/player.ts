@@ -31,6 +31,10 @@ export interface Ground {
   /** What feet at height y stand on at (x, z), where that isn't always the ground (a tunnel's floor). */
   floor?(x: number, z: number, y: number): number;
   collide(pos: { x: number; z: number }, y: number, r: number): unknown;
+  /** collide(), in short steps from where you were, so nothing goes through a wall in one stride (map.ts). */
+  sweep?(from: { x: number; z: number }, pos: { x: number; z: number }, y: number, r: number): unknown;
+  /** Feet at y shut inside a building: out to the nearest clear spot outside it, and true (map.ts). */
+  unstick?(pos: { x: number; z: number }, y: number, r: number): boolean;
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
   readonly lastBlock: number;
   /** What there is to stand on for feet at y, if not just the ground (car roofs). */
@@ -432,7 +436,7 @@ export class Player {
     }
 
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
-    this.map.collide(p, this.pos.y, RADIUS);
+    this.bump(p);
     const hit = this.slideTo(p, dt);
     if (hit && this.diving) this.vel.x = this.vel.z = 0;
     // only walking at something head on climbs it: brushing past a fence or a car doesn't
@@ -476,6 +480,23 @@ export class Player {
     this.speed = Math.hypot(this.vel.x, this.vel.z);
     if (this.onGround) this.bob += this.speed * dt * 1.9;
     this.landKick *= Math.max(0, 1 - dt * 8);
+  }
+
+  /** Moving from where you are to p: pushed out of whatever's in the way, a stride at a time, so a
+   *  sprint or a ride on a slow frame can't carry you clean through a wall. */
+  private bump(p: { x: number; z: number }) {
+    if (this.map.sweep) this.map.sweep(this.pos, p, this.pos.y, RADIUS);
+    else this.map.collide(p, this.pos.y, RADIUS);
+  }
+
+  /** Shut inside a building after all (shoved in by a car, a square of Bath loading in round you,
+   *  dropped into a courtyard off a roof): out on to the nearest clear ground. True if you were moved. */
+  unstick(): boolean {
+    if (this.ladder || !this.map.unstick?.(this.pos, this.pos.y, RADIUS)) return false;
+    this.pos.y = Math.max(this.pos.y, this.under(this.pos.x, this.pos.z));
+    this.vel.x = this.vel.z = 0;
+    this.rideV = 0;
+    return true;
   }
 
   /** Where collision left you (p) after moving dt: the part of your speed into whatever you hit
@@ -673,7 +694,7 @@ export class Player {
       this.dip += ((held ? 0.25 : 0) - this.dip) * Math.min(1, dt * 10);
       this.rideV = Math.hypot(this.vel.x, this.vel.z);
       const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
-      this.map.collide(p, this.pos.y, RADIUS);
+      this.bump(p);
       this.slideTo(p, dt);
     } else if (this.grind) {
       this.grindUpdate(dt, press, s, fwd, side);
@@ -778,7 +799,7 @@ export class Player {
       const target = this.verbOn ? (s.verb === "tuck" ? 0.35 : 0.25) : this.charge * 0.35 + (this.manual ? -0.06 : 0);
       this.dip += (target - this.dip) * Math.min(1, dt * 10);
       const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
-      this.map.collide(p, this.pos.y, RADIUS);
+      this.bump(p);
       // how much of the way we meant to go we got (1: nothing in the way)
       const blocked = this.map.lastBlock, sp = Math.hypot(this.vel.x, this.vel.z), want = sp * dt;
       const progress = want > 1e-4 ? Math.max(0, Math.min(1, ((p.x - this.pos.x) * this.vel.x + (p.z - this.pos.z) * this.vel.z) / sp / want)) : 1;

@@ -1507,6 +1507,8 @@ export class Game {
     } else {
       const [x, z] = this.spawnSpot();
       this.player.spawn(x, z);
+      // (looked at again once its square of Bath is in, in case it's put a house there)
+      this.landing = { t: 20 };
     }
     this.hp = 100;
     this.alive = true;
@@ -4083,6 +4085,9 @@ export class Game {
       if (this.freeMode) this.arrowLook(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !this.reveal.on && !placeNow());
       p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
+      // shut in a building after all (shoved in by a car, a square loading in round you, down into a
+      // courtyard off a roof): out on to the nearest clear ground, as the others will see you
+      else if (this.alive && p.unstick()) this.sendState();
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points

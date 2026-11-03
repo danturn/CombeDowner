@@ -936,25 +936,29 @@ export class Vehicle implements Mover {
     }
     const teeter = S.tip && this.tipT > 0 ? Math.sign(lat) * Math.min(0.3, this.tipT * 0.8) : 0;
     this.lean += (Math.max(-0.1, Math.min(0.1, lat * S.lean)) + teeter - this.lean) * Math.min(1, dt * 6);
-    // move, plough through the traffic, and bump off anything else in the way
-    this.x += this.vx * dt; this.z += this.vz * dt;
+    // move, plough through the traffic, and bump off anything else in the way: in strides shorter
+    // than the car is wide, so going flat out (or a slow frame) never carries it through a wall
     this.impact = 0;
     const soft = traffic ? new Set<Mover>(traffic.list) : null;
-    if (traffic && soft) this.plough(traffic, soft);
     const pass = soft ? (m: Mover) => soft.has(m) : undefined;
-    const c2 = Math.cos(this.a), s2 = Math.sin(this.a);
-    for (let it = 0; it < 3; it++) {
-      let bx = 0, bz = 0, best = 0;
-      for (const o of this.circles) {
-        const cx = this.x + o * c2, cz = this.z - o * s2;
-        const p = map.collide({ x: cx, z: cz }, this.y, this.hw, this, pass);
-        const d = Math.hypot(p.x - cx, p.z - cz);
-        if (d > best) { best = d; bx = p.x - cx; bz = p.z - cz; }
+    const strides = Math.min(12, Math.max(1, Math.ceil(Math.hypot(this.vx, this.vz) * dt / (this.hw * 0.7))));
+    for (let st = 0; st < strides; st++) {
+      this.x += this.vx * dt / strides; this.z += this.vz * dt / strides;
+      if (st === 0 && traffic && soft) this.plough(traffic, soft);
+      const c2 = Math.cos(this.a), s2 = Math.sin(this.a);
+      for (let it = 0; it < 3; it++) {
+        let bx = 0, bz = 0, best = 0;
+        for (const o of this.circles) {
+          const cx = this.x + o * c2, cz = this.z - o * s2;
+          const p = map.collide({ x: cx, z: cz }, this.y, this.hw, this, pass);
+          const d = Math.hypot(p.x - cx, p.z - cz);
+          if (d > best) { best = d; bx = p.x - cx; bz = p.z - cz; }
+        }
+        if (best < 1e-4) break;
+        this.x += bx; this.z += bz;
+        const ux = bx / best, uz = bz / best, vn = this.vx * ux + this.vz * uz;
+        if (vn < 0) { this.vx -= ux * vn * 1.3; this.vz -= uz * vn * 1.3; this.impact = Math.max(this.impact, -vn); }
       }
-      if (best < 1e-4) break;
-      this.x += bx; this.z += bz;
-      const ux = bx / best, uz = bz / best, vn = this.vx * ux + this.vz * uz;
-      if (vn < 0) { this.vx -= ux * vn * 1.3; this.vz -= uz * vn * 1.3; this.impact = Math.max(this.impact, -vn); }
     }
     this.horn = !over && inp.horn;
     this.gas = Math.abs(thr);
