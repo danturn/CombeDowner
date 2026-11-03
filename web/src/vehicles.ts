@@ -630,6 +630,8 @@ export class Vehicle implements Mover {
   spin = 0;                        // how fast it's turning, rad/s: + is left
   /** Doing donuts: the back end's out and it keeps coming round while you hold the lock and the throttle. */
   drift = false;
+  private wag = 0;                 // the back end swinging to and fro after a fast slide, and for how long
+  private wagT = 0;
   /** How hard its front tyres are sliding wide, 0 to 1 (only known to whoever's driving it, for the squeal). */
   scrub = 0;
   /** Taken from the traffic: its paint and make, by number, so everyone can make the same car. */
@@ -843,7 +845,7 @@ export class Vehicle implements Mover {
 
   /** Put it somewhere, stopped. */
   place(x: number, z: number, a: number, tip = 0) {
-    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, spin: 0, drift: false, horn: false, gas: 0, hand: false });
+    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, spin: 0, drift: false, wag: 0, horn: false, gas: 0, hand: false });
     this.snaps = [];
     this.moved = true;
   }
@@ -865,7 +867,7 @@ export class Vehicle implements Mover {
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;
-    if (k === 0 && !id) { this.drift = false; this.scrub = 0; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
+    if (k === 0 && !id) { this.drift = false; this.wag = 0; this.scrub = 0; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -925,9 +927,20 @@ export class Vehicle implements Mover {
     // donuts: pull the handbrake with some lock on and the back end comes round; keep your foot down
     // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
     const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
+    const was = this.drift;
     this.drift = !over && !S.crush && (kick || (this.drift && (hold || (hand && Math.hypot(vf, vl) > 0.5))));
+    // let go of a fast slide and the back end doesn't just settle: it swings back past straight and
+    // wags a few times, harder the more sideways it was going, before the tyres take hold
+    if (was && !this.drift && fast && !over) { this.wag = Math.min(1, (Math.abs(vl) / Math.max(4, Math.hypot(vf, vl))) * 1.8) * Math.sign(this.spin); this.wagT = 0; }
     // at speed the nose still whips round as fast, while the car slides on the way it was going (below)
     if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
+    if (this.drift && fast) yaw *= 1.15;
+    if (this.wag) {
+      this.wagT += dt;
+      const fade = Math.exp(-this.wagT * 1.5);
+      yaw -= this.wag * 1.5 * Math.sin(this.wagT * 7.5) * fade;
+      if (fade < 0.05 || over || this.drift) this.wag = 0;
+    }
     this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
     const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
     // the back wheels follow the front ones round a corner: the body turns about its back axle,
