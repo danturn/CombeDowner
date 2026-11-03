@@ -33,7 +33,7 @@ tools/mapdata.py), and neither is needed; with --measure, they are worked out fr
 the canopy map as usual and written to that file. Both build exactly the same map.
 """
 from collections import Counter, defaultdict
-import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
+import copy, hashlib, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
 from PIL import Image
@@ -653,9 +653,23 @@ STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 # metres: bumps in a road's survey narrower than about four times this are evened out
 # (measured over all of the map's terrain, not just this square's, so every square grades alike)
-DETAIL = terrain_detail([np.asarray(Image.open(os.path.join(cache, f)).convert("RGB")).astype(float) @ [256, 1, 1 / 256]
-                         for f in sorted(os.listdir(cache)) if f.startswith(f"{Z}_") and f.endswith(".png")] or DEM,
-                        156543.03 * math.cos(math.radians(lat0)) / 2 ** Z)
+def _detail():
+    # the same figure for every square, so it is worked out once per set of terrain tiles and kept
+    names = sorted(f for f in os.listdir(cache) if f.startswith(f"{Z}_") and f.endswith(".png"))
+    key = hashlib.sha1(repr([(f, os.path.getsize(os.path.join(cache, f))) for f in names] + [lat0]).encode()).hexdigest() if names else None
+    kept = os.path.join(os.path.dirname(os.path.abspath(src_dir)), f".detail-{key}.json")
+    if key and os.path.exists(kept):
+        return json.load(open(kept))
+    d = terrain_detail([np.asarray(Image.open(os.path.join(cache, f)).convert("RGB")).astype(float) @ [256, 1, 1 / 256]
+                        for f in names] or DEM, 156543.03 * math.cos(math.radians(lat0)) / 2 ** Z)
+    if key:
+        tmp = f"{kept}.{os.getpid()}"
+        json.dump(d, open(tmp, "w"))
+        os.replace(tmp, kept)
+    return d
+
+
+DETAIL = _detail()
 print(f"terrain: detail down to {DETAIL:.0f} m")
 
 

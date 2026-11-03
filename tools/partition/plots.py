@@ -879,8 +879,27 @@ def _street_edge(region, B=None, bunion=None):
     if B is not None:
         street = street.difference(B.boundary.buffer(0.01))
     if bunion is not None and not bunion.is_empty:
-        street = street.difference(_buffered(bunion, 0.01))
+        street = street.difference(_parts_near(_buffered(bunion, 0.01), street))
     return street
+
+
+_PARTS = {}
+
+
+def _parts_near(g, h):
+    """The parts of `g` whose boxes meet `h`'s, as one geometry: a window's buildings run to
+    thousands, and taking a region's edge off all of them cost more the bigger the window."""
+    if g.geom_type != "MultiPolygon":
+        return g
+    hit = _PARTS.get(id(g))
+    if hit is None or hit[0] is not g:
+        _PARTS.clear()
+        hit = _PARTS[id(g)] = (g, list(g.geoms), STRtree(list(g.geoms)))
+    parts, tree = hit[1], hit[2]
+    near = sorted(int(k) for k in tree.query(shapely.box(*h.bounds)))
+    if not near:
+        return g
+    return shapely.MultiPolygon([parts[k] for k in near])
 
 
 _BUFFERED = {}
@@ -889,11 +908,16 @@ _BUFFERED = {}
 def _buffered(g, d):
     """g.buffer(d), kept while g is the same object: a task divides every piece against one union of
     its window's buildings, and buffering that union once per piece was a fifth of the work."""
-    hit = _BUFFERED.get((id(g), d))
+    # the least recently used goes first: clearing them all every few blocks threw away the
+    # window's buildings too, the costliest of them to buffer again
+    key = (id(g), d)
+    hit = _BUFFERED.get(key)
     if hit is None or hit[0] is not g:
-        if len(_BUFFERED) > 8:
-            _BUFFERED.clear()
-        hit = _BUFFERED[(id(g), d)] = (g, g.buffer(d))
+        while len(_BUFFERED) > 8:
+            del _BUFFERED[next(iter(_BUFFERED))]
+        hit = (g, g.buffer(d))
+    _BUFFERED.pop(key, None)
+    _BUFFERED[key] = hit
     return hit[1]
 
 
