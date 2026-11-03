@@ -19,6 +19,10 @@
 // stays street furniture until someone gets in it, and then it's a car like the rest. You can call
 // a bus at any bus stop (game.ts), in Combe Down or anywhere in Bath. Space with some lock on kicks the back end
 // out for donuts: keep the throttle and the lock on and it keeps going round.
+// At speed it's the tyres that decide (tyres, below): each end grips as hard as its tyres will and
+// then slides, so the handbrake swings the back end out, lifting off or braking lightens it, the
+// throttle keeps a rear-drive car's tail out, and too much spins it, while steering into the slide
+// catches it. The big ones (a bus, a coach) sit on their tyres and just turn.
 //
 // Who decides what: whoever's driving a vehicle moves it and sends where it is about 20 times a
 // second. The host decides who sits where (the first to ask) and sends round who's in what and where
@@ -66,8 +70,34 @@ interface Spec {
   crush?: boolean;                // runs people over at walking pace (the roller)
   siren?: "siren" | "chimes";     // H switches it on and off
   milk?: boolean;                 // crates of bottles, which smash
+  rear?: boolean;                 // driven by its back wheels, so the throttle can push the back end out
   offroad?: boolean;              // as good on grass and fields as on the road, and low gears for the hills (the Land Rover)
   paint: string[];                // colours it comes in
+}
+
+// The tyres at speed (Vehicle.tyres). Their grip is the kind's own, shared between the axles.
+const TYRE_PEAK = 0.12;     // how far a tyre slips sideways (radians) before it's gripping as hard as it can
+const FRONT_TAIL = 0.7;     // what a front tyre keeps sliding right sideways, against its best
+const REAR_TAIL = 0.8;      // and a back one
+const TYRE_GRIP = 1.3;      // the tyres together, against the kind's grip
+const TYRE_REAR = 1.2;      // the back tyres hold on a touch better than the front, so a corner overdone runs wide rather than spinning
+const HAND_REAR = 0.25;     // what the back tyres keep with the handbrake on
+const POWER_REAR = 0.35;    // what full throttle takes off the back tyres, driven by the back wheels
+const POWER_FRONT = 0.12;   // and a little, driven by the front, for the fun of it
+const RELAX = 5;            // metres it rolls, once the back's been out, before its tyres bite again: the tail swings past straight
+const DAMP = 0.6;           // how hard it settles back to turning as the wheel says
+const CASTER = 0.3;         // how far the front wheels turn themselves into a slide
+const STEER_GAIN = 1.4;     // the front wheels turn that much further than the slow-speed lock says, for the slip the tyres need to bite
+const COUNTER_LOCK = 1;     // how far you can steer into a slide, radians, past the kind's own lock
+const CATCH = 3;            // how much steadier it gets steering into a slide, so it stops coming round
+const SLIDE_SWING = 0.9;    // and what's taken off the back end's pull on the nose then, so it goes where it points
+const SLIDE_TURN = 2.5;     // sliding, how much harder the tyres swing the way it's going round than they really would
+const SLIDE_LOSS = 0.4;     // and the share of the speed they'd scrub off that they do
+
+/** How hard a tyre pushes back, as a share of its grip, slipping x times as far as its peak; past it, down to tail. */
+function tyre(x: number, tail: number): number {
+  const m = Math.abs(x);
+  return Math.sign(x) * (m <= 1 ? m * (2 - m) : tail + (1 - tail) * Math.exp(-(m - 1) * 0.7));
 }
 
 /** Four seats in a small car: driver, front passenger, and two in the back. */
@@ -101,7 +131,7 @@ export const SPECS: Record<VKind, Spec> = {
     paint: XR3I_PAINT,
   },
   robin: {
-    name: "Reliant Robin", L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
+    name: "Reliant Robin", rear: true, L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
     steer: 0.62, grip: 9, tip: 6.5, lean: 0.008, seats: four(-0.2, -1.0, 0.32), cam: 6, mass: 0.8, gears: [0.24, 0.48, 0.74, 1], engine: "tinny",
     paint: ["#e2b42a", "#8fb5d2", "#c9632a", "#7b5333", "#d6cdb0", "#8aa23c"],
   },
@@ -116,24 +146,24 @@ export const SPECS: Record<VKind, Spec> = {
     paint: ["#cdbf98", "#6b4a2e", "#3c5a3a", "#a8281f", "#eeeeea", "#4a6f9a"],
   },
   sierra: {
-    name: "Ford Sierra", L: 4.43, W: 1.7, H: 1.37, waist: 0.88, wb: 2.6, top: 46, accel: 6.2, brake: 11, rev: 7,
+    name: "Ford Sierra", rear: true, L: 4.43, W: 1.7, H: 1.37, waist: 0.88, wb: 2.6, top: 46, accel: 6.2, brake: 11, rev: 7,
     steer: 0.58, grip: 10, lean: 0.005, seats: four(-0.2, -1.2, 0.38), cam: 7, mass: 1.1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: ["#a9adb2", "#5a1a22", "#eeeeea", "#1d2a4a", "#b8a06a", "#1b1c1f"],
   },
   police: {
-    name: "Police Sierra", L: 4.43, W: 1.7, H: 1.37, waist: 0.88, wb: 2.6, top: 50, accel: 6.8, brake: 12, rev: 7,
+    name: "Police Sierra", rear: true, L: 4.43, W: 1.7, H: 1.37, waist: 0.88, wb: 2.6, top: 50, accel: 6.8, brake: 12, rev: 7,
     steer: 0.58, grip: 11, lean: 0.005, seats: four(-0.2, -1.2, 0.38), cam: 7, mass: 1.1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     siren: "siren", paint: ["#f4f4f0"],
   },
   transit: {
-    name: "Ford Transit", L: 4.6, W: 1.95, H: 2.05, waist: 1.0, wb: 2.7, top: 34, accel: 4.5, brake: 9, rev: 6,
+    name: "Ford Transit", rear: true, L: 4.6, W: 1.95, H: 2.05, waist: 1.0, wb: 2.7, top: 34, accel: 4.5, brake: 9, rev: 6,
     steer: 0.6, grip: 8, lean: 0.009, cam: 8, mass: 1.4, gears: [0.22, 0.45, 0.72, 1], engine: "diesel",
     // two up front, and your mates in the back
     seats: [[1.0, 0.3, 0.45], [1.0, 0.3, -0.45], [-0.6, 0.3, 0.5], [-0.6, 0.3, -0.5], [-1.6, 0.3, 0.5], [-1.6, 0.3, -0.5]],
     paint: ["#f2f2ee", "#f2f2ee", "#c9201c", "#1f3f7a", "#e9e2c8"],
   },
   icecream: {
-    name: "Mr Whippy van", L: 5.0, W: 2.0, H: 2.45, waist: 1.05, wb: 2.9, top: 26, accel: 3.2, brake: 8, rev: 5,
+    name: "Mr Whippy van", rear: true, L: 5.0, W: 2.0, H: 2.45, waist: 1.05, wb: 2.9, top: 26, accel: 3.2, brake: 8, rev: 5,
     steer: 0.6, grip: 6, lean: 0.01, cam: 9, mass: 1.6, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", siren: "chimes",
     seats: [[1.45, 0.3, 0.5], [1.45, 0.3, -0.5], [-0.9, 0.3, -0.45], [-0.9, 0.3, 0.45]], paint: ["#f6f4ee"],
   },
@@ -630,10 +660,13 @@ export class Vehicle implements Mover {
   spin = 0;                        // how fast it's turning, rad/s: + is left
   /** Doing donuts: the back end's out and it keeps coming round while you hold the lock and the throttle. */
   drift = false;
-  private wag = 0;                 // the back end swinging to and fro after a fast slide, and for how long
-  private wagT = 0;
+  private out = 0;                 // how far its back end's been out of late, fading
+  private rf = 0;                  // the back tyres' sideways push, m/s² (+ to the left)
+  private load = 0;                // the weight thrown forward on to the front tyres (- is back on to the rear), as a share
   /** How hard its front tyres are sliding wide, 0 to 1 (only known to whoever's driving it, for the squeal). */
   scrub = 0;
+  /** How far its back tyres are sliding, 0 to 1 (only known to whoever's driving it). */
+  slip = 0;
   /** Taken from the traffic: its paint and make, by number, so everyone can make the same car. */
   made?: number[];
   /** On its side (the Robin, cornering too hard): -1 or 1, which way it went; 0 on its wheels. */
@@ -845,7 +878,7 @@ export class Vehicle implements Mover {
 
   /** Put it somewhere, stopped. */
   place(x: number, z: number, a: number, tip = 0) {
-    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, spin: 0, drift: false, wag: 0, horn: false, gas: 0, hand: false });
+    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, spin: 0, drift: false, load: 0, rf: 0, out: 0, slip: 0, horn: false, gas: 0, hand: false });
     this.snaps = [];
     this.moved = true;
   }
@@ -867,7 +900,7 @@ export class Vehicle implements Mover {
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;
-    if (k === 0 && !id) { this.drift = false; this.wag = 0; this.scrub = 0; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
+    if (k === 0 && !id) { this.drift = false; this.load = 0; this.rf = 0; this.out = 0; this.scrub = 0; this.slip = 0; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -879,8 +912,16 @@ export class Vehicle implements Mover {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
-    const grass = !S.crush && !S.offroad && !paved(this.x, this.z), fast = Math.hypot(vf, vl) > 8,
-      top = S.top * (grass ? 0.6 : 1) * (this.drift && !fast ? 0.3 : 1);   // a roller's made for grass; a donut holds it down to a crawl
+    const sp = Math.hypot(vf, vl);
+    const grass = !S.crush && !S.offroad && !paved(this.x, this.z), fast = sp > 8;
+    // donuts: pull the handbrake with some lock on at a crawl and the back end comes round; keep your
+    // foot down and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
+    const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3) && sp < 6, hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
+    this.drift = !over && !S.crush && (kick || (this.drift && sp < 9 && (hold || (hand && sp > 0.5))));
+    // at a crawl the wheels just go where they're pointed; from a jog up the tyres take over, gripping
+    // and letting go (the slow ones never go fast enough to slide)
+    const tyres = over || this.drift || S.top < 10 ? 0 : Math.min(1, Math.max(0, (sp - 5) / 3));
+    const top = S.top * (grass ? 0.6 : 1) * (this.drift && !fast ? 0.3 : 1);   // a roller's made for grass; a donut holds it down to a crawl
     this.flipped = false;
     // engine and brakes
     // (the engine's own push is kept apart: front tyres sliding wide can't put it down, below)
@@ -895,15 +936,16 @@ export class Vehicle implements Mover {
     if (!held || over) vf -= 9.8 * slope * (S.offroad ? 0.45 : 0.75) * dt;   // a Land Rover's low range takes the hills
     // rolling resistance, more on grass and a lot on its side, and the air
     // (grass drags at the weak ones, a milk float or a C5, a bit less than it would at a car, or they'd never move)
-    // a handbrake yanked at speed with the wheel turned locks the back wheels into a slide rather than
-    // pulling the car up short, so it drifts on round before it stops
-    const slide = hand && !held && Math.abs(this.steer) > 0.3 && Math.abs(vf) > 6;
-    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : slide ? 2 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
+    // a handbrake yanked at speed with the wheel turned, or already sliding, only locks the back wheels,
+    // so it slides on round rather than pulling up short
+    const slide = hand && !held && tyres > 0.5 && (Math.abs(this.steer) > 0.3 || Math.abs(vl) > 0.2 * sp);
+    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : slide ? 2.2 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
-    // steering, and only so much grip. Brake or lift off into a corner and the weight comes forward
-    // on to the front tyres, so they bite harder and the nose tucks in; foot down, it sits back and
-    // the front runs wide
+    // brake or lift off and the weight comes forward on to the front tyres, so they bite harder and the
+    // back goes light; foot down, it sits back on the rear ones
     const slowing = (thr > 0.05 && vf < -0.5) || (thr < -0.05 && vf > 0.5);
+    const shift = slowing ? 0.12 : hand ? 0.04 : Math.abs(thr) < 0.05 ? 0.04 : push * vf > 0 && Math.abs(thr) > 0.3 ? -0.05 : 0;
+    this.load += (shift - this.load) * Math.min(1, dt * 6);
     const load = slowing ? 1.3 : push * vf > 0 && Math.abs(thr) > 0.3 ? 1 : 1.15;
     const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : load);
     // full lock at walking pace and round a junction, easing off the faster you go, as anyone does
@@ -911,61 +953,52 @@ export class Vehicle implements Mover {
     // touch of the wheel is a touch of turn and holding it on turns as hard as it can
     this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7.5 : 9));
     const lock = Math.min(S.steer / (1 + Math.max(0, Math.abs(vf) - 5) / 22), Math.atan((2 * grip * S.wb) / Math.max(1, vf * vf)));
-    let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
-    const want = Math.abs(yaw * vf);
-    this.scrub = 0;
-    if (want > grip) {
-      yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
-      // asking for more turn than the tyres have: the front ones slide wide, scrubbing off speed and
-      // spinning away the engine's push, so it slows and, slower, turns tighter (lift off and it bites)
-      if (!hand && !over) {
-        this.scrub = Math.min(1, want / grip - 1);
-        const off = (this.scrub * grip * 0.35 + Math.abs(push) * this.scrub * 0.7) * dt;
-        vf = Math.sign(vf) * Math.max(0, Math.abs(vf) - off);
+    this.scrub = 0; this.slip = 0;
+    let spin = this.spin, vx = this.vx, vz = this.vz, da = 0;
+    if (tyres < 1) {
+      let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
+      const want = Math.abs(yaw * vf);
+      let f = vf;
+      if (want > grip) {
+        yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
+        // asking for more turn than the tyres have: the front ones slide wide, scrubbing off speed and
+        // spinning away the engine's push, so it slows and, slower, turns tighter (lift off and it bites)
+        if (!hand && !over) {
+          this.scrub = Math.min(1, want / grip - 1);
+          const off = (this.scrub * grip * 0.35 + Math.abs(push) * this.scrub * 0.7) * dt;
+          f = Math.sign(f) * Math.max(0, Math.abs(f) - off);
+        }
       }
+      if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, sp / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
+      spin = this.spin + (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
+      // the back wheels follow the front ones round: the body turns about its back axle, so its middle
+      // moves a little towards the inside of the bend (vl is + to the right) and the way it's going
+      // turns with it. With the handbrake on, or in a donut, the back end lets go and it keeps going
+      // the way it was while the nose comes round
+      const loose = this.drift || hand || over;
+      const track = loose ? 0 : -spin * half;
+      const l = track + (vl - track) * Math.exp(-(this.drift ? 1.3 : hand ? 0.8 : over ? 3 : grass ? 4 : 9) * dt);
+      da = spin * dt;
+      const cn = loose ? c : Math.cos(this.a + da), sn = loose ? s : Math.sin(this.a + da);
+      vx = f * cn + l * sn; vz = -f * sn + l * cn;
     }
-    // donuts: pull the handbrake with some lock on and the back end comes round; keep your foot down
-    // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
-    const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
-    const was = this.drift;
-    this.drift = !over && !S.crush && (kick || (this.drift && (hold || (hand && Math.hypot(vf, vl) > 0.5))));
-    // let go of a fast slide and the back end doesn't just settle: it swings back past straight and
-    // wags a few times, harder the more sideways it was going, before the tyres take hold
-    if (was && !this.drift && fast && !over) { this.wag = Math.min(1, (Math.abs(vl) / Math.max(4, Math.hypot(vf, vl))) * 1.8) * Math.sign(this.spin); this.wagT = 0; }
-    // at speed the nose still whips round as fast, while the car slides on the way it was going (below)
-    if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
-    if (this.drift && fast) yaw *= 1.15;
-    if (this.wag) {
-      this.wagT += dt;
-      const fade = Math.exp(-this.wagT * 1.5);
-      yaw -= this.wag * 1.5 * Math.sin(this.wagT * 7.5) * fade;
-      if (fade < 0.05 || over || this.drift) this.wag = 0;
+    if (tyres === 0) { this.rf = 0; this.out = 0; }
+    else {
+      const d = this.tyres(dt, vf * c + vl * s, -vf * s + vl * c, lock, thr, hand, grass, push);
+      spin += (d.spin - spin) * tyres; vx += (d.vx - vx) * tyres; vz += (d.vz - vz) * tyres; da += (d.da - da) * tyres;
+      this.scrub += (d.scrub - this.scrub) * tyres; this.slip = d.slip * tyres;
     }
-    this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
-    const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
-    // the back wheels follow the front ones round a corner: the body turns about its back axle,
-    // so its middle moves a little towards the inside of the bend as it turns (vl is + to the
-    // right), and the way it's going turns with it; a sideways slide on top of that dies away as
-    // the tyres bite. With the handbrake on, or in a donut, the back end lets go: it keeps going
-    // the way it was while the nose comes round
-    const loose = this.drift || hand || over;
-    const track = loose ? 0 : -this.spin * half;
-    const vl0 = vl;
-    vl = track + (vl - track) * Math.exp(-(this.drift ? 1.3 : hand ? 0.8 : over ? 3 : grass ? 4 : 9) * dt);
-    // sliding fast, the tyres catching the slide swing the car's way on round to where it's pointing,
-    // so it comes out of the corner still going instead of skidding to a halt
-    if (fast && (this.drift || hand) && !over && vf > 0) vf += (Math.abs(vl0) - Math.abs(vl)) * 0.6;
+    this.spin = spin;
     // a donut goes round its front wheels, the back end swinging out round them
-    const da = this.spin * dt;
     if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
     this.a += da;
+    const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
     // the indicators cancel themselves once it's gone round the corner and the wheel's back straight
     if (this.signal) {
       this.signalTurn += da * this.signal;
       if (this.signalTurn > 0.7 && Math.abs(this.steer) < 0.15) this.signal = 0;
     }
-    const cn = loose ? c : Math.cos(this.a), sn = loose ? s : Math.sin(this.a);
-    this.vx = vf * cn + vl * sn; this.vz = -vf * sn + vl * cn;
+    this.vx = vx; this.vz = vz;
     // the Robin: corner too hard for too long and it lifts a wheel, then goes over
     if (S.tip && !over) {
       this.tipT = Math.abs(lat) > S.tip && Math.abs(vf) > 7 ? this.tipT + dt : Math.max(0, this.tipT - dt * 2);
@@ -1001,6 +1034,81 @@ export class Vehicle implements Mover {
     this.reversing = !over && thr < -0.05 && vf <= 0.5;
     this.engineNote(dt);
     this.moved = true;
+  }
+
+  /**
+   * At speed, the tyres decide where it goes. Each axle pushes sideways as hard as its tyres will grip,
+   * more the more they're slipping up to a point, then a bit less, and how hard each end grips swings
+   * the car round. Yank the handbrake and the back tyres let go, so the front swings the back end
+   * out; lift off or brake and the back goes light. Overdo it and the back keeps coming round till it
+   * spins, and turning the wheel the other way (into the slide) catches it.
+   */
+  private tyres(dt: number, vx: number, vz: number, lock: number, thr: number, hand: boolean, grass: boolean, push: number) {
+    const S = this.spec, half = S.wb / 2;
+    // the big ones sit on their tyres: hard to unstick and quick to settle
+    const plant = Math.min(1, Math.max(0, S.mass - 1));
+    const peak = TYRE_PEAK + 0.05 * plant;
+    const G = S.grip * TYRE_GRIP * (grass ? 0.7 : 1);
+    const k2 = half * half;
+    const wf = 0.5 + this.load * (1 - plant * 0.5);
+    const Ff = G * wf;
+    let Fr = G * (1 - wf) * (TYRE_REAR + 0.3 * plant);
+    if (hand) Fr *= HAND_REAR + 0.65 * plant;
+    if (thr > 0.05 && push > 0) Fr *= 1 - thr * (S.rear ? POWER_REAR : POWER_FRONT) * (1 - plant);
+    const damp = DAMP + 4 * plant;
+    let a = this.a, spin = this.spin, rf = this.rf, out = this.out, scrub = 0, slip = 0;
+    const n = Math.min(16, Math.ceil(dt / (1 / 240))), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const c = Math.cos(a), s = Math.sin(a);
+      const u = vx * c - vz * s, vy = -(vx * s + vz * c);   // forwards, and sideways to the left
+      const fy = vy + half * spin, ry = vy - half * spin;    // how each axle's moving sideways
+      // how sideways the front wheels are travelling, steered into by the wheel itself as you let it
+      // (caster) once the back's out, and with the lock opened right up for steering into a slide
+      const travel = Math.atan2(fy, Math.max(1, Math.abs(u)));
+      const rearOut = Math.min(1, Math.max(0, (Math.abs(Math.atan2(ry, Math.max(1, Math.abs(u)))) / peak - 1) / 2));
+      const into = this.steer * travel > 0 ? Math.min(COUNTER_LOCK, Math.abs(travel) + lock * STEER_GAIN) : lock * STEER_GAIN;
+      const asked = this.steer * into;
+      const steer = Math.max(-COUNTER_LOCK, Math.min(COUNTER_LOCK, asked + (travel - asked) * CASTER * rearOut));
+      const cd = Math.cos(steer), sd = Math.sin(steer);
+      const wu = u * cd + fy * sd, wv = -u * sd + fy * cd;
+      const af = Math.atan2(wv, Math.abs(wu)), ar = Math.atan2(ry, Math.abs(u));
+      const fw = -Ff * tyre(af / peak, FRONT_TAIL);
+      // the back tyres take a moment to bite again, so the tail swings past straight and back
+      out = Math.max(out * Math.exp(-h * 1.2), rearOut);
+      rf += (-Fr * tyre(ar / peak, REAR_TAIL) - rf) * Math.min(1, (h * Math.max(2, Math.hypot(u, ry))) / (0.2 + RELAX * out));
+      const fr = rf;
+      const Fx = -fw * sd, Fy = fw * cd + fr;
+      // a touch of steadiness: the car settles to turning as the wheel says, unless it's well past it
+      const most = G / Math.max(1, Math.abs(u));
+      const path = Math.max(-most, Math.min(most, (u * Math.tan(asked)) / S.wb));
+      // sliding sideways, the tyres swing the way it's going round after where it's pointing harder than
+      // they really could, and scrub off less speed doing it, so it comes out of the slide still going;
+      // and steer into the slide and the back end pulls the nose back less, so it goes where it points
+      const sideways = Math.min(1, Math.max(0, (Math.atan2(Math.abs(vy), Math.abs(u)) - 0.12) / 0.3));
+      const held = this.steer * travel > 0 ? Math.min(1, Math.abs(this.steer) * 1.5) : 0;   // steering into the slide
+      const catching = sideways * held, settle = damp + CATCH * catching;
+      spin += ((half * (fw * cd - fr * (1 - SLIDE_SWING * catching))) / k2 - settle * (spin - path * (1 - catching))) * h;
+      const gx = Fx * c - Fy * s, gz = -Fx * s - Fy * c, vv = Math.hypot(vx, vz);
+      if (vv > 0.5) {
+        const ex = vx / vv, ez = vz / vv, along = gx * ex + gz * ez, across = gz * ex - gx * ez;
+        const lose = along < 0 ? along * (1 - (1 - SLIDE_LOSS) * sideways) : along, turn = across * (1 + (SLIDE_TURN - 1) * sideways);
+        vx += (lose * ex - turn * ez) * h; vz += (lose * ez + turn * ex) * h;
+      } else { vx += gx * h; vz += gz * h; }
+      a += spin * h;
+      scrub = Math.max(scrub, Math.min(1, Math.abs(af) / peak - 1));
+      slip = Math.max(slip, Math.min(1, (Math.abs(ar) - peak) / 0.35));
+    }
+    this.rf = rf; this.out = out;
+    // asking for more turn than the tyres have: the fronts scrub wide, scrubbing off speed and spinning
+    // away the engine's push, so it slows and, slower, turns tighter (lift off and it bites)
+    const c = Math.cos(a), s = Math.sin(a), u = vx * c - vz * s;
+    const wide = Math.max(0, Math.min(1, (u * u * Math.abs(Math.tan(this.steer * lock))) / S.wb / (S.grip * (grass ? 0.7 : 1)) - 1) * (1 - slip));
+    scrub = Math.max(scrub, wide);
+    if (scrub > 0 && !hand) {
+      const off = Math.min(Math.abs(u), (wide * S.grip * 0.35 + Math.abs(push) * scrub * 0.7) * dt) * Math.sign(u);
+      vx -= off * c; vz += off * s;
+    }
+    return { spin, vx, vz, da: a - this.a, scrub: Math.max(0, scrub), slip: Math.max(0, slip) };
   }
 
   /**

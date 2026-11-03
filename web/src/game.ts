@@ -431,6 +431,7 @@ export class Game {
   private bellWas = false;                       // at a tiller: the bell key last frame, so holding it rings once
   private steerer: Avatar | null = null;         // you, stood at the tiller, for the chase camera to see
   private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
+  private slideCam = 0;                          // how far the chase camera has swung out for a slide, 0 to 1
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
   private nextNaughtyBoy = 1;
@@ -2778,16 +2779,22 @@ export class Game {
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
     if (from) { this.driverView(v, s.yaw, settle); return; }
     this.insideYaw = null;
-    // the chase camera: the mouse only looks about, and it swings back behind as you drive on
+    // the chase camera: the mouse only looks about, and it swings back behind as you drive on. In a
+    // slide it hangs back towards the way the car's really going, lagging and pulling out wider, so
+    // you see it come round side on
+    const sp = Math.hypot(v.vx, v.vz), across = sp > 6 ? Math.atan2(Math.sin(Math.atan2(-v.vx, -v.vz) - s.yaw), Math.cos(Math.atan2(-v.vx, -v.vz) - s.yaw)) : 0;
+    const sliding = Math.min(1, Math.max(0, (Math.abs(across) - 0.15) / 0.5)) * Math.min(1, Math.max(0, (sp - 6) / 6));
+    this.slideCam += (sliding - this.slideCam) * Math.min(1, dt * (sliding > this.slideCam ? 4 : 1.5));
     if (settle) {
-      p.yaw += Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw)) * settle;
+      const aim = s.yaw + across * 0.55 * this.slideCam;
+      p.yaw += Math.atan2(Math.sin(aim - p.yaw), Math.cos(aim - p.yaw)) * settle * (1 - 0.5 * this.slideCam);
       p.pitch += (-0.2 - p.pitch) * settle;
     }
     p.pitch = Math.max(-0.75, Math.min(0.3, p.pitch));
     const cp = Math.cos(p.pitch);
     const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
     // it hangs a little above the roof and a bit further back than the vehicle's own reach, so you see the road ahead over it
-    const reach = v.spec.cam * 1.25;
+    const reach = v.spec.cam * 1.25 * (1 + 0.25 * this.slideCam);
     const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 1.1, v.z);
     const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, reach);
     const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : reach);
@@ -3518,9 +3525,9 @@ export class Game {
         this.engines.set(v, (e = started));
       }
       // the one you're in sounds as if you're in it, not from where the camera trails behind; its
-      // tyres squeal sliding sideways (a donut, the handbrake), and the front ones scrub wide in a corner taken too fast
+      // tyres squeal sliding sideways (a donut, the handbrake, the back end stepping out), louder the further, and the front ones scrub wide in a corner taken too fast
       const side = Math.abs(v.vx * Math.sin(v.a) + v.vz * Math.cos(v.a));
-      const skid = v.drift || v.hand ? 1 : Math.max(v.scrub * 0.6, Math.min(1, Math.max(0, (side - 2) / 4)));
+      const skid = v.drift || v.hand ? 1 : Math.max(v.scrub * 0.6, v.slip, Math.min(1, Math.max(0, (side - 2) / 4)));
       e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren, Math.min(1, Math.abs(v.speed) / v.spec.top), skid);
     }
     // the nearest few cars in the traffic
