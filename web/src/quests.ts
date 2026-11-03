@@ -48,10 +48,12 @@ import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
 import { ctl, ctlText } from "./controls";
+import * as RS from "./racescreens";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
 import * as Paper from "./paper";
+import { Lineup, type LineupConfig } from "./lineup";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -180,6 +182,11 @@ export interface QuestWorld {
   shove?(v: Vehicle): Shove;
   /** Host: anyone in front of that vehicle as it goes goes under it, as under any car (you included). */
   runOver?(v: Vehicle): void;
+  /** Out of whatever you're doing, for the start of a minigame (lineup.ts): out of a car, a balloon or
+   *  a trolley, off a ladder and your ride, and anything carried put down. */
+  reset?(): void;
+  /** Host: someone back to full health. */
+  heal?(id: string): void;
 }
 
 /** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a
@@ -310,8 +317,11 @@ export interface JobKind {
   take?: string;
   /** Today's job of this kind on the noticeboard at spot, from r. Null if it can't make one there. */
   offer(r: Rng, spot: PostSpot, w: QuestWorld): Offer | null;
-  /** local: a go of your own (Backspace after it's over), not the room's. */
-  start(o: Offer, w: QuestWorld, started: number, by: string, local?: boolean): Job;
+  /** local: a go of your own (Backspace after it's over), not the room's. started is GO, and cast
+   *  who entered (lineup.ts), in order; on a go of your own, just you. */
+  start(o: Offer, w: QuestWorld, started: number, by: string, local: boolean, cast: string[]): Job;
+  /** How it starts (lineup.ts): its spots in the game area and so on. */
+  lineup?: LineupConfig;
   /** One more noticeboard a day of this kind, the same for everyone (the daily race), from r and
    *  the spots round the village. */
   daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | Offer[] | null;
@@ -492,6 +502,8 @@ export class Quests {
   private day = -1;
   private posts: Post[] = [];
   private job: Job | null = null;
+  private lu: Lineup | null = null;    // the running minigame's start (lineup.ts): before GO there's no job yet
+  private luP: unknown;                // how far the job had got, for someone joining, to take on at GO
   private started = 0;            // when the running job was taken (ms since 1970), and by whom
   private by = "";
   private finishT = 0;            // seconds the "job done" card stays up
@@ -523,7 +535,10 @@ export class Quests {
   }
 
   get running() { return this.job; }
-  get title() { return this.job?.offer.title ?? ""; }
+  get title() { return this.current?.title ?? ""; }
+  /** The minigame on, started or still lining up. */
+  private get current(): Offer | null { return this.job?.offer ?? this.lu?.offer ?? null; }
+  private get lining() { return !this.job && !!this.lu; }
 
   /** Today's noticeboards for the maps. */
   spots(): JobSpot[] {
@@ -532,7 +547,7 @@ export class Quests {
     return extra.concat(this.posts.map((p) => ({
       x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, layer: p.kind.challenge ? "challenges" : "job-" + p.kind.id,
       label: p.kind.challenge ? p.offer.title : p.kind.label, challenge: p.kind.challenge,
-      done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed,
+      done: this.doneSeeds.has(p.offer.seed) || this.current?.seed === p.offer.seed,
     })));
   }
   /** Search circles for the maps. */
@@ -621,11 +636,12 @@ export class Quests {
       } else if (p.view && d > SHOWN + 60) { this.w.scene.remove(p.view); p.view = undefined; }
       if (p.view) {
         const badge = p.view.getObjectByName("badge"), ring = p.view.getObjectByName("ring") as THREE.Mesh;
-        const off = this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed;
+        const off = this.doneSeeds.has(p.offer.seed) || this.current?.seed === p.offer.seed;
         if (badge) { badge.visible = !off; badge.rotation.y = t * 1.3; badge.position.y = 2.8 + Math.sin(t * 1.7) * 0.1; }
         if (ring) { ring.visible = !off; (ring.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(t * 3); }
       }
     }
+    if (this.lining) this.lineUp();
     if (this.job) {
       // a job that goes wrong ends there, rather than stopping the whole game with it
       try {
@@ -694,13 +710,13 @@ export class Quests {
   hint(): string {
     const me = this.w.me();
     if (!me.alive) return "";
-    const h = this.job && !this.job.done ? this.job.hint?.() : "";
+    const h = this.lining ? this.lu!.hint() : this.job && !this.job.done ? this.job.hint?.() : "";
     if (h) return h;
     const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
     if (!p) return "";
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
-    if (this.job?.offer.seed === p.offer.seed) return "";
-    if (this.job && !this.local) return "Finish or call off your job first";
+    if (this.current?.seed === p.offer.seed) return "";
+    if (this.lu && !this.local) return "Finish or call off your job first";
     return p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
   }
 
@@ -708,41 +724,70 @@ export class Quests {
   use(): boolean {
     const me = this.w.me();
     if (!me.alive) return false;
+    if (this.enter()) return true;
     if (this.job && !this.job.done && this.job.use?.()) return true;
     const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
-    if (!p || (this.job && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
+    if (!p || ((this.job || this.lu) && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
     this.take(p.wait?.stamp ? { ...p.offer, mode: p.wait.stamp() } : p.offer);
     return true;
   }
 
-  /** Take a job on, for everyone in the room. */
+  /** Take a job on, for everyone in the room: its entries open (lineup.ts). */
   private take(o: Offer) {
-    const t = Date.now();
-    this.begin(o, t, this.w.selfId);
+    const kind = kinds.get(o.kind);
+    if (!kind) return;
+    this.begin(o, Date.now(), this.w.selfId, undefined, false, Lineup.entryFor(kind, this.w));
     this.sendStart();
   }
 
+  /** lu: how long its entries are open; an older page's start has none, and its job starts there and then. */
   private sendStart(to?: string) {
-    if (!this.job || this.local) return;
-    this.w.send("qe", { k: "start", o: this.job.offer, t: this.started, by: this.by, p: this.job.progress?.() }, to);
+    if (this.local || !this.lu) return;
+    const o = this.current!;
+    this.w.send("qe", { k: "start", o, t: this.started, by: this.by, lu: this.lu.entrySecs, l: this.lu.state(), p: this.job?.progress?.() }, to);
   }
 
-  private begin(o: Offer, t: number, by: string, p?: unknown, local = false) {
+  private begin(o: Offer, t: number, by: string, p?: unknown, local = false, entry?: number) {
     const kind = kinds.get(o.kind);
     if (!kind) return;
-    if (this.job) this.clear();
+    if (this.job || this.lu) this.clear();
     this.takeDown();
     this.started = t; this.by = by; this.finishT = 0;
     this.local = local;
-    this.job = kind.start(o, this.w, t, by, local);
-    Telemetry.begin("job:" + o.kind);
-    if (p !== undefined) this.job.restore?.(p);
     if (kind.again) this.last = o;
-    if (local) { this.startCard(o, kind); return; }
+    Telemetry.begin("job:" + o.kind);
+    if (local || entry === undefined) {
+      // a go of your own, or taken on an older page: no line-up, it starts here and now
+      const cast = local ? [this.w.selfId] : this.w.players().map((q) => q.id).sort();
+      this.job = kind.start(o, this.w, t, by, local, cast);
+      if (p !== undefined) this.job.restore?.(p);
+      this.startCard(o, kind);
+    } else {
+      this.lu = new Lineup(o, kind, this.w, t, by, entry);
+      this.luP = p;
+    }
+    if (local) return;
     SFX.jobTaken();
-    this.startCard(o, kind);
     const who = by === this.w.selfId ? "You" : this.w.nameOf(by);
     this.w.feed(`<b style="color:${this.w.colourOf(by)}">${esc(who)}</b> took on a job: <b style="color:${kind.colour}">${esc(o.title)}</b>`);
+  }
+
+  /** E while a minigame's entries are open: in, wherever you are. */
+  enter(): boolean { return this.lining && this.lu!.use(); }
+  /** The entries are open and you've not entered yet. */
+  entering(): boolean { return this.lining && this.lu!.canEnter(); }
+
+  /** Lining up: the host closes the entries, and at GO the job itself starts with whoever's in. */
+  private lineUp() {
+    const lu = this.lu!;
+    if (this.w.isHost) lu.host();
+    lu.update();
+    if (!lu.started) return;
+    const kind = kinds.get(lu.offer.kind)!;
+    lu.goNow();
+    RS.waiting(null);
+    this.job = kind.start(lu.offer, this.w, lu.go, lu.by, false, lu.cast!);
+    if (this.luP !== undefined) { this.job.restore?.(this.luP); this.luP = undefined; }
   }
 
   private startCard(o: Offer, kind: JobKind) {
@@ -752,23 +797,24 @@ export class Quests {
   /** The job you're in, if going off somewhere else would leave it (a race you're riding in, or a
    *  team challenge): what to call it, and whether it's yours alone, so leaving can call it off. */
   leaving(): { what: string; alone: boolean } | null {
-    const j = this.job, k = j && kinds.get(j.offer.kind);
+    const j = this.job, k = this.current && kinds.get(this.current.kind);
+    if (this.lining) return this.lu!.inIt() ? { what: k?.challenge ? "challenge" : k?.label.toLowerCase() ?? "job", alone: this.w.players().length <= 1 } : null;
     if (!j || j.done || !(k?.challenge || j.inIt?.())) return null;
     return { what: k?.challenge ? "challenge" : k?.label.toLowerCase() ?? "job", alone: this.local || this.w.players().length <= 1 };
   }
 
   /** Call the job off (the pause menu), for everyone. */
   callOff() {
-    if (!this.job) return;
-    if (!this.local) { this.w.send("qe", { k: "stop", s: this.job.offer.seed }); }
-    const o = this.job.offer;
+    const o = this.current;
+    if (!o) return;
+    if (!this.local) { this.w.send("qe", { k: "stop", s: o.seed }); }
     Paper.job(kinds.get(o.kind)?.label ?? "Job", o.title, o.where, false, true);
     this.endCard(false, "Job called off", "");
     this.clear();
   }
 
   private endCard(won: boolean, title: string, line: string) {
-    missionEnd({ result: won ? "complete" : "failed", title, lines: line ? [line] : [], colour: this.job ? kinds.get(this.job.offer.kind)?.colour : undefined });
+    missionEnd({ result: won ? "complete" : "failed", title, lines: line ? [line] : [], colour: this.current ? kinds.get(this.current.kind)?.colour : undefined });
   }
 
   private finish() {
@@ -806,9 +852,13 @@ export class Quests {
 
   private clear() {
     this.job?.end();
-    if (this.job) Telemetry.end("job:" + this.job.offer.kind);
-    if (this.job && kinds.get(this.job.offer.kind)?.again) this.lastT = Date.now();
+    const o = this.current;
+    if (o) Telemetry.end("job:" + o.kind);
+    if (o && kinds.get(o.kind)?.again) this.lastT = Date.now();
     this.job = null;
+    this.lu?.dispose();
+    this.lu = null;
+    this.luP = undefined;
     this.stageKey = null;
     missionClear("job");
     this.local = false;
@@ -821,21 +871,28 @@ export class Quests {
     if (!d || typeof d !== "object") return;
     if (d.k === "start" && d.o && typeof d.o.seed === "number") {
       const t = Number(d.t) || 0, by = String(d.by ?? from);
-      if (this.job && this.job.offer.seed === d.o.seed) { if (d.p !== undefined && !this.job.done) this.job.restore?.(d.p); return; }
+      if (this.current && this.current.seed === d.o.seed && !this.local) {
+        if (this.lining) this.lu!.restore(d.l);
+        else if (d.p !== undefined && this.job && !this.job.done) this.job.restore?.(d.p);
+        return;
+      }
       // two jobs taken at once: the first one taken (then the lower id) stands
-      if (this.job && !this.job.done && !this.local && (this.started < t || (this.started === t && this.by < by))) return;
-      this.begin(d.o as Offer, t, by, d.p);
+      if (this.current && !this.job?.done && !this.local && (this.started < t || (this.started === t && this.by < by))) return;
+      const lu = d.lu === undefined ? undefined : Math.max(0, Math.min(120, Number(d.lu) || 0));
+      this.begin(d.o as Offer, t, by, d.p, false, lu);
+      if (this.lu) this.lu.restore(d.l);
       return;
     }
     if (d.k === "stop") {
-      if (this.job && this.job.offer.seed === d.s) { this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
+      if (this.current && this.current.seed === d.s) { this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
       return;
     }
+    if (this.lining && d.s === this.lu!.offer.seed) { this.lu!.event(d, from); return; }
     if (this.job && d.s === this.job.offer.seed) this.job.event?.(d, from);
   }
 
   /** Someone joined: the host tells them what job's on. */
-  joined(id: string) { if (this.w.isHost && this.job && !this.job.done) this.sendStart(id); }
+  joined(id: string) { if (this.w.isHost && this.current && !this.job?.done) this.sendStart(id); }
 
   /** Backspace: back on the line of the race you're in, or of the last one (for two minutes after it). */
   restart(): boolean {
@@ -843,7 +900,7 @@ export class Quests {
     const job = this.job;
     if (job && !job.done && job.restart) return job.restart();
     const o = this.last;
-    if (!o || (job && !job.done) || (!job && Date.now() - this.lastT > 120000)) return false;
+    if (!o || this.lining || (job && !job.done) || (!job && Date.now() - this.lastT > 120000)) return false;
     this.begin(o, Date.now(), this.w.selfId, undefined, true);
     return true;
   }
@@ -860,10 +917,10 @@ export class Quests {
   waiting(): boolean { return !!this.job && !this.job.done && !!this.job.waiting?.(); }
   spectate() { return this.job && !this.job.done ? this.job.spectate?.() ?? null : null; }
   cycle(by: number): boolean { return !!this.job && !this.job.done && !!this.job.cycle?.(by); }
-  quiet(): boolean { return !!this.job && !this.job.done && !!this.job.quiet?.(); }
+  quiet(): boolean { return !!this.lu?.quiet() || (!!this.job && !this.job.done && !!this.job.quiet?.()); }
 
   /** Where you're held on a start line, if you are. */
-  held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
+  held(): { x: number; z: number; y?: number } | null { return this.lu?.held() ?? (this.job && !this.job.done ? this.job.held?.() ?? null : null); }
   /** The running job's things in the road, for the traffic. */
   obstacles() {
     const out = this.job && !this.job.done ? [...(this.job.obstacles?.() ?? [])] : [];
@@ -934,14 +991,14 @@ export class Quests {
         if (this.stageKey !== null) { missionStage({ title: st.title, sub: st.sub, colour: st.colour ?? kind.colour, life: st.life }); }
         this.stageKey = st.key;
       } else if (!st && this.stageKey === null) this.stageKey = "";
-    } else missionClear("job");
+    } else if (!this.lining) missionClear("job");
     const p = this.postAt(me.x, me.z, READ);
     let poster = "";
-    if (p && this.job?.offer.seed !== p.offer.seed) {
+    if (p && this.current?.seed !== p.offer.seed) {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "{use} to start it" : `{use} to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
+        + `<em>${done ? "Done today" : this.current && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "{use} to start it" : `{use} to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
     }
     show($("jobposter"), ctlText(poster), !!poster);
   }

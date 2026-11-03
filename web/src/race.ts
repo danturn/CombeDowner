@@ -1,11 +1,7 @@
 // A to B races: from the noticeboard to a real place 1 to 3 km away, on a set ride. Taking one
-// opens the entries: for a few seconds anyone in the game, wherever they are, can press E to enter
-// (whoever took it is in already). When the entries close, everyone who entered, and nobody else,
-// is put on a starting grid across the street with the ride, facing the way, held still by a
-// countdown (the same for everyone, as it comes from the clock) till GO: a big banner while the
-// racers gather and line up, then 3, 2, 1, GO! in the middle of the screen under start lights
-// (racescreens.ts). With nobody else in the room there's nobody to wait for, so it goes straight to
-// the countdown.
+// starts it the way every minigame starts (lineup.ts): the entries open, and everyone who enters is
+// put on a starting grid across the street on the ride, facing the way, held still through the
+// title card and 3, 2, 1, GO! under the start lights.
 //
 // The start and the finish are on the nearest proper street to the noticeboard and to the place,
 // since most of the rides are hopeless on grass, and the route between them follows the streets
@@ -53,10 +49,8 @@
 // with a board of the times in the room and the "local legend", whoever's had the most goes at it.
 //
 // Who decides what: the route and its checkpoints come from the poster's seed and the map everyone
-// has. Entering goes round as "ent"; the host closes the entries and sends the grid ("grid": who's
-// racing, in grid order), and if no grid comes (an older host) each player falls back on the
-// entries they heard. Each racer times themselves and says as they pass each checkpoint ("cp") and
-// cross the line ("fin"), with their run ("gh") if it's a best. Everyone keeps the results from
+// has. Who's racing, in grid order, is lineup.ts's line-up, the same on every screen. Each racer
+// times themselves and says as they pass each checkpoint ("cp") and cross the line ("fin"), with their run ("gh") if it's a best. Everyone keeps the results from
 // those, counting a finish only from someone who's been through every checkpoint in order; the
 // host checks the time against its own clock as well, and sends the results that stand ("res"),
 // or says a finish doesn't count ("dq"). A racer out of time says "out"; riding on, they send no more checkpoints and
@@ -79,11 +73,9 @@ import { type Card, type Job, type Offer, type Perch, type PostSpot, type QuestW
 import { type PathPoint, type RacePath, along, gatesOf, racePath } from "./raceroute";
 
 const COLOUR = "#3ec7e8";
-const ENTRY = 15;          // seconds the entries are open after it's taken
-const COUNTDOWN = 8;       // seconds on the grid from the entries closing to GO
+const HOLD = 8;            // seconds on the grid from the entries closing to GO
 const RETRY = 3;           // and for a go of your own
 const GO_HUSH = 1.3;       // seconds after GO before the middle of the screen is anyone else's again
-const GRID_WAIT = 2.5;     // seconds after the entries close to wait for the host's grid
 const PASS = 12;           // metres from a checkpoint's middle that counts as through it, at least
 const TOP_SPEED = 48;      // metres a second: nobody's quicker over the whole route than this, boosts and all
 const LATE = 30;           // seconds a finish's time may be quicker than the host's clock says it can be
@@ -333,8 +325,43 @@ registerJob({
     if (board.seed !== o.seed && world) { const m = myDaily(o.seed); onBoard(o.seed, world.selfId, world.name, m.t, m.n); }
     return boardHtml();
   },
-  start: (o, w, started, by, local) => new Race(o, w, started, by, !!local),
+  lineup: {
+    hold: HOLD, verb: "Enter the race",
+    spots: (o, w, n) => {
+      const rt = routeOf(o, w);
+      if (!rt) return [];
+      const at = startOf(rt, o, w);
+      return Array.from({ length: n }, (_, k) => gridSlot(w, at, k));
+    },
+    ready: (o, w) => { const rt = routeOf(o, w); if (rt) w.ride(rt.ride); },
+  },
+  start: (o, w, started, _by, local, cast) => new Race(o, w, started, local, cast),
 });
+
+/** Where a race's checkpoints and start line are, from its route. */
+interface StartLine { path: RacePath | null; gates: PathPoint[]; line: PathPoint; lineAt: number }
+function startOf(rt: Route, offer: Offer, w: QuestWorld): StartLine {
+  const p = rt.path;
+  if (p) {
+    const lineAt = lineOf(p.len);
+    return { path: p, gates: [...gatesOf(p).map((s) => along(p, s)), along(p, p.len)], lineAt, line: along(p, lineAt) };
+  }
+  // no street to be found: the old way, from the noticeboard to clear ground at the place
+  const f = clearSpot(w.map, rt.to.x, rt.to.z, 25) ?? [rt.to.x, rt.to.z];
+  const dx = f[0] - offer.x, dz = f[1] - offer.z, l = Math.hypot(dx, dz) || 1;
+  return { path: null, lineAt: 0, gates: [{ x: f[0], z: f[1], dx: dx / l, dz: dz / l, half: 3 }], line: { x: offer.x + (dx / l) * 6, z: offer.z + (dz / l) * 6, dx: dx / l, dz: dz / l, half: 3 } };
+}
+
+/** Place k on the grid: rows across the street behind the start line, facing up the route. */
+function gridSlot(w: QuestWorld, s: StartLine, k: number): { x: number; z: number; yaw: number } {
+  const L = s.line, cols = Math.max(2, Math.min(4, Math.floor((L.half * 2) / 1.8)));
+  const gap = Math.min(1.8, (L.half * 2 - 0.6) / cols), row = Math.floor(k / cols), col = k % cols;
+  const back = 2 + row * 3.5;
+  const p = s.path ? along(s.path, s.lineAt - back) : { ...L, x: L.x - L.dx * back, z: L.z - L.dz * back };
+  const side = (col - (cols - 1) / 2) * gap, x = p.x - p.dz * side, z = p.z + p.dx * side;
+  const c = clearSpot(w.map, x, z, 3) ?? [x, z];
+  return { x: c[0], z: c[1], yaw: Math.atan2(-p.dx, -p.dz) };
+}
 
 /** What a prompt calls going again: use (E, □), or the touch screen's Again button. */
 const againKey = () => ctl("again");
@@ -511,14 +538,11 @@ class Race implements Job {
   private gates: PathPoint[];               // the checkpoints along the way, then the finish
   private line: PathPoint;                  // the start line
   private lineAt = 0;                       // and how far along the route it is
-  private close: number;                    // ms since 1970: the entries close
   private go: number;                       // and GO for the room
   private myGo: number;                     // and for me (a go of my own starts later)
   private start: { x: number; z: number; yaw: number };   // my place on the grid
   private fin: { x: number; z: number };
-  private entries: string[] = [];           // who's entered, as heard
-  private grid: string[] | null = null;     // who's racing, in grid order
-  private gridFromHost = false;
+  private grid: string[];                   // who's racing, in grid order
   private cps = new Map<string, number>();  // how many checkpoints each racer's been through
   private next = 0;                         // my next gate
   private mySlot = -1;                      // my place on the grid
@@ -574,33 +598,24 @@ class Race implements Job {
   private timer = hudBit("top:112px;width:240px;margin-left:-120px;line-height:1");
   private timerHtml = "";
 
-  constructor(readonly offer: Offer, private w: QuestWorld, started: number, by: string, private local: boolean) {
+  constructor(readonly offer: Offer, private w: QuestWorld, started: number, private local: boolean, cast: string[]) {
     this.rt = routeOf(offer, w)!;
     this.medal = medals(this.rt.author);
     this.daily = offer.mode === DAILY;
-    // on your own in the room there's nobody to wait for: straight to the countdown
-    const lone = !local && w.players().length <= 1;
-    this.close = local || lone ? started : started + ENTRY * 1000;
-    this.go = local ? started + RETRY * 1000 : lone ? started + (RETRY + 1) * 1000 : this.close + COUNTDOWN * 1000;
+    // the room's race starts at GO, from the grid lineup.ts put everyone on; a go of your own has its own 3, 2, 1
+    this.go = local ? started + RETRY * 1000 : started;
     this.myGo = this.go;
     this.best = bestOf(offer.seed);
-    this.path = this.rt.path;
+    const at = startOf(this.rt, offer, w);
+    this.path = at.path;
     const p = this.path;
-    if (p) {
-      this.gates = [...gatesOf(p).map((s) => along(p, s)), along(p, p.len)];
-      this.lineAt = lineOf(p.len);
-      this.line = along(p, this.lineAt);
-    } else {
-      // no street to be found: the old way, from the noticeboard to clear ground at the place
-      const f = clearSpot(w.map, this.rt.to.x, this.rt.to.z, 25) ?? [this.rt.to.x, this.rt.to.z];
-      const dx = f[0] - offer.x, dz = f[1] - offer.z, l = Math.hypot(dx, dz) || 1;
-      this.gates = [{ x: f[0], z: f[1], dx: dx / l, dz: dz / l, half: 3 }];
-      this.line = { x: offer.x + (dx / l) * 6, z: offer.z + (dz / l) * 6, dx: dx / l, dz: dz / l, half: 3 };
-    }
+    this.gates = at.gates; this.line = at.line; this.lineAt = at.lineAt;
+    this.grid = local ? [] : cast.slice(0, 64);
     const f = this.gates[this.gates.length - 1];
     this.fin = { x: f.x, z: f.z };
     this.setUpClock();
-    this.start = this.slot(0);
+    this.mySlot = local ? 0 : this.grid.indexOf(w.selfId);
+    this.start = this.slot(Math.max(0, this.mySlot));
     this.routeLine = { pts: p ? p.pts : [this.line.x, this.line.z, f.x, f.z], gates: [], colour: COLOUR };
     this.lineGates();
     this.addPar();
@@ -621,12 +636,11 @@ class Race implements Job {
       if (w.me().alive) { this.racing = true; w.moveTo(this.start.x, this.start.z, this.start.yaw); w.ride(this.rt.ride); }
       return;
     }
-    this.enter(by);
-    const left = Math.ceil((this.close - Date.now()) / 1000);
-    if (lone) return;
-    if (left <= 0) w.toast(`A race is on: you're watching this one. ${againKey()} to have a go of your own`, 3);
-    else if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press {use} and enter`, 3);
-    else w.toast(`A race is taking entries: {use} to enter (${left} s)`, 4);
+    this.pipped = 0;
+    if (this.mySlot >= 0 && w.me().alive) {
+      this.racing = true;
+      if (w.riding() !== this.rt.ride) w.ride(this.rt.ride);
+    } else if (this.mySlot < 0) w.toast(`A race is on: you're watching this one. ${againKey()} to have a go of your own`, 3);
   }
 
   /** Each leg's time limit and gold pace at each gate, and where the boost pads lie. */
@@ -659,32 +673,16 @@ class Race implements Job {
     this.ghosts.set("@par", { id: "@par", name: "Gold pace", colour: "#ffe27a", b: { t: T, sp: this.parAt, g: "", e, cp: this.gates.length - 1 }, pts, heading: this.start.yaw });
   }
 
-  private alone() { return this.own || (this.grid?.length ?? 1) <= 1; }
+  private alone() { return this.own || this.grid.length <= 1; }
 
   /** Seconds since my GO. */
   private get now() { return (Date.now() - this.myGo) / 1000; }
 
-  /** Place k on the grid: rows across the street behind the start line, facing up the route. */
-  private slot(k: number): { x: number; z: number; yaw: number } {
-    const L = this.line, cols = Math.max(2, Math.min(4, Math.floor((L.half * 2) / 1.8)));
-    const gap = Math.min(1.8, (L.half * 2 - 0.6) / cols), row = Math.floor(k / cols), col = k % cols;
-    const back = 2 + row * 3.5;
-    const p = this.path ? along(this.path, this.lineAt - back) : { ...L, x: L.x - L.dx * back, z: L.z - L.dz * back };
-    const side = (col - (cols - 1) / 2) * gap, x = p.x - p.dz * side, z = p.z + p.dx * side;
-    const c = clearSpot(this.w.map, x, z, 3) ?? [x, z];
-    return { x: c[0], z: c[1], yaw: Math.atan2(-p.dx, -p.dz) };
-  }
+  private slot(k: number) { return gridSlot(this.w, { path: this.path, gates: this.gates, line: this.line, lineAt: this.lineAt }, k); }
 
-  private enter(id: string) { if (!this.entries.includes(id)) this.entries.push(id); }
-  private canEnter() {
-    return !this.local && !this.grid && Date.now() < this.close && !this.entries.includes(this.w.selfId) && this.w.me().alive;
-  }
   private here(id: string) { return this.w.players().some((p) => p.id === id); }
 
-  hint() {
-    if (this.canEnter()) return `<b>{use}</b> Enter the race (${Math.ceil((this.close - Date.now()) / 1000)} s)`;
-    return this.againOk() ? "<b>{again}</b> Go again" : "";
-  }
+  hint() { return this.againOk() ? "<b>{again}</b> Go again" : ""; }
 
   /** Use goes again on a ride, or in a race once you're not racing flat out: not mid-race, nor waiting for the end. */
   private againOk() {
@@ -692,45 +690,7 @@ class Race implements Job {
     return (this.racing || this.w.riding()) && !(this.racing && !this.over && !this.out && !this.dnf);
   }
 
-  use(): boolean {
-    if (this.againOk() && !this.canEnter()) return this.restart();
-    if (!this.canEnter()) return false;
-    this.enter(this.w.selfId);
-    this.w.send("qe", { k: "ent", s: this.offer.seed });
-    SFX.tick();
-    return true;
-  }
-
-  /** The host closes the entries and says who's racing. */
-  host() {
-    if (this.local || this.done || this.grid || Date.now() < this.close) return;
-    const ids = this.entries.filter((id) => this.here(id));
-    this.w.send("qe", { k: "grid", s: this.offer.seed, ids });
-    this.onGrid(ids, true);
-  }
-
-  /** Who's racing: onto the grid if I am. A grid of my own making (no word from the host) gives
-   *  way to the host's. */
-  private onGrid(ids: string[], fromHost: boolean) {
-    if (this.local || this.gridFromHost || (this.grid && !fromHost)) return;
-    this.grid = ids.slice(0, 64);
-    this.gridFromHost = fromHost;
-    for (const id of this.grid) this.enter(id);
-    const k = this.grid.indexOf(this.w.selfId);
-    if (this.own) return;
-    if (k < 0) {
-      if (this.racing && Date.now() < this.go) { this.racing = false; this.w.toast("The entries closed without you: you're watching this one", 3); }
-      return;
-    }
-    if (this.racing && k === this.mySlot) return;
-    this.mySlot = k;
-    this.start = this.slot(k);
-    if (Date.now() < this.go + 5000 && this.w.me().alive) {
-      this.racing = true;
-      this.w.moveTo(this.start.x, this.start.z, this.start.yaw);
-      this.w.ride(this.rt.ride);
-    }
-  }
+  use(): boolean { return !!this.againOk() && this.restart(); }
 
   /** Back on the line, on my own clock. */
   restart(): boolean {
@@ -754,7 +714,6 @@ class Race implements Job {
 
   update(dt: number) {
     const t = this.now, me = this.w.me();
-    if (!this.local && !this.grid && Date.now() >= this.close + GRID_WAIT * 1000) this.onGrid([...this.entries].sort().filter((id) => this.here(id)), false);
     // coming off for good (killed) on the way: out of the race
     if (this.racing && !this.over && !this.dnf && !this.done && !me.alive) this.dropOut(t);
     // the countdown: a pip a second and a long one on GO, each number big in the middle with the start lights
@@ -772,7 +731,6 @@ class Race implements Job {
       if (this.local ? this.over || this.dnf : this.roomOver && !mine) this.finish();
     }
     if (this.done) { this.hideHud(); return; }
-    this.drawWait(t);
     this.watch(dt);
     const live = this.racing && !this.over && !this.dnf;
     const target = live ? this.gates[this.next] : this.gates[this.gates.length - 1];
@@ -825,35 +783,12 @@ class Race implements Job {
     if (this.w.isHost) this.w.send("qe", { k: "end", s: this.offer.seed, r: this.results, o: [...this.outs], d: [...this.dnfs], h: [...this.homes] });
   }
 
-  /** The banner while the entries are open and the racers line up, till the 3, 2, 1. */
-  private drawWait(t: number) {
-    const nowMs = Date.now(), names = (ids: string[]) => ids.slice(0, 6).map((id) => esc(this.who(id))).join(", ") + (ids.length > 6 ? ` and ${ids.length - 6} more` : "");
-    if (!this.local && !this.grid && nowMs < this.close) {
-      const inIt = this.entries.includes(this.w.selfId);
-      RS.waiting({
-        kind: this.offer.title,
-        head: `Waiting for racers<span class="dots"></span>`, count: Math.ceil((this.close - nowMs) / 1000),
-        sub: `${this.entries.length} in: ${names(this.entries)}`,
-        small: inIt ? `You're in · ${esc(rideSpecs[this.rt.ride].name)}` : this.w.me().alive ? `<b>${esc(RS.control("use"))}</b> to enter` : "",
-      });
-    } else if (!this.local && !this.grid) {
-      RS.waiting({ kind: this.offer.title, head: `Lining up<span class="dots"></span>`, sub: `${this.entries.length} in: ${names(this.entries)}` });
-    } else if (this.racing && !this.dnf && !this.over && t < 0 && Math.ceil(-t) > 3) {
-      const many = !this.own && (this.grid?.length ?? 1) > 1;
-      RS.waiting({
-        kind: this.offer.title, head: "Get ready", count: Math.ceil(-t),
-        sub: many ? `On the grid: ${nth(this.mySlot + 1)} of ${this.grid!.length}` : `${esc(rideSpecs[this.rt.ride].name)} to <b>${esc(this.rt.to.n)}</b>`,
-        small: many ? `Racing: ${names(this.grid!)}` : undefined,
-      });
-    } else RS.waiting(null);
-  }
-
   /** From Get ready till GO has faded the middle of the screen is the countdown's alone: anything
    *  else for it (a ride's intro, its keys) waits till after. */
   quiet(): boolean {
     if (!this.racing || this.over || this.dnf || this.done) return false;
     const t = this.now;
-    return t < GO_HUSH && (t > -COUNTDOWN || this.own);
+    return t < GO_HUSH && (t > -HOLD || this.own);
   }
 
   inIt() { return this.racing && !this.done; }
@@ -1341,7 +1276,7 @@ class Race implements Job {
   private finOk(from: string, t: number) {
     if (!Number.isFinite(t) || t < (this.path?.len ?? this.rt.d) / TOP_SPEED) return false;
     if ((this.cps.get(from) ?? 0) < this.gates.length - 1) return false;
-    return (this.grid ?? this.entries).includes(from);
+    return this.grid.includes(from);
   }
 
   private addResult(id: string, t: number) {
@@ -1378,11 +1313,7 @@ class Race implements Job {
       }
     }
     if (this.local) return;   // the rest is the room's race
-    if (d.k === "ent") {
-      if (!this.grid && Date.now() < this.close + GRID_WAIT * 1000) this.enter(from);
-    } else if (d.k === "grid" && Array.isArray(d.ids)) {
-      this.onGrid(d.ids.map(String), true);
-    } else if (d.k === "out") {
+    if (d.k === "out") {
       if (!self) { this.outs.add(from); if (d.dnf) this.dnfs.add(from); }
     } else if (d.k === "home") {
       if (!self) { this.outs.add(from); this.homes.add(from); }
@@ -1452,7 +1383,7 @@ class Race implements Job {
     };
   }
 
-  progress() { return { r: this.results, e: this.entries, g: this.gridFromHost ? this.grid : null, c: [...this.cps], o: [...this.outs], d: [...this.dnfs], h: [...this.homes] }; }
+  progress() { return { r: this.results, c: [...this.cps], o: [...this.outs], d: [...this.dnfs], h: [...this.homes] }; }
   restore(p: any) {
     if (!p || typeof p !== "object") return;
     if (Array.isArray(p.r)) for (const r of p.r) {
@@ -1461,9 +1392,7 @@ class Race implements Job {
     }
     this.results.sort((a, b) => a.t - b.t);
     if (this.results.length && !this.firstT) this.firstT = Date.now();
-    if (Array.isArray(p.e)) for (const id of p.e.slice(0, 64)) this.enter(String(id));
     if (Array.isArray(p.c)) for (const c of p.c.slice(0, 64)) if (Array.isArray(c)) this.cps.set(String(c[0]), Math.max(this.cps.get(String(c[0])) ?? 0, Number(c[1]) || 0));
-    if (Array.isArray(p.g)) this.onGrid(p.g.map(String), true);
     for (const [k, set] of [["o", this.outs], ["d", this.dnfs], ["h", this.homes]] as const) if (Array.isArray(p[k])) for (const id of p[k].slice(0, 64)) set.add(String(id));
   }
 
@@ -1483,7 +1412,7 @@ class Race implements Job {
 
   card(): Card {
     const c = this.cardBase();
-    if (!this.racing || this.over || this.now < 0 || (!this.local && !this.grid)) return c;
+    if (!this.racing || this.over || this.now < 0) return c;
     const last = this.gates.length - 1, k = this.next;
     return {
       ...c, progress: k < last ? `${k} / ${last}` : "Finish", timer: clock(Math.max(0, this.now), true),
@@ -1493,18 +1422,10 @@ class Race implements Job {
   }
 
   private cardBase(): Card {
-    const t = this.now, me = this.w.me(), m = this.medal, nowMs = Date.now();
+    const t = this.now, me = this.w.me(), m = this.medal;
     const medalLine = `Gold ${clock(m.gold)} · silver ${clock(m.silver)} · bronze ${clock(m.bronze)}`;
     const legend = this.daily ? boardHtml() : "";
     const names = (ids: string[]) => ids.slice(0, 6).map((id) => esc(id === this.w.selfId ? "You" : this.w.nameOf(id))).join(", ") + (ids.length > 6 ? ` and ${ids.length - 6} more` : "");
-    if (!this.local && !this.grid) {
-      const left = Math.max(0, Math.ceil((this.close - nowMs) / 1000)), inIt = this.entries.includes(this.w.selfId);
-      return {
-        line: left <= 0 ? "Entries closed: lining up" : inIt ? `<b class="clue">You're in</b> · the grid in ${left} s` : `<b class="clue">Entries open</b>: <b>${esc(RS.control("use"))}</b> to enter · ${left} s`,
-        sub: `${this.entries.length} in: ${names(this.entries)}<br>${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}`,
-        bar: 1 - Math.min(1, Math.max(0, (this.close - nowMs) / (ENTRY * 1000))),
-      };
-    }
     if (this.racing && !this.over && t < 0) {
       return { line: `<b class="clue">${Math.ceil(-t) <= 3 ? Math.ceil(-t) : "Get ready"}</b>`, sub: `${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}${this.best ? ` · best ${clock(this.best.t, true)}` : ""}${this.grid && !this.own ? `<br>Racing: ${names(this.grid)}` : ""}` };
     }

@@ -4047,7 +4047,8 @@ export class Game {
     const lining = this.sports.lining, filming = this.broadcast.on;
     if (this.useKey) {
       this.useKey = false;
-      if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
+      if (this.quests.enter()) { /* into a minigame while its entries are open, wherever you are */ }
+      else if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
       else if (!this.car && !this.ride && this.alive && this.golfDriver.use()) { /* the tape on the Golf Driver's seat */ }
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
@@ -4617,7 +4618,7 @@ export class Game {
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
     const moored = free && !near && !helm && !tiller && canal ? canal.mooredNear(pp.x, pp.y, pp.z) : -1;
     const lock = free && !near && !helm && !tiller && moored < 0 && canal ? canal.lockNear(pp.x, pp.z) : -1;
-    const job = !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.invasion.hint() || this.scars.hint() : "") : "";
+    const job = this.quests.entering() || !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.invasion.hint() || this.scars.hint() : "") : "";
     // by a balloon's basket on the lawn (or wherever one's come down)
     const balloon = free && !near && !this.basket && !this.riding ? this.balloons.near(this.player.pos.x, this.player.pos.y, this.player.pos.z) : null;
     // something new in your hands: say what to do with it, for a moment
@@ -4886,6 +4887,23 @@ export class Game {
         this.sendState();
       },
       riding: () => (this.riding && this.alive ? this.held : null),
+      reset: () => {
+        if (this.ride) this.getOut();
+        if (this.balloons.aboard >= 0) this.balloons.leave(true);
+        if (this.basket) this.leaveBasket();
+        if (this.riding) this.dismount(false);
+        if (this.ladders.carriers.has(this.net.selfId)) this.askLadder({ op: "drop" });
+        if (this.oddments.carrying(this.net.selfId)) this.oddments.drop(this.woodMe(), this.isHost);
+        this.player.ladder = null;
+        this.aiming = this.binoculars = false;
+      },
+      heal: (id) => {
+        const s = this.entry(id);
+        if (!this.isHost || !s.alive || s.hp >= 100) return;
+        s.hp = 100;
+        if (id === this.net.selfId) this.hp = 100;
+        this.sendScores();
+      },
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
       ammo: (n) => {
         this.weapon.reserve = Math.min(MAX_RESERVE, this.weapon.reserve + n);
