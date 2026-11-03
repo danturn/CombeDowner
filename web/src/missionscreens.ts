@@ -13,7 +13,7 @@
 // them from the events that player already gets (quests.ts, race.ts, bonfire.ts). The panel is
 // written only when its words change, and the cards run on timers, not frames (only the confetti
 // has a frame loop, and only while it is falling).
-import { show } from "./show";
+import { setHidden, show } from "./show";
 import { ctlText } from "./controls";
 import { modal } from "./modal";
 import { cutFlag, cutFront, tearOff } from "./cutting";
@@ -174,18 +174,25 @@ export function missionProgress(o: MissionProgress) {
   const frac = typeof o.progress === "number" ? o.progress : o.bar;
   const count = typeof o.progress === "string" ? o.progress : "";
   const col = o.colour ?? ACCENT;
-  const html = (o.label ? `<div class="label" style="color:${col}">${o.label}</div>` : "")
+  const top = (o.label ? `<div class="label" style="color:${col}">${o.label}</div>` : "")
     + `<div class="head"><div class="jobtitle">${esc(ctlText(o.goal))}</div>${count ? `<div class="count" style="color:${col}">${esc(count)}</div>` : ""}</div>`
-    + (o.timer ? `<div class="timer">${esc(o.timer)}</div>` : "")
-    + (o.hint ? `<div class="jobline">${ctlText(o.hint)}</div>` : "")
-    + (frac !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%;background:${col}"></div></div>` : "")
+    + (o.timer ? `<div class="timer">${esc(o.timer)}</div>` : "");
+  const foot = (frac !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%;background:${col}"></div></div>` : "")
     + (o.sub ? `<em>${ctlText(o.sub)}</em>` : "");
   const key = o.flash ?? "";
   if (key !== flashKey) {
     if (flashKey && key) { panel.classList.remove("fresh"); void panel.offsetWidth; panel.classList.add("fresh"); }
     flashKey = key;
   }
-  show(panel, html, true);
+  // in parts, so the clock ticking doesn't rebuild the job's line: a picture in it would be thrown
+  // away and decoded again every second, and flash
+  if (panel.childElementCount !== 3) panel.replaceChildren(document.createElement("div"), document.createElement("div"), document.createElement("div"));
+  const [a, b, c] = panel.children as unknown as HTMLElement[];
+  show(a, top);
+  show(b, o.hint ? ctlText(o.hint) : "", !!o.hint);
+  if (b.className !== "jobline") b.className = "jobline";
+  show(c, foot);
+  setHidden(panel, false);
 }
 
 /** Take the panel down, if it is this mission's. */
@@ -213,7 +220,7 @@ export function missionCardDrop() { dropCard(); }
 /** A title or stage card has the space over the crosshair: call-outs wait till it's gone, as they
  *  do for a race's countdown, rather than land on top of it. */
 export function missionCardUp() {
-  if (document.querySelector(".tsc-call:not([hidden]):not(.out)")) return true;   // a trail's or a bounty's call-out (trailscreens.ts)
+  if (document.querySelector(".wsc-call:not([hidden]):not(.out)")) return true;   // a bounty's call-out (wantedscreens.ts)
   return !!card && !card.classList.contains("out") && (card.classList.contains("msc-start") || card.classList.contains("msc-stage"));
 }
 

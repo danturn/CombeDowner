@@ -1,10 +1,14 @@
 // Seagull Attack: tourists sat on benches with their sandwiches from the Darling Deli, and the gulls
 // of Bath want them. Keep the sandwiches out of their beaks for five waves.
 //
-// The job goes up on a noticeboard in a square, park or beer garden. Take it and a ring of benches
-// is set out near the board with three tourists on them (one more for each extra player), each with
-// a sandwich of three bites. Then the gulls come in off the rooftops, a wave at a time, each wave
-// bigger and more mixed than the last, with a breather between:
+// The job goes up on a noticeboard by a pub or a named place. Take it and a ring of benches is set
+// out on the nearest open ground (a green, a square, a wide pavement: clear and flat all round, with
+// sky above, found by asking the map; up to 150 m off if it's tight by the board, and the board says
+// where), with three tourists on them (one more for each extra player), each with a sandwich of three
+// bites. Everyone is put in the middle of the ring, facing a tourist, and each tourist has a pin over
+// them, seen through anything, green to red as their sandwich goes and flashing while a gull's after
+// it; the ring is on the maps too. Then the gulls come in off the rooftops, a wave at a time, each
+// wave bigger and more mixed than the last, with a breather between:
 //
 // - Herring gulls circle, pick a sandwich and swoop: their shadow grows on the ground as they come
 //   down. Shoot them on the way in.
@@ -24,29 +28,35 @@
 //
 // A gull that grabs a bite flies off with it to a rooftop: shoot it before it gets there and the
 // bite's saved. A tourist whose sandwich is all gone storms off. Between waves three crates are
-// put out by the benches, each with an upgrade: a bucket of chips to throw down (gulls go for the
-// chips instead), a plastic owl to stand by a tourist (gulls keep away until a walker knocks it
-// over), a brolly that blocks one swoop, a megaphone for a bigger shout, or second helpings for
-// everyone. Whoever gets to one first takes it for the team.
+// put out by the benches: always a box of rounds (more spare rifle rounds for every player), and
+// two upgrades: a bucket of chips to throw down (gulls go for the chips instead), a plastic owl to
+// stand by a tourist (gulls keep away until a walker knocks it over), a brolly that blocks one
+// swoop, a megaphone for a bigger shout, or second helpings for everyone. Whoever gets to one first
+// takes it for the team, so the rounds are a choice against an upgrade.
 //
 // Stars at the end for how much sandwich is left, and a score: gulls seen off, thieves shot in
 // flight, gulls stared out, and a bonus for a wave without a bite lost. Each day has its own twist
 // (a bank holiday's crowds, Chip Tuesday, a hen do, bin day). Three stars puts a seagull on your
 // head, from your wardrobe (wardrobe.ts), and beating Big Lad cleanly gets you more.
 //
-// Who decides what: the host runs the gulls, the tourists, the waves and Big Lad, and sends their
-// state round about 10 times a second as "qe" (with what just happened, for the sounds and
-// feathers); everyone else draws that, smoothed. Shots at gulls, shouts, stares, chips and crates
-// go to the host as "qe" from whoever did them. Where seagull muck lands goes round, and each
-// player sees for themselves whether it got them. A go of your own (Backspace afterwards) runs it
-// all on your machine and sends nothing.
+// Losing leaves no mark on the town: the gulls just go.
+//
+// Who decides what: the host picks where the benches go, runs the gulls, the tourists, the waves
+// and Big Lad, and sends their state round about 10 times a second as "qe" (with what just
+// happened, for the sounds and feathers); everyone else draws that, smoothed. Shots at gulls,
+// shouts, stares, chips and crates go to the host as "qe" from whoever did them. Where seagull muck
+// lands goes round, and each player sees for themselves whether it got them. Each player moves
+// themselves into the middle when the benches' place first comes round, and tops up their own gun
+// when a box of rounds is taken. The box goes round apart from the other crates, so an older page
+// sees it as taken and ignores its pick. A go of your own (Backspace afterwards) runs it all on
+// your machine and sends nothing.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { ball, box, part, type Piece } from "./avatar";
 import { dayNumber } from "./daylight";
 import { type GameMap, PATHS } from "./map";
 import { clearSpot } from "./haunts";
-import { type Card, type Job, type Offer, type PostSpot, type Quarry, type QuestWorld, type Rng, esc, hash, registerJob, rng, starText } from "./quests";
+import { type Card, type Job, type Offer, type PostSpot, type Quarry, type QuestWorld, type Rng, compassWord, esc, far, hash, registerJob, rng, starText } from "./quests";
 import { count as wardCount, earn } from "./wardrobe";
 import type { Follow } from "./weapon";
 
@@ -81,9 +91,10 @@ const WAVE_SAY = ["", "Here they come", "Hoverers: stare them out", "A gang, and
 const B_ARRIVE = 0, B_PERCH = 1, B_RUN = 2, B_PASS = 3, B_BACK = 4, B_DIVE = 5, B_DEAD = 6;
 
 // the upgrades in the crates
-const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4;
-const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings"];
-const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here"];
+const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4, AMMO_UP = 5;
+const AMMO_ROUNDS = 90;
+const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings", "Box of rounds"];
+const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here", `${AMMO_ROUNDS} more rounds each, for everyone`];
 
 // each day's twist
 const MODS = ["", "Bank holiday", "Chip Tuesday", "Hen do", "Bin day", ""];
@@ -91,7 +102,7 @@ const MOD_SAY = ["", "Crowds out: an extra tourist, and more gulls.", "Chips in 
 
 // what just happened, sent with the state for the sounds, feathers and words
 const FX_PUFF = 0, FX_STEAL = 1, FX_SAVE = 2, FX_POO = 3, FX_BOMB = 4, FX_BROLLY = 5, FX_OWL = 6, FX_STORM = 7, FX_SHOUT = 8,
-  FX_SCREECH = 9, FX_BOSSDOWN = 10, FX_WAVE = 11, FX_CLEAN = 12, FX_GRAB = 13, FX_CRY = 14, FX_PICK = 15, FX_PULL = 16, FX_HIT = 17, FX_DIVE = 18;
+  FX_SCREECH = 9, FX_BOSSDOWN = 10, FX_WAVE = 11, FX_CLEAN = 12, FX_GRAB = 13, FX_CRY = 14, FX_PICK = 15, FX_PULL = 16, FX_HIT = 17, FX_DIVE = 18, FX_AMMO = 19;
 type Fx = number[];
 
 const TOURIST_LINES = ["Oi! That bird's had my panini!", "My sandwich! Did you see that?", "It took it right out of my hand!", "Shoo! SHOO!", "That was a twelve pound sandwich!", "Is this normal here?"];
@@ -131,11 +142,12 @@ interface State {
 registerJob({
   id: "gulls", glyph: "G", colour: COLOUR, label: "Seagull Attack", again: true,
   goal: () => `Keep the sandwiches out of the gulls' beaks for ${WAVES} waves`,
-  offer(r: Rng, spot: PostSpot) {
+  offer(r: Rng, spot: PostSpot, w: QuestWorld) {
+    world = w;
     const mod = dayNumber() % MODS.length, stars = 1 + Math.floor(r() * 3);
     const o: Offer = {
       kind: "gulls", seed: hash("gulls", r() * 1e9), stars, x: spot.x, z: spot.z, where: spot.name, mode: mod,
-      title: MODS[mod] ? `Seagull Attack: ${MODS[mod]}` : spot.pub ? "Seagull Attack in the beer garden" : "Seagull Attack",
+      title: MODS[mod] ? `Seagull Attack: ${MODS[mod]}` : "Seagull Attack",
       blurb: `Tourists on the benches with their sandwiches, and the gulls of Bath want them. Five waves, then Big Lad himself. `
         + `Shoot them, stare them out, shout ({use}) at a gang, and save a stolen bite by shooting the thief before it reaches the roofs. `
         + (MOD_SAY[mod] ? `Today: ${MOD_SAY[mod]} ` : ""),
@@ -144,6 +156,15 @@ registerJob({
     const best = bestAt(spot.name);
     if (best) o.blurb += `Your best here: ${best}.`;
     return o;
+  },
+  poster(o) {
+    let said = previews.get(o.seed);
+    if (said === undefined && world?.map.detailedAt(o.x, o.z)) {
+      const at = openGround(world.map, o.x, o.z);
+      said = at ? whereSaid(world, o.x, o.z, at.x, at.z) : "";
+      previews.set(o.seed, said);
+    }
+    return said ? `<p>It's tight round here, so the benches go out on open ground ${esc(said)}: you start in the middle of them.</p>` : "";
   },
   start: (o, w, _started, _by, local) => new Seagulls(o, w, !!local),
 });
@@ -161,25 +182,110 @@ function keepBest(where: string, score: number) {
 /** A test for whether a spot's clear of the streets round (x, z): not in a building or a wall, and
  *  off the carriageway (footpaths are fine), so the benches go on a pavement, a green or a square. */
 function spotTest(map: GameMap, x: number, z: number, r: number) {
-  const segs: number[][] = [];
+  // the carriageway's pieces, filed by 16 m square so each test only looks at those nearby
+  const B = 16, near = new Map<number, number[][]>();
+  const at = (i: number, j: number) => i * 4096 + j;
   for (const rd of [...map.areas().flatMap((a) => a.d.rd), ...map.wide?.rd ?? []]) {
     if (PATHS.has(rd.c) || rd.p.length < 2) continue;
     const half = (rd.w ?? 7) / 2 + 1.8;
     for (let k = 0; k < rd.p.length - 1; k++) {
       const a = rd.p[k], b = rd.p[k + 1];
-      if (Math.min(a[0], b[0]) > x + r || Math.max(a[0], b[0]) < x - r || Math.min(-a[1], -b[1]) > z + r || Math.max(-a[1], -b[1]) < z - r) continue;
-      segs.push([a[0], -a[1], b[0], -b[1], half]);
+      const x0 = Math.min(a[0], b[0]) - half, x1 = Math.max(a[0], b[0]) + half, z0 = Math.min(-a[1], -b[1]) - half, z1 = Math.max(-a[1], -b[1]) + half;
+      if (x0 > x + r || x1 < x - r || z0 > z + r || z1 < z - r) continue;
+      const seg = [a[0], -a[1], b[0], -b[1], half];
+      for (let i = Math.floor(x0 / B); i <= Math.floor(x1 / B); i++) for (let j = Math.floor(z0 / B); j <= Math.floor(z1 / B); j++) {
+        const l = near.get(at(i, j));
+        if (l) l.push(seg); else near.set(at(i, j), [seg]);
+      }
     }
   }
   return (px: number, pz: number) => {
-    if (map.blocked(px, pz, 1) || map.indoors(px, pz)) return false;
-    for (const [ax, az, bx, bz, half] of segs) {
+    if (map.blocked(px, pz, 1)) return false;
+    for (const [ax, az, bx, bz, half] of near.get(at(Math.floor(px / B), Math.floor(pz / B))) ?? []) {
       const vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1, t = Math.max(0, Math.min(1, ((px - ax) * vx + (pz - az) * vz) / l2));
       if (Math.hypot(px - ax - vx * t, pz - az - vz * t) < half) return false;
     }
     return true;
   };
 }
+
+const OPEN_R = RING + 4;      // clear all round: the benches, and room to walk behind them
+const SKY_R = 20;             // and mostly clear beyond that, to see the gulls coming in
+const SEARCH = 150;           // how far from the noticeboard to look for it
+const OFF_BOARD = 10;         // and no nearer than this, so its poster doesn't keep popping up
+const CELL = 2;
+
+/** The middle for the ring of benches: the nearest genuinely open, flat ground to (x, z), clear of
+ *  buildings, walls, fences, trees, the carriageway, water and anything overhead for OPEN_R all
+ *  round (or, if nothing near is that roomy, for just the ring), and as open as can be out to SKY_R. Only the map is asked, and nothing random, so the
+ *  board can say where before the job's taken and the host finds the same place. Null if nothing
+ *  near is open enough for the ring at all. */
+function openGround(map: GameMap, x: number, z: number): { x: number; z: number } | null {
+  const ok = spotTest(map, x, z, SEARCH + SKY_R + 4), N = Math.ceil((SEARCH + SKY_R) / CELL), W = 2 * N + 1;
+  const seen = new Int8Array(W * W);
+  const free = (i: number, j: number) => {
+    const k = (i + N) * W + (j + N);
+    if (!seen[k]) {
+      const px = x + i * CELL, pz = z + j * CELL;
+      // nothing overhead either: a bridge, a railway's arches, a canopy
+      seen[k] = map.detailedAt(px, pz) && ok(px, pz) && map.floor(px, pz, 999) - map.ground(px, pz) < 2.5 ? 1 : 2;
+    }
+    return seen[k] === 1;
+  };
+  const cands: number[][] = [];
+  const reach = Math.floor(SEARCH / CELL);
+  for (let i = -reach; i <= reach; i += 2) for (let j = -reach; j <= reach; j += 2) {
+    const d = Math.hypot(i, j) * CELL;
+    if (d >= OFF_BOARD && d <= SEARCH) cands.push([i, j, d]);
+  }
+  cands.sort((a, b) => a[2] - b[2] || a[0] - b[0] || a[1] - b[1]);
+  // open ground counts for more than being near, but 100 m further has to be a lot more open
+  const score = (open: number, d: number) => open * 100 - d * 0.3;
+  const search = (clearR: number, allowed: number) => {
+    const disc: number[][] = [], ring: number[][] = [], rd = clearR / CELL, rs = SKY_R / CELL;
+    for (let i = -Math.ceil(rs); i <= rs; i++) for (let j = -Math.ceil(rs); j <= rs; j++) {
+      const d = Math.hypot(i, j);
+      if (d <= rd) disc.push([i, j]); else if (d <= rs) ring.push([i, j]);
+    }
+    // a lamp post or a bollard in the ring is fine; a wall or a building isn't
+    const allow = Math.floor(disc.length * allowed);
+    let best: { x: number; z: number } | null = null, bestS = -Infinity;
+    for (const [ci, cj, d] of cands) {
+      if (score(1, d) <= bestS) break;
+      if (!free(ci, cj)) continue;
+      let shut = 0;
+      for (const [i, j] of disc) if (!free(ci + i, cj + j) && ++shut > allow) break;
+      if (shut > allow) continue;
+      const cx = x + ci * CELL, cz = z + cj * CELL, g0 = map.ground(cx, cz);
+      let lo = g0, hi = g0, wet = map.inWater(cx, cz);
+      for (let k = 0; k < 8 && !wet; k++) {
+        const a = (k / 8) * Math.PI * 2, g = map.ground(cx + Math.cos(a) * clearR, cz + Math.sin(a) * clearR);
+        lo = Math.min(lo, g); hi = Math.max(hi, g);
+        wet = map.inWater(cx + Math.cos(a) * RING, cz + Math.sin(a) * RING);
+      }
+      if (wet || hi - lo > 3) continue;
+      let clear = 0;
+      for (const [i, j] of ring) if (free(ci + i, cj + j)) clear++;
+      const s = score(clear / ring.length, d);
+      if (s > bestS) { bestS = s; best = { x: cx, z: cz }; }
+    }
+    return best;
+  };
+  // somewhere roomy if there is one; failing that, just room for the ring
+  return search(OPEN_R, 0.03) ?? search(RING + 2, 0.06);
+}
+
+/** Where the benches went, in words, from the noticeboard at (bx, bz): "", if they're by it. */
+function whereSaid(w: QuestWorld, bx: number, bz: number, cx: number, cz: number): string {
+  const d = Math.hypot(cx - bx, cz - bz);
+  if (d < 25) return "";
+  const place = w.places().filter((p) => Math.hypot(p.x - cx, p.z - cz) < 70).sort((a, b) => Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz))[0];
+  return `${far(d)} ${compassWord(cx - bx, cz - bz)}${place ? `, on ${place.n}` : ""}`;
+}
+
+// the board's word on where the benches will go, worked out once its ground has loaded
+const previews = new Map<number, string>();
+let world: QuestWorld | null = null;
 
 // ---- models -------------------------------------------------------------------------------------
 
@@ -311,6 +417,21 @@ function chipsGeo() {
   for (let k = 0; k < 9; k++) { const a = k * 2.4; p.push([box(0.03, 0.18, 0.03, Math.cos(a) * 0.08, 0.32, Math.sin(a) * 0.08).rotateZ((k % 3 - 1) * 0.2), "#f2c84a"]); }
   return part(p);
 }
+/** A tourist's badge: a pin with a sandwich on it, drawn white so each takes its own colour. */
+function badgeTex() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const x = c.getContext("2d")!;
+  const pin = () => { x.beginPath(); x.arc(32, 26, 20, Math.PI * 0.8, Math.PI * 2.2); x.lineTo(32, 60); x.closePath(); };
+  pin(); x.fillStyle = "#14161c"; x.fill();
+  x.save(); x.translate(32, 27); x.scale(0.8, 0.8); x.translate(-32, -27); pin(); x.fillStyle = "#ffffff"; x.fill(); x.restore();
+  x.beginPath(); x.moveTo(20, 34); x.lineTo(44, 34); x.lineTo(32, 16); x.closePath();
+  x.lineJoin = "round"; x.lineWidth = 4; x.strokeStyle = "#14161c"; x.stroke();
+  x.fillStyle = "#14161c"; x.fillRect(22, 28, 20, 2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 function label(text: string) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(text), depthTest: false, transparent: true }));
   s.scale.set(2.2, 0.55, 1);
@@ -334,7 +455,7 @@ function labelTex(text: string) {
 interface GullView { gen: number; k: number; ph: number; x: number; y: number; z: number; yaw: number; tx: number; ty: number; tz: number; tyaw: number; flap: number; stare: number; stared: boolean }
 interface TouristView { g: THREE.Group; person: THREE.Group; sandwich: THREE.Mesh; brolly: THREE.Mesh; owl: THREE.Mesh; leave: number }
 
-const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
 
 class Seagulls implements Job {
   done: Job["done"] = null;
@@ -374,6 +495,9 @@ class Seagulls implements Job {
   private splatT = 0;
   private shoutT = 0;
   private seenTourists = "";
+  private badges: THREE.Points;      // one over each tourist, seen through anything, so you can find them
+  private placed = false;            // you've been put in the middle of the benches
+  private markedAt = "";
 
   constructor(readonly offer: Offer, private w: QuestWorld, private local: boolean) {
     this.r = rng(offer.seed ^ 0x5eaf00d);
@@ -405,6 +529,14 @@ class Seagulls implements Job {
     this.fv = new Float32Array(N * 3);
     this.fl = new Float32Array(N);
     this.root.add(this.feathers);
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
+    bg.setAttribute("color", new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
+    bg.setDrawRange(0, 0);
+    this.badges = new THREE.Points(bg, new THREE.PointsMaterial({ map: badgeTex(), size: 44, sizeAttenuation: false, vertexColors: true, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+    this.badges.frustumCulled = false;
+    this.badges.renderOrder = 11;
+    this.root.add(this.badges);
     w.scene.add(this.root);
     w.mark("@gulls", { x: offer.x, z: offer.z }, "Seagull Attack", COLOUR);
     if (this.owner) this.setUp();
@@ -417,16 +549,21 @@ class Seagulls implements Job {
 
   private setUp() {
     const w = this.w, S = this.S, r = this.r;
-    // the middle of it all: near the noticeboard, where most of a ring of benches would be off the street
-    const ok = spotTest(w.map, this.offer.x, this.offer.z, 50), a0 = r() * Math.PI * 2;
-    let cx = this.offer.x, cz = this.offer.z, best = -1;
-    for (const d of [8, 12, 16, 5, 20]) for (let k = 0; k < 10; k++) {
-      const a = a0 + (k / 10) * Math.PI * 2, x = this.offer.x + Math.cos(a) * d, z = this.offer.z + Math.sin(a) * d;
-      let n = ok(x, z) ? 2 : 0;
-      for (let m = 0; m < 12; m++) if (ok(x + Math.cos(m * 0.52) * RING, z + Math.sin(m * 0.52) * RING)) n++;
-      if (n > best) { best = n; cx = x; cz = z; }
+    const open = openGround(w.map, this.offer.x, this.offer.z);
+    let cx = open?.x ?? this.offer.x, cz = open?.z ?? this.offer.z;
+    const ok = spotTest(w.map, cx, cz, 50);
+    if (!open) {
+      // nowhere properly open near: the roomiest spot round the board, as best it can
+      const a0 = r() * Math.PI * 2;
+      let best = -1;
+      for (const d of [8, 12, 16, 5, 20]) for (let k = 0; k < 10; k++) {
+        const a = a0 + (k / 10) * Math.PI * 2, x = this.offer.x + Math.cos(a) * d, z = this.offer.z + Math.sin(a) * d;
+        let n = ok(x, z) ? 2 : 0;
+        for (let m = 0; m < 12; m++) if (ok(x + Math.cos(m * 0.52) * RING, z + Math.sin(m * 0.52) * RING)) n++;
+        if (n > best) { best = n; cx = x; cz = z; }
+      }
+      if (best < 2) { const c = clearSpot(w.map, cx, cz, 10); if (c) { cx = c[0]; cz = c[1]; } }
     }
-    if (best < 2) { const c = clearSpot(w.map, cx, cz, 10); if (c) { cx = c[0]; cz = c[1]; } }
     S.cx = cx; S.cz = cz;
     this.players = this.local ? 1 : Math.max(1, w.players().length);
     const n = Math.min(6, 3 + this.players - 1) + (this.mod === 1 ? 1 : 0);
@@ -622,8 +759,8 @@ class Seagulls implements Job {
       if (S.clean) { S.sc += 50; this.emit([FX_CLEAN, S.w]); }
       if (S.w >= WAVES) { this.over(true); return; }
       S.ph = 0; S.t = LULL;
-      // three crates to pick from
-      const r = this.r, all = this.mod === 2 ? [CHIPS_UP] : [];
+      // three crates to pick from, one always a box of rounds: the gulls take a lot of shooting
+      const r = this.r, all = this.mod === 2 ? [CHIPS_UP, AMMO_UP] : [AMMO_UP];
       const rest = [CHIPS_UP, OWL_UP, BROLLY_UP, LOUD_UP, HELPING_UP].filter((u) => !all.includes(u) && !(u === LOUD_UP && S.loud));
       while (all.length < 3 && rest.length) all.push(rest.splice(Math.floor(r() * rest.length), 1)[0]);
       S.up = all;
@@ -856,7 +993,8 @@ class Seagulls implements Job {
       else if (u === BROLLY_UP) { const m = most().find(({ t }) => !t.brolly); if (m) m.t.brolly = true; }
       else if (u === LOUD_UP) S.loud = true;
       else if (u === HELPING_UP) for (const t of S.tr) if (!t.gone) t.bites = Math.min(t.max, t.bites + 1);
-      this.emit([FX_PICK, u, 0, 0, 0, from === this.w.selfId ? 1 : 0]);
+      // its own effect, which older pages don't know and so say nothing about
+      this.emit(u === AMMO_UP ? [FX_AMMO] : [FX_PICK, u, 0, 0, 0, from === this.w.selfId ? 1 : 0]);
       S.t = Math.min(S.t, 6);
     } else if (d.k === "chips") {
       if (S.ch <= 0 || S.ph !== 1) return;
@@ -870,7 +1008,9 @@ class Seagulls implements Job {
     const S = this.S, q = (v: number) => Math.round(v * 100) / 100;
     const b = this.lad;
     return {
-      k: "st", s: this.offer.seed, w: S.w, ph: S.ph, t: q(S.t), sc: S.sc, c: [q(S.cx), q(S.cz)], up: S.up, ch: S.ch, loud: S.loud ? 1 : 0,
+      k: "st", s: this.offer.seed, w: S.w, ph: S.ph, t: q(S.t), sc: S.sc, c: [q(S.cx), q(S.cz)], ch: S.ch, loud: S.loud ? 1 : 0,
+      // the box of rounds goes on its own, so an older page sees that crate as already taken
+      up: S.up.map((u) => (u === AMMO_UP ? -1 : u)), ua: S.up.indexOf(AMMO_UP),
       ok: S.clean ? 1 : 0, bc: S.bc ? 1 : 0, won: S.won ? 1 : 0, chip: S.chip ? [q(S.chip.x), q(S.chip.z)] : 0,
       tr: S.tr.map((t) => [q(t.x), q(t.z), q(t.y), q(t.yaw), t.bites, t.max, (t.brolly ? 1 : 0) | (t.owl ? 2 : 0) | (t.gone ? 4 : 0)]),
       g: this.gulls.filter((g) => g.ph !== GONE).map((g) => [g.i, g.gen, g.k, g.ph, q(g.x), q(g.y), q(g.z), q(g.yaw)]),
@@ -897,6 +1037,7 @@ class Seagulls implements Job {
     S.w = Number(d.w) || 0; S.ph = Number(d.ph) || 0; S.t = Number(d.t) || 0; S.sc = Number(d.sc) || 0;
     if (Array.isArray(d.c)) { S.cx = Number(d.c[0]); S.cz = Number(d.c[1]); }
     S.up = Array.isArray(d.up) ? d.up.map(Number) : [];
+    if (d.ua >= 0 && d.ua < S.up.length) S.up[d.ua] = AMMO_UP;
     S.ch = Number(d.ch) || 0; S.loud = !!d.loud; S.clean = !!d.ok; S.bc = !!d.bc; S.won = !!d.won;
     S.chip = Array.isArray(d.chip) ? { x: Number(d.chip[0]), z: Number(d.chip[1]), t: 1 } : null;
     S.tr = d.tr.slice(0, 8).map((a: number[]) => ({ x: +a[0], z: +a[1], y: +a[2], yaw: +a[3], bites: +a[4], max: +a[5], brolly: !!(a[6] & 1), owl: !!(a[6] & 2), gone: !!(a[6] & 4) }));
@@ -972,6 +1113,12 @@ class Seagulls implements Job {
       case FX_WAVE: SFX.jobStep(); if (x === WAVES) SFX.alarm(); break;
       case FX_CLEAN: if (near) this.w.toast(`Wave ${x} without a bite lost! +50`, 2.5); break;
       case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`, 3); SFX.pickup("ammo"); break;
+      case FX_AMMO:
+        // everyone's gun is their own, so each tops up their own
+        if (me.alive) this.w.ammo?.(AMMO_ROUNDS);
+        this.w.toast(`${UP_NAME[AMMO_UP]}: ${UP_SAY[AMMO_UP]}`, 3);
+        SFX.pickup("ammo");
+        break;
     }
   }
 
@@ -1052,6 +1199,29 @@ class Seagulls implements Job {
     return { x: S.cx + (k - 1) * 2.4, z: S.cz };
   }
 
+  /** A pin over each tourist still sat there, coloured by how much sandwich is left, and flashing
+   *  while a gull's going for them. */
+  private drawBadges(t: number) {
+    const geo = this.badges.geometry, pos = geo.attributes.position as THREE.BufferAttribute, col = geo.attributes.color as THREE.BufferAttribute;
+    const bv = this.bossView, flash = Math.sin(t * 14) > 0;
+    let n = 0;
+    for (const tr of this.S.tr) {
+      if (tr.gone || n >= pos.count) continue;
+      let threat = !!bv && bv.ph === B_DIVE && Math.hypot(bv.x - tr.x, bv.z - tr.z) < 25;
+      for (const v of this.view.values()) {
+        if (threat) break;
+        threat = (v.ph === SWOOP || v.ph === HOLD || v.ph === WALK) && Math.hypot(v.x - tr.x, v.z - tr.z) < 8;
+      }
+      const f = tr.bites / tr.max;
+      _c.set(threat && flash ? "#ffffff" : threat ? "#ff5a4e" : f > 0.6 ? "#58e06a" : f > 0.3 ? "#ffc23a" : "#ff5a4e");
+      pos.setXYZ(n, tr.x, tr.y + 2.3, tr.z);
+      col.setXYZ(n, _c.r, _c.g, _c.b);
+      n++;
+    }
+    geo.setDrawRange(0, n);
+    pos.needsUpdate = col.needsUpdate = true;
+  }
+
   private draw(dt: number, t: number) {
     const S = this.S;
     this.buildTourists();
@@ -1070,6 +1240,7 @@ class Seagulls implements Job {
         v.person.visible = v.leave < 5.5;
       }
     });
+    this.drawBadges(t);
     // the crates, in a lull
     for (let k = 0; k < 3; k++) {
       const u = S.ph === 0 ? S.up[k] ?? -1 : -1;
@@ -1177,6 +1348,7 @@ class Seagulls implements Job {
     if (this.local) this.run(dt);
     else if (!this.w.isHost && this.ready) this.ready = false;   // someone else is host now
     this.draw(dt, t);
+    this.settle();
     this.shoutT -= dt;
     // staring out a hoverer: keep your crosshair on it
     const S = this.S, me = this.w.me();
@@ -1194,6 +1366,32 @@ class Seagulls implements Job {
         }
       }
     }
+  }
+
+  /** Once the benches are out: the maps' marker on them, and everyone put in the middle. */
+  private settle() {
+    const S = this.S, w = this.w;
+    if (!S.tr.length) return;
+    const key = `${S.cx},${S.cz}`;
+    if (key !== this.markedAt) {
+      this.markedAt = key;
+      w.mark("@gulls", { x: S.cx, z: S.cz }, "Seagull Attack", COLOUR);
+      w.circle("gulls", { x: S.cx, z: S.cz, r: RING + 1, colour: COLOUR });
+    }
+    if (this.placed) return;
+    this.placed = true;
+    // someone joining part way through finds their own way there
+    if (S.w !== 0 || S.ph !== 0 || S.t < FIRST - 4) return;
+    const said = whereSaid(w, this.offer.x, this.offer.z, S.cx, S.cz);
+    if (said) w.toast(`Too tight by the noticeboard: the benches are out on open ground ${said}`, 4);
+    if (!w.me().alive) return;
+    const ids = this.local ? [w.selfId] : w.players().map((p) => p.id).sort();
+    const n = ids.length, a = (Math.max(0, ids.indexOf(w.selfId)) / n) * Math.PI * 2 + 0.4, d = n > 1 ? 1.8 : 0;
+    let x = S.cx + Math.cos(a) * d, z = S.cz + Math.sin(a) * d;
+    if (w.map.blocked(x, z, 0.4)) { x = S.cx; z = S.cz; }
+    const off = (t: Tourist) => Math.abs(Math.atan2(Math.sin(Math.atan2(t.z - S.cz, t.x - S.cx) - a), Math.cos(Math.atan2(t.z - S.cz, t.x - S.cx) - a)));
+    const facing = S.tr.filter((t) => !t.gone).sort((p, q) => off(p) - off(q))[0];
+    w.moveTo(x, z, facing ? Math.atan2(x - facing.x, z - facing.z) : 0);
   }
 
   host(dt: number) { if (!this.local) this.run(dt); }
@@ -1365,11 +1563,9 @@ class Seagulls implements Job {
     return { name: "Big Lad", fill: b.hp / Math.max(1, b.top) };
   }
 
-  /** The gulls' mess goes where the benches were. */
-  scarAt() { return { x: this.S.cx, z: this.S.cz }; }
-
   end() {
     this.w.mark("@gulls", null);
+    this.w.circle("gulls", null);
     this.w.scene.remove(this.root);
     this.root.traverse((o) => {
       if (o instanceof THREE.Mesh || o instanceof THREE.Points || o instanceof THREE.Sprite) {

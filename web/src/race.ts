@@ -692,6 +692,8 @@ class Race implements Job {
     return (this.racing || this.w.riding()) && !(this.racing && !this.over && !this.out && !this.dnf);
   }
 
+  aside() { return !this.canEnter(); }
+
   use(): boolean {
     if (this.againOk() && !this.canEnter()) return this.restart();
     if (!this.canEnter()) return false;

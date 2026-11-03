@@ -1,7 +1,7 @@
 // The yesterday half of the Chronicle (daily.ts is the paper and lays out its one page; this writes
 // the pieces): "Yesterday in <map name>", written each morning from what happened in the game the
 // day before. A small day log keeps the notable things (pubs won back or lost, with the Gaffer and how close it was, flags shot
-// and the best combo, squares cleared, jobs failed, trails solved or given up, records set, scars
+// and the best combo, squares cleared, jobs failed, records set, scars
 // left or mended), and on the first load of a new day (midnight GMT, when the Flag Lads start
 // again: invasion.ts) yesterday's log becomes the page. It has the flags' peak and end in the strap,
 // a lead story picked by drama (the closest finish, the biggest win or the worst loss), the scars
@@ -45,7 +45,7 @@ export interface Ev {
   wh?: string;                      // where, in words: the street or the pub
   tx?: string;                      // what, in words
   who?: string;                     // who did it (for a pub, everyone who was there, by name, with commas)
-  kd?: string;                      // a job's kind, as its poster says it ("Treasure trail")
+  kd?: string;                      // a job's kind, as its poster says it ("Race")
   won?: 0 | 1;
   off?: 0 | 1;                      // a job called off
   pub?: string; g?: string; tr?: string[];
@@ -189,7 +189,7 @@ export function pubOutcome(o: { won: boolean; pub: string; g?: string; tr?: stri
   if (Math.hypot(x - mx, z - mz) < PHOTO_REACH && photos < MAX_PHOTOS) want = { ev: e, x, z, mx, mz };
 }
 
-/** A job of mine is over. kind: what the poster calls it ("Treasure trail"). */
+/** A job of mine is over. kind: what the poster calls it ("Race"). */
 export function job(kind: string, title: string, where: string, won: boolean, off = false) {
   log({ k: "job", tx: title, wh: where, kd: kind, who: myName, won: won ? 1 : 0, off: off ? 1 : 0 });
 }
@@ -208,7 +208,7 @@ export function scarFixed(sid: number, x: number, z: number, what: string, by: s
 /** I cleared a square of flags. */
 export function cleared(where: string) { log({ k: "clr", wh: where, who: myName }); }
 
-/** A new best of mine at something: what, in words ("Treasure trail: 4:12"). */
+/** A new best of mine at something: what, in words ("Race: 4:12"). */
 export function record(what: string) { log({ k: "rec", tx: what, who: myName }); }
 
 // ---- the room's log, shared ---------------------------------------------------------------------------
@@ -430,10 +430,7 @@ function items(L: Log, used: Ev | undefined, r: () => number, when: string): Ite
   const out: Item[] = [];
   for (const e of L.ev) {
     if (e === used || out.length >= 3) continue;
-    if (e.k === "job" && e.kd === "Treasure trail") {
-      out.push(e.won ? { head: "Trail solved", text: `${esc(e.tx ?? "The treasure trail")} was cracked ${when}${e.wh ? `, starting from ${esc(e.wh)}` : ""}. The tin has been put back for someone else.` }
-        : { head: "Trail goes cold", text: `Nobody finished ${esc(e.tx ?? "the treasure trail")} ${when}. Today's noticeboards have a new one.` });
-    } else if (e.k === "job" && !e.won) {
+    if (e.k === "job" && !e.won) {
       out.push({ head: e.off ? "Job called off" : `${esc(e.kd ?? "Job")} goes west`, text: `${esc(e.tx ?? "A job")}${e.wh ? ` at ${esc(e.wh)}` : ""}: ${e.off ? "called off halfway, nobody's saying why" : "not done, and the noticeboard has been told"}.` });
     } else if (e.k === "rec") {
       out.push({ head: "New record", text: `${esc(e.tx ?? "")}, set ${when}${e.who ? ` by ${esc(e.who)}` : ""}. The next go is on the noticeboards.` });

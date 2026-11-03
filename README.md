@@ -104,7 +104,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
   and, when you're playing alone, a moment of slow-motion.
 - **The Flag Lads have a brew while you're busy.** When everyone in the room is on a job, a race,
-  a trail, the bonfire or any other minigame (alone, just you), the flags stop creeping and
+  the bonfire or any other minigame (alone, just you), the flags stop creeping and
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
   haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
@@ -113,24 +113,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
-- **Wanted ringleaders hide among lookalikes.** Four to eight men (more with more players, and more
-  lookouts) dress like him, each with a different mix of hat, jacket colour, bag, dog and limp. The
-  poster gives two features, a witness a third (but one in three is wrong, and owns up if you press
-  them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
-  point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
-  something at each stop for a minute, so waiting for him at the right one catches him without a
-  chase, for a bonus. A Gaffer who got away is a Wanted poster too. It opens with the poster as a big
-  splash (his features as pictures, his round of stops, the clock and how to catch him), and J (hold
-  the pad's touchpad, or Poster on a touch screen) brings it back, ticking off what the witnesses
-  have said. The search circle is a band and wall of red light in the streets, clues stand under red
-  beams with a "?", every shrink is called out with its new size, a card by the crosshair ticks off
-  which of his features the man you're looking at has, and it ends on a results card.
+- **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
+  of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
+  you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the
+  screen), and a paintball hit winds him. Get right up to him and press E (the pad's use button, or
+  Use on a touch screen) to cuff him. Fall 80 m behind for a few seconds, or let a chase go past two
+  minutes, and he's got away to his next stop: three goes, shown on the job card and the poster, and
+  the third time he's gone for good. Quarter of an hour on the clock. More players and he's
+  quicker, warier and has more mates. A Gaffer who got away is a Wanted poster too, and quicker
+  still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
+  screen) brings the poster back, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
-  hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
+  hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
-  has a biscuit tin (a short trail from the bar); the Gaffer cuffed, and his phone gives away the
-  square the Flag Lads are eyeing next; a chest dug up, and the flyer in it starts a race back to
-  the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
+  says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
+  away the square the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
   Races take entries (a big banner says who's in and counts down; on your own in the room it goes
@@ -148,30 +145,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
-  Treasure trails open with a big splash saying what you're after, any clock, how the search circle
-  works and the first clue, large (the big map, or the Clue button on a touch screen, brings the clue back), and end
-  on a results card like a race's. They don't give the answer away (no distances or compass from two
-  stars, and no search circle unless you ask a local: E shows what the hint gives and costs, and only
-  a second E pays; three hints a tin, each circle smaller and always with the tin well inside, and it
-  never shrinks by itself, with a countdown on your card to the next) and, together, have no clock:
-  each leg is worth three brass stars, and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
-  you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
-  look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
-  pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up by holding use or the Clue button, and talks
-  the others in), bearings (two look-outs, each showing whoever's up there a gold line
-  on the ground towards the tin; it's where they cross), clues split in two
-  (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
-  church bell or a busker's tune to follow by ear, a plaque whose table rules out all but one of the
-  tins round the corner, and twin tins to open in quick succession (with friends, or on your own if you're fast).
+  Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
+  pavement; if it's tight by the board, the board says where) and puts everyone in the middle of it.
+  Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
+  and flashing while a gull's after it, and the ring is on the maps. One of the three crates between
+  waves is always a box of rounds: more spare rifle rounds for everyone, instead of an upgrade.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
-  and it drops. A lost Seagull Attack leaves gulls nesting on the roofs: shoot the nests down or climb
-  up (the ladders) and press E, with an angry parent swooping at you. A trail race lost to K leaves a hole and
-  her note, a riddle to where she hid the rosette within 150 m: dig at the right mound (hold E). A race
+  and it drops. A race
   nobody finished leaves a smug ghost: press E on the line and reach the last gate before it does. A
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
-  till 90% is covered. Bigger rooms get more to do: more ties, nests, gates, mounds and tag, and
+  till 90% is covered. Bigger rooms get more to do: more ties, gates and tag, and
   tougher guards. Put one right for a prize.
 - **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
   flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.
@@ -189,7 +173,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
   one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60; C goes round the chase camera, the driver's seat and a racing game's bonnet camera; at speed the tyres grip and let go like a driving game's: Space at speed with some lock on swings the back end out into a slide, the throttle holds it in a rear-drive car, hold it too long and it spins, and steering the other way catches it, with a wag of the tail as it grips again; a bus or a coach just leans on its tyres and turns, and at a crawl Space and the lock still do donuts), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car (in through a passage in the engine house at the back of each station, up steps where the platform stands above the ground),
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field takes in
-  the town and the fields round it, down Trowbridge Road past the canal bridge at Widbrook to the marina; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
+  the town and the fields round it, down Trowbridge Road past the canal bridge at Widbrook to the marina; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. A pub with a job or a bus stop on top of it has its pint moved out beside it, with a thin line back, so you can pick either. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go. The rifle's balls lob
   out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
@@ -253,16 +237,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down through the lock above. Barrels lost make a worse result. With four or more of you a second
   boat comes up the flight the other way, sharing the water and the locks.
 - **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
-  steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
-  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
+  steepest stretch of street on the map, 100 to 200 metres of it (in Bath, Perrymead, Hodshill,
+  Rosemount Lane and the like; Whiteheads Lane in Bradford-on-Avon; Longmarket Street in Cape Town),
+  and it has to be pushed to the top. It stands
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
-  to start. E (Use) at its back puts your hands to it (you lean in low, your hands flat on the panel,
-  shoving on each heave and shaking when you tire, with the road and the hill either side) and you go with it, looking about as you like, till you press E
+  to start. E (Use) at its back puts your hands to it, and the view eases out behind you so you see
+  yourself bent to it with your mates and the bus going up the hill; you go with it, looking about as you like, till you press E
   again or step back (S). Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
   sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
-  right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
-  too late, a good heave). It counts for more when you all heave together. Steady shoving soon tires,
+  on it for a surge, or shout "HEAVE!" into your mic. The bar shows how close you need to be: dead
+  on, in the thin green band, is PERFECT! and shoves it on hard; in the yellow is Good; in the orange,
+  a bit early or late, it's scrappy and does hardly anything; and further off you've missed, lose your
+  grip for a moment and it drops back. A shout gets a little more leeway than a press. Heaving
+  together counts for more the better you each time it: a beat you all get perfect is PERFECT
+  TOGETHER! and a big extra shove, while a beat most of you botch lets it slip back. Steady shoving soon tires,
   so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
   from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
   own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
@@ -439,6 +428,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.
+
+- **E uses what you're looking at**: with two things in reach at once (a strange object by a
+  noticeboard, a ladder by a car), E (or Use) goes for the one under the crosshair, or the nearest
+  when you're looking at neither, and the prompt always says which, with "or look at…" for the
+  other. Whatever you're in or on (a car, a basket, a boat's tiller), or a job's own use like
+  cuffing someone, still comes first.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
   knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; the

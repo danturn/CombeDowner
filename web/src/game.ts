@@ -144,7 +144,6 @@ import { Quests, type Perch, type QuestWorld } from "./quests";
 import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
 import "./wanted";
-import { myRosettes } from "./trail";
 import "./race";
 import "./gulls";
 import "./stunts";
@@ -256,6 +255,7 @@ const VH_EVERY = 2;                      // seconds between the host's vehicle l
 const BUS_EVERY = 60;                    // seconds between the host sending a bus nobody's using back to a stop
 const DELIVERY_CHANCE = 0.4;             // how often a gang of naughty boys arrives in a Nova
 const STOP_REACH = 3.5;                  // how close to a bus stop's flag you can call a bus
+const LOOK_AT = 0.17;                    // radians off the crosshair (and the thing's own size) that count as looking at it, for E
 const CALL_GAP = 10000;                  // ms: the host sends each player one bus this often
 /** What a call for a bus can ask for: 1 for a minibus, 2 for a double-decker. */
 const BUS_KEYS: Record<string, Vehicle["kind"]> = { Digit1: "minibus", Digit2: "bus" };
@@ -285,6 +285,11 @@ const CAR_LINE: Record<string, string> = {
 };
 
 /** A vehicle the host is driving: naughty boys on their way somewhere, or a bus someone's called (by them, to pull in at). */
+/** Something E could do where you stand: what the prompt says, the touch button's word (none when
+ *  E only says why not), what to call it, where it is to be looked at and how far off it is. */
+type UseKind = "tour" | "deli" | "board" | "again" | "car" | "stop" | "balloon" | "trolley" | "tiller" | "moored" | "lock" | "odd" | "wood" | "swap" | "ladder" | "train";
+interface UseChoice { k: UseKind; text: string; button?: string; what: string; x: number; y: number; z: number; r: number; d: number; aimed: boolean; off: number }
+
 interface Delivery {
   route: { x: number; z: number }[]; k: number; size: number; t: number; stuck: number;
   by?: string; at?: { x: number; z: number; a: number };
@@ -369,6 +374,16 @@ const $ = (id: string) => document.getElementById(id)!;
 /** A pub to go to: where to stand (scene coords) and which way to face, or, with no yaw, the pub
  *  itself, and the street outside is found on the way. rating: its food hygiene rating, 0 to 5. */
 interface Pub { name: string; x: number; z: number; yaw?: number; rating: number | null }
+
+// IDKFA, typed anywhere in play (not in a text box): a full load of rounds. One listener for the
+// page, pointed at whichever game is running, as the train builds a new Game for each town.
+let onIdkfa: (() => void) | null = null, idkfaTyped = "";
+addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) || e.key.length !== 1) return;
+  idkfaTyped = (idkfaTyped + e.key.toLowerCase()).slice(-5);
+  if (idkfaTyped === "idkfa") { idkfaTyped = ""; onIdkfa?.(); }
+});
 
 export class Game {
   readonly player: Player;
@@ -567,7 +582,6 @@ export class Game {
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   readonly night: NightOut;                        // jobs that lead into each other, and last orders
   readonly scars: Scars;                           // what losing has left about the town today
-  private trailLines = new Map<string, number[]>();   // the treasure trail's bearing lines, on your own map alone
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
   private announcer = new Announcer();             // the station announcements (announce.ts)
   private joinNews = false;                         // the once-a-day showing of the Chronicle on joining stays up longer
@@ -618,6 +632,7 @@ export class Game {
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
+    onIdkfa = () => { if (!this.alive) return; this.weapon.fillUp(); SFX.pickup("ammo"); this.toast("IDKFA: very happy ammo added", 2.5); };
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
     // your Progression setting may have changed on the menu since the page opened
     setFeatures(myFeatures);
@@ -760,7 +775,6 @@ export class Game {
       me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
       crew: () => 1 + this.remotes.size,
       targets: () => this.targets(),
-      peck: () => { this.player.kick(0.12); this.player.yaw += (Math.random() - 0.5) * 0.3; SFX.hurt(); },
       send: (data, to) => this.net.send("scr", data, to),
       toast: (text, secs) => this.toast(text, secs),
       feed: (html) => this.feed(html),
@@ -768,7 +782,7 @@ export class Game {
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       hear: (x, y, z) => this.hear(x, y, z),
     });
-    this.quests.onScar = (o, x, z) => { const k = scarKindOf(o.kind); this.scars.add(k, x, z, k === "tag" ? o.title : o.where || o.title); };
+    this.quests.onScar = (o, x, z) => { const k = scarKindOf(o.kind); if (k) this.scars.add(k, x, z, k === "tag" ? o.title : o.where || o.title); };
     // something new for your wardrobe: say so, and show everyone
     this.unEarn = onEarn((w) => {
       this.toast(`New in your wardrobe: ${w.name}!`, 3.5);
@@ -1606,13 +1620,6 @@ export class Game {
     if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").innerHTML = text; }
   }
 
-  private setTrailLine(key: string | null, pts: number[] | null) {
-    if (!key) this.trailLines.clear();
-    else if (pts) this.trailLines.set(key, pts);
-    else this.trailLines.delete(key);
-    this.minimap.pencil = [...this.trailLines.values()].map((p) => ({ pts: p, colour: "#ffd84a", dash: true }));
-  }
-
   /** A pad's button while the map's up: true if the map took it. */
   mapPad(b: number, down: boolean): boolean {
     if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
@@ -1854,13 +1861,13 @@ export class Game {
   wearChanged() { this.hello(); }
 
   private hello(to?: string, ask = false) {
-    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket; wr: what you're wearing (wardrobe.ts)
+    // wr: what you're wearing (wardrobe.ts)
     // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
     const p = this.net.peers().filter((id) => this.known.has(id));
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p }, to);
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, wr: myWear(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, wr: myWear(), p }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string; wr?: string }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number; wr?: string }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
@@ -1883,7 +1890,6 @@ export class Game {
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
-    r.avatar.setRosettes(String(d?.ro ?? ""));
     r.avatar.setWear(String(d?.wr ?? ""));
     // they've come back to our map (they took the train back): draw them again
     if (this.elsewhere.has(from)) {
@@ -2038,7 +2044,7 @@ export class Game {
         const them = DECKED[c?.kind ?? NAUGHTY] ?? DECKED[NAUGHTY];
         const how = d.w === RUN ? "ran over" : d.w === BLAST ? "sent flying" : d.m ? "decked" : gore() ? anyOf(NAUGHTY_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
+        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true, c?.kind); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
       }
     }
     if (d.k === "kdmg" || d.k === "kkill") {
@@ -2650,11 +2656,152 @@ export class Game {
     return true;
   }
 
-  private useVehicle() {
+  // ---- what E does -------------------------------------------------------------------------
+  // What you're in, on or in the middle of comes first (useHeld). Past that, of everything within
+  // reach (useChoices), what you're looking at wins, and failing that the nearest.
+  // The prompt and the press both come from useChoice, so they can't disagree.
+
+  /** The running job's use, unless it can wait for whatever's in front of you. */
+  private jobFirst(): string {
+    const h = this.quests.jobHint();
+    return (h.includes("{use}") || h.includes("{again}")) && !this.quests.jobAside() ? h : "";
+  }
+
+  /** E for what you're in, on or in the middle of. Returns true if E was for that. */
+  private useHeld(): boolean {
+    if (this.ride) { this.useVehicle(); return true; }
+    if (this.alive && this.golfDriver.use()) return true;
+    if (!this.quests.jobAside() && this.quests.jobUse()) return true;
+    if (this.invasion.use() || this.scars.use()) return true;
+    if (this.alive && this.sports.use(this.player)) return true;
+    if (this.balloons.aboard >= 0) return this.useBalloon();
+    if (this.basket) return this.useBasket();
+    if (this.alive && this.world.canal?.helmOf(this.net.selfId)) return this.canalUse();
+    return false;
+  }
+
+  /** Everything else E could do where you stand, each with where it is. */
+  private useChoices(): UseChoice[] {
+    const out: UseChoice[] = [];
+    const pl = this.player, p = pl.pos, me = this.net.selfId, canal = this.world.canal;
+    if (this.ride || !this.alive) return out;
+    const add = (k: UseKind, text: string, what: string, x: number, y: number, z: number, r: number, d: number, button?: string) =>
+      out.push({ k, text, what, x, y, z, r, d, button, aimed: false, off: Infinity });
+    const far = (x: number, z: number) => Math.hypot(x - p.x, z - p.z);
+    const chest = p.y + 1.2;
+    const tour = this.mineTour.near(p.x, p.z, p.y) ? this.mineTour.spot() : undefined;
+    if (tour) add("tour", "<b>{use}</b> Go in for a mine tour", "the door", tour.x, chest, tour.z, 0.6, far(tour.x, tour.z), "Go in");
+    const deli = this.deliDoor.near(p.x, p.z, p.y) ? this.deliDoor.spot() : undefined;
+    if (deli) add("deli", "<b>{use}</b> Work a shift in the deli kitchen", "the door", deli.x, chest, deli.z, 0.6, far(deli.x, deli.z), "Go in");
+    const board = this.quests.board();
+    if (board?.can) add("board", board.text, board.challenge ? "the challenge" : "the noticeboard", board.x, board.y, board.z, board.challenge ? 1.5 : 0.7, board.d, "Use");
+    const job = this.quests.jobAside() ? this.quests.jobHint() : "";
+    if (job.includes("{use}") || job.includes("{again}")) add("again", job, "nothing in particular", NaN, NaN, NaN, 0, 50, "Use");
+    const free = !this.sports.lining && !this.broadcast.on;
+    const car = free ? this.nearCar() : null;
+    if (car) {
+      const verb = car.t !== undefined ? "Nick" : car.driver ? "Ride in" : "Get in";
+      add("car", `<b>{use}</b> ${verb} the ${esc(car.name)}`, `the ${esc(car.name)}`, car.x, p.y + 0.9, car.z, 1.6, Math.max(0, far(car.x, car.z) - 1.5), "Get in");
+    }
+    const stop = free ? this.stopNear() : null;
+    if (stop) {
+      const text = this.busMenu > performance.now() && stop === this.busStop ? `<button data-bus="minibus"><b>{minibus}</b> Minibus</button> <button data-bus="bus"><b>{bus}</b> Double-decker</button>`
+        : this.zones.can("bus") ? `<b>{use}</b> Call a bus` : esc(this.zones.shut("bus"));
+      add("stop", text, "the bus stop", stop.x, p.y + 1.8, stop.z, 0.4, far(stop.x, stop.z), "Bus");
+    }
+    const balloon = free && !this.riding && !pl.ladder ? this.balloons.near(p.x, p.y, p.z) : null;
+    if (balloon) add("balloon", balloon.why ? esc(balloon.why) : `<b>{use}</b> Climb into ${esc(balloon.b.name)}'s basket`, "the basket", balloon.b.x, balloon.b.y + 0.6, balloon.b.z, 0.9, far(balloon.b.x, balloon.b.z), balloon.why ? undefined : "Get in");
+    const trolley = !this.riding ? this.trolleyNear() : null;
+    if (trolley) {
+      const h = trolley.rideView!.heading, bx = trolley.avatar.x - Math.sin(h) * TROLLEY_AHEAD, bz = trolley.avatar.z - Math.cos(h) * TROLLEY_AHEAD;
+      add("trolley", `<b>{use}</b> Climb into ${esc(trolley.name)}'s trolley`, "the trolley", bx, p.y + 0.6, bz, 0.5, far(bx, bz), "Get in");
+    }
+    if (free && canal) {
+      const boat = this.zones.can("boat"), shut = esc(this.zones.shut("boat"));
+      const tiller = canal.tillerNear(p.x, p.y, p.z, me);
+      const moored = tiller ? -1 : canal.mooredNear(p.x, p.y, p.z);
+      if (tiller) { const t = canal.stern(tiller); add("tiller", boat ? `<b>{use}</b> Take the tiller of ${esc(tiller.name)}` : shut, "the tiller", t.x, t.y + 0.8, t.z, 0.5, far(t.x, t.z), "Use"); }
+      else if (moored >= 0) { const t = canal.mooredTiller(moored); add("moored", boat ? `<b>{use}</b> Cast off ${esc(canal.mooredName(moored))} and take the tiller` : shut, "the tiller", t.x, t.y + 0.8, t.z, 0.5, far(t.x, t.z), "Use"); }
+      const lock = canal.lockNear(p.x, p.z);
+      if (lock >= 0) {
+        const d = canal.locks[lock].d, mx = (d.lo[0] + d.hi[0]) / 2, mz = -(d.lo[1] + d.hi[1]) / 2, half = Math.hypot(d.hi[0] - d.lo[0], d.hi[1] - d.lo[1]) / 2;
+        add("lock", `<b>{use}</b> ${esc(canal.lockHint(lock))}`, "the lock", mx, p.y, mz, half, Math.max(0, far(mx, mz) - half), "Use");
+      }
+    }
+    const who = this.woodMe();
+    const odd = this.oddments.useAt(who);
+    if (odd) {
+      const set = this.oddments.carrying(me);
+      add("odd", this.oddments.hint(who), set ? "the structure" : "the strange thing", odd.x, odd.y, odd.z, odd.r, far(odd.x, odd.z), set ? "Set it in" : "Pick up");
+    }
+    const wood = this.bonfire.useAt(who);
+    if (wood) add("wood", this.bonfire.hint(who), "the bundle of wood", wood.x, wood.y, wood.z, 0.4, far(wood.x, wood.z), "Pick up");
+    const it = this.swapAt, slot = this.carrying();
+    if (it && slot && (isRide(it.kind) || it.kind === "ladder") && !this.basket && !pl.ladder && this.pickups.items.has(it.id)) {
+      const named = (k: RideKind | "ladder" | "odd") => (k === "ladder" ? "the ladder" : k === "odd" ? "the strange thing" : esc(rideSpecs[k].name));
+      add("swap", `<b>{use}</b> Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(it.kind)}`, named(it.kind), it.x, p.y + 0.4, it.z, 0.5, far(it.x, it.z), "Swap");
+    }
+    if (!this.riding && !this.basket && !pl.ladder && !this.ladders.carriers.has(me)) {
+      const L = this.ladders.footAt(p.x, p.y, p.z) ?? this.ladders.topAt(p.x, p.y, p.z);
+      if (L) add("ladder", "<b>{use}</b> Take the ladder down · walk into it to climb", "the ladder", L.x, p.y + 1.2, L.z, 0.5, far(L.x, L.z), "Use");
+    }
+    const door = this.atTrainDoor();
+    if (door) {
+      const link = this.world.railway!.linkFor(door);
+      add("train", link ? `<b>{use}</b> Board the ${esc(link.to_station)} train` : esc(door.to ? `This train's bound for ${door.to}, and you can't go there yet.` : "This train isn't going anywhere yet."),
+        "the train", NaN, NaN, NaN, 0, 0.3, link ? "Board" : undefined);
+    }
+    return out;
+  }
+
+  private lookDir = new THREE.Vector3();
+
+  /** What E picks of useChoices, and another you could have instead by looking at it. */
+  private useChoice(): { pick: UseChoice | null; also: UseChoice | null } {
+    const list = this.useChoices();
+    if (!list.length) return { pick: null, also: null };
+    const eye = this.camera.position, f = this.camera.getWorldDirection(this.lookDir);
+    // how far the crosshair is inside (below 0) or off each thing's edge: of those you're looking
+    // at, the one it's most squarely on wins, which for two in line is the nearer
+    for (const c of list) {
+      if (!Number.isFinite(c.x)) continue;
+      const dx = c.x - eye.x, dy = c.y - eye.y, dz = c.z - eye.z, L = Math.hypot(dx, dy, dz) || 1e-6;
+      c.off = Math.acos(Math.max(-1, Math.min(1, (dx * f.x + dy * f.y + dz * f.z) / L))) - Math.atan2(c.r, L);
+      c.aimed = c.off < LOOK_AT;
+    }
+    list.sort((a, b) => +b.aimed - +a.aimed || (a.aimed ? a.off - b.off : 0) || a.d - b.d);
+    const pick = list[0];
+    const also = !pick.aimed ? list.find((c) => c !== pick && Number.isFinite(c.x) && c.what !== pick.what) ?? null : null;
+    return { pick, also };
+  }
+
+  /** E on what useChoice picked. */
+  private useOn(c: UseChoice) {
+    switch (c.k) {
+      case "tour": this.goDownMine(); break;
+      case "deli": this.goInDeli(); break;
+      case "board": this.quests.takeBoard(); break;
+      case "again": this.quests.jobUse(); break;
+      case "car": this.useVehicle("car"); break;
+      case "stop": this.useVehicle("stop"); break;
+      case "balloon": this.useBalloon(); break;
+      case "trolley": this.useBasket(); break;
+      case "tiller": case "moored": this.canalUse("boat"); break;
+      case "lock": this.canalUse("lock"); break;
+      case "odd": this.oddments.use(this.woodMe(), this.isHost, this.held ?? undefined); break;
+      case "wood": this.bonfire.use(this.woodMe(), this.isHost); break;
+      case "swap": this.useSwap(); break;
+      case "ladder": this.useLadder(); break;
+      case "train": this.trainUse(); break;
+    }
+  }
+
+  /** only: just the vehicle, or just the bus stop, when E chose one of them over the other. */
+  private useVehicle(only?: "car" | "stop") {
     if (this.ride) { this.getOut(); return; }
-    if (this.riding && this.nearCar()) this.dismount();
+    if (only !== "stop" && this.riding && this.nearCar()) this.dismount();
     if (!this.alive || this.sports.lining || this.broadcast.on) return;
-    const v = this.nearCar();
+    const v = only === "stop" ? null : this.nearCar();
     if (!v) {
       // at a bus stop: up comes the menu (E again puts it away)
       const stop = this.stopNear();
@@ -2695,12 +2842,12 @@ export class Game {
   }
 
   /** A vehicle near enough to get in, with a seat free: one of ours, a parked car, or one in the traffic. */
-  private nearCar(): { i: number; name: string; driver: string; t?: number } | null {
+  private nearCar(): { i: number; name: string; driver: string; t?: number; x: number; z: number } | null {
     const p = this.player.pos;
     const v = this.vehicles.nearest(p.x, p.z, p.y, CAR_REACH);
     if (v) return v;
     const c = this.traffic.nearest(p.x, p.z, p.y, CAR_REACH);
-    return c && { i: TRAFFIC_ID + c.n, name: c.name, driver: "", t: c.n };
+    return c && { i: TRAFFIC_ID + c.n, name: c.name, driver: "", t: c.n, x: c.x, z: c.z };
   }
 
   private getIn(v: Vehicle, seat: number) {
@@ -3035,15 +3182,15 @@ export class Game {
   }
 
   /** E by the canal: let go of the tiller you're at, take one within reach, or work a lock. True if it did. */
-  private canalUse(): boolean {
+  private canalUse(only?: "boat" | "lock"): boolean {
     const canal = this.world.canal, p = this.player.pos, me = this.net.selfId;
     if (!canal || !this.alive) return false;
     if (canal.helmOf(me)) { this.letGo(); return true; }
-    if (this.nearCar()) return false;
+    if (!only && this.nearCar()) return false;
     // (or one moored by the bank: cast off, it's a boat under way like any other)
-    const moored = canal.tillerNear(p.x, p.y, p.z, me) ? -1 : canal.mooredNear(p.x, p.y, p.z);
-    if ((moored >= 0 || canal.tillerNear(p.x, p.y, p.z, me)) && !this.zones.can("boat")) { this.toast(this.zones.shut("boat"), 2.5); return true; }
-    const b = moored >= 0 ? canal.castOff(moored) : canal.tillerNear(p.x, p.y, p.z, me);
+    const moored = only === "lock" || canal.tillerNear(p.x, p.y, p.z, me) ? -1 : canal.mooredNear(p.x, p.y, p.z);
+    if (only !== "lock" && (moored >= 0 || canal.tillerNear(p.x, p.y, p.z, me)) && !this.zones.can("boat")) { this.toast(this.zones.shut("boat"), 2.5); return true; }
+    const b = only === "lock" ? null : moored >= 0 ? canal.castOff(moored) : canal.tillerNear(p.x, p.y, p.z, me);
     if (b) {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
@@ -3052,7 +3199,7 @@ export class Game {
       SFX.door();
       return true;
     }
-    const i = canal.lockNear(p.x, p.z);
+    const i = only === "boat" ? -1 : canal.lockNear(p.x, p.z);
     if (i < 0) return false;
     const lk = canal.locks[i], filling = lk.want === 0;
     if (this.isHost) canal.work(i);
@@ -3321,6 +3468,14 @@ export class Game {
     this.camera.rotation.x += at.pitch ?? 0;
     this.camera.rotation.z += at.roll ?? 0;
     if (at.eye) { this.camera.position.set(at.eye.x, at.eye.y, at.eye.z); this.camera.lookAt(at.eye.lx, at.eye.ly, at.eye.lz); }
+    if (at.orbit) {
+      const o = at.orbit, pt = Math.max(-1.2, Math.min(0.5, p.pitch + o.tilt)), cp = Math.cos(pt);
+      const bx = Math.sin(p.yaw) * cp, by = -Math.sin(pt), bz = Math.cos(p.yaw) * cp;
+      const hit = o.dist > 0.05 ? this.map.raycast(o.x, o.y, o.z, bx, by, bz, o.dist) : null;
+      const d = hit ? Math.max(0, hit.dist - 0.3) : o.dist, cam = this.camera.position.set(o.x + bx * d, o.y + by * d, o.z + bz * d);
+      cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, o.y) + 0.4);
+      this.camera.rotation.set(pt + (o.look ?? 0), p.yaw, 0, "YXZ");
+    }
   }
 
   /** Into a mate's trolley (E by it), or back out. Returns true if E was for that. */
@@ -3929,7 +4084,7 @@ export class Game {
     // or a string of bunting between them
     const bunting = melee || flag ? null : this.invasion.hitBunting(origin, dir, maxD);
     if (bunting) { maxD = bunting.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shootBunting(bunting); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
-    // or a cable tie on a scar's banner, or a gull's nest
+    // or a cable tie on a scar's banner
     const scarTarget = melee ? null : this.scars.hit(origin, dir, maxD);
     if (scarTarget) { maxD = scarTarget.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.scars.shoot(scarTarget); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     // or something a job's put up to shoot at (a seagull)
@@ -4048,22 +4203,7 @@ export class Game {
     const lining = this.sports.lining, filming = this.broadcast.on;
     if (this.useKey) {
       this.useKey = false;
-      if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
-      else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
-      else if (!this.car && !this.ride && this.alive && this.golfDriver.use()) { /* the tape on the Golf Driver's seat */ }
-      else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
-      else if (!this.car && !this.ride && this.invasion.use()) { /* cuffing the Gaffer */ }
-      else if (!this.car && !this.ride && this.scars.use()) { /* putting right what a lost job left */ }
-      else if (!this.car && !this.ride && this.alive && this.sports.use(p)) { /* in goal for a penalty shoot-out */ }
-      else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
-      else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
-      else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
-      else if (!this.car && !this.ride && this.oddments.use(this.woodMe(), this.isHost, this.held ?? undefined)) { /* one of the strange objects */ }
-      else if (!this.car && !this.ride && this.bonfire.use(this.woodMe(), this.isHost)) { /* a bundle of wood for the bonfire */ }
-      else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
-      else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
-      else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
-      else this.useVehicle();
+      if (!this.useHeld()) { const c = this.useChoice().pick; if (c) this.useOn(c); }
     }
     // (a door found in a square that's just loaded goes on the maps)
     if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
@@ -4606,51 +4746,33 @@ export class Game {
       show($("drivehint"), car.tip ? stripOf([["out", "get out"]])
         : stripOf([["drive", "drive"], ["brake", "brake"], ["steer", "steer"], ["left", ""], ["right", "indicate"], ["handbrake", "handbrake"], ["horn", horn], ["view", "view"], ["out", "out"]]));
     }
-    const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
-    const tape = free && !this.car ? this.golfDriver.hint() : "";
-    const near = free && !tape ? this.nearCar() : null, stop = free && !near && !tape ? this.stopNear() : null;
-    const tour = !ride && this.alive && this.mineTour.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
-    const deli = !ride && this.alive && !tour && this.deliDoor.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
+    const tape = !ride && this.alive ? this.golfDriver.hint() : "";
+    const stop = !ride && this.alive ? this.stopNear() : null;
     if (stop !== this.busStop) this.busMenu = 0;   // walked off: the menu goes
-    const menu = !!stop && this.busMenu > performance.now();
-    const verb = near?.t !== undefined ? "Nick" : near?.driver ? "Ride in" : "Get in";
-    const pp = this.player.pos;
-    const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
-    const moored = free && !near && !helm && !tiller && canal ? canal.mooredNear(pp.x, pp.y, pp.z) : -1;
-    const lock = free && !near && !helm && !tiller && moored < 0 && canal ? canal.lockNear(pp.x, pp.z) : -1;
-    const job = !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.invasion.hint() || this.scars.hint() : "") : "";
-    // by a balloon's basket on the lawn (or wherever one's come down)
-    const balloon = free && !near && !this.basket && !this.riding ? this.balloons.near(this.player.pos.x, this.player.pos.y, this.player.pos.z) : null;
+    const acts = (h: string) => h.includes("{use}") || h.includes("{again}");
+    const job = !ride ? this.jobFirst() : "", odds = !ride ? this.invasion.hint() || this.scars.hint() : "";
+    const goal = this.sports.goalCall, aloft = this.balloons.aboard >= 0;
+    // what you're in or on, or a job on the go, has E to itself: nothing else is offered
+    const inUse = !!ride || !!tape || !!job || acts(odds) || goal || aloft || !!this.basket || !!helm;
+    const { pick, also } = inUse ? { pick: null, also: null } : this.useChoice();
     // something new in your hands: say what to do with it, for a moment
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
-    const wood = !ride && !car && !tour && !deli && this.alive ? this.oddments.hint(this.woodMe()) || this.bonfire.hint(this.woodMe()) : "";
-      // at a train's open door: say where it goes and get on with E. Away from a door there's
-      // nothing to say, and E there does nothing.
-      const door = !ride && !near && !tour && !deli && this.alive ? this.atTrainDoor() : null;
-      const doorLink = door ? this.world.railway!.linkFor(door) : null;
-      const train = door && doorLink ? `<b>{use}</b> Board the ${esc(doorLink.to_station)} train` : "";
     // stood on a station platform with no train to get on: the next one from this platform, as the board says
-    const wait = !door && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
-    const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
-    const named = (k: RideKind | "ladder" | "odd") => (k === "ladder" ? "the ladder" : k === "odd" ? "the strange thing" : esc(rideSpecs[k].name));
-    const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
-    const text = tour ? `<b>{use}</b> Go in for a mine tour`
-      : deli ? `<b>{use}</b> Work a shift in the deli kitchen`
-      : train ? train
-      : job ? job
+    const wait = pick?.k !== "train" && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
+    const who = this.woodMe();
+    // with nothing for E to do here, what there is to know: the job's word, the noticeboard's, the bonfire's
+    const said = !ride ? this.quests.jobHint() || this.quests.board()?.text || odds : "";
+    const wood = !ride && !car && this.alive ? this.oddments.hint(who) || this.bonfire.hint(who) : "";
+    const text = ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>{use}</b> to get out`
       : tape ? tape
-      : near ? `<b>{use}</b> ${verb} the ${esc(near.name)}`
-      : balloon ? (balloon.why ? esc(balloon.why) : `<b>{use}</b> Climb into ${esc(balloon.b.name)}'s basket`)
-      : tiller ? (this.zones.can("boat") ? `<b>{use}</b> Take the tiller of ${esc(tiller.name)}` : esc(this.zones.shut("boat")))
-      : moored >= 0 ? (this.zones.can("boat") ? `<b>{use}</b> Cast off ${esc(canal!.mooredName(moored))} and take the tiller` : esc(this.zones.shut("boat")))
-      : lock >= 0 ? `<b>{use}</b> ${esc(canal!.lockHint(lock))}`
-      : menu ? `<button data-bus="minibus"><b>{minibus}</b> Minibus</button> <button data-bus="bus"><b>{bus}</b> Double-decker</button>`
-      : stop ? (this.zones.can("bus") ? `<b>{use}</b> Call a bus` : esc(this.zones.shut("bus")))
-      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>{use}</b> to get out`
+      : job ? job
+      : acts(odds) ? odds
       : this.basket ? `In the trolley · <b>{use}</b> to climb out`
-      : swap ? `<b>{use}</b> ${swap}`
+      : inUse ? ""
+      : pick ? pick.text + (also ? ` <small>· or look at ${also.what}</small>` : "")
+      : said ? said
       : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>{ride}</b> to get off${` · ${esc(rideSpecs[this.held].keys)}`}`
       : this.held && performance.now() < this.rideTip ? `<b>{ride}</b> Get on ${esc(rideSpecs[this.held].name)}`
       : wood && !ladder.startsWith("<b>") ? wood
@@ -4685,18 +4807,14 @@ export class Game {
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
     const chip = !words ? "" : `<span class="carryicon">${carryIcon(odd ? "odd" : lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), ctlText(chip), !!chip);
-    const jobUse = job.includes("<b>{use}</b>") || job.includes("<b>{again}</b>");
-    const ladderUse = ladder.startsWith("<b>{use}</b>");
-    const woodUse = wood.startsWith("<b>{use}</b>") && !ladderUse;
-    const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
-    const goal = this.sports.goalCall;
-    setHidden($("t-car"), !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse);
+    const balloonOut = aloft && !!sky && this.balloons.clearance() <= 3;
+    setHidden($("t-car"), !ride && !helm && !this.basket && !balloonOut && !goal && !(job || acts(odds) || tape) && !pick?.button);
     setHidden($("t-ride"), (!this.held && !lad && !odd) || !!ride || !!this.basket);
     setHidden($("t-view"), !this.car && !this.world.canal?.helmOf(this.net.selfId));
     for (const id of ["t-sigl", "t-sigr"]) setHidden($(id), !this.car && !this.world.canal?.helmOf(this.net.selfId));
     say($("t-ride"), this.riding ? "Get off" : lad ? "Put up" : odd ? "Put down" : "Ride");
     setHidden($("t-trick"), !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind);
-    say($("t-car"), ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? (wood.includes("Set it") ? "Set it in" : "Pick up") : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus");
+    say($("t-car"), ride || sky || this.basket ? "Get out" : helm ? "Let go" : goal || job || acts(odds) || tape ? "Use" : pick?.button ?? "Use");
   }
 
   /** The score card of a set of penalties or a shoot-out, and the keeper's dive buttons. */
@@ -4878,7 +4996,6 @@ export class Game {
       circle: (key, c) => this.quests.circle(key, c),
       ride: (kind) => { this.giveRide(kind); if (!this.riding) this.toggleRide(); },
       reward: (what) => { if ((RIDES as readonly string[]).includes(what)) this.giveRide(what as RideKind); },
-      announce: () => this.hello(),
       moveTo: (x, z, yaw) => {
         if (this.ride) this.getOut();
         this.letGo();
@@ -4888,13 +5005,15 @@ export class Game {
       },
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
+      ammo: (n) => {
+        this.weapon.reserve = Math.min(MAX_RESERVE, this.weapon.reserve + n);
+        if (this.weapon.kind === "fists") this.switchTo("rifle");
+      },
       rideBoost: (mul, kick = 0) => { this.rideMulT = 0.25; this.rideMulV = mul; this.player.rideKick += kick; },
       knock: () => this.player.knock(),
       hear: (x, y, z) => this.hear(x, y, z),
       dust: (x, y, z, nx, nz) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 80) this.effects.dust(new THREE.Vector3(x, y, z), new THREE.Vector3(nx, 0, nz)); },
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
-      pencil: (key, pts) => this.setTrailLine(key, pts),
-      wipe: () => this.setTrailLine(null, null),
       body: () => this.player,
       stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
       pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },

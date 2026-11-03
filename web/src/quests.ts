@@ -1,7 +1,7 @@
 // Jobs: things to do round Bath, a fresh set every game day (every 24 minutes). Each one is put up
 // on a noticeboard somewhere real (outside a pub, in a park or a square), with a ring of light at
 // its foot and a badge in the job's colour on the maps. Walk up to one to read it, and press E to
-// take it on: a Wanted poster, a treasure trail, a race and so on (each in its own file, which
+// take it on: a Wanted poster, a race, Seagull Attack and so on (each in its own file, which
 // registers itself here with registerJob).
 //
 // Who decides what: nobody, mostly. Where today's jobs are and what each one asks comes from the
@@ -9,7 +9,7 @@
 // without anything going over the network. Taking a job takes it on for the whole room, as a
 // team: whoever takes it sends the job's poster round, and everyone builds the same job from its
 // seed. One job runs at a time; if two people take different jobs at once, the first one taken
-// wins. Taking a job, its steps (a clue found, someone over the line) and calling it off (from the
+// wins. Taking a job, its steps (a wave beaten, someone over the line) and calling it off (from the
 // pause menu) all go round as "qe". The host tells anyone who joins what job is on and how far
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
 // the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
@@ -20,7 +20,7 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
-// A job lost leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
+// A job lost (bar Seagull Attack) leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
 // so stopping or swapping jobs costs nothing.
 // A Gaffer who got away from a pub takeover (invasion.ts, gaffer.ts) is the next game day's Wanted
 // poster: the host keeps the list and every player puts up the same poster from it.
@@ -131,8 +131,6 @@ export interface QuestWorld {
   circle(key: string, c: Circle | null): void;
   /** Hand yourself a ride and get on it (the start of a race). */
   ride(kind: RideKind): void;
-  /** Say hello to everyone again, with anything new about you (a rosette from a trail). */
-  announce?(): void;
   /** Move yourself there (the start of a race), facing yaw. */
   moveTo(x: number, z: number, yaw: number): void;
   /** What you're riding, if you're on a ride. */
@@ -145,14 +143,12 @@ export interface QuestWorld {
   knock?(): void;
   /** Slow you down for a while (wading through seagull muck). */
   slow?(secs: number): void;
+  /** More spare rifle rounds for you (a job's box of them), up to what you can carry. */
+  ammo?(rounds: number): void;
   /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
   hear?(x: number, y: number, z: number): [number, number];
   /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
   dust?(x: number, y: number, z: number, nx: number, nz: number): void;
-  /** A line pencilled onto your own big map (scene x, z pairs), by key, or null to rub it out. */
-  pencil?(key: string, pts: number[] | null): void;
-  /** Rub out every pencil line on the map. */
-  wipe?(): void;
   /** Your own body, for a job that moves you itself (The Climb's holds: theclimb.ts). */
   body?(): Player;
   /** Where the stick (a pad's or the touch screen's) is pushed, -1..1 each way, x to the right. */
@@ -196,6 +192,9 @@ export interface Perch {
   /** Mouse look kept within max (radians) either side of facing yaw. */
   around?: { yaw: number; max: number };
   eye?: { x: number; y: number; z: number; lx: number; ly: number; lz: number };
+  /** Seen from behind: the view dist back from (x, y, z) the way you look, tipped down by tilt, kept
+   *  out of walls, and looking look higher than (x, y, z), so what's there sits low in the view. */
+  orbit?: { x: number; y: number; z: number; dist: number; tilt: number; look?: number };
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
@@ -207,7 +206,7 @@ export interface Card {
   line: string; sub?: string; bar?: number;
   /** How far you've got in a few characters ("2 / 5"), and the clock if the job has one. */
   progress?: string; timer?: string;
-  /** Where the job has got to (a wave, a clue): when key changes everyone gets a banner. */
+  /** Where the job has got to (a wave, a checkpoint): when key changes everyone gets a banner. */
   stage?: { key: string; title: string; sub?: string; colour?: string; life?: number };
 }
 
@@ -220,12 +219,12 @@ export interface Offer {
   title: string; blurb: string; reward: string;
   x: number; z: number; where: string;     // the noticeboard, and the place it's at
   mode?: number;                            // anything else the kind needs, as a number
-  /** A follow-up job's own shape (nightout.ts): how many legs a trail has, where a race finishes, and a line to open the poster (html). */
-  legs?: number; to?: { n: string; x: number; z: number }; say?: string;
+  /** A follow-up job's own shape (nightout.ts): where a race finishes, and a line to open the poster (html). */
+  to?: { n: string; x: number; z: number }; say?: string;
 }
 
 /** What goes round for a follow-up job: everything about it that the seed doesn't give. */
-export type Link = Pick<Offer, "kind" | "seed" | "stars" | "title" | "x" | "z" | "where" | "mode" | "legs" | "to" | "say">;
+export type Link = Pick<Offer, "kind" | "seed" | "stars" | "title" | "x" | "z" | "where" | "mode" | "to" | "say">;
 
 /** A job someone's taken, running on every player's screen. */
 /** Anything a job that's over has left standing in the road for a while (a lost bus where it came to
@@ -246,6 +245,9 @@ export interface Job {
   /** E pressed: return true if the job used it. hint(): what E would do, if anything. */
   use?(): boolean;
   hint?(): string;
+  /** E's use isn't about anything in front of you just now (going again after a race), so
+   *  anything else E could do where you stand comes first. */
+  aside?(): boolean;
   /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
   naughtyBoyDown?(i: number, by: string): void;
   card(): Card;
@@ -260,7 +262,7 @@ export interface Job {
   shoot?(q: Quarry, power: number): void;
   /** A boss of the job's own for the boss bar (Big Lad): its name and how much fight is left, 0..1. */
   bossBar?(): { name: string; fill: number } | null;
-  /** The job's poster or clue brought back up (the job control); false if it has none. */
+  /** The job's poster brought back up (the job control); false if it has none. */
   recall?(): boolean;
   /** Take down anything the job put up. */
   end(): void;
@@ -367,6 +369,8 @@ const IN_BATH = 9;             // and this many anywhere else in the force field
 const VILLAGE = 1300;          // metres from Firs Field that count as round the village
 const SHOWN = 360;             // a noticeboard is built when you're this close, and taken down past SHOWN + 60
 const READ = 7;                // how close to read it
+const BOARD_MID = 1.55, BOARD_HALF = 0.75;  // the poster's height up the board, and half its width, for looking at it
+const LOOK_AT = 0.17;                      // radians off its edge that still count as looking at it, as for E (game.ts)
 const TAKE = 3.2;              // and to take it
 const DONE_KEY = "cd-jobs-done";
 
@@ -665,9 +669,20 @@ export class Quests {
 
   /** Stood reading a noticeboard (the Chronicle's pinned up on every one). */
   atBoard(): boolean {
+    const p = this.readingPost();
+    return !!p && !p.kind.challenge;
+  }
+
+  /** The noticeboard you're stood at and looking at: its poster only comes up when it's what you're
+   *  reading, not whenever you walk past within reach. */
+  private readingPost(): Post | undefined {
     const me = this.w.me();
     const p = me.alive ? this.postAt(me.x, me.z, READ) : undefined;
-    return !!p && !p.kind.challenge;
+    if (!p) return undefined;
+    const l = this.w.look(), y = p.wait ? me.y + 1 : (p.y ?? me.y) + BOARD_MID;
+    const dx = p.x - l.x, dy = y - l.y, dz = p.z - l.z, d = Math.hypot(dx, dy, dz) || 1e-6;
+    const off = Math.acos(Math.max(-1, Math.min(1, (dx * l.dx + dy * l.dy + dz * l.dz) / d))) - Math.atan2(BOARD_HALF, d);
+    return off < LOOK_AT ? p : undefined;
   }
 
   private distTo(p: Post, x: number, z: number) { return p.wait ? p.wait.dist(x, z) : Math.hypot(p.x - x, p.z - z); }
@@ -688,25 +703,43 @@ export class Quests {
     return best;
   }
 
-  /** What E does here, for the prompt in the middle of the screen; empty if nothing. */
-  hint(): string {
-    const me = this.w.me();
-    if (!me.alive) return "";
-    const h = this.job && !this.job.done ? this.job.hint?.() : "";
-    if (h) return h;
-    const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
-    if (!p) return "";
-    if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
-    if (this.job?.offer.seed === p.offer.seed) return "";
-    if (this.job && !this.local) return "Finish or call off your job first";
-    return p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
+  /** What the running job's own use does, for the prompt; empty if nothing. It comes before
+   *  anything else E might do (game.ts). */
+  jobHint(): string {
+    return this.w.me().alive && this.job && !this.job.done ? this.job.hint?.() ?? "" : "";
   }
 
-  /** Use pressed. Returns true if it was for a job. */
-  use(): boolean {
+  /** Whether the running job's use can wait for anything else E could do here (Job.aside). */
+  jobAside(): boolean { return !!this.job && !this.job.done && !!this.job.aside?.(); }
+
+  /** Use pressed, for the running job. Returns true if it was for that. */
+  jobUse(): boolean {
+    return this.w.me().alive && !!this.job && !this.job.done && !!this.job.use?.();
+  }
+
+  /** The noticeboard (or a challenge's waiting thing) you're stood at: where to look at it, how far
+   *  it is, what the prompt says, and whether E would take it. */
+  board(): { x: number; y: number; z: number; d: number; text: string; can: boolean; challenge: boolean } | null {
+    const me = this.w.me();
+    if (!me.alive) return null;
+    const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
+    if (!p) return null;
+    const done = this.doneSeeds.has(p.offer.seed), busy = !!this.job && !this.local;
+    const text = done ? "Done today. New jobs tomorrow" : busy ? (this.job?.offer.seed === p.offer.seed ? "" : "Finish or call off your job first")
+      : p.kind.challenge ? `<b>{use}</b> ${esc(p.offer.title)}` : `<b>{use}</b> ${p.kind.take ?? "Take the job"}`;
+    const d = this.distTo(p, me.x, me.z);
+    if (!p.wait) return { x: p.x, y: p.view ? p.y + 1.6 : me.y + 1.2, z: p.z, d, text, can: !done && !busy, challenge: !!p.kind.challenge };
+    // a challenge's thing can stand off from its spot (a bus moved up the road): look for its
+    // nearest side down the slope of its distance, and a little in from it
+    const e = 0.25, gx = (p.wait.dist(me.x + e, me.z) - p.wait.dist(me.x - e, me.z)) / (2 * e), gz = (p.wait.dist(me.x, me.z + e) - p.wait.dist(me.x, me.z - e)) / (2 * e);
+    const g = Math.hypot(gx, gz) || 1;
+    return { x: me.x - (gx / g) * (d + 1), y: me.y + 1.2, z: me.z - (gz / g) * (d + 1), d, text, can: !done && !busy, challenge: true };
+  }
+
+  /** E at the noticeboard you're stood at: take its job. Returns true if it did. */
+  takeBoard(): boolean {
     const me = this.w.me();
     if (!me.alive) return false;
-    if (this.job && !this.job.done && this.job.use?.()) return true;
     const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
     if (!p || (this.job && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
     this.take(p.wait?.stamp ? { ...p.offer, mode: p.wait.stamp() } : p.offer);
@@ -874,7 +907,7 @@ export class Quests {
   indoors(): boolean { return !!this.job && !!this.job.indoors?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
-  /** The job control: the running job's poster or clue again. */
+  /** The job control: the running job's poster again. */
   recall(): boolean { return !!this.job && !this.job.done && !!this.job.recall?.(); }
 
   /** On a touch screen, the Poster button, while the running job has one to bring back. */
@@ -933,7 +966,7 @@ export class Quests {
         this.stageKey = st.key;
       } else if (!st && this.stageKey === null) this.stageKey = "";
     } else missionClear("job");
-    const p = this.postAt(me.x, me.z, READ);
+    const p = this.readingPost();
     let poster = "";
     if (p && this.job?.offer.seed !== p.offer.seed) {
       const o = p.offer, done = this.doneSeeds.has(o.seed);

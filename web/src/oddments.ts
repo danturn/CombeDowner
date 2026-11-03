@@ -580,6 +580,15 @@ export class Oddments {
   /** By a structure that's already full, which takes no more. */
   private atFull(me: Holder) { const c = this.cur(); return this.structs.some((t) => t !== c && Math.hypot(me.x - t.x, me.z - t.z) < SET_REACH && Math.abs(me.y - t.y) < 4); }
 
+  /** Where the thing E would act on is (the object at your feet, or the structure), so the game can
+   *  tell whether you're looking at it; null if E does nothing here. */
+  useAt(me: Holder): { x: number; y: number; z: number; r: number } | null {
+    if (!this.on || !me.alive) return null;
+    if (this.carrying(me.id)) { const c = this.cur(); return c && this.atStructure(me) && this.s.f < this.total ? { x: c.x, y: c.y + 2, z: c.z, r: 2 } : null; }
+    const o = this.nearest(me);
+    return o ? { x: o[1], y: o[2] + 0.3, z: o[3], r: 0.4 } : null;
+  }
+
   /** E: pick one up, or set yours in a socket. ride: the ride you'd leave here. Returns true if E was for that. */
   use(me: Holder, isHost: boolean, ride?: string): boolean {
     if (!this.on || !me.alive || performance.now() - this.asked < 600) return false;

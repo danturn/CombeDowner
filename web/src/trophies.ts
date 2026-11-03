@@ -17,7 +17,7 @@ import { PAGE, ttBar, ttTitle } from "./teletext";
 import { closeButton } from "./modal";
 
 export type Tier = "bronze" | "silver" | "gold";
-export const CATEGORIES = ["Jobs", "Races", "Trails", "Seagulls", "Wanted", "Riding & tricks", "Exploring", "Bath landmarks", "Fighting"] as const;
+export const CATEGORIES = ["Jobs", "Races", "Seagulls", "Wanted", "Riding & tricks", "Exploring", "Bath landmarks", "Fighting"] as const;
 export type Category = (typeof CATEGORIES)[number];
 export interface Trophy { id: string; name: string; how: string; tier: Tier; cat: Category; goal?: () => boolean }
 export const TIER_COLOUR: Record<Tier, string> = { bronze: "#cd7f32", silver: "#c3ccd6", gold: "#ffc83a" };
@@ -94,10 +94,6 @@ add("Races", "bronze", "ra1", "Also Ran", "Finish a race");
 add("Races", "silver", "ra2", "On the Podium (Nearly)", "Finish a race in a silver medal time");
 add("Races", "gold", "ra3", "Gold Standard", "Finish a race in a gold medal time");
 add("Races", "silver", "rawin", "Eat My Dust", "Be first over the line in a race against other players");
-
-add("Trails", "bronze", "tr1", "X Marks a Spot", "Dig up the chest at the end of a treasure trail");
-add("Trails", "silver", "tr2", "Silver Tongue", "Finish a treasure trail in a silver time");
-add("Trails", "gold", "tr3", "Proper Pirate", "Finish a treasure trail in a gold time, with no hints");
 
 add("Seagulls", "bronze", "gu1", "Chip Guardian", "Finish a Seagull Attack");
 add("Seagulls", "silver", "gu2", "Gull Scarer", "Three stars on a Seagull Attack");
@@ -246,8 +242,8 @@ export function missionResult(kind: string, g: Grade) {
     if (!was || g.best.v > was.v) { state().best[kind] = g.best; dirty = true; if (was) Paper.record(`${RECORD[kind] ?? cap(kind)}: ${g.best.text}`); }
   }
 }
-const PREFIX: Record<string, string> = { race: "ra", trail: "tr", gulls: "gu", wanted: "wa" };
-const RECORD: Record<string, string> = { race: "Race", trail: "Treasure trail", gulls: "Seagull Attack", wanted: "Wanted" };
+const PREFIX: Record<string, string> = { race: "ra", gulls: "gu", wanted: "wa" };
+const RECORD: Record<string, string> = { race: "Race", gulls: "Seagull Attack", wanted: "Wanted" };
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Your best at a kind of job so far, in words, for its start card. */

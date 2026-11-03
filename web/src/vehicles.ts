@@ -1631,8 +1631,8 @@ export class Vehicles {
   }
 
   /** The nearest vehicle within reach of (x, z), about level with y, with a seat free (a parked car counts), if any. */
-  nearest(x: number, z: number, y: number, reach: number): { i: number; name: string; driver: string } | null {
-    let best: { i: number; name: string; driver: string } | null = null, bd = reach;
+  nearest(x: number, z: number, y: number, reach: number): { i: number; name: string; driver: string; x: number; z: number } | null {
+    let best: { i: number; name: string; driver: string; x: number; z: number } | null = null, bd = reach;
     for (const v of this.list) {
       if (Math.abs(v.x - x) > 12 || Math.abs(v.z - z) > 12 || Math.abs(v.y - y) > 2.5) continue;
       const d = v.distance(x, z);
@@ -1645,7 +1645,7 @@ export class Vehicles {
       if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || S[k].taken || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
       const c = Math.cos(a), s = Math.sin(a);
       const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[parkedMake(this.map, fx, fy, k)], driver: "" }; }
+      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[parkedMake(this.map, fx, fy, k)], driver: "", x: fx, z: -fy }; }
     }
     // and those parked out in Bath
     for (const m of this.map.tilesNear(x, z, 6)) {
@@ -1655,7 +1655,7 @@ export class Vehicles {
         if (Math.abs(fz - z0 - y) > 2.5) continue;
         const dx = x - fx, dz = z + fy, c = Math.cos(a), s = Math.sin(a);
         const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[parkedMake(m, fx, fy, k)], driver: "" }; }
+        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[parkedMake(m, fx, fy, k)], driver: "", x: fx, z: -fy }; }
       }
     }
     return best;
