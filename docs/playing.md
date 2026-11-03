@@ -154,7 +154,8 @@ deli too. Safari and Firefox leave full screen when you press Esc.
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
   debug panel.
-- Controls: mouse sensitivity.
+- Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
+  counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
   Flag Lads, Bendy and seagull muck all leave you alone, even if you shoot them (other players can
   still shoot you, and traffic and trains can still run you over). The host's setting is the game's: everyone who
@@ -198,7 +199,7 @@ what's held on it. It shakes a little when you fire and more when you're hit.
 
 Holding the right stick right over for a moment turns you faster, so you can swing round quickly and
 still aim finely with small pushes. Once a pad's been seen, Settings (and the mines' pause menu) has
-a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
+a Controller section: look speed side to side and up and down, invert up and down, invert left and right, the faster turn,
 the stick's dead zone and rumble, all usable with the pad itself.
 
 The buttons are laid out as Call of Duty: Warzone's defaults, so they feel familiar. Square reloads

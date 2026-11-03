@@ -172,6 +172,7 @@ import { Announcer } from "./announce";
 import * as Yours from "./yours";
 import * as Paper from "./paper";
 import { Arrival, type ArrivalKind } from "./arrive";
+import { inverted, type LookFrom } from "./invert";
 
 const TOWN: Record<string, string> = { "combe-down": "Bath" };
 
@@ -969,7 +970,7 @@ export class Game {
     addEventListener("mousemove", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       if (!$("bigmap").hidden) { this.moveCursor(e.movementX, e.movementY); return; }
-      this.look(e.movementX, e.movementY);
+      this.look(e.movementX, e.movementY, "mouse");
     }, sig);
     addEventListener("keydown", (e) => {
       if (isKey(e.code, "pubcard.go") && this.mapOpen && this.pubMap.isOpen) { if (!e.repeat) this.pubMap.go(); return; }
@@ -1265,8 +1266,10 @@ export class Game {
     if (this.binoculars) { this.aiming = false; this.firing = false; }
   }
 
-  look(dx: number, dy: number) {
+  look(dx: number, dy: number, from?: LookFrom) {
     if (this.mapOpen) { const c = this.minimap.cursor; this.minimap.zoomFull(Math.exp(-dy * 0.0008), c?.[0], c?.[1]); return; }
+    // after the map: a drag on the map zooms it the way the hand goes, whoever plays inverted
+    if (from) [dx, dy] = inverted(from, dx, dy);
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
@@ -1284,7 +1287,7 @@ export class Game {
     this.arrowHeld += dt;
     // radians a second, turned into the mouse's units
     const rate = (0.35 + 0.65 * Math.min(1, this.arrowHeld / 0.4)) * dt / this.player.sensitivity;
-    this.look(x * rate * 2.4, y * rate * 1.4);
+    this.look(x * rate * 2.4, y * rate * 1.4, "mouse");
   }
 
   /** The jump button: walks off the ball if you're lining up a kick, and is the handbrake while driving. */

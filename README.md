@@ -444,8 +444,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   hold (a tap uses when there's a prompt), Circle crouches on a tap and lies down on a hold,
   Triangle switches weapon, L1 and R1 go back and forward through them. In a car R2 and L2 are the
   pedals, the left stick steers, Triangle gets out and R1 is the horn. Options pauses, and on the menus the
-  d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
-  dead zone and rumble once one's connected, and you can move any button to another in Settings,
+  d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert
+  (up and down, and left and right), dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
   [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
 - **Arriving somewhere new**: when you start a game, come back to life, go to a pub (or anywhere

@@ -54,10 +54,10 @@ const RAMP_NEAR_FULL = 0.9, RAMP_AFTER = 0.3, RAMP_IN = 0.2, RAMP = 1.6;
 const REPEAT_FIRST = 0.4, REPEAT = 0.14;   // seconds before a held d-pad moves on again round a menu
 
 /** The controller settings, kept in this browser like the others (settings.ts). */
-const PAD_DEFAULTS = { lookX: 1, lookY: 1, invert: false, boost: true, dead: STICK_DEAD, rumble: true };
+const PAD_DEFAULTS = { lookX: 1, lookY: 1, invert: false, invertX: false, boost: true, dead: STICK_DEAD, rumble: true };
 type PadSettings = typeof PAD_DEFAULTS;
 const PAD_KEYS: Record<keyof PadSettings, string> = {
-  lookX: "cd-padlookx", lookY: "cd-padlooky", invert: "cd-padinvert", boost: "cd-padboost", dead: "cd-paddead", rumble: "cd-padrumble",
+  lookX: "cd-padlookx", lookY: "cd-padlooky", invert: "cd-padinvert", invertX: "cd-padinvertx", boost: "cd-padboost", dead: "cd-paddead", rumble: "cd-padrumble",
 };
 const padSet: PadSettings = { ...PAD_DEFAULTS };
 for (const k of Object.keys(PAD_KEYS) as (keyof PadSettings)[]) {
@@ -71,7 +71,7 @@ for (const k of Object.keys(PAD_KEYS) as (keyof PadSettings)[]) {
 
 // each setting's box on the Settings page (and the mines' menu), by id
 const PAD_INPUTS: Record<keyof PadSettings, string> = {
-  lookX: "pad-lookx", lookY: "pad-looky", invert: "pad-invert", boost: "pad-boost", dead: "pad-dead", rumble: "pad-rumble",
+  lookX: "pad-lookx", lookY: "pad-looky", invert: "pad-invert", invertX: "pad-invertx", boost: "pad-boost", dead: "pad-dead", rumble: "pad-rumble",
 };
 
 function setPad<K extends keyof PadSettings>(k: K, v: PadSettings[K]) {
@@ -551,7 +551,7 @@ export class GamepadControls {
         const ramp = padSet.boost ? 1 + (RAMP - 1) * Math.min(1, Math.max(0, (this.fullT - RAMP_AFTER) / RAMP_IN)) : 1;
         // squared, so small pushes aim finely and a full push still turns quickly
         const k = m * dt * ramp;
-        page.look(lx * k * LOOK_X * padSet.lookX, ly * k * LOOK_Y * padSet.lookY * (padSet.invert ? -1 : 1));
+        page.look(lx * k * LOOK_X * padSet.lookX * (padSet.invertX ? -1 : 1), ly * k * LOOK_Y * padSet.lookY * (padSet.invert ? -1 : 1));
       }
       if (pressed(B.options)) {
         // as Esc does: letting go of the mouse is what pauses a game played with it captured

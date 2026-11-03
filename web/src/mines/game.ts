@@ -33,6 +33,7 @@ import { heldModel, Viewmodel } from "./viewmodel";
 import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT, WEAK_LINE, weaknessOf } from "./bosses";
 import { BossFx } from "./bossfx";
 import { pop } from "../pop";
+import { inverted } from "../invert";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -240,7 +241,7 @@ export class MineGame {
     addEventListener("contextmenu", (e) => e.preventDefault());
     addEventListener("mousemove", (e) => {
       this.mouseX = e.clientX / innerWidth;
-      if (this.active && (document.pointerLockElement || this.freeLook)) this.player.look(e.movementX, e.movementY, 1);
+      if (this.active && (document.pointerLockElement || this.freeLook)) this.player.look(...inverted("mouse", e.movementX, e.movementY), 1);
     });
     addEventListener("keydown", (e) => {
       if (e.code === "KeyE" && !e.repeat) { this.eDown = true; if (this.active) this.use(); }

@@ -102,7 +102,7 @@ export class TouchControls {
       const dx = e.clientX - this.lastX, dy = e.clientY - this.lastY;
       this.lastX = e.clientX; this.lastY = e.clientY;
       this.moved += Math.abs(dx) + Math.abs(dy);
-      this.game.look(dx * 1.6, dy * 1.6);
+      this.game.look(dx * 1.6, dy * 1.6, "touch");
     }
   }
 
