@@ -20,7 +20,7 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
-// A job lost leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
+// A job lost (bar Seagull Attack) leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
 // so stopping or swapping jobs costs nothing.
 // A Gaffer who got away from a pub takeover (invasion.ts, gaffer.ts) is the next game day's Wanted
 // poster: the host keeps the list and every player puts up the same poster from it.
@@ -145,6 +145,8 @@ export interface QuestWorld {
   knock?(): void;
   /** Slow you down for a while (wading through seagull muck). */
   slow?(secs: number): void;
+  /** More spare rifle rounds for you (a job's box of them), up to what you can carry. */
+  ammo?(rounds: number): void;
   /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
   hear?(x: number, y: number, z: number): [number, number];
   /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */

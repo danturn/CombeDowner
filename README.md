@@ -164,14 +164,18 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
   church bell or a busker's tune to follow by ear, a plaque whose table rules out all but one of the
   tins round the corner, and twin tins to open in quick succession (with friends, or on your own if you're fast).
+  Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
+  pavement; if it's tight by the board, the board says where) and puts everyone in the middle of it.
+  Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
+  and flashing while a gull's after it, and the ring is on the maps. One of the three crates between
+  waves is always a box of rounds: more spare rifle rounds for everyone, instead of an upgrade.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
-  and it drops. A lost Seagull Attack leaves gulls nesting on the roofs: shoot the nests down or climb
-  up (the ladders) and press E, with an angry parent swooping at you. A trail race lost to K leaves a hole and
+  and it drops. A trail race lost to K leaves a hole and
   her note, a riddle to where she hid the rosette within 150 m: dig at the right mound (hold E). A race
   nobody finished leaves a smug ghost: press E on the line and reach the last gate before it does. A
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
-  till 90% is covered. Bigger rooms get more to do: more ties, nests, gates, mounds and tag, and
+  till 90% is covered. Bigger rooms get more to do: more ties, gates, mounds and tag, and
   tougher guards. Put one right for a prize.
 - **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
   flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.

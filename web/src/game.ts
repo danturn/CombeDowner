@@ -760,7 +760,6 @@ export class Game {
       me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
       crew: () => 1 + this.remotes.size,
       targets: () => this.targets(),
-      peck: () => { this.player.kick(0.12); this.player.yaw += (Math.random() - 0.5) * 0.3; SFX.hurt(); },
       send: (data, to) => this.net.send("scr", data, to),
       toast: (text, secs) => this.toast(text, secs),
       feed: (html) => this.feed(html),
@@ -768,7 +767,7 @@ export class Game {
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       hear: (x, y, z) => this.hear(x, y, z),
     });
-    this.quests.onScar = (o, x, z) => { const k = scarKindOf(o.kind); this.scars.add(k, x, z, k === "tag" ? o.title : o.where || o.title); };
+    this.quests.onScar = (o, x, z) => { const k = scarKindOf(o.kind); if (k) this.scars.add(k, x, z, k === "tag" ? o.title : o.where || o.title); };
     // something new for your wardrobe: say so, and show everyone
     this.unEarn = onEarn((w) => {
       this.toast(`New in your wardrobe: ${w.name}!`, 3.5);
@@ -3929,7 +3928,7 @@ export class Game {
     // or a string of bunting between them
     const bunting = melee || flag ? null : this.invasion.hitBunting(origin, dir, maxD);
     if (bunting) { maxD = bunting.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shootBunting(bunting); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
-    // or a cable tie on a scar's banner, or a gull's nest
+    // or a cable tie on a scar's banner
     const scarTarget = melee ? null : this.scars.hit(origin, dir, maxD);
     if (scarTarget) { maxD = scarTarget.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.scars.shoot(scarTarget); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     // or something a job's put up to shoot at (a seagull)
@@ -4888,6 +4887,10 @@ export class Game {
       },
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
+      ammo: (n) => {
+        this.weapon.reserve = Math.min(MAX_RESERVE, this.weapon.reserve + n);
+        if (this.weapon.kind === "fists") this.switchTo("rifle");
+      },
       rideBoost: (mul, kick = 0) => { this.rideMulT = 0.25; this.rideMulV = mul; this.player.rideKick += kick; },
       knock: () => this.player.knock(),
       hear: (x, y, z) => this.hear(x, y, z),
