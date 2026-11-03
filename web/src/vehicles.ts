@@ -877,7 +877,8 @@ export class Vehicle implements Mover {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
-    const grass = !S.crush && !S.offroad && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
+    const grass = !S.crush && !S.offroad && !paved(this.x, this.z), fast = Math.hypot(vf, vl) > 8,
+      top = S.top * (grass ? 0.6 : 1) * (this.drift && !fast ? 0.3 : 1);   // a roller's made for grass; a donut holds it down to a crawl
     this.flipped = false;
     // engine and brakes
     // (the engine's own push is kept apart: front tyres sliding wide can't put it down, below)
@@ -895,7 +896,7 @@ export class Vehicle implements Mover {
     // a handbrake yanked at speed with the wheel turned locks the back wheels into a slide rather than
     // pulling the car up short, so it drifts on round before it stops
     const slide = hand && !held && Math.abs(this.steer) > 0.3 && Math.abs(vf) > 6;
-    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : slide ? 3.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
+    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : slide ? 2 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
     // steering, and only so much grip. Brake or lift off into a corner and the weight comes forward
     // on to the front tyres, so they bite harder and the nose tucks in; foot down, it sits back and
@@ -925,7 +926,8 @@ export class Vehicle implements Mover {
     // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
     const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
     this.drift = !over && !S.crush && (kick || (this.drift && (hold || (hand && Math.hypot(vf, vl) > 0.5))));
-    if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
+    // at speed it's a slide round the corner, turning as the wheel says, not a spin on the spot
+    if (this.drift && !fast) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
     this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
     const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
     // the back wheels follow the front ones round a corner: the body turns about its back axle,
@@ -935,7 +937,11 @@ export class Vehicle implements Mover {
     // the way it was while the nose comes round
     const loose = this.drift || hand || over;
     const track = loose ? 0 : -this.spin * half;
+    const vl0 = vl;
     vl = track + (vl - track) * Math.exp(-(this.drift ? 1.3 : hand ? 0.8 : over ? 3 : grass ? 4 : 9) * dt);
+    // sliding fast, the tyres catching the slide swing the car's way on round to where it's pointing,
+    // so it comes out of the corner still going instead of skidding to a halt
+    if (fast && (this.drift || hand) && !over && vf > 0) vf += (Math.abs(vl0) - Math.abs(vl)) * 0.6;
     // a donut goes round its front wheels, the back end swinging out round them
     const da = this.spin * dt;
     if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
