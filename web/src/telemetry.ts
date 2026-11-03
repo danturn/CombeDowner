@@ -22,7 +22,8 @@
 // The dashboard draws where people go over each map's own whole-map picture (minimap.ts). The game
 // sends it: once the game has settled, in the browser's idle time, it asks the server which
 // release of this map its picture is from, and if the server has none or an older one, sends the
-// picture (a PNG of the map, nothing about the player) with its bounds and the map's release. The
+// picture (a PNG of the map, nothing about the player) with its bounds and the map's release
+// followed by the game's build, so a map rebuilt from the same data is pictured again. The
 // server decides whether to keep it. Each browser stops offering once the server has that release, and only
 // on a computer, which draws the picture at full size.
 
@@ -151,9 +152,12 @@ let picturing = "";
 type Picture = { canvas: HTMLCanvasElement; x0: number; y0: number; x1: number; y1: number };
 
 /** Sends this map's whole-map picture to the server if it hasn't one from this release (see the top). */
-export function offerPicture(id: string, release: string, look: () => Picture | null) {
+export function offerPicture(id: string, dataRelease: string, look: () => Picture | null) {
   init();
-  if (!on || !release || picturing === id) return;
+  if (!on || !dataRelease || picturing === id) return;
+  // a map can be rebuilt bigger from the same data release, so the picture is dated by the build
+  // as well, which still sorts as newer on the server
+  const release = `${dataRelease}.${__BUILD__}`;
   picturing = id;
   const key = "cd-tpic:" + id;
   try { if (localStorage.getItem(key) === release) return; } catch { return; }
