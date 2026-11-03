@@ -1,8 +1,8 @@
 // Bell Ringing, a team challenge (challenges.ts): English change ringing up a church tower. The
 // challenge stands at the biggest church in reach of where everyone starts, found from the map's
 // own buildings, so every map with a church has one. Outside it a sandwich board says to try bell
-// ringing today, with the vicar stood by it beckoning you over. Climb the tower (use, by the vicar) and
-// you're in the ringing chamber, a room of our own built high over the street, each player holding
+// ringing today, with the vicar stood by it beckoning you over. Everyone who enters (lineup.ts) is
+// gathered round the vicar and taken up the tower at GO, into the ringing chamber, a room of our own built high over the street, each player holding
 // one bell's rope. The touch starts in rounds (1-2-3-4...), then the method moves the bells about,
 // pairs swapping places every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one,
 // and the more of you there are, the more bells and the longer the touch. Rows come at a steady
@@ -15,14 +15,16 @@
 // whole lot collapses into a jangle, and too many bad rows over the touch and the conductor calls
 // Stand: lost either way. Ring it through clean enough and the strange object turns up at the
 // church door. With fewer than three players, steady old ringers who never miss make up three
-// bells; anyone who climbs up late stands by the wall and watches.
+// bells; anyone else can climb up too (use, by the vicar), and once the ringing has started stands
+// by the wall and watches.
 //
 // Who decides what: the host keeps the time and runs the band. Each screen syncs its clock to the
 // host's ("tq"/"ta" inside "qe"), so the rows are laid out on one shared clock from the moment the
 // host says go. A pull is timed on the puller's own synced clock, and what goes round is when that
 // pull makes the bell sound; since that's a little after the pull, it reaches everyone before the
 // bell is due, and every screen plays it at the same shared moment, however far away the puller
-// is. The host judges each row from those times (the puller decided their own pull, as a shooter
+// is. The host starts the ringing once everyone who entered is up, or someone up there calls
+// "Look to!". The host judges each row from those times (the puller decided their own pull, as a shooter
 // decides their own hits) and says which rows were bad, and when it's won or collapsed. The
 // steady ringers strike on the beat on every screen alike, and take over a rope if its ringer
 // leaves the game.
@@ -40,6 +42,7 @@ import { openGround } from "./oddments";
 import { speak } from "./posh";
 import { Avatar } from "./avatar";
 import { esc, hash, type Card, type Job, type Waiting } from "./quests";
+import { ring } from "./lineup";
 
 const COLOUR = "#d9a441";
 const LEAD = 700;            // ms from pulling the rope to the bell sounding
@@ -543,7 +546,9 @@ registerChallenge({
   goal: () => "Climb the tower and ring the touch without the bells clashing",
   place,
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0]),
-  start({ offer, spots, w }) {
+  // round the vicar at the foot of the tower; at GO up the tower
+  lineup: { spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
+  start({ offer, spots, w, cast }) {
     const board = spots[0], mid = spots[1] ?? spots[0];
     const church = board.name;
     const C = { x: mid.x, z: mid.z };
@@ -577,6 +582,7 @@ registerChallenge({
     let lookAsked = false;
     let jangleT = 0;
     let gatherSince = 0;
+    let upAtGo = cast.includes(w.selfId);
 
     const chamber = buildChamber(C.x, C.z, top, church);
     // the vicar and his board stay out while you climb, so there's still somewhere to go up from
@@ -860,6 +866,7 @@ registerChallenge({
       offer, done: null,
       aloft: inside,
       update(dt) {
+        if (upAtGo) { upAtGo = false; if (w.me().alive) climb(); }
         welcome.update(dt);
         const t = nowS();
         // keep the clock in step with the host's
@@ -940,9 +947,9 @@ registerChallenge({
       },
       host() {
         if (phase === "gather") {
-          const everyone = w.players();
+          const here = new Set(w.players().map((p) => p.id));
           if (list.length && !gatherSince) gatherSince = performance.now();
-          const all = everyone.every((p) => list.includes(p.id));
+          const all = cast.every((id) => !here.has(id) || list.includes(id));
           if ((all && list.length && performance.now() - gatherSince > 1500) || lookAsked) startRinging();
           return;
         }

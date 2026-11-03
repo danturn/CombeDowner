@@ -3,12 +3,13 @@
 // challenge stands outside a gallery or museum found from the map: a set piece called one (the
 // Holburne) if it's in the zone, otherwise the biggest public building near a pedestrian street,
 // named for the square or street it's on. On the pavement an easel says the Open Exhibition is
-// tonight, and the curator stands by it beckoning. E by him starts it and takes you straight into
-// the gallery itself (anyone else goes in with E by him when they get there): a long white room
+// tonight, and the curator stands by it beckoning. E by him starts it, and at GO everyone who
+// entered (lineup.ts) is taken up into the gallery itself (anyone else goes in with E by him when
+// they get there): a long white room
 // built high over the street (like the bell ringers' chamber), with an easel each. Its light is its
 // own (world.ts's indoors), so nobody in it goes dark at night against its white walls.
 //
-// Once everyone's in (or someone presses E to get on with it) the subject is set ("A seagull's
+// Once everyone who entered is in (or someone presses E to get on with it) the subject is set ("A seagull's
 // revenge", "Last orders at" the nearest pub...) and so is who's judging tonight, two critics with
 // tastes of their own (three for a big show), which is worth reading before you start. Each painter
 // gets the easel (easel.ts), a paint program of the old sort, for a minute and a half or so. Then
@@ -604,13 +605,31 @@ function themeWords(t: string, w: QuestWorld, at: ChallengeSpot, street: string)
   return t.replace("{pub}", pub).replace("{place}", place).replace("{street}", street || "the high street");
 }
 
+/** Which way is out from the gallery's door, as a unit vector. */
+function outOf(spots: ChallengeSpot[]): [number, number] {
+  const door = spots[0], mid = spots[1] ?? spots[0];
+  const dx = mid.x - door.x, dz = mid.z - door.z, l = Math.hypot(dx, dz);
+  return l < 0.5 ? [0, 1] : [dx / l, dz / l];
+}
+
 registerChallenge({
   id: "gallery", name: "The Art Gallery", glyph: "A", colour: COLOUR, tier: 3, stars: 2,
   blurb: "Paint a picture each, see it hung, and win over the critics at the private view",
   goal: () => "Go in, paint the subject, and get the show past the critics",
   place,
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0], spots[0].name),
-  start({ offer, spots, w, by }) {
+  // on the pavement by the door, as goDown leaves you, and up into the gallery at GO
+  lineup: {
+    spots: ({ spots }, n) => {
+      const door = spots[0], [ox, oz] = outOf(spots);
+      return Array.from({ length: n }, (_, k) => {
+        const side = (k % 2 ? 0.9 : -0.9) * Math.ceil((k % 4) / 2), out = 1.8 + Math.floor(k / 4) * 0.9;
+        const x = door.x + ox * out - oz * side, z = door.z + oz * out + ox * side;
+        return { x, z, yaw: Math.atan2(x - door.x, z - door.z) };
+      });
+    },
+  },
+  start({ offer, spots, w, cast }) {
     const door = spots[0], mid = spots[1] ?? spots[0];
     const gallery = door.name;
     const street = placedInfo.get(spots)?.street ?? "";
@@ -628,8 +647,8 @@ registerChallenge({
     let hung = false;
     let aboard = false;
     let gatherSince = 0, startAsked = false, hangSince = 0;
-    // whoever took it on by the curator is already there: their E takes them straight in
-    let enterNow = by === w.selfId, inT = 0;
+    // everyone who entered goes straight in
+    let enterNow = cast.includes(w.selfId), inT = 0;
     const chunks = new Map<string, string[]>();
     const works = new Map<string, { px: Uint8Array; strokes: number; how?: How }>();
     // each painting's time-lapse, as sent (to pass on to anyone who missed it) and unpacked
@@ -656,7 +675,7 @@ registerChallenge({
     const room = new Room(Cx, top, Cz, gallery);
     const welcome = new Welcome(w.scene, w.map, door, mid, gallery);
     // which way is out from the gallery's door to the street, for putting people back on the pavement
-    const [outX, outZ] = (() => { const dx = mid.x - door.x, dz = mid.z - door.z, l = Math.hypot(dx, dz); return l < 0.5 ? [0, 1] : [dx / l, dz / l]; })();
+    const [outX, outZ] = outOf(spots);
     // Mr Pettigrew sees the evening through from beside the exit, in the room's own frame
     const PETTIGREW: [number, number] = [HX - 0.7, -2.7];
     const pettigrew = new Avatar("Mr Pettigrew, Curator", "#1f2a44", "curator", "#bdbdbd");
@@ -1062,7 +1081,7 @@ registerChallenge({
         if (enterNow) {
           enterNow = false;
           const m = me();
-          if (phase === "gather" && Math.hypot(m.x - door.x, m.z - door.z) < 15) goUp();
+          if (phase === "gather" && m.alive) goUp();
         }
         // the host's word on who's in can cross with ours on the way: say it again till it lands
         if (aboard && phase === "gather" && !w.isHost && !list.includes(w.selfId) && (inT -= dt) <= 0) { inT = 2; send({ k: "in" }); }
@@ -1101,7 +1120,8 @@ registerChallenge({
         if (aboard) wakeEye();
         if (phase === "gather") {
           if (list.length && !gatherSince) gatherSince = performance.now();
-          const all = w.players().every((p) => list.includes(p.id));
+          const here = new Set(w.players().map((p) => p.id));
+          const all = cast.every((id) => !here.has(id) || list.includes(id));
           const waited = gatherSince && performance.now() - gatherSince > 45000;
           if (list.length && ((all && performance.now() - gatherSince > 1500) || startAsked || waited)) {
             const ps = list.slice(0, MAX_PAINTERS), ti = themeIndex();

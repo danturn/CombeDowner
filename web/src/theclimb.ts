@@ -25,14 +25,14 @@
 // - Alone it can be done (there are more holds, and none needs a boost); with more of you there
 //   are fewer holds and more of them need a boost.
 // Where it waits comes from the map; the crag is the same on every map, and its holds come from
-// the job's seed and how many are climbing, so everyone climbs the same face. The crag's ledges,
+// the job's seed and how many entered, so everyone climbs the same face. The crag's ledges,
 // the grass at its foot and its top are things to stand on (map.floors), and its rock is solid
 // (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
 //
 // Who decides what: each climber moves themselves (holds, ropes, being hauled up, up to the crag
 // and back down) and says what they're doing ("qe" cs, a few times a second), and says when
-// they've fallen. The host decides how many the face is set for, who's climbing (everyone by the
-// foot when it starts, and anyone up at the crag or on a hold after; the rest, and anyone who's
+// they've fallen. The host decides how many the face is set for, who's climbing (everyone who
+// entered, lineup.ts, all taken up together at GO, and anyone up at the crag or on a hold after; the rest, and anyone who's
 // gone back down, are bystanders and don't hold up the win), who's knocked out, carried, back on
 // their feet or out, how many lives the team has left ("lv"), when the team has reached a ledge,
 // when everyone's down or the lives are gone and it starts again, and when it's won.
@@ -47,6 +47,7 @@ import { openGround } from "./oddments";
 import type { Player } from "./player";
 import { hearts, missionEnd, missionStage } from "./missionscreens";
 import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
+import { ring } from "./lineup";
 
 const COLOUR = "#d9783a";
 const WIDTH = 12;          // metres across the face on the map
@@ -73,7 +74,6 @@ const livesFor = (n: number) => 3 + Math.floor((Math.max(1, n) - 1) / 2);
 const DOWN_SECS = 90;      // to carry a knocked-out mate back up before they're out
 const WIN_HOLD = 2.5;      // seconds everyone has to stand at the top together
 const SEND = 0.12;
-const JOIN = 40;           // metres from the foot that anyone goes up to the crag when it starts
 const UP = 7;              // metres from the foot on the map to go up to the crag with E
 
 /** The face, in scene coordinates: its foot's middle, out (the way it faces) and along (right, facing it). */
@@ -314,9 +314,11 @@ registerChallenge({
     return spots;
   },
   waiting({ spots, w }) { const f = faceFor(spots, w.map); return f ? waitingFace(w, f) : null; },
-  start({ offer, spots, w }) {
+  // in front of the face, looking up at it; at GO up to the crag
+  lineup: { spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4, spots[1] ?? spots[0]) },
+  start({ offer, spots, w, cast }) {
     const f = faceFor(spots, w.map)!;
-    return climb(offer, w, f);
+    return climb(offer, w, f, cast);
   },
 });
 
@@ -340,7 +342,7 @@ function waitingFace(w: QuestWorld, f: Face): Waiting {
   };
 }
 
-function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
+function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job {
   const seed = offer.seed, map = w.map;
   // where it's left when it's won, and where you come back down to: in front of the face on the map, by the mats
   const [ex, ez] = onFace(f, 0, DEPTH + 4);
@@ -350,7 +352,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const rock = (s: number, y: number) => rockOut(s, y - room.y0);
   const inRoom = (x: number, y: number, z: number) => y > room.y0 - 60 && Math.abs(x - room.ox) < 40 && Math.abs(z - room.oz) < 40;
   const meIn = () => { const me = w.me(); return inRoom(me.x, me.y, me.z); };
-  let route: Route = routeFor(room, seed, Math.max(1, w.players().length));
+  let route: Route = routeFor(room, seed, Math.max(1, cast.length));
   let fixed = false;               // the host has said how many it's set for
   const S = () => route.ledges.length - 1;
   /** How far out a ledge's lip is at s, where hands go over it; and where you stand once you're up. */
@@ -867,10 +869,10 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     },
     host(dt) {
       if (job.done) return;
-      if (!fixed) { hostSay({ k: "n", n: Math.max(1, w.players().length) }); }
+      if (!fixed) { hostSay({ k: "n", n: Math.max(1, cast.length) }); }
       if (!enrolled) {
         enrolled = true;
-        hostSay({ k: "cl", ids: w.players().filter((p) => Math.hypot(p.x - ex, p.z - ez) < JOIN || inRoom(p.x, p.y, p.z)).map((p) => p.id) });
+        hostSay({ k: "cl", ids: w.players().filter((p) => cast.includes(p.id) || inRoom(p.x, p.y, p.z)).map((p) => p.id) });
       }
       const now = performance.now();
       const ids = new Set(w.players().map((p) => p.id));
@@ -1223,10 +1225,9 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     hurt.style.width = `${(1 - cap) * 100}%`;
   }
 
-  // everyone by the foot when it's taken on goes up together
+  // everyone who entered goes up together
   hook();
-  const me = w.me();
-  if (me.alive && Math.hypot(me.x - ex, me.z - ez) < JOIN) toFoot();
+  if (w.me().alive && cast.includes(w.selfId)) toFoot();
   // for tools/climb_team_probe.mjs
   Object.assign(job, { probe: { face: { ...room, base: room.y0, crag: true }, entry: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], lives: () => lives, spare: () => { lives = most = 99; }, ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local, rock } });
   return job;

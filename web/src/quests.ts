@@ -8,10 +8,12 @@
 // day's number (daylight.ts) and the map, so everyone everywhere sees the same noticeboards
 // without anything going over the network. Taking a job takes it on for the whole room, as a
 // team: whoever takes it sends the job's poster round, and everyone builds the same job from its
-// seed. One job runs at a time; if two people take different jobs at once, the first one taken
-// wins. Taking a job, its steps (a clue found, someone over the line) and calling it off (from the
-// pause menu) all go round as "qe". The host tells anyone who joins what job is on and how far
-// it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
+// seed. Every one starts the same way (lineup.ts): its entries open for everyone in the game,
+// then whoever entered is put in its game area for a title card and a countdown, and at GO the job
+// itself starts, knowing who's in. One job runs at a time; if two people take different jobs at
+// once, the first one taken wins. Taking a job, entering it, its line-up, its steps (a clue found,
+// someone over the line) and calling it off (from the pause menu) all go round as "qe". The host
+// tells anyone who joins what job is on, who's in and how far it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
 // the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
 // The job control (J, a hold of the pad's touchpad, Poster on a touch screen) brings back the
