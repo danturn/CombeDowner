@@ -3,10 +3,11 @@
 // coming on after dark.
 //
 // The time of day comes from the clock (the time since 1970, which every computer and phone
-// already agrees on to within a second or two), so everyone in a room, and everyone anywhere, sees
-// the same sky at the same moment, host or not. The one thing that goes over the network is how
-// far a game's clock has been moved on (T in the debug panel, F3): the host decides that, and
-// tells everyone in the game every couple of seconds (game.ts, "clk"), so it moves for all of them.
+// already agrees on to within a second or two), moved on so that the page opens, and each new game
+// starts, at seven in the morning with the sun just up (dawnSkip). The one thing that goes over the
+// network is how far a game's clock has been moved on: the host picks it when their game starts,
+// moves it on from the debug panel (T, F3) or a train journey, and tells everyone in the game every
+// couple of seconds and as they join (game.ts, "clk"), so everyone in a room sees the same sky.
 //
 // For testing: ?time=21:30 in the address stops your clock at that time, ?daylen=4 makes a day last
 // four minutes, the debug panel (F3) moves the game's clock on three hours or a day (round the week and
@@ -97,6 +98,15 @@ export function nightOut(): boolean {
 export function clockKind(): string {
   return FIXED !== null ? "stopped by ?time" : skip ? `shared, moved on ${skip} h for everyone in this game` : "shared";
 }
+
+/** Hours to move the shared clock on so that it reads seven in the morning now: where a fresh
+ *  page and a new game start. ?time keeps its own hour. */
+export function dawnSkip(): number {
+  if (FIXED !== null) return 0;
+  const now = Date.now() / 1000 / DAY + PHASE;
+  return ((((7 / 24 - now) % 1) + 1) % 1) * 24;
+}
+setSkip(dawnSkip());
 
 /** Hours this game's clock is moved on, and setting it (the host's word, game.ts). */
 export function getSkip() { return skip; }
