@@ -50,8 +50,8 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 # OpenStreetMap (businesses; streets' widths; bridges' kinds; the railway's kinds and level crossings), the food hygiene ratings, the Land Registry
 # parcels, the listed railings and walls, the census's output areas, the conservation areas and the
-# surveyed roofs' heights (tools/cct.py), kept whole
-OTHER = ["osm", "osm-roads", "osm-bridges", "osm-detail", "osm-rail", "fsa", "parcels", "listed", "census", "conservation", "heights"]
+# surveyed roofs' heights (tools/cct.py) and the footprints the buildings layer lacks (tools/footprints.py), kept whole
+OTHER = ["osm", "osm-roads", "osm-bridges", "osm-detail", "osm-rail", "fsa", "parcels", "listed", "census", "conservation", "heights", "footprints"]
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",

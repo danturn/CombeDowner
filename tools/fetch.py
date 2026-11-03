@@ -3,7 +3,7 @@ sources, into the raw dir the builds read: the start of rebuilding the repositor
 map data from scratch (tools/mapdata.py). For an ordinary rebuild none of this is needed:
 tools/mapdata.py unpack gives the same data from the repository.
 
-Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,city]
+Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,city,footprints]
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
@@ -22,7 +22,10 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
   what the houses are where the map data doesn't (buildings.priors). Both are open APIs;
 - city (a map inside the City of Cape Town): the City's 2 m contours, measured roof heights and
   tree crowns (tools/cct.py), turned into the heights layer and the crowns beside the canopy map.
-  The contours' ground goes into the terrain tiles once a build has fetched them (cct.py ground).
+  The contours' ground goes into the terrain tiles once a build has fetched them (cct.py ground);
+- footprints: the buildings the buildings layer leaves out, from the sources the map lists
+  (tools/footprints.py; Google's need duckdb), after the city's heights. A map listing none gets
+  an empty layer.
 The HM Land Registry parcels (INSPIRE Index Polygons) have to be fetched by hand, one zip per local
 authority: `tools/parcels.py` converts the download to `parcels.geojson` in the wide dir (see
 docs/new-area.md). They are optional: without them the partition build divides blocks by rule.
@@ -214,6 +217,10 @@ def main():
         cct.crowns(A, raw)
         print("city: once a build has fetched the terrain tiles, lay the contours' ground over them: "
               f"python3 -I tools/cct.py {map_id} ground {raw}")
+    if want("footprints"):
+        if "google" in getattr(A, "footprints", ()):
+            subprocess.run([sys.executable, os.path.join(TOOLS, "footprints.py"), map_id, "fetch", raw], check=True)
+        subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "footprints.py"), map_id, "merge", raw], check=True)
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
         print(f"epc: download the energy certificates and OS Open UPRN by hand into {os.path.join(raw, 'epc')} (see docs/new-area.md)")
 

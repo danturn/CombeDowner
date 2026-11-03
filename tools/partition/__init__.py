@@ -102,7 +102,7 @@ def _layer(src):
 # layers a map can be without: parcels are England and Wales's, listed buildings England's, and a
 # new map may have no OpenStreetMap detail or bridges fetched. Without them the plots follow the
 # blocks and the evidence alone, and a bridge's kind goes by what it carries and crosses
-OPTIONAL = ("parcels", "listed", "osm-detail", "osm-bridges")
+OPTIONAL = ("parcels", "listed", "osm-detail", "osm-bridges", "footprints")
 
 
 def load_layer(raw, name, bbox):
@@ -114,6 +114,10 @@ def load_layer(raw, name, bbox):
             return []
         path = xz
     feats, envelopes = _layer(path)
+    if name == "building":
+        more = load_layer(raw, "footprints", bbox)
+    else:
+        more = []
     lon0, lat0 = bbox[0] / KX + LON0 - LONLAT_PAD, bbox[1] / KY + LAT0 - LONLAT_PAD
     lon1, lat1 = bbox[2] / KX + LON0 + LONLAT_PAD, bbox[3] / KY + LAT0 + LONLAT_PAD
     out = []
@@ -132,7 +136,7 @@ def load_layer(raw, name, bbox):
         if g.is_empty or not g.intersects(B):
             continue
         out.append((g, copy.deepcopy(f["properties"])))
-    return out
+    return out + more
 
 
 class Terrain:

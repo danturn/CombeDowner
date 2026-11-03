@@ -235,6 +235,23 @@ python3 -I tools/cct.py $MAP ground                            # the contours' g
 
 then measure and pack as usual (the crowns go into the canopy kept in `measured/`).
 
+### Buildings OpenStreetMap hasn't mapped (where it's thin)
+
+Every map packs a footprints layer beside the buildings (`footprints.geojson`): the buildings
+Overture's layer leaves out, which the build takes as buildings like any other. Which sources feed
+it is the map's own `footprints` setting in `tools/area.py`, best first, each footprint kept only
+where nothing better overlaps it: `"survey"` (the heights layer's outlines, such as the City of
+Cape Town's) and `"google"` (Google Open Buildings v3, for the map's `country`, at confidence
+0.75 or more; it covers Africa, South and South East Asia and Latin America). A map listing none,
+as the British maps do, gets an empty layer and builds as it would without one. Buildings from it
+carry nothing but their outline, so their height and kind are the area's guesses (`buildings.py`)
+unless the heights layer covers them.
+
+```sh
+python3 tools/footprints.py $MAP fetch                         # Google's, if listed (needs pip3 install duckdb)
+python3 -I tools/footprints.py $MAP merge                      # after the heights layer
+```
+
 ### OpenStreetMap businesses (recommended)
 
 ```sh

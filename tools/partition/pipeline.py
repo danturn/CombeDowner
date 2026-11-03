@@ -129,7 +129,8 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     R = Run(raw, once, city, store, jobs, log)
     os.makedirs(once, exist_ok=True)
     os.makedirs(city, exist_ok=True)
-    whole = lambda layer: cache.file_digest(layer_file(raw, layer))
+    whole = lambda layer: cache.file_digest(layer_file(raw, layer)) if layer != "building" else \
+        cache.sha(cache.file_digest(layer_file(raw, layer)) + cache.file_digest(cache.footprints_file(raw)))
     t0 = time.time()
 
     # ---- pass 1: the graph, each square's corridors, the bridges and road heights ----
