@@ -38,7 +38,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wide, and a steel girder on stone abutments only where no arch would clear the road or the river
   under it. A short bridge is all one or the other, and no pier stands in the way. You can walk the
   whole line without falling through it: along its viaducts, up its grassy embankments, and on to
-  the platforms, which are walled down to the ground under a station on a viaduct. Where the map
+  the platforms, which stand on a row of dark arches under a station on a viaduct, with the
+  canopies the map data has over them on posts (not as blocks standing up from the street below).
+  The stonework is textured in the area's own material: Bath stone in Bath, London stock brick in
+  Hackney. Tracks running side by side over a viaduct share one deck at one height, on piers in
+  line with each other's, and a line that passes under another has the headroom for a train.
+  A railway tunnel's mouth is one stone face for the tracks going in side by side, under one arch
+  or an arch each, and stands only as high as the hill it's cut into lets it; its bore is lined
+  in stone, the track running in, until it fades to dark a few metres in. Walls the map draws
+  across the cutting stop at the line, and no building, parked car, bench or path stands on a
+  running line or inside a tunnel's mouth. A siding or a line the data ends stops at red buffers.
+  Where the map
   data has a level crossing (the footpath over the main line at Ferry Lane, Bathampton, or Bridge
   Street at Greenland Mills in Bradford-on-Avon), the way crosses the line at grade on a deck between
   the rails, with red lights on posts either side; everywhere else a path stops at the line. A
@@ -46,7 +56,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down only at its weirs and dams, where the water falls over a stone crest into the water below
   (Twerton, Kelston, Saltford, Warleigh and Avoncliff weirs, and the dam below Prior Park's top
   lake), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
-  ground round it, as the filter beds do at the sewage works. A road the map
+  ground round it, as the filter beds do at the sewage works. You can wade into the water and walk
+  along its bed: where it's deeper than you are tall (out in the sea off Cape Town's quays), the
+  water closes over your head, murky green, with its surface above you. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern
@@ -61,6 +73,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   carriageway, its slip roads and the roundabout they meet have grass verges, not pavements, so
   each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
   wall rather than in one slope of road.
+  Open country is the ground the map data says it is, not lawn: bare grey rock with boulders, heath
+  and scrub grown as low rounded shrubs, many in flower (drifts of heather purple and pink, and
+  fynbos yellow, pink and white), sand on the beaches and rushes in a marsh, from the map down to the
+  minimap and the mountains on the skyline. South of the equator (Cape Town) the sun crosses the
+  northern sky, so slopes facing north are the sunny ones. A whole day goes by every 24 minutes,
+  and the game always opens, and every new game starts, at seven in the morning with the sun just
+  up; everyone in a game sees the same time.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions; bus shelters only at the stops that have one, and the
@@ -168,7 +187,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
-  one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car,
+  one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60; C goes round the chase camera, the driver's seat and a racing game's bonnet camera; at speed the tyres grip and let go like a driving game's: Space at speed with some lock on swings the back end out into a slide, the throttle holds it in a rear-drive car, hold it too long and it spins, and steering the other way catches it, with a wag of the tail as it grips again; a bus or a coach just leans on its tyres and turns, and at a crawl Space and the lock still do donuts), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car (in through a passage in the engine house at the back of each station, up steps where the platform stands above the ground),
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field takes in
   the town and the fields round it, down Trowbridge Road past the canal bridge at Widbrook to the marina; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
@@ -321,8 +340,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   his brake, says nothing for a moment, then "I'm afraid that's a fail"). He watches your signals at
   every turn (← and →, or the arrow buttons), your speed against each street's real limit (the one on
   the sign by the speedo), whether you stop at the
-  end of a road, the kerb, which side of the road you're on and whether you look round (the mouse or
-  the stick) before you move off and before you turn. Hit anything and that's that. The same minor
+  end of a road, the kerb and which side of the road you're on, and reminds you about your mirrors
+  if you don't look round (the mouse or the stick), though he doesn't mark you down for it. Hit anything and that's that. The same minor
   fault four times over is a serious one. He'll ask you to pull up on the left on the way round and
   back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
   the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
@@ -427,10 +446,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   hold (a tap uses when there's a prompt), Circle crouches on a tap and lies down on a hold,
   Triangle switches weapon, L1 and R1 go back and forward through them. In a car R2 and L2 are the
   pedals, the left stick steers, Triangle gets out and R1 is the horn. Options pauses, and on the menus the
-  d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
-  dead zone and rumble once one's connected, and you can move any button to another in Settings,
+  d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert
+  (up and down, and left and right), dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
   [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
+- **Arriving somewhere new**: when you start a game, come back to life, go to a pub (or anywhere
+  else across the map) or step off the train in another town, the street's name sign covers the
+  view until the streets round you are built, so you don't watch them go up. It lifts as soon as
+  they are, after half a second at the least and 9 seconds at the most, so a slow phone isn't kept
+  waiting. While it's up you can't move or shoot, and nothing can hurt you. A jump to somewhere
+  that's already built isn't covered at all.
 - **If the map won't come in**: after half a minute with nothing new, a note at the top says how
   many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
   square that fails to load is tried again a little later, and Play never waits on it. Phones and
@@ -483,7 +508,9 @@ phone, tablet or computer and the model of its graphics chip, the map, the game'
 race, ball or the mines start and stop, and at the end how smoothly the game ran (frame rate and how
 much it drew each frame). Every half minute it notes which 50 m square of the map you are in, without your name. Your
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
-many are in it. It never sends chat, voice or your address. Add `?telemetry=0` to the address to
+many are in it. Once per version of each map, a computer also sends the game's own picture of the whole map
+(nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
+never sends chat, voice or your address. Add `?telemetry=0` to the address to
 turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
 nothing at all.
 
@@ -493,6 +520,17 @@ Bath is one map, built in full-detail squares about a kilometre across (`tools/p
 The game loads a small file about the map as a whole (`web/public/maps/combe-down.json`), streams
 in the squares round the player, and lays a lighter whole-city file underneath for the minimap and
 anywhere a square isn't loaded yet.
+
+The map tools write JSON, and that stays in the repository as the map's copy, but the game
+downloads the squares, the whole-city file and the ground kinds packed (`web/src/pack.ts`): the
+same numbers to the last decimal, as whole numbers in small binary streams, gzipped.
+`npm run build` and `npm run dev` pack them (`tools/pack_squares.mjs`, only what has changed since
+last time), check every pack reads back exactly as its JSON, and stop if one doesn't; the site
+carries only the packs. Two more checks load the map both ways through the game's own code and
+compare what it does: `node tools/pack_behave.mjs --map $MAP` (ground, floors, walls and rays on a
+grid over every square) and `node tools/pack_scene.mjs --map $MAP` (every model built for every
+square). `node tools/pack_squares.mjs --export <dir>` writes the packs back out as JSON, for
+running the map tools on exactly what the game gets.
 
 Everything the map is built from is kept in `data/combe-down/` (`tools/mapdata.py`), so it rebuilds
 from a fresh clone with nothing to download, byte for byte the same map everyone else gets. It
@@ -506,24 +544,30 @@ python3 -I tools/mapdata.py unpack $MAP        # the repository's copy -> data/r
 # (the canal moors its boats where data/$MAP/moorings.json says: tools/moorings.py finds them in the lidar)
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
-python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 python3 -I tools/ground_kinds.py $MAP
 ```
 
 `prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
-ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
-street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
-city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
-an edge between two of them. Each garden has one style of front and the gardens round a block one
+ground of the whole map out as one partition (`tools/partition/stage.py`), for every map, not just
+Bath: every bit of ground is a street, a pavement, a garden plot, a path or open land, the streets
+are fitted once across the whole city, the plots follow the Land Registry's parcels where the map
+has them (England and Wales) and the blocks and the houses' fronts everywhere else, and every wall,
+fence, hedge and gate stands on an edge between two of them. A map without the lidar's wall runs
+(outside England) has only its mapped walls and the guessed boundaries; one without the kept lidar
+(`partition.zip`, below) keeps every guess whether or not anything is seen standing there.
+`--no-partition` builds `prep_map.py`'s squares straight into the game's folder instead, as every
+map was built before, to compare the two. Each garden has one style of front and the gardens round a block one
 of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
 Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
 railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
 streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
-What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
+What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip` (Bath's
+only, so far).
 The churches' towers and spires are measured from the lidar by `tools/towers.py` and kept in
 `data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh.
 
@@ -570,7 +614,20 @@ without them (a row keeps its old roofs where the new ones don't fit the survey 
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
-walls or too tall, faces lying over each other and buildings standing in each other.
+walls or too tall, faces lying over each other and buildings standing in each other. Every roof is
+solid where it's drawn: you stand on the strips closing the slits between its faces, walk into its
+steps rather than through them, land on it however fast you fall, and stand on a building that
+reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run
+without a browser) drops a player on every point of a sample of roofs in each square to check.
+
+In England and Wales the 2021 Census says how many homes in each street are flats, terraced,
+semi-detached or detached, and the build follows it wherever the map data doesn't say, so a street
+of flats or of semis looks like one. A conservation area that no character area covers is the
+town's old core: its houses are built of what the old buildings round them are made of (Bath stone
+in Bath, stock brick in Hackney), each a shade of its own, with a painted front where the houses
+round it are painted, and its tall terraces get parapets, tall sash windows and railings. London
+stock brick has a look of its own: yellow to grey-brown bricks in pale mortar, sooty, with red
+brick arches over the windows and red bands at the floors.
 
 Each map's centre, size and character areas are in `tools/area.py`. To make a map of somewhere
 new, follow [docs/new-area.md](docs/new-area.md): every download (lidar and canopy included),
@@ -585,27 +642,38 @@ brick from the map data: stock-brick terraces with bay windows, red-brick counci
 tower blocks, and Georgian terraces with parapets and railings round Clapton Square and Sutton
 Place. Its data is kept in `data/pembury/` (rebuild it as Bath's, with `mapdata.py unpack pembury`).
 
-Cape Town has its own page too, `cape-town.html`: the first map outside the UK, built from worldwide
-data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
-counts and the area's character). It runs from the V&A Waterfront through the city centre, the
+Cape Town has its own page too, `cape-town.html`: the first map outside the UK. It stands on the
+City of Cape Town's own survey of its ground (the 2 m contours from its 2019 lidar), its buildings
+are as tall as the City measured their roofs, and its trees grow where the City outlined their
+crowns (`tools/cct.py`, which any map inside the City picks up). Where OpenStreetMap hasn't mapped
+the houses yet, as through much of Newlands and the southern suburbs, they come from the City's own
+footprints and then Google's machine-learned ones (`tools/footprints.py`); with no energy certificates, what
+the buildings are made of is guessed from the area's character. It runs from the V&A Waterfront through the city centre, the
 painted houses of the Bo-Kaap and Gardens to the top of Table Mountain, which you can see from
-anywhere on the map, and you can ride the cableway up it. Hand-made set pieces stand in for the
+anywhere on the map, and you can ride the cableway up it. Round the back of Devil's Peak it goes on
+through Woodstock, Salt River, Observatory and Mowbray, past UCT and Rosebank to Newlands, its
+forest and the rugby stadium, and the top of Kirstenbosch. Hand-made set pieces stand in for the
 Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, the Clock Tower, the Cape
 Wheel and Zeitz MOCAA. Its houses stand behind high plastered walls and steel palisades, with
 masonry walls between the plots, as Cape Town's do. Table Bay and the harbour are sea, held at sea level (`sea` in
-`tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm` (or `mapdata.py unpack`),
+`tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm,city,footprints` (or `mapdata.py unpack`),
 then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 
 ## Play your own street
 
-Any place can be a map. `python3 -I tools/new_area.py add "Your Town" --radius 1500` finds it and
-puts it on the menu, and `python3 -I tools/new_area.py build your-town` downloads the open map data
-and builds it, which takes a quarter of an hour or so on a laptop. Then `cd web && npm run dev` and
-open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
+Any place can be a map. `python3 -I tools/new_area.py find "Your Town"` finds it,
+`python3 -I tools/new_area.py add "Your Town" --lat N --lon N --radius 1500` adds it as a test map
+(`--in-menu` puts it on the menu too), and `python3 -I tools/new_area.py build your-town` downloads
+the open map data and builds it, which takes a quarter of an hour or so on a laptop; `verify` and
+`shoot` check it. Then `cd web && npm run dev` and open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
 elsewhere they are guessed from the open map data's heights and floor counts. Wherever the data
 has them, buildings take OpenStreetMap's floor counts, roof shapes, wall materials and colours, a
 house with no energy certificate is built of what its neighbours' certificates say, and mapped
-street lamps stand where they really are. [docs/own-area.md](docs/own-area.md) says what you will need installed
+street lamps stand where they really are. Away from the lidar the terrain is a coarse survey from
+space, with buildings and trees in it, so the streets are graded as roads are built: the whole
+network at once, every junction at one height, no street steeper than its kind of road may be
+where the hill allows, and the ground cut and banked to them. On the lidar the streets stay where
+it measured them. [docs/own-area.md](docs/own-area.md) says what you will need installed
 and what the script can't do for you. If you use Claude Code, ask it to make a map of your area and
 it follows the `new-area` skill.
 
@@ -618,8 +686,18 @@ them wherever it covers them. Tree canopy from Meta and
 World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
-Agency (Open Government Licence). Listed railings and walls contain Historic England data ©
-Historic England 2026 (Open Government Licence). The copy of the map data in `data/` is shared under the same
+Agency (Open Government Licence). Plot boundaries in England from HM Land Registry's INSPIRE Index
+Polygons: this information is subject to Crown copyright and database rights 2026 and is reproduced
+with the permission of HM Land Registry; the polygons (including the associated geometry, namely x, y
+co-ordinates) are subject to Crown copyright and database rights 2026 Ordnance Survey AC0000851063.
+Listed railings and walls contain Historic England data ©
+Historic England 2026 (Open Government Licence). House types from the 2021 Census: source, Office
+for National Statistics, licensed under the Open Government Licence v3.0. Conservation areas from
+planning.data.gov.uk: © Historic England 2026 and the local planning authorities (Open Government
+Licence). Both contain OS data © Crown copyright and database right 2026. Cape Town's ground
+contours, building heights, building footprints and tree canopy: City of Cape Town (its Open Data
+Policy). Cape Town's other buildings OpenStreetMap lacks: Google Open Buildings (CC BY 4.0 or ODbL),
+by way of VIDA's combined copy (ODbL). The copy of the map data in `data/` is shared under the same
 terms (see `data/combe-down/README.md`, which also says where each part comes from).
 
 Multiplayer runs over WebRTC with [Trystero](https://github.com/dmotz/trystero).

@@ -10,6 +10,7 @@
 // Data coordinates are metres east (x) and north (y) of the detailed map's centre, as there.
 // Lengths in the file are whole decimetres, and each point of a line or ring after the first is
 // given relative to the one before.
+import { fetchPacked, packedName } from "./pack";
 import type { Building, Line, Place, Pond, RayHit, Road } from "./map";
 
 /**
@@ -311,7 +312,6 @@ function push(m: Map<number, number[]>, k: number, v: number) { const a = m.get(
 
 export async function loadWide(url: string): Promise<Wide | null> {
   // a map without a wider circle: no file (some servers send a page instead)
-  const res = await fetch(url).catch(() => null);
-  const data = res?.ok ? await res.json().catch(() => null) : null;
+  const data = await fetchPacked(packedName(url)).catch(() => null);
   return data?.t ? new Wide(data) : null;
 }

@@ -18,7 +18,7 @@
 // ever shrinks by itself: stuck, you can ask a local, three hints a tin (one for the chest), the
 // first 45 seconds into a clue and then 20 seconds apart. The first E says what the hint gives and
 // what it costs, and only a second E pays: a circle goes on the maps, off-centre, then smaller each
-// time, and always with the tin (or the chest, or a plaque's true tin) well inside it. A hint there's
+// time, and always with the tin (or the chest, or a plaque's true tin, or a look leg's house as well as its tin) well inside it. A hint there's
 // nothing left to give for is never taken. Each tin is placed only once all of Bath round it is
 // loaded, so it lands in the same spot on every screen, never in a building, a garden behind a wall
 // or the water. The tin only shows within a few metres' walk and rattles when you're close. On
@@ -1309,7 +1309,11 @@ class Trail implements Job {
    */
   private ringOf(n: number, h: number, k = this.ringStep(n)) {
     if (k < 0) return null;
-    const known = this.targetOf(n, h), at = known ?? this.aim(n, h), spread = known ? 0 : this.reach(n, h);
+    const known = this.targetOf(n, h), house = this.t.legs[n].step === "look" ? this.houses.get(n) : null;
+    // a look leg's tin can have been moved out to the street: the circle holds its door as well,
+    // since the door is what you're looking for
+    const both = known && house ? { x: (known.x + house.x) / 2, z: (known.z + house.z) / 2 } : null;
+    const at = both ?? known ?? this.aim(n, h), spread = both ? Math.hypot(known!.x - house!.x, known!.z - house!.z) / 2 : known ? 0 : this.reach(n, h);
     const R = Math.max(this.radius(n, k), spread + RING_MARGIN), hi = Math.min(0.7 * R, R - spread - RING_MARGIN), lo = Math.min(0.3 * R, hi);
     const r = rng(hash("ring", this.offer.seed, n, h, k)), a = r() * Math.PI * 2, f = lo + r() * (hi - lo);
     return { x: at.x + Math.cos(a) * f, z: at.z + Math.sin(a) * f, r: R, k, known: !!known };
@@ -1473,7 +1477,8 @@ class Trail implements Job {
     if (n !== this.mine) return;
     const k = this.ringStep(n), of = this.hintsOn(n), R = this.ringOf(n, 0)?.r ?? this.radius(n, k), last = n === this.t.legs.length - 1;
     const who = from === this.w.selfId ? `${pickOf(rng(hash("local", this.offer.seed, n, k)), LOCALS)} ` : `${esc(this.w.nameOf(from))} asked a local. `;
-    const thing = last ? "The chest is" : this.halvesOf(n).length > 1 ? "Both tins are" : "The tin is";
+    const house = this.t.legs[n].step === "look" ? this.houses.get(n) : null;
+    const thing = last ? "The chest is" : this.halvesOf(n).length > 1 ? "Both tins are" : house ? `${house.name[0].toUpperCase()}${esc(house.name.slice(1))}, and its tin, are` : "The tin is";
     callout(k === 0 ? "A search circle's on your map" : "The search area is shrinking!", `${who}Hint ${k + 1} of ${of}: ${thing} somewhere in a circle ${across(R)} across.`);
     SFX.searchShrink();
     for (const h of this.halvesOf(n)) this.showRing(n, h);

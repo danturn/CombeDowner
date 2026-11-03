@@ -27,11 +27,11 @@ case by case:
     a boat over the water, and the ground under the span is dug below the water; a path on its
     towpath is level with the coping (tools/canal.py's banks, web/src/works.ts); and nothing runs
     through one of its tunnels below the arch (a street over one is on its cover).
- 8. The corridors are clear: no tree, shrub, street item (parked cars aside) or wall stands in a
+ 8. The corridors are clear: no tree, shrub, boulder, street item (parked cars aside) or wall stands in a
     road's carriageway, on the railway, in the water or in the canal's channel.
  9. Things on the ground fit together: every gate has a wall or fence at both sides; no two walls,
     fences or hedges run on top of each other; a front path goes through a garden boundary only at
-    a gate; no tree, shrub or street item stands on a wall or inside a building; no building
+    a gate; no tree, shrub, boulder or street item stands on a wall or inside a building; no building
     stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
     pavement); and where the road and the paving meet, neither pokes a point or a sliver into the
     other (check_more.slivers).
@@ -42,7 +42,8 @@ case by case:
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
-    tunnel mouths, pubs and wires, boats, the railway's holes, and what is drawn over the streets.
+    tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, and
+    whether roofs are solid to stand on.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
@@ -50,6 +51,7 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_more   # rules 12 on (tools/check_more.py)
+from railway import open_runs
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -330,8 +332,10 @@ def main():
         corr = [l.buffer((r.get("w") or RW.get(r["c"], 4)) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
         b = m["b"]
         for pts in rail_pts:
-            run = [q[:2] for q in pts if q[3] != 2 and b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
-            if len(run) > 1: corr.append(LineString(run).buffer(4.5, cap_style=2))
+            # (each stretch out in the open on its own: over a tunnel is the hill, not the line)
+            for whole in open_runs(pts):
+                run = [q for q in whole if b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
+                if len(run) > 1: corr.append(LineString(run).buffer(4.5, cap_style=2))
         if canal:
             for run in canal["runs"]:
                 pts = [q for q in run["p"] if b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
@@ -350,6 +354,9 @@ def main():
         sb = m.get("sb") or []
         for q, s in zip(sb, standing([q[:2] for q in sb])):
             if s: note("8 shrub in a corridor", 1, (tag, round(q[0]), round(q[1])), "shrub")
+        rk = m.get("rk") or []
+        for q, s in zip(rk, standing([q[:2] for q in rk])):
+            if s: note("8 boulder in a corridor", 1, (tag, round(q[0]), round(q[1])), "boulder")
         fx = [q for q in m.get("fx") or [] if q[0] != "car"]
         for q, s in zip(fx, standing([q[1:3] for q in fx])):
             if s: note("8 street item in a corridor", 1, (tag, round(q[1]), round(q[2])), str(q[0]))
@@ -365,9 +372,11 @@ def main():
         return found
 
     check_more.watertight(root, map_id)      # (once, here, so every worker shares it)
+    check_more.trackclear(root, map_id)
     if "--tiles" in args:
         check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
     check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])
+    check_more.roofs_solid(root, map_id, check_more.OVERROAD_ONLY[0])
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check
@@ -611,7 +620,7 @@ def fit_together(m, tag, note, f=None):
                 if not any(gate_pts[int(j)].distance(h) < 1.0 for j in gtree.query(h.buffer(1.0))):
                     note("9 front path through a wall", 1, (tag, round(h.x if h.geom_type == "Point" else q[0]), round(h.y if h.geom_type == "Point" else q[1])), bars[int(k)]["c"])
     # trees, shrubs and street items on a wall or indoors
-    for kind, items, xy in (("tree", m["tr"], lambda q: q[:2]), ("shrub", m.get("sb") or [], lambda q: q[:2]),
+    for kind, items, xy in (("tree", m["tr"], lambda q: q[:2]), ("shrub", m.get("sb") or [], lambda q: q[:2]), ("boulder", m.get("rk") or [], lambda q: q[:2]),
                             ("street item", [q for q in m.get("fx") or [] if q[0] != "car"], lambda q: q[1:3])):
         pts = shapely.points(np.asarray([xy(q) for q in items], float).reshape(-1, 2))
         inside = set(indoors.query(pts, predicate="within")[0].tolist()) if len(items) else set()
@@ -650,7 +659,7 @@ def fit_together(m, tag, note, f=None):
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.3) for q in m.get("dv") or []])
     if ways:
         wtree = shapely.STRtree(ways)
-        for kind, items in (("tree", m["tr"]), ("shrub", m.get("sb") or [])):
+        for kind, items in (("tree", m["tr"]), ("shrub", m.get("sb") or []), ("boulder", m.get("rk") or [])):
             if not items: continue
             pts = shapely.points(np.asarray([q[:2] for q in items], float).reshape(-1, 2))
             for n in sorted(set(wtree.query(pts, predicate="within")[0].tolist())):
@@ -713,7 +722,8 @@ SEAM = 0.25    # map.ts roofSeams: the widest slit the game closes between two e
 def roof_seams(b):
     """map.ts roofSeams, in step with it: the strips the game draws to close a lidar roof's open
     edges, and how much of each open edge they leave open. Returns (strips, open edges), each open
-    edge [x0, y0, x1, y1, metres left open, whether it is a wall top]."""
+    edge [x0, y0, x1, y1, metres left open, whether it is a wall top]. Each strip's last item says
+    whether the game draws it (a slit under 5 cm it leaves shut as it is)."""
     m = b["rm"]
     v, t = m["v"], m["t"]
     n = len(v) // 3
@@ -750,8 +760,8 @@ def roof_seams(b):
             if w0 > SEAM or w1 > SEAM: continue
             cover[i].append((lo, hi))
             cover[j].append(tuple(sorted(((lo - sc) / (sd - sc) * M, (hi - sc) / (sd - sc) * M))))
-            if max(abs(g0), abs(g1), w0, w1) < 0.05: continue
-            strips.append((e0, e1, f1, f0))
+            # (the game leaves a slit this fine as it is, shut: it is still roof, not bare footprint)
+            strips.append((e0, e1, f1, f0, max(abs(g0), abs(g1), w0, w1) >= 0.05))
     opened = []
     for (ax, ay, az, bx, by, bz, wall), cv in zip(edges, cover):
         L = math.hypot(bx - ax, by - ay)
@@ -797,7 +807,7 @@ def roofs_whole(m, tag, note):
         past = U.difference(P.buffer(0.3)).area
         if past > 1: note("11 roof reaching past its walls", past, at, f"{past:.1f} m2")
         strips, opened = roof_seams(b)
-        pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q])).buffer(0.01) for q in strips]
+        pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q[:4]])).buffer(0.01) for q in strips]
         try: shut = shapely.union_all(pieces)
         except shapely.errors.GEOSException: shut = shapely.union_all(pieces, grid_size=0.01)
         bare = P.difference(shut).area

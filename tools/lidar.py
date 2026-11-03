@@ -2,7 +2,8 @@
 
 Data: the EA's 1 m LIDAR Composite DTM (bare ground), First Return DSM (ground plus buildings
 and trees) and Last Return DSM (the same, but through the leaves where the pulse got there), open
-data under the Open Government Licence. Put the GeoTIFFs for the map in <raw dir>/lidar/dtm/,
+data under the Open Government Licence; in Wales, the Welsh Government's 1 m DTM and DSM (no last
+returns), in the same grid, which tools/fetch.py puts beside them. Put the GeoTIFFs for the map in <raw dir>/lidar/dtm/,
 <raw dir>/lidar/dsm/ and <raw dir>/lidar/last/ (see README). Any number of tiles in each.
 
 For each building footprint the roof is sampled every half metre, a little inside the walls:
@@ -130,7 +131,11 @@ class Lidar:
             col = np.floor((e - t.c) / t.a).astype(int)
             row = np.floor((n - t.f) / t.e).astype(int)
             ok = (row >= 0) & (row < shape[0]) & (col >= 0) & (col < shape[1])
-            if ok.any(): out[ok] = self._heights(g)[row[ok], col[ok]]
+            if ok.any():
+                # where two surveys overlap (the EA's and Wales's at the border) a gap in one keeps the other's height
+                v = self._heights(g)[row[ok], col[ok]]
+                seen = ~np.isnan(v)
+                out[np.flatnonzero(ok)[seen]] = v[seen]
         return out
 
     def surface(self, xs, ys):

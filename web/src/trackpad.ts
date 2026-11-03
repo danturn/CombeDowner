@@ -39,7 +39,7 @@ export class Trackpad {
       this.at = over(e.target) ? { x: e.clientX, y: e.clientY } : null;
       if (!this.at) return;
       this.use();
-      if (was) this.game()?.look((e.clientX - was.x) * 1.5, (e.clientY - was.y) * 1.5);
+      if (was) this.game()?.look((e.clientX - was.x) * 1.5, (e.clientY - was.y) * 1.5, "mouse");
     });
     // the click doesn't reach the touch controls, which would take it as the start of a drag
     addEventListener("pointerdown", (e) => {
@@ -71,7 +71,7 @@ export class Trackpad {
     addEventListener("wheel", (e) => {
       if (e.ctrlKey || !live() || (!over(e.target) && !this.inUse)) return;
       this.use();
-      this.game()?.look(-e.deltaX * 1.2, -e.deltaY * 1.2);
+      this.game()?.look(-e.deltaX * 1.2, -e.deltaY * 1.2, "mouse");
     }, { passive: true });
     addEventListener("blur", () => this.stopFiring());
   }
@@ -125,6 +125,6 @@ export class Trackpad {
     const ex = edge(at.x, innerWidth), ey = edge(at.y, innerHeight);
     if (!ex && !ey) return;
     const s = dt / g.player.sensitivity;
-    g.look(ex * EDGE_TURN * s, ey * EDGE_TILT * s);
+    g.look(ex * EDGE_TURN * s, ey * EDGE_TILT * s, "mouse");
   }
 }

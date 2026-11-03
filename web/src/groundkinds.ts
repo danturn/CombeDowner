@@ -3,9 +3,12 @@
 // (tools/ground_kinds.py). The whole-city map's own ground is 12 m to the patch, which looks blocky;
 // this is drawn over it wherever there's a square, before any square has loaded. Nothing about it
 // goes over the network: every player loads the same file.
+import { fetchPacked, packedName } from "./pack";
 
-/** The minimap's colour for each kind of ground, by its digit in the maps' ground grids. */
-export const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b"];
+/** The minimap's colour for each kind of ground, by its character in the maps' ground grids ('0' up;
+ *  the wild ground's rock, heath, sand and wetland after the town's, tools/wild.py). */
+export const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b",
+  "#86847c", "#6f6d47", "#cbbd92", "#4d6346"];
 const RGB = GROUND.map((c) => parseInt(c.slice(1), 16));
 
 export class GroundKinds {
@@ -55,7 +58,11 @@ export class GroundKinds {
 
 export async function loadGroundKinds(url: string): Promise<GroundKinds | null> {
   // a map without squares has no file (some servers send a page instead)
-  const res = await fetch(url).catch(() => null);
-  const data = res?.ok ? await res.json().catch(() => null) : null;
+  const data = await fetchPacked(packedName(url)).catch(() => null);
   return data?.sq ? new GroundKinds(data) : null;
 }
+
+/** The wild ground's kinds (tools/wild.py), and which channel of the wild ground's detail each takes
+ *  (textures.ts wildDetail): rock, heath and scrub, sand. */
+export const ROCK = 8, HEATH = 9, SAND = 10, WETLAND = 11;
+export const WILD_CHANNEL: Record<number, number> = { [ROCK]: 0, [HEATH]: 1, [SAND]: 2 };

@@ -30,6 +30,16 @@
     stands on a lip more than 0.3 m over the open ground behind it. Each place's score is its area in
     m2. Only when web/dist has been built (each run reads the maps as they are now); CD_OVERROAD=0
     leaves it out.
+21. Nothing stands in a train's way (tools/trackclear.ts runs the game's own web/src/railway.ts and
+    walks every line out in the open, and into each tunnel mouth, through the space a train fills):
+    no face of the railway itself (a tunnel face without an opening big enough, a parapet, pier or
+    platform wall across a track) and none of the squares' buildings, walls, fences, hedges, gates,
+    trees or street furniture across it; and no line just stops out in the open with nothing at its end.
+22. Roofs are solid (tools/roof_probe.mjs runs the game's own map.ts and player.ts on a sample of
+    each square's buildings, CD_ROOFS_PER of them, 40 unless set): a player dropped on any point of
+    a roof as world.ts draws it, slowly or falling fast on a slow frame, stands on it at the drawn
+    height; no part of an outline is left with no roof over it; and walking across a roof never
+    takes you down into it. CD_ROOFS=0 leaves it out.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
@@ -109,6 +119,16 @@ def _set_pieces(centre):
 def watertight(root, map_id):
     """Rule 19's findings over the whole map, from tools/watertight.ts bundled with the game's code;
     none if that can't be run. Called once before the squares are checked, so it runs only once."""
+    return _railway_check("watertight.ts", root, map_id)
+
+
+def trackclear(root, map_id):
+    """Rule 21's findings over the whole map, from tools/trackclear.ts, as watertight's."""
+    return _railway_check("trackclear.ts", root, map_id)
+
+
+@functools.lru_cache(maxsize=4)
+def _railway_check(script, root, map_id):
     here = os.path.dirname(os.path.abspath(__file__))
     web = os.path.join(os.path.dirname(here), "web")
     try:
@@ -116,10 +136,25 @@ def watertight(root, map_id):
                              "--loader=ts", "--log-level=error",
                              "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"
                              "globalThis.document={createElement:()=>({getContext:()=>new Proxy({},{get:()=>()=>({})})})};"],
-                            input=open(os.path.join(here, "watertight.ts")).read(), cwd=web, capture_output=True, text=True, check=True).stdout
+                            input=open(os.path.join(here, script)).read(), cwd=web, capture_output=True, text=True, check=True).stdout
         with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
             f.write(js); f.flush()
             return json.loads(subprocess.run(["node", f.name, os.path.abspath(root), map_id], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
+
+
+@functools.lru_cache(maxsize=2)
+def roofs_solid(root, map_id, only=None):
+    """Rule 22's findings over the squares given (all if None), from tools/roof_probe.mjs; none if
+    it can't be run. Called once before the squares are checked."""
+    if os.environ.get("CD_ROOFS") == "0": return []
+    here = os.path.dirname(os.path.abspath(__file__))
+    args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
+            "--per", os.environ.get("CD_ROOFS_PER", "40")]
+    if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
+    try:
+        return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
         return []
 
@@ -147,10 +182,16 @@ def _unmask(m, pieces):
     if not near: return
     hide = lambda x, y: any(p.contains(Point(x, y)) for p in near)
     mid = lambda ring: (sum(q[0] for q in ring) / len(ring), sum(q[1] for q in ring) / len(ring))
+    gone = [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if hide(*mid(b["r"][0]))]
     m["bl"] = [b for b in m.get("bl") or [] if not hide(*mid(b["r"][0]))]
     m["wp"] = [w for w in m.get("wp") or [] if w.get("c") == "canal" or not all(hide(q[0], q[1]) for q in w["r"][0])]
-    for k in ("tr", "sb", "dr", "by", "sh"):
-        if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1])]
+    # (a hidden building's door, bay window and sign go with it: setpieces.ts GONE_REACH)
+    kept = [LineString(b["r"][0] + b["r"][0][:1]) for b in m["bl"]]
+    def on_gone(x, y):
+        g = min((r.distance(Point(x, y)) for r in gone), default=9)
+        return g < 0.6 and not any(r.distance(Point(x, y)) < g for r in kept)
+    for k in ("tr", "sb", "rk", "dr", "by", "sh"):
+        if m.get(k): m[k] = [q for q in m[k] if not hide(+q[0], +q[1]) and not (k in ("dr", "by", "sh") and on_gone(+q[0], +q[1]))]
     m["sp"] = [list(p.exterior.coords) for p in near for p in getattr(p, "geoms", [p])]
 
 
@@ -307,9 +348,9 @@ def square(m, tag, note, f):
             dz = q[2] - float(ground(ox, oy))
             if abs(dz) > 1.0: note("16 tunnel mouth off the ground", abs(dz), at(q[0], q[1]), f"{t['c']} {t['n']!r} floor {dz:+.1f} m from the ground outside")
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
-    for w in watertight(root, map_id):
+    for w in watertight(root, map_id) + trackclear(root, map_id):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
-    for w in overroad(root, map_id, OVERROAD_ONLY[0]):
+    for w in overroad(root, map_id, OVERROAD_ONLY[0]) + roofs_solid(root, map_id, OVERROAD_ONLY[0]):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
@@ -494,6 +535,7 @@ def land_and_water(m, waters, ground, note, at, sq, f):
 def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_deck, pts, hits, inner):
     fx = m.get("fx") or []
     groups = (("tree", [q[:3] for q in m.get("tr") or []], 0.6), ("shrub", [q[:3] for q in m.get("sb") or []], 0.6),
+              ("boulder", [q[:3] for q in m.get("rk") or []], 0.6),
               ("street item", [q[1:4] for q in fx if q[0] != "car"], 0.4), ("parked car", [q[1:4] for q in fx if q[0] == "car"], 0.4))
     for kind, items, tol in groups:
         if not items: continue
@@ -539,9 +581,12 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
         if q[0] != "bus" or not inner.contains(Point(q[1], q[2])): continue
         g = street_gap(q[1], q[2], btree, blines)
         if g > 6: note("15 bus stop away from the road", g, at(q[1], q[2]), f"{q[5] if len(q) > 5 else ''!r} {g:.0f} m from the kerb")
+    # (a crossing or a set of lights is on any carriageway: a busway, a motorway's slip road)
+    clines = [(ln, r) for ln, r in zip(rlines, roads) if r["c"] not in PATHS]
+    ctree = shapely.STRtree([l for l, _ in clines])
     for q in m.get("cx") or []:
         if not inner.contains(Point(q[0], q[1])): continue
-        g = street_gap(q[0], q[1], vtree, vlines)
+        g = street_gap(q[0], q[1], ctree, clines)
         if g > 1: note("15 crossing off the road", g, at(q[0], q[1]), f"{q[4]} {g:.0f} m off the carriageway")
     alls = [(ln, r) for ln, r in zip(rlines, roads)]
     for q in m.get("pb") or []:

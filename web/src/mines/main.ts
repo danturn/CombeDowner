@@ -10,6 +10,7 @@ import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
 import { GamepadControls, key, mouse, padActions, padPress, padSettings, tap } from "../gamepad";
+import { invertSettings } from "../invert";
 import { MINES, controlsPage, ctlText } from "../controls";
 import * as Telemetry from "../telemetry";
 
@@ -262,6 +263,7 @@ padActions(MINES, {
   slot1: slot(1), slot2: slot(2), slot3: slot(3), slot4: slot(4),
 }, "cd-padbuttons-mines");
 padSettings();
+invertSettings();
 
 let last = performance.now();
 let frames = 0, fpsT = 0;

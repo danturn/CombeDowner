@@ -77,7 +77,18 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     r1 = lambda v: round(float(v), 2)
     # the game draws a kerbed street's pavement 0.2 m and its carriageway 0.07 m above the ground
     # (web/src/world.ts), and stands each item at the height stored here
-    add = lambda kind, x, y, ang, *extra: items.append([kind, r1(x), r1(y), r1(gelev(x, y) + (0.07 if kind == "car" else 0.2)), r1(ang), *extra])
+    # (one standing well away from any street, in a park or out on a hill, stands on the ground itself)
+    paved_by = [(LineString([(a, b) for a, b, *_ in r["p"]]), r) for r in roads
+                if len(r["p"]) > 1 and r["c"] not in ("footway", "steps", "cycleway", "path", "track", "bridleway")]
+    ptree = shapely.STRtree([ln for ln, _ in paved_by])
+
+    def paved(x, y):
+        pt = Point(x, y)
+        for i in ptree.query(pt.buffer(25)):
+            ln, r = paved_by[int(i)]
+            if ln.distance(pt) < half(r) + max(r.get("pv", [PAVE, PAVE])) + 3.0: return True
+        return False
+    add = lambda kind, x, y, ang, *extra: items.append([kind, r1(x), r1(y), r1(gelev(x, y) + (0.07 if kind == "car" else 0.2 if paved(x, y) else 0.0)), r1(ang), *extra])
 
     # ---- mapped furniture --------------------------------------------------------
     stops = []

@@ -61,6 +61,9 @@
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 //   Someone over a race's line or out of it, waiting for the others (race.ts), says so in their position
 //   updates ("rw"), and the host lets nothing hurt them; killed out of it, they come back once it's over.
+// - Arriving somewhere new (arrive.ts: the start, a respawn, a jump across the map, another town), the
+//   view is covered until the streets there are built. That's your own screen's business, but while it's
+//   up you're held still and send the same "rw", so nothing hurts you before you can see.
 // - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so,
 //   and everyone says when they're busy on a job, so the host can hold the Flag Lads off while all are.
@@ -109,7 +112,7 @@ import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
+import { clockAt, clockLink, dawnSkip, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say, setHidden, setStyle } from "./show";
@@ -169,6 +172,8 @@ import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
 import * as Yours from "./yours";
 import * as Paper from "./paper";
+import { Arrival, type ArrivalKind } from "./arrive";
+import { inverted, type LookFrom } from "./invert";
 
 const TOWN: Record<string, string> = { "combe-down": "Bath" };
 
@@ -227,7 +232,9 @@ const KICK_WAIT = 0.15;                  // seconds after your last shot before 
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const BOAT_CHASE_KEY = "cd-boat-chase";  // whether you steer a narrowboat from the back deck or with the chase camera (C)
-const INSIDE_KEY = "cd-inside";         // whether you drive from the driver's seat or with the chase camera (C)
+const INSIDE_KEY = "cd-inside";         // how you drive (C): "0" the chase camera, "1" from the driver's seat, "2" from the bonnet
+const DRIVE_VIEWS = ["chase", "cockpit", "bonnet"] as const;
+type DriveView = (typeof DRIVE_VIEWS)[number];
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
 const TIP_MS = 4000;                      // how long the middle of the screen says what to do with what you've got, before it's only by its icon
@@ -327,7 +334,7 @@ interface StateExtra {
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
-  rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts): the host lets nothing hurt them
+  rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts), or arriving (arrive.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
   vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
   ft?: number;         // the host's switches for the zones, the strange objects and the challenges (features.ts)
@@ -416,7 +423,7 @@ export class Game {
   get atWheel() { return !!this.car || !!this.world.canal?.helmOf(this.net.selfId); }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
   private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
-  private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
+  private driveView: DriveView = (() => { try { return DRIVE_VIEWS[Number(localStorage.getItem(INSIDE_KEY))] ?? "chase"; } catch { return "chase"; } })();
   private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
   private boatChase = (() => { try { return localStorage.getItem(BOAT_CHASE_KEY) === "1"; } catch { return false; } })();   // at a tiller: the chase camera, not the back deck
   private boatYaw: number | null = null;         // at a tiller: which way the boat was heading last frame, so your view turns with it
@@ -425,6 +432,7 @@ export class Game {
   private bellWas = false;                       // at a tiller: the bell key last frame, so holding it rings once
   private steerer: Avatar | null = null;         // you, stood at the tiller, for the chase camera to see
   private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
+  private slideCam = 0;                          // how far the chase camera has swung out for a slide, 0 to 1
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
   private nextNaughtyBoy = 1;
@@ -486,6 +494,7 @@ export class Game {
   private readonly listeners = new AbortController();
   private life = 0;                                 // goes up on each respawn, so stale hits are ignored
   private deadFor = 0;
+  private arrival: Arrival;                         // the cover while the streets where you've landed are built
   private killer = "";
   private sendT = 0;
   private sbT = 0;
@@ -589,6 +598,7 @@ export class Game {
     known: string[] = [],
     carry?: GameCarry,
   ) {
+    this.arrival = new Arrival(world, (kind, x, z) => this.arrivalWords(kind, x, z));
     this.known = new Set(known);
     if (carry) {
       // travelling to another town: the same game carries on, so what says who's who and how the
@@ -811,20 +821,21 @@ export class Game {
     const pl = carry?.arriveAt ? this.world.railway?.platform(carry.arriveAt) : null;
     const arrival = carry ? (pl ? { x: pl.centre[0], z: -pl.centre[1], yaw: Math.PI } : carry.at) : undefined;
     this.respawn(arrival ?? up ?? at ?? this.savedSpot());
+    this.arrival.next(carry ? "travel" : "start");
     if (at && !up) this.player.pitch = at.pitch;
     addEventListener("pagehide", () => this.saveSpot(), { signal: this.listeners.signal });
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); }, { signal: this.listeners.signal });
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     this.listen("hello", (d, from) => this.onHello(d, from));
-    // the debug panel's "+3 hours" (daylight.ts): the host moves the game's clock on and tells
-    // everyone; anyone else asks the host
+    // the game's clock (daylight.ts): the host's, set at dawn when their game started and moved on
+    // by the debug panel or a train journey, goes to everyone; anyone else asks the host to move it
     this.listen("clk", here((d, from) => {
       if (!Array.isArray(d) || typeof d[1] !== "number") return;
       if (d[0] === "add" && this.isHost) { setSkip(getSkip() + d[1]); this.net.send("clk", ["set", getSkip()]); }
       else if (d[0] === "set" && from === this.hostId && !this.isHost) setSkip(d[1]);
     }));
-    setSkip(carry?.skip ?? 0);   // a new game starts on the shared time, until its host says otherwise; a journey keeps it
+    setSkip(carry?.skip ?? dawnSkip());   // a new game starts at dawn, until its host says otherwise; a journey keeps its clock
     clockLink.ask = (h) => {
       if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
       else this.net.send("clk", ["add", h], this.hostId);
@@ -963,7 +974,7 @@ export class Game {
     addEventListener("mousemove", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       if (!$("bigmap").hidden) { this.moveCursor(e.movementX, e.movementY); return; }
-      this.look(e.movementX, e.movementY);
+      this.look(e.movementX, e.movementY, "mouse");
     }, sig);
     addEventListener("keydown", (e) => {
       if (isKey(e.code, "pubcard.go") && this.mapOpen && this.pubMap.isOpen) { if (!e.repeat) this.pubMap.go(); return; }
@@ -1259,8 +1270,10 @@ export class Game {
     if (this.binoculars) { this.aiming = false; this.firing = false; }
   }
 
-  look(dx: number, dy: number) {
+  look(dx: number, dy: number, from?: LookFrom) {
     if (this.mapOpen) { const c = this.minimap.cursor; this.minimap.zoomFull(Math.exp(-dy * 0.0008), c?.[0], c?.[1]); return; }
+    // after the map: a drag on the map zooms it the way the hand goes, whoever plays inverted
+    if (from) [dx, dy] = inverted(from, dx, dy);
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
@@ -1278,7 +1291,7 @@ export class Game {
     this.arrowHeld += dt;
     // radians a second, turned into the mouse's units
     const rate = (0.35 + 0.65 * Math.min(1, this.arrowHeld / 0.4)) * dt / this.player.sensitivity;
-    this.look(x * rate * 2.4, y * rate * 1.4);
+    this.look(x * rate * 2.4, y * rate * 1.4, "mouse");
   }
 
   /** The jump button: walks off the ball if you're lining up a kick, and is the handbrake while driving. */
@@ -1316,12 +1329,13 @@ export class Game {
       return;
     }
     if (!this.car) return;
-    this.inside = !this.inside;
-    try { localStorage.setItem(INSIDE_KEY, this.inside ? "1" : "0"); } catch { /* storage may be blocked */ }
+    const n = (DRIVE_VIEWS.indexOf(this.driveView) + 1) % DRIVE_VIEWS.length;
+    this.driveView = DRIVE_VIEWS[n];
+    try { localStorage.setItem(INSIDE_KEY, String(n)); } catch { /* storage may be blocked */ }
     const p = this.player;
     p.yaw = this.car.seat().yaw;
-    p.pitch = this.inside ? -0.06 : -0.15;
-    this.toast(this.inside ? "Driver's seat" : "Chase camera", 1.2);
+    p.pitch = this.driveView === "chase" ? -0.15 : -0.06;
+    this.toast(this.driveView === "cockpit" ? "Driver's seat" : this.driveView === "bonnet" ? "Bonnet camera" : "Chase camera", 1.2);
   }
 
   reload() {
@@ -1380,6 +1394,9 @@ export class Game {
       : null;
     return { x: p.x, y: -p.z, doing, view: view.fogFar };
   }
+
+  /** For telemetry.ts: the big map's whole-map picture, once it is drawn. */
+  mapPicture() { return this.minimap.picture(); }
 
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
 
@@ -1488,6 +1505,9 @@ export class Game {
     });
   }
 
+  /** Nothing may hurt you: out of a race and watching the others finish, or still arriving (arrive.ts). */
+  private sheltered() { return this.quests.waiting() || this.arrival.up; }
+
   private respawn(at?: { x: number; z: number; yaw: number }) {
     if (this.ride) this.getOut();
     this.dismount();
@@ -1519,6 +1539,7 @@ export class Game {
     this.binoculars = false;
     this.claimed.clear();
     this.life++;
+    this.arrival.next("respawn");
     this.blood.stop(this.net.selfId);
     this.sendState();
     if (this.isMatchHost) this.applyRespawn(this.net.selfId, this.life);
@@ -1858,6 +1879,7 @@ export class Game {
     }
     // someone whose game has just started: tell them where the vehicles are
     if (d?.ask && this.vhKnown) this.net.send("vh", this.vehicles.snapshot(), from);
+    if (d?.ask && this.isHost) this.net.send("clk", ["set", getSkip()], from);
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
@@ -2334,7 +2356,7 @@ export class Game {
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
     if (GANG.includes(by) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
-    if (id === this.net.selfId ? this.quests.waiting() : this.remotes.get(id)?.waiting) return;   // out of a race, watching the others finish
+    if (id === this.net.selfId ? this.sheltered() : this.remotes.get(id)?.waiting) return;   // out of a race watching the others finish, or arriving
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
       target.alive = false;
@@ -2708,7 +2730,7 @@ export class Game {
     const { v, seat } = ride;
     this.ride = null;
     this.handbrake = false;
-    this.insideOf?.inside(false);
+    this.insideOf?.inside(null);
     this.insideOf = null;
     this.insideYaw = null;
     const at = v.exitSpot(seat), p = this.player;
@@ -2752,20 +2774,30 @@ export class Game {
     p.vel.set(v.vx, 0, v.vz);
     p.onGround = true;
     p.speed = Math.abs(v.speed);
-    if (this.insideOf !== (this.inside ? v : null)) { this.insideOf?.inside(false); this.insideOf = this.inside ? v : null; this.insideOf?.inside(true); }
+    const from = this.driveView === "chase" ? null : this.driveView;
+    if (this.insideOf !== (from ? v : null) || v.view !== from) {
+      this.insideOf?.inside(null); this.insideOf = from ? v : null; this.insideOf?.inside(from);
+      if (from) p.pitch = v.restPitch;
+    }
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
-    if (this.inside) { this.driverView(v, s.yaw, settle); return; }
+    if (from) { this.driverView(v, s.yaw, settle); return; }
     this.insideYaw = null;
-    // the chase camera: the mouse only looks about, and it swings back behind as you drive on
+    // the chase camera: the mouse only looks about, and it swings back behind as you drive on. In a
+    // slide it hangs back towards the way the car's really going, lagging and pulling out wider, so
+    // you see it come round side on
+    const sp = Math.hypot(v.vx, v.vz), across = sp > 6 ? Math.atan2(Math.sin(Math.atan2(-v.vx, -v.vz) - s.yaw), Math.cos(Math.atan2(-v.vx, -v.vz) - s.yaw)) : 0;
+    const sliding = Math.min(1, Math.max(0, (Math.abs(across) - 0.15) / 0.5)) * Math.min(1, Math.max(0, (sp - 6) / 6));
+    this.slideCam += (sliding - this.slideCam) * Math.min(1, dt * (sliding > this.slideCam ? 4 : 1.5));
     if (settle) {
-      p.yaw += Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw)) * settle;
+      const aim = s.yaw + across * 0.55 * this.slideCam;
+      p.yaw += Math.atan2(Math.sin(aim - p.yaw), Math.cos(aim - p.yaw)) * settle * (1 - 0.5 * this.slideCam);
       p.pitch += (-0.2 - p.pitch) * settle;
     }
     p.pitch = Math.max(-0.75, Math.min(0.3, p.pitch));
     const cp = Math.cos(p.pitch);
     const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
     // it hangs a little above the roof and a bit further back than the vehicle's own reach, so you see the road ahead over it
-    const reach = v.spec.cam * 1.25;
+    const reach = v.spec.cam * 1.25 * (1 + 0.25 * this.slideCam);
     const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 1.1, v.z);
     const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, reach);
     const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : reach);
@@ -2775,7 +2807,7 @@ export class Game {
   }
 
   /**
-   * The driver's own view, from their seat over the dash (cockpit.ts). It turns with the vehicle; look
+   * The driver's own view, from their seat over the dash or from the bonnet (cockpit.ts). It turns with the vehicle; look
    * about with the mouse, and it eases back to straight ahead as the chase camera does. It pitches with the
    * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
    */
@@ -2786,7 +2818,7 @@ export class Game {
     let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
     if (settle) {
       off -= off * settle;
-      p.pitch += (-0.06 - p.pitch) * settle;
+      p.pitch += (v.restPitch - p.pitch) * settle;
     }
     off = Math.max(-2.4, Math.min(2.4, off));
     p.yaw = ahead + off;
@@ -2797,7 +2829,7 @@ export class Game {
 
   /** A passenger: sat in your seat as it goes along, looking about through your own eyes (and free to shoot). */
   private rideAlong(seat: number, v: Vehicle) {
-    if (this.insideOf) { this.insideOf.inside(false); this.insideOf = null; }   // the driver's view is only from the driver's seat
+    if (this.insideOf) { this.insideOf.inside(null); this.insideOf = null; }   // the driver's view is only from the driver's seat
     const p = this.player, s = v.seat(seat);
     p.pos.set(s.x, s.y, s.z);
     p.vel.set(v.vx, 0, v.vz);
@@ -3416,7 +3448,9 @@ export class Game {
     if (this.carrier && !helm) {
       const was = this.player.pos.clone();
       this.carry();
-      this.camera.position.add(this.player.pos.clone().sub(was));
+      const moved = this.player.pos.clone().sub(was);
+      this.camera.position.add(moved);
+      this.weapon.carried(moved);
     }
     const before = this.carrier?.m;
     this.findCarrier();
@@ -3494,9 +3528,9 @@ export class Game {
         this.engines.set(v, (e = started));
       }
       // the one you're in sounds as if you're in it, not from where the camera trails behind; its
-      // tyres squeal sliding sideways (a donut, the handbrake), and the front ones scrub wide in a corner taken too fast
+      // tyres squeal sliding sideways (a donut, the handbrake, the back end stepping out), louder the further, and the front ones scrub wide in a corner taken too fast
       const side = Math.abs(v.vx * Math.sin(v.a) + v.vz * Math.cos(v.a));
-      const skid = v.drift || v.hand ? 1 : Math.max(v.scrub * 0.6, Math.min(1, Math.max(0, (side - 2) / 4)));
+      const skid = v.drift || v.hand ? 1 : Math.max(v.scrub * 0.6, v.slip, Math.min(1, Math.max(0, (side - 2) / 4)));
       e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren, Math.min(1, Math.abs(v.speed) / v.spec.top), skid);
     }
     // the nearest few cars in the traffic
@@ -3990,7 +4024,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.quests.waiting(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -4083,7 +4117,7 @@ export class Game {
       // no mouse captured (an iPad with a keyboard, a touch screen): the arrow keys look round instead of walking
       p.arrowsWalk = !this.freeMode;
       if (this.freeMode) this.arrowLook(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !this.reveal.on && !placeNow());
-      p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
+      p.update(dt, this.active && this.alive && !this.arrival.up && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       // shut in a building after all (shoved in by a car, a square loading in round you, down into a
       // courtyard off a roof): out on to the nearest clear ground, as the others will see you
@@ -4119,7 +4153,7 @@ export class Game {
     this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
+    else if (this.active && this.alive && !this.arrival.up && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
@@ -4304,6 +4338,25 @@ export class Game {
       else this.hello(this.hostId);   // keeps the host's name list fresh
     }
     this.updateHud(dt);
+    const covered = this.arrival.up;
+    this.arrival.update(dt, p.pos.x, p.pos.z);
+    if (this.arrival.up !== covered) this.sendState();   // sheltered or not: the host hears at once
+  }
+
+  /** What the cover says as you arrive at scene (x, z) (arrive.ts): the town, then the street. */
+  private arrivalWords(kind: ArrivalKind, x: number, z: number) {
+    const town = this.placeName(), street = this.whereName(x, z);
+    return { why: kind === "start" ? `Welcome to ${town}` : `Arriving at ${kind === "travel" ? mapName(this.mapId) : town}`, where: street || town };
+  }
+
+  /** On a street: its name; off the streets: the place you're in; otherwise the nearest street. */
+  private whereName(x: number, z: number): string {
+    let best = "", bd = 30;
+    for (const s of this.streets) {
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d < bd) { bd = d; best = s.n; }
+    }
+    return bd > 10 ? this.placeAt(x, -z)?.n ?? best : best;
   }
 
   /** Steer and kick or bowl, if you're lined up on a ball. */
@@ -4512,13 +4565,7 @@ export class Game {
     this.placeT -= dt;
     if (this.placeT <= 0) {
       this.placeT = 0.5;
-      // on a street: its name; off the streets: the place you're in; otherwise the nearest street
-      let best = "", bd = 30;
-      for (const s of this.streets) {
-        const d = Math.hypot(s.x - p.pos.x, s.z - p.pos.z);
-        if (d < bd) { bd = d; best = s.n; }
-      }
-      if (bd > 10) best = this.placeAt(p.pos.x, -p.pos.z)?.n ?? best;
+      const best = this.whereName(p.pos.x, p.pos.z);
       const edge = this.map.fieldEdge(p.pos.x, p.pos.z), aloft = this.quests.aloft();
       const where = $("where");
       say(where, aloft ? "" : edge < 25 ? "Force field: you can't go further" : best);
@@ -4712,7 +4759,7 @@ export class Game {
     } else this.rideFrom = null;
     const board = $("scoreboard");
     // by the clock rather than frames, so a slow machine doesn't keep it up for longer
-    if (this.dailyT < 0 && this.active) {
+    if (this.dailyT < 0 && this.active && !this.arrival.up) {
       this.dailyT = performance.now() + (this.joinNews ? 20000 : 12000); board.classList.add("join"); board.hidden = false;
       // a card to read: its × puts it away, as Esc does, and the mouse is let go while it's up (modal.ts)
       modal(board, () => board, () => this.closeDaily(), () => this.dailyT > 0 && board.classList.contains("join"));
@@ -4878,6 +4925,7 @@ export class Game {
   /** leave: true (the default) also drops the connection, for closing the game. Travelling passes
    *  false: only this map's world is torn down, and the voice links and the room stay. */
   dispose(leave = true) {
+    this.arrival.dispose();
     this.unEarn();
     this.wings.dispose();
     this.records.dispose();

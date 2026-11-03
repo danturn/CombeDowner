@@ -123,13 +123,20 @@ export function bridgePlan(p: number[][], need: Need, twin: { piers: number[][];
     while (e + 1 < p.length && p[e + 1][3] === 1) e++;
     const sa = s[k], sb = s[e];
     const paired = twin.ends.some(([x, y]) => onto(k, e, x, y) !== null);
-    let sup: number[];
+    const at = twin.piers.map(([x, y]) => onto(k, e, x, y)).filter((c): c is number => c !== null && c > sa + 2 * PIER && c < sb - 2 * PIER).sort((u, v) => u - v);
+    const sup = [sa];
     if (paired) {
-      const at = twin.piers.map(([x, y]) => onto(k, e, x, y)).filter((c): c is number => c !== null && c > sa + 2 * PIER && c < sb - 2 * PIER).sort((u, v) => u - v);
-      sup = [sa];
       for (const c of at) if (c > sup[sup.length - 1] + 2 * PIER + 1) sup.push(c);
       sup.push(sb);
-    } else sup = piersAt(sa, sb);
+    } else {
+      // (a line that only runs beside another for a stretch, coming into a junction or leaving it,
+      // stands on that one's piers there, so neither has a pier standing in the other's arch)
+      for (const c of [...at, sb]) {
+        const from = sup[sup.length - 1];
+        if (c < sb && c <= from + 2 * PIER + 1) continue;
+        sup.push(...piersAt(from, c).slice(1));
+      }
+    }
     const girdered = twin.girders.map(([x, y]) => onto(k, e, x, y)).filter((c): c is number => c !== null);
     const sp = oneKind(spansOf(sup), (q) => girdered.some((c) => c >= q.a && c <= q.b));
     for (const q of sp) if (q.kind !== "wall") for (const c of [q.a - PIER, q.b + PIER]) if (c > sa + 1 && c < sb - 1 && !piers.includes(c)) piers.push(c);
@@ -199,7 +206,8 @@ const FOOT = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bri
 const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 
 /** The headroom wanted under the railway, by what passes under it: a van's under a street, a
- *  walker's under its pavements and a path, a narrowboat's under the canal, a little over water.
+ *  walker's under its pavements and a path, a narrowboat's under the canal, a train's under another
+ *  line, a little over water.
  *  Here rather than in world.ts so the map checks build the bridges exactly as the game does. */
 export function railNeed(tracks: number[][][], roads: { p: number[][]; c: string; w?: number; pv?: number[]; bridge?: unknown }[], lines: { p: number[][]; c: string }[], ponds: number[][][], canalRuns: { p: number[][] }[]): Need {
   const ways: { p: number[][]; reach: number; need: number }[] = [];
@@ -211,5 +219,10 @@ export function railNeed(tracks: number[][][], roads: { p: number[][]; c: string
   }
   for (const l of lines) ways.push({ p: l.p, reach: 2, need: l.c === "canal" ? 2.8 : 0.8 });
   for (const run of canalRuns) ways.push({ p: run.p, reach: 6, need: 2.8 });
+  // another line on the ground passing under (away from its own bridges' ends, where it's the line
+  // itself coming down to the ground): a train's height and its width
+  for (const p of tracks)
+    for (let k = 0; k + 1 < p.length; k++)
+      if (p.slice(Math.max(0, k - 3), k + 5).every((q) => q[3] === 0)) ways.push({ p: [p[k], p[k + 1]], reach: 2.6, need: 4.8 });
   return needUnder(tracks, ways, ponds);
 }

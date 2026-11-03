@@ -77,6 +77,9 @@ SLIT = 1e-3         # m2: a face this small is a hairline left by the noding, no
 SLIVER_THIN = 0.25      # metres: a face whose area/perimeter is under this is a sliver too
 CAP_OVERHANG = 6.0      # metres: a garden cap reaches this far past its house's corners
 BACK_ROWS = 8.0         # metres: two rows closer than this back on to each other
+BACK_CLEAR = 1.0        # metres a guessed back line keeps from the two houses it lies between
+SAME_LINE = 0.5         # metres: two division lines this near each other somewhere,
+SAME_WAY = math.cos(math.radians(3))   # and running this nearly the same way, are one line
 JOIN_ANGLE = 10.0       # degrees: evidence runs this close to collinear join into one line
 JOIN_GAP = 8.0          # metres: and within this of each other
 EXTEND = 3.0            # metres an evidence line is carried on past each end so it closes faces
@@ -252,6 +255,16 @@ def building_axes(polys):
     return out
 
 
+def square_to(v, axis):
+    """Of the four ways a house's walls face, the one nearest to v. A house faces its street square
+    to its own walls: the bare direction to the nearest point of a street that runs past it at a
+    slant would turn every line laid from its front (the divisions between gardens, the backs of
+    them) across the gardens on the slant."""
+    a = np.asarray(axis, float)
+    ways = (a, -a, np.array([-a[1], a[0]]), np.array([a[1], -a[0]]))
+    return max(ways, key=lambda w: float(np.dot(w, v)))
+
+
 def front_normals(geoms, axes, roads_tree, roads):
     """The outward direction each house faces: towards the nearest street. Falls back to square to
     the house's axis where no street is near."""
@@ -402,7 +415,16 @@ def side_wall_lines(geoms, fbt, parcel_of):
     return out
 
 
-def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None, memo=None):
+def _way_of(line):
+    """The unit direction from a line's first point to its last (its longest piece's, if in pieces)."""
+    if line.geom_type == "MultiLineString":
+        line = max(line.geoms, key=lambda g: g.length)
+    a, b = np.array(line.coords[0][:2]), np.array(line.coords[-1][:2])
+    d = b - a
+    return d / (np.hypot(*d) or 1.0)
+
+
+def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None, memo=None, free=None):
     """Candidate division lines for a block. From each shared wall between two houses, and from each
     free side wall of a detached or end house, a line square to the house's front running back from
     the wall to the block's far side. Between houses that do not share a wall, the perpendicular
@@ -416,10 +438,39 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
     tree = STRtree(geoms)
     lines = []
     walls = []
+    laid = []
+
+    def once(found):
+        # In a terrace the two walls of a party wall each give a line a few centimetres from the
+        # other's, at a hair's different angle, and over a long block a fan of them criss-cross it
+        # into slivers (Cape Town: one block of 61 terraced houses cut into 17,000 faces under
+        # 0.1 m2). On land the house alone lays out, a line running the same way as one already
+        # laid and meeting or nearly meeting it is that line, and is laid once.
+        out = []
+        for ln in found:
+            box_ = ln.envelope.buffer(SAME_LINE)
+            u = _way_of(ln)
+            if any(o.envelope.intersects(box_) and abs(float(np.dot(u, w))) > SAME_WAY
+                   and o.distance(ln) < SAME_LINE for o, w in laid):
+                continue
+            laid.append((ln, u))
+            out.append(ln)
+        return out
+
     for i, m, back, shared in side_wall_lines(geoms, fbt, parcel_of):
+        fr = free is not None and free[i]
         line = _back(block, m, back)
         if not line.is_empty:
-            lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+            got = _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+            lines += once(got) if fr else got
+        # Without registered parcels nothing else divides the ground in front of a row of houses,
+        # so the whole front of a block was one face: too long to be any one house's garden, it
+        # was open land, and the houses lost their fronts, gates and paths. The side wall of a
+        # house on unregistered land carries on forwards to the street as well, so it has a front.
+        if fr:
+            line = _back(block, m, -back)
+            if not line.is_empty:
+                lines += once(_uncovered(block, line, parcel_lines, par_tree, Point(m), memo))
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
         # in index order, not the index's order: `near` below breaks a distance tie by which house it
@@ -438,16 +489,23 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
             near = j if h.distance(Point(m)) < g.distance(Point(m)) else i
             f = fbt[near]
             b = f if abs(np.dot(gap, f)) < 0.7 else np.array([-f[1], f[0]])
+            pair_free = free is not None and free[i] and free[j]
+            if pair_free and b is not f and np.dot(fbt[i], fbt[j]) < -0.5:
+                continue                     # two houses back to back: their yard's back line divides them
             if not walls:
                 walls.append(unary_union([g.boundary for g in geoms]).buffer(-0.05))
             line = _through(block, m, b, geoms, walls[0])
             if not line.is_empty:
-                lines += _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+                got = _uncovered(block, line, parcel_lines, par_tree, Point(m), memo)
+                lines += once(got) if pair_free else got
     return [l for l in lines if not l.is_empty and l.length > 1]
 
 
-def _half_plane(line, pt, size=4000.0):
-    """A large polygon on pt's side of line."""
+def _half_plane(line, pt, size=4000.0, whole=False):
+    """A large polygon on pt's side of line. `whole` makes it the true half-plane, running on past
+    the line's ends: without it the polygon is only as wide as the line is long, so a house standing
+    beyond the end of its back line had no garden left at all. Only houses on land no registered
+    parcel reaches take the true one, so the plots the parcels shape stay as they were."""
     if line.geom_type == "MultiLineString":
         line = max(line.geoms, key=lambda g: g.length)
     c = list(line.coords)
@@ -458,6 +516,10 @@ def _half_plane(line, pt, size=4000.0):
     nrm = np.array([-d[1], d[0]]) / n
     if np.dot(np.array([pt.x, pt.y]) - a, nrm) < 0:
         nrm = -nrm
+    if whole:
+        u = d / n
+        a, b = a - u * size, b + u * size
+        return Polygon([tuple(a), tuple(b), tuple(b + nrm * size), tuple(a + nrm * size)])
     return Polygon([tuple(a - nrm * size), tuple(b - nrm * size),
                     tuple(b + nrm * size), tuple(a + nrm * size)])
 
@@ -497,7 +559,7 @@ def _through(block, p, d, geoms, inset=None):
     return unary_union(out) if len(out) > 1 else (out[0] if out else LineString())
 
 
-def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reach=2 * GARDEN):
+def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reach=2 * GARDEN, free=None):
     """One line for the back of a yard where two rows of houses back on to each other: the evidence
     line if one runs along the gap, else the line midway between the two rows, parallel to the
     longer row. A pair of houses back on to each other when each one's front points away from the
@@ -506,6 +568,7 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
     geoms = [b for _, b in inside]
     tree = STRtree(geoms)
     out = {}
+    found = []
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
         for j in sorted(int(j) for j in tree.query(g.buffer(reach))):
@@ -529,6 +592,18 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
             if any(g2.intersects(gap) for g2 in geoms if g2 is not g and g2 is not h):
                 continue
             mid = (c + other) / 2
+            pair_free = free is not None and free[i] and free[j]
+            if pair_free:
+                # the back of a yard is one line for every pair of houses backing on to it: a pair
+                # whose gap a back line already crosses takes that one, or each pair drew its own a
+                # metre or two from the last and left a strip of nobody's ground between them
+                across = [l for l in found if l.intersects(gap) and l.distance(g) >= BACK_CLEAR
+                          and l.distance(h) >= BACK_CLEAR]
+                if across:
+                    line = min(across, key=lambda l: l.distance(mid_point(mid)))
+                    out[inside[i][0]] = line
+                    out[inside[j][0]] = line
+                    continue
             # the back line runs along the gap, square to the two fronts (parallel to the rows), so
             # the longer house's own long side decides its direction
             li = g.minimum_rotated_rectangle.length
@@ -548,15 +623,24 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
                     line = best[1]
             # clipped to the block, so its ends land on the block's far side (a building or a
             # corridor) and never in open land: the growth cap below keeps it only the yard's back
-            line = line.intersection(block.buffer(1.0))
+            line = line.intersection(_buffered(block, 1.0))
             if line.is_empty or line.length < 1:
                 continue
             if line.geom_type == "MultiLineString":
-                line = max(line.geoms, key=lambda g: g.length)
+                if pair_free:
+                    # the stretch of the yard's back between the two houses, not the longest
+                    # stretch of the line anywhere in the block, which can lie past other houses
+                    line = min(line.geoms, key=lambda g: g.distance(mid_point(mid)))
+                else:
+                    line = max(line.geoms, key=lambda g: g.length)
             if line.geom_type != "LineString":
                 continue
+            if pair_free and min(line.distance(g), line.distance(h)) < BACK_CLEAR:
+                continue                    # the two stand offset, and a back line between them runs into one
             out[inside[i][0]] = line
             out[inside[j][0]] = line
+            if pair_free:
+                found.append(line)
     return out
 
 
@@ -580,7 +664,7 @@ def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
         depth = max(float(np.dot(v - c, -f)) for v in vs)
         half = max(abs(float(np.dot(v - c, a))) for v in vs) + CAP_OVERHANG
         m = c - f * (depth + GARDEN)
-        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(block.buffer(0.5))
+        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(_buffered(block, 0.5))
         parts = [seg] if seg.geom_type == "LineString" else \
             [x for x in getattr(seg, "geoms", []) if x.geom_type == "LineString"]
         for x in parts:
@@ -795,8 +879,27 @@ def _street_edge(region, B=None, bunion=None):
     if B is not None:
         street = street.difference(B.boundary.buffer(0.01))
     if bunion is not None and not bunion.is_empty:
-        street = street.difference(_buffered(bunion, 0.01))
+        street = street.difference(_parts_near(_buffered(bunion, 0.01), street))
     return street
+
+
+_PARTS = {}
+
+
+def _parts_near(g, h):
+    """The parts of `g` whose boxes meet `h`'s, as one geometry: a window's buildings run to
+    thousands, and taking a region's edge off all of them cost more the bigger the window."""
+    if g.geom_type != "MultiPolygon":
+        return g
+    hit = _PARTS.get(id(g))
+    if hit is None or hit[0] is not g:
+        _PARTS.clear()
+        hit = _PARTS[id(g)] = (g, list(g.geoms), STRtree(list(g.geoms)))
+    parts, tree = hit[1], hit[2]
+    near = sorted(int(k) for k in tree.query(shapely.box(*h.bounds)))
+    if not near:
+        return g
+    return shapely.MultiPolygon([parts[k] for k in near])
 
 
 _BUFFERED = {}
@@ -805,11 +908,16 @@ _BUFFERED = {}
 def _buffered(g, d):
     """g.buffer(d), kept while g is the same object: a task divides every piece against one union of
     its window's buildings, and buffering that union once per piece was a fifth of the work."""
-    hit = _BUFFERED.get((id(g), d))
+    # the least recently used goes first: clearing them all every few blocks threw away the
+    # window's buildings too, the costliest of them to buffer again
+    key = (id(g), d)
+    hit = _BUFFERED.get(key)
     if hit is None or hit[0] is not g:
-        if len(_BUFFERED) > 8:
-            _BUFFERED.clear()
-        hit = _BUFFERED[(id(g), d)] = (g, g.buffer(d))
+        while len(_BUFFERED) > 8:
+            del _BUFFERED[next(iter(_BUFFERED))]
+        hit = (g, g.buffer(d))
+    _BUFFERED.pop(key, None)
+    _BUFFERED[key] = hit
     return hit[1]
 
 
@@ -823,16 +931,70 @@ def _directions(line, d):
     return v / n[:, None]
 
 
-def _twin_stretches(line, held, tree, ways_tree, ways):
+def _along(line, d):
+    """The points `d` metres along `line`, as shapely.line_interpolate_point gives them, to the bit:
+    the same sums in the same order as GEOS makes them, but walking the line once for every distance
+    rather than from its start for each one."""
+    d = np.asarray(d, float)
+    d = np.where(d < 0, line.length + d, d)
+    xy = shapely.get_coordinates(line)
+    dx, dy = xy[1:, 0] - xy[:-1, 0], xy[1:, 1] - xy[:-1, 1]
+    seg = np.sqrt(dx * dx + dy * dy)
+    run = np.concatenate([[0.0], np.add.accumulate(seg)])
+    k = np.searchsorted(run[1:], d, side="right")
+    kk = np.minimum(k, len(seg) - 1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        frac = (d - run[kk]) / seg[kk]
+        p0, p1 = xy[kk], xy[kk + 1]
+        out = np.where((frac <= 0)[:, None], p0,
+                       np.where((frac >= 1)[:, None], p1, (p1 - p0) * frac[:, None] + p0))
+    out[k >= len(seg)] = xy[-1]
+    out[d <= 0] = xy[0]
+    return out
+
+
+def _segment_ends(line):
+    xy = shapely.get_coordinates(line)
+    return xy[:-1], xy[1:]
+
+
+def _near_pairs(pts, lines, dist, ends=_segment_ends):
+    """(point, line) index pairs within `dist`, as STRtree(lines).query(pts, "dwithin") finds them but
+    tested against the lines' segments, each with a box of its own: a long boundary is then no longer
+    measured whole from every point near its box. A line is within reach of a point when one of its
+    segments is, so the pairs are the same; only their order differs, and a point's pairs decide
+    together whether it is twinned, whatever their order. Segments boxed further than `dist` from every
+    point can pair with none, so they are left out before the index is built. `ends(line)` gives a
+    line's segments as (starts, ends), and may remember them for a line asked about again."""
+    none = np.zeros(0, int), np.zeros(0, int)
+    if not len(lines) or not len(pts):
+        return none
+    got = [ends(l) for l in lines]
+    a = np.concatenate([g[0] for g in got])
+    b = np.concatenate([g[1] for g in got])
+    which = np.repeat(np.arange(len(lines)), [len(g[0]) for g in got])
+    x0, y0, x1, y1 = shapely.total_bounds(pts)
+    m = dist + 1.0
+    near = ((np.minimum(a[:, 0], b[:, 0]) <= x1 + m) & (np.maximum(a[:, 0], b[:, 0]) >= x0 - m)
+            & (np.minimum(a[:, 1], b[:, 1]) <= y1 + m) & (np.maximum(a[:, 1], b[:, 1]) >= y0 - m))
+    if not near.any():
+        return none
+    segs = shapely.linestrings(np.stack([a[near], b[near]], axis=1))
+    pi, si = STRtree(segs).query(pts, predicate="dwithin", distance=dist)
+    pairs = np.unique(pi * len(lines) + which[near][si])
+    return pairs // len(lines), pairs % len(lines)
+
+
+def _twin_stretches(line, held, ways_tree, ways, ends=_segment_ends):
     """The stretches of `line`, as (start, end) metres along it, that run within TWIN of a line in
     `held` and in nearly the same direction, with no mapped way between the two."""
     L = line.length
     if L < TWIN_MIN:
         return []
     d = np.linspace(0.0, L, max(2, int(L / TWIN_STEP) + 1))
-    pts = shapely.line_interpolate_point(line, d)
+    pts = shapely.line_interpolate_point(line, d) if shapely.has_z(line) else shapely.points(_along(line, d))
     hit = np.zeros(len(d), bool)
-    pi, hi = tree.query(pts, predicate="dwithin", distance=TWIN)
+    pi, hi = _near_pairs(pts, held, TWIN, ends)
     mine = np.zeros((len(d), 2))
     near = np.unique(pi)
     if len(near):
@@ -925,24 +1087,35 @@ def _one_boundary(ranked, ways=(), net=None):
     def bound(i):
         out = []
         for l in kept[i]:
+            # most lines lie wholly in the net or wholly out of it, and the prepared tests answer
+            # those far sooner than cutting the line against the whole net
+            if net is not None and not net.intersects(l):
+                continue
             g = l if net is None or net.contains(l) else l.intersection(net)
             out += [p for p in getattr(g, "geoms", [g]) if p.geom_type == "LineString" and p.length > 0.05]
         bounding[i] = out
     for i in kept:
         bound(i)
+    # a held line is asked about by every line near it, so its segments are taken out once
+    seg_ends = {}
+
+    def ends(l):
+        if id(l) not in seg_ends:
+            seg_ends[id(l)] = (l, *_segment_ends(l))
+        return seg_ends[id(l)][1:]
     out = []
     for n, part in enumerate(rest):
         i = len(first) + n
-        cand = [int(j) for j in tree.query(part.buffer(TWIN)) if int(j) < i]
-        held = [g for j in sorted(cand) for g in bounding.get(j, [])]
+        cand = tree.query(part.buffer(TWIN))
+        held = [g for j in np.sort(cand[cand < i]) for g in bounding.get(int(j), [])]
         if not held:
             kept[i] = [part]; bound(i); out.append((part, [part], None, tagged[n][0]))
             continue
-        local = STRtree(held)
-        runs = _twin_stretches(part, held, local, ways_tree, ways)
+        runs = _twin_stretches(part, held, ways_tree, ways, ends)
         if not runs:
             kept[i] = [part]; bound(i); out.append((part, [part], None, tagged[n][0]))
             continue
+        local = STRtree(held)
         L = part.length
         keep, at = [], 0.0
         for a, b in runs:
@@ -1280,11 +1453,20 @@ def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion
     parcel_of = [parcels.index_of(g) if parcels is not None else None for g in geoms]
     # a house in a parcel of its own needs no inferred division: the parcel's edge is its boundary
     covered = {i for i, k in zip(gidx, parcel_of) if k is not None}
+    # A house on land no registered parcel reaches has only itself to go by: every line laid from
+    # its front runs square to its walls, and its garden is laid out as the old build's were. One
+    # with a parcel near is left as the parcels shape it (an unregistered shed among registered
+    # gardens is not a house of its own on open ground).
+    free = [k is None and not (parcels is not None and parcels.tree is not None
+                               and len(parcels.tree.query(g, predicate="dwithin", distance=GARDEN)))
+            for g, k in zip(geoms, parcel_of)]
+    fbt = [square_to(f, axes[i]) if fr else f for f, i, fr in zip(fbt, gidx, free)]
 
     cuts, back_cuts, caps = [], [], []
     if inside:
         cuts = house_divisions(region, geoms, fbt, parcel_of, par_lines, par_tree,
-                               parcels.__dict__.setdefault("_memo", {}) if parcels is not None else None)
+                               parcels.__dict__.setdefault("_memo", {}) if parcels is not None else None,
+                               free=free)
         if not cuts and not par_lines:
             pts = []
             for b in geoms:
@@ -1294,7 +1476,7 @@ def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion
                     p = bd.interpolate(k / n, normalized=True); pts.append((p.x, p.y))
             vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=region.buffer(5), only_edges=True)
             cuts = [vedges.intersection(region.buffer(1))]
-        backs = back_lines(region, inside, fbt, evidence_lines, ev_tree, parcel_of)
+        backs = back_lines(region, inside, fbt, evidence_lines, ev_tree, parcel_of, free=free)
         back_cuts = list({(round(b.bounds[0], 2), round(b.bounds[1], 2),
                           round(b.bounds[2], 2), round(b.bounds[3], 2)): b for b in backs.values()}.values())
         caps = garden_caps(region, geoms, gidx, fbt, backs, skip=covered)
@@ -1341,7 +1523,7 @@ def _cut_region(region, buildings, evidence_lines, ev_tree, axes, fronts, bunion
     net = unary_union([f.boundary for f in (recut or faces)]).buffer(0.02)
     shapely.prepare(net)
     return dict(btree0=btree0, inside=inside, ev=ev, geoms=geoms, gidx=gidx, fbt=fbt, par_lines=par_lines,
-                par_tree=par_tree, parcel_of=parcel_of, covered=covered, cuts=cuts, back_cuts=back_cuts,
+                par_tree=par_tree, parcel_of=parcel_of, free=free, covered=covered, cuts=cuts, back_cuts=back_cuts,
                 caps=caps, backs=backs, lines=lines, faces=faces, pieces=pieces, side_a=side_a,
                 side_b=side_b, adj=adj, street=street, front_pl=front_pl, front_lines=front_lines,
                 recut=recut, net=net)
@@ -1437,7 +1619,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     for k, g in inside:
         r = g.buffer(GARDEN + FACE_PAD, join_style="mitre")
         if k in backs:
-            r = r.intersection(_half_plane(backs[k], g.centroid))
+            r = r.intersection(_half_plane(backs[k], g.centroid, whole=cut["free"][gidx.index(k)]))
         reach[k] = r
     # where a house's title is registered, its plot may not leave that parcel: the parcel is the
     # reach's own limit, so a plot is the parcel the house stands in divided among the houses in it

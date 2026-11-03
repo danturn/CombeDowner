@@ -1421,3 +1421,155 @@ same as main):
 - [ ] **A stream through a tunnel is left out inside its bore** (`world.ts outsideBores`): the
   footway culvert at -2781,-2464 carries one, and draped on the ground it climbed into the arch
   and over the headwall. Trade-off: no water is drawn on the tube's floor.
+
+## Every map through the partition (2 November)
+
+- [ ] **No kept lidar is no longer an error.** `stage.py` used to stop when
+  `data/<map>/measured/partition.zip` was missing, so a lost file could not quietly change Bath. It
+  now builds without it (no guess dropped for nothing standing near it, no survey ground under a
+  bridge) and says so on its first line, because only Bath has one. Hackney has the raw lidar in
+  another worktree and could be packed (`tools/mapdata.py pack pembury ...`); Bradford-on-Avon's is
+  partial; Cape Town has none.
+- [ ] **No parcels, no listed buildings, no OpenStreetMap bridges outside Bath.** Each is an
+  optional layer (`partition.OPTIONAL`): the plots follow the blocks and the house fronts, the
+  Georgian railings rule goes on eaves alone, and a bridge's kind goes by what it carries and
+  crosses. Bradford-on-Avon (Wiltshire) and Hackney (Hackney and the four boroughs its wide box
+  crosses into) have their parcels fetched (2 November 2026; `tools/parcels.py` takes every
+  council's download at once) but not packed: built with them, Bradford-on-Avon gave 1,417 front
+  paths against the fallback's 1,754 and the old build's 2,368 (a house parcel that stops at the
+  front wall leaves no front garden), and Hackney's back boundaries went to 148 km of hedge
+  against the old build's 62. Their listed railings and walls are packed. Cape Town never will
+  have parcels, so it relies on the fallback.
+- [ ] **The zone names in the partition are still a table.** `settle.OPEN_FRONT_ZONES` (`"bath"`:
+  no guessed fronts in the city centre) and `SUBURB_FRONTS`, and `plots.FRONT` for zones with no
+  mix of their own, name Bath's zones. Every other map's zones fall through to their mixes in
+  `gardens.STYLE`, so nothing breaks, but Cape Town's `cbd` keeps guessed fronts where a house
+  stands back more than 1.5 m. Left as tables for Dan to decide, because no data rule measured
+  keeps Bath as it is. Building cover within 120 m does not tell a city centre from a dense
+  suburb: Cape Town's `cape` zone has a median of 0.29 against Bath's `bath` zone's 0.39. Shop signs
+  per building within 120 m does tell them apart (`bath` median 0.43, 64% of houses at 0.2 or more;
+  Cape Town's `cbd` 0.22, 57%; the suburbs about 0). But 19% of Bath's Georgian houses and 2% of its
+  Victorian ones are at 0.2 or more too, so a shop rule would open fronts along Georgian streets
+  that the table keeps closed.
+- [ ] **A way with no width of its own** (most of Hackney's and Bradford-on-Avon's minor streets
+  and paths) is given its class's width in the writer (`write_tile.way_width`), as `prep_map.py`
+  does; before, a bridge over one stopped the square being written.
+- [ ] **Short path stubs at a square's edge** (`drop_edge_way_stubs`): under 10 m, ending on the
+  edge with no way within 1.5 m over it, they go once every square is written. Cape Town had 105
+  such ways stopping at an edge, 81 of them stubs; a real path running on over the edge always has
+  its other piece there, so none should be lost.
+- [x] **Roads under Cape Town's elevated freeways kink** (rule 1, 21 → 121 on the first 53
+  squares). claude/road-grading's network grading in `prep_map.py` took most of it (23 on the
+  combined build), and `structures.py` now grades the partition's streets the same way
+  (`grading.grade`, with a road in a shallow tunnel never joined to one passing over it). On
+  the first 53 squares rule 1 goes 218 → 119 (too steep 180 → 78, off its ground 15 → 11, kinked
+  23 → 30: the extra kinks are on F.W. de Klerk and Nelson Mandela Boulevards where a held point
+  keeps the graded profile and its neighbours follow the base square's ground). Still open: those
+  seven, and the coarse survey's grading evening out a real ramp (a service loop down under Helen
+  Suzman Boulevard in 1_3 now stays level, and is drawn as a bridge over nothing).
+- [x] **Ways crossing on a coarse survey are not bridges because grading cut one through a bump.**
+  Rule 2f (both builders) inferred a bridge wherever two ways crossed 1.5 m apart; on a survey with
+  no detail finer than `grading.COARSE` (Cape Town's, 16 m) a street graded through a hillside
+  came out metres under a path crossing it at grade, and the steps and streets round it were dug
+  down under the "bridge" (Newlands' Bantry and Biskop Steps 4 m under the houses beside them).
+  There each way is now measured where they cross, from no lower than the survey there. Bath,
+  Hackney and Bradford-on-Avon (3 m) keep the old rule. On a coarse survey rule 2g also measures
+  the lower road from the ground it was graded from; on a fine one that lost a real footbridge in
+  Bath (0_3, by Walcot Street), so there it keeps the graded height.
+- [x] **A path joined to a road where it goes into its cutting** (Bath 0_3, the footbridge by
+  Walcot Street, drawn as a bridge over nothing): the data gives a pedestrian way and a service
+  road in a shallow tunnel one point, and the network grading made it a junction, pulling the
+  bridge's end down to the road. Points on a shallow tunnel's stretch, its mouths too, are never
+  one junction with another way the data puts there (the underpass rule carries that way over
+  the cutting anyway).
+- [x] **A steep path's end graded off the street it meets** (Bath 3_2, a pedestrian ramp into a
+  square, 0.8 m off the footways there): the grading told junctions apart by heights already
+  evened out along each road, and a steep path's evened end stood 3 m off the street's, so the
+  two were taken for a crossing at different levels. `grading.grade` now takes the unevened
+  heights for that test (`survey`); `prep_map.py` still passes none, so the old build is as it was.
+- [x] **Hackney's track off its ground** (rule 6, 6 → 17): a footway beside an embankment, dug as
+  wide as a verge (or decked beside the track), took the track bed's ground down 1.5-2.5 m with
+  it. `lay_ground` now holds the bed (2.3 m and half a grid cell, to its last point on the ground)
+  as it holds a carriageway, and a deck cuts it only when it stands a bridge's height over the
+  track. Hackney 17 → 8 (the old build's 6, and 2_1's rail bridge marked 4 m short of the passage
+  under it).
+- [x] **Paving no street reaches stood metres off the ground** (Cape Town's building floating):
+  a sliver paved between houses took the level of the nearest street up to 40 m away, so a
+  terrace stood 3 m over it. Paving beyond a street's reach (and a wall's width more) now lies on
+  the ground. Rule 9's "path strip along a pavement" rises a little (Bath 34 → 49) because such
+  paving is now level with the paths beside it, where before it stood a step apart.
+- [x] **Crossings off the road** (Cape Town 0 → 24): the crossings are on the busway, a slip road
+  and the motorway, which the old build didn't have or called primary. The check counted only its
+  own list of vehicle classes; it now takes any carriageway.
+- [ ] **Back boundaries roll from each zone's own mix, and the roll now runs.** `reroll_back_styles`
+  looked a block up by its owner house's point, which stands in a hole of its block, so it never
+  found one, even in Bath: the guessed fences and hedges between gardens kept whatever the square's
+  commonest evidence was (in Hackney, hedges all round). It now finds the block by the boundary's
+  middle and rolls from `gardens.STYLE`'s back mix for the zone, as the old build does. A
+  registered (parcel) garden's edge against open land is left alone: rolling those too turned most
+  of Bath's hedges into fences (1,1: 19.7 km of hedge to 4.5 km), and the plots made them hedges on
+  purpose. A guessed edge against open land is rolled, because its kind was only the square's
+  commonest evidence (in Hackney, where a back yard often meets unassigned land, thick hedges
+  across the yards). Bath's sample squares move by a kilometre or so between fence and hedge.
+- [ ] **Cape Town's own boundary kinds** (`security_wall`, `boundary_wall`, `palisade`) were not
+  among the writer's barrier kinds, so they were dropped without a word (409 km of back walls and
+  every guessed front). They are now written with the game's heights and widths, guessed fronts of
+  those kinds follow the same rules as Bath's, and the walls count as walls in `settle.py`.
+- [x] **Fewer front paths and gates where there are no parcels** (Bradford-on-Avon 2,368 front
+  paths to 1,193, Cape Town 8,330 to 5,510, Hackney 4,827 to 4,550). Without parcels nothing divided
+  the ground in front of a row of houses, so a block's whole front was one face, too long to be any
+  one garden, and was left as open land. A plot whose house stood past the end of its back line
+  also had no reach at all (`_half_plane` was only as wide as the line was long). Now, on land no
+  registered parcel reaches within 30 m (`free` in `plots._cut_region`, a data condition and not a
+  map switch), each side wall's division carries on forward to the street. The house's front is
+  squared to its own walls. The garden's reach is a true half-plane. Pairs backing on to the same
+  yard share one back line, which keeps a metre clear of both houses. In the writer, a door on such
+  land gets its own gate when a side fence stands between it and the nearest gate. After:
+  Bradford-on-Avon 1,754 front paths; on 1,1, 357 against the old build's 576 and the partition's
+  240, with 329 of 711 doors reached against 427 and 228. Hackney has 5,689 against 4,827. Cape Town's 53 partition squares have 7,155 against 8,330 (5,510 before); on 2,0, 458 against 572 (362 before). Of
+  Bradford-on-Avon 1,1's doors still without a path, most face the carriageway or pavement within
+  2 m (the partition's street is wider there than the old build's, so the old gate stands in it),
+  and the rest have a front garden under 3 m deep.
+- [x] **Stepped back fences in Bradford-on-Avon.** The writer now straightens guessed boundaries
+  between gardens on unregistered land as `prep_map._straighten` did (`partition/straighten.py`: a
+  run straying under 3 m from a straight line, clear of streets, houses, gateways and other runs,
+  is drawn straight, and fences ending on it slide along to meet it). On Bradford-on-Avon 1,1, steps
+  per km fall from 13.0 to 6.8 (the old build had none, because it drew its fences straight in the
+  first place).
+- [x] **Cape Town's diagonal walls across gardens.** The front normal was the bare direction to the
+  nearest street point, so division lines and caps ran at the angle to it rather than square to the
+  house. On unregistered land it is now squared to the house's walls. The guessed kind between
+  gardens was the square's commonest evidence (Cape Town's inferred "wall") and was never rolled;
+  it is now rolled from the zone's back mix like any other guessed fence. The front walls along the
+  near street are still drawn, but rolled per street row rather than per house row, so a whole row
+  can come out as palisade where the old build mixed it with security walls. That is a style roll,
+  not a lost wall.
+- [x] **Terraced blocks shattered into slivers** (Cape Town 4_0: one 2,795 m2 block of 61 back-to-back
+  terraced houses cut into 19,133 faces, 17,837 of them under 0.1 m2, and the square took 355 s to
+  divide). Every pair of houses laid its own back line the length of the block, every gap between
+  two back-to-back houses laid a bisector along it too, and the two walls of each party wall gave
+  lines a few centimetres apart at slightly different angles. On unregistered land a pair whose gap
+  a back line already crosses takes that line, two back-to-back houses are not bisected (their back
+  line divides them), and a division line running within 3 degrees of one already laid and coming
+  within 0.5 m of it is laid once. Now 832 faces (107 under 0.1 m2), and the square divides in 17 s.
+- [ ] **Bradford-on-Avon's parcels leave fewer front paths than the fallback.** With the Land
+  Registry parcels (claude/combined-parcels), the plots follow them as in Bath, and the map has
+  1,417 front paths against the old build's 2,368 and the fallback's 1,754. On 1,1, 254 of 711 doors
+  are reached (old build 427). Of the doors the old build reached and this does not, 144 have a
+  parcel in front of the door and are lost the way Bath's parcel plots lose them. In 80 the house's
+  parcel stops at its front wall with nothing registered in front, so the front garden is left as
+  open land. In 29 the house has no parcel of its own but one lies within 30 m, so it is not laid
+  out from the house alone either. Hackney with its parcels is fine (4,881 against the old build's
+  4,827; on 1,1, 447 doors against 345), though its back boundaries go hedge-heavy as the parcel
+  edges do in Bath (148 km of hedge against the old build's 62). A rule for a parcel that stops at
+  the house front, so the front garden is laid out from the house, would bring Bradford-on-Avon up.
+  It needs measuring on Bath first, because it would touch Bath's plots.
+- [ ] **A few new wall clashes where gardens are laid out from the house** (rule 9). Bradford-on-Avon
+  has one pair of walls a metre apart (2,2 at 706,1424, a garden wall beside a fence, 3 m). It
+  appears in the whole-map build but not when the square is written alone from the same caches.
+  Cape Town's 53 partition squares have 3 lone stubs, 3 pairs of walls a metre apart and 1 fence
+  poking past another, where before there were none. They come from the plots' new forward
+  divisions, not the straightening: they are the same with it turned off. The same builds took
+  rule 9's path strips from 207 to 155 and its road-paving slivers from 159 to 91 in Cape Town, and
+  in Hackney from 39 to 32 and 83 to 50. Two of the stubs are held only by a run 0.36 m away, inside
+  the writer's own hold distance but outside the check's 0.3 m.

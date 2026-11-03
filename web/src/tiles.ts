@@ -1,5 +1,5 @@
 // The full-detail squares round the detailed map (built by tools/prep_tiles.py into
-// public/maps/<id>/<ti>_<tj>.json): the rest of Bath at the same detail as Combe Down, about a
+// public/maps/<id>/<ti>_<tj>.json, and downloaded packed: pack.ts): the rest of Bath at the same detail as Combe Down, about a
 // kilometre a side. Only the squares near the player are loaded. Each is fetched, given a GameMap
 // of its own (its ground, walls, roofs and trees, which the main map hands questions to) that is
 // set up a slice at a time, and its scenery is built a few milliseconds a frame (world.ts), so the
@@ -23,6 +23,7 @@ import { clearClimb } from "./theclimb";
 // and dropped once it's further than view.drop; and no more than SQUARES of them, the nearest, with
 // a few more kept once built, so walking along the edge of one doesn't build and drop it by turns.
 const BUDGET = 6;        // milliseconds of setting up and building a frame
+const RUSH = 24;         // and while the view's covered on arriving somewhere
 const SPARE = 2;         // squares kept built past the budget
 // A phone or tablet takes one square at a time: each one being read briefly takes several times its
 // file's size in memory, and Chrome on Android closes the page outright when it runs short.
@@ -56,9 +57,27 @@ interface Tile {
   tries?: number; failedAt?: number;
 }
 
-/** A response's text, calling alive() as each piece of it arrives. */
-async function textOf(r: Response, alive: () => void): Promise<string> {
-  if (!r.body) return r.text();
+/** Whether a count of squares still to come (tiles.ts's pending, or arrive.ts's few close by) has
+ *  stayed at nought for a few frames and a little while: the last square built is drawn and on the
+ *  graphics card by then, not just finished. The screenshot tool (tools/shoot.mjs) waits on the same
+ *  test, through globalThis.__calm. */
+export class Calm {
+  private frames = 0;
+  private since = -1;
+  constructor(private wantFrames: number, private wantMs: number) {}
+  /** Call once a frame with the count; true once it has been nought long enough. */
+  still(n: number, now = performance.now()): boolean {
+    if (n > 0) { this.since = -1; this.frames = 0; return false; }
+    if (this.since < 0) this.since = now;
+    return ++this.frames >= this.wantFrames && now - this.since >= this.wantMs;
+  }
+  reset() { this.since = -1; this.frames = 0; }
+}
+(globalThis as any).__calm = (frames: number, ms: number) => new Calm(frames, ms);
+
+/** A response's bytes, calling alive() as each piece of it arrives. */
+async function bytesOf(r: Response, alive: () => void): Promise<Uint8Array> {
+  if (!r.body) return new Uint8Array(await r.arrayBuffer());
   const reader = r.body.getReader(), parts: Uint8Array[] = [];
   let n = 0;
   for (;;) {
@@ -70,7 +89,7 @@ async function textOf(r: Response, alive: () => void): Promise<string> {
   const all = new Uint8Array(n);
   n = 0;
   for (const p of parts) { all.set(p, n); n += p.length; }
-  return new TextDecoder().decode(all);
+  return all;
 }
 
 /** What last went wrong loading a square, for the note main.ts shows when loading stalls. */
@@ -86,6 +105,10 @@ export class Tiles {
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
+  /** Build in bigger slices a frame, while nobody can see the frame rate (arrive.ts's cover is up). */
+  rush = false;
+  /** Goes up whenever a square's scenery comes or goes, so the backdrop knows to look again. */
+  drawnVersion = 0;
 
   /** build: a square's scenery, a slice at a time, into the group given; free: let go of a group half built. */
   constructor(private core: GameMap, private scene: THREE.Scene,
@@ -98,6 +121,11 @@ export class Tiles {
     const m = this.core.tileAt(x, z);
     if (!m?.d.tile) return undefined;
     return this.live.get(tileKey(m.d.tile[0], m.d.tile[1]))?.world;
+  }
+
+  /** The squares whose scenery is built and drawn, as [ti, tj]. */
+  *drawn(): Generator<[number, number]> {
+    for (const t of this.live.values()) if (t.world) yield [t.ti, t.tj];
   }
 
   /** Keep the squares within r of scene (x, z) loaded from now on, and say whether they all are yet
@@ -114,6 +142,24 @@ export class Tiles {
       }
     return ready;
   }
+
+  /** How many squares within r of scene (x, z) aren't loaded and built yet (leaving out any that
+   *  wouldn't load): what someone just set down there has to wait for to see the streets round them. */
+  unbuiltNear(x: number, z: number, r: number): number {
+    const I = this.core.tileIndex!, S = I.cells * I.dx, u = x - I.x0, v = -z - I.y0;
+    let n = 0;
+    for (let ti = Math.floor((u - r) / S); ti <= Math.floor((u + r) / S); ti++)
+      for (let tj = Math.floor((v - r) / S); tj <= Math.floor((v + r) / S); tj++) {
+        const k = tileKey(ti, tj), t = this.live.get(k);
+        if (!this.exists.has(k) || t?.failed || t?.world) continue;
+        if (Math.hypot(Math.max(0, ti * S - u, u - (ti + 1) * S), Math.max(0, tj * S - v, v - (tj + 1) * S)) <= r) n++;
+      }
+    return n;
+  }
+
+  /** Look for the squares round us on the next update rather than at the next of its regular looks:
+   *  after a jump, so the ones there start loading straight away. */
+  look() { this.wait = 0; }
 
   /** others: where everyone else is (scene coords), for the host; leave it empty otherwise. */
   update(px: number, pz: number, dt: number, others: { x: number; z: number }[] = []) {
@@ -177,7 +223,7 @@ export class Tiles {
     // (when the spike probe is watching, how this frame's update was spent: see tools/spikeprobe.mjs)
     const T = (globalThis as any).__tileTimes as { setup: number; build: number; worlds: number } | undefined;
     if (T) { T.setup = T.build = T.worlds = 0; }
-    const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? BUDGET);
+    const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? (this.rush ? RUSH : BUDGET));
     const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.near && !t.world))).sort((a, b) => first(a) - first(b));
     for (const t of work) {
       while (!busy()) {
@@ -210,7 +256,7 @@ export class Tiles {
           if (long.length > 200) long.splice(0, long.length - 200);
         }
         if (T) T.build += performance.now() - s0;
-        if (r.done) { t.world = r.value; t.job = undefined; break; }
+        if (r.done) { t.world = r.value; t.job = undefined; this.drawnVersion++; break; }
       }
       if (busy()) break;
     }
@@ -230,11 +276,14 @@ export class Tiles {
     let late = 0;
     const alive = () => { clearTimeout(late); late = window.setTimeout(() => stop.abort(), 20000); };
     alive();
-    fetch(`${this.core.tileBase}${t.ti}_${t.tj}.json`, { signal: stop.signal })
-      .then((r) => (r.ok ? textOf(r, alive) : Promise.reject(new Error(String(r.status)))))
+    // the packed square (pack.ts), or its JSON where a tool serves the map folder before packing
+    const base = `${this.core.tileBase}${t.ti}_${t.tj}`;
+    fetch(`${base}.pack.gz`, { signal: stop.signal })
+      .then((r) => (r.status === 404 ? fetch(`${base}.json`, { signal: stop.signal }) : r))
+      .then((r) => (r.ok ? bytesOf(r, alive) : Promise.reject(new Error(String(r.status)))))
       .finally(() => clearTimeout(late))
-      // read it in a worker, so the parse never lands in a frame (parsesquare.ts)
-      .then((text) => this.parser.parse(t.ti, t.tj, text))
+      // read it in a worker, so the reading never lands in a frame (parsesquare.ts)
+      .then((bytes) => this.parser.parse(t.ti, t.tj, bytes))
       .then((parsed) => {
         if (parsed.error !== undefined) throw new Error(parsed.error);
         const d = parsed.data as MapData;
@@ -264,7 +313,7 @@ export class Tiles {
   /** Take down a square's scenery, finished or not. */
   private unbuild(t: Tile) {
     if (!t.world && !t.job) return;
-    if (t.world) t.world.dispose();
+    if (t.world) { t.world.dispose(); this.drawnVersion++; }
     else if (t.job) { t.job.return(undefined as never); if (t.group) this.free(t.group); }
     t.world = t.job = t.group = undefined;
     // the map stays for whoever's there, on its true ground: what it was handed by the scenery

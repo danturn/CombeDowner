@@ -32,8 +32,8 @@ and roof levels, and the canopy) is read from that file instead (one square's me
 tools/mapdata.py), and neither is needed; with --measure, they are worked out from the lidar and
 the canopy map as usual and written to that file. Both build exactly the same map.
 """
-from collections import defaultdict
-import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
+from collections import Counter, defaultdict
+import copy, hashlib, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
 from PIL import Image
@@ -225,6 +225,8 @@ def L(f):
     steps read the same layer; the properties are copied each time, so no step sees another's changes."""
     if f not in _layers:
         _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+        # the footprints the buildings layer lacks (tools/footprints.py) are buildings like any other
+        if f == "building" and os.path.exists(f"{src_dir}/footprints.geojson"): _layers[f] += L("footprints")
     return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
 
 
@@ -273,7 +275,9 @@ def flag_ranges(p, key):
     return out
 
 
-from profiles import APPROACH, carry_profile, ease_grades, ease_kinks
+from profiles import APPROACH, carry_profile, ease_kinks
+from railway import open_runs, portal_faces, BORE_LIT
+from grading import COARSE, grade, terrain_detail
 
 
 def level_structures(run, z, bridges, tunnels):
@@ -528,6 +532,14 @@ def towpath(run, z, snap=True, bridged=()):
 
 # every road run first, with its heights and what's marked on it; then the underpasses, so the
 # roads over them are spans; then the roads are written out and the ground flattened under them
+# a road by the sea is up on the quay, as the ground there is (the water, below), never down on the
+# sea floor or the harbour's water that the survey has under it
+QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH, SHORE_DEPTH = 2.5, 1.5, 30.0, 0.4
+quayside = None
+if getattr(A, "sea", None) is not None:
+    quayside = unary_union([q for g, p in L("water") if p.get("subtype") == "ocean" and p.get("class") != "sea"
+                            for q in whole_polys(g, box(*(ROAD_BOX or BM.bounds)).buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
+    shapely.prepare(quayside)
 pending = []
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
@@ -564,6 +576,9 @@ for g, p in L("segment"):
             # the survey's heights, the structures carried straight between the road at their ends
             # (the roads are smoothed as a network once they're all in: smooth_network)
             z = [elev(x, y) for x, y, _ in run]
+            if quayside is not None:
+                by_sea = shapely.dwithin(quayside, shapely.points([q[:2] for q in run]), QUAY_REACH)
+                z = [max(h, A.sea + QUAY_HEIGHT) if w else h for h, w in zip(z, by_sea)]
             z = level_structures(run, z, bridge_ranges, tunnel_ranges)
             for i in in_ranges(run, tunnel_ranges):
                 for ts, zs_ in floors:
@@ -623,15 +638,14 @@ def chains():
 
 
 # Roads rise and fall like roads, not like the survey's pixels: the survey has walls, kerbs and
-# banks in it, a metre or two up or down within a few metres along a street. So once every road is
-# in, the network is smoothed as a whole, the main roads first: each road along its length (the
-# pieces the data splits it into joined up), by distance, over about a dozen metres either way;
-# where a lesser road meets one already smoothed (a side street at a junction, a crossroads) it
-# takes that road's height there and eases into it; and no road is left steeper than the hill it
-# climbs, measured over 40 m, with a little to spare (or 1 in 5.5, where the hill's gentler).
-# Bridges and tunnels keep the heights they're carried at.
-RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "living_street": 4,
-        "unclassified": 5, "pedestrian": 5, "service": 6, "unknown": 6}
+# banks in it, a metre or two up or down within a few metres along a street, and a coarse survey
+# (no lidar) has buildings in it and the slope of the hillside a road runs across. So once every
+# road is in, each is evened out along its length (the pieces the data splits it into joined up),
+# by distance, over about a dozen metres either way, and then the whole network is graded at once
+# (tools/grading.py): every junction at one height, each road as near that as it can be with no
+# stretch steeper than its kind of road may be, nor steeper than the hill it climbs (measured over
+# 40 m, with a little to spare, or 1 in 5.5 where the hill's gentler), and bumps narrower than the
+# survey can really see evened out. Bridges and tunnels keep the heights they're carried at.
 SIGMA = 6.0          # metres: how far along a road its heights are evened out
 GRADE = 0.18         # the steepest a road is laid where the hill under it is gentler than that
 # and the steepest each kind of road is laid whatever the hill: Bath's main roads climb at 1 in 8
@@ -639,54 +653,78 @@ GRADE = 0.18         # the steepest a road is laid where the hill under it is ge
 # Hodshill), and only drives and yards more, up to 1 in 3
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
+# metres: bumps in a road's survey narrower than about four times this are evened out
+# (measured over all of the map's terrain, not just this square's, so every square grades alike)
+def _detail():
+    # the same figure for every square, so it is worked out once per set of terrain tiles and kept
+    names = sorted(f for f in os.listdir(cache) if f.startswith(f"{Z}_") and f.endswith(".png"))
+    key = hashlib.sha1(repr([(f, os.path.getsize(os.path.join(cache, f))) for f in names] + [lat0]).encode()).hexdigest() if names else None
+    kept = os.path.join(os.path.dirname(os.path.abspath(src_dir)), f".detail-{key}.json")
+    if key and os.path.exists(kept):
+        return json.load(open(kept))
+    d = terrain_detail([np.asarray(Image.open(os.path.join(cache, f)).convert("RGB")).astype(float) @ [256, 1, 1 / 256]
+                        for f in names] or DEM, 156543.03 * math.cos(math.radians(lat0)) / 2 ** Z)
+    if key:
+        tmp = f"{kept}.{os.getpid()}"
+        json.dump(d, open(tmp, "w"))
+        os.replace(tmp, kept)
+    return d
+
+
+DETAIL = _detail()
+print(f"terrain: detail down to {DETAIL:.0f} m")
 
 
 def smooth_network():
-    done = {}
-    key = lambda q: (round(q[0] * 2), round(q[1] * 2))
-    order = []
-    for ch in chains():
-        c = pending[ch[0][0]]["c"]
-        if c in PATHS and c != "pedestrian": continue
-        L = sum(math.dist(pending[k1]["run"][i1][:2], pending[k2]["run"][i2][:2]) for (k1, i1), (k2, i2) in zip(ch, ch[1:]))
-        order.append((RANK.get(c, 6), -L, ch))
-    order.sort(key=lambda o: (o[0], o[1]))
+    order = [ch for ch in chains() if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"]
     tun = {k: in_ranges(r["run"], r["tunnel_ranges"]) for k, r in enumerate(pending) if r["tunnel_ranges"]}
-    for _, _, ch in order:
+    xy, target, fixed, steep = {}, {}, {}, []
+    for ch in order:
         pts = [pending[k]["run"][i] for k, i in ch]
         z = np.array([pending[k]["z"][i] for k, i in ch], dtype=float)
         n = len(ch)
-        fixed = np.array([i in pending[k]["span"] or i in tun.get(k, ()) for k, i in ch])
-        for m, q in enumerate(pts):
-            h = done.get(key(q))
-            # (a road laid already, meeting this one there: unless it's well above or below, a
-            # bridge's deck and a road passing under it at a point the data happens to give both)
-            if h is not None and abs(h - z[m]) < 2.5: z[m] = h; fixed[m] = True
+        hold = [i in pending[k]["span"] or i in tun.get(k, ()) for k, i in ch]
         d = np.zeros(n)
         for m in range(1, n): d[m] = d[m - 1] + math.dist(pts[m - 1][:2], pts[m][:2])
-        # evened out along it, by distance (the fixed points pull their neighbours, and keep their own)
-        out = z.copy()
-        for m in range(n):
-            if fixed[m]: continue
+        for m, (k, i) in enumerate(ch):
+            xy[(k, i)] = pts[m][:2]
+            if hold[m]:
+                target[(k, i)] = fixed[(k, i)] = float(z[m])
+                continue
             near = np.flatnonzero(np.abs(d - d[m]) < 3 * SIGMA)
             w = np.exp(-((d[near] - d[m]) ** 2) / (2 * SIGMA ** 2))
-            out[m] = float((w * z[near]).sum() / w.sum())
-        z = out
-        # no steeper than the hill (over 40 m) it climbs
-        lim = np.zeros(max(0, n - 1))
+            target[(k, i)] = float((w * z[near]).sum() / w.sum())
+        lim = []
         for m in range(n - 1):
             dd = d[m + 1] - d[m]
-            if dd < 0.01: lim[m] = 0.0; continue
+            if dd < 0.01: lim.append(1.0); continue
             (ax, ay), (bx, by) = pts[m][:2], pts[m + 1][:2]
             ux, uy = (bx - ax) / dd, (by - ay) / dd
             mx, my = (ax + bx) / 2, (ay + by) / 2
             hill = abs(elev(mx + ux * 20, my + uy * 20) - elev(mx - ux * 20, my - uy * 20)) / 40
-            lim[m] = min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)) * dd
-        ease_grades(z, d, lim, fixed)
-        ease_kinks(z, d, fixed)
+            lim.append(min(STEEPEST.get(pending[ch[m][0]]["c"], 0.33), max(GRADE, hill + 0.03)))
+        steep.append(lim)
+    regrade(order, xy, target, fixed, steep)
+
+
+graded_key = lambda q: (round(q[0] * 2), round(q[1] * 2))
+
+
+def regrade(order, xy, target, fixed, steep):
+    """The network graded (tools/grading.py) and written back to the roads, each then eased of
+    sharp changes of gradient between its junctions (a junction stays where the grading put it)."""
+    exact = [[STEEPEST.get(pending[k]["c"], 0.33) for k, _ in ch[:-1]] for ch in order]
+    graded = grade(order, xy, target, fixed, steep, DETAIL, [RW.get(pending[ch[0][0]]["c"], 4) / 2 for ch in order], exact)
+    seen = Counter(q for ch in order for q in {graded_key(pending[k]["run"][i]) for k, i in ch})
+    for ch in order:
+        pts = [pending[k]["run"][i] for k, i in ch]
+        z = [graded[(k, i)] for k, i in ch]
+        d = [0.0]
+        for a, b in zip(pts, pts[1:]): d.append(d[-1] + math.dist(a[:2], b[:2]))
+        held = [(k, i) in fixed or seen[graded_key(pts[m][:2])] > 1 or m in (0, len(ch) - 1) for m, (k, i) in enumerate(ch)]
+        ease_kinks(z, d, held)
         for m, (k, i) in enumerate(ch):
             pending[k]["z"][i] = float(z[m])
-            done[key(pts[m])] = float(z[m])
 
 
 smooth_network()
@@ -744,6 +782,7 @@ if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points o
 #    easing in and out over a few dozen metres, and its own flattening cuts the ground with it.
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
 rail_tracks = json.load(open(rail_file))["tracks"] if os.path.exists(rail_file) else []
+rail_canopies = [shapely.Polygon(c["r"]).buffer(0) for c in (json.load(open(rail_file)).get("canopies") or [])] if os.path.exists(rail_file) else []
 is_sea = lambda p: p.get("subtype") == "ocean" and getattr(A, "sea", None) is not None   # a map by the sea holds it at sea level
 water_polys = [transform(proj, g) for g, p in L("water") if p.get("class") != "sea" and g.geom_type.endswith("Polygon")]
 water_tree = shapely.STRtree(water_polys)
@@ -1126,6 +1165,11 @@ for k, r in enumerate(pending):
         if r["tunnel_ranges"] and in_ranges([r["run"][i] for i in near_k], r["tunnel_ranges"]): continue     # (in a tunnel: under the hill)
         if o["tunnel_ranges"] and in_ranges([o["run"][i] for i in near_j], o["tunnel_ranges"]): continue
         zk, zj = min(r["z"][i] for i in near_k), min(o["z"][i] for i in near_j)
+        if DETAIL > COARSE:
+            # (where they cross, and each no lower than the survey there, which a way graded through a
+            # bump in it was cut from: grading.COARSE)
+            at = lambda w, near: w["z"][min(near, key=lambda i: math.dist(w["run"][i][:2], (x.x, x.y)))]
+            zk, zj = (max(at(w, near), elev(x.x, x.y)) for w, near in ((r, near_k), (o, near_j)))
         if abs(zk - zj) < 1.5: continue
         (up, upi), (lo_, loi) = ((r, k), (o, j)) if zk > zj else ((o, j), (r, k))
         reach = RW.get(lo_["c"], 4) / 2 + 2.5
@@ -1217,31 +1261,23 @@ if dipped: carry_spans(True)      # (a road dipped beside a bridge of its own ha
 
 def limit_grades():
     """No road steeper than its kind may be (STEEPEST), after the dips under bridges and the
-    climbs onto them: where one is, the ramp is lengthened, the bottom of each dip (and every
-    bridge's deck, and the towpath) staying where it is."""
+    climbs onto them: the network is graded again (regrade), the bottom of each dip (and every
+    bridge's deck, and the towpath) staying where it is, so the ramps either side are lengthened
+    and the roads meeting them follow."""
     held = defaultdict(set)
     for j, x in dips:
         for i, q in enumerate(pending[j]["run"]):
             if math.dist(q[:2], (x.x, x.y)) < 6: held[j].add(i)
-    # (the main roads first, and a lesser road held where it meets one already eased, as in smooth_network)
-    done, key = {}, lambda q: (round(q[0] * 2), round(q[1] * 2))
-    order = sorted((ch for ch in chains() if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"),
-                   key=lambda ch: (RANK.get(pending[ch[0][0]]["c"], 6), -len(ch)))
+    order = [ch for ch in chains() if pending[ch[0][0]]["c"] not in PATHS or pending[ch[0][0]]["c"] == "pedestrian"]
+    xy, target, fixed, steep = {}, {}, {}, []
     for ch in order:
-        pts = [pending[k]["run"][i] for k, i in ch]
-        z = [pending[k]["z"][i] for k, i in ch]
-        meets = [key(q) in done and abs(done[key(q)] - h) < 2.5 for q, h in zip(pts, z)]
-        z = [done[key(q)] if m_ else h for q, h, m_ in zip(pts, z, meets)]
-        d = [0.0]
-        for a, b in zip(pts, pts[1:]): d.append(d[-1] + math.dist(a[:2], b[:2]))
-        fixed = [m_ or i in pending[k]["span"] or i in pending[k]["deck"] or i in pending[k]["tow"] or i in held[k] for m_, (k, i) in zip(meets, ch)]
-        lim = [STEEPEST.get(pending[ch[m][0]]["c"], 0.33) * (d[m + 1] - d[m]) for m in range(len(ch) - 1)]
-        ease_grades(z, d, lim, fixed)
-        ease_kinks(z, d, fixed)
-        for q, (k, i), h in zip(pts, ch, z):
-            pending[k]["z"][i] = h
-            done.setdefault(key(q), h)
-
+        for k, i in ch:
+            r = pending[k]
+            xy[(k, i)] = r["run"][i][:2]
+            target[(k, i)] = r["z"][i]
+            if i in r["span"] or i in r["deck"] or i in r["tow"] or i in held[k]: fixed[(k, i)] = r["z"][i]
+        steep.append([STEEPEST.get(pending[ch[m][0]]["c"], 0.33) for m in range(len(ch) - 1)])
+    regrade(order, xy, target, fixed, steep)
 
 limit_grades()
 
@@ -1323,8 +1359,11 @@ if afloat: carry_spans(True)      # (the footbridges too)
 # drawn over the road down in it, or a path whose bridge the data stops short of the road it
 # crosses), is on a bridge there: the ground is the lower road's. Over a bored tunnel the ground is
 # the hill over its roof, and a way on it stays on the ground; and a path along the top of a
-# cutting's side, over the road's verge, is beside it, not on it
+# cutting's side, over the road's verge, is beside it, not on it. A road graded down through a bump
+# in the survey (a building in a coarse one) is measured from the ground it was cut from, which the
+# way crossing it still has; a road dipped under a bridge is measured from its dip
 stacked = 0
+dipped_at = {(j, i) for j, x in dips for i, q in enumerate(pending[j]["run"]) if math.dist(q[:2], (x.x, x.y)) < 6}
 for k, r in enumerate(pending):
     if r["c"] in PATHS and r["c"] in ("steps", "pedestrian"): continue
     for j in road_tree.query(road_lines[k].buffer(4.0)):
@@ -1338,7 +1377,8 @@ for k, r in enumerate(pending):
             if line_.distance(pt) > half_: continue
             m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], q[:2]))
             if any(b0 <= m_ <= b1 for b0, b1 in o["bored"]): continue
-            if r["z"][i] - o["z"][m_] >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
+            below = o["z"][m_] if (int(j), m_) in dipped_at else max(o["z"][m_], elev(*o["run"][m_][:2]))
+            if r["z"][i] - below >= (2.5 if r["c"] in PATHS else 3.0) and m_ not in o["span"]:
                 r["span"].add(i); r.setdefault("solid", set()).add(i); stacked += 1
 if stacked: print(f"bridges: {stacked} road points lying over another road well below them carried as bridges")
 
@@ -1605,8 +1645,13 @@ if True:
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
             # the basins off it (a marina): canal.ts draws their water too, at their pound's level
             cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
-    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
+
+    _shore = []
+    def sea_shore():
+        """Within a grid step of the coast (not of a square's edge, where the sea runs on)."""
+        if not _shore: _shore.append(whole_sea.boundary.intersection(BM.buffer(QUAY_REACH + dx)).buffer(dx * 1.01))
+        return _shore[0]
     beaches = unary_union([q for g, p in L("land") if p.get("class") in ("beach", "sand") for q in whole_polys(g)] or [Point(1e9, 1e9)])
     # A river or a lake steps down only at a weir or a dam (OpenStreetMap's waterway=weir or dam, in
     # Overture's infrastructure): its water is cut there, so the water above and below lie at their
@@ -1712,6 +1757,13 @@ if True:
         whole = transform(proj, g)
         if not whole.intersects(BM): continue
         if not whole.is_valid: whole = shapely.make_valid(whole)
+        # a harbour's dock or basin mapped over the sea is the sea, which already stands there at sea
+        # level: only what reaches beyond it is its own, and that opens onto the sea at sea level
+        # rather than at the seabed under its mapped edge
+        joins_sea = getattr(A, "sea", None) is not None and not is_sea(p) and whole.intersects(whole_sea)
+        if joins_sea:
+            whole = whole.difference(whole_sea)
+            if whole.area < 1: continue
         # (a tank, a pool or a reservoir stands in its own walls: the game builds them, where its water
         # stands above the ground round it)
         tank = p.get("subtype") in ("human_made", "reservoir") or p.get("class") == "wastewater"
@@ -1731,6 +1783,7 @@ if True:
                     # (the lidar across a weir reads the water below it, not the level above)
                     bank = [(x, y) for x, y in rings[0] if not (weir_near is not None and shapely.intersects_xy(weir_near, x, y))] or rings[0]
                     wz = A.sea if at_sea else min(elev(x, y) for x, y in bank) + 0.1
+                    if joins_sea: wz = max(wz, A.sea)
                     entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz), **({"c": "canal"} if is_canal else {}),
                                  **({"k": "t"} if tank else {}))
                     water_all.append(entry)
@@ -1750,7 +1803,13 @@ if True:
                         elif at_sea:
                             # the harbour's quays stand straight up out of deep water, a metre and a
                             # half above it; a beach is left to run down into the sea
-                            grid[win][wet] = np.minimum(grid[win][wet], wz - QUAY_DEPTH)
+                            # (but only a little below it along the shore itself, so the ground the
+                            # game draws between the last wet point and the first dry one meets the
+                            # water at its edge rather than dipping under it)
+                            shore = shapely.intersects_xy(sea_shore(), GX[win], GY[win])
+                            blk = grid[win]
+                            blk[wet] = np.minimum(blk[wet], np.where(shore[wet], wz - SHORE_DEPTH, wz - QUAY_DEPTH))
+                            grid[win] = blk
                             qwin, quay = cover_xy(poly.buffer(QUAY_REACH, join_style=2), edge=True)
                             quay &= ~shapely.intersects_xy(whole_sea, GX[qwin], GY[qwin]) & ~shapely.contains_xy(beaches, GX[qwin], GY[qwin])
                             grid[qwin][quay] = np.maximum(grid[qwin][quay], wz + QUAY_HEIGHT)
@@ -2128,8 +2187,13 @@ if TILE is not None:
 
 # ---- ground types per terrain vertex ------------------------------------------
 # 0 garden/grass, 1 pitch (and golf greens), 2 wood floor, 3 farmland/meadow, 4 cemetery,
-# 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground
+# 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground, and the wild ground's
+# (tools/wild.py): 8 rock, 9 heath and scrub, 10 sand, 11 wetland, under all the rest
+import wild
 GT = np.zeros(grid.shape, dtype=np.int8)
+for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)):
+    win, inn = cover_xy(poly)
+    GT[win][inn] = t
 layers = []
 for g, p in L("land_use"):
     c = p.get("class")
@@ -2148,6 +2212,10 @@ for t, g in layers:
     for poly in polys(g):
         win, inn = cover_xy(poly)
         GT[win][inn] = t
+_from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [q for g, p in L("building") for q in polys(g)],
+                       [shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2)
+                        for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS])
+print(f"wild ground: {', '.join(f'{int((GT == k).sum())} points of {n}' for k, n in wild.NAMES.items())} ({_from_cover} from the land cover)")
 
 # ---- buildings ----------------------------------------------------------------
 from buildings import classify
@@ -2172,12 +2240,111 @@ if TILE is not None:
         near = [(i, j) for i in range(math.floor((x0 - G.x0) / _size), math.floor((x1 - G.x0) / _size) + 1)
                 for j in range(math.floor((y0 - G.y0) / _size), math.floor((y1 - G.y0) / _size) + 1) if _built(i, j)]
         return max(near, key=lambda t: (poly.intersection(_tile_box(*t)).area, t), default=at)
-for g, p in L("building"):
-    for poly in (polys(g) if TILE is None else whole_polys(g, WORK)):
+
+
+def _outlines(layer):
+    if not os.path.exists(f"{src_dir}/{layer}.geojson"): return []
+    return [(p, transform(proj, g).buffer(0)) for g, p in L(layer) if g.geom_type.endswith("Polygon")]
+
+
+# what the census's output areas and the conservation areas say of each building (buildings.priors),
+# worked out over every footprint in the square's cut of the map, so each output area is seen whole
+_census = [(p["hh"], g) for p, g in _outlines("census")]
+_cores = [g for _, g in _outlines("conservation")]
+PRIOR = {}
+if _census or _cores:
+    from buildings import priors
+    _everywhere = box(-1e9, -1e9, 1e9, 1e9)
+    _every = []
+    for fi, (g, p) in enumerate(L("building")):
+        for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, _everywhere)):
+            poly = poly.simplify(0.25)
+            if poly.area < 6 or poly.geom_type != "Polygon": continue
+            _every.append(((fi, k), poly, p))
+    _every_certs = None
+    try:
+        import epc
+        _every_certs = epc.per_building(epc.load(os.path.join(src_dir, "epc"), A.bbox, proj), [e[1] for e in _every])
+    except FileNotFoundError:
+        pass
+    _got = priors([e[1] for e in _every], [e[2] for e in _every], _every_certs,
+                  [zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()) for c in (e[1].centroid for e in _every)],
+                  A.zones, A.default_zone, _census, _cores)
+    for (fid, _, _), pr in zip(_every, _got):
+        PRIOR[fid] = dict(pr, near=[_every[j][0] for j in pr["near"]])
+    print(f"census: {len(_census)} output areas, {sum(1 for pr in _got if pr['flats'] is not None)} homes in them, "
+          f"{sum(1 for pr in _got if pr['flats'])} blocks of flats, {sum(len(pr['near']) for pr in _got) // 2} pairs of houses sharing a wall; "
+          f"conservation areas: {len(_cores)}, {sum(1 for pr in _got if pr['core'])} buildings in an old core "
+          f"({sum(1 for pr in _got if pr['walls'])} with its walls from the data)")
+# A running line out in the open at a footprint's own level (not up on a viaduct high enough over
+# it, nor down in a cutting under it) is where the line is: no building stands across it. A footprint the line
+# only clips is cut back to clear a train; one it runs through (a station's roof over its tracks,
+# or an outline the data has astray) isn't built.
+LINE_CLEAR = 2.6      # metres either side of a track's middle kept clear of buildings
+LINE_OVER = 5.5       # metres up a line on a bridge must be for a building to fit under it (a unit in a viaduct's arch)
+_line_segs = []
+for t in rail_tracks:
+    p_ = t["p"]
+    for k_ in range(len(p_) - 1):
+        a_, b_ = p_[k_], p_[k_ + 1]
+        if a_[3] == 2 and b_[3] == 2: continue
+        if a_[3] == 2: a_ = [(a_[i] + b_[i]) / 2 for i in range(3)]
+        if b_[3] == 2: b_ = [(a_[i] + b_[i]) / 2 for i in range(3)]
+        _line_segs.append((a_, b_))
+_line_tree = shapely.STRtree([shapely.LineString([a_[:2], b_[:2]]) for a_, b_ in _line_segs]) if _line_segs else None
+
+
+# Inside a railway tunnel's mouth, under its crown, where the ground's grid slopes down into the
+# cutting in front of the face (the game draws the bore there), nothing stands: only the hill over
+# it is ground
+bored_low = []
+for fc in portal_faces(json.load(open(rail_file)).get("portals") or []) if os.path.exists(rail_file) else []:
+    if not (X0 - 30 <= fc["x"] <= X1 + 30 and Y0 - 30 <= fc["y"] <= Y1 + 30): continue
+    nx_, ny_ = -fc["uy"], fc["ux"]
+    low = []
+    for u in np.arange(0.0, BORE_LIT + 1.01, 1.0):
+        for v in np.arange(fc["v0"], fc["v1"] + 0.01, 1.0):
+            x_, y_ = fc["x"] + fc["ux"] * u + nx_ * v, fc["y"] + fc["uy"] * u + ny_ * v
+            if gelev(x_, y_) < fc["z"] + fc["crown"]: low.append(shapely.Point(x_, y_).buffer(0.75, quad_segs=2))
+    if low: bored_low.append(unary_union(low))
+_bored = unary_union(bored_low) if bored_low else None
+
+
+def clear_of_line(poly):
+    if _bored is not None and _bored.intersects(poly):
+        rest = poly.difference(_bored)
+        parts = sorted(getattr(rest, "geoms", [rest]), key=lambda g: -g.area)
+        if not parts or parts[0].geom_type != "Polygon" or parts[0].area < max(12.0, 0.5 * poly.area): return None
+        poly = parts[0].simplify(0.25)
+    if _line_tree is None: return poly
+    near = [_line_segs[int(j)] for j in _line_tree.query(poly.buffer(LINE_CLEAR))]
+    level = []
+    for a_, b_ in near:
+        m_ = shapely.LineString([a_[:2], b_[:2]]).intersection(poly.buffer(LINE_CLEAR))
+        if m_.is_empty: continue
+        c_ = m_.centroid
+        f_ = shapely.LineString([a_[:2], b_[:2]]).project(c_, normalized=True)
+        z_ = a_[2] + (b_[2] - a_[2]) * f_
+        if -4.0 < z_ - gelev0(c_.x, c_.y) < LINE_OVER: level.append(shapely.LineString([a_[:2], b_[:2]]).buffer(LINE_CLEAR, cap_style=2))
+    if not level: return poly
+    rest = poly.difference(unary_union(level))
+    parts = sorted(getattr(rest, "geoms", [rest]), key=lambda g: -g.area)
+    if not parts or parts[0].geom_type != "Polygon" or parts[0].area < max(12.0, 0.5 * poly.area): return None
+    return parts[0].simplify(0.25)
+
+
+for fi, (g, p) in enumerate(L("building")):
+    for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
             p = dict(p, _own=keeper(poly) == (ti, tj))      # whole, in the tile holding its middle
+        if PRIOR:
+            p = dict(p, _fid=(fi, k), _prior=PRIOR.get((fi, k)))
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
+        # (a platform's canopy up on the viaduct is the railway's to draw: tools/railway.py)
+        if any(poly.intersects(c) and poly.intersection(c).area > 0.5 * max(poly.area, c.area) for c in rail_canopies): continue
+        poly = clear_of_line(poly)
+        if poly is None: continue
         cand.append((poly, p))
 # buildings whose roofs stand at different levels in the lidar (a mansion between lower links
 # and wings, a house with a single-storey extension) are split where the levels change, and big
@@ -2298,6 +2465,12 @@ try:
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
     print("no lidar data:", e)
+# the heights layer: each roof's highest point as a survey measured it (tools/cct.py), where the lidar didn't
+if os.path.exists(f"{src_dir}/heights.geojson"):
+    from buildings import surveyed_heights
+    _todo = [i for i in range(len(cand)) if not (measured and measured[i])]
+    print(f"heights: {surveyed_heights([cand[i][0] for i in _todo], [cand[i][1] for i in _todo], [(p['height'], g) for p, g in _outlines('heights')])}"
+          f" of {len(cand)} buildings from the surveyed roofs")
 # wall materials from energy certificates, where the data is present (see tools/epc.py)
 certs = None
 try:
@@ -2396,10 +2569,13 @@ def give_way(cand, info, fresh):
     mapped again inside its terrace, two guesses at one semi) would stand walls and roofs inside each
     other. Where one lies within the other, the bigger has it cut out, as a courtyard or a notch, so
     each part stands on its own ground at its own height; where they only overlap, the overlap goes
-    from the smaller. An outline whose lidar roof is kept isn't cut (the roof is fitted to it), nor
-    is a pitched roof given a hole it would span, nor is an outline cut in two. A part standing inside
+    from the smaller (from the bigger where that would leave the smaller under half, and from the
+    smaller anyway where neither can otherwise). An outline whose lidar roof is kept isn't cut (the
+    roof is fitted to it), nor is a pitched roof given a hole it would span, nor is an outline cut in
+    two. A part standing inside
     another gets a courtyard of its own only where the lidar or the mapped heights put it higher or
-    lower than the rest; at the same height it is one roof, and the part is left out of the whole.
+    lower than the rest; at the same height it is one roof, and the part is left out of the whole,
+    as it is from one whose lidar roof is kept unless it stands clear above that roof (a tower).
     Returns how many were cut, and which parts were left out."""
     def known(n):
         return fresh[n] or cand[n][1].get("height") or cand[n][1].get("num_floors")
@@ -2419,14 +2595,24 @@ def give_way(cand, info, fresh):
             over = a.intersection(b).area
             if over < 0.5: continue
             big, small = (i, j) if a.area >= b.area else (j, i)
-            # (where they only overlap, the smaller gives way unless its lidar roof is kept, then the bigger)
-            order = [big] if over >= 0.8 * polys[small].area else [small, big]
-            for k in order:
-                rest = polys[k].difference(polys[small if k == big else big])
-                if is_faced(k) or rest.geom_type != "Polygon" or rest.area < 0.5 * polys[k].area: continue
+            within = over >= 0.8 * polys[small].area
+            # a part inside a building that can't make room for it (its lidar roof is kept, or a hole
+            # would cut it in two or open its pitched roof), at that building's height, is under its
+            # roof: its own roof stood in the same place, the two showing through each other. One
+            # standing clear above that roof is a tower, and stays.
+            under = within and not (known(small) and level(small)[0] > level(big)[1] + 1.0)
+            if under and is_faced(big):
+                merged.add(small)
+                continue
+            # (where they only overlap, the smaller gives way unless its lidar roof is kept, then the
+            # bigger; and where the bigger can't, the smaller does even down to a fifth of it)
+            order = [(big, 0.5)] if within else [(small, 0.5), (big, 0.5), (small, 0.2)]
+            for k, least in order:
+                o = small if k == big else big
+                rest = polys[k].difference(polys[o])
+                if is_faced(k) or rest.geom_type != "Polygon" or rest.area < least * polys[k].area: continue
                 if len(rest.interiors) > len(polys[k].interiors):
                     if info[k]["roof"]: continue
-                    o = small if k == big else big
                     if not (known(o) and known(k) and max(abs(x - y) for x, y in zip(level(o), level(k))) >= 1.0):
                         merged.add(o)
                         break
@@ -2436,6 +2622,8 @@ def give_way(cand, info, fresh):
                 cand[k] = (rest, cand[k][1])
                 cut += 1
                 break
+            else:
+                if under: merged.add(small)
     return cut, merged
 
 
@@ -2715,18 +2903,30 @@ def _to_the_shops(roads):
             line = shapely.LineString([a[:2], b[:2]])
             if line.length < 0.5: seg.append(list(was)); continue
             here = []
+            road = line.buffer(half, cap_style=2)
             for k, s in enumerate((1, -1)):           # left, then right, looking along the points
-                strip = lambda v: line.buffer(s * (half + v), single_sided=True, cap_style=2).difference(line.buffer(half, cap_style=2))
+                strip = lambda v: line.buffer(s * (half + v), single_sided=True, cap_style=2).difference(road)
+                steps, v = [], was[k]
+                while v < was[k] + DOOR_REACH:
+                    steps.append(v); v += 0.5
+                # the widest strip's neighbours are all any narrower one can touch, so the trees are
+                # asked once and each step only measures the overlaps
+                widest = strip(steps[-1] + 0.5)
+                near_cars = [int(j) for j in car_tree.query(widest) if cars[int(j)][0] != me]
+                car_geoms = np.array([cars[j][1] for j in near_cars], dtype=object)
+                near_fp = [int(j) for j in fp_tree.query(widest)]
+                fp_geoms = np.array([footprints[j] for j in near_fp], dtype=object)
                 # the pavement grows out from its kerb until it meets a building: if that's a shop,
                 # it reaches its front
                 v, met = was[k], None
-                while v < was[k] + DOOR_REACH and met is None:
-                    g = strip(v + 0.5)
-                    if any(cars[int(j)][0] != me and cars[int(j)][1].intersection(g).area > 0.1 for j in car_tree.query(g)):
+                for i, v in enumerate(steps):
+                    g = widest if i == len(steps) - 1 else strip(v + 0.5)
+                    if len(near_cars) and (shapely.area(shapely.intersection(car_geoms, g)) > 0.1).any():
                         met = []; break
-                    hit = [int(j) for j in fp_tree.query(g) if footprints[int(j)].intersection(g).area > 0.1]
-                    if hit: met = hit
-                    else: v += 0.5
+                    hit = [near_fp[j] for j in np.nonzero(shapely.area(shapely.intersection(fp_geoms, g)) > 0.1)[0]] if len(near_fp) else []
+                    if hit: met = hit; break
+                else:
+                    v += 0.5
                 # (None: an opening between the buildings, such as an alley's mouth)
                 here.append(None if met is None else v if met and all(shopfront[j] for j in met) else was[k])
             seg.append(here)
@@ -2862,6 +3062,18 @@ if squares:
                         if q.geom_type == "LineString" and q.length >= 1.2]
     front, side = clip(front), clip(side)
     print(f"gardens: {len(squares)} paved squares and pedestrian streets kept clear of garden boundaries ({n_sq} runs before, {len(front) + len(side)} after)")
+# and no garden wall, fence or hedge is guessed out on mapped rock, heath, sand or marsh, past the yard
+# right round a house (where an outline drawn hugging the house would leave it none)
+_wild = [poly for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)) if t in wild.NAMES and poly.area > 0]
+if _wild:
+    _near = shapely.STRtree(_wild)
+    off_wild = unary_union(_wild).difference(unary_union([c[0].buffer(wild.YARD, quad_segs=2) for c in cand
+                                                          if len(_near.query(c[0], predicate="dwithin", distance=wild.YARD))]))
+    n_wd = len(front) + len(side)
+    cut = lambda run: [(st, q, o) for st, ln, o in run for q in getattr(ln.difference(off_wild), "geoms", [ln.difference(off_wild)])
+                       if q.geom_type == "LineString" and q.length >= 1.2]
+    front, side = cut(front), cut(side)
+    print(f"gardens: no boundaries guessed out on the wild ground ({n_wd} runs before, {len(front) + len(side)} after)")
 side_style = {o: st for st, _, o in side}     # each garden's fence or hedge, by its house
 garden_sides = [ln for _, ln, _ in side]     # (the side and back runs, for the lidar walls along them, below)
 garden_br = []
@@ -3750,6 +3962,14 @@ for q in trees:
 trees = kept
 print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path or a drive, {stepped} trees stepped "
       f"out of one, {n_tr - len(trees)} trees left out")
+# boulders on the bare rock, last, clear of everything laid before them
+_hard = [f.buffer(1.0) for f in footprints] + [
+    shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2 + (max(r.get("pv") or [1.7]) if r["c"] in KERBED else 0) + 0.8)
+    for r in roads if len(r["p"]) > 1] + [shapely.Polygon(w["r"][0]).buffer(1.0) for w in wp if len(w["r"][0]) >= 3]
+_hard_tree = shapely.STRtree(_hard)
+boulder_list = wild.boulders(GT, GX, GY, dx, lambda x, y, r: not len(_hard_tree.query(shapely.Point(x, y).buffer(r), predicate="intersects"))
+                             and not near_line(shapely.Point(x, y), r + 0.3) and not in_way(shapely.Point(x, y)), gelev, inside)
+print(f"wild ground: {len(boulder_list)} boulders on the rock")
 # telegraph poles go up once the walls and buildings are down, each clear of them
 from landscape import telegraph, string_wires
 from buildings import zone_at
@@ -3869,8 +4089,8 @@ out = dict(
     v=list(A.view) if getattr(A, "view", None) else None,
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
-           k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
+           k=wild.digits(GT.ravel())),
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, rk=boulder_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
     **({"lx": level_crossings} if level_crossings else {}),
     **({"wf": weir_faces} if weir_faces else {}),
 )
@@ -3927,13 +4147,14 @@ if TILE is not None:
         b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=spawn,
         t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,
                h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
-               k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
+               k=wild.digits(GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
         bl=blds, rd=cut_lines(roads), wp=wp, wl=cut_lines(wl), br=cut_lines(barriers), tn=cut_lines(tunnel_list),
         wf=cut_lines(weir_faces), lx=[c for c in level_crossings if own(c[0], c[1])],
         gt=[q for q in gate_list if mid(q, 0, 2)], mk=[q for q in marks if mid(q, 0, 2)], wr=[q for q in twires if own(q[0], q[1])],
         fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
         tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],
         lm=[q for q in marks_lm if own(q[1], q[2])], dr=[q for q in doors if own(q[0], q[1])], sb=[q for q in shrub_list if own(q[0], q[1])],
+        rk=[q for q in boulder_list if own(q[0], q[1])],
         # (the doors just over the edge, for the partition to open a boundary across the edge in front of
         # them the same from both sides; it takes them out again)
         drn=[q for q in doors if not own(q[0], q[1]) and TX0 - 6 <= q[0] <= TX1 + 6 and TY0 - 6 <= q[1] <= TY1 + 6],
@@ -3956,8 +4177,9 @@ corridors = []
 for r in out["rd"]:
     if len(r["p"]) > 1 and r["c"] not in PATHS: corridors.append(shapely.LineString([q[:2] for q in r["p"]]).buffer((r["w"] if "pv" in r else RW.get(r["c"], 4)) / 2, cap_style=2))
 for t in rail_tracks:
-    pts = [q[:2] for q in t["p"] if q[3] != 2 and X0 - 20 <= q[0] <= X1 + 20 and Y0 - 20 <= q[1] <= Y1 + 20]
-    if len(pts) > 1: corridors.append(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))
+    for run in open_runs(t["p"]):
+        pts = [q for q in run if X0 - 20 <= q[0] <= X1 + 20 and Y0 - 20 <= q[1] <= Y1 + 20]
+        if len(pts) > 1: corridors.append(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))
 for seg, lv, half in canal_runs:
     corridors.append(seg.buffer(half + 0.8, cap_style=2))
 # and nothing on the canal's banks or their verges (web/src/works.ts lays them)
@@ -3970,15 +4192,42 @@ for a, b, lv in canal_open:
                                       (b[0] - nx_ * reach(b, 1), b[1] - ny_ * reach(b, 1)), (a[0] - nx_ * reach(a, 1), a[1] - ny_ * reach(a, 1))]).buffer(0.5))
 for w in out["wp"]:
     if len(w["r"][0]) >= 3: corridors.append(shapely.Polygon(w["r"][0], [tuple(map(tuple, h)) for h in w["r"][1:]]).buffer(0.8))
+# nor inside a railway tunnel's mouth (bored_low, above)
+corridors.extend(bored_low)
+if bored_low:
+    bl_ = unary_union(bored_low)
+    kept_rd, n_cut_rd = [], 0
+    for r in out["rd"]:
+        if r["c"] not in PATHS or len(r["p"]) < 2 or not bl_.intersects(shapely.LineString([q[:2] for q in r["p"]])):
+            kept_rd.append(r); continue
+        n_cut_rd += 1
+        rest = shapely.LineString([q[:2] for q in r["p"]]).difference(bl_)
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type == "LineString" and piece.length >= 1.0:
+                kept_rd.append(dict(r, p=[[r1(x_), r1(y_), r1(gelev(x_, y_))] for x_, y_ in piece.coords]))
+    out["rd"] = kept_rd
+    if n_cut_rd: print(f"railway: {n_cut_rd} paths cut back out of tunnel mouths")
 if corridors:
     ctree = shapely.STRtree(corridors)
     def clear_at(x, y):
         pt = shapely.Point(x, y)
         return any(corridors[int(k)].contains(pt) for k in ctree.query(pt))
+    def on_line(x, y, z):
+        if _line_tree is None: return False
+        pt = shapely.Point(x, y)
+        for j in _line_tree.query(pt.buffer(RAIL_HALF)):
+            a_, b_ = _line_segs[int(j)]
+            ln = shapely.LineString([a_[:2], b_[:2]])
+            if ln.distance(pt) >= RAIL_HALF: continue
+            f_ = ln.project(pt, normalized=True)
+            if -4.0 < a_[2] + (b_[2] - a_[2]) * f_ - z < 2.5: return True
+        return False
     before = (len(out["tr"]), len(out["sb"]), len(out["fx"]), len(out["br"]))
     out["tr"] = [q for q in out["tr"] if not clear_at(q[0], q[1])]
     out["sb"] = [q for q in out["sb"] if not clear_at(q[0], q[1])]
-    out["fx"] = [q for q in out["fx"] if q[0] == "car" or not clear_at(q[1], q[2])]     # (parked cars stand in the road on purpose)
+    out["rk"] = [q for q in out["rk"] if not clear_at(q[0], q[1])]
+    # (parked cars stand in the road on purpose, but not on the railway where it crosses at its level)
+    out["fx"] = [q for q in out["fx"] if not (on_line(q[1], q[2], q[3]) if q[0] == "car" else clear_at(q[1], q[2]))]
     # walls: the pieces outside the corridors, and off the pavements, are kept, cut at their edge
     # (a wall at the back of the pavement stands just clear of it)
     for r in out["rd"]:
@@ -4001,18 +4250,22 @@ if corridors:
             cut_walls.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
     _trim_ends(cut_walls)      # (and those cut back stop where they meet another, as above)
     _undouble(cut_walls)       # (and no guessed fence ends up on another, or poking past one)
-    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end) is a
-    # post in the way, not a wall: it goes. Last, as taking out a doubled fence can leave one alone,
-    # and again until none is left, as a stub can be all that held up another.
+    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end, nor one of
+    # its own kind running on from it at one) is a post in the way, not a wall: it goes. Last, as
+    # taking out a doubled fence can leave one alone, and again until none is left, as a stub can be
+    # all that held up another.
     gate_ends = [shapely.Point(g[0], g[1]) for g in out.get("gt") or []] + [shapely.Point(g[2], g[3]) for g in out.get("gt") or []]
     n_cut = len(cut_walls)
     while True:
         ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in cut_walls] + gate_ends
         etree = shapely.STRtree(ends_) if ends_ else None
-        def _joined(k, pt):
-            return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in etree.query(pt.buffer(0.3)))
-        kept_ = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5
-                 or _joined(k, shapely.Point(b["p"][0][:2])) or _joined(k, shapely.Point(b["p"][-1][:2]))]
+        def _joined(k, pt, same=False):
+            return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 and (not same or int(j) < len(cut_walls) and cut_walls[int(j)]["c"] == cut_walls[k]["c"])
+                       for j in etree.query(pt.buffer(0.3)))
+        def _held(k, b):
+            a_, z_ = shapely.Point(b["p"][0][:2]), shapely.Point(b["p"][-1][:2])
+            return (_joined(k, a_) and _joined(k, z_)) or _joined(k, a_, True) or _joined(k, z_, True)
+        kept_ = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5 or _held(k, b)]
         if len(kept_) == len(cut_walls): break
         cut_walls = kept_
     out["br"] = cut_walls
@@ -4028,7 +4281,7 @@ if corridors:
     print(f"gates: {n_open} left open where their wall was cut off the road or the pavement")
     gone = (before[0] - len(out["tr"]), before[1] - len(out["sb"]), before[2] - len(out["fx"]))
     print(f"corridors: {gone[0]} trees, {gone[1]} shrubs and {gone[2]} street items taken off the roads, the railway and the water; {before[3]} wall runs cut to {len(out['br'])}")
-json.dump(out, open(out_path, "w"), separators=(",", ":"))
+open(out_path, "w").write(json.dumps(out, separators=(",", ":")))
 if STORE is not None: STORE.save()
 print(f"terrain {out['t']['nx']}x{out['t']['ny']} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "

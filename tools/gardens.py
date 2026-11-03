@@ -26,6 +26,7 @@ from shapely.ops import substring, unary_union, voronoi_diagram
 
 HOUSES = {"detached", "semi", "terrace"}
 DEPTH = {"detached": 22, "semi": 20, "terrace": 16}   # how far a garden reaches from the house
+STREET_REACH = 80.0     # metres: the furthest a house with a garden stands from a street or lane
 # front boundary, side and back boundary, per zone; each is a list of (style, weight) (the side and
 # back one is rolled for a whole back yard, so a hedged yard is kept rare)
 STYLE = {
@@ -102,9 +103,13 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     near = lambda g, parts, t: unary_union([parts[int(k)] for k in t.query(g)])
     front, side, gates, drives = [], [], [], []
     plot_of, street_of = {}, {}
+    ftree = shapely.STRtree(facing) if facing else None
     for i, p in enumerate(polys):
         b = info[i]
         if b["kind"] not in HOUSES or i not in cells: continue
+        # a building no street comes near (a hut on a mountain top, a cafe in a park) is nobody's
+        # home with a garden round it, whatever its size makes it look like
+        if ftree is None or not len(ftree.query(p, predicate="dwithin", distance=STREET_REACH)): continue
         plot = unary_union(cells[i]).intersection(_reach(p, DEPTH[b["kind"]]))
         streets = near(plot, corridor_parts, ctree)
         if not streets.is_empty: plot = plot.difference(streets)
@@ -129,6 +134,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         # kept for things like its drive
         lead, yard = row_of[i], yard_of[i]
         style_front = pick(STYLE.get(info[lead]["zone"], NEUTRAL)[0], rng_for(lead).random())
+        if info[lead].get("core") and info[lead]["parapet"]: style_front = "railing"   # a town house's area railings
         style_side = pick(STYLE.get(info[yard]["zone"], NEUTRAL)[1], rng_for(yard).random())
         edge = plot.exterior.difference(polys[i].buffer(0.4, join_style=2))
         street_side = street_of[i]
@@ -390,12 +396,14 @@ def _squared(side, front, polys, bend=2.0, reach=5.0, rounds=30):
             pos[m] = [nx, ny]; moved += 1
         if not moved: break
     # no stretch through a house: a corner that makes one goes back where it was
+    inner = {}
+    shrunk = lambda k: inner[k] if k in inner else inner.setdefault(k, polys[k].buffer(-0.3))
     for _ in range(3):
         bad = set()
         for ch in chains:
             for a, b in zip(ch, ch[1:]):
                 seg = LineString([pos[a], pos[b]])
-                if houses is not None and seg.length > 0 and any(polys[int(k)].buffer(-0.3).intersects(seg) for k in houses.query(seg)):
+                if houses is not None and seg.length > 0 and any(shrunk(int(k)).intersects(seg) for k in houses.query(seg)):
                     bad.update(m for m in (a, b) if m not in held)
         if not bad: break
         for m in bad: pos[m] = list(home[m])

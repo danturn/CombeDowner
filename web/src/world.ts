@@ -8,7 +8,7 @@ import { Need, railNeed } from "./railbridge";
 import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
-import { sky as skyNow } from "./daylight";
+import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
 import { Culler, show, traverseAll } from "./cull";
 import { buildVegetation } from "./trees";
@@ -17,10 +17,12 @@ import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
 import { REPOSE, aroundPortals, boreRoof, buildTunnels, cuttings, mouths, portalBanks, wingTop } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
+import { ROCK, WILD_CHANNEL } from "./groundkinds";
+import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
-import { Canal, lockPits, canalBores, lockAt } from "./canal";
-import { aqueductSetPieceAt } from "./landmarks/setpieces";
-import { Railway } from "./railway";
+import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
+import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
+import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
@@ -134,6 +136,8 @@ export interface World {
   sun: THREE.DirectionalLight;
   /** others: where everyone else is, for the host, which loads the map round them too (tiles.ts). */
   update(px: number, py: number, pz: number, dt?: number, others?: { x: number; z: number }[]): void;
+  /** With the camera at scene (x, y, z) under the water, the fog closes in murky round it: after update. */
+  under(x: number, y: number, z: number, dt: number): void;
   /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it,
    *  or of a tunnel's floor for something at height y inside one. */
   surface(x: number, z: number, y?: number): number;
@@ -146,6 +150,12 @@ export interface World {
   /** Keep the squares of Bath within r of scene (x, z) loaded from now on (where everyone starts),
    *  and say whether they all are yet: their ground and walls, if not yet their scenery. */
   hold(x: number, z: number, r: number): boolean;
+  /** How many squares of the map within r of scene (x, z) are still to load and build (tiles.ts). */
+  unbuilt(x: number, z: number, r: number): number;
+  /** Start on the squares round wherever we are now, straight away: after a jump. */
+  look(): void;
+  /** Build the squares in bigger slices a frame, while the view is covered (arrive.ts). */
+  rush: boolean;
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
   canal: Canal | null;
   railway: Railway | null;
@@ -172,6 +182,8 @@ export interface TileWorld {
   surface(x: number, z: number, y?: number): number;
   paved(x: number, z: number): boolean;
   pavement(x: number, z: number): boolean;
+  /** The level of its water at scene (x, z), or null where there's none. */
+  water(x: number, z: number): number | null;
   update(px: number, pz: number, dt: number): void;
   /** Free what it alone uses (the materials and models it shares stay). */
   dispose(): void;
@@ -307,10 +319,37 @@ function run<T>(g: Generator<void, T>): T {
   return r.value;
 }
 
+/** The railway's brick and stone in what the town round it is built of: the walls most of the
+ *  buildings within a few hundred metres have (Bath stone, red brick or London stock), Bath stone
+ *  where there are none to go by. */
+/** The railway's tunnel mouths near a square (railway.ts railMouths, worked out once for the map). */
+function railMouthsIn(S: Shared, T: { x0: number; y0: number; nx: number; ny: number; dx: number; dy: number }): ReturnType<typeof railMouths> {
+  return ((S.railMouths ?? []) as ReturnType<typeof railMouths>).filter((m) =>
+    m.x > T.x0 - 30 && m.x < T.x0 + (T.nx - 1) * T.dx + 30 && m.y > T.y0 - 30 && m.y < T.y0 + (T.ny - 1) * T.dy + 30);
+}
+
+const MASON_MATS: Partial<Record<MasonKind, THREE.Material>> = {};
+function railMasonry(map: GameMap): Masonry {
+  const seen = new Map<string, MasonKind>();
+  return {
+    kind(x, y) {
+      const key = `${Math.floor(x / 100)},${Math.floor(y / 100)}`;
+      let k = seen.get(key);
+      if (k) return k;
+      const n: Record<MasonKind, number> = { s: 0, k: 0, y: 0 };
+      for (const b of map.wide?.buildingsNear(Math.floor(x / 100) * 100 + 50, Math.floor(y / 100) * 100 + 50, 300) ?? []) if (b.m === "s" || b.m === "k" || b.m === "y") n[b.m]++;
+      k = n.y > n.s && n.y >= n.k ? "y" : n.k > n.s ? "k" : "s";
+      seen.set(key, k);
+      return k;
+    },
+    material: (k) => (MASON_MATS[k] ??= new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide })),
+  };
+}
+
 /** Walls whose windows light up after dark (world.update turns the glow up at night): some windows and not
  *  others, picked by which window it is on the wall, which storey, and the building's colour. */
 const GLOWING: THREE.MeshLambertMaterial[] = [];
-function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "render") {
+function litWindows(mat: THREE.MeshLambertMaterial, kind: TX.WallKind) {
   mat.emissiveMap = TX.windowGlow(kind);
   mat.emissive.set("#ffffff");
   mat.emissiveIntensity = 0;
@@ -326,7 +365,7 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "r
 
 /** One material for a kind of wall, windowed and plain alike (Geo.windowed marks which faces have
  *  windows), so a square's walls of that kind are drawn in one go instead of two. */
-function anyWalls(kind: "stone" | "brick" | "render") {
+function anyWalls(kind: TX.WallKind) {
   const mat = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
   const plainMap = TX.wall(kind, false), lit = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
@@ -427,18 +466,22 @@ const WEIR_CREST_UP = 0.12, WEIR_CREST_HALF = 0.35, WEIR_RUN = 1.1, WEIR_RUN_LEA
 const WEIR_STREAK = 0.7, WEIR_FROTH = 0.8;
 const WEIR_STONE = [0.48, 0.38, 0.22], WEIR_FOAM = [0.9, 0.93, 0.93];
 const WEIR_STREAKS = [[0.09, 0.21, 0.28], [0.16, 0.3, 0.37], [0.11, 0.25, 0.32], [0.2, 0.34, 0.4]];
+// with your eyes under the water: the murk it closes in to by day, the surface overhead, and how far off it's thick
+const UNDER_WATER = new THREE.Color("#2b5a62"), UNDER_SURFACE = new THREE.Color("#5d9aa2"), UNDER_FAR = 16;
 
 function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
   if (core) S.railTracks = map.railData?.tracks.map((t) => t.p) ?? [];
+  if (core) S.railMouths = map.railData ? railMouths(map.railData) : [];
   const D = map.d, T = D.t, Z0 = map.z0;
+  if (core) setLatitude(D.centre?.[1] ?? 51);
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
   // the scene itself never moves, so it needn't make everything in it work out its place afresh each frame (stayPut)
   if (core) { scene.matrixAutoUpdate = false; scene.updateMatrixWorld = function (force?: boolean) { placeShown(this, !!force); }; }
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
-  let dark = 0, indoors = false;
+  let dark = 0, indoors = false, wet = 0, night = 0;
   const indoorSun = new THREE.Color("#fff4e2"), indoorSky = new THREE.Color("#fffaf0"), indoorGround = new THREE.Color("#8a7458");
   // (names what each part of the build adds, so the frame-rate probe, tools/fpsprobe.mjs, can count draws by kind)
   let marked = 0;
@@ -455,6 +498,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     new THREE.Color("#8f8b82"), // hard standing
     new THREE.Color("#6a5a3c"), // flowerbeds
     new THREE.Color("#7d7350"), // playgrounds: worn grass, bark and sand
+    new THREE.Color("#8b8a82"), // bare rock and scree (tools/wild.py)
+    new THREE.Color("#78764e"), // heath and scrub
+    new THREE.Color("#cdbf98"), // sand and beaches
+    new THREE.Color("#536a46"), // wetland
   ];
   const earth = new THREE.Color("#7a6a4c");
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
@@ -624,6 +671,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   yield;
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
+  const tWild = new Uint8Array(T.nx * T.ny * 3);
   const hAt = (i: number, j: number) => T.h[Math.min(T.ny - 1, Math.max(0, j)) * T.nx + Math.min(T.nx - 1, Math.max(0, i))] / 10;
   const c = new THREE.Color();
   for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
@@ -631,8 +679,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     tPos[v * 3] = x; tPos[v * 3 + 1] = hAt(i, j) - sink[v]; tPos[v * 3 + 2] = z;
     tUv[v * 2] = x / 7; tUv[v * 2 + 1] = z / 7;
     const slope = Math.hypot(hAt(i + 1, j) - hAt(i - 1, j), hAt(i, j + 1) - hAt(i, j - 1)) / (2 * T.dx);
-    c.copy(GROUND[+T.k[v]] ?? GROUND[0]);
-    c.lerp(earth, Math.min(0.75, Math.max(0, (slope - 0.45) * 1.4)));
+    const kind = T.k.charCodeAt(v) - 48, ch = WILD_CHANNEL[kind];
+    c.copy(GROUND[kind] ?? GROUND[0]);
+    // (a steep slope is bare earth, but rock stays rock)
+    if (kind !== ROCK) c.lerp(earth, Math.min(0.75, Math.max(0, (slope - 0.45) * 1.4)));
+    if (ch !== undefined) tWild[v * 3 + ch] = 255;
     const n = 0.9 + hash(v) * 0.16;
     tCol[v * 3] = c.r * n; tCol[v * 3 + 1] = c.g * n; tCol[v * 3 + 2] = c.b * n;
     if (i === T.nx - 1 && j % 16 === 15) yield;
@@ -694,6 +745,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   terrGeo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
   terrGeo.setAttribute("color", new THREE.BufferAttribute(tCol, 3));
   terrGeo.setAttribute("uv", new THREE.BufferAttribute(tUv, 2));
+  terrGeo.setAttribute("wild", new THREE.BufferAttribute(tWild, 3, true));
   // how far each point is inside the canal's banks (works.ts): the ground isn't drawn inside them
   const works = map.works;
   if (works) terrGeo.setAttribute("cut", new THREE.BufferAttribute(works.sd.slice(), 1));   // (a copy: the map keeps its own for the ground)
@@ -709,16 +761,33 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // and none inside the canal's tunnels, so you see through them from portal to portal
   const bores = canalBores(map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null), map.z0, T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy);
   mouth.a.push(...bores.a); mouth.b.push(...bores.b);
+  // and none inside a railway tunnel's lined mouth (the hill over it stays whole)
+  for (const m of railMouthsIn(S, T)) {
+    mouth.a.push(new THREE.Vector4(m.x, -m.y, m.ux, -m.uy));
+    mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, m.crown + 0.6, m.hw, m.deep));
+  }
   const ownTerr = !S.terrMat || mouth.a.length > 0 || !!works;
   const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
   // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
   const mottle = S.mottle ??= { value: TX.mottle() };
+  const wildTex = S.wildTex ??= { value: TX.wildDetail() };
   // (each count of tunnel mouths is its own shader: three.js would otherwise hand a square with
   // mouths the program compiled for one without, or the other way round, by the code's text alone)
   if (ownTerr && !mouth.a.length && !works) S.terrMat ??= terrMat;
   if (ownTerr) terrMat.onBeforeCompile = (shader) => {
     shader.uniforms.mottle = mottle;
-    shader.fragmentShader = "uniform sampler2D mottle;\n" + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+    shader.uniforms.wildMap = wildTex;
+    // rock, heath and sand each have their own detail in place of the grass's (TX.wildDetail: one in
+    // each channel), by how much of each the ground there is
+    shader.vertexShader = "attribute vec3 wild;\nvarying vec3 vWild;\n" + shader.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      vWild = wild;`);
+    shader.fragmentShader = "uniform sampler2D mottle;\nuniform sampler2D wildMap;\nvarying vec3 vWild;\n" + shader.fragmentShader.replace("#include <map_fragment>", `vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+      float ws = vWild.r + vWild.g + vWild.b;
+      if (ws > 0.004) {
+        vec3 wd = texture2D(wildMap, vMapUv * 0.5).rgb;
+        sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, vec3(dot(wd, vWild) / ws), min(ws, 1.0));
+      }
+      diffuseColor *= sampledDiffuseColor;
       float mt = texture2D(mottle, vMapUv * 0.061).r * 0.6 + texture2D(mottle, vMapUv * 0.23 + 0.37).r * 0.4;
       diffuseColor.rgb *= 0.78 + 0.44 * mt;`);
     if (works) {
@@ -759,7 +828,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     yield* cellTris(idx, ti, tj, Math.min(T.nx - 1, ti + TILE), Math.min(T.ny - 1, tj + TILE));
     const g = new THREE.BufferGeometry();
-    for (const name of ["position", "color", "uv", "normal", ...(works ? ["cut"] : [])]) g.setAttribute(name, terrGeo.getAttribute(name));
+    for (const name of ["position", "color", "uv", "wild", "normal", ...(works ? ["cut"] : [])]) g.setAttribute(name, terrGeo.getAttribute(name));
     g.setIndex(idx);
     freeOnUpload(g);
     const i1 = Math.min(T.nx - 1, ti + TILE), j1 = Math.min(T.ny - 1, tj + TILE);
@@ -800,10 +869,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const S = Math.max(2, Math.round(12 / T.dx));
     const cols = (n: number) => { const a: number[] = []; for (let i = 0; i < n - 1; i += S) a.push(i); a.push(n - 1); return a; };
     const ci = cols(T.nx), cj = cols(T.ny), nI = ci.length, nJ = cj.length;
-    const pos: number[] = [], col: number[] = [], uv: number[] = [], idx: number[] = [];
+    const pos: number[] = [], col: number[] = [], uv: number[] = [], wildW: number[] = [], idx: number[] = [];
     const vert = (i: number, j: number, h: number) => {
       const v = j * T.nx + i;
       pos.push(tPos[v * 3], h, tPos[v * 3 + 2]); col.push(tCol[v * 3], tCol[v * 3 + 1], tCol[v * 3 + 2]); uv.push(tUv[v * 2], tUv[v * 2 + 1]);
+      wildW.push(tWild[v * 3], tWild[v * 3 + 1], tWild[v * 3 + 2]);
       return pos.length / 3 - 1;
     };
     for (const j of cj) for (const i of ci) {
@@ -830,6 +900,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute("wild", new THREE.BufferAttribute(new Uint8Array(wildW), 3, true));
     g.setIndex(idx);
     g.computeVertexNormals();
     const nor = g.getAttribute("normal") as THREE.BufferAttribute;
@@ -1749,7 +1820,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
-  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail()) : null;
+  const railCentre = map.d.centre as [number, number] | undefined;
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail(),
+    railCentre ? (x, y) => setPieceAt(railCentre, x, y) : undefined, railMasonry(map)) : null;
   if (railway) S.railBank = (x: number, z: number) => railway.bankAt(x, z);
   if (railway) { map.floors.push((x, z, y) => railway.floor(x, z, y)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
@@ -1769,7 +1842,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
 
   // ponds and the lake
-  const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  // (both sides: with your eyes under it you look up at it, as you do at the canal's)
+  const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
   const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
     for (const hole of w.r.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
@@ -1780,10 +1854,29 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // (all of them in one mesh: each mesh costs a little to draw, however small)
   const ponds: THREE.BufferGeometry[] = [];
+  const drawnWater: { r: number[][][]; y: number; box: number[] }[] = [];
+  /** The level of the water drawn here at scene (x, z), or null where there's none. */
+  const waterAt = (x: number, z: number): number | null => {
+    for (const w of drawnWater) {
+      const [x0, y0, x1, y1] = w.box;
+      if (x < x0 || x > x1 || -z < y0 || -z > y1) continue;
+      if (inRing(w.r[0], x, -z) && !w.r.slice(1).some((h) => inRing(h, x, -z))) return w.y;
+    }
+    return null;
+  };
+  const ringBox = (ring: number[][]) => {
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const [x, y] of ring) { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
+    return b;
+  };
   for (const w of D.wp) {
     if (w.c === "canal" && map.canal) continue;         // the canal draws its own water, at its own levels
     const lv = w.c ? undefined : map.canal?.pondLevel(w);
-    if (lv !== null) { const m = pondMesh(lv === undefined ? w : { ...w, z: lv }); ponds.push(m.geometry.translate(0, m.position.y, 0)); }
+    if (lv !== null) {
+      const m = pondMesh(lv === undefined ? w : { ...w, z: lv });
+      ponds.push(m.geometry.translate(0, m.position.y, 0));
+      drawnWater.push({ r: w.r, y: m.position.y, box: ringBox(w.r[0]) });
+    }
   }
   if (ponds.length) {
     scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
@@ -1899,7 +1992,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const WALL_TINTS: Record<Surf, number[][]> = {
     s: [[0.96, 0.86, 0.66], [0.93, 0.82, 0.6], [0.9, 0.84, 0.72], [0.98, 0.9, 0.74], [0.88, 0.8, 0.66]],   // Bath stone
     k: [[0.74, 0.44, 0.33], [0.68, 0.4, 0.31], [0.78, 0.5, 0.38], [0.64, 0.42, 0.34]],                   // red brick
-    y: [[0.9, 0.77, 0.55], [0.86, 0.72, 0.5], [0.92, 0.8, 0.6]],                                        // buff brick
+    y: [[1, 1, 0.98], [0.92, 0.91, 0.89], [0.82, 0.8, 0.77], [0.97, 0.95, 0.9]],                  // stock brick, coloured in its texture: clean to sooty
     r: [[0.96, 0.95, 0.91], [0.93, 0.91, 0.85], [0.97, 0.93, 0.83], [0.9, 0.9, 0.88]],                  // render
     c: [[0.98, 0.42, 0.62], [0.36, 0.72, 0.98], [0.99, 0.86, 0.22], [0.48, 0.86, 0.46], [0.98, 0.56, 0.2],
         [0.66, 0.46, 0.92], [0.22, 0.84, 0.8], [0.99, 0.3, 0.3]],                                       // painted render, as in the Bo-Kaap
@@ -1919,11 +2012,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // a colour the data gives is met halfway by the material's own tint, so a mapper's pure "#FF0000"
   // brick still reads as brick and the retro grade doesn't make it glare
-  const tinted = (base: number[], hex?: string) => {
+  const tinted = (base: number[], hex?: string, share = 0.5) => {
     const m = hex && /^#?([0-9a-f]{6})$/i.exec(hex);
     if (!m) return base;
     const v = parseInt(m[1], 16), rgb = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => c / 255);
-    return base.map((c, k) => c * 0.5 + rgb[k] * 0.5);
+    return base.map((c, k) => c * (1 - share) + rgb[k] * share);
   };
   const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
@@ -2020,7 +2113,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
-    const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc);
+    // (stock brick's texture has its colour already: mappers' "brown" for it would turn it to mud)
+    const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc, surf === "y" ? 0.25 : 0.5);
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
     const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
@@ -2165,7 +2259,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r", "c"] as Surf[]) {
-    const kind = sfc === "s" ? "stone" : sfc === "r" || sfc === "c" ? "render" : "brick";
+    const kind = sfc === "s" ? "stone" : sfc === "r" || sfc === "c" ? "render" : sfc === "y" ? "stock" : "brick";
     wallMats[sfc] = anyWalls(kind);
   }
   wallMats.roof ??= new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
@@ -2313,6 +2407,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- trees and shrubs ------------------------------------------------------------------
   const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, S.vegKit);
   S.vegKit ??= vegetation.kit;
+  buildBoulders(scene, D.rk ?? [], Z0, culler, () => view.sceneryFar * 0.6);
   yield;
 
   mark("trees");
@@ -2400,7 +2495,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   mark("woods");
   // ---- front doors and bay windows ---------------------------------------------------------
   {
-    const DOOR = ["#1f3b2d", "#24324a", "#6b1f24", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
+    const DOOR = ["#1f3b2d", "#24324a", "#c8302c", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
     const doors = D.dr ?? [];
     const frameGeo = new THREE.BoxGeometry(1.25, 2.45, 0.06).translate(0, 1.22, 0.03);
     const doorGeo = new THREE.BoxGeometry(0.95, 2.05, 0.08).translate(0, 1.02, 0.05);
@@ -2556,7 +2651,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- grass round the player ---------------------------------------------------------------
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
   mark("grass-build");
-  const grass: Grass = T.nx ? yield* buildGrass(scene, D, S.railBank ? (x: number, z: number) => Math.max(drawnGround(x, z), S.railBank(x, z)) : drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE, S.railTracks ?? []) : { update() {} };
+  const grass: Grass = T.nx ? yield* buildGrass(scene, D, S.railBank ? (x: number, z: number) => Math.max(drawnGround(x, z), S.railBank(x, z)) : drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE, S.railTracks ?? [],
+    railMouthsIn(S, T).map((m) => [[0, -m.hw], [m.deep, -m.hw], [m.deep, m.hw], [0, m.hw]].map(([u, v]) => [m.x + m.ux * u - m.uy * v, m.y + m.uy * u + m.ux * v]))) : { update() {} };
   yield;
 
   mark("grass");
@@ -2573,7 +2669,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const bx0 = T.x0, bx1 = T.x0 + (T.nx - 1) * T.dx, bz0 = -(T.y0 + (T.ny - 1) * T.dy), bz1 = -T.y0;
     let far = false;
     return {
-      group, surface, paved, pavement,
+      group, surface, paved, pavement, water: waterAt,
       update(px: number, pz: number, dt: number) {
         const d = Math.hypot(Math.max(0, bx0 - px, px - bx1), Math.max(0, bz0 - pz, pz - bz1));
         if (farTerr && (far ? d < SIMPLER_FAR - 50 : d > SIMPLER_FAR)) {
@@ -2594,6 +2690,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   stayPut(scene, scene.children.filter((c) => STILL.has(c.name)));
 
   const { tunnelDark, hemi, sun, sky } = shell!;
+  const murk = new THREE.Color();
   const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
 
   // ---- after dark: the street lamps nearest you light the street round them -----------------
@@ -2719,9 +2816,33 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, pavement: pavementAll, vehicles, fieldLook: fieldMat, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
+    unbuilt: (x, z, r) => tiles?.unbuiltNear(x, z, r) ?? 0,
+    look: () => tiles?.look(),
+    get rush() { return tiles?.rush ?? false; },
+    set rush(on: boolean) { if (tiles) tiles.rush = on; },
     get tunnel() { return dark; },
     get indoors() { return indoors; },
     set indoors(on: boolean) { indoors = on; },
+    under(x: number, y: number, z: number, dt: number) {
+      // (the canal's bed is 1.2 m down: any lower and you're under an aqueduct, not in it)
+      let lv = map.canal instanceof Canal ? map.canal.waterAt(x, z) : null;
+      if (lv !== null && y < lv - 1.5) lv = null;
+      lv ??= tiles?.worldAt(x, z)?.water(x, z) ?? waterAt(x, z);
+      const want = lv !== null && y < lv ? 1 : 0;
+      wet = Math.abs(want - wet) < 0.01 ? want : wet + (want - wet) * Math.min(1, dt * 12);
+      // (the sky takes no fog: under the water it would show through, past the bed, as a band of daylight)
+      sky.visible = wet < 0.5;
+      // (seen from under it the surface is lit from behind, which a lit material can't show: it glows instead)
+      const daylight = (1 - 0.85 * night) * (1 - dark);
+      (S.waterMat as THREE.MeshLambertMaterial).emissive.copy(UNDER_SURFACE).multiplyScalar(wet * daylight);
+      if (!wet) return;
+      const fog = world.fog as THREE.Fog;
+      murk.copy(UNDER_WATER).multiplyScalar(daylight);
+      fog.color.lerp(murk, wet);
+      (world.background as THREE.Color).copy(fog.color);
+      fog.near *= 1 - wet;
+      fog.far += (UNDER_FAR - fog.far) * wet;
+    },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       // (when the spike probe is watching how a frame is spent, tools/spikeprobe.mjs; with no
@@ -2732,7 +2853,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (inside !== dark) dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
       // the time of day (daylight.ts), and inside a tunnel the daylight goes and the fog turns dark
       const W0 = performance.now();
-      const sk = skyNow(), night = sk.night;
+      const sk = skyNow();
+      night = sk.night;
       const fog = world.fog as THREE.Fog;
       fog.color.lerpColors(sk.fog, tunnelDark, dark);
       (world.background as THREE.Color).copy(fog.color);
@@ -2761,9 +2883,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (W) W.veg += performance.now() - b4;
       b4 = performance.now();
       outskirts?.update(px, pz, dt);
-      backdrop?.update(px, pz, dark);
       if (W) W.outskirts += performance.now() - b4;
       tiles?.update(px, pz, dt, others);
+      // after the squares, so it knows which of them are drawn this frame
+      backdrop?.update(px, pz, dark, tiles);
       b4 = performance.now();
       grass.update(px, pz);
       if (W) W.grass += performance.now() - b4;

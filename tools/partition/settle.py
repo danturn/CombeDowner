@@ -37,14 +37,17 @@ from shapely.strtree import STRtree
 from gardens import STYLE as GARDEN_STYLE, pick
 from . import MAP, ROOT, once, zone_at
 from .data import Data
-from .plots import FRONT_ROW, SUPPORT
+from .plots import FRONT_ROW, GARDEN as PARCEL_NEAR, SUPPORT
 
 HOUSES = {"detached", "semi", "terrace"}     # as `gardens.HOUSES`: only a house has a garden
 OPEN_FRONT_ZONES = {"bath"}     # the city centre: buildings stand on the pavement, shops below
 # zones whose guessed fronts are rolled from the suburb's mix, as main rolls every zone without a mix
 # of its own; the Georgian terraces keep the railings round their areas
 SUBURB_FRONTS = {"victorian", "riverside"}
-FRONT_GUESSES = {"garden_wall", "brick_wall_low", "hedge_low", "railing", "fence", "hedge"}
+# what a front nothing was seen along can be guessed as: every zone's front mix (Cape Town's
+# plastered walls and palisades too), and a fence or hedge
+FRONT_GUESSES = {"garden_wall", "brick_wall_low", "hedge_low", "railing", "fence", "hedge"} | {
+    k for front, _ in GARDEN_STYLE.values() for k, _ in front}
 SETBACK = 1.5           # metres: a house this close to its front line has no front garden
 SHOP_REACH = 4.0        # metres from a shop sign to the building it hangs on
 EVIDENCE_NEAR = 1.5     # metres: a stretch this near a mapped or lidar barrier is backed by it
@@ -70,7 +73,8 @@ LISTED_WALL = "stone_wall"
 MAPPED_GROUP = {"wall": "wall", "retaining_wall": "wall", "hedge": "hedge", "fence": "fence"}
 MAPPED_RANK = ["wall", "hedge", "fence"]
 MAPPED_TIE = 0.3        # metres: mapped barriers this much further than the nearest are as near
-WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
+WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall",
+         "security_wall", "boundary_wall"}
 GUESSED = {"front", "parcel", "inferred"}
 # Georgian Bath: where the houses round a front are tall town houses (the lidar's eaves), or Historic
 # England lists railings all along the streets, a front nothing was seen along is the iron railings
@@ -89,6 +93,12 @@ def as_mapped(kind, mapped):
     if mapped == "hedge":
         return kind if kind in ("hedge", "hedge_low") else "hedge"
     return kind if kind in ("fence", "railing") else "fence"
+
+
+def _box(p, tol):
+    """A box round `p` holding everything within `tol` of it: a little more than the circle, so an
+    index finds every line in reach without the circle being drawn first; the distance decides."""
+    return shapely.box(p.x - tol, p.y - tol, p.x + tol, p.y + tol)
 
 
 class Evidence:
@@ -116,7 +126,7 @@ class Evidence:
     def near(self, p, tol=EVIDENCE_NEAR):
         if self.tree is None:
             return False
-        idx = np.atleast_1d(self.tree.query(p.buffer(tol)))
+        idx = np.atleast_1d(self.tree.query(_box(p, tol)))
         return any(self.lines[int(k)].distance(p) <= tol for k in idx)
 
     def mapped_at(self, pts, tol=EVIDENCE_NEAR):
@@ -125,7 +135,7 @@ class Evidence:
         for p in pts:
             near = []
             if self.mapped_tree is not None:
-                near = [self.mapped[int(k)] for k in np.atleast_1d(self.mapped_tree.query(p.buffer(tol)))]
+                near = [self.mapped[int(k)] for k in np.atleast_1d(self.mapped_tree.query(_box(p, tol)))]
                 near = sorted((l.distance(p), MAPPED_GROUP.get(c, "wall")) for l, c in near if l.distance(p) <= tol)
             # The nearest, and of those about as near, a wall before a hedge before a fence: a fence
             # mapped along a wall usually stands on it. Picking from a set took whichever the run's
@@ -175,7 +185,19 @@ def load_evidence(sq, pad=50.0):
     listed = [(g, p["kind"]) for g, p in D.near(win, "listed") if g.geom_type == "Point"]
     ev = Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
     ev.styled = [(l, s) for l, s in styled if not l.is_empty and l.length > 0]
+    ev.parcels = [g for g, _p in D.polys_near((x0 - pad - PARCEL_NEAR, y0 - pad - PARCEL_NEAR,
+                                               x1 + pad + PARCEL_NEAR, y1 + pad + PARCEL_NEAR), "parcels")]
     return ev
+
+
+def unregistered(owners, evidence):
+    """The plots whose house stands on land no registered parcel reaches (within PARCEL_NEAR): their
+    gardens were laid out from the house alone, as the old build's were, and their guessed
+    boundaries are drawn as its were. Where parcels reach, the plots follow them and stay as they are."""
+    polys = getattr(evidence, "parcels", None) or []
+    tree = STRtree(polys) if polys else None
+    return {bi for bi, g in owners.items()
+            if tree is None or not len(tree.query(g, predicate="dwithin", distance=PARCEL_NEAR))}
 
 
 # What a mapped wall or fence is made of, where OpenStreetMap says (`wall`, `material`, `fence_type`):

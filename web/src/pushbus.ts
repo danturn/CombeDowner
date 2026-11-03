@@ -1240,7 +1240,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       if (nearCab()) {
         if (driver && driver !== w.selfId) { w.toast(`${w.nameOf(driver)}'s in the cab`, 2); return true; }
         inCab = true; myHb = hb; mySteer = 0;
-        bus.inside(true);
+        bus.inside("cockpit");
         say({ k: "cab", on: 1 });
         sendDrive();
         w.toast("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake", 5);
@@ -1319,7 +1319,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       armGeo.dispose(); handGeos.forEach((g) => g.dispose()); sleeve.dispose(); shade.dispose(); skin.dispose();
       if (tjump && tjump.textContent === "Heave") tjump.textContent = "Jump";
       for (const id of posed) w.pose?.(id, 0, "");
-      bus.inside(false);
+      bus.inside(null);
       w.mark("@challenge", null);
       w.scene.remove(binMesh, carObj);
       binGeo.dispose(); binMat.dispose(); binMesh.dispose();
@@ -1430,7 +1430,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     bus.sit(0, id && id !== w.selfId ? id : "", id ? w.colourOf(id) : "#fff");
     if (id !== w.selfId && inCab) leaveCab();
   }
-  function leaveCab() { inCab = false; bus.inside(false); }
+  function leaveCab() { inCab = false; bus.inside(null); }
 
   // for checking the beat's sync in a test room: where this screen's beat is, and (on the host) its own
   (window as unknown as Record<string, unknown>).__pushbus = () => {

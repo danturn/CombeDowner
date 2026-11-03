@@ -3,10 +3,11 @@
 // coming on after dark.
 //
 // The time of day comes from the clock (the time since 1970, which every computer and phone
-// already agrees on to within a second or two), so everyone in a room, and everyone anywhere, sees
-// the same sky at the same moment, host or not. The one thing that goes over the network is how
-// far a game's clock has been moved on (T in the debug panel, F3): the host decides that, and
-// tells everyone in the game every couple of seconds (game.ts, "clk"), so it moves for all of them.
+// already agrees on to within a second or two), moved on so that the page opens, and each new game
+// starts, at seven in the morning with the sun just up (dawnSkip). The one thing that goes over the
+// network is how far a game's clock has been moved on: the host picks it when their game starts,
+// moves it on from the debug panel (T, F3) or a train journey, and tells everyone in the game every
+// couple of seconds and as they join (game.ts, "clk"), so everyone in a room sees the same sky.
 //
 // For testing: ?time=21:30 in the address stops your clock at that time, ?daylen=4 makes a day last
 // four minutes, the debug panel (F3) moves the game's clock on three hours or a day (round the week and
@@ -98,6 +99,15 @@ export function clockKind(): string {
   return FIXED !== null ? "stopped by ?time" : skip ? `shared, moved on ${skip} h for everyone in this game` : "shared";
 }
 
+/** Hours to move the shared clock on so that it reads seven in the morning now: where a fresh
+ *  page and a new game start. ?time keeps its own hour. */
+export function dawnSkip(): number {
+  if (FIXED !== null) return 0;
+  const now = Date.now() / 1000 / DAY + PHASE;
+  return ((((7 / 24 - now) % 1) + 1) % 1) * 24;
+}
+setSkip(dawnSkip());
+
 /** Hours this game's clock is moved on, and setting it (the host's word, game.ts). */
 export function getSkip() { return skip; }
 export function setSkip(h: number) { skip = ((Math.round(h * 60) / 60 % WEEK) + WEEK) % WEEK; }
@@ -140,18 +150,24 @@ const out: Sky = {
   hemiSky: new THREE.Color(), hemiGround: new THREE.Color(), hemiI: 0, fog: new THREE.Color(), top: new THREE.Color(), night: 0,
 };
 
+// +1 where the midday sun is in the south (Bath), -1 south of the equator, where it's in the north
+let south = 1;
+
+/** Put the sun on the right side of the sky for a map at this latitude. */
+export function setLatitude(lat: number) { south = lat < 0 ? -1 : 1; }
+
 /** The sky now (the same object each time, refilled). */
 export function sky(): Sky {
-  // the sun's hour angle: 0 when it's due south, at one o'clock (British Summer Time); it rises in
-  // the east (+x) and sets in the west
+  // the sun's hour angle: 0 when it's due south (due north in Cape Town), at one o'clock; it rises
+  // in the east (+x) and sets in the west
   const h = (timeOfDay() - 13 / 24) * Math.PI * 2;
   // a long summer-ish day: it's up from six in the morning till eight at night, so six is sunrise
   // and half seven a low golden sun going down
   const up = 0.82 * Math.cos(h) + 0.22;
-  out.sun.set(-Math.sin(h) * 0.9, up, 0.35 + 0.45 * Math.cos(h)).normalize();
-  // by night the moon, opposite the sun and high in the south
+  out.sun.set(-Math.sin(h) * 0.9, up, south * (0.35 + 0.45 * Math.cos(h))).normalize();
+  // by night the moon, opposite the sun and high on the sun's side of the sky
   if (out.sun.y >= 0) out.light.copy(out.sun);
-  else out.light.set(-out.sun.x * 0.6, Math.max(0.35, -out.sun.y), 0.5).normalize();
+  else out.light.set(-out.sun.x * 0.6, Math.max(0.35, -out.sun.y), south * 0.5).normalize();
   const e = out.sun.y;
   let i = 0;
   while (i < KC.length - 2 && e > KC[i + 1][0]) i++;

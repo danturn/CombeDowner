@@ -629,9 +629,9 @@ export class Minimap {
     g.fillRect(0, 0, BASE, BASE);
     const cw = T.dx / this.mpp + 0.6, ch = T.dy / this.mpp + 0.6;
     for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
-      const k = +T.k[j * T.nx + i];
-      if (!k) continue;
-      g.fillStyle = GROUND[k];
+      const k = T.k.charCodeAt(j * T.nx + i) - 48;
+      if (!(k > 0)) continue;
+      g.fillStyle = GROUND[k] ?? GROUND[0];
       const [px, py] = P(T.x0 + i * T.dx, T.y0 + j * T.dy);
       g.fillRect(px - cw / 2, py - ch / 2, cw, ch);
     }
@@ -705,6 +705,14 @@ export class Minimap {
     fieldEdge(g, map, P, BASE);
   }
 
+  /** The whole-map picture and its bounds in data metres, for maps with a wider map round them. */
+  picture(): { canvas: HTMLCanvasElement; x0: number; y0: number; x1: number; y1: number } | null {
+    const w = this.wide;
+    if (!w) return null;
+    const span = w.canvas.width * w.mpp;
+    return { canvas: w.canvas, x0: w.x0, y0: w.y1 - span, x1: w.x0 + span, y1: w.y1 };
+  }
+
   /** The wider map, on a canvas of its own about 6 m to the pixel, with the force field round it. */
   private drawWide(map: GameMap) {
     const W = map.wide!, canvas = document.createElement("canvas");
@@ -736,7 +744,7 @@ export class Minimap {
       kc.width = i1 - i0 + 1; kc.height = j1 - j0 + 1;
       const kg = kc.getContext("2d")!, img = kg.createImageData(kc.width, kc.height);
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-        const col = parseInt(GROUND[W.k[j * W.nx + i]].slice(1), 16), o = ((j1 - j) * kc.width + (i - i0)) * 4;
+        const col = parseInt((GROUND[W.k[j * W.nx + i]] ?? GROUND[0]).slice(1), 16), o = ((j1 - j) * kc.width + (i - i0)) * 4;
         img.data[o] = col >> 16; img.data[o + 1] = (col >> 8) & 255; img.data[o + 2] = col & 255; img.data[o + 3] = 255;
       }
       kg.putImageData(img, 0, 0);
@@ -1394,7 +1402,7 @@ export class Minimap {
     if (this.size !== Math.round(css * dpr)) { this.size = Math.round(css * dpr); c.width = c.height = this.size; }
     const S = this.size, R = S / 2, g = this.ctx;
     const key = this.drawKey(x, z, yaw, dpr, blips, mates);
-    if (key === this.drawn) return;
+    if (key && key === this.drawn) return;
     this.drawn = key;
     const scale = R / RANGE;                       // screen px per metre
     g.setTransform(1, 0, 0, 1, 0, 0);

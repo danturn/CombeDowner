@@ -4,6 +4,8 @@ clone with no downloads, and get exactly the map everyone else gets.
 Usage:
   python3 -I tools/mapdata.py unpack <map> [<raw dir>]   the repository's copy -> a raw dir to build from
   python3 -I tools/mapdata.py pack <map> <raw dir>       a raw dir (fresh downloads) -> the repository's copy
+  python3 -I tools/mapdata.py pack <map> <raw dir> census conservation    just those layers (a new
+                                                         download of one layer, leaving the rest as they are)
 
 The raw dir is the one the builds read (data/raw/<map>/wide unless given). What's kept, in
 data/<map>/ (see the README there for where each comes from and its licence):
@@ -14,6 +16,8 @@ data/<map>/ (see the README there for where each comes from and its licence):
   that is a plain file rather than an API), which only the partition build reads;
 - Historic England's listed railings and walls (tools/listed.py), which only the partition build
   reads;
+- the 2021 Census's accommodation types for each output area (tools/census.py) and the
+  conservation areas (tools/conservation.py), which buildings.priors reads;
 - the energy certificates without addresses: for each address point, its latest certificate's
   property type and the wall material it names (domestic), or the words of the premises' name as
   hashes (non-domestic, see shops.py), and its OS Open UPRN position;
@@ -45,8 +49,9 @@ import numpy as np
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 # OpenStreetMap (businesses; streets' widths; bridges' kinds; the railway's kinds and level crossings), the food hygiene ratings, the Land Registry
-# parcels and the listed railings and walls, kept whole
-OTHER = ["osm", "osm-roads", "osm-bridges", "osm-detail", "osm-rail", "fsa", "parcels", "listed"]
+# parcels, the listed railings and walls, the census's output areas, the conservation areas and the
+# surveyed roofs' heights (tools/cct.py) and the footprints the buildings layer lacks (tools/footprints.py), kept whole
+OTHER = ["osm", "osm-roads", "osm-bridges", "osm-detail", "osm-rail", "fsa", "parcels", "listed", "census", "conservation", "heights", "footprints"]
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",
@@ -361,11 +366,12 @@ class WideTops:
 
 # ---- pack and unpack -------------------------------------------------------------------------------
 
-def pack(map_id, raw):
+def pack(map_id, raw, only=None):
     from prep_tiles import SKIP      # the outlines no square reads (Great Britain's coastline and the like)
     out = data_dir(map_id)
     os.makedirs(os.path.join(out, "epc"), exist_ok=True)
     for layer in OVERTURE + OTHER:
+        if only and layer not in only: continue
         path = os.path.join(raw, f"{layer}.geojson")
         if not os.path.exists(path):
             print(f"{layer}: not in {raw}, left as it was"); continue
@@ -376,6 +382,7 @@ def pack(map_id, raw):
         text = '{"type":"FeatureCollection","features":[' + ",\n".join(json.dumps(f, separators=(",", ":"), ensure_ascii=False) for f in fs) + "]}\n"
         write_xz(os.path.join(out, f"{layer}.geojson.xz"), text.encode())
         print(f"{layer}: {len(fs)} features, {os.path.getsize(path) / 1e6:.1f} MB -> {os.path.getsize(os.path.join(out, f'{layer}.geojson.xz')) / 1e6:.1f} MB")
+    if only: return
     pack_epc(os.path.join(raw, "epc"), os.path.join(out, "epc"))
     for zoom, folder in TERRAIN.items():
         pack_terrain(os.path.join(raw, folder), zoom, os.path.join(out, f"terrain{zoom}.zip"))
@@ -390,19 +397,30 @@ def pack(map_id, raw):
 
 
 def unpack(map_id, raw):
+    from concurrent.futures import ThreadPoolExecutor
     src = data_dir(map_id)
     os.makedirs(os.path.join(raw, "epc"), exist_ok=True)
-    for layer in OVERTURE + OTHER:
-        path = os.path.join(src, f"{layer}.geojson.xz")
-        if os.path.exists(path):
-            with open(os.path.join(raw, f"{layer}.geojson"), "wb") as f: f.write(lzma.decompress(open(path, "rb").read()))
-    for name in ("certificates", "non-domestic", "uprn"):
-        path = os.path.join(src, "epc", f"{name}.csv.xz")
-        if os.path.exists(path):
-            with open(os.path.join(raw, "epc", f"{name}.csv"), "wb") as f: f.write(lzma.decompress(open(path, "rb").read()))
-    for zoom, folder in TERRAIN.items():
-        unpack_terrain(os.path.join(src, f"terrain{zoom}.zip"), zoom, os.path.join(raw, folder))
+    jobs = [(os.path.join(src, f"{layer}.geojson.xz"), os.path.join(raw, f"{layer}.geojson")) for layer in OVERTURE + OTHER]
+    jobs += [(os.path.join(src, "epc", f"{name}.csv.xz"), os.path.join(raw, "epc", f"{name}.csv"))
+             for name in ("certificates", "non-domestic", "uprn")]
+    # lzma and zlib let go of the interpreter while they work, so the files come out side by side
+    with ThreadPoolExecutor(os.cpu_count() or 4) as pool, ThreadPoolExecutor(os.cpu_count() or 4) as pngs:
+        waits = [pool.submit(_unxz, a, b) for a, b in jobs if os.path.exists(a)]
+        for zoom, folder in TERRAIN.items():
+            unpack_terrain(os.path.join(src, f"terrain{zoom}.zip"), zoom, os.path.join(raw, folder), pngs)
+        for w in waits: w.result()
     print(f"{map_id}: unpacked into {raw}; the measurements are read from {measured_dir(map_id)}")
+
+
+def _unxz(path, out):
+    _write_if_new(out, lzma.decompress(open(path, "rb").read()))
+
+
+def _write_if_new(out, data):
+    """A file left untouched, with its old time, when it already holds the same: the square builds
+    take a file whose time has changed as a new one, and build again from it."""
+    if os.path.exists(out) and os.path.getsize(out) == len(data) and open(out, "rb").read() == data: return
+    with open(out, "wb") as f: f.write(data)
 
 
 def pack_epc(raw, out):
@@ -474,16 +492,22 @@ def pack_terrain(folder, zoom, path):
     print(f"terrain {zoom}: {len(files)} tiles, {sum(os.path.getsize(f) for f in files) / 1e6:.1f} MB -> {os.path.getsize(path) / 1e6:.1f} MB")
 
 
-def unpack_terrain(path, zoom, folder):
+def unpack_terrain(path, zoom, folder, pool=None):
     from PIL import Image
     if not os.path.exists(path): return
     z = read_zip(path)
     tiles, d = from_npy(z["tiles.npy"]), from_npy(z["heights.npy"]).astype(np.int64)
     v = np.cumsum(np.cumsum(d, axis=1), axis=2)
     os.makedirs(folder, exist_ok=True)
-    for (tx, ty), t in zip(tiles.tolist(), v):
+    def save(tx, ty, t):
         rgb = np.stack([(t >> 16) & 255, (t >> 8) & 255, t & 255], axis=-1).astype(np.uint8)
-        Image.fromarray(rgb, "RGB").save(os.path.join(folder, f"{zoom}_{tx}_{ty}.png"))
+        buf = io.BytesIO()
+        Image.fromarray(rgb, "RGB").save(buf, "PNG")
+        _write_if_new(os.path.join(folder, f"{zoom}_{tx}_{ty}.png"), buf.getvalue())
+    if pool is None:
+        for (tx, ty), t in zip(tiles.tolist(), v): save(tx, ty, t)
+        return
+    for w in [pool.submit(save, tx, ty, t) for (tx, ty), t in zip(tiles.tolist(), v)]: w.result()
 
 
 if __name__ == "__main__":
@@ -491,4 +515,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 3 or sys.argv[1] not in ("pack", "unpack"): raise SystemExit(__doc__)
     cmd, map_id = sys.argv[1], sys.argv[2]
     raw = sys.argv[3] if len(sys.argv) > 3 else os.path.join(ROOT, "data", "raw", map_id, "wide")
-    (pack if cmd == "pack" else unpack)(map_id, raw)
+    if cmd == "pack": pack(map_id, raw, set(sys.argv[4:]) or None)
+    else: unpack(map_id, raw)

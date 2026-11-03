@@ -176,7 +176,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
   `docs/new-area.md`). The village is the middle 3 x 3 squares, loaded like the rest: all are
   `web/public/maps/combe-down/<ti>_<tj>.json` (as the partition stage writes them, below), streamed in round the player, and
-  `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. `map.ts` loads them and answers ground height,
+  `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. The game
+  downloads the squares, `-wide.json` and `-ground.json` packed (`src/pack.ts`; every build packs
+  them with `tools/pack_squares.mjs` and checks each reads back exactly as its JSON); the JSON is
+  what's committed and what the tools read. `map.ts` loads them and answers ground height,
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
@@ -212,6 +215,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
     all of that.
+  - A running line at a thing's own level (not high over it on a viaduct, nor down in a cutting)
+    is laid before all of it: buildings are cut back off it, and nothing else stands on it or
+    inside a tunnel's mouth under its crown (`clear_of_line` and the corridors in `prep_map.py`;
+    `tools/trackclear.ts`, rule 21, checks it).
 
   The canal breaks this order on purpose: it cuts through the land. Its banks, coping, towpath,
   verges and retaining walls are designed once for the whole canal (`tools/canal.py`) and built
@@ -226,11 +233,12 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   meeting them at their height, no steeper than the hill), as the railway is (`tools/railway.py`;
   the levelling both share is `tools/profiles.py`).
 
-  Then, for Bath, the **partition** lays all of that out again as one partition of the ground,
+  Then, for every map, the **partition** lays all of that out again as one partition of the ground,
   the last stage of `tools/prep_tiles.py` (`tools/partition/stage.py`): the streets are fitted
   once across the whole city (`tools/partition/once.py`, `corridors.py`), their heights,
   bridges and tunnels worked out together (`tools/structures.py`, `profiles.py`), the blocks
-  divided into plots that follow the Land Registry's parcels (`plots.py`), and every boundary,
+  divided into plots that follow the Land Registry's parcels where a map has them (`plots.py`;
+  elsewhere the blocks and the houses' fronts), and every boundary,
   gate, front path and the ground under the roads written into each square from those
   (`write_tile.py`), over `prep_map.py`'s square for everything else. So the streets, plots,
   garden boundaries and road heights the game shows come from there, and new rules for them go

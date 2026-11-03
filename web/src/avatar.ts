@@ -437,6 +437,12 @@ export class Avatar {
     this.label.visible = this.talkMark.visible = false;
     for (const [up, low] of this.arms) { up.rotation.set(0, 0, 0); low.rotation.set(0, 0, 0); }
     this.arms.forEach(([up], k) => { up.rotation.z = k === 0 ? -0.12 : 0.12; });
+    // update() hangs the legs from the hips each frame, and the wardrobe never runs it
+    this.legs.forEach(([up, low], i) => {
+      const side = i ? 1 : -1;
+      up.position.set(side * 0.1, HIP, 0);
+      reach(up, low, THIGH, SHIN, _t.set(side * 0.11, 0.06, 0), KNEE);
+    });
   }
 
   /** Where what they're riding is (a cable car cabin), when their snapshots are measured from it rather

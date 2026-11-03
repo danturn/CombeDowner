@@ -1,14 +1,17 @@
-// The inside of a vehicle, for the driver's own view (C while driving switches to it, game.ts). The
-// cars share one dash, set back from each kind's own windscreen: a dashboard, a hooded binnacle with
-// a speedo whose needle shows how fast you're going and a rev counter beside it, a steering wheel that
+// The inside of a vehicle, for the driver's own view (C while driving goes from the chase camera to
+// this, then to the bonnet camera, game.ts). The cars share one dash, set back from each kind's own
+// windscreen: a dashboard, a hooded binnacle with a speedo whose needle shows how fast you're going and a rev counter beside it, a steering wheel that
 // turns as you steer, the windscreen pillars, the roof lining, the rear-view mirror, the pillars
 // behind the doors and a gear stick (a golf ball on the end of it in a Golf GTI). The open ones (the
 // C5 and the heavy roller) have no roof to frame. The buses have a cab of their own, being so
-// different: a big flat wheel nearly lying down on its column, a long low dash under a split
+// different: a big flat wheel nearly lying down on its column, a long low dash, its dials read down through the wheel, under a split
 // windscreen, the cab's green side panels, and an old mechanical ticket machine on its post by the
 // door, with a crank handle and a coin tray: no screens, they're old buses. Arleen's coaches (coaches.ts) have the same
 // sort of cab, under their own raked windscreen, in grey, with no ticket machine. A parked car with
-// its driver's door left open (golfdriver.ts) shows the same inside through the doorway.
+// its driver's door left open (golfdriver.ts) shows the same inside through the doorway. The dash sits
+// well down below the driver's eyes, so the windscreen is mostly road. The bonnet camera (bonnetEye)
+// draws no inside at all: it looks out from just above the bonnet at the foot of the windscreen, or
+// from the front of a bus's or a coach's cab.
 //
 // Who decides what: it's only ever drawn on each player's own screen (for whoever's driving, or
 // through an open door), so nothing here goes over the network.
@@ -22,12 +25,38 @@ const SCREEN: Record<string, [number, number]> = {
   c5: [0.9, 0], roller: [0.7, 0],
 };
 const OPEN = new Set(["c5", "roller"]);
+/** The vans' bonnets meet the windscreen higher than their windows' line, so their dash sits up level with it. */
+const SILL: Record<string, number> = { transit: 1.08, icecream: 1.12, chipvan: 1.1 };
+/** The ice cream van's driver is drawn sat close up to the windscreen; from the seat you're this much further back, so its dash isn't in your lap. */
+const SEAT_BACK: Record<string, number> = { icecream: 0.45 };
+/** The milk float's windscreen is a flat pane right in front of you: from the seat the body's cut away up to this height, pane and all. */
+const PANE: Record<string, number> = { milkfloat: 1.8 };
+const screenOf = (kind: string): [number, number] => {
+  const [screen, rake] = SCREEN[kind] ?? SCREEN.car0;
+  return [screen + (SEAT_BACK[kind] ?? 0), rake];
+};
 /** The everyday cars' three shapes (furniture.ts) have their own roof heights and window lines: [H, waist]. */
 const SHAPE_DIMS: Record<string, [number, number]> = { car0: [1.44, 0.9], car1: [1.45, 0.95], car2: [1.58, 0.93] };
 
 /** What the cockpit needs to know about the vehicle. kind: its kind, or for an everyday car "car" and its shape's number.
  *  seat: the driver's [along, up, across]. decks and base: a bus's. */
 export interface CockpitOf { kind: string; L: number; W: number; H: number; waist: number; seat: number[]; decks?: number; base?: number; coach?: { foot: number[]; top: number[] }; doorway?: boolean }
+
+const isBusCab = (d: CockpitOf) => d.kind === "bus" || d.kind === "minibus" || d.kind === "school" || !!d.coach;
+
+/** Where the bonnet camera sits, in the vehicle's own frame (along, up, across): over the middle of the
+ *  bonnet just ahead of the windscreen's foot, or for a bus or a coach just ahead of its flat front. */
+export function bonnetEye(d: CockpitOf): THREE.Vector3 {
+  if (isBusCab(d)) {
+    const front = d.coach ? d.coach.foot[0] : d.L / 2, foot = d.coach ? d.coach.foot[1] : (d.decks ?? 2) === 2 ? 1.45 : 1.2;
+    return new THREE.Vector3(front + 0.08, foot + 0.2, 0);
+  }
+  // the roller's windscreen line would be inside its drum: it looks out over the drum's frame instead
+  if (d.kind === "roller") return new THREE.Vector3(0.4, 1.45, 0);
+  const waist = SHAPE_DIMS[d.kind]?.[1] ?? d.waist, [screen] = SCREEN[d.kind] ?? SCREEN.car0;
+  // and the Land Rover's spare wheel rides on its bonnet, so it looks out over the top of that
+  return new THREE.Vector3(d.seat[0] + screen + 0.12, waist + (d.kind === "landrover" ? 0.4 : 0.26), 0);
+}
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -60,12 +89,18 @@ export class Cockpit {
   /** The part of the body to cut away round you while you drive, in the vehicle's own frame (vehicles.ts): the cabin of a car. Null for the open ones, buses and coaches. */
   cut: THREE.Box3 | null = null;
   private top: number;                  // what the speedo reads up to, mph
+  /** How far down the view settles (a pitch, radians): far enough that the dials show under the windscreen. */
+  rest = -0.06;
 
   constructor(d: CockpitOf) {
     if (SHAPE_DIMS[d.kind]) [d.H, d.waist] = SHAPE_DIMS[d.kind];
-    const [al, up, ac] = d.seat, bus = d.kind === "bus" || d.kind === "minibus" || d.kind === "school" || !!d.coach;
+    if (SEAT_BACK[d.kind]) d = { ...d, seat: [d.seat[0] - SEAT_BACK[d.kind], d.seat[1], d.seat[2]] };
+    const [al, up, ac] = d.seat, bus = isBusCab(d);
     const open = OPEN.has(d.kind);
-    this.eye = new THREE.Vector3(al - 0.05, open ? up + 0.75 : Math.min(d.H - 0.17, up + (bus ? 1.15 : 1.12)), ac);
+    // sat up and forward a touch, as you would to see the road, but never so high that the roof lining crowds the screen
+    // in a short cab (a van's) you sit back from the dash, or the dials would be under your chin
+    const [screen] = screenOf(d.kind), back = al + screen - 0.02 - Math.max(0.15, screen - 0.55);
+    this.eye = new THREE.Vector3(bus ? al - 0.05 : Math.max(al - 0.15, Math.min(al - 0.01, back - 0.45)), open ? up + 0.78 : Math.min(d.H - 0.14, up + (bus ? 1.17 : 1.15)), ac);
     this.turns = bus ? 4 : 2.6;
     this.top = bus ? 60 : d.kind === "milkfloat" || d.kind === "c5" || d.kind === "roller" ? 20 : 120;
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -76,16 +111,20 @@ export class Cockpit {
 
   /** The cars' dash, set back from the windscreen, and everything round it. */
   private carDash(d: CockpitOf, open: boolean): Part[] {
-    const [al, up, ac] = d.seat, [screen, rake] = SCREEN[d.kind] ?? SCREEN.car0, ey = this.eye.y;
-    const yd = Math.min(ey - 0.25, d.waist + 0.02);     // the top of the dash, along the bottom of the windows
+    const [al, up, ac] = d.seat, [screen, rake] = screenOf(d.kind), ey = this.eye.y;
+    // the top of the dash, along the bottom of the windows: any lower and you'd see down past it into the bonnet
+    const yd = Math.min(ey - 0.3, (SILL[d.kind] ?? d.waist) + 0.02);
     const front = al + screen - 0.02, deep = Math.max(0.15, screen - 0.55), back = front - deep;
+    // in the shortest cab (the ice cream van's) you sit a little lower too, to see the dials over the wheel
+    if (!open) this.eye.y = Math.min(ey, yd + 0.8 * (back - this.eye.x));
     // from the seat the lining sits a little above the real roof: at its true height the wide view makes it crowd the top of
     // the screen. Seen through an open door from outside it has to stay under the roof
     const half = d.W / 2 - 0.08, roof = d.doorway ? d.H - 0.06 : d.H + 0.02;
     const parts: Part[] = [];
     if (d.kind !== "c5") {
       parts.push([box(deep, 0.2, half * 2), d.kind === "landrover" ? "#5a5f55" : DASH, (front + back) / 2, yd - 0.1, 0]);   // the dashboard
-      parts.push([box(0.16, 0.12, 0.38), DASH, back + 0.08, yd + 0.03, ac], [box(0.2, 0.02, 0.4), DASH, back + 0.06, yd + 0.1, ac]);   // the binnacle, and its hood
+      // the binnacle and its hood sit low, so the dials stand only just proud of the dash
+      parts.push([box(0.16, 0.1, 0.38), DASH, back + 0.08, yd - 0.01, ac], [box(0.2, 0.02, 0.4), DASH, back + 0.06, yd + 0.06, ac]);
       parts.push([box(0.05, 0.03, 0.5), "#3a3c3e", (front + back) / 2, yd + 0.005, -ac * 0.6]);                          // the vents
     }
     if (!open) {
@@ -93,7 +132,7 @@ export class Cockpit {
       // floor, the doors' insides, seats, the hump down the middle and a footwell under the dash
       const rear = Math.max(-d.L / 2 + 0.3, al - 1.45), len = front - rear, mid = (front + rear) / 2, wide = d.W / 2 - 0.03;
       const SEAT = d.kind === "xr3i" || d.kind === "golf" || d.kind === "golfdriver" ? "#3c3a44" : d.kind === "landrover" ? "#4a4a42" : "#3a3a3e";
-      this.cut = new THREE.Box3(new THREE.Vector3(rear, up + 0.01, -wide), new THREE.Vector3(front, d.waist + 0.1, wide));
+      this.cut = new THREE.Box3(new THREE.Vector3(rear, up + 0.01, -wide), new THREE.Vector3(front + (PANE[d.kind] ? 0.08 : 0), PANE[d.kind] ?? d.waist + 0.1, wide));
       // seen through an open door from outside, the floor can't hang below the body's sills
       const fl = d.doorway ? Math.max(up, 0.32) : up;
       parts.push([box(len, 0.03, wide * 2), "#2a2826", mid, fl - 0.005, 0]);                                    // the carpet
@@ -128,9 +167,11 @@ export class Cockpit {
     }
     if (d.kind !== "c5") {
       // the steering wheel, on a column rising towards you, and the dials behind it
-      const hub = new THREE.Vector3(Math.max(al + 0.3, Math.min(back - 0.05, al + 0.45)), d.waist, ac);
+      const hub = new THREE.Vector3(Math.max(al + 0.3, Math.min(back - 0.05, al + 0.45)), yd - 0.07, ac);
       this.wheel(hub, d.kind === "landrover" || d.kind === "roller" ? 0.2 : 0.18, 0.4, d.kind === "roller" ? "#2a2a2a" : "#161718");
-      if (!d.doorway) this.dials(new THREE.Vector3(back - 0.003, yd + 0.03, ac), 0.045, 0.1);   // (two dozen little meshes, unseen from outside)
+      if (!d.doorway) this.dials(new THREE.Vector3(back - 0.003, yd + 0.005, ac), 0.045, 0.1);   // (two dozen little meshes, unseen from outside)
+      const down = Math.atan2(this.eye.y - yd, back - this.eye.x);
+      this.rest = -Math.max(0.06, Math.min(0.25, down - 0.42));
     } else {
       // the C5 steers by handlebars under your knees
       parts.push([box(0.04, 0.03, 0.42), "#1b1c1d", al + 0.3, up + 0.32, ac]);
@@ -147,7 +188,6 @@ export class Cockpit {
     const parts: Part[] = [
       [box(0.06, ws[0] - base, W - 0.1), GREEN, f - 0.06, (base + ws[0]) / 2, 0],                          // the panel under the windscreen
       [box(0.42, 0.1, W - 0.16), DASH, f - 0.27, ws[0] - 0.05, 0],                                         // the long low dash
-      [box(0.36, 0.22, 0.62), DASH, f - 0.3, ws[0] + 0.02, ac],                                            // and the driver's binnacle on it
       strut(lo, hi, 0, 0.1, 0.05, POST),                                                                    // the split windscreen's middle
       strut(lo, hi, W / 2 - 0.06, 0.12, 0.08, POST), strut(lo, hi, -W / 2 + 0.06, 0.12, 0.08, POST),       // and its sides
       [box(0.12, ceil - ws[1], W - 0.1), POST, hi[0] - 0.03, (ws[1] + ceil) / 2, 0],                       // over it, the back of the destination box
@@ -166,10 +206,14 @@ export class Cockpit {
       [box(0.16, 0.03, 0.06), "#8a6a2a", al + 0.7, up + 0.65, ac - 0.58],                                 // with some change in it
     );
     // the big wheel, nearly flat, on its column
-    const hub = new THREE.Vector3(al + 0.55, this.eye.y - 0.4, ac);
+    // the dials sit low on the dash beyond the wheel's hub, read down through the far half of the wheel as in a real bus
+    const dial = new THREE.Vector3(al + 0.62, Math.max(this.eye.y - 0.5, ws[0] + 0.05), ac);
+    const hub = new THREE.Vector3(al + 0.45, Math.min(this.eye.y - 0.47, dial.y - 0.03), ac);
     this.wheel(hub, 0.25, 1.15, "#141516");
     parts.push(strut([hub.x + 0.05, hub.y - 0.03], [hub.x + 0.32, base + 0.2], ac, 0.05, 0.05, "#1b1c1d"));
-    this.dials(new THREE.Vector3(f - 0.48, ws[0] + 0.1, ac), 0.06, 0.15, 0.45);
+    parts.push([box(0.14, dial.y - ws[0] + 0.02, 0.42), DASH, dial.x + 0.06, (dial.y + ws[0] - 0.08) / 2, ac]);
+    this.dials(dial, 0.06, 0.15, 0.64);
+    this.rest = -Math.max(0.06, Math.min(0.25, Math.atan2(this.eye.y - dial.y, dial.x - this.eye.x) - 0.42));
     return parts;
   }
 

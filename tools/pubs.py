@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
     pubs = []
     for x, y, _g, a, _w, name, style in signs:
-        if style != "pub" or not name or any(p["name"] == name for p in pubs): continue
+        if style != "pub" or not name or not inside(x, y) or any(p["name"] == name for p in pubs): continue
         ox, oy = out_front(x, y, a)
         pubs.append(dict(name=name, x=ox, y=oy, px=x, py=y, a=a, conf=2.0))
     signed = len(pubs)

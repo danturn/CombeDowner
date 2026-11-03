@@ -11,7 +11,7 @@
 // Usage: node watertight.mjs <maps root> <map id>; prints one JSON list of findings.
 import * as THREE from "three";
 import { readFileSync, existsSync, readdirSync } from "fs";
-import { Railway } from "./src/railway";
+import { Railway, ARCADE_LEAST, ARCADE_BAY, ARCADE_DEEP } from "./src/railway";
 import { Wide } from "./src/wide";
 import { bridgePlan, railNeed } from "./src/railbridge";
 
@@ -201,6 +201,10 @@ const inRing = (r: number[][], x: number, y: number) => {
     if ((r[i][1] > y) !== (r[j][1] > y) && x < ((r[j][0] - r[i][0]) * (y - r[i][1])) / (r[j][1] - r[i][1]) + r[i][0]) o = !o;
   return o;
 };
+const segD = (a: number[], b: number[], x: number, y: number) => {
+  const vx = b[0] - a[0], vy = b[1] - a[1], f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / (vx * vx + vy * vy || 1)));
+  return Math.hypot(a[0] + vx * f - x, a[1] + vy * f - y);
+};
 const platformAt = (x: number, y: number) => platRings.find((p) => x >= p.box[0] && x <= p.box[2] && y >= p.box[1] && y <= p.box[3] && inRing(p.r, x, y)) ?? null;
 
 /** The span of air the railway's body should fill over (x, y): from its drawn top down to the ground,
@@ -208,6 +212,13 @@ const platformAt = (x: number, y: number) => platRings.find((p) => x >= p.box[0]
 function body(x: number, y: number, g: number): [number, number] | null {
   const pl = platformAt(x, y);
   // (over a road or water a platform stays open as high as its walls stop there, under its underside: railway.ts)
+  // (the arches a raised platform stands on along its outer sides are open as far in as their dark backs)
+  if (pl && pl.z - g > ARCADE_LEAST && pl.r.some((A, i) => {
+    const B = pl.r[(i + 1) % pl.r.length], len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    if (len <= ARCADE_BAY || segD(A, B, x, y) > ARCADE_DEEP + 0.05) return false;
+    const n = nearest((A[0] + B[0]) / 2, (A[1] + B[1]) / 2);
+    return !n || n.off >= 3.4;
+  })) return null;
   if (pl) { const lo = need(x, y) > 0 ? Math.max(g + need(x, y), pl.z - 4) : g; return pl.z > lo ? [lo, pl.z] : null; }
   const n = nearest(x, y);
   if (!n || n.flag === 2 || n.off > 2.3) return null;

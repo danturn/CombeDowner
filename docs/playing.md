@@ -181,7 +181,8 @@ open it, and Back or Esc takes you back to the list:
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
   debug panel.
-- Controls: mouse sensitivity.
+- Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
+  counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
   Flag Lads, Bendy and seagull muck all leave you alone, even if you shoot them (other players can
   still shoot you, and traffic and trains can still run you over). The host's setting is the game's: everyone who
@@ -225,7 +226,7 @@ what's held on it. It shakes a little when you fire and more when you're hit.
 
 Holding the right stick right over for a moment turns you faster, so you can swing round quickly and
 still aim finely with small pushes. Once a pad's been seen, Settings (and the mines' pause menu) has
-a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
+a Controller section: look speed side to side and up and down, invert up and down, invert left and right, the faster turn,
 the stick's dead zone and rumble, all usable with the pad itself.
 
 The buttons are laid out as Call of Duty: Warzone's defaults, so they feel familiar. Square reloads
@@ -258,7 +259,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
 | Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out (let go of a tiller) |
-| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | driver's seat or chase camera |
+| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | chase camera, driver's seat or bonnet camera |
 | Triangle | switch weapon | get out |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
@@ -388,10 +389,12 @@ tight as a real car does; take one too fast and the front tyres squeal and run w
 speed, until you lift off or brake and the nose tucks in. The left and right arrows (◀ and ▶ on a
 touch screen) work the indicators, which tick away and cancel themselves once you're round the
 corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
-sees them, the traffic's brake lights too. C (View on a touch screen) switches
-between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
-speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
-an old ticket machine by the door. It remembers which you like. Each engine has a voice of its own:
+sees them, the traffic's brake lights too. C (View on a touch screen) goes round
+the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
+a low dash: the speedo shows your speed, the wheel turns as you steer, and the buses have a cab of
+their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
+racing game, sits just above the bonnet at the foot of the windscreen (on a bus or a coach, at the
+front of the cab) with nothing of the inside in the way. It remembers which you like. Each engine has a voice of its own:
 it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
 the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
 The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit

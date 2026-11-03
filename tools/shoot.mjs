@@ -167,18 +167,14 @@ async function open(time, v) {
       };
     });
   }
-  await page.addStyleTag({ content: "#menu,#hud,.toast,#pause,#debug,#touch{display:none!important}" });
+  await page.addStyleTag({ content: "#menu,#hud,.toast,#pause,#debug,#touch,#arrive{display:none!important}" });
 }
 
 /** Wait until every square in sight of the view is loaded and built, and has stayed so for a
  *  dozen frames and half a second (the game looks for squares to load every 0.3 s of play, and
  *  play time only moves on with the frames), then shoot. */
 async function settle() {
-  await page.evaluate(() => { window.__calm = null; });
-  return page.waitForFunction(() => {
-    const p = window.__tilesPending;
-    if (p !== 0) { window.__calm = null; return false; }
-    const c = (window.__calm ??= { frames: 0, t: performance.now() });
-    return ++c.frames >= 12 && performance.now() - c.t > 500;
-  }, null, { timeout: +opt.timeout * 1000, polling: "raf" }).then(() => true, () => false);
+  // (the game's own test, tiles.ts's Calm, which the arrival cover waits on too)
+  await page.evaluate(() => { window.__shootCalm = window.__calm(12, 500); });
+  return page.waitForFunction(() => window.__shootCalm.still(window.__tilesPending ?? 1), null, { timeout: +opt.timeout * 1000, polling: "raf" }).then(() => true, () => false);
 }

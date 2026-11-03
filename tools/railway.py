@@ -27,7 +27,10 @@ the map centre and heights in metres above sea level:
   the departure boards: SERVICES), and, on a line that carries on to another map (LINKS), whether this
   route's trains do ("on": 1 if the linked station is the last they call at here, so they go on there).
 - platforms: [{"n": station, "r": [[x, y], ...] the edge, "z": the platform's top, "no": its number, if the data has one}].
-- portals: [[x, y, z, angle]] tunnel mouths, the angle pointing into the hill (east is 0, north a quarter turn).
+- canopies: [{"r": [[x, y], ...] the outline, "z": the platform's top}] the canopies over platforms up off the ground,
+  and "t": 1 on an outline that is left out of the squares but not drawn (the station's whole extent, or one canopy again).
+- portals: [[x, y, z, angle, ground]] tunnel mouths, the angle pointing into the hill (east is 0, north a quarter turn),
+  and the ground's height over the tunnel just inside it.
 """
 import json, math, os, sys
 import numpy as np
@@ -93,6 +96,11 @@ SERVICES = {
     ],
 }
 EDGE = 60            # a track end this near the circle's edge is where trains come and go
+CANOPY_REACH = 1.5  # metres past a platform's edge its canopy may overhang the track
+CANOPY_SHARE = 0.5  # how much of a footprint over a raised platform makes it the platform's canopy
+CANOPY_TRACK = 8.0  # metres of track under an outline that make it the station's extent rather than a canopy
+CANOPY_RAISED = 2.0 # metres a platform stands over the ground for what's on it not to stand on the ground
+COVER_AT = (4, 6, 8, 10, 12)   # metres into a tunnel from its mouth that the ground over it is read at
 SHORT_TUNNEL = 50    # metres: a tunnel shorter than this is something going over the line, and has no mouths
 ROAD_HALF = {"motorway": 7, "trunk": 6, "primary": 4.3, "secondary": 4, "tertiary": 3.5, "residential": 3, "unclassified": 2.8,
              "living_street": 2.5, "service": 1.8, "unknown": 2}     # half a road's width (the rest are paths: 1.5)
@@ -101,6 +109,62 @@ TOY = {"miniature"}  # OpenStreetMap's railway values for a garden or park's rid
 TOY_SPUR = 30        # metres: ordinary rail this short joining only toy track is part of the model
 TOUCH = 0.5          # metres: track ends this near are joined
 TOY_MATCH = 1.5      # metres: an Overture segment this near toy track along most of it is that track
+
+
+def open_runs(p):
+    """Each stretch of a track's points [x, y, z, flag, ...] that is out in the open (not in a tunnel),
+    as [x, y] points, run on to the tunnel mouths at its ends: halfway to the first point inside,
+    where the mouths stand (`portals` below)."""
+    runs, run = [], []
+    for k, q in enumerate(p):
+        if q[3] == 2:
+            if run:
+                run.append([(run[-1][0] + q[0]) / 2, (run[-1][1] + q[1]) / 2])
+                runs.append(run)
+                run = []
+            continue
+        if not run and k > 0 and p[k - 1][3] == 2:
+            run.append([(p[k - 1][0] + q[0]) / 2, (p[k - 1][1] + q[1]) / 2])
+        run.append(list(q[:2]))
+    if run: runs.append(run)
+    return runs
+
+
+# The tunnel mouths' faces, as web/src/railway.ts headwalls() groups them (the same numbers): mouths
+# facing the same way side by side open in one face, at the outermost of them.
+PORTAL_TURN, PORTAL_DEPTH, PORTAL_SIDE, PORTAL_STAGGER, PORTAL_R = 0.35, 2.5, 16, 9, 3.6
+PORTAL_LEAST, PORTAL_CROWN, BORE_LIT = 5, 7, 11
+
+
+def portal_faces(portals):
+    """Each face: the middle of its foot (x, y), the way in (ux, uy), the rails' height, its reach
+    across (the bores' outer edges) and the height of the bores' crown over the rails."""
+    groups = []
+    for m in portals:
+        for g in groups:
+            if any(_with(m, o) for o in g): g.append(m); break
+        else: groups.append([m])
+    out = []
+    for g in groups:
+        ang = math.atan2(sum(math.sin(m[3]) for m in g), sum(math.cos(m[3]) for m in g))
+        ux, uy = math.cos(ang), math.sin(ang)
+        cx, cy = sum(m[0] for m in g) / len(g), sum(m[1] for m in g) / len(g)
+        along = [(m[0] - cx) * ux + (m[1] - cy) * uy for m in g]
+        across = [(m[1] - cy) * ux - (m[0] - cx) * uy for m in g]
+        base = min(m[2] for m in g)
+        grounds = [m[4] for m in g if len(m) > 4]
+        cover = sum(grounds) / len(grounds) - base if grounds else None
+        crown = min(PORTAL_CROWN, cover - 0.6) if cover is not None and cover >= PORTAL_LEAST + 0.6 else PORTAL_CROWN
+        out.append(dict(x=cx + ux * min(along), y=cy + uy * min(along), ux=ux, uy=uy, z=base,
+                        v0=min(across) - PORTAL_R, v1=max(across) + PORTAL_R, crown=crown))
+    return out
+
+
+def _with(m, o):
+    turn = abs(math.atan2(math.sin(m[3] - o[3]), math.cos(m[3] - o[3])))
+    dx, dy, ux, uy = m[0] - o[0], m[1] - o[1], math.cos(o[3]), math.sin(o[3])
+    along, side = abs(dx * ux + dy * uy), abs(dy * ux - dx * uy)
+    return turn < PORTAL_TURN and side < PORTAL_SIDE and (along < PORTAL_DEPTH or (side < 2 * PORTAL_R + 1 and along < PORTAL_STAGGER))
 
 
 def toy_track(src, proj):
@@ -129,6 +193,33 @@ def toy_track(src, proj):
         if any(t.distance(toy_all) >= TOUCH and t not in toy_tables for t in joins): continue
         if g.distance(toy_all) < TOUCH or any(t in toy_tables for t in joins): taken.append((g, p))
     return shapely.unary_union([g for g, _ in taken] + toy_tables).buffer(TOY_MATCH), [p.get("osm") for _, p in taken]
+
+
+DECK_SHARED, DECK_APART, DECK_STEP = 4.5, 6.5, 2.5    # metres apart side by side, and up and down
+
+
+def share_decks(tracks):
+    segs = [(ti, k, t["p"][k], t["p"][k + 1]) for ti, t in enumerate(tracks) for k in range(len(t["p"]) - 1)
+            if t["p"][k][3] == 1 and t["p"][k + 1][3] == 1]
+    if not segs: return
+    tree = shapely.STRtree([LineString([a[:2], b[:2]]) for _, _, a, b in segs])
+    new = {}
+    for ti, t in enumerate(tracks):
+        for k, q in enumerate(t["p"]):
+            if q[3] != 1: continue
+            best = {}
+            for j in tree.query(Point(q[:2]).buffer(DECK_APART)):
+                tj, kj, a, b = segs[int(j)]
+                if tj == ti: continue
+                vx, vy = b[0] - a[0], b[1] - a[1]
+                f = min(1, max(0, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / ((vx * vx + vy * vy) or 1)))
+                dist = math.hypot(a[0] + vx * f - q[0], a[1] + vy * f - q[1])
+                z = a[2] + (b[2] - a[2]) * f
+                if dist < DECK_APART and abs(z - q[2]) < DECK_STEP and (tj not in best or dist < best[tj][0]): best[tj] = (dist, z)
+            if not best: continue
+            ws = [(1.0, q[2])] + [(min(1.0, (DECK_APART - dd) / (DECK_APART - DECK_SHARED)), z) for dd, z in best.values()]
+            new[(ti, k)] = sum(w * z for w, z in ws) / sum(w for w, _ in ws)
+    for (ti, k), z in new.items(): tracks[ti]["p"][k][2] = z
 
 
 def main():
@@ -230,7 +321,12 @@ def main():
         # the hill above it, so the tunnels are left out of the evening and laid straight after it
         bridge = [q[3] == 1 for q in p]
         tunnel = [q[3] == 2 for q in p]
-        carry_profile(z, d, bridge, [True] * n)
+        # (a bridge running from the very end of a piece, or from a point or two short of it, starts
+        # at the height of the line it leaves, as at a junction on a viaduct, not down at the
+        # survey's ground under it)
+        for e in (0, n - 1):
+            if pinned[e] is not None: z[e] = pinned[e]
+        carry_profile(z, d, bridge, [True] * n, fixed=(pinned[0], pinned[-1]))
         even = list(z)
         for i in range(n):
             if bridge[i] or tunnel[i]: continue
@@ -257,6 +353,11 @@ def main():
             q[2] = even[i]
             laid.setdefault(key(q), even[i])
             laid_at.append((q[0], q[1], even[i]))
+    # Tracks side by side on one viaduct are on one deck, at one height: each point on a bridge
+    # takes the mean of its own height and those of the bridges beside it (within DECK_SHARED,
+    # fading out to DECK_APART as they part), where they differ by less than a flyover would.
+    share_decks(tracks)
+
     # Where the line crosses a road or a path well above it (more than 3 m) and the data marks no
     # bridge, it's on one: the road or path passes under. And each bridge runs on to where the
     # track meets the ground, not stopping short of it on a bank's edge.
@@ -487,6 +588,33 @@ def main():
         if z is None: continue
         ring = list(poly.simplify(0.5).exterior.coords)[:-1]
         platforms.append(dict(n=n, r=[[r1(x), r1(y)] for x, y in ring], z=r1(z + 0.9), **({"no": no} if no else {})))
+    # The canopies over platforms up on a viaduct or a bank: a footprint the data maps mostly over
+    # such a platform can't stand on the ground below as a building (it would be a solid block round
+    # the line), so it's the platform's canopy, at the platform's height, and the squares leave it out.
+    canopies = []
+    raised = [(poly.buffer(CANOPY_REACH), r1(level[n or k] + 0.9)) for k, (n, poly, _) in enumerate(plats) if level.get(n or k) is not None]
+    for f in [f for l in ("building", "footprints") if os.path.exists(os.path.join(src, f"{l}.geojson"))
+              for f in json.load(open(os.path.join(src, f"{l}.geojson")))["features"]]:
+        g = proj(shape(f["geometry"]))
+        if not g.geom_type.endswith("Polygon") or not g.intersects(circle): continue
+        for poly in getattr(g, "geoms", [g]):
+            poly = poly.buffer(0)
+            if poly.is_empty or poly.area < 6: continue
+            over = [(poly.intersection(P).area, z) for P, z in raised if poly.intersects(P)]
+            if not over or sum(a for a, _ in over) < CANOPY_SHARE * poly.area: continue
+            z = max(over)[1]
+            if z - T.elev(poly.centroid.x, poly.centroid.y) < CANOPY_RAISED: continue
+            ring = list(poly.simplify(0.3).exterior.coords)[:-1]
+            # (an outline the line runs through is the station's whole extent, not a roof: left out, not drawn)
+            whole = all_track.intersection(poly).length > CANOPY_TRACK
+            canopies.append((poly, dict(r=[[r1(x), r1(y)] for x, y in ring], z=z, **({"t": 1} if whole else {}))))
+    # one canopy drawn where two outlines map the same one
+    drawn = []
+    for poly, c in sorted(canopies, key=lambda pc: -pc[0].area):
+        if "t" not in c and any(poly.intersection(o).area > 0.8 * poly.area for o in drawn): c["t"] = 1
+        if "t" not in c: drawn.append(poly)
+    canopies = [c for _, c in canopies]
+    if canopies: print(f"railway: {len(drawn)} platform canopies up off the ground, and {len(canopies) - len(drawn)} more outlines over them left out")
     portals = []
     for t in tracks:
         p = t["p"]
@@ -497,12 +625,16 @@ def main():
                 if 0 <= m < len(p) and p[m][3] != 2:
                     # the mouth faces out of the hill, from the tunnel's end toward the open track
                     ang = math.atan2(p[k][1] - p[m][1], p[k][0] - p[m][0])
-                    portals.append([r1((p[k][0] + p[m][0]) / 2), r1((p[k][1] + p[m][1]) / 2), r1((p[k][2] + p[m][2]) / 2), round(ang, 3)])
+                    x, y = (p[k][0] + p[m][0]) / 2, (p[k][1] + p[m][1]) / 2
+                    # the ground over the tunnel a few metres in, past the slope down into the cutting,
+                    # which the face stands as high as
+                    over = sorted(T.elev(x + math.cos(ang) * u, y + math.sin(ang) * u) for u in COVER_AT)[len(COVER_AT) // 2]
+                    portals.append([r1(x), r1(y), r1((p[k][2] + p[m][2]) / 2), round(ang, 3), r1(over)])
 
     out_d = dict(
         tracks=[dict(n=t["n"], p=[[r1(q[0]), r1(q[1]), round(q[2], 2), q[3]] + ([r1(T.elev(q[0], q[1]))] if q[3] == 1 else []) for q in t["p"]])
                 for t in tracks],
-        routes=out_routes, platforms=platforms, portals=portals,
+        routes=out_routes, platforms=platforms, portals=portals, **({"canopies": canopies} if canopies else {}),
     )
     # the journeys on to another map: which lines carry on, the station at each end, and how long
     # the ride takes (the real distance at the local train's speed, plus a stop at each station on
@@ -520,4 +652,5 @@ def main():
     print(f"{len(tracks)} tracks, {len(out_routes)} routes, {len(platforms)} platforms, {len(portals)} tunnel mouths -> {out} ({os.path.getsize(out) // 1024} KB)")
 
 
-main()
+if __name__ == "__main__":
+    main()

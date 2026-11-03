@@ -6,18 +6,22 @@ terrain. Some data is optional. The map still builds without it, just with more 
 
 | Data | What it gives | Needed? | Coverage |
 |---|---|---|---|
-| Overture Maps | footprints, roads, paths, walls, water, woods, place names | yes | worldwide |
+| Overture Maps | footprints, roads, paths, walls, water, woods, rock, heath, sand and marsh, place names | yes | worldwide |
 | Mapzen terrain tiles | ground height | yes (downloaded by the build) | worldwide |
-| Environment Agency lidar | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England |
+| Environment Agency lidar (England), Welsh Government lidar (Wales, DataMapWales; no last returns) | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England and Wales |
 | Meta / WRI canopy height | tree positions, hedges, shrubs | recommended | worldwide |
 | Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional | England and Wales |
 | OpenStreetMap | shops, pubs, cafés and offices, on the right building | recommended | worldwide |
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
+| 2021 Census, accommodation type (TS044) | how many homes in each street are flats, terraced, semi-detached or detached | recommended | England and Wales |
+| Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
-`tools/new_area.py` does the registering and the build in order for an ordinary area, and the
-`new-area` skill (`.claude/skills/new-area/`) walks through it; `docs/own-area.md` says what a script
-cannot do for you.
+**To make a new map, follow the `new-area` skill (`.claude/skills/new-area/SKILL.md`)**: it runs
+`tools/new_area.py` (`check`, `find`, `add`, `build`, `verify`, `shoot`), which does everything
+below that an ordinary area needs, in order. This file is the background, and the manual steps
+the skill leaves to a person (energy certificates, parcels, canals, landmarks, publishing);
+`docs/own-area.md` says what a script cannot do for you.
 
 All raw data goes in `data/raw/<map id>/`, which git ignores. For a map with a wide area, a copy of
 what the build reads from it, small enough to keep, then goes in the repository, in `data/<map id>/`
@@ -161,6 +165,93 @@ in `data/combe-down/README.md`.
    For shop signs, also download the **Non-domestic** certificates for the same authority and
    save them as `data/raw/my-place/epc/non-domestic.csv`.
 
+### The census's house types and the conservation areas (England and Wales)
+
+Two open downloads, no account, a few seconds each (with `wide` on the end for a map with a wider
+circle, which every new map has):
+
+```sh
+python3 -I tools/census.py $MAP data/raw/$MAP/wide/census.geojson wide
+python3 -I tools/conservation.py $MAP data/raw/$MAP/wide/conservation.geojson wide
+```
+
+`tools/fetch.py $MAP --only census,conservation` runs both (it skips them outside England and
+Wales, and the conservation areas outside England). `census.py` takes every 2021 output area (about
+125 households each) the map's box touches, from the ONS's outlines, and how many of each one's
+households live in a detached, semi-detached or terraced house, a purpose-built block of flats, a
+converted house and so on, from Nomis (table TS044). It prints the mix over the whole map: Bath's
+is about a fifth each detached and semi-detached, a third terraced and a sixth flats, Hackney's
+over half flats. `conservation.py` takes the council's conservation areas from
+planning.data.gov.uk and prints their names; there are usually one to four per square kilometre
+of town. Without either file the build guesses as before, from the zones.
+
+The build (`buildings.priors`) then uses them wherever the map data and the surveys don't say:
+
+- **Flats.** In each output area, the biggest homes are made blocks of flats, one at a time, as
+  long as that brings the share of households in flats nearer the census's (a block holds one
+  household for each 75 m² of its floors, a house one). Overture's class (`apartments`, `house`,
+  `terrace` ...), a floor count of four or more, and energy certificates that say houses come first.
+- **Pairs and rows.** Where two houses' footprints stand up to 3 m apart (the outlines often draw
+  a pair of semis or a terrace apart), they are taken as sharing a wall, closest first, for as
+  long as that brings the area's detached, semi-detached and terraced homes nearer the census's.
+  Footprints that touch are a pair or a row as before.
+- **The old core.** A building in a conservation area, where no zone in `tools/area.py` covers
+  it, is in the old core: its houses and shops are built of what most of the old core's buildings
+  within 400 m are made of, as their energy certificates and mapped facades say (Bath stone in
+  Bath, stock brick in Hackney), each a shade of its own; it is painted (white, cream or a pale
+  colour) where most of the mapped facades and certificates round it say rendered. A terraced or
+  semi-detached house there with its eaves 8 m or more up is a Georgian or Regency town house: a
+  parapet, tall sash windows and railings to its front. Blocks of flats keep the zone's walls, being of their own time. (Bath's village and city
+  lay out their gardens their own way, `tools/partition/`, so they keep their own fronts.)
+
+The build prints what it took, for example
+`census: 299 output areas, 6779 homes in them, 862 blocks of flats, 158 pairs of houses sharing a
+wall; conservation areas: 20, 3023 buildings in an old core (2472 with its walls from the data)`.
+For a map kept in the repository, pack the two files with the rest
+(`python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide census conservation` packs just these),
+and add their rows to `data/$MAP/README.md` (copy them from `data/combe-down/README.md`).
+Licence: Open Government Licence v3; the attributions are in `data/combe-down/README.md`.
+
+### The City of Cape Town's own data (inside the City)
+
+A map anywhere inside the City of Cape Town gets the City's open data (its Open Data Policy: free
+for any use, credit "City of Cape Town") in place of the lidar, by the same layers the UK maps
+have, so the build reads it as it reads theirs:
+
+- the ground: the Ground Level Map's 2 m contours (from the 2018-19 lidar), filled in between
+  into a 2 m grid and laid over the terrain tiles, as `tools/lidar_ground.py` lays the lidar's
+  ground (Mapzen's tiles still hold out at sea and past the City, and the two meet smoothly);
+- the buildings' heights: the City's 2D Building Footprints, each roof measured from the air, as
+  the heights layer (`heights.geojson`: an outline in degrees and its roof's highest point above
+  the ground, `height`, in metres). Any survey of roof heights can go in this layer;
+- the trees: the City's Tree Canopies outlines, as the crowns layer beside the canopy height map
+  (`canopy/crowns.geojson`), which keeps the trees to the crowns it outlines.
+
+```sh
+python3 -I tools/fetch.py $MAP --only city                     # or tools/cct.py $MAP fetch, heights, crowns
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force   # (fetches the terrain tiles)
+python3 -I tools/cct.py $MAP ground                            # the contours' ground into the tiles
+```
+
+then measure and pack as usual (the crowns go into the canopy kept in `measured/`).
+
+### Buildings OpenStreetMap hasn't mapped (where it's thin)
+
+Every map packs a footprints layer beside the buildings (`footprints.geojson`): the buildings
+Overture's layer leaves out, which the build takes as buildings like any other. Which sources feed
+it is the map's own `footprints` setting in `tools/area.py`, best first, each footprint kept only
+where nothing better overlaps it: `"survey"` (the heights layer's outlines, such as the City of
+Cape Town's) and `"google"` (Google Open Buildings v3, for the map's `country`, at confidence
+0.75 or more; it covers Africa, South and South East Asia and Latin America). A map listing none,
+as the British maps do, gets an empty layer and builds as it would without one. Buildings from it
+carry nothing but their outline, so their height and kind are the area's guesses (`buildings.py`)
+unless the heights layer covers them.
+
+```sh
+python3 tools/footprints.py $MAP fetch                         # Google's, if listed (needs pip3 install duckdb)
+python3 -I tools/footprints.py $MAP merge                      # after the heights layer
+```
+
 ### OpenStreetMap businesses (recommended)
 
 ```sh
@@ -230,13 +321,13 @@ canal to the levels those files give; then:
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 ```
 
-For Combe Down's Bath, that same command then lays the ground out as a partition
-(`tools/partition/stage.py`, "Rebuild a map" in the README). It runs for a map marked
-`partition=True` in `tools/area.py`; a new map doesn't have it, and is built by `prep_map.py` alone.
-To give one the partition it needs the Land Registry's parcels (below) and the lidar, then a build,
-then `tools/mapdata.py pack`, which keeps what the partition reads from the lidar
-(`data/$MAP/measured/partition.zip`); `tools/partition/` still reads `CD_MAP` for its map, and has
-only been tried on Bath.
+That same command then lays the ground out as a partition (`tools/partition/stage.py`, "Rebuild a
+map" in the README), for every map. It uses whatever the map has: the Land Registry's parcels
+(below; England and Wales only) for where the plots' boundaries run, else the blocks and the houses'
+fronts; the lidar's wall runs (England) beside the mapped walls; and, once a build with the lidar
+has run `tools/mapdata.py pack`, what the partition reads from the lidar itself
+(`data/$MAP/measured/partition.zip`). None of them is needed. `--no-partition` builds the squares
+with `prep_map.py` alone, into the game's folder, to compare.
 
 For the squares' shop signs, download OpenStreetMap and the food hygiene ratings for the wide
 circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`, and the same with
@@ -451,16 +542,25 @@ changed for every area at once.
    brick or render. A building takes the majority, and bungalows get one storey.
 6. **Everything else** (`buildings.classify`): where the data is silent, the area's zones in
    `tools/area.py` decide the materials, roof style and storeys, with Overture's building class
-   and attachment (detached, semi or terrace) worked out from shared walls.
-7. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
+   and attachment (detached, semi or terrace) worked out from shared walls. Where the census and
+   the conservation areas have been downloaded, they decide first (`buildings.priors`, above):
+   which homes are blocks of flats, which houses standing a little apart share a wall, and the old
+   core's walls, parapets and railings.
+7. **Wild ground** (`wild.py`): the land layer's bare rock, scree and cliffs, heath and scrub,
+   beaches and sand, wetland and grassland are each their own kind of ground, under the streets,
+   paths and buildings and never inside a garden. Overture's satellite land cover fills in open
+   country the land layer hasn't mapped, but never near a building or a street, nor inside any
+   land use but a national park or nature reserve. Boulders are scattered over the bare rock last,
+   clear of everything else.
+8. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
    present, tree heights and crowns come from it, with roofs and thin things removed. Trunks are
    kept off roads and pavements.
-8. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
+9. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
    and hedges, gates, doors, driveways and parked cars. A car that would clash with a wall or a
    building is left out. Each house wall is divided into equal window bays, centred on the wall
    (one window if there's only room for one, none if there isn't); the front door takes the
    middle of a bay, and the game leaves out the ground-floor window behind a door or shopfront.
-9. **Shop signs** (`shops.py`): businesses come from OpenStreetMap, which usually maps them on
+10. **Shop signs** (`shops.py`): businesses come from OpenStreetMap, which usually maps them on
    the building itself, so its outline picks the building. A non-domestic energy certificate
    placed by its UPRN marks the exact premises, and moves a business mapped only as a point
    nearby. Food hygiene ratings add pubs, cafés and takeaways OpenStreetMap is missing, and an
@@ -471,7 +571,7 @@ changed for every area at once.
    the business's own street, skipping party walls; several businesses in one building share the
    wall. A landmark pack can rename a business to what is over the door (`SIGN_NAMES`) or drop
    one (`SIGN_SKIP`).
-10. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
+11. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
 
 The output is one JSON file per map, which the game loads (`web/src/map.ts` describes every field).
 

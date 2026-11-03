@@ -24,12 +24,12 @@ NEAR = 4.0      # metres: an address point this close outside a footprint still 
 
 
 def load(folder, bbox, proj):
-    """Addresses inside bbox (W, S, E, N, lon/lat): a list of (x, y, wall or None, bungalow)."""
+    """Addresses inside bbox (W, S, E, N, lon/lat): a list of (x, y, wall or None, bungalow, a house)."""
     certs, uprns = os.path.join(folder, "certificates.csv"), os.path.join(folder, "uprn.csv")
     if not (os.path.exists(certs) and os.path.exists(uprns)): raise FileNotFoundError(f"no EPC data in {folder}")
     # every square of the map reads the same addresses, so they're worked out once and kept beside
     # the data, until the files, the area or where the map is centred change
-    key = repr((bbox, proj(*bbox[:2]), [(os.path.getsize(p), os.path.getmtime(p)) for p in (certs, uprns)]))
+    key = repr((bbox, proj(*bbox[:2]), [(os.path.getsize(p), os.path.getmtime(p)) for p in (certs, uprns)], "house"))
     kept = os.path.join(folder, f".addresses-{zlib.crc32(key.encode()):08x}.pickle")
     if os.path.exists(kept):
         with open(kept, "rb") as f: return pickle.load(f)
@@ -58,12 +58,14 @@ def _read(certs, uprns, bbox, proj):
     for u, r in latest.items():
         desc = r["walls_description"].lower()
         wall = next((w for k, w in WALLS if k in desc), None)
-        out.append((*where[u], wall, r["property_type"] == "Bungalow"))
+        out.append((*where[u], wall, r["property_type"] == "Bungalow", r["property_type"] in ("House", "Bungalow")))
     return out
 
 
 def per_building(addresses, polys):
-    """For each footprint: dict(wall=..., bungalow=...) from the addresses in it, or None."""
+    """For each footprint: dict(wall=..., bungalow=..., n=addresses, houses=how many are a house or
+    bungalow) from the addresses in it, or None. A flat's certificate says nothing of the building:
+    a house divided into flats and a block built as flats both have them."""
     if not addresses: return [None] * len(polys)
     tree = shapely.STRtree(polys)
     pts = shapely.points(np.array([(a[0], a[1]) for a in addresses]))
@@ -83,5 +85,5 @@ def per_building(addresses, polys):
         walls = [g[2] for g in got if g[2]]
         # the commonest wall, the first one listed on a tie (not whichever Python's per-run hashing puts first)
         wall = max(walls, key=walls.count) if walls and len(walls) * 2 >= len(got) else None
-        out.append(dict(wall=wall, bungalow=all(g[3] for g in got), n=len(got)))
+        out.append(dict(wall=wall, bungalow=all(g[3] for g in got), n=len(got), houses=sum(1 for g in got if g[4])))
     return out

@@ -424,7 +424,10 @@ def pass_structures(out, raw, terrain, log=print):
     It is one step over every edge because a dip under a bridge lowers the roads that meet the one
     underneath, so no square can decide it from its own streets. Each edge is walked every 4 m, as
     the old build walked a road, with the raw ground as its starting height (`structures.py`)."""
-    from . import MAP, ROOT, Terrain
+    import math
+    from PIL import Image
+    from . import LAT0, MAP, ROOT, Terrain
+    from grading import terrain_detail
     from structures import chain_edges, make_run, solve, split_back
     edges = read_graph(out)
     bb = map_bbox()
@@ -439,8 +442,12 @@ def pass_structures(out, raw, terrain, log=print):
     rail, canal = side("rail"), side("canal")
     t = time.time()
     pending = [make_run(c, ground) for c in chain_edges(edges)]
+    # (over all of the map's terrain, as prep_map.py measures it, so both grade alike)
+    detail = terrain_detail([np.asarray(Image.open(os.path.join(terrain, f)).convert("RGB")).astype(float) @ [256, 1, 1 / 256]
+                             for f in sorted(os.listdir(terrain)) if f.startswith("15_") and f.endswith(".png")],
+                            156543.03 * math.cos(math.radians(LAT0)) / 2 ** 15)
     log(f"  structures: {len(edges)} edges in {len(pending)} through-roads walked in {time.time() - t:.0f}s")
-    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb))
+    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb), detail)
     rows = {}
     for r in pending:
         rows.update(split_back(r))
@@ -923,6 +930,16 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
             print(f"  pass 2: {ti}_{tj} already holds {written} rows, more than the {len(ids)} to "
                   f"write: leaving it (a partial task must not shrink a pass output)", flush=True)
             return ti, tj, written
+    rows = _divide_rows(ti, tj, ids, out, raw, bb, ids)
+    os.makedirs(out_dir, exist_ok=True)
+    json.dump(rows, open(os.path.join(out_dir, "blocks.json"), "w"))
+    return ti, tj, len(rows)
+
+
+def _divide_rows(ti, tj, ids, out, raw, bb, part):
+    """The rows of `blocks.json` for the pieces `part` (a run of `ids`, in their order), divided
+    exactly as the whole square divides them: the window and everything read from it come from
+    all of the square's pieces, so a square split over several processes comes out the same."""
     whole = read_pieces(out)
     mypieces = [whole[i] for i in ids]
     corridors = read_corridors(out)
@@ -940,9 +957,6 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     # "same faces from two windows" test runs, so a test that passes is about the real path
     env = window_inputs(out, raw, bb, win, corridors)
 
-    out_dir = os.path.join(out, f"{ti}_{tj}")
-    os.makedirs(out_dir, exist_ok=True)
-
     # The parent block of each piece, read from the ones pass 2 wrote for the whole map. It must be
     # the *real* block, not one clipped to this window: a window edge would be a boundary in the
     # network and would cut the block in the wrong place, and `make_plots` cuts the parent so that
@@ -951,11 +965,13 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
 
     way_lines = [c[0]["line"] for c in corridors]
     way_tree = STRtree(way_lines)
-    owner = [next((q for q in parents if q.contains(piece.representative_point())), None) for piece in mypieces]
+    chosen = set(part)
+    mine = [(n, piece) for n, piece in zip(ids, mypieces) if n in chosen]
+    owner = [next((q for q in parents if q.contains(piece.representative_point())), None) for _n, piece in mine]
     left = collections.Counter(id(q) for q in owner if q is not None)
     shared = {}
     rows = []
-    for n, piece, parent in zip(ids, mypieces, owner):
+    for (n, piece), parent in zip(mine, owner):
         near_ways = sorted(int(k) for k in way_tree.query(piece, predicate="dwithin", distance=31))
         cx, cy = piece.representative_point().x, piece.representative_point().y
         p, e = make_plots(piece, env["buildings"], env["ev_lines"], env["ev_tree"],
@@ -977,8 +993,73 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
             plots=[dict(kind=k, bi=b, xy=xy) for g, k, b in p for xy in _poly_json_parts(g)],
             edges=[dict(a=_geom_key(s), xy=_line_json(s), la=_label_json(a1), lb=_label_json(b1))
                    for s, a1, b1 in e]))
-    json.dump(rows, open(os.path.join(out_dir, "blocks.json"), "w"))
-    return ti, tj, len(rows)
+    return rows
+
+
+def _divide_part(ti, tj, ids, out, raw, bb, part):
+    return ti, tj, _divide_rows(ti, tj, ids, out, raw, bb, part)
+
+
+def divide_split(tasks, out, jobs, log, what="divide"):
+    """Pass 2's tasks, each square's pieces shared out over the pool in parts, so one big square
+    doesn't hold up the pass. A part is one or more parent blocks' pieces (a parent's cut is worked
+    out once and kept for its pieces), and every part reads its square's whole window, so the rows
+    are the ones the square would give in one process; they are written in the square's order."""
+    from concurrent.futures import ProcessPoolExecutor
+    pieces = read_pieces(out)
+    blocks = read_parents(out, None)
+    ptree = STRtree(blocks)
+
+    def parent_cost(n):
+        rp = pieces[n].representative_point()
+        k = next((int(k) for k in sorted(ptree.query(rp)) if blocks[int(k)].contains(rp)), None)
+        return (k, shapely.get_num_coordinates(blocks[k]) if k is not None else shapely.get_num_coordinates(pieces[n]))
+    parts = []
+    costs = {t[:2]: [(n, *parent_cost(n)) for n in t[2]] for t in tasks}
+    target = sum(c for v in costs.values() for _n, _k, c in v) / max(1, jobs * 4)
+    for t in tasks:
+        groups = {}
+        for n, k, c in costs[t[:2]]:
+            g = groups.setdefault(("p", k) if k is not None else ("n", n), [[], 0])
+            g[0].append(n)
+            # a parent's cut is made once for all its pieces, so its cost counts once
+            g[1] = max(g[1], c) if k is not None else g[1] + c
+        run, cost = [], 0
+        for ns, c in groups.values():
+            run += ns
+            cost += c
+            if cost >= target:
+                parts.append((t, run, cost)); run, cost = [], 0
+        if run:
+            parts.append((t, run, cost))
+    rows, failed, spans, done = collections.defaultdict(list), {}, [], []
+    left = collections.Counter(t[:2] for t, _r, _c in parts)
+    t0 = time.time()
+    with ProcessPoolExecutor(jobs) as pool:
+        futures = [(t, pool.submit(_timed, _divide_part, *t[:6], sorted(run)), run, _c)
+                   for t, run, _c in sorted(parts, key=lambda p: -p[2])]
+        for t, f, run_, cost_ in futures:
+            sq = t[:2]
+            try:
+                (_a, _b, got), pid, a, b = f.result()
+                rows[sq] += got
+                spans.append((pid, a - t0, b - t0, f"{sq[0]}_{sq[1]}[{len(run_)} pieces from {min(run_)}, est {cost_:.0f}]"))
+            except Exception as exc:
+                if sq not in failed:
+                    failed[sq] = exc
+                    log(f"  {what}: {sq[0]}_{sq[1]} FAILED ({type(exc).__name__}: {exc})")
+            left[sq] -= 1
+            if left[sq] == 0 and sq not in failed:
+                at = {n: k for k, n in enumerate(t[2])}
+                out_dir = os.path.join(out, f"{sq[0]}_{sq[1]}")
+                os.makedirs(out_dir, exist_ok=True)
+                json.dump(sorted(rows.pop(sq), key=lambda r: at[r["n"]]),
+                          open(os.path.join(out_dir, "blocks.json"), "w"))
+                done.append((sq[0], sq[1], len(t[2])))
+    log(f"  {what}: {len(tasks) - len(failed)} squares in {len(parts)} parts done, {len(failed)} failed")
+    if spans:
+        log("  " + pool_use(what, spans, time.time() - t0, jobs))
+    return done, [(a, b, e) for (a, b), e in failed.items()]
 
 
 def _run_pool(fn, tasks, jobs, log, what, order=None):
@@ -1026,6 +1107,7 @@ def pool_use(what, spans, wall, jobs):
         last[p] = max(last.get(p, 0.0), b)
     idle = sum(wall - e for e in last.values()) + wall * max(0, jobs - len(last))
     tail = sorted(spans, key=lambda s: -s[2])[:4]
+    print(f"PROFILE {what} slowest: " + ", ".join(f"{n} {b - a:.1f}s" for _p, a, b, n in sorted(spans, key=lambda s: s[1] - s[2])[:8]), flush=True)
     return (f"{what}: {wall:.0f}s wall, {work:.0f} CPU-s of tasks, {idle:.0f} core-s idle at the end; "
             f"longest {max(b - a for _p, a, b, _n in spans):.0f}s; last to finish: "
             + ", ".join(f"{n} ({b - a:.0f}s, ended {b:.0f}s)" for _p, a, b, n in tail))

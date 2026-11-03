@@ -11,7 +11,9 @@ everything else we have, in this order:
 - OpenStreetMap, where the street is tagged (tools/osm.py roads): its width, or its number of
   lanes (about 3.25 m each), and which sides have a pavement ("sidewalk"). A street whose
   pavements are mapped as footpaths of their own has none drawn on it (the paths are drawn), and
-  so does a side with a mapped footpath running alongside it, tagged or not.
+  so does a side with a mapped footpath running alongside it, tagged or not. A dual carriageway
+  (two one-way halves under one name) has none down its central reservation, and none across the
+  middle of a junction between its halves.
 - The walls and building fronts: from each point along the street, look out sideways each way,
   up to 12 m, for the first wall or building front running along the street. Each side's distance
   is the middle reading over the dozen points round it, so a gate pier doesn't narrow it. Where the
@@ -119,6 +121,38 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses_from=None):
     walks = [((np.array(a[:2], float), np.array(b[:2], float))) for f in roads if f["c"] in WALKS
              for a, b in zip(f["p"], f["p"][1:]) if math.hypot(b[0] - a[0], b[1] - a[1]) > 0.5]
     wtree = shapely.STRtree([shapely.LineString([a, b]) for a, b in walks]) if walks else None
+    # the halves of dual carriageways: one-way streets with a name, each mapped as its own line
+    halves = [((np.array(a[:2], float), np.array(b[:2], float)), f["n"]) for f in roads
+              if f.get("ow") and f.get("n") and f["c"] in RW and f["c"] not in WALKS and f["c"] in kerbed
+              for a, b in zip(f["p"], f["p"][1:]) if math.hypot(b[0] - a[0], b[1] - a[1]) > 0.5]
+    htree = shapely.STRtree([shapely.LineString([a, b]) for (a, b), _ in halves]) if halves else None
+
+    def beside(pt, tan, reach):
+        """The halves of dual carriageways within reach of pt, as (name, offset to the left of
+        tan, whether running along tan rather than across it, direction, a point on it)."""
+        if htree is None: return []
+        out_ = []
+        for k in htree.query(shapely.Point(pt).buffer(reach)):
+            (a, b), n = halves[int(k)]
+            d = b - a; L = np.linalg.norm(d); u = d / L
+            f = float((pt - a) @ u)
+            if f < -1 or f > L + 1: continue
+            off = a + u * f - pt
+            if np.linalg.norm(off) > reach: continue
+            out_.append((n, float(tan[0] * off[1] - tan[1] * off[0]), abs(float(u @ tan)) >= 0.8, u, a))
+        return out_
+
+    def crossing(pt, tan, own):
+        """Whether pt lies between the two halves of another street's dual carriageway: the
+        middle of a junction across it, where no pavement goes."""
+        across = [(n, u, a) for n, _, along, u, a in beside(pt, tan, 14.0) if not along and n != own]
+        for i, (n, u, a) in enumerate(across):
+            s1 = float(u[0] * (pt - a)[1] - u[1] * (pt - a)[0])
+            for m, v, c in across[i + 1:]:
+                if m != n or abs(float(u @ v)) < 0.8: continue
+                s2 = float(u[0] * (pt - c)[1] - u[1] * (pt - c)[0])
+                if s1 * s2 < 0 and abs(s1) + abs(s2) < 25: return True
+        return False
 
     def walked(pt, tan, side, reach):
         """Whether a mapped footpath runs alongside the street at pt, on that side, within reach."""
@@ -163,6 +197,9 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses_from=None):
             pv = [pave0 * oside[0], pave0 * oside[1]] if oside else [pave0, pave0]
             for k, side in enumerate((1, -1)):
                 if pv[k] and walked(inner[i], t[i], side, w0 / 2 + pave0 + 3.0): pv[k] = 0.0
+                # the side facing the other half of a dual carriageway is its central reservation
+                if pv[k] and r.get("ow") and any(n == r.get("n") and along and w0 / 2 + 0.5 < lat * side < w0 + 2 * pave0 + 8
+                                                 for n, lat, along, _, _ in beside(inner[i], t[i], w0 + 2 * pave0 + 8)): pv[k] = 0.0
             room = []
             for s in sides:
                 near = [v for v in s[max(0, i - 6):i + 7] if v is not None]
@@ -207,6 +244,10 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses_from=None):
                     a_ -= 1
                 else: b_ += 1
             for i in range(a_, min(b_, len(fits))): fits[i] = tuple(min(x, y) for x, y in zip(fits[i], mine))
+        # (after the evening out above, which would spread a junction's bare middle along the street)
+        for i in range(1, len(p)):
+            if crossing((p[i - 1] + p[i]) / 2, t[i], r.get("n")): fits[i] = (fits[i][0], 0.0, 0.0)
+        if len(fits) > 1 and crossing((p[0] + p[1]) / 2, t[0], r.get("n")): fits[0] = fits[1]
         base = (float(w0), pave0, pave0)
         if all(f == base for f in fits):
             out.append(r); continue

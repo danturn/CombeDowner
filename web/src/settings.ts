@@ -11,8 +11,9 @@
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
 // used by game.ts), shadows, and the debug panel (debug.ts, also F3). Choosing a distance, resolution or
-// shadows yourself turns automatic off. Controls: mouse sensitivity, and
-// once a controller's been seen, its own look speeds, dead zone, turn boost and rumble (gamepad.ts keeps those).
+// shadows yourself turns automatic off. Controls: mouse sensitivity, turning the look round for the mouse and
+// for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
+// rumble (gamepad.ts keeps those).
 // Sound: music, sound effects, background (traffic, birds, wind) and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
 // game comes for anyone (cats, naughty boys and the teams, the Flag Lads, Bendy, seagull muck), and
 // progression, the zones, strange objects and challenges together (features.ts). Both are for
@@ -23,6 +24,7 @@ import * as SFX from "./audio";
 import type { DebugPanel } from "./debug";
 import { mine, progressionDefault, setProgression } from "./features";
 import { resetPadSettings } from "./gamepad";
+import { invertSettings, resetInvert } from "./invert";
 import { closeButton } from "./modal";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
 import { quality } from "./quality";
@@ -126,6 +128,7 @@ export function settingsPage(h: Hooks) {
   prog.checked = mine.zones;
   prog.onchange = () => { setProgression(prog.checked); showRoam(); };
   if (roam) { roam.checked = freeRoam; roam.onchange = () => { freeRoam = roam.checked; keep("cd-freeroam", roam.checked); }; }
+  invertSettings();
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
   auto.onchange = () => { if (auto.checked) quality.automatic(); else quality.manual(); show(); };
@@ -155,6 +158,7 @@ export function settingsPage(h: Hooks) {
     setProgression(null); prog.checked = progressionDefault; showRoam();
     setSens(SENS);
     resetPadSettings();
+    resetInvert();
     SFX.setMusicVolume(MUSIC); keep("cd-music", MUSIC);
     SFX.setSfxVolume(SFX_VOL); keep("cd-sfx", SFX_VOL);
     SFX.setBackgroundVolume(BACKGROUND); keep("cd-bg", BACKGROUND);

@@ -1,6 +1,6 @@
 """Build every square of a map as a partition, and report what the city came to.
 
-Usage: python3 -I tools/partition/city.py [--only ti,tj ti,tj ...] [--jobs n] [--all] [--out dir]
+Usage: python3 -I tools/partition/city.py [--map id] [--only ti,tj ti,tj ...] [--jobs n] [--all] [--out dir]
                                            [--once dir] [--raw dir] [--terrain dir]
 
 `--all` builds every square that reaches the wide force field's data circle (131 of them for
@@ -292,6 +292,7 @@ def main(argv=None):
                     help="the folder passes 1 and 2 write and the squares read (out/once-p1)")
     ap.add_argument("--force-passes", action="store_true",
                     help="run passes 1 and 2 even where their output is already there")
+    ap.add_argument("--map", default=MAP, help="the map (read before the imports, as CD_MAP is)")
     ap.add_argument("--raw", default=os.path.join(ROOT, "data", "raw", MAP, "wide"))
     ap.add_argument("--terrain", default=None)
     a = ap.parse_args(argv)

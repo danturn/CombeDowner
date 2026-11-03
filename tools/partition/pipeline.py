@@ -83,7 +83,7 @@ class Run:
         self.count(stage, [key], got, time.time() - t0)
         return got
 
-    def pool(self, stage, fn, tasks, keys, dest_of, names_of):
+    def pool(self, stage, fn, tasks, keys, dest_of, names_of, run=None):
         """A pooled stage: each task's outputs from the store, or run in the pool and then stored.
         Returns {task square: {name: digest}} and the squares whose task failed."""
         t0 = time.time()
@@ -96,8 +96,11 @@ class Run:
                 out[(t[0], t[1])] = got
         failed = set()
         if todo:
-            done, bad = O._run_pool(fn, [t for t, _ in todo], self.jobs, self.log, stage,
-                                    order=lambda t: -self.weight.get((t[0], t[1]), 0))
+            if run is not None:
+                done, bad = run([t for t, _ in todo])
+            else:
+                done, bad = O._run_pool(fn, [t for t, _ in todo], self.jobs, self.log, stage,
+                                        order=lambda t: -self.weight.get((t[0], t[1]), 0))
             failed = {(a, b) for a, b, _e in bad}
             for t, k in todo:
                 if (t[0], t[1]) not in failed:
@@ -126,7 +129,8 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     R = Run(raw, once, city, store, jobs, log)
     os.makedirs(once, exist_ok=True)
     os.makedirs(city, exist_ok=True)
-    whole = lambda layer: cache.file_digest(layer_file(raw, layer))
+    whole = lambda layer: cache.file_digest(layer_file(raw, layer)) if layer != "building" else \
+        cache.sha(cache.file_digest(layer_file(raw, layer)) + cache.file_digest(cache.footprints_file(raw)))
     t0 = time.time()
 
     # ---- pass 1: the graph, each square's corridors, the bridges and road heights ----
@@ -182,7 +186,7 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
         gather = {n for t in wanted for n in neighbours(*t)}
         tasks = [t for t in tasks if (t[0], t[1]) in gather]
     windows = _block_windows(once, tasks)
-    code = cache.code_key((ONCE, "_fit_square_blocks"))
+    code = cache.code_key((ONCE, "_fit_square_blocks"), (ONCE, "divide_split"))
     keys = [cache.key_of("divide", code, R.lib, pieces_d, corridors_d, t[:3],
                          R.layers.digest("infrastructure", w, PAD), R.layers.digest("parcels", w, PAD),
                          R.layers.ridges(w, PAD))
@@ -194,7 +198,8 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
             os.remove(f)
     R.weight = work
     div, bad = R.pool("divide", O._fit_square_blocks, tasks, keys, lambda t: once,
-                      lambda t: [f"{name(t)}/blocks.json"])
+                      lambda t: [f"{name(t)}/blocks.json"],
+                      run=lambda todo: O.divide_split(todo, once, jobs, log))
     if bad:
         sys.exit(f"partition: pass 2 failed in {len(bad)} squares")
     log(f"  pass 2: {len(tasks)} squares, {R.ran['divide']} divided, {time.time() - t0:.0f}s so far")
