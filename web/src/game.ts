@@ -375,6 +375,16 @@ const $ = (id: string) => document.getElementById(id)!;
  *  itself, and the street outside is found on the way. rating: its food hygiene rating, 0 to 5. */
 interface Pub { name: string; x: number; z: number; yaw?: number; rating: number | null }
 
+// IDKFA, typed anywhere in play (not in a text box): a full load of rounds. One listener for the
+// page, pointed at whichever game is running, as the train builds a new Game for each town.
+let onIdkfa: (() => void) | null = null, idkfaTyped = "";
+addEventListener("keydown", (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) || e.key.length !== 1) return;
+  idkfaTyped = (idkfaTyped + e.key.toLowerCase()).slice(-5);
+  if (idkfaTyped === "idkfa") { idkfaTyped = ""; onIdkfa?.(); }
+});
+
 export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
@@ -622,6 +632,7 @@ export class Game {
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
+    onIdkfa = () => { if (!this.alive) return; this.weapon.fillUp(); SFX.pickup("ammo"); this.toast("IDKFA: very happy ammo added", 2.5); };
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
     // your Progression setting may have changed on the menu since the page opened
     setFeatures(myFeatures);
