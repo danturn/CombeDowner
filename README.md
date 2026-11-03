@@ -56,7 +56,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down only at its weirs and dams, where the water falls over a stone crest into the water below
   (Twerton, Kelston, Saltford, Warleigh and Avoncliff weirs, and the dam below Prior Park's top
   lake), and a tank, a pool or a reservoir stands in concrete walls wherever its water is above the
-  ground round it, as the filter beds do at the sewage works. A road the map
+  ground round it, as the filter beds do at the sewage works. You can wade into the water and walk
+  along its bed: where it's deeper than you are tall (out in the sea off Cape Town's quays), the
+  water closes over your head, murky green, with its surface above you. A road the map
   data puts in a tunnel goes through one, bored under the hill from where its road meets the hill
   face, with the ground and the lanes over it left as they are and one headwall over the
   openings where two bores come out side by side. A tunnel cars drive through is a modern

@@ -20,7 +20,7 @@ import { buildOutskirts } from "./outskirts";
 import { ROCK, WILD_CHANNEL } from "./groundkinds";
 import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
-import { Canal, lockPits, canalBores, lockAt } from "./canal";
+import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
 import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
@@ -136,6 +136,8 @@ export interface World {
   sun: THREE.DirectionalLight;
   /** others: where everyone else is, for the host, which loads the map round them too (tiles.ts). */
   update(px: number, py: number, pz: number, dt?: number, others?: { x: number; z: number }[]): void;
+  /** With the camera at scene (x, y, z) under the water, the fog closes in murky round it: after update. */
+  under(x: number, y: number, z: number, dt: number): void;
   /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it,
    *  or of a tunnel's floor for something at height y inside one. */
   surface(x: number, z: number, y?: number): number;
@@ -180,6 +182,8 @@ export interface TileWorld {
   surface(x: number, z: number, y?: number): number;
   paved(x: number, z: number): boolean;
   pavement(x: number, z: number): boolean;
+  /** The level of its water at scene (x, z), or null where there's none. */
+  water(x: number, z: number): number | null;
   update(px: number, pz: number, dt: number): void;
   /** Free what it alone uses (the materials and models it shares stay). */
   dispose(): void;
@@ -462,6 +466,8 @@ const WEIR_CREST_UP = 0.12, WEIR_CREST_HALF = 0.35, WEIR_RUN = 1.1, WEIR_RUN_LEA
 const WEIR_STREAK = 0.7, WEIR_FROTH = 0.8;
 const WEIR_STONE = [0.48, 0.38, 0.22], WEIR_FOAM = [0.9, 0.93, 0.93];
 const WEIR_STREAKS = [[0.09, 0.21, 0.28], [0.16, 0.3, 0.37], [0.11, 0.25, 0.32], [0.2, 0.34, 0.4]];
+// with your eyes under the water: the murk it closes in to by day, the surface overhead, and how far off it's thick
+const UNDER_WATER = new THREE.Color("#2b5a62"), UNDER_SURFACE = new THREE.Color("#5d9aa2"), UNDER_FAR = 16;
 
 function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
@@ -475,7 +481,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core) { scene.matrixAutoUpdate = false; scene.updateMatrixWorld = function (force?: boolean) { placeShown(this, !!force); }; }
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
-  let dark = 0, indoors = false;
+  let dark = 0, indoors = false, wet = 0, night = 0;
   const indoorSun = new THREE.Color("#fff4e2"), indoorSky = new THREE.Color("#fffaf0"), indoorGround = new THREE.Color("#8a7458");
   // (names what each part of the build adds, so the frame-rate probe, tools/fpsprobe.mjs, can count draws by kind)
   let marked = 0;
@@ -1836,7 +1842,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
 
   // ponds and the lake
-  const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  // (both sides: with your eyes under it you look up at it, as you do at the canal's)
+  const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
   const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
     for (const hole of w.r.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
@@ -1847,10 +1854,29 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // (all of them in one mesh: each mesh costs a little to draw, however small)
   const ponds: THREE.BufferGeometry[] = [];
+  const drawnWater: { r: number[][][]; y: number; box: number[] }[] = [];
+  /** The level of the water drawn here at scene (x, z), or null where there's none. */
+  const waterAt = (x: number, z: number): number | null => {
+    for (const w of drawnWater) {
+      const [x0, y0, x1, y1] = w.box;
+      if (x < x0 || x > x1 || -z < y0 || -z > y1) continue;
+      if (inRing(w.r[0], x, -z) && !w.r.slice(1).some((h) => inRing(h, x, -z))) return w.y;
+    }
+    return null;
+  };
+  const ringBox = (ring: number[][]) => {
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const [x, y] of ring) { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
+    return b;
+  };
   for (const w of D.wp) {
     if (w.c === "canal" && map.canal) continue;         // the canal draws its own water, at its own levels
     const lv = w.c ? undefined : map.canal?.pondLevel(w);
-    if (lv !== null) { const m = pondMesh(lv === undefined ? w : { ...w, z: lv }); ponds.push(m.geometry.translate(0, m.position.y, 0)); }
+    if (lv !== null) {
+      const m = pondMesh(lv === undefined ? w : { ...w, z: lv });
+      ponds.push(m.geometry.translate(0, m.position.y, 0));
+      drawnWater.push({ r: w.r, y: m.position.y, box: ringBox(w.r[0]) });
+    }
   }
   if (ponds.length) {
     scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
@@ -2643,7 +2669,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const bx0 = T.x0, bx1 = T.x0 + (T.nx - 1) * T.dx, bz0 = -(T.y0 + (T.ny - 1) * T.dy), bz1 = -T.y0;
     let far = false;
     return {
-      group, surface, paved, pavement,
+      group, surface, paved, pavement, water: waterAt,
       update(px: number, pz: number, dt: number) {
         const d = Math.hypot(Math.max(0, bx0 - px, px - bx1), Math.max(0, bz0 - pz, pz - bz1));
         if (farTerr && (far ? d < SIMPLER_FAR - 50 : d > SIMPLER_FAR)) {
@@ -2664,6 +2690,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   stayPut(scene, scene.children.filter((c) => STILL.has(c.name)));
 
   const { tunnelDark, hemi, sun, sky } = shell!;
+  const murk = new THREE.Color();
   const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
 
   // ---- after dark: the street lamps nearest you light the street round them -----------------
@@ -2796,6 +2823,26 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     get tunnel() { return dark; },
     get indoors() { return indoors; },
     set indoors(on: boolean) { indoors = on; },
+    under(x: number, y: number, z: number, dt: number) {
+      // (the canal's bed is 1.2 m down: any lower and you're under an aqueduct, not in it)
+      let lv = map.canal instanceof Canal ? map.canal.waterAt(x, z) : null;
+      if (lv !== null && y < lv - 1.5) lv = null;
+      lv ??= tiles?.worldAt(x, z)?.water(x, z) ?? waterAt(x, z);
+      const want = lv !== null && y < lv ? 1 : 0;
+      wet = Math.abs(want - wet) < 0.01 ? want : wet + (want - wet) * Math.min(1, dt * 12);
+      // (the sky takes no fog: under the water it would show through, past the bed, as a band of daylight)
+      sky.visible = wet < 0.5;
+      // (seen from under it the surface is lit from behind, which a lit material can't show: it glows instead)
+      const daylight = (1 - 0.85 * night) * (1 - dark);
+      (S.waterMat as THREE.MeshLambertMaterial).emissive.copy(UNDER_SURFACE).multiplyScalar(wet * daylight);
+      if (!wet) return;
+      const fog = world.fog as THREE.Fog;
+      murk.copy(UNDER_WATER).multiplyScalar(daylight);
+      fog.color.lerp(murk, wet);
+      (world.background as THREE.Color).copy(fog.color);
+      fog.near *= 1 - wet;
+      fog.far += (UNDER_FAR - fog.far) * wet;
+    },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       // (when the spike probe is watching how a frame is spent, tools/spikeprobe.mjs; with no
@@ -2806,7 +2853,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (inside !== dark) dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
       // the time of day (daylight.ts), and inside a tunnel the daylight goes and the fog turns dark
       const W0 = performance.now();
-      const sk = skyNow(), night = sk.night;
+      const sk = skyNow();
+      night = sk.night;
       const fog = world.fog as THREE.Fog;
       fog.color.lerpColors(sk.fog, tunnelDark, dark);
       (world.background as THREE.Color).copy(fog.color);

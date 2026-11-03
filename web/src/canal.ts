@@ -952,6 +952,24 @@ export class Canal {
     return null;
   }
 
+  /** The level of the canal's water at scene (x, z) (scene Y), or null off it: 1.2 m over the bed floor() gives. */
+  waterAt(x: number, z: number): number | null {
+    for (const lk of this.locks) {
+      const [u, v] = lk.local(x, z);
+      if (u < -wingLength(lk.d) || u > lk.L + TAIL) continue;
+      const av = Math.abs(v);
+      if (av < LOCK_HALF) return (u < 0 ? lk.d.zl : u > lk.L ? lk.d.zh : lk.level) - this.z0;
+      if (av < LOCK_HALF + COPE + APRON) return null;
+    }
+    const q = this.nearest(x, z);
+    if (!q) return null;
+    const r = this.d.runs[q.run], L = this.legs[q.run], k = q.i;
+    const a = L.pts[Math.max(0, k - 1)], b = L.pts[Math.min(L.pts.length - 1, k + 1)];
+    const tx = b.x - a.x, tz = b.z - a.z, tl = Math.hypot(tx, tz) || 1;
+    const across = Math.abs(((x - L.pts[k].x) * tz - (z - L.pts[k].z) * tx) / tl);
+    return across < r.p[k][2] ? r.lv - this.z0 - (this.sunk[q.run] ?? 0) : null;
+  }
+
   // ---- the host: locks and boats ----------------------------------------------------------------
   /** Someone's leant on a lock's beam: set it for the other end. */
   work(i: number) {
