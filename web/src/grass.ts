@@ -2,9 +2,16 @@
 // flowering shrubs on heath and scrub, swaying in the wind and shrinking into the ground towards
 // the edge of a circle that follows the player. The ground is split into cells; cells that come
 // into range are filled, cells left behind are reused. A coarse mask keeps grass off buildings,
-// roads, paths, driveways and water.
+// roads, paths, driveways and water. What the heath grows (its greens, how much of it is in flower
+// and the flowers' colours) belongs to the map's ecoregion, from public/maps/<id>-flora.json
+// (tools/flora.py): fynbos on Table Mountain, mostly green gorse, bramble and heather in England.
 import * as THREE from "three";
 import { boreHalf, type MapData } from "./map";
+
+interface Flora { leaf: string[]; bloom: string[]; flowers: number; dry: number }
+const FLORA = import.meta.glob<Flora>("../public/maps/*-flora.json", { eager: true, import: "default" });
+// a map without one: plain scrub, a few in flower
+const PLAIN: Flora = { leaf: ["#4c5a33"], bloom: ["#e3c23a", "#f0ece0", "#8f4fa0"], flowers: 0.15, dry: 0.3 };
 
 function hash2(i: number, j: number, k: number) {
   let x = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(k + 0x1b873593, 0x27d4eb2f);
@@ -221,6 +228,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   // per kind of ground: chance of a tuft, height in metres, and flowers (meadows); w: how wide a tuft
   // spreads for its height, dry: how many of them are browned off; bush: how many of the places a
   // tuft could go have a shrub instead (heath: they're wider, so fewer of them cover the ground)
+  const flora = FLORA[`../public/maps/${D.id}-flora.json`] ?? PLAIN;
   const KIND: Record<number, { p: number; h: number; flowers: number; w?: number; dry?: number; bush?: number }> = {
     0: { p: 0.8, h: 0.24, flowers: 0.02 },   // gardens and verges
     1: { p: 0.95, h: 0.13, flowers: 0 },     // sports pitches: mown
@@ -228,16 +236,17 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
     3: { p: 1, h: 0.42, flowers: 0.1 },      // farmland and meadow: long, with buttercups and daisies
     4: { p: 0.75, h: 0.22, flowers: 0.03 },  // cemetery
     7: { p: 0.3, h: 0.16, flowers: 0 },      // playgrounds
-    9: { p: 0.95, h: 0.4, flowers: 0.5, w: 0.7, dry: 0.3, bush: 0.55 },  // heath and scrub: low rounded shrubs, many in flower
+    9: { p: 0.95, h: 0.4, flowers: flora.flowers, w: 0.7, dry: flora.dry, bush: 0.55 },  // heath and scrub: low rounded shrubs
     11: { p: 1, h: 0.75, flowers: 0 },                          // wetland: rushes
   };
-  const DRY = new THREE.Color("#6f6549"), LEAF = new THREE.Color("#4c5a33");
-  // heath in flower: heather's purples and pinks, and fynbos's yellows, pinks and whites, in drifts
-  const BLOOMS = ["#8f4fa0", "#b0559a", "#d87fae", "#e3c23a", "#f0ece0", "#e0913a"].map((c) => new THREE.Color(c));
+  const DRY = new THREE.Color("#6f6549"), LEAVES = flora.leaf.map((c) => new THREE.Color(c));
+  const BLOOMS = flora.bloom.map((c) => new THREE.Color(c));
   const glsl = (c: THREE.Color) => `vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)})`;
   const shapes = { grass: tuftGeo(true, false), bush: tuftGeo(false, true), both: tuftGeo(true, true) };
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const uPlayer = { value: new THREE.Vector3() };
+  // the flowers' colours are written into the shader, so two maps' palettes mustn't share one program
+  mat.customProgramCacheKey = () => flora.bloom.join();
   // aFlower: for a grass tuft 0 (none), 1 (buttercup) or 2 (daisy); for a shrub 10 + its bloom (0 none)
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
@@ -301,7 +310,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
       const tint = 0.95 + 0.3 * H(6);
       colour.copy(kinds[k] ?? kinds[0]).multiplyScalar(tint * 1.05);
       colour.g *= 1.04 + 0.08 * patch;
-      if (isBush) colour.lerp(LEAF, 0.3 + 0.5 * H(11));
+      if (isBush) colour.lerp(LEAVES[Math.floor(H(15) * LEAVES.length)], 0.3 + 0.5 * H(11));
       if (spec.dry) colour.lerp(DRY, spec.dry * H(8));
       mesh.setColorAt(count, colour);
       const fl = H(7);

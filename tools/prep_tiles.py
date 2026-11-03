@@ -52,7 +52,7 @@ from shapely.geometry import shape, box, Point
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
-from mapdata import measured_dir
+from mapdata import data_dir, measured_dir
 from stitch import boundaries, path_clear
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -236,7 +236,7 @@ def main():
 
     # ---- which need building: a square is built again only when something it's built from has
     # changed: its own cut of the layers, the shared data it reads (lidar, canopy, terrain,
-    # certificates), the canal and railway files, or any of the map tools
+    # certificates), the canal and railway files, the flora record, or any of the map tools
     t0 = time.time()
     # this file is in the cut, and prep_map never reads the partition's tools
     partition_tools = (os.path.join(TOOLS, "partition") + os.sep, os.path.join(TOOLS, "structures.py"))
@@ -244,6 +244,7 @@ def main():
     shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
+    lines += [p for p in [os.path.join(data_dir(map_id), "flora.json")] if os.path.exists(p)]
     # and, built from the repository's measurements, its own measurements file
     kept = lambda t: [p for p in [os.path.join(measured_dir(map_id), "faces", f"{t[0]}_{t[1]}.json")] if os.path.exists(p)] + (
         [] if measure else [p for p in [os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")] if os.path.exists(p)])

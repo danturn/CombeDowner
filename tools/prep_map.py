@@ -2189,7 +2189,7 @@ if TILE is not None:
 # 0 garden/grass, 1 pitch (and golf greens), 2 wood floor, 3 farmland/meadow, 4 cemetery,
 # 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground, and the wild ground's
 # (tools/wild.py): 8 rock, 9 heath and scrub, 10 sand, 11 wetland, under all the rest
-import wild
+import wild, flora
 GT = np.zeros(grid.shape, dtype=np.int8)
 for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)):
     win, inn = cover_xy(poly)
@@ -2214,7 +2214,7 @@ for t, g in layers:
         GT[win][inn] = t
 _from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [q for g, p in L("building") for q in polys(g)],
                        [shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2)
-                        for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS])
+                        for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS], open_shrub=flora.open_shrub(A.id))
 print(f"wild ground: {', '.join(f'{int((GT == k).sum())} points of {n}' for k, n in wild.NAMES.items())} ({_from_cover} from the land cover)")
 
 # ---- buildings ----------------------------------------------------------------

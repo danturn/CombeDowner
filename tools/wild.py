@@ -12,7 +12,11 @@ What the land layer maps comes first and wins over the satellite land cover, whi
 country nobody has mapped: never inside any mapped land use but a protected area (a national park,
 a nature reserve), and never near a street or a building a street comes near (one that might have a
 garden, gardens.py), so it can't turn gardens, verges or the edges of a town into heath, though a
-hut on a mountain top stands on the mountain. It's the same for every map, from its own data.
+hut on a mountain top stands on the mountain. The land cover's shrubland is heath only where open
+shrubland is the land's own wild ground (tools/flora.py, from the map's ecoregion): in a land that
+would be forest it's mostly grazing and hedgerows the satellite can't tell from scrub, so it's
+meadow there, and only the mapped heath and scrub are heath. It's the same for every map, from its
+own data.
 
 Boulders: on bare rock, a few outcrops of them, each one placed by where it is (so two squares
 working over the same ground agree), clear of the streets, paths, walls and buildings, as the small
@@ -63,10 +67,11 @@ def mapped(land, polys, project):
     return out
 
 
-def fill(GT, cover_xy, land_cover, land_use, polys, footprints, streets):
+def fill(GT, cover_xy, land_cover, land_use, polys, footprints, streets, open_shrub=True):
     """Paint the satellite land cover's wild kinds onto the ground still unmarked (GT == 0) out in
     open country. footprints: projected building outlines; streets: projected carriageways
     (polygons). cover_xy(poly) gives a window of the grid and the vertices in it inside poly.
+    open_shrub: the land cover's shrubland is heath (tools/flora.py), not meadow.
     Returns how many vertices it painted."""
     built = np.zeros(GT.shape, dtype=bool)
     for g, p in land_use:
@@ -78,8 +83,9 @@ def fill(GT, cover_xy, land_cover, land_use, polys, footprints, streets):
         _mark(built, cover_xy, f.buffer(BUILT_REACH, quad_segs=2))
     for s in streets: _mark(built, cover_xy, s.buffer(STREET_REACH, quad_segs=2))
     n = 0
+    cover = {**COVER, "shrub": HEATH if open_shrub else MEADOW}
     for g, p in land_cover:
-        k = COVER.get(p.get("subtype"))
+        k = cover.get(p.get("subtype"))
         if k is None: continue
         for q in polys(g):
             win, inn = cover_xy(q)
