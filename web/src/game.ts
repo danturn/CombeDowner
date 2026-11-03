@@ -3320,6 +3320,14 @@ export class Game {
     this.camera.rotation.x += at.pitch ?? 0;
     this.camera.rotation.z += at.roll ?? 0;
     if (at.eye) { this.camera.position.set(at.eye.x, at.eye.y, at.eye.z); this.camera.lookAt(at.eye.lx, at.eye.ly, at.eye.lz); }
+    if (at.orbit) {
+      const o = at.orbit, pt = Math.max(-1.2, Math.min(0.5, p.pitch + o.tilt)), cp = Math.cos(pt);
+      const bx = Math.sin(p.yaw) * cp, by = -Math.sin(pt), bz = Math.cos(p.yaw) * cp;
+      const hit = o.dist > 0.05 ? this.map.raycast(o.x, o.y, o.z, bx, by, bz, o.dist) : null;
+      const d = hit ? Math.max(0, hit.dist - 0.3) : o.dist, cam = this.camera.position.set(o.x + bx * d, o.y + by * d, o.z + bz * d);
+      cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, o.y) + 0.4);
+      this.camera.rotation.set(pt + (o.look ?? 0), p.yaw, 0, "YXZ");
+    }
   }
 
   /** Into a mate's trolley (E by it), or back out. Returns true if E was for that. */

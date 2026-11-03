@@ -198,6 +198,9 @@ export interface Perch {
   /** Mouse look kept within max (radians) either side of facing yaw. */
   around?: { yaw: number; max: number };
   eye?: { x: number; y: number; z: number; lx: number; ly: number; lz: number };
+  /** Seen from behind: the view dist back from (x, y, z) the way you look, tipped down by tilt, kept
+   *  out of walls, and looking look higher than (x, y, z), so what's there sits low in the view. */
+  orbit?: { x: number; y: number; z: number; dist: number; tilt: number; look?: number };
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
