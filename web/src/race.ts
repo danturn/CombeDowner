@@ -690,6 +690,8 @@ class Race implements Job {
     return (this.racing || this.w.riding()) && !(this.racing && !this.over && !this.out && !this.dnf);
   }
 
+  aside() { return true; }
+
   use(): boolean { return !!this.againOk() && this.restart(); }
 
   /** Back on the line, on my own clock. */

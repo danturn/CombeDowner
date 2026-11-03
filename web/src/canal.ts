@@ -1161,6 +1161,11 @@ export class Canal {
   }
   /** The name a moored boat goes by (as it will under way). */
   mooredName(m: number): string { return NAMES[(MOOR + m) % NAMES.length]; }
+  /** Where moored boat m's tiller is, scene (x, z), so the game can tell whether you're looking at it. */
+  mooredTiller(m: number): { x: number; y: number; z: number } {
+    const o = this.moorings[m], back = o.len / 2 - 0.6;
+    return { x: o.x - Math.cos(o.a) * back, y: o.lv - this.z0 + 1, z: o.z + Math.sin(o.a) * back };
+  }
 
   /** Moored boat m cast off: a boat under way where it lay, number MOOR + m, which everyone makes
    *  the same from the canal file (the host's updates then carry it like any other). */
