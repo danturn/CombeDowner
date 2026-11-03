@@ -7,7 +7,10 @@
 // it's just "the fourteen twenty service", without the British Transport Police.
 //
 // Each announcement is said in short phrases, one after another, the way the real ones are stitched
-// together from recorded pieces, which gives them that stop-start rhythm. The browser's speech
+// together from recorded pieces, which gives them that stop-start rhythm. The station hands the
+// browser one phrase at a time, each as loud as the speakers are where you are now, so walking off
+// the platform fades them and once you're out of earshot the rest goes unsaid, instead of the whole
+// announcement following you up into town. The browser's speech
 // can't be run through the game's sound (there's no way to filter or echo it), so the phrasing,
 // the voice and its pace are what make it sound like a station.
 //
@@ -20,7 +23,7 @@ import type { Departure, Railway } from "./railway";
 
 const synth = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;
 
-const RANGE = 90;          // metres from a platform you can hear the station's speakers
+const RANGE = 80;          // metres from a platform you can hear the station's speakers
 const NEXT = 80;           // seconds before a train pulls in that it's announced
 const APPROACH = 18;       // and that it's said to be approaching
 const LATE = 8;            // an announcement more than this late is dropped rather than said
@@ -79,6 +82,11 @@ export class Announcer {
   private said = new Set<string>();
   private fillerAt = 0;
   private t = 0;
+  /** The phrases still to be said, and how loud the speakers are where you stand. */
+  private queue: string[] = [];
+  private loud = 0;
+  /** When the phrase the station handed the browser was handed over (0: none is being said). */
+  private saying = 0;
 
   /** Each frame: if you're near a station, announce what's due there. */
   update(dt: number, rail: Railway | null | undefined, x: number, z: number, mapId = "", now = Date.now() / 1000) {
@@ -86,8 +94,13 @@ export class Announcer {
     if (this.t > 0 || !rail || !synth) return;
     this.t = 0.5;
     const near = rail.stationNear(x, z, RANGE);
-    if (!near) { this.fillerAt = 0; return; }
-    const loud = Math.min(1, 1.15 - near.far / RANGE) * SFX.effectsVolume();
+    // out of earshot: what's left of an announcement goes unsaid
+    if (!near) { this.fillerAt = 0; this.queue.length = 0; this.loud = 0; return; }
+    // full on and round the platforms, falling away to nothing at the edge of earshot
+    const loud = this.loud = Math.min(1, 1.6 * (1 - near.far / RANGE)) * SFX.effectsVolume();
+    // the browser can fail to say a phrase has ended; give up waiting on one after a while
+    if (this.saying && performance.now() - this.saying > 12000) this.saying = 0;
+    if (!this.saying) this.next();
     if (!this.fillerAt) this.fillerAt = now + 20 + Math.random() * 40;
     const op = OPERATORS[mapId] ? `${OPERATORS[mapId]} ` : "";
     for (const d of rail.departures(near.station, 6)) {
@@ -114,7 +127,7 @@ export class Announcer {
       this.fillerAt = now + FILLER[0] + Math.random() * (FILLER[1] - FILLER[0]);
       // never over a train's announcement
       const fillers = op ? FILLERS : FILLERS.slice(1);
-      if (!synth.speaking && !synth.pending) this.say(fillers[Math.floor(Math.random() * fillers.length)], loud);
+      if (!synth.speaking && !synth.pending && !this.queue.length) this.say(fillers[Math.floor(Math.random() * fillers.length)], loud);
     }
     if (this.said.size > 200) this.said.clear();
   }
@@ -130,15 +143,27 @@ export class Announcer {
 
   private say(lines: string[], loud: number) {
     if (!synth || document.hidden || loud <= 0.05) return;
-    for (const text of lines) {
-      if (!text) continue;
-      const u = new SpeechSynthesisUtterance(text);
-      if (voice) u.voice = voice;
-      u.lang = voice?.lang ?? "en-GB";
-      u.rate = 0.9;
-      u.pitch = 0.95;
-      u.volume = loud;
-      synth.speak(u);
-    }
+    this.queue.push(...lines.filter((t) => t));
+    if (!this.saying) this.next();
+  }
+
+  /** Hand the browser the next phrase, if you can still hear the speakers; the one after follows
+   *  as soon as it's said. */
+  private next() {
+    this.saying = 0;
+    if (!synth || document.hidden || this.loud <= 0.05) { this.queue.length = 0; return; }
+    const text = this.queue.shift();
+    if (!text) return;
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) u.voice = voice;
+    u.lang = voice?.lang ?? "en-GB";
+    u.rate = 0.9;
+    u.pitch = 0.95;
+    u.volume = this.loud;
+    const at = this.saying = performance.now();
+    const done = () => { if (this.saying === at) this.next(); };
+    u.onend = done;
+    u.onerror = done;
+    synth.speak(u);
   }
 }

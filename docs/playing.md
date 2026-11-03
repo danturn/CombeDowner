@@ -468,7 +468,8 @@ bound and where it calls, which platform, and how long till it's due, all on the
 same time as the sky and your watch, so a train every few real minutes is one every few hours).
 The station speakers announce each train in GWR's own words ("Platform two for the fourteen twenty
 Great Western Railway service to Westbury, calling at..."), again as it approaches, and now and then
-remind you to "See it. Say it. Sorted." Anyone near a station hears them, and nobody else. After
+remind you to "See it. Say it. Sorted." You hear them on the platforms and just round the station, fading as
+you walk off, and an announcement stops once you're out of earshot. After
 dark the lamps under the canopies light the platforms. Stand on any platform
 and the middle of the screen tells you the next train from it too.
 
