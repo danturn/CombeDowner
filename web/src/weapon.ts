@@ -709,6 +709,12 @@ export class Weapon {
     this.show();
   }
 
+  /** IDKFA: every magazine full and as many spare rounds as you can carry. */
+  fillUp() {
+    this.ammo = MAG; this.reserve = MAX_RESERVE;
+    if (this.hasSniper) { this.sniperAmmo = GUNS.sniper.mag; this.sniperReserve = SNIPER_MAX_RESERVE; }
+  }
+
   /** Pick up the sniper rifle. If you've already got it, its magazine goes in your spare rounds. */
   giveSniper() {
     if (this.hasSniper) { this.sniperReserve = Math.min(SNIPER_MAX_RESERVE, this.sniperReserve + GUNS.sniper.mag); return; }
