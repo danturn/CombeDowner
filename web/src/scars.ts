@@ -2,15 +2,11 @@
 // lost (not one called off), or a pub the Flag Lads kept, leaves something behind where it happened:
 // - a pub kept by the Flag Lads: a cocky "WE RUN THIS" banner hung high outside, signed by the Gaffer
 //   (who has picked up a new trait for winning, in invasion.ts), with lads guarding it;
-// - Seagull Attack lost: chips and litter all over, and gulls nesting on the roofs round about;
 // - a treasure trail race lost to K: a hole where she dug up the chest, with her note ("Too slow. — K");
 // - a race nobody finished: skid marks, and the winner's smug ghost idling on the line;
 // - anything else (a Wanted man who got away): his tag sprayed on the pavement.
 // Each one is a rematch of its own, suited to what was lost:
 // - banner: shoot every cable tie holding it up (small targets, up near the top) and it comes down;
-// - gulls: knock every nest off its roof, by shooting it or climbing up (the ladders) and pressing E;
-//   each nest has an angry parent that circles it and swoops at you (a peck knocks your aim about,
-//   it never hurts);
 // - trail: K's note gives a riddle to where she hid the rosette she nicked, within 150 m; dig (hold E)
 //   at the right mound (the note's clue is plain compass directions and a distance, and the
 //   nearer you get the warmer the note gets);
@@ -24,7 +20,6 @@
 // do and more to find, not more health on anything, except that the guards get a little tougher:
 // - banner: 3 + c cable ties (4 alone, 8 at most), guarded by 2 lads plus 1 for every 3 players,
 //   each with 25% more health for every other player;
-// - gulls: 2 + c nests (3 alone, 7 at most);
 // - trail: the note's distance is 70 + 25c m (150 at most), and there are c - 1 other mounds that
 //   are only molehills (5 at most), in other directions;
 // - race: c gates (4 at most), 110 m apart along the streets; the ghost runs 5.2 m/s;
@@ -38,7 +33,7 @@
 // merge in: scars are joined together by id, and one put right stays put right (the fixed ids
 // travel with the list). Whoever finishes a rematch says so ("scr" with k "fix"); the host takes
 // it off the list, drops the prize and tells everyone who did it, for the banner. Progress on the
-// shared ones (cut ties, fallen nests, sprayed paint) goes round as "scr" with k "hit" so a team
+// shared ones (cut ties, sprayed paint) goes round as "scr" with k "hit" so a team
 // can split the work, and the host sends it to a joiner; the host also brings the banner's guards
 // (naughtyboys.ts) once someone's near, and sends them home when it's put right. A page that
 // doesn't know "scr", or "hit", just sees no scars, or no progress. The race and the digging are
@@ -58,7 +53,7 @@ import { gateModel, ghostModel } from "./race";
 import { type RacePath, along, racePath } from "./raceroute";
 import * as Paper from "./paper";
 
-export type ScarKind = "pub" | "gulls" | "trail" | "race" | "tag";
+export type ScarKind = "pub" | "trail" | "race" | "tag";
 interface Scar { id: number; k: ScarKind; x: number; z: number; n: string; day: number; c: number }
 
 export interface ScarWorld {
@@ -81,8 +76,6 @@ export interface ScarWorld {
   /** Host: a prize on the ground. */
   prize(x: number, z: number, good: boolean): void;
   hear(x: number, y: number, z: number): [number, number];
-  /** A gull's peck: it knocks your aim about. */
-  peck(): void;
 }
 
 const KEY = "cd-scars";           // plus the room and the day, so each room keeps its own and old days can go
@@ -106,31 +99,29 @@ const SPRAY_COLOUR = "#27d3ff";
 const ties = (c: number) => Math.min(8, 3 + c);
 const guardsFor = (c: number) => 2 + Math.floor(c / 3);
 const guardHp = (c: number) => Math.round(50 * (1 + 0.25 * (c - 1)));
-const nestsFor = (c: number) => Math.min(7, 2 + c);
 const decoysFor = (c: number) => Math.min(5, c - 1);
 const clueDist = (c: number) => Math.min(150, 70 + 25 * c);
 const gatesFor = (c: number) => Math.min(4, c);
 const tagWidth = (c: number) => Math.min(6.4, 2.4 + 0.8 * (c - 1));
 
-/** Targets to shoot or knock off: how many a scar needs. */
-const needOf = (s: Scar) => (s.k === "pub" ? ties(s.c) : s.k === "gulls" ? nestsFor(s.c) : 0);
+/** Targets to shoot: how many a scar needs. */
+const needOf = (s: Scar) => (s.k === "pub" ? ties(s.c) : 0);
 const bits = (m: number) => { let n = 0; for (; m; m &= m - 1) n++; return n; };
 
-/** A job kind (quests.ts) as the kind of mark it leaves. */
-export function scarKindOf(job: string): ScarKind {
-  return job === "gulls" ? "gulls" : job === "trail" ? "trail" : job === "race" ? "race" : "tag";
+/** A job kind (quests.ts) as the kind of mark it leaves, or null for none (Seagull Attack's gulls
+ *  just go). */
+export function scarKindOf(job: string): ScarKind | null {
+  return job === "gulls" ? null : job === "trail" ? "trail" : job === "race" ? "race" : "tag";
 }
 
 const VERB: Record<ScarKind, [string, string]> = {
   pub: ["Cut down the Flag Lads' banner", "cut down the Flag Lads' banner"],
-  gulls: ["Knock the gulls' nests off the roofs", "cleared the gulls' nests"],
   trail: ["Find where K hid the rosette", "found K's rosette"],
   race: ["Beat the smug ghost", "beat the smug ghost"],
   tag: ["Spray over the tag", "sprayed over the tag"],
 };
 const SAID: Record<ScarKind, (n: string) => string> = {
   pub: (n) => `The Flag Lads kept ${n.split("|")[0]}, and they've hung a banner up high to say so`,
-  gulls: (n) => `The gulls have made a mess of ${n}, and they're nesting on the roofs`,
   trail: () => "K dug up the chest first, and left a hole and a note",
   race: () => "The race's winner is idling on the line, looking smug",
   tag: (n) => `Lost "${n}", and there's a tag sprayed on the pavement to rub it in`,
@@ -182,19 +173,16 @@ interface Paint { cov: Uint8Array; ink: Uint8Array | null; inkN: number; covN: n
 interface View {
   g: THREE.Group;
   ghost?: THREE.Object3D;
-  cryT: number;
   tgts?: Tgt[];
   loc?: Float32Array;                       // targets' places in the group, to put right when one's gone
   tie?: THREE.InstancedMesh; banner?: THREE.Object3D;
-  nest?: THREE.InstancedMesh; gull?: THREE.InstancedMesh; parent?: THREE.InstancedMesh; wing?: THREE.InstancedMesh;
-  pg?: Float32Array; pgT?: Float32Array;    // each parent gull: x, y, z, state, angle, dive start (6), and its timer
   mounds?: THREE.InstancedMesh; mx?: Float32Array; mTry?: number;
   gate?: THREE.Group[]; gateT?: number;
   ov?: CanvasRenderingContext2D; ovTex?: THREE.CanvasTexture; ovDirty?: boolean; wide?: number;
   extra: THREE.Object3D[];
 }
 
-const M4 = new THREE.Matrix4(), Q4 = new THREE.Quaternion(), EU = new THREE.Euler(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3(0, 0, 0);
+const M4 = new THREE.Matrix4(), Q4 = new THREE.Quaternion(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3(0, 0, 0);
 const DIR = new THREE.Vector3();
 
 export class Scars {
@@ -202,7 +190,7 @@ export class Scars {
   private views = new Map<number, View>();
   private work: { id: number; t: number; i: number } | null = null;
   private near: Scar | null = null;
-  private nearI = -1;                         // the nest or mound within reach, if the scar has them
+  private nearI = -1;                         // the mound within reach, if the scar has them
   private focus: Scar | null = null;          // the scar the hint's about
   private t = 0;
   private gone = new Set<number>();   // put right today: kept so a stale copy can't bring one back
@@ -302,7 +290,7 @@ export class Scars {
     }
   }
 
-  /** Someone else's progress: a tie cut or nest down (i, or m for a whole mask), or cells of paint (c). */
+  /** Someone else's progress: a tie cut (i, or m for a whole mask), or cells of paint (c). */
   private heard(d: any) {
     const id = Number(d.id), s = this.list.find((o) => o.id === id);
     if (!s) return;
@@ -351,9 +339,9 @@ export class Scars {
   /** The maps' grey "!" for each. */
   spots(): JobSpot[] { return this.list.map((s) => ({ x: s.x, z: s.z, colour: COLOUR, glyph: "!", label: s.k === "trail" ? `${VERB[s.k][0]}: ${this.riddle(s)}` : VERB[s.k][0] })); }
 
-  // ---- targets: cable ties and nests ----------------------------------------------------------
+  // ---- targets: cable ties ----------------------------------------------------------
 
-  /** A shot that hits a cable tie or a nest: the nearest within maxDist, along d from o. */
+  /** A shot that hits a cable tie: the nearest within maxDist, along d from o. */
   hit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { id: number; i: number; dist: number } | null {
     let best: { id: number; i: number; dist: number } | null = null;
     for (const [id, v] of this.views) {
@@ -389,7 +377,7 @@ export class Scars {
     if (bits(now) >= needOf(s)) this.claim(s.id);
   }
 
-  /** Cut ties and fallen nests go from view. */
+  /** Cut ties go from view. */
   private refresh(s: Scar, v: View, m: number) {
     if (s.k === "pub" && v.tie && v.loc) {
       for (let i = 0; i < v.tie.count; i++) {
@@ -398,14 +386,6 @@ export class Scars {
       }
       v.tie.instanceMatrix.needsUpdate = true;
       if (v.banner) v.banner.rotation.z = Math.min(0.5, bits(m) * 0.09);
-    } else if (s.k === "gulls" && v.nest && v.gull && v.loc) {
-      for (let i = 0; i < v.nest.count; i++) {
-        const out = m & (1 << i) ? ZERO : ONE, x = v.loc[i * 3], y = v.loc[i * 3 + 1], z = v.loc[i * 3 + 2];
-        v.nest.setMatrixAt(i, M4.compose(P3.set(x, y + 0.08, z), Q4.setFromEuler(EU.set(Math.PI / 2, 0, 0)), out));
-        v.gull.setMatrixAt(i * 2, M4.compose(P3.set(x, y + 0.3, z), Q4.identity(), out === ZERO ? ZERO : S3.set(1, 0.8, 1.6)));
-        v.gull.setMatrixAt(i * 2 + 1, M4.compose(P3.set(x, y + 0.5, z + 0.28), Q4.identity(), out === ZERO ? ZERO : S3.set(0.6, 0.6, 0.6)));
-      }
-      v.nest.instanceMatrix.needsUpdate = v.gull.instanceMatrix.needsUpdate = true;
     }
   }
 
@@ -569,18 +549,11 @@ export class Scars {
       if (!v && d < SHOWN && this.w.map.detailedAt(s.x, s.z)) this.build(s);
       else if (v && d > SHOWN + 40) this.unbuild(s.id);
       const view = this.views.get(s.id);
-      if (view) this.animate(s, view, d, dt, me);
+      if (view) this.animate(s, view, dt);
       if (!me.alive) continue;
-      const seen = s.k === "pub" ? 45 : s.k === "gulls" ? 70 : s.k === "trail" ? 14 : s.k === "race" ? 8 : 16;
-      let reach = s.k === "race" ? REACH + 1 : s.k === "trail" || s.k === "gulls" ? 0 : REACH, ni = -1, dd = d;
-      if (view && s.k === "gulls" && view.tgts) {
-        const m = this.prog.get(s.id) ?? 0;
-        dd = 1e9; reach = 2.8;
-        for (let i = 0; i < view.tgts.length; i++) {
-          const T = view.tgts[i], h = Math.hypot(T.x - me.x, T.z - me.z);
-          if (!(m & (1 << i)) && h < dd && Math.abs(T.y - me.y) < 3.5) { ni = i; dd = h; }
-        }
-      } else if (view && s.k === "trail" && view.mx) {
+      const seen = s.k === "pub" ? 45 : s.k === "trail" ? 14 : s.k === "race" ? 8 : 16;
+      let reach = s.k === "race" ? REACH + 1 : s.k === "trail" ? 0 : REACH, ni = -1, dd = d;
+      if (view && s.k === "trail" && view.mx) {
         const m = this.prog.get(s.id) ?? 0;
         dd = 1e9; reach = REACH;
         for (let i = 0; i < view.mx.length / 2; i++) {
@@ -657,9 +630,6 @@ export class Scars {
     if (s.k === "pub") {
       key = 1 + bits(m);
       if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Shoot the cable ties holding the banner up: ${bits(m)} of ${ties(s.c)} cut`; }
-    } else if (s.k === "gulls") {
-      key = this.nearI >= 0 ? 100 : bits(m);
-      if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = this.nearI >= 0 ? "<b>{use}</b> Knock the nest off the roof" : `Shoot or climb up to the gulls' nests (a ladder helps): ${bits(m)} of ${nestsFor(s.c)} down`; }
     } else if (s.k === "trail") {
       if (this.work) { key = 200 + Math.round((this.work.t / WORK) * 10); if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = `Digging… ${Math.round((this.work.t / WORK) * 100)}%`; } }
       else if (this.nearI >= 0) { key = 300; if (this.hk !== key * 1000 + s.id % 1000) { this.hk = key * 1000 + s.id % 1000; this.ht = "Hold <b>{use}</b> to dig here"; } }
@@ -688,11 +658,10 @@ export class Scars {
     return this.ht;
   }
 
-  /** E pressed: knock a nest off, start digging, or set the ghost off. */
+  /** E pressed: start digging, or set the ghost off. */
   use(): boolean {
     const s = this.near;
     if (!s || this.work) return false;
-    if (s.k === "gulls" && this.nearI >= 0) { this.cut(s, this.nearI, true); return true; }
     if (s.k === "trail" && this.nearI >= 0) { this.work = { id: s.id, t: 0, i: this.nearI }; SFX.dig(); return true; }
     if (s.k === "race" && !this.run) {
       this.run = { id: s.id, t: 0, next: 0 };
@@ -703,66 +672,15 @@ export class Scars {
     return false;
   }
 
-  private animate(s: Scar, v: View, d: number, dt: number, me: { x: number; y: number; z: number; alive: boolean }) {
+  private animate(s: Scar, v: View, dt: number) {
     if (v.ghost && !(this.run?.id === s.id)) { v.ghost.position.y = 0.05 + Math.sin(this.t * 3) * 0.05; v.ghost.rotation.y = Math.sin(this.t * 0.7) * 0.4; }
-    if (s.k === "gulls") {
-      if (d < 90 && (v.cryT -= dt) <= 0) {
-        v.cryT = 5 + Math.random() * 6;
-        SFX.gullCry(...this.w.hear(s.x, this.w.map.ground(s.x, s.z) + 8, s.z));
-      }
-      if (d < 150) this.parents(s, v, dt, me);
-    } else if (s.k === "trail") {
+    if (s.k === "trail") {
       if (!v.mounds && ((v.mTry = (v.mTry ?? 0) - dt) <= 0)) { v.mTry = 1; this.mounded(s, v); }
     } else if (s.k === "race" && v.gate && (v.gateT = (v.gateT ?? 0) - dt) <= 0) {
       v.gateT = 0.5;
       const rt = this.routeOf(s);
       v.gate.forEach((g, k) => { g.position.y = this.w.map.ground(rt.gates[k].x, rt.gates[k].z); g.visible = !this.run || k >= this.run.next; });
     }
-  }
-
-  /** The nests' parents: they circle, then every so often dive at you if you're near. */
-  private parents(s: Scar, v: View, dt: number, me: { x: number; y: number; z: number; alive: boolean }) {
-    if (!v.parent || !v.wing || !v.pg || !v.pgT || !v.tgts) return;
-    const m = this.prog.get(s.id) ?? 0, g = v.g.position;
-    for (let k = 0; k < v.tgts.length; k++) {
-      const o = k * 6, T = v.tgts[k];
-      if (m & (1 << k)) { v.parent.setMatrixAt(k, M4.compose(P3, Q4, ZERO)); v.wing.setMatrixAt(k * 2, M4.compose(P3, Q4, ZERO)); v.wing.setMatrixAt(k * 2 + 1, M4.compose(P3, Q4, ZERO)); continue; }
-      let st = v.pg[o + 3];
-      const px = v.pg[o], py = v.pg[o + 1], pz = v.pg[o + 2];
-      let nx = px, ny = py, nz = pz;
-      v.pgT[k] -= dt;
-      if (st === 0) {
-        v.pg[o + 4] += dt * 1.6;
-        const a = v.pg[o + 4];
-        nx = T.x + Math.cos(a) * 3.2; nz = T.z + Math.sin(a) * 3.2; ny = T.y + 2.6 + Math.sin(a * 2) * 0.4;
-        if (v.pgT[k] <= 0 && me.alive && Math.hypot(T.x - me.x, T.z - me.z) < 28) { st = 1; v.pgT[k] = 0; v.pg[o + 5] = 0; }
-        else if (v.pgT[k] <= 0) v.pgT[k] = 1;
-      } else if (st === 1) {
-        v.pg[o + 5] += dt;
-        const f = Math.min(1, dt * 4);
-        nx = px + (me.x - px) * f; ny = py + (me.y + 1.5 - py) * f; nz = pz + (me.z - pz) * f;
-        if (Math.hypot(nx - me.x, ny - (me.y + 1.5), nz - me.z) < 1.4) {
-          this.w.peck();
-          SFX.gullCry(...this.w.hear(nx, ny, nz));
-          st = 2;
-        } else if (v.pg[o + 5] > 2) st = 2;
-      } else {
-        v.pg[o + 4] += dt * 1.6;
-        const a = v.pg[o + 4], tx = T.x + Math.cos(a) * 3.2, tz = T.z + Math.sin(a) * 3.2, ty = T.y + 2.6, f = Math.min(1, dt * 2.2);
-        nx = px + (tx - px) * f; ny = py + (ty - py) * f; nz = pz + (tz - pz) * f;
-        if (Math.hypot(nx - tx, nz - tz) < 1) { st = 0; v.pgT[k] = 5 + Math.random() * 4; }
-      }
-      v.pg[o] = nx; v.pg[o + 1] = ny; v.pg[o + 2] = nz; v.pg[o + 3] = st;
-      const yaw = Math.atan2(nx - px, nz - pz), flap = Math.sin(this.t * (st === 1 ? 20 : 9) + k) * 0.7;
-      P3.set(nx - g.x, ny - g.y, nz - g.z);
-      v.parent.setMatrixAt(k, M4.compose(P3, Q4.setFromEuler(EU.set(0, yaw, 0)), S3.set(1, 0.8, 1.7)));
-      const cx = Math.cos(yaw), sx = -Math.sin(yaw);
-      for (const side of [-1, 1]) {
-        P3.set(nx - g.x + cx * 0.5 * side, ny - g.y, nz - g.z + sx * 0.5 * side);
-        v.wing.setMatrixAt(k * 2 + (side + 1) / 2, M4.compose(P3, Q4.setFromEuler(EU.set(0, yaw, flap * side, "YXZ")), ONE));
-      }
-    }
-    v.parent.instanceMatrix.needsUpdate = v.wing.instanceMatrix.needsUpdate = true;
   }
 
   // ---- building -----------------------------------------------------------------------------------
@@ -790,9 +708,9 @@ export class Scars {
     const ban = s.k === "pub" ? bannerSpot(map, s.x, s.z) : null;
     g.position.set(ban ? ban.x : s.x, ban ? map.ground(ban.x, ban.z) : y0, ban ? ban.z : s.z);
     // things scattered on the ground are laid on it where they fall, so only the rest is turned about
-    if (s.k !== "gulls" && s.k !== "race" && s.k !== "trail") g.rotation.y = r() * Math.PI * 2;
+    if (s.k !== "race" && s.k !== "trail") g.rotation.y = r() * Math.PI * 2;
     if (ban) g.rotation.y = ban.yaw;
-    const v: View = { g, cryT: 2, extra: [] };
+    const v: View = { g, extra: [] };
     const cs = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
     if (s.k === "pub") {
       const n = ties(s.c), W = 3.6, H = 1.1, cy = ban!.cy, bx = ban!.x, bz = ban!.z, by = g.position.y;
@@ -817,28 +735,6 @@ export class Scars {
       }
       v.tie = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: "#ffd23a" }), n);
       g.add(v.tie);
-      this.refresh(s, v, this.prog.get(s.id) ?? 0);
-    } else if (s.k === "gulls") {
-      const n = nestsFor(s.c);
-      g.add(scatter(r, 40, 9, [0.04, 0.04, 0.3], "#f2c94c", ground, s.x, s.z));
-      g.add(scatter(r, 14, 9, [0.25, 0.02, 0.3], "#eeeeee", ground, s.x, s.z));
-      v.loc = new Float32Array(n * 3);
-      v.tgts = [];
-      for (let k = 0; k < n; k++) {
-        const a = r() * Math.PI * 2, dd = 10 + r() * 40, x = s.x + Math.cos(a) * dd, z = s.z + Math.sin(a) * dd;
-        const hit = map.raycast(x, y0 + 80, z, 0, -1, 0, 120);
-        const y = hit && hit.kind === "building" ? y0 + 80 - hit.dist : ground(x, z);
-        v.loc.set([x - s.x, y - y0, z - s.z], k * 3);
-        v.tgts.push({ x, y: y + 0.3, z, r: 0.6 });
-      }
-      v.nest = new THREE.InstancedMesh(new THREE.TorusGeometry(0.28, 0.1, 4, 8), lambert("#6b5433"), n);
-      v.gull = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 8, 6), lambert("#f6f6f6"), n * 2);
-      v.parent = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 8, 6), lambert("#fafafa"), n);
-      v.wing = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.03, 0.3), lambert("#d9dde0"), n * 2);
-      for (const m of [v.parent, v.wing]) m.frustumCulled = false;
-      v.pg = new Float32Array(n * 6); v.pgT = new Float32Array(n);
-      for (let k = 0; k < n; k++) { v.pg[k * 6] = v.tgts[k].x; v.pg[k * 6 + 1] = v.tgts[k].y + 2.6; v.pg[k * 6 + 2] = v.tgts[k].z; v.pg[k * 6 + 4] = r() * 6; v.pgT[k] = 3 + r() * 5; }
-      g.add(v.nest, v.gull, v.parent, v.wing);
       this.refresh(s, v, this.prog.get(s.id) ?? 0);
     } else if (s.k === "trail") {
       const hole = new THREE.Mesh(new THREE.CircleGeometry(0.75, 16), new THREE.MeshBasicMaterial({ color: "#1c140c" }));

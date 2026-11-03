@@ -689,9 +689,6 @@ rematch. Each is a grey ! on the map.
 
 - **The Flag Lads' banner** (a pub they kept): it hangs high up, held by cable ties, and two lads guard
   it. Shoot every tie (small targets) and it drops.
-- **Nesting gulls** (a lost Seagull Attack): nests sit on roofs round the chips. Shoot them off, or climb
-  up with a ladder and press E beside one. Each nest has an angry parent that circles and swoops at you;
-  a peck jolts your aim but doesn't hurt.
 - **K's hole** (a trail race lost to K): her note is a riddle: a distance and a direction to the rosette she hid,
   within 150 m. Mounds of earth stand where you could dig; hold E at the right one (the note says how warm
   you are as you get close). Other mounds are only molehills.
@@ -700,9 +697,9 @@ rematch. Each is a grey ! on the map.
 - **The tag** (a Wanted man who got away): hold fire, or the touch fire button, with the crosshair on the
   tag to spray over it, like a can. Cover 90% of the lettering.
 
-A bigger room makes more to do rather than tougher enemies: more cable ties (4 alone, up to 8), nests
-(3, up to 7), ghost gates (1, up to 4), molehills and a farther clue, and a bigger tag; only the banner's
-guards get a bit tougher. Friends share progress, so you can split the ties or the paint. Calling a job
+A bigger room makes more to do rather than tougher enemies: more cable ties (4 alone, up to 8), ghost
+gates (1, up to 4), molehills and a farther clue, and a bigger tag; only the banner's guards get a bit
+tougher. Friends share progress, so you can split the ties or the paint. Calling a job
 off leaves nothing.
 
 ### Races
@@ -750,10 +747,14 @@ Tourists on benches with sandwiches, and the gulls of Bath want them. Five waves
 roofs: herring gulls that swoop (shoot them), hoverers that drop straight down (stare them out with
 your crosshair), gangs of black-headed gulls (shout at them with E), walkers that sneak up behind,
 and poopers that splatter your screen. The last wave brings Big Lad, a seagull the size of a bus,
-who drops poo bombs and dives for whole sandwiches; his beak's the weak spot. Between waves, pick a
-crate (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings). Stars for how much
-sandwich is left, a daily twist (bank holiday, Chip Tuesday, a hen do, bin day), and Backspace for
-another go.
+who drops poo bombs and dives for whole sandwiches; his beak's the weak spot. The benches go out on
+the nearest open ground, clear and flat all round (if it's tight by the noticeboard, the board says
+how far and which way), and everyone starts in the middle of them, facing a tourist. A pin over each
+tourist shows through walls and hedges, green to red as their sandwich goes, flashing while a gull's
+after it; the ring is on the minimap. Between waves, pick a crate: one is always a box of rounds (90
+more rifle rounds for everyone), the others an upgrade (chips as a decoy, a plastic owl, a brolly, a
+megaphone, second helpings). Stars for how much sandwich is left, a daily twist (bank holiday, Chip
+Tuesday, a hen do, bin day), and Backspace for another go. Losing leaves no scar.
 
 ### The night out
 
