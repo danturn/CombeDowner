@@ -148,6 +148,7 @@ const lambert = (c: string) => mats.get(c) ?? mats.set(c, new THREE.MeshLambertM
 const GEO = {
   leg: box(0.15, 0.84, 0.17).translate(0, -0.42, 0),
   stripe: box(0.015, 0.8, 0.035).translate(0, -0.42, 0),
+  sleeveStripe: box(0.015, 0.54, 0.035).translate(0, -0.28, 0),
   shoe: box(0.15, 0.11, 0.29).translate(0, -0.8, -0.05),
   torso: box(0.44, 0.6, 0.25),
   sleeve: box(0.12, 0.56, 0.13).translate(0, -0.28, 0),
@@ -522,7 +523,7 @@ export class Figure {
       const stripe = suit === TRACKIES[0] ? TRACKIES[3] : WHITE;
       limbs(
         (side) => [mesh(GEO.leg, suit), mesh(GEO.stripe, stripe, side * 0.076), mesh(GEO.shoe, WHITE)],
-        (side) => [mesh(GEO.sleeve, suit), mesh(GEO.stripe, stripe, side * 0.06), mesh(GEO.hand, skin)]);
+        (side) => [mesh(GEO.sleeve, suit), mesh(GEO.sleeveStripe, stripe, side * 0.06), mesh(GEO.hand, skin)]);
       const chain = mesh(GEO.chain, GOLD, 0, 1.34, -0.13);
       chain.scale.set(1, 1.3, 1);
       this.body.add(mesh(GEO.torso, suit, 0, 1.16, 0), mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15), chain);
