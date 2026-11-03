@@ -138,7 +138,7 @@ registerJob({
     describe(o, d, `The Flag Lads' Gaffer, last seen leaving <b>${esc(f.pub)}</b> in a hurry, and still quick on his feet. `);
     return o;
   },
-  start: (o, w, started) => new Wanted(o, w, started),
+  start: (o, w, started, _by, _local, cast) => new Wanted(o, w, started, cast),
 });
 
 /** What the poster says, and what he's worth. */
@@ -170,7 +170,7 @@ class Wanted implements Job {
   private splashed = false; private splashWait = 0;
   private posterT = 0;
 
-  constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
+  constructor(readonly offer: Offer, private w: QuestWorld, private started: number, private cast: string[]) {
     this.d = details(offer, w);
   }
 
@@ -283,9 +283,9 @@ class Wanted implements Job {
     return at;
   }
 
-  /** His top speed and how close you can get before he runs: more of you, and he's quicker and warier. */
+  /** His top speed and how close you can get before he runs: more of you after him, and he's quicker and warier. */
   private scale() {
-    const extra = Math.max(0, this.w.players().length - 1);
+    const extra = Math.max(0, this.cast.length - 1);
     return { sprint: SPRINT + this.d.quick + Math.min(0.8, extra * 0.2), spook: SPOOK + Math.min(16, extra * 4), mates: Math.min(5, this.offer.stars + Math.floor(extra / 2)) };
   }
 
