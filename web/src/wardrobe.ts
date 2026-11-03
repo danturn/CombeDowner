@@ -1,6 +1,5 @@
 // The wardrobe: daft things to wear, earned by doing things round Bath. A seagull sitting on your
-// head for seeing off a Seagull Attack, a traffic cone for winning a race, a centurion's helmet for
-// gold on a treasure trail, a halo for climbing Bath Abbey, a chef's hat from a good
+// head for seeing off a Seagull Attack, a traffic cone for winning a race, a halo for climbing Bath Abbey, a chef's hat from a good
 // shift at the Darling Deli, a baby's bonnet for enough tummy time... Each one says what you've done to everyone you play with.
 //
 // There are three places to wear something: on your head, on your face, and on your back or
@@ -8,7 +7,7 @@
 // you turning round in it, and what's still to earn and how.
 //
 // Who decides what: all your own. What you've earned and what you're wearing are kept on your
-// machine (local storage), like the trail rosettes. What you're wearing goes round in your hello
+// machine (local storage). What you're wearing goes round in your hello
 // (game.ts) as a short list of names, for everyone else to draw on you (avatar.ts). Nothing is
 // checked: it's only clothes.
 import * as THREE from "three";
@@ -27,7 +26,6 @@ export const WEARABLES: Wearable[] = [
   { id: "gull", slot: "head", name: "A seagull", how: "Three stars on a Seagull Attack" },
   { id: "splat", slot: "head", name: "Splattered flat cap", how: "Get pooed on five times by seagulls" },
   { id: "cone", slot: "head", name: "Traffic cone", how: "Be first over the line in a race" },
-  { id: "helmet", slot: "head", name: "Centurion's helmet", how: "Gold on a treasure trail" },
   { id: "deer", slot: "head", name: "Deerstalker", how: "Bring in a Wanted ringleader" },
   { id: "toque", slot: "head", name: "Chef's hat", how: "Three stars on a shift at the Darling Deli" },
   { id: "bonnet", slot: "head", name: "Baby's bonnet", how: "Ten minutes of tummy time, all told" },
@@ -159,15 +157,6 @@ export function wearGeometry(id: string): { geo: THREE.BufferGeometry; on: "head
         [cyl(0.03, 0.13, 0.42, 0, C + 0.34, 0, 14), "#f26a1b"],
         [cyl(0.075, 0.093, 0.08, 0, C + 0.35, 0, 14).scale(1.02, 1, 1.02), "#f4f4f2"],
       ]).rotateZ(0.12) };
-    case "helmet":
-      return { on: "head", geo: part([
-        [shell(0.172, 0, Math.PI * 2, 0.5 * Math.PI, C + 0.01, 0.0), "#a8adb3"],
-        [box(0.36, 0.025, 0.36, 0, C + 0.01, 0.0).scale(1, 1, 1), "#8d9298"],
-        [box(0.04, 0.12, 0.34, 0, C + 0.21, 0.01), "#b3262e"],
-        [box(0.025, 0.06, 0.3, 0, C + 0.155, 0.01), "#c9a14a"],
-        [box(0.02, 0.12, 0.08, -0.16, C - 0.06, -0.06), "#8d9298"],
-        [box(0.02, 0.12, 0.08, 0.16, C - 0.06, -0.06), "#8d9298"],
-      ]) };
     case "deer":
       return { on: "head", geo: part([
         [shell(0.17, 0, Math.PI * 2, 0.5 * Math.PI, C + 0.005, 0.0), tweed],

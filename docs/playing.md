@@ -161,12 +161,12 @@ only pauses and you hold Esc to leave full screen; it stays full screen down the
 deli too. Safari and Firefox leave full screen when you press Esc.
 
 **Every card and sheet** over the game has a × in its top right corner to put it away. The cards
-that stop you to read them (a job's end card, a race's or a trail's results, the opening poster of
-a treasure hunt or a Wanted bounty, the night out's front page, the driving test's report) come up
+that stop you to read them (a job's end card, a race's results, the opening poster of
+a Wanted bounty, the night out's front page, the driving test's report) come up
 as cuttings torn out of the Chronicle, each with the paper's masthead and the section it's from
 along the top (Stop Press, Sport, Motoring, Wanted). The ones
-that come up by themselves (the Chronicle's front page when you join, a job's end card, a race's or
-a trail's results, the opening poster of a treasure hunt or a Wanted bounty, the night out's front
+that come up by themselves (the Chronicle's front page when you join, a job's end card, a race's
+results, the opening poster of a Wanted bounty, the night out's front
 page, the driving test's report, the Art Gallery's verdict, the fly-over when a zone opens) also
 go on Esc (without leaving full screen in Chrome and Edge) or Options on a pad, and with a mouse a
 click anywhere off the card puts it away and goes straight back to aiming. While one's up the mouse
@@ -607,81 +607,6 @@ from a takeover is a Wanted poster too, under his own name. It ends on a results
 (taken in, put down, ambushed or got away), the time, the clues, the lookalikes, the time lost to
 wrong men, and with friends, who found what.
 
-### Treasure trails
-
-A chain of four to six riddles, each about a real pub, church, park or street in Bath ("Bells ring
-for Saint Mary"), with a biscuit tin on a post nearby holding the next one. The riddles get harder
-with the stars, and now and then one is a sepia sketch of the view instead. Nothing gives the answer
-away: a one-star riddle says roughly which way ("somewhere south of here"), and from two stars there's
-no distance or compass at all.
-
-A trail starts with a big splash: TREASURE HUNT and the trail's name, how many tins there are before
-the chest, whether there's a clock (together there isn't; in a race it's when K gets to the chest),
-how the search circle works, and the first clue, large. It fades by itself. Open the big map to see the clue
-again (it sits over the map; tap Clue on a touch screen), and
-each new clue comes up big for a few seconds when you get it.
-
-No circle comes up by itself, and none shrinks by itself: only a local's hint does. From 45 seconds
-into a clue you can ask one (use: E or □). That first press only says what you'd get and what it costs ("Hint 2 of
-3: the search circle round tin 1 shrinks from 260 m across to 150 m", "Costs 1 brass star: this leg
-goes from ★★☆ to ★☆☆"); press use again within a few seconds to pay, or walk on and keep your star.
-Paid, the circle comes up or draws in, with a call-out ("The search area is shrinking!") and a sound
-everyone on the trail hears, whoever asked. Each tin has three hints (260, 150 and 80 m across), 20
-seconds apart, and the chest one (360 m). The card shows which hint you're on and counts down to the
-next; when there are no more it says so and E doesn't offer one, so you never pay for nothing. In a
-race hints are free (they cost you time). The circle always has the tin (on a plaque leg, the true
-tin, not the plaque) well inside it, at least 12 m in from the edge. Asked from far off, before that
-part of Bath has loaded on your screen, the first circle is a big one round the whole area the tin
-could be in, and it settles round the tin as you get near; closer hints wait till you're there. The
-tin only shows when you're close, and rattles when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
-something in the street there ("from the post box, 14 paces south-west"). Hold E (Dig on a touch
-screen) to dig where you stand: in the wrong place you get a hole with a worm in it, which everyone
-can see and which fills itself in after half an hour. Near the Bath Bun chest the spade hits wood,
-and then it wants lifting: two of you holding E together, or a long heave on your own. Inside, a
-gold, silver or bronze rosette pinned on your jacket.
-
-Every tin has a three-wheel brass lock, and its code is read off the place: the house the tin stands
-at (the windows across its top floor, its chimney pots, its storeys), or the benches, bins and lamp
-posts in the park it's in, or the letters on the nearest shop sign. The card says what to count once
-you've seen the tin, so friends further off can help. On a touch screen tap above or below each
-wheel; at a keyboard W and S (or the scroll wheel, or the number keys) turn a wheel, A and D move
-between them, E tries it and Escape leaves it. A wrong code jams the lock for ten seconds. A look
-leg sends you to a street or place and then names a house you have to pick out by eye ("the house
-with the teal door", or the only red-brick one in the row): its tin is on the doorstep (or out on
-the street, if the garden's shut in behind a hedge or a wall), and only shows when you're nearly
-there. Tins are never put in a building, on a roof, in the water or anywhere you can't walk to.
-
-Together there's no clock and no par. Each leg is worth three brass stars: asking a local, jamming a lock and
-opening a decoy or the wrong tin each cost one. The rosette comes from your total (gold for nine in
-ten), and the end card (like a race's) gives your time, tins found, hints bought, jams and wrong holes,
-how each leg went and the reward. A trail done together can't be lost. A race keeps
-its clock and par, and you're racing K too, a ghost rival who runs to the best time anyone's done
-on that trail on your device (the par the first time). If she gets to the chest first, she digs it
-up, leaving a hole and a note. Twin tins must be opened within 30 seconds of each other (or a little
-longer on your own), and one trail a day is the trail of the day, the same in every room.
-
-Each trail mixes its legs. A split clue gives each
-friend half the name (alternate letters) on their own screen; on your own, the other half is pinned
-to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
-A sketch-map leg gives you a riddle to the place and a rough inked sketch of 250 m round it, with
-an X where the tin is and no names (on hard trails, no north arrow either, and it may be turned
-round). Hold use (E or □; the Clue button on a touch screen) to study it full screen, while a tap of it still asks a local; you can't see the big
-map while you do. With friends only the map-holder has it (one for every two of you, each with a
-torn strip of it), so they have to talk the others in.
-
-A bearing leg names two look-outs on high ground (ringed on the map). Stood at one, you see a gold
-line on the ground running away towards the tin, and on past it: the tin is where the lines cross.
-Each line you see is pencilled on your own map, so on your own you climb both; with friends, one of
-you on each hill, on the radio. A plaque leg has a plaque by the place with a little table on it
-("Not the gold lid", "Not BADGER"), and round the corner, out of sight of it, stand several tins:
-the table rules out all but the true one. One of you reads, the others open.
-
-More players make more to tell each other, not harder tins: whoever takes the trail on decides how
-many legs give each of you something different to know (a sketch map, a bearing, a split clue or a plaque:
-one on your own, two for two or three of you, three for four or five). A plaque gets another tin and
-another row for every two players, and with four or more a bearing has three look-outs. All of it
-works on your own too.
-
 ### Scars
 
 Losing leaves its mark for the rest of the day (until midnight GMT), and each mark is a little
@@ -689,16 +614,13 @@ rematch. Each is a grey ! on the map.
 
 - **The Flag Lads' banner** (a pub they kept): it hangs high up, held by cable ties, and two lads guard
   it. Shoot every tie (small targets) and it drops.
-- **K's hole** (a trail race lost to K): her note is a riddle: a distance and a direction to the rosette she hid,
-  within 150 m. Mounds of earth stand where you could dig; hold E at the right one (the note says how warm
-  you are as you get close). Other mounds are only molehills.
 - **The smug ghost** (a race nobody finished): press E on the line and the ghost sets off along the
   streets through its gates. Get to the last one before it does, any way you like.
 - **The tag** (a Wanted man who got away): hold fire, or the touch fire button, with the crosshair on the
   tag to spray over it, like a can. Cover 90% of the lettering.
 
 A bigger room makes more to do rather than tougher enemies: more cable ties (4 alone, up to 8), ghost
-gates (1, up to 4), molehills and a farther clue, and a bigger tag; only the banner's guards get a bit
+gates (1, up to 4) and a bigger tag; only the banner's guards get a bit
 tougher. Friends share progress, so you can split the ties or the paint. Calling a job
 off leaves nothing.
 
@@ -762,12 +684,10 @@ Jobs lead into each other. Within the minute of something being done, a follow-u
 a poster on the spot or a phone call with a marker. It is an ordinary job, built the same on every
 screen, so everything about it works as usual and it scales with the room as that job does.
 
-- **Pub won back:** the landlord has found his late wife's biscuit tin. A poster goes up at the pub
-  for a short three-clue trail from the bar, with a chest at the end.
+- **Pub won back:** the landlord says last one to the next pub buys. A race poster goes up at the pub,
+  to the nearest other pub at least 250 m off.
 - **Gaffer cuffed:** his phone has the Flag Lads' plan. You get a call and a purple marker on the
   square they are eyeing next, the most flagged one beside a square you have cleared or won back.
-- **Trail chest dug up:** the flyer in it says "Last one back to the pub buys". A race poster goes up
-  at the chest, to the pub the trail began at (or the nearest one).
 - **Seagull Attack won:** a tourist tells you there are men putting flags up, and a marker shows the
   ladder crew. A crew needs a lamp near enough, so now and then there is no tip.
 - **Gaffer gets away:** nothing new; he is tomorrow's Wanted poster, and goes on the night's card.
@@ -878,7 +798,7 @@ any wood themselves.
 ### The wardrobe
 
 Daft things to wear, earned round Bath and seen by everyone: a seagull on your head, a splattered
-flat cap, a traffic cone for winning a race, a centurion's helmet for a gold trail, a halo for
+flat cap, a traffic cone for winning a race, a halo for
 climbing the Abbey, a deerstalker for bringing in a ringleader, a chef's hat from the deli, a cat
 on your shoulder for surviving a swarm, a baby's bonnet for ten minutes of tummy time, and more.
 One thing on your head, one on your face and one on your back, picked in the Wardrobe in the pause

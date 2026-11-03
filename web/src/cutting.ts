@@ -1,12 +1,11 @@
-// Cuttings from the Chronicle: the cards that stop you to read them (a job's end card, a race's or a
-// trail's results, a treasure hunt's or a bounty's poster, the driving test's report, the night
-// out's front page) come up as pieces torn out of the paper: plain newsprint with lightly torn top
+// Cuttings from the Chronicle: the cards that stop you to read them (a job's end card, a race's
+// results, a bounty's poster, the driving test's report, the night out's front page) come up as pieces torn out of the paper: plain newsprint with lightly torn top
 // and bottom edges, the paper's masthead small along the top and the section it's from. The
 // Chronicle's masthead itself (navy, a small "The Bath" over a big heavy "Chronicle") is written
 // here too, so the paper and its cuttings match.
 //
 // Each card's own screen file lays out its words (missionscreens.ts, racescreens.ts,
-// trailscreens.ts, wantedscreens.ts); this gives them the paper. The torn edges are made up afresh
+// wantedscreens.ts); this gives them the paper. The torn edges are made up afresh
 // for each card, so no two cuttings tear alike. Kept plain on purpose: one serif in black ink, with
 // navy only for the masthead.
 //

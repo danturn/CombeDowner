@@ -5,8 +5,8 @@
 // they're moving. Lying on their front (Z), they do tummy time like a baby: flat on a play mat,
 // propped up on their forearms with their head up, a dummy in and a rattle in hand, their legs
 // kicking away. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
-// everyone sees them dressed the same. Rosettes from treasure trails (trail.ts) are pinned on their
-// jacket, and anything from their wardrobe (wardrobe.ts) is put on them, as they say in their hello.
+// everyone sees them dressed the same. Anything from their wardrobe (wardrobe.ts) is put on them, as
+// they say in their hello.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { look } from "./gore";
@@ -136,9 +136,6 @@ export class Avatar {
   /** Tummy time: the play mat under them, the dummy in their mouth and the rattle in their hand. */
   private mat: THREE.Mesh;
   private dummy: THREE.Mesh;
-  /** Rosettes pinned on the jacket, and which (a letter each: g, s or b). */
-  private rosettes: THREE.Mesh | null = null;
-  private rosetteKey = "";
   /** What they're wearing from their wardrobe, and the beanie or hair a hat goes on instead of. */
   private wear: THREE.Mesh[] = [];
   private wearKey = "";
@@ -338,25 +335,6 @@ export class Avatar {
   setName(name: string, colour: string) {
     (this.label.material.map as THREE.Texture).dispose();
     this.label.material.map = nameLabel(name, colour);
-  }
-
-  /** Pin on their treasure-trail rosettes: a letter each, g, s or b, at most three. */
-  setRosettes(key: string) {
-    key = key.replace(/[^gsb]/g, "").slice(0, 3);
-    if (key === this.rosetteKey) return;
-    this.rosetteKey = key;
-    if (this.rosettes) { this.upper.remove(this.rosettes); this.rosettes.geometry.dispose(); this.rosettes = null; }
-    if (!key) return;
-    const pieces: Piece[] = [];
-    [...key].forEach((m, k) => {
-      const col = m === "g" ? "#e8b923" : m === "s" ? "#c9ced6" : "#b8743a", x = 0.13 - k * 0.075, y = 1.3 - HIP;
-      const disc = (r: number, z: number) => new THREE.CylinderGeometry(r, r, 0.01, 12).rotateX(Math.PI / 2).translate(x, y, z);
-      pieces.push([disc(0.034, -0.136), col], [disc(0.018, -0.142), "#f4ecd4"],
-        [box(0.016, 0.06, 0.006, x - 0.012, y - 0.045, -0.134), col], [box(0.016, 0.06, 0.006, x + 0.012, y - 0.045, -0.134), col]);
-    });
-    const m = new THREE.Mesh(part(pieces), MAT);
-    this.upper.add(m);
-    this.rosettes = m;
   }
 
   /** A ladder over their shoulder (ladders.ts), or not. */

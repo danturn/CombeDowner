@@ -230,7 +230,6 @@ let kit = 0, coat = 0, loud = 0, catBuild: "" | "kitten" | "fat" | "long" = "";
 let state = "Standing";
 let colour = COLOURS[0], seed = 1;
 const worn: Partial<Record<Slot, string>> = {};
-let rosettes = "";
 let walkZ = 0;
 let avatar: Avatar | null = null, gang: Figure | null = null, cat: CatFigure | null = null;
 let gull: ReturnType<typeof gullFigure> | null = null, bendy: BendyFigure | null = null, owner: Owner | null = null, flap = 0;
@@ -279,7 +278,6 @@ function build() {
     avatar.tagged = false;
     walkZ = 0;
     avatar.setWear(SLOTS.map((s) => worn[s]).filter(Boolean).join(","));
-    avatar.setRosettes(rosettes);
     turntable.add(avatar.root);
   } else if (e.kind === "gang") {
     gang = new Figure();
@@ -398,7 +396,6 @@ function drawBar() {
       const opts: [string, string][] = [["", "Nothing"], ...WEARABLES.filter((w) => w.slot === slot).map((w): [string, string] => [w.id, w.name])];
       bar.append(group(slot === "head" ? "Head" : slot === "face" ? "Face" : "Back", select(opts, worn[slot] ?? "", (v) => { if (v) worn[slot] = v; else delete worn[slot]; again(); })));
     }
-    bar.append(group("Rosettes", select([["", "None"], ["g", "Gold"], ["gs", "Gold, silver"], ["gsb", "Gold, silver, bronze"]], rosettes, (v) => { rosettes = v; again(); })));
     bar.append(button("Another face", false, () => { seed++; again(); }));
   } else if (e.kind === "cat") {
     bar.append(group("Breed", select(e.kits!.map((n, k): [string, string] => [String(k), n]), String(kit), (v) => { kit = +v; coat = 0; again(); })));
@@ -459,7 +456,6 @@ function writeUrl() {
   if (e.kind === "player") {
     if (colour !== COLOURS[0]) q.set("colour", colour.slice(1));
     for (const s of SLOTS) if (worn[s]) q.set(s, worn[s]!);
-    if (rosettes) q.set("rosettes", rosettes);
   }
   if (e.kind === "gang" && e.kits && kit) q.set("kit", String(kit));
   if (e.kind === "gang" && e.loud && loud) q.set("loud", String(loud));
@@ -484,7 +480,6 @@ function readUrl() {
   const c = "#" + (q.get("colour") ?? "");
   if (COLOURS.includes(c)) colour = c;
   for (const s of SLOTS) { const w = q.get(s); if (w && WEARABLES.some((x) => x.id === w && x.slot === s)) worn[s] = w; }
-  rosettes = (q.get("rosettes") ?? "").replace(/[^gsb]/g, "").slice(0, 3);
   if (e.kind === "cat") { kit = num("breed", 0, e.kits!.length - 1) ?? 0; coat = Math.min(num("coat", 0, 15) ?? 0, coatsOf(kit) - 1); }
   else if (e.kits) kit = num("kit", 0, e.kits.length - 1) ?? 0;
   loud = num("loud", 1, LOUD.length - 1) ?? 0;

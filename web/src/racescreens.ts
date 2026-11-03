@@ -2,8 +2,8 @@
 // (missionscreens.ts): the banner while the racers gather and line up, the 3, 2, 1, GO! with its
 // start lights, the banner while you watch the others after you've finished or come off, and the
 // results card at the end, which stays up till you carry on: a cutting from the Chronicle's sports
-// pages (cutting.ts), with the race's colour on its section tab. A treasure trail's screens share the
-// look (trailscreens.ts), and its end card is this results card in the trail's colour.
+// pages (cutting.ts), with the race's colour on its section tab. A Wanted bounty's screens share the
+// look (wantedscreens.ts), and its end card is this results card in the poster's red.
 //
 // All drawn on the page in the HUD's layer and sized by the screen, so they work the same on a
 // phone. Nothing here goes over the network: race.ts says what to show from what it already knows.
@@ -19,7 +19,7 @@ const COLOUR = "#3ec7e8";
 const CARD_SECS = 8;
 
 let styled = false;
-/** The race screens' look, for other set pieces (a treasure trail: trailscreens.ts) to share; --rc on an element sets its colour. */
+/** The race screens' look, for other set pieces (a Wanted bounty: wantedscreens.ts) to share; --rc on an element sets its colour. */
 export function style() {
   if (styled) return;
   styled = true;
@@ -94,9 +94,6 @@ body:has(.rsc-count:not([hidden]),.rsc-wait:not([hidden])) #clickhint{visibility
 const layer = () => document.getElementById("hud") ?? document.body;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const nth = (n: number) => `${n}<sup>${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}</sup>`;
-
-/** On a touch screen: its own buttons are up rather than the keys. */
-export const touchUp = () => { const t = document.getElementById("touch"); return !!t && !t.hidden; };
 
 /** What to call a control in a prompt: its key, pad button or touch word (controls.ts). */
 export const control = (id: string) => ctl(id);

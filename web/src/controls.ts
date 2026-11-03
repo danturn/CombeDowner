@@ -1,19 +1,19 @@
 // Every control in the game in one place: what it does, its keys and mouse button, its button on a
 // game controller (Call of Duty: Warzone's default layout), and its word on a touch screen. Prompts
 // name controls, never keys: ctl("use") gives "E", "□" or "Use" by whichever was touched last (the
-// keyboard, the pad or the screen), and ctlText("{use} Open the tin") does the same for a whole line.
+// keyboard, the pad or the screen), and ctlText("{use} Get in") does the same for a whole line.
 // The pad's buttons (gamepad.ts), the Buttons list in Settings, the Controls list on the menu and the
 // minigames' control strips all come from these tables.
 //
 // Few controls, and the context decides what they do. In the normal world one button does everything
-// you interact with: use (E, □, Use) gets you in a car, opens a tin, takes the call on Push the Bus,
+// you interact with: use (E, □, Use) gets you in a car, takes the call on Push the Bus,
 // goes again after a race, lets go of a lock beam, cuffs, shouts at gulls, votes for a painting; when
 // two things are near, it's the one the prompt names. A hold of use only where a tap of it already
-// means something else there (the trail's sketch, where a tap asks a local). Separate buttons are for
+// means something else there. Separate buttons are for
 // what's held or steered: moving, the pedals, jump, crouch and prone, sprint, aim, shoot, reload,
 // weapons, the horn (at a car's wheel or a narrowboat's helm, where it's the bell), the map, the
 // radio, marking, the torch, binoculars and getting on or off a ride. Minigames whose play is quite
-// different (the tin lock, the easel, the bell chamber, the Climb, the tightrope, the Driving Test's
+// different (the easel, the bell chamber, the Climb, the tightrope, the Driving Test's
 // back seat, the big map and a pub's card on it) have their own table here, and show it as a strip while
 // you're in them (strip).
 //
@@ -173,15 +173,6 @@ export const PLACES: Record<string, Control[]> = {
   // a big card over the game (a mission's end, a race's results, a bounty's poster: modal.ts)
   card: [
     { id: "card.close", name: "close", keys: ["Escape"], pad: B.options, touch: "×" },
-  ],
-  // a tin's combination lock: it has the keyboard to itself, and a pad drives it through the menu
-  // code's arrows, Enter and Escape (gamepad.ts); on a touch screen its own buttons say it all
-  lock: [
-    { id: "lock.turn", name: "turn", keys: ["KeyW", "KeyS"], say: STICK("W/S or wheel", "d-pad ↑↓", "▲ ▼") },
-    { id: "lock.move", name: "next wheel", keys: ["KeyA", "KeyD"], say: { keys: "A/D", pad: "d-pad ←→", touch: "" } },
-    { id: "lock.digit", name: "set a wheel", say: { keys: "0-9" } },
-    { id: "lock.try", name: "try it", keys: ["KeyE", "Enter"], pad: B.cross, say: { touch: "" } },
-    { id: "lock.leave", name: "leave it", keys: ["Escape"], pad: B.circle, say: { touch: "" } },
   ],
   // the bells' ringing chamber: a pull is a jump, and use looks to before the ringing (or pulls during it)
   bells: [
