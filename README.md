@@ -113,18 +113,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
-- **Wanted ringleaders hide among lookalikes.** Four to eight men (more with more players, and more
-  lookouts) dress like him, each with a different mix of hat, jacket colour, bag, dog and limp. The
-  poster gives two features, a witness a third (but one in three is wrong, and owns up if you press
-  them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
-  point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
-  something at each stop for a minute, so waiting for him at the right one catches him without a
-  chase, for a bonus. A Gaffer who got away is a Wanted poster too. It opens with the poster as a big
-  splash (his features as pictures, his round of stops, the clock and how to catch him), and J (hold
-  the pad's touchpad, or Poster on a touch screen) brings it back, ticking off what the witnesses
-  have said. The search circle is a band and wall of red light in the streets, clues stand under red
-  beams with a "?", every shrink is called out with its new size, a card by the crosshair ticks off
-  which of his features the man you're looking at has, and it ends on a results card.
+- **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, dressed as the
+  poster shows (a coloured jacket, maybe a hat, a bag or a dog), doing his round of a pub, a park
+  and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
+  you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the
+  screen), and a paintball hit winds him. Get right up to him and press E (the pad's use button, or
+  Use on a touch screen) to cuff him. Fall 80 m behind for a few seconds, or let a chase go past two
+  minutes, and he's got away to his next stop: three goes, shown on the job card and the poster, and
+  the third time he's gone for good. Quarter of an hour on the clock. More players and he's
+  quicker, warier and has more mates. A Gaffer who got away is a Wanted poster too, and quicker
+  still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
+  screen) brings the poster back, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord

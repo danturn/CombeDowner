@@ -23,10 +23,10 @@
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
 // boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
-// bring a gang of their own anywhere. A Wanted ringleader is dressed like his lookalikes, who wear a
-// hat, a coloured jacket, a bag, a dog or a limp in different mixes (they ride on the look number,
-// so every screen draws the same men), and any of them can be made to give up with his hands in the
-// air instead of going down, to be cuffed and led off. A ringleader can also wear one loud thing (a
+// bring a gang of their own anywhere. A Wanted man wears some of a hat, a coloured jacket, a bag, a
+// dog or a limp, so you can pick him out (they ride on the look number, so every screen draws the
+// same man), and a man a job runs can be made to give up with his hands in the air instead of going
+// down, to be cuffed and led off. A ringleader can also wear one loud thing (a
 // rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
 // run is drawn on a mobility scooter or in his van, which also rides on his look.
 //
@@ -124,7 +124,7 @@ export const LOUD = ["", "a red rosette", "a hi-vis tabard", "a big purple hat"]
 export const wearing = (lk: number) => Math.round((lk % 1) * 8) % LOUD.length;
 export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
 /**
- * What a Wanted lookalike has on him: a hat, a jacket (0 his own clothes, 1 to 3 a colour), a bag, a
+ * What a Wanted man has on him: a hat, a jacket (0 his own clothes, 1 to 3 a colour), a bag, a
  * dog and a limp, packed into six bits that ride on his look in 1024ths after the loud thing's
  * eighths. Too small a step for a page that reads only the loud thing to see, so older pages just
  * draw a lad in his own clothes.
@@ -215,7 +215,7 @@ const GEO = {
   arm: box(0.09, 0.56, 0.1).translate(0, -0.28, 0),
   locks: box(0.3, 0.42, 0.08),
   bag: box(0.07, 0.15, 0.2).translate(0, -0.42, 0),
-  // a Wanted lookalike's features: a hat, a jacket over his own clothes, a shoulder bag, a dog, a stick
+  // a Wanted man's features: a hat, a jacket over his own clothes, a shoulder bag, a dog, a stick
   trilby: new THREE.CylinderGeometry(0.135, 0.16, 0.2, 12).translate(0, 0.1, 0),
   trilbyBrim: new THREE.CylinderGeometry(0.25, 0.25, 0.025, 14),
   coat: box(0.5, 0.58, 0.29),
@@ -393,7 +393,7 @@ export class Figure {
       this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, skin, 0, 1.62, 0));
     };
     this.body.scale.setScalar(1);
-    // a Wanted lookalike's features, over whatever he's wearing
+    // a Wanted man's features, over whatever he's wearing
     const extras = () => {
       const [hat, coat, bag, dog, limp] = featsOf(look);
       if (coat) {
@@ -1238,7 +1238,7 @@ export class NaughtyBoys {
     const c = this.list[i];
     if (!c || c.state !== ALIVE || c.gen !== gen) return null;
     c.hp = Math.max(0, c.hp - amount * (1 - c.armour));
-    // a Wanted man nearly done for, with someone close enough to collar him, gives up
+    // a man a job wants alive (the Gaffer on the run), nearly done for, gives up
     if (c.spare && !c.meek && c.hp <= c.top * 0.2) {
       c.hp = Math.max(1, c.hp); c.meek = true; c.target = ""; c.rush = false; c.homeX = c.x; c.homeZ = c.z;
       return "dmg";
