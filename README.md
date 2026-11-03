@@ -148,8 +148,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
   pavement; if it's tight by the board, the board says where) and puts everyone in the middle of it.
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
-  and flashing while a gull's after it, and the ring is on the maps. One of the three crates between
-  waves is always a box of rounds: more spare rifle rounds for everyone, instead of an upgrade.
+  and flashing while a gull's after it, and the ring is on the maps. The tourists point out gulls coming
+  in, wave their arms at one after their lunch, duck, cheer a good shot and storm off in a huff,
+  saying so. Each kind of gull has its own look, every wave comes in from one side under a banner
+  saying what's in it and from where, and before every wave each player gets an ammo pack.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
   and it drops. A race
