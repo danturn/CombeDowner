@@ -8,8 +8,9 @@
 // E gets in and out: the driver's seat if it's free, otherwise a passenger seat, where you can look
 // about and shoot. W and S drive, A and D steer (the mouse only looks about, and the view comes back
 // behind once you leave it: game.ts, settleRate in player.ts), Space is the handbrake and H (or a click) the horn,
-// or the siren on the police car, or Greensleeves on the ice cream van. C switches between the chase camera and
-// the driver's own view from the seat, over the dash (cockpit.ts). Vehicles block like walls,
+// or the siren on the police car, or Greensleeves on the ice cream van. C goes round the chase camera,
+// the driver's own view from the seat, over the dash (cockpit.ts), and the bonnet camera, with nothing
+// of the inside drawn. Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Drive into the traffic, a parked car or a vehicle nobody's in and it gives way: you
 // plough on, a bit slower, and what you hit is knocked off its line (the traffic and the parked
@@ -30,7 +31,7 @@ import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, glass, GOLF_DRIVER_SHAPE, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
 import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 export { MAKES };
-import { Cockpit } from "./cockpit";
+import { bonnetEye, Cockpit, CockpitOf } from "./cockpit";
 import { driverDressing, driverSpot, PETROL_BLUE } from "./golfdriver";
 import { GLASS, glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
@@ -38,6 +39,8 @@ import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches"
 import { CHIP, CHIP_LAMPS, chipDecals, chipParts } from "./chipvan";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
+/** The two ways of driving from inside rather than with the chase camera. */
+export type InsideView = "cockpit" | "bonnet";
 export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "golfdriver" | "paramount" | "alizee" | "chipvan";
 /** Arleen's coaches (coaches.ts): a Plaxton Paramount or a Van Hool Alizée. */
 export const isCoach = (k: VKind) => k === "paramount" || k === "alizee";
@@ -667,7 +670,10 @@ export class Vehicle implements Mover {
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
   private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
-  private cockpit: Cockpit | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
+  private cockpit: Cockpit | null = null;
+  /** How its driver is looking out from inside, on this screen: from the seat or from the bonnet (null: from outside, or nobody). */
+  view: InsideView | null = null;
+  private bonnet: THREE.Vector3 | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
   private cutPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];   // and the box its cabin's cut out of the body by, in its own frame and in the world
   private uncut: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];  // the body's own materials, put back when the driver looks from outside again
   private ajar = false;            // the inside shown through an open door while it's parked (doorway)
@@ -724,19 +730,25 @@ export class Vehicle implements Mover {
     return { x: this.x + al * c + ac * s, y: this.y + up, z: this.z - al * s + ac * c, yaw: this.a - Math.PI / 2 };
   }
 
-  /** The driver's own view from inside, on or off (game.ts): the inside drawn round them, and their own figure hidden. */
-  inside(on: boolean) {
-    if (on && this.ajar) this.doorway(null);
-    if (on && !this.cockpit) {
-      const S = this.spec, bus = isBus(this.kind);
-      const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
-      const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
-      this.cockpit = new Cockpit({ kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
-        decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined });
+  private cockpitOf(): CockpitOf {
+    const S = this.spec, bus = isBus(this.kind);
+    const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
+    const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
+    return { kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
+      decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined };
+  }
+
+  /** The driver's own view from inside (game.ts), or null for none: from the seat the inside's drawn round them; either way their own figure's hidden. */
+  inside(view: InsideView | null) {
+    this.view = view;
+    if (view && this.ajar) this.doorway(null);
+    if (view === "cockpit" && !this.cockpit) {
+      this.cockpit = new Cockpit(this.cockpitOf());
       this.body.add(this.cockpit.group);
       if (this.cockpit.cut) this.cutAway(boxPlanes(this.cockpit.cut));
-    } else if (!on && this.cockpit && !this.ajar) this.dropCockpit();
-    if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit;
+    } else if (view !== "cockpit" && this.cockpit && !this.ajar) this.dropCockpit();
+    if (view === "bonnet") this.bonnet ??= bonnetEye(this.cockpitOf());
+    if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit && !view;
   }
 
   private dropCockpit() {
@@ -753,7 +765,7 @@ export class Vehicle implements Mover {
    * to the seats; null shuts it. Never while someone's driving from inside, whose view it would spoil.
    */
   doorway(b: THREE.Plane[] | null) {
-    if (b && !this.ajar && !this.cockpit) {
+    if (b && !this.ajar && !this.cockpit && !this.view) {
       const S = this.spec;
       this.cockpit = new Cockpit({ kind: this.kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0], doorway: true });
       this.body.add(this.cockpit.group);
@@ -796,10 +808,13 @@ export class Vehicle implements Mover {
     this.cockpit?.update(this.steer, this.speed, this.rpm, this.signal);
     this.root.updateMatrixWorld(true);
     for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
-    out.copy(this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
+    out.copy(this.view === "bonnet" && this.bonnet ? this.bonnet : this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
     this.body.localToWorld(out);
     return { pitch: this.body.rotation.z, roll: this.body.rotation.x };
   }
+
+  /** How far down (a pitch) the driver's view from inside settles to. */
+  get restPitch(): number { return this.view === "cockpit" && this.cockpit ? this.cockpit.rest : -0.06; }
 
   /** The first free seat (the driver's if it is), or -1. gone: whether someone in a seat has left the game. */
   freeSeat(gone: (id: string) => boolean = () => false): number {
@@ -846,7 +861,7 @@ export class Vehicle implements Mover {
       this.body.add(f);
     }
     if (f) {
-      f.visible = !!id && !(k === 0 && this.cockpit);
+      f.visible = !!id && !(k === 0 && (this.cockpit || this.view));
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;

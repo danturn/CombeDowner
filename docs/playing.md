@@ -232,7 +232,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
 | Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out (let go of a tiller) |
-| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | driver's seat or chase camera |
+| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | chase camera, driver's seat or bonnet camera |
 | Triangle | switch weapon | get out |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
@@ -362,10 +362,12 @@ tight as a real car does; take one too fast and the front tyres squeal and run w
 speed, until you lift off or brake and the nose tucks in. The left and right arrows (◀ and ▶ on a
 touch screen) work the indicators, which tick away and cancel themselves once you're round the
 corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
-sees them, the traffic's brake lights too. C (View on a touch screen) switches
-between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
-speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
-an old ticket machine by the door. It remembers which you like. Each engine has a voice of its own:
+sees them, the traffic's brake lights too. C (View on a touch screen) goes round
+the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
+a low dash: the speedo shows your speed, the wheel turns as you steer, and the buses have a cab of
+their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
+racing game, sits just above the bonnet at the foot of the windscreen (on a bus or a coach, at the
+front of the cab) with nothing of the inside in the way. It remembers which you like. Each engine has a voice of its own:
 it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
 the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
 The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit

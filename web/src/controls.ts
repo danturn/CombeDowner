@@ -121,7 +121,7 @@ export const STREETS: Control[] = [
   { id: "handbrake", name: "Handbrake", keys: ["Space"], via: "jump", say: { touch: "Jump" } },
   { id: "out", name: "Get out", keys: ["KeyE"], pad: B.triangle, touch: "Get out", where: "wheel" },
   { id: "horn", name: "Horn, bell, siren or chimes", keys: ["KeyH"], pad: B.r1, touch: "Fire", where: "wheel" },
-  { id: "view", name: "Inside or chase camera", keys: ["KeyC"], pad: B.circle, touch: "View", where: "wheel" },
+  { id: "view", name: "Chase, seat or bonnet camera", keys: ["KeyC"], pad: B.circle, touch: "View", where: "wheel" },
   { id: "left", name: "Indicate left", keys: ["ArrowLeft"], pad: B.left, touch: "◀", where: "wheel" },
   { id: "right", name: "Indicate right", keys: ["ArrowRight"], pad: B.right, touch: "▶", where: "wheel" },
   // in the back of the Driving Test's car, where the d-pad's uses on foot don't apply

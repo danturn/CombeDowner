@@ -231,7 +231,9 @@ const KICK_WAIT = 0.15;                  // seconds after your last shot before 
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const BOAT_CHASE_KEY = "cd-boat-chase";  // whether you steer a narrowboat from the back deck or with the chase camera (C)
-const INSIDE_KEY = "cd-inside";         // whether you drive from the driver's seat or with the chase camera (C)
+const INSIDE_KEY = "cd-inside";         // how you drive (C): "0" the chase camera, "1" from the driver's seat, "2" from the bonnet
+const DRIVE_VIEWS = ["chase", "cockpit", "bonnet"] as const;
+type DriveView = (typeof DRIVE_VIEWS)[number];
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
 const TIP_MS = 4000;                      // how long the middle of the screen says what to do with what you've got, before it's only by its icon
@@ -420,7 +422,7 @@ export class Game {
   get atWheel() { return !!this.car || !!this.world.canal?.helmOf(this.net.selfId); }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
   private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
-  private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
+  private driveView: DriveView = (() => { try { return DRIVE_VIEWS[Number(localStorage.getItem(INSIDE_KEY))] ?? "chase"; } catch { return "chase"; } })();
   private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
   private boatChase = (() => { try { return localStorage.getItem(BOAT_CHASE_KEY) === "1"; } catch { return false; } })();   // at a tiller: the chase camera, not the back deck
   private boatYaw: number | null = null;         // at a tiller: which way the boat was heading last frame, so your view turns with it
@@ -1325,12 +1327,13 @@ export class Game {
       return;
     }
     if (!this.car) return;
-    this.inside = !this.inside;
-    try { localStorage.setItem(INSIDE_KEY, this.inside ? "1" : "0"); } catch { /* storage may be blocked */ }
+    const n = (DRIVE_VIEWS.indexOf(this.driveView) + 1) % DRIVE_VIEWS.length;
+    this.driveView = DRIVE_VIEWS[n];
+    try { localStorage.setItem(INSIDE_KEY, String(n)); } catch { /* storage may be blocked */ }
     const p = this.player;
     p.yaw = this.car.seat().yaw;
-    p.pitch = this.inside ? -0.06 : -0.15;
-    this.toast(this.inside ? "Driver's seat" : "Chase camera", 1.2);
+    p.pitch = this.driveView === "chase" ? -0.15 : -0.06;
+    this.toast(this.driveView === "cockpit" ? "Driver's seat" : this.driveView === "bonnet" ? "Bonnet camera" : "Chase camera", 1.2);
   }
 
   reload() {
@@ -2723,7 +2726,7 @@ export class Game {
     const { v, seat } = ride;
     this.ride = null;
     this.handbrake = false;
-    this.insideOf?.inside(false);
+    this.insideOf?.inside(null);
     this.insideOf = null;
     this.insideYaw = null;
     const at = v.exitSpot(seat), p = this.player;
@@ -2767,9 +2770,13 @@ export class Game {
     p.vel.set(v.vx, 0, v.vz);
     p.onGround = true;
     p.speed = Math.abs(v.speed);
-    if (this.insideOf !== (this.inside ? v : null)) { this.insideOf?.inside(false); this.insideOf = this.inside ? v : null; this.insideOf?.inside(true); }
+    const from = this.driveView === "chase" ? null : this.driveView;
+    if (this.insideOf !== (from ? v : null) || v.view !== from) {
+      this.insideOf?.inside(null); this.insideOf = from ? v : null; this.insideOf?.inside(from);
+      if (from) p.pitch = v.restPitch;
+    }
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
-    if (this.inside) { this.driverView(v, s.yaw, settle); return; }
+    if (from) { this.driverView(v, s.yaw, settle); return; }
     this.insideYaw = null;
     // the chase camera: the mouse only looks about, and it swings back behind as you drive on
     if (settle) {
@@ -2790,7 +2797,7 @@ export class Game {
   }
 
   /**
-   * The driver's own view, from their seat over the dash (cockpit.ts). It turns with the vehicle; look
+   * The driver's own view, from their seat over the dash or from the bonnet (cockpit.ts). It turns with the vehicle; look
    * about with the mouse, and it eases back to straight ahead as the chase camera does. It pitches with the
    * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
    */
@@ -2801,7 +2808,7 @@ export class Game {
     let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
     if (settle) {
       off -= off * settle;
-      p.pitch += (-0.06 - p.pitch) * settle;
+      p.pitch += (v.restPitch - p.pitch) * settle;
     }
     off = Math.max(-2.4, Math.min(2.4, off));
     p.yaw = ahead + off;
@@ -2812,7 +2819,7 @@ export class Game {
 
   /** A passenger: sat in your seat as it goes along, looking about through your own eyes (and free to shoot). */
   private rideAlong(seat: number, v: Vehicle) {
-    if (this.insideOf) { this.insideOf.inside(false); this.insideOf = null; }   // the driver's view is only from the driver's seat
+    if (this.insideOf) { this.insideOf.inside(null); this.insideOf = null; }   // the driver's view is only from the driver's seat
     const p = this.player, s = v.seat(seat);
     p.pos.set(s.x, s.y, s.z);
     p.vel.set(v.vx, 0, v.vz);
