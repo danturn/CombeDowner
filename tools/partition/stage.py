@@ -133,6 +133,10 @@ def write(job):
 
 
 def main(argv):
+    # the passes read the map's layers, never prep_map's squares, so prep_tiles runs them beside the squares
+    passes_only = "--passes-only" in argv
+    passes_done = "--passes-done" in argv
+    argv = [a for a in argv if a not in ("--passes-only", "--passes-done")]
     only = None
     if "--only" in argv:
         k = argv.index("--only")
@@ -174,18 +178,21 @@ def main(argv):
     store = os.environ.get("CD_PARTITION_CACHE") or os.path.join(root, "cache")
     t0 = time.time()
     result = os.path.join(root, "build.json")
-    for f in (result, os.path.join(root, "cache.txt"), os.path.join(root, "stages.json")):
-        if os.path.exists(f):
-            os.remove(f)
     from partition import cache
+    if not passes_done:
+        for f in (result, os.path.join(root, "cache.txt"), os.path.join(root, "stages.json")):
+            if os.path.exists(f):
+                os.remove(f)
+        print(f"partition: the passes and {len(wanted)} squares' assembly (log in {root}/city.log, store {store})",
+              flush=True)
+        run([os.path.join(HERE, "pipeline.py"), "build", src_dir, once, city, store, str(jobs), result,
+             *([] if only is None else [f"{a},{b}" for a, b in wanted])], os.path.join(root, "city.log"))
+        if passes_only:
+            return 0 if os.path.exists(result) else 1
     # prep_map's squares aren't in the store, but a build checked against another names them first
     # if they differ (verify.py)
     cache.add_stages(root, {"prep": {name(t): cache.file_digest(os.path.join(base, name(t) + ".json"))
                                      for t in wanted}})
-    print(f"partition: the passes and {len(wanted)} squares' assembly (log in {root}/city.log, store {store})",
-          flush=True)
-    run([os.path.join(HERE, "pipeline.py"), "build", src_dir, once, city, store, str(jobs), result,
-         *([] if only is None else [f"{a},{b}" for a, b in wanted])], os.path.join(root, "city.log"))
     if not os.path.exists(result):
         sys.exit(f"partition: the passes failed, see {root}/city.log")
     passes = json.load(open(result))

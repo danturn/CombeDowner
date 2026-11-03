@@ -1029,14 +1029,14 @@ def divide_split(tasks, out, jobs, log, what="divide"):
     left = collections.Counter(t[:2] for t, _r, _c in parts)
     t0 = time.time()
     with ProcessPoolExecutor(jobs) as pool:
-        futures = [(t, pool.submit(_timed, _divide_part, *t[:6], sorted(run)))
+        futures = [(t, pool.submit(_timed, _divide_part, *t[:6], sorted(run)), run, _c)
                    for t, run, _c in sorted(parts, key=lambda p: -p[2])]
-        for t, f in futures:
+        for t, f, run_, cost_ in futures:
             sq = t[:2]
             try:
                 (_a, _b, got), pid, a, b = f.result()
                 rows[sq] += got
-                spans.append((pid, a - t0, b - t0, f"{sq[0]}_{sq[1]}"))
+                spans.append((pid, a - t0, b - t0, f"{sq[0]}_{sq[1]}[{len(run_)} pieces from {min(run_)}, est {cost_:.0f}]"))
             except Exception as exc:
                 if sq not in failed:
                     failed[sq] = exc
@@ -1100,6 +1100,7 @@ def pool_use(what, spans, wall, jobs):
         last[p] = max(last.get(p, 0.0), b)
     idle = sum(wall - e for e in last.values()) + wall * max(0, jobs - len(last))
     tail = sorted(spans, key=lambda s: -s[2])[:4]
+    print(f"PROFILE {what} slowest: " + ", ".join(f"{n} {b - a:.1f}s" for _p, a, b, n in sorted(spans, key=lambda s: s[1] - s[2])[:8]), flush=True)
     return (f"{what}: {wall:.0f}s wall, {work:.0f} CPU-s of tasks, {idle:.0f} core-s idle at the end; "
             f"longest {max(b - a for _p, a, b, _n in spans):.0f}s; last to finish: "
             + ", ".join(f"{n} ({b - a:.0f}s, ended {b:.0f}s)" for _p, a, b, n in tail))
