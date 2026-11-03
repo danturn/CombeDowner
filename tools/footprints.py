@@ -28,6 +28,7 @@ VIDA = "https://data.source.coop/vida/google-microsoft-open-buildings/geoparquet
 SURE = 0.75        # Google's confidence below which a footprint is left out (its least sure go down to 0.65)
 LEAST = 10.0       # square metres: anything smaller is a shed or a trace of nothing
 COVERED = 0.1      # a footprint counts as already standing where this much of it, or of what it meets, overlaps
+CELL = 50.0        # metres: the grid the footprints already kept are looked up in
 
 
 def cache(raw):
@@ -54,8 +55,10 @@ def fetch(A, raw):
 
 
 def merge(A, raw):
-    import shapely
+    import numpy as np
+    import shapely, shapely.geometry
     from shapely.geometry import shape
+    from shapely.ops import unary_union
     lon0, lat0 = A.centre
     kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 
@@ -64,6 +67,11 @@ def merge(A, raw):
         out = []
         for f in json.load(open(path))["features"]:
             g = shape(f["geometry"])
+            if not g.is_valid:
+                # (the survey's outlines were thinned, and a thinned outline can cross itself)
+                g = g.buffer(0)
+                if g.is_empty or not g.geom_type.endswith("Polygon"): continue
+                f = dict(f, geometry=shapely.geometry.mapping(g))
             m = shapely.transform(g, lambda a: (a - [lon0, lat0]) * [kx, ky]).buffer(0)
             if not m.is_empty: out.append((m, f))
         return out
@@ -74,16 +82,28 @@ def merge(A, raw):
         "survey": lambda: [(m, f, f["properties"].get("src") or "survey") for m, f in read(os.path.join(raw, "heights.geojson"))],
         "google": lambda: [(m, f, "google") for m, f in read(os.path.join(cache(raw), "google.geojson")) if f["properties"]["conf"] >= SURE],
     }
-    added, counts = [], {}
+    added, counts, cells = [], {}, {}
+    cell = lambda m: [(i, j) for i in range(int(m.bounds[0] // CELL), int(m.bounds[2] // CELL) + 1)
+                      for j in range(int(m.bounds[1] // CELL), int(m.bounds[3] // CELL) + 1)]
     for name in getattr(A, "footprints", ()):
         rank = sources[name]()
         if name == "google" and not rank: raise SystemExit(f"footprints: no Google footprints in {cache(raw)}: fetch them first")
-        later = shapely.STRtree([m for m, _, _ in added]) if added else None
         for m, f, src in rank:
             if m.area < LEAST: continue
             near = ([taken[i] for i in tree.query(m)] if tree is not None else []) + \
-                   ([added[i][0] for i in later.query(m)] if later is not None else [])
+                   [added[i][0] for i in {i for c in cell(m) for i in cells.get(c, ())} if added[i][0].intersects(m)]
             if any(m.intersection(h).area > COVERED * min(m.area, h.area) for h in near): continue
+            # what little of it stands on a better footprint is that one's: it is cut back to meet it
+            if sum(m.intersection(h).area for h in near) > 0.5:
+                rest = m.difference(unary_union(near))
+                rest = max(getattr(rest, "geoms", [rest]), key=lambda g: g.area) if not rest.is_empty else rest
+                if rest.is_empty or rest.geom_type != "Polygon" or rest.area < max(LEAST, 0.8 * m.area): continue
+                g = shapely.transform(rest, lambda a: np.round(a / [kx, ky] + [lon0, lat0], 7))
+                if not g.is_valid: g = g.buffer(0)
+                if g.geom_type != "Polygon": continue
+                m = shapely.transform(g, lambda a: (a - [lon0, lat0]) * [kx, ky])
+                f = dict(f, geometry=shapely.geometry.mapping(g))
+            for c in cell(m): cells.setdefault(c, []).append(len(added))
             added.append((m, f, src))
             counts[src] = counts.get(src, 0) + 1
     feats = [dict(type="Feature", properties=dict(is_underground=False, has_parts=False, src=src), geometry=f["geometry"])

@@ -1,9 +1,9 @@
 # Missing houses in Cape Town's Newlands squares
 
-Status: **parked** (3 November 2026). Dan found Dean Street with no houses down one side and
-Montrose Street missing houses on the live Cape Town map (fork `main` 7c215cc9). The houses are
-missing from the sources we build from, not dropped by the build. This note records what each
-source has there and how a fallback layer could fill the gap, for when we pick it up again.
+Status: **done** (3 November 2026), as the footprints layer (`tools/footprints.py`). Dan found
+Dean Street with no houses down one side and Montrose Street missing houses on the live Cape Town
+map (fork `main` 7c215cc9). The houses were missing from the sources we built from, not dropped by
+the build. This note records what each source has there, and what the fallback layer does.
 
 ## Where
 
@@ -35,66 +35,47 @@ Across the whole Cape Town wide circle: Overture 34,448 buildings, the City's he
 far more than Overture (6,-5: 1,385 to 620; 8,-2: 468 to 10). Overture appears to take Microsoft's
 footprints where OpenStreetMap has nothing, but almost none of Google's.
 
-## The fallback, as tried
+## The fallback
 
-The approach: a `footprints` layer packed for every map beside `building` (the common pack shape;
-empty where there's nothing to add), holding only the footprints no better source already has.
-Every reader of the buildings takes it with them. Best source first, each footprint kept only where
-nothing already kept overlaps it (more than 10% of the smaller of the two), and at least 10 m²:
+Every map packs a `footprints` layer beside `building` (empty where there's nothing to add),
+holding only the footprints no better source already has, and every reader of the buildings takes
+it with them. The map lists its sources in `tools/area.py` (`footprints`), best first; Cape Town
+lists the City's outlines (`"survey"`, the heights layer's) and then Google's (`"google"`, at
+confidence 0.75 or more; the dataset's floor is 0.65). A footprint overlapping a better one by more
+than 10% of the smaller is left out, one overlapping it less is cut back to meet it, and anything
+under 10 m² is left out. Microsoft's are not a source, as Overture already takes them where
+OpenStreetMap has none. The British maps list no sources, fetch nothing and pack an empty layer.
 
-1. the buildings layer (Overture), untouched;
-2. a survey's outlines where the map has one: the heights layer's (the City's footprints);
-3. Google's machine-learned footprints at confidence 0.75 or more (the dataset's floor is 0.65).
-   Microsoft's are left out, because Overture already takes them where OpenStreetMap has none.
+For Cape Town that is 35,183 buildings: 20,295 of the City's and 14,888 of Google's, on top of
+Overture's 34,448. They carry nothing but an outline. The City's take their roof height from the
+heights layer, as every building over a surveyed roof does; Google's take the area's guess, as any
+building without a survey or a floor count does in Cape Town (`buildings.cape_eaves`: by the zone
+and the building's kind, drawn once for each row of attached houses).
 
-What this would add:
+Without the City's outlines, Google's footprints overlapping nothing in Overture would come to
+42,201 at 0.65, 33,719 at 0.7, 24,986 at 0.75 and 16,537 at 0.8; Microsoft's not already in Overture
+come to 2,638 more in Cape Town, 469 in Bath, 117 in Hackney and 91 in Bradford-on-Avon.
 
-| Map | City outlines | Google (>= 0.75) | Microsoft, if it were taken |
-|---|---|---|---|
-| Cape Town | 20,298 | 15,032 | 2,638 more |
-| Bath (combe-down) | none | none (Google doesn't cover Europe) | 469 |
-| Hackney (pembury) | none | none | 117 |
-| Bradford-on-Avon | none | none | 91 |
-
-So Cape Town would roughly double its buildings (34,448 to about 69,800), and with Microsoft left
-out the three British maps would get an empty layer and build exactly as now. Without the City
-outlines, Google's footprints overlapping nothing in Overture come to 42,201 at 0.65, 33,719 at
-0.7, 24,986 at 0.75 and 16,537 at 0.8.
-
-How the machine-learned footprints were fetched: VIDA's per-country GeoParquet,
+Google's footprints are fetched from VIDA's per-country GeoParquet,
 `https://data.source.coop/vida/google-microsoft-open-buildings/geoparquet/by_country/country_iso=ZAF/ZAF.parquet`,
-read with duckdb (httpfs, spatial) and filtered on its `bbox` column to the map's wide box. That
-takes about 10 s per map. The files are named by ISO 3166-1 alpha-3, so the map needs its country in
-`tools/area.py` as well as its `region`.
-
-The prototype was not kept. Wiring it in means reading the layer wherever the build reads
-`building.geojson`:
-
-- `prep_map.py` (`L`) and `prep_wide.py` (`L`);
-- the partition's own readers: `partition/data.py` `_features`, `partition/__init__.py`
-  `load_layer` (adding `footprints` to `OPTIONAL`), `partition/cache.py` `Layers._load`, and the
-  `whole("building")` digest in `partition/pipeline.py`, so a new layer invalidates the cached
-  pieces;
-- `railway.py` (platform canopies) and `canal.py`;
-- the split lists: `prep_tiles.SHOPS` and `mapdata.OTHER`.
+read with duckdb (httpfs, spatial) and filtered on its `bbox` column to the map's wide box, in
+about 15 s. The files are named by ISO 3166-1 alpha-3: the map's `country` in `tools/area.py`.
 
 ## Licences
 
 - Google Open Buildings v3: CC BY 4.0 or ODbL, at the user's choice.
-- Microsoft Global ML Building Footprints: ODbL.
 - VIDA's combined dataset: ODbL.
 - City of Cape Town 2D Building Footprints: the City's Open Data Policy (free for any use; credit
   "City of Cape Town"), as for the heights already used.
 
-Any of these would need a row in `data/<map>/README.md`, and Google and the City added to the
-credits in `README.md` and `web/index.html`.
+They are in `data/cape-town/README.md`, the credits in `README.md` and the game's credits line
+(`web/index.html`).
 
 ## Open questions
 
-- Phones and iPads: twice the buildings in Cape Town's squares. Measure the frame budget first.
-- Quality: Google's footprints at 0.75 looked right round Dean Street, but nobody has checked them
-  in shots elsewhere (informal settlements, industrial roofs, things under trees).
-- Heights: Google's footprints have no measured height unless one of the City's roofs lies under
-  them, so most would take the rule-based guess.
-- Cleaning: the per-map count of source footprints that the build drops (in a street, overlapping,
-  at a square's edge) was not measured. On these two streets it isn't the cause.
+- Quality: Google's footprints at 0.75 look right round Dean Street, Montrose Street and the
+  southern suburbs, but nobody has looked at informal settlements, industrial roofs or things under
+  trees.
+- Streets: guessed footprints clash with a street's carriageway at about the rate OpenStreetMap's
+  do (check rule 9). They could give way to the street as the railway's clearance cuts buildings
+  back (`prep_map.clear_of_line`).
