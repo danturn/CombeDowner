@@ -2,8 +2,11 @@
 // each point as whole centimetres from the one before it, from the square's corner `o`, and each
 // list of point numbers as the step from the number before. This puts them back as the game reads them,
 // in typed arrays: they pass from the reading worker to the game without being copied, and take
-// less memory while the square is kept.
+// less memory while the square is kept. readSquare is the whole read of a square's file as it
+// arrives: un-gzipped and unpacked (pack.ts), then this.
 // Nothing here goes over the network.
+
+import { gunzip, unpack } from "./pack";
 
 const LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
 
@@ -35,4 +38,13 @@ export function surfaceBuffers(d: any): ArrayBuffer[] {
   for (const name of LISTS) if (sf[name]) out.push(sf[name].buffer);
   for (const e of sf.e) out.push(e.i.buffer);
   return out;
+}
+
+/** A square's object from its file's bytes, as the game uses it: packed (pack.ts), or its JSON. */
+export async function readSquare(bytes: Uint8Array): Promise<any> {
+  const raw = await gunzip(bytes);
+  const packed = raw.length >= 4 && raw[0] === 0x43 && raw[1] === 0x44 && raw[2] === 0x50 && raw[3] === 0x31;
+  const data = packed ? unpack(raw) : JSON.parse(new TextDecoder().decode(raw));
+  unpackSurfaces(data);
+  return data;
 }

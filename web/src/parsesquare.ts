@@ -1,14 +1,15 @@
 // Reading a square's file off the main thread.
 //
-// Each square of Bath is a JSON file of a few megabytes, and the game has to turn it into an object
-// before it can build anything from it. JSON.parse of one costs 5-9 ms on the Mac (more on a phone,
-// and more again when several arrive together after a bad connection), and it used to land in a
-// frame, as a stutter. This does it in a worker instead, so the frame that starts a square's load
-// only waits for the result, not for the work.
+// Each square of Bath is a packed file (pack.ts) of a megabyte or so, and the game has to turn it
+// into an object before it can build anything from it. That costs 10-30 ms on the Mac (more on a
+// phone, and more again when several arrive together after a bad connection), and reading the JSON
+// it came from used to land in a frame, as a stutter. This does it in a worker instead, so the frame
+// that starts a square's load only waits for the result, not for the work.
 //
 // Nothing here goes over the network: it reads the file the game already fetches.
 import ParseSquare from "./parsesquare.worker?worker&inline";
-import { unpackSurfaces } from "./sfpack";
+import { readSquare } from "./sfpack";
+import { readOffMain } from "./pack";
 
 /** The message a square's worker sends back: the square it is, and the object or what went wrong. */
 export interface Parsed {
@@ -36,17 +37,17 @@ export class SquareParser {
    *  each one keeps its own memory, which a phone can't spare (0: keep them). */
   constructor(private most = 2, private idleMs = 0) {}
 
-  /** Parse one square's text into its object, off the main thread where that is possible. */
-  parse(ti: number, tj: number, text: string): Promise<Parsed> {
-    if (this.broken) return Promise.resolve(this.onMain(ti, tj, text));
+  /** Read one square's file (packed, or its JSON) into its object, off the main thread where that is possible. */
+  parse(ti: number, tj: number, bytes: Uint8Array): Promise<Parsed> {
+    if (this.broken) return this.onMain(ti, tj, bytes);
     // (for tools/parsetest.mjs: the same work done the old way, to compare against)
-    if ((globalThis as any).__parseOnMain) return Promise.resolve(this.onMain(ti, tj, text));
+    if ((globalThis as any).__parseOnMain) return this.onMain(ti, tj, bytes);
     let w: Worker;
     try {
       w = this.idle.pop() ?? this.make();
     } catch {
       this.broken = true;
-      return Promise.resolve(this.onMain(ti, tj, text));
+      return this.onMain(ti, tj, bytes);
     }
     clearTimeout(this.linger.get(w));
     return new Promise<Parsed>((resolve) => {
@@ -61,7 +62,7 @@ export class SquareParser {
       }, 30000);
       const done = (p: Parsed) => { clearTimeout(late); resolve(p); };
       this.waiting.set(w, done);
-      w.postMessage({ ti, tj, text });
+      w.postMessage({ ti, tj, bytes }, [bytes.buffer]);
     });
   }
 
@@ -103,8 +104,8 @@ export class SquareParser {
   }
 
   /** The old way, for when no worker is available. */
-  private onMain(ti: number, tj: number, text: string): Parsed {
-    try { const data = JSON.parse(text); unpackSurfaces(data); return { ti, tj, data }; }
+  private async onMain(ti: number, tj: number, bytes: Uint8Array): Promise<Parsed> {
+    try { return { ti, tj, data: await readSquare(bytes) }; }
     catch (e) { return { ti, tj, error: String(e) }; }
   }
 
@@ -115,3 +116,7 @@ export class SquareParser {
     this.live = 0;
   }
 }
+
+// the whole-city map and the ground kinds are read the same way, off the main thread, as the game starts
+const files = new SquareParser(1, 5000);
+readOffMain((bytes) => files.parse(0, 0, bytes).then((p) => { if (p.error !== undefined) throw new Error(p.error); return p.data; }));

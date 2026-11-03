@@ -2,8 +2,10 @@
 // browser: the game's own map.ts and player.ts are bundled for Node and run on the built map
 // files, so what's tested is exactly what the game does when you land on a roof.
 //
-//   node tools/roof_probe.mjs --map combe-down [--per 40] [--squares "1,2 3,4"] [--near x,y,r] [--all]
+//   node tools/roof_probe.mjs --map combe-down [--per 40] [--squares "1,2 3,4"] [--near x,y,r] [--all] [--packed]
 //
+// --packed reads the map from the packs the game downloads (tools/pack_squares.mjs) rather than
+// its JSON, through the game's own reader.
 // For each building tested (--per of them in every square, spread evenly through its list; --all
 // for every one; --near for those within r metres of data point x, y), it takes points over the
 // roof as world.ts draws it (its lidar faces and the strips closing the slits between them, or
@@ -26,7 +28,7 @@ import { pathToFileURL } from "url";
 
 const here = path.dirname(new URL(import.meta.url).pathname), web = path.join(here, "..", "web");
 const argv = process.argv.slice(2);
-const opt = { map: "combe-down", per: "40", tol: "0.15", squares: "", near: "", all: false, list: "12", json: false, at: "", trace: false, maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
+const opt = { map: "combe-down", per: "40", tol: "0.15", squares: "", near: "", all: false, list: "12", json: false, at: "", trace: false, packed: false, maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) {
   const k = argv[i].slice(2);
   opt[k] = typeof opt[k] === "boolean" ? true : argv[++i];
@@ -42,16 +44,16 @@ globalThis.document = { getElementById: () => null, createElement: () => ({ widt
 globalThis.window = globalThis;
 globalThis.fetch = async (u) => {
   const f = path.join(opt.maps, String(u).replace(/^\/?maps\//, ""));
-  if (!fs.existsSync(f)) return { ok: false, status: 404, json: async () => null, text: async () => "" };
-  const text = fs.readFileSync(f, "utf8");
-  return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
+  if (!fs.existsSync(f) || (!opt.packed && f.endsWith(".pack.gz"))) return { ok: false, status: 404, json: async () => null, text: async () => "" };
+  const b = fs.readFileSync(f), text = () => b.toString("utf8");
+  return { ok: true, status: 200, json: async () => JSON.parse(text()), text: async () => text(), arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.length) };
 };
 
 const esbuild = createRequire(path.join(web, "package.json"))("esbuild");
 const entry = `
 export { GameMap, loadMap, tileKey, roofSeams } from "./map";
 export { Player } from "./player";
-export { unpackSurfaces } from "./sfpack";
+export { unpackSurfaces, readSquare } from "./sfpack";
 export { maskSetPieces } from "./landmarks/setpieces";
 `;
 const out = path.join(os.tmpdir(), `roof_probe_${process.pid}.mjs`);
@@ -65,6 +67,16 @@ const index = fs.existsSync(path.join(maps, opt.map, "tiles.json")) ? JSON.parse
 const core = await G.loadMap(coreFile, index ? wideFile : undefined, index ? `maps/${opt.map}/` : undefined);
 const z0 = core.z0;
 
+/** With --packed, the squares round (ti, tj) read from their packs, ready for square(). */
+const unpacked = new Map();
+async function readRound(ti, tj) {
+  if (!opt.packed) return;
+  for (let i = ti - 1; i <= ti + 1; i++) for (let j = tj - 1; j <= tj + 1; j++) {
+    const k = G.tileKey(i, j), f = path.join(maps, opt.map, `${i}_${j}.pack.gz`);
+    if (made.has(k) || unpacked.has(k) || !fs.existsSync(f)) continue;
+    unpacked.set(k, await G.readSquare(new Uint8Array(fs.readFileSync(f))));
+  }
+}
 /** A square as tiles.ts makes it: parsed, its set pieces masked, its setup run to the end. */
 const made = new Map();
 function square(ti, tj) {
@@ -72,9 +84,10 @@ function square(ti, tj) {
   if (made.has(k)) return made.get(k);
   const f = path.join(maps, opt.map, `${ti}_${tj}.json`);
   let m = null;
-  if (fs.existsSync(f)) {
-    const d = JSON.parse(fs.readFileSync(f, "utf8"));
-    G.unpackSurfaces(d);
+  if (opt.packed ? unpacked.has(k) : fs.existsSync(f)) {
+    let d = unpacked.get(k);
+    unpacked.delete(k);
+    if (!d) { d = JSON.parse(fs.readFileSync(f, "utf8")); G.unpackSurfaces(d); }
     G.maskSetPieces(d);
     m = new G.GameMap(d, null, true);
     while (m.setup && !m.setup.next().done);
@@ -260,6 +273,7 @@ function testBuilding(m, b, key) {
 // --at x,y: what the game says is underfoot there, for looking into one place
 if (opt.at && index) {
   const [x, y] = opt.at.split(",").map(Number), S = index.cells * index.dx;
+  await readRound(Math.floor((x - index.x0) / S), Math.floor((y - index.y0) / S));
   loadRound(Math.floor((x - index.x0) / S), Math.floor((y - index.y0) / S));
   const top = drawnAny(x, y);
   console.log(`drawn ${top}`);
@@ -301,6 +315,7 @@ if (!opt.squares && (!near || core.inGrid(near[0], -near[1]))) {
   for (const i of pick(core.d.bl)) testBuilding(core, core.d.bl[i], `core#${i}`);
 }
 for (const [ti, tj] of index ? squares : []) {
+  await readRound(ti, tj);
   loadRound(ti, tj);
   const m = square(ti, tj);
   if (!m) continue;

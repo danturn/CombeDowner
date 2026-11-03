@@ -16,6 +16,7 @@
 //
 // Who decides what: nothing here goes over the network or touches what you've earned. It only reads
 // the map files the game reads.
+import { fetchPacked } from "./pack";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { USDZExporter } from "three/examples/jsm/exporters/USDZExporter.js";
@@ -157,7 +158,7 @@ const squares = new Map<string, Promise<Square | null>>();
 function loadSquare(ti: number, tj: number): Promise<Square | null> {
   const k = `${ti}_${tj}`;
   let p = squares.get(k);
-  if (!p) squares.set(k, (p = fetch(`${MAPS}${MAP}/${k}.json`).then((r) => (r.ok ? r.json() : null)).then((d: MapData | null) => {
+  if (!p) squares.set(k, (p = fetchPacked(`${MAPS}${MAP}/${k}.pack.gz`).then((d: MapData | null) => {
     if (!d) return null;
     const before = d.bl.slice();
     maskSetPieces(d);

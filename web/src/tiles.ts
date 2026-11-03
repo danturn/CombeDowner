@@ -1,5 +1,5 @@
 // The full-detail squares round the detailed map (built by tools/prep_tiles.py into
-// public/maps/<id>/<ti>_<tj>.json): the rest of Bath at the same detail as Combe Down, about a
+// public/maps/<id>/<ti>_<tj>.json, and downloaded packed: pack.ts): the rest of Bath at the same detail as Combe Down, about a
 // kilometre a side. Only the squares near the player are loaded. Each is fetched, given a GameMap
 // of its own (its ground, walls, roofs and trees, which the main map hands questions to) that is
 // set up a slice at a time, and its scenery is built a few milliseconds a frame (world.ts), so the
@@ -75,9 +75,9 @@ export class Calm {
 }
 (globalThis as any).__calm = (frames: number, ms: number) => new Calm(frames, ms);
 
-/** A response's text, calling alive() as each piece of it arrives. */
-async function textOf(r: Response, alive: () => void): Promise<string> {
-  if (!r.body) return r.text();
+/** A response's bytes, calling alive() as each piece of it arrives. */
+async function bytesOf(r: Response, alive: () => void): Promise<Uint8Array> {
+  if (!r.body) return new Uint8Array(await r.arrayBuffer());
   const reader = r.body.getReader(), parts: Uint8Array[] = [];
   let n = 0;
   for (;;) {
@@ -89,7 +89,7 @@ async function textOf(r: Response, alive: () => void): Promise<string> {
   const all = new Uint8Array(n);
   n = 0;
   for (const p of parts) { all.set(p, n); n += p.length; }
-  return new TextDecoder().decode(all);
+  return all;
 }
 
 /** What last went wrong loading a square, for the note main.ts shows when loading stalls. */
@@ -276,11 +276,14 @@ export class Tiles {
     let late = 0;
     const alive = () => { clearTimeout(late); late = window.setTimeout(() => stop.abort(), 20000); };
     alive();
-    fetch(`${this.core.tileBase}${t.ti}_${t.tj}.json`, { signal: stop.signal })
-      .then((r) => (r.ok ? textOf(r, alive) : Promise.reject(new Error(String(r.status)))))
+    // the packed square (pack.ts), or its JSON where a tool serves the map folder before packing
+    const base = `${this.core.tileBase}${t.ti}_${t.tj}`;
+    fetch(`${base}.pack.gz`, { signal: stop.signal })
+      .then((r) => (r.status === 404 ? fetch(`${base}.json`, { signal: stop.signal }) : r))
+      .then((r) => (r.ok ? bytesOf(r, alive) : Promise.reject(new Error(String(r.status)))))
       .finally(() => clearTimeout(late))
-      // read it in a worker, so the parse never lands in a frame (parsesquare.ts)
-      .then((text) => this.parser.parse(t.ti, t.tj, text))
+      // read it in a worker, so the reading never lands in a frame (parsesquare.ts)
+      .then((bytes) => this.parser.parse(t.ti, t.tj, bytes))
       .then((parsed) => {
         if (parsed.error !== undefined) throw new Error(parsed.error);
         const d = parsed.data as MapData;

@@ -519,6 +519,17 @@ The game loads a small file about the map as a whole (`web/public/maps/combe-dow
 in the squares round the player, and lays a lighter whole-city file underneath for the minimap and
 anywhere a square isn't loaded yet.
 
+The map tools write JSON, and that stays in the repository as the map's copy, but the game
+downloads the squares, the whole-city file and the ground kinds packed (`web/src/pack.ts`): the
+same numbers to the last decimal, as whole numbers in small binary streams, gzipped.
+`npm run build` and `npm run dev` pack them (`tools/pack_squares.mjs`, only what has changed since
+last time), check every pack reads back exactly as its JSON, and stop if one doesn't; the site
+carries only the packs. Two more checks load the map both ways through the game's own code and
+compare what it does: `node tools/pack_behave.mjs --map $MAP` (ground, floors, walls and rays on a
+grid over every square) and `node tools/pack_scene.mjs --map $MAP` (every model built for every
+square). `node tools/pack_squares.mjs --export <dir>` writes the packs back out as JSON, for
+running the map tools on exactly what the game gets.
+
 Everything the map is built from is kept in `data/combe-down/` (`tools/mapdata.py`), so it rebuilds
 from a fresh clone with nothing to download, byte for byte the same map everyone else gets. It
 needs Python 3 with numpy, shapely and Pillow:

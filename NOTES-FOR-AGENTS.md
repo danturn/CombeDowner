@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Packed map files (branch `claude/pack-squares`):** the game downloads each square, `-wide` and
+  `-ground` as a `.pack.gz` (`web/src/pack.ts`), packed from the JSON in every build by
+  `tools/pack_squares.mjs` and checked to read back exactly; `dist` carries no square JSON. Touches
+  `tiles.ts`, `parsesquare*.ts`, `sfpack.ts`, `wide.ts`, `groundkinds.ts`, `whatswhat.ts`,
+  `vite.config.ts`, `tools/roof_probe.mjs`. The JSON stays the tools' copy.
+
 - **Census house types and conservation areas (branch `claude/census-zones`):** two new wide
   layers (`tools/census.py`, `tools/conservation.py`, packed in `data/<map>/`) that
   `buildings.priors` uses for flats, pairs and rows, and an old core's walls, parapets and roofs.
