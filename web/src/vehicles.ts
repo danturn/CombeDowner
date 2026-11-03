@@ -892,7 +892,10 @@ export class Vehicle implements Mover {
     if (!held || over) vf -= 9.8 * slope * (S.offroad ? 0.45 : 0.75) * dt;   // a Land Rover's low range takes the hills
     // rolling resistance, more on grass and a lot on its side, and the air
     // (grass drags at the weak ones, a milk float or a C5, a bit less than it would at a car, or they'd never move)
-    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
+    // a handbrake yanked at speed with the wheel turned locks the back wheels into a slide rather than
+    // pulling the car up short, so it drifts on round before it stops
+    const slide = hand && !held && Math.abs(this.steer) > 0.3 && Math.abs(vf) > 6;
+    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : slide ? 3.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
     // steering, and only so much grip. Brake or lift off into a corner and the weight comes forward
     // on to the front tyres, so they bite harder and the nose tucks in; foot down, it sits back and
@@ -903,8 +906,8 @@ export class Vehicle implements Mover {
     // full lock at walking pace and round a junction, easing off the faster you go, as anyone does
     // with the wheel at speed: there, full lock asks the tyres for twice what they've got, so a
     // touch of the wheel is a touch of turn and holding it on turns as hard as it can
-    this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7 : 9));
-    const lock = Math.min(S.steer / (1 + Math.max(0, Math.abs(vf) - 5) / 20), Math.atan((2 * grip * S.wb) / Math.max(1, vf * vf)));
+    this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7.5 : 9));
+    const lock = Math.min(S.steer / (1 + Math.max(0, Math.abs(vf) - 5) / 22), Math.atan((2 * grip * S.wb) / Math.max(1, vf * vf)));
     let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
     const want = Math.abs(yaw * vf);
     this.scrub = 0;
@@ -932,7 +935,7 @@ export class Vehicle implements Mover {
     // the way it was while the nose comes round
     const loose = this.drift || hand || over;
     const track = loose ? 0 : -this.spin * half;
-    vl = track + (vl - track) * Math.exp(-(this.drift ? 1.6 : hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
+    vl = track + (vl - track) * Math.exp(-(this.drift ? 1.3 : hand ? 0.8 : over ? 3 : grass ? 4 : 9) * dt);
     // a donut goes round its front wheels, the back end swinging out round them
     const da = this.spin * dt;
     if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
