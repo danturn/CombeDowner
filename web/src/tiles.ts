@@ -107,6 +107,8 @@ export class Tiles {
   private pinned = new Set<number>();
   /** Build in bigger slices a frame, while nobody can see the frame rate (arrive.ts's cover is up). */
   rush = false;
+  /** Goes up whenever a square's scenery comes or goes, so the backdrop knows to look again. */
+  drawnVersion = 0;
 
   /** build: a square's scenery, a slice at a time, into the group given; free: let go of a group half built. */
   constructor(private core: GameMap, private scene: THREE.Scene,
@@ -119,6 +121,11 @@ export class Tiles {
     const m = this.core.tileAt(x, z);
     if (!m?.d.tile) return undefined;
     return this.live.get(tileKey(m.d.tile[0], m.d.tile[1]))?.world;
+  }
+
+  /** The squares whose scenery is built and drawn, as [ti, tj]. */
+  *drawn(): Generator<[number, number]> {
+    for (const t of this.live.values()) if (t.world) yield [t.ti, t.tj];
   }
 
   /** Keep the squares within r of scene (x, z) loaded from now on, and say whether they all are yet
@@ -249,7 +256,7 @@ export class Tiles {
           if (long.length > 200) long.splice(0, long.length - 200);
         }
         if (T) T.build += performance.now() - s0;
-        if (r.done) { t.world = r.value; t.job = undefined; break; }
+        if (r.done) { t.world = r.value; t.job = undefined; this.drawnVersion++; break; }
       }
       if (busy()) break;
     }
@@ -303,7 +310,7 @@ export class Tiles {
   /** Take down a square's scenery, finished or not. */
   private unbuild(t: Tile) {
     if (!t.world && !t.job) return;
-    if (t.world) t.world.dispose();
+    if (t.world) { t.world.dispose(); this.drawnVersion++; }
     else if (t.job) { t.job.return(undefined as never); if (t.group) this.free(t.group); }
     t.world = t.job = t.group = undefined;
     // the map stays for whoever's there, on its true ground: what it was handed by the scenery

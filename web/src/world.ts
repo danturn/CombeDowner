@@ -2835,9 +2835,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (W) W.veg += performance.now() - b4;
       b4 = performance.now();
       outskirts?.update(px, pz, dt);
-      backdrop?.update(px, pz, dark);
       if (W) W.outskirts += performance.now() - b4;
       tiles?.update(px, pz, dt, others);
+      // after the squares, so it knows which of them are drawn this frame
+      backdrop?.update(px, pz, dark, tiles);
       b4 = performance.now();
       grass.update(px, pz);
       if (W) W.grass += performance.now() - b4;

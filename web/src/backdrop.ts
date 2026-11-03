@@ -9,10 +9,14 @@
 // be worth drawing (?backdrop=1 draws it anyway, ?backdrop=0 never).
 //
 // It's drawn straight after the sky with a depth range of its own, out to 60 km, then the depth is
-// wiped so the world draws over it as if it weren't there; the near part, which the world covers,
-// is left out as the player moves. Nothing here goes over the network.
+// wiped so the world draws over it as if it weren't there. So it leaves out just what the world
+// itself draws: on a map in squares, the squares whose scenery is built, out to the camera's far
+// edge, and nothing more, however far the draw distance; elsewhere, everything nearer than the fog.
+// Leaving out a ring as deep as the fog instead left a hole past the last square built, through
+// which the far side of the mountain showed behind the near. Nothing here goes over the network.
 import * as THREE from "three";
 import type { GameMap } from "./map";
+import { view } from "./view";
 
 const RELIEF = 400;
 const touch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
@@ -25,9 +29,12 @@ const SEA_REACH = 55000;     // metres from the middle of the map to the edges o
 // range's, from anywhere on the map, so the edge never shows as a line under the sky)
 const SEA_HAZE = [6000, 24000];
 
+/** The squares the world draws for itself (tiles.ts). */
+export interface DrawnSquares { drawnVersion: number; drawn(): Iterable<[number, number]> }
+
 export interface Backdrop {
   /** Follow the player, the sun and the fog; dark: how far into a tunnel they are (0 to 1). */
-  update(px: number, pz: number, dark: number): void;
+  update(px: number, pz: number, dark: number, squares?: DrawnSquares | null): void;
 }
 
 export function buildBackdrop(map: GameMap, scene: THREE.Scene, palette: THREE.Color[], earth: THREE.Color,
@@ -110,10 +117,37 @@ export function buildBackdrop(map: GameMap, scene: THREE.Scene, palette: THREE.C
   idx.setUsage(THREE.DynamicDrawUsage);
   geo.setIndex(idx);
 
+  // which squares the world draws, one texel each (with a blank one round the edge)
+  const I = map.tileIndex, S = I ? I.cells * I.dx : 1;
+  const tis = I?.tiles.map((t) => t[0]) ?? [0], tjs = I?.tiles.map((t) => t[1]) ?? [0];
+  const ti0 = Math.min(...tis) - 1, tj0 = Math.min(...tjs) - 1, cw = Math.max(...tis) - ti0 + 2, chh = Math.max(...tjs) - tj0 + 2;
+  const coverData = new Uint8Array(cw * chh), coverTex = new THREE.DataTexture(coverData, cw, chh, THREE.RedFormat, THREE.UnsignedByteType);
+  coverTex.needsUpdate = true;
+  const cover = {
+    on: !!I, tex: coverTex, data: coverData, w: cw, h: chh, size: S,
+    x0: I ? I.x0 + ti0 * S : 0, y0: I ? I.y0 + tj0 * S : 0,
+    at(x: number, y: number) {
+      const i = Math.floor((x - this.x0) / S), j = Math.floor((y - this.y0) / S);
+      return i < 0 || j < 0 || i >= cw || j >= chh ? cw * chh : j * cw + i;
+    },
+    fill(drawn: Iterable<[number, number]>) {
+      coverData.fill(0);
+      for (const [ti, tj] of drawn) {
+        const i = ti - ti0, j = tj - tj0;
+        if (i >= 0 && j >= 0 && i < cw && j < chh) coverData[j * cw + i] = 255;
+      }
+      coverTex.needsUpdate = true;
+    },
+  };
+  // the detailed map's own ground, where it has some
+  const core: [number, number, number, number] = T.nx > 1 ? [T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy] : [1, 1, -1, -1];
+
   const U = {
     sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunCol: { value: new THREE.Color() },
     skyCol: { value: new THREE.Color() }, groundCol: { value: new THREE.Color() },
-    haze: { value: new THREE.Color() }, fogFar: { value: 900 }, cut: { value: 800 },
+    haze: { value: new THREE.Color() }, fogNear: { value: 110 }, fogFar: { value: 900 }, cut: { value: 800 }, camFar: { value: 980 },
+    cover: { value: cover.tex }, coverAt: { value: new THREE.Vector4(cover.x0, cover.y0, cover.size, cover.on ? 1 : 0) },
+    coverN: { value: new THREE.Vector2(cover.w, cover.h) }, coreBox: { value: new THREE.Vector4(core[0], core[1], core[2], core[3]) },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms: U, vertexColors: true, fog: false,
@@ -130,16 +164,32 @@ export function buildBackdrop(map: GameMap, scene: THREE.Scene, palette: THREE.C
         vW = wp.xyz;
         vDepth = -mv.z;
       }`,
-    fragmentShader: `uniform vec3 haze; uniform float fogFar; uniform float cut;
+    fragmentShader: `uniform vec3 haze; uniform float fogNear; uniform float fogFar; uniform float cut; uniform float camFar;
+      uniform sampler2D cover; uniform vec4 coverAt; uniform vec2 coverN; uniform vec4 coreBox;
       varying vec3 vCol; varying vec3 vW; varying float vDepth;
+      float drawn(vec2 c){
+        if (c.x < 0.0 || c.y < 0.0 || c.x >= coverN.x || c.y >= coverN.y) return 0.0;
+        return texelFetch(cover, ivec2(c), 0).r;
+      }
       void main(){
-        if (vDepth < cut) discard;
+        vec2 p = vec2(vW.x, -vW.z), g = (p - coverAt.xy) / coverAt.z;
+        float here = coverAt.w > 0.5 ? drawn(floor(g)) : 0.0;
+        if (p.x >= coreBox.x && p.y >= coreBox.y && p.x <= coreBox.z && p.y <= coreBox.w) here = 1.0;
+        if (here > 0.5 && vDepth < camFar) discard;
+        if (coverAt.w < 0.5 && vDepth < cut) discard;
+        // how near a drawn square this is: 1 at its edge, nothing half a square past it
+        vec2 f = g - 0.5, b = floor(f), w = f - b;
+        float near = coverAt.w > 0.5 ? mix(mix(drawn(b), drawn(b + vec2(1.0, 0.0)), w.x), mix(drawn(b + vec2(0.0, 1.0)), drawn(b + vec2(1.0, 1.0)), w.x), w.y) : 1.0;
+        near = smoothstep(0.0, 0.5, max(near, here));
         // the air's own haze, light even kilometres off, which turns what's far off blue before it
         // fades it into the sky; and where it meets the world, part way into the street fog, so the
         // two don't part sharply (all the way made white cut-outs of the mountains against the sky)
         float h = 0.06 + 0.8 * (1.0 - exp(-distance(vW, cameraPosition) / 14000.0));
         vec3 c = mix(vCol, vCol * vec3(0.74, 0.88, 1.25), smoothstep(0.0, 0.35, h));
-        h = max(h, 0.6 * (1.0 - smoothstep(fogFar, fogFar * 1.3 + 250.0, vDepth)));
+        // only next to the world's own ground, and no foggier than the world is there, so a long
+        // draw distance doesn't wash out mountains well clear of it
+        float street = min(clamp((vDepth - fogNear) / (fogFar - fogNear), 0.0, 1.0), 0.6);
+        h = max(h, street * near * (1.0 - smoothstep(fogFar, fogFar * 1.3 + 250.0, vDepth)));
         // and the sea is lost in it altogether before its far edge, so it meets the sky's own
         // haze at the horizon rather than stopping in a straight line under it
         h = max(h, smoothstep(${SEA_HAZE[0].toFixed(1)}, ${SEA_HAZE[1].toFixed(1)}, distance(vW.xz, cameraPosition.xz)));
@@ -156,31 +206,37 @@ export function buildBackdrop(map: GameMap, scene: THREE.Scene, palette: THREE.C
   geo.computeBoundingSphere();
   scene.add(mesh);
 
-  // only the cells past the world's edge are drawn, worked out again as the player moves
-  let bx = Infinity, bz = Infinity, bCut = 0;
-  const keep = (px: number, pz: number, cut: number) => {
-    const a = idx.array, py = -pz, r = cut - step * 1.5 - REBUILD;
+  // only the cells the world doesn't cover are drawn, worked out again as the player moves
+  let bx = Infinity, bz = Infinity, bCut = 0, bFar = 0, bVersion = -1;
+  const covered = (x: number, y: number) => (x >= core[0] && y >= core[1] && x <= core[2] && y <= core[3]) ||
+    (cover.on && cover.data[cover.at(x, y)] > 0);
+  const keep = (px: number, pz: number, cut: number, camFar: number) => {
+    const a = idx.array, py = -pz, r = cut - step * 1.5 - REBUILD, far = camFar - step * 1.5 - REBUILD;
     let n = 0;
     if (sea > -Infinity) { const v = nx * ny; a[n++] = v; a[n++] = v + 1; a[n++] = v + 2; a[n++] = v + 1; a[n++] = v + 3; a[n++] = v + 2; }
     for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
-      if (Math.hypot(x0 + (i + 0.5) * step - px, y0 + (j + 0.5) * step - py) < r) continue;
+      const cx = x0 + (i + 0.5) * step, cy = y0 + (j + 0.5) * step;
+      if (cover.on ? Math.hypot(cx - px, cy - py) < far && covered(cx - step / 2, cy - step / 2) && covered(cx + step / 2, cy - step / 2) &&
+        covered(cx - step / 2, cy + step / 2) && covered(cx + step / 2, cy + step / 2) : Math.hypot(cx - px, cy - py) < r) continue;
       const p = j * nx + i, q = p + 1, s = p + nx, t = s + 1;
       a[n++] = p; a[n++] = q; a[n++] = s; a[n++] = q; a[n++] = t; a[n++] = s;
     }
     geo.setDrawRange(0, n);
     idx.needsUpdate = true;
     mesh.visible = n > 0;
-    bx = px; bz = pz; bCut = cut;
+    bx = px; bz = pz; bCut = cut; bFar = camFar;
   };
 
   const fog = scene.fog as THREE.Fog;
   const tmp = new THREE.Vector3();
   return {
-    update(px, pz, dark) {
-      const cut = fog.far * 0.9;
-      if (Math.hypot(px - bx, pz - bz) > REBUILD || Math.abs(cut - bCut) > 20) keep(px, pz, cut);
+    update(px, pz, dark, squares) {
+      const cut = fog.far * 0.9, camFar = view.cameraFar;
+      const changed = cover.on && squares && squares.drawnVersion !== bVersion;
+      if (changed) { bVersion = squares.drawnVersion; cover.fill(squares.drawn()); }
+      if (changed || Math.hypot(px - bx, pz - bz) > REBUILD || Math.abs(cut - bCut) > 20 || camFar !== bFar) keep(px, pz, cut, camFar);
       mesh.visible = dark < 0.5 && geo.drawRange.count > 0;
-      U.cut.value = cut; U.fogFar.value = fog.far;
+      U.cut.value = cut; U.fogNear.value = fog.near; U.fogFar.value = fog.far; U.camFar.value = camFar;
       U.haze.value.copy(fog.color);
       U.sunDir.value.copy(tmp.subVectors(sun.position, sun.target.position).normalize());
       U.sunCol.value.copy(sun.color).multiplyScalar(sun.intensity);
