@@ -772,10 +772,18 @@ three stars (a few of those a day at most), or a team challenge won. It appears 
 E picks it up, and then it's in your hands instead of a ride or a ladder. You can't sprint with it,
 and you're a little slower. X sets it down; get downed and it drops where you fell, and anyone can
 pick it up. Take it to the structure, a leaning stack of dark frames with empty sockets up its
-corners, standing on open ground in the furthest zone open (Firs Field in Combe Down to begin with;
-the big map shows where), and E sets it in the next socket. A structure that's full takes no more.
+corners, standing on open ground in the furthest zone open (Firs Field in Combe Down to begin with),
+and E sets it in the next socket. A structure that's full takes no more: take yours there and it
+tells you where the next one is, how far and which way.
 
-The sockets are the only count there is. When a structure is full, the next [zone](#zones) opens:
+Both maps mark every structure in the zones open so far: green once it's full, red while it wants
+filling, and the one taking objects now pulses with a white edge. The big map writes how full that
+one is under it ("2 of 6"), and pointing at any of them names where it stands, its zone and how full it is. On the
+minimap, structures a walk away sit on the rim their way, and the one taking objects sits there from
+anywhere, with how far it is. The key switches them off and on. Structures in zones not open yet
+aren't shown.
+
+When a structure is full, the next [zone](#zones) opens:
 the camera flies over to it and its name comes up (E, Space or a tap skips it), and its challenges
 have noticeboards of their own from then on, every day. Everyone in a room sees the fly-overs, and a
 room carries on from whoever has filled the most sockets on that map; it never goes backwards.
