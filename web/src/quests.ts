@@ -1056,7 +1056,7 @@ export class Quests {
     let recall: Brief | null = null;
     if (job && this.recallT > 0) {
       const o = job.offer, kind = kinds.get(o.kind)!, c = job.card();
-      const live = [c.progress !== undefined && typeof c.progress === "string" ? `<b>${esc(c.progress)}</b>` : "", c.line, c.timer ? `<b>${esc(c.timer)}</b> left` : ""].filter(Boolean).join(" · ")
+      const live = [c.progress !== undefined && typeof c.progress === "string" ? `<b>${esc(c.progress)}</b>` : "", c.line, c.timer ? `<b>${esc(c.timer)}</b>` : ""].filter(Boolean).join(" · ")
         + (c.sub ? `<br>${c.sub}` : "") + (c.bar !== undefined ? `<div class="bar"><i style="width:${Math.round(Math.max(0, Math.min(1, c.bar)) * 100)}%"></i></div>` : "");
       recall = { label: `${kind.label} · ${starText(o.stars)}`, colour: kind.colour, title: o.title, blurb: o.blurb, block: job.brief?.() ?? kind.poster?.(o), live, reward: o.reward, foot: "<b>{job}</b> Put it away" };
     }

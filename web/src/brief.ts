@@ -66,7 +66,8 @@ addStyle("brief", `
   .brief .bblurb{display:none}
   .brief .cut-flag{margin-bottom:4px}
   .brief .bfoot{margin-top:4px;padding-top:4px;font-size:14px}
-}`);
+}
+@media (max-height:500px){.brief .wsc ul{display:none}.brief .wsc .paper{margin:2px 0}}`);
 
 /** The words of a brief at that moment, for a cutting (the element with the "cut" class). */
 export function briefHtml(at: BriefAt, b: Brief): string {
@@ -76,9 +77,9 @@ export function briefHtml(at: BriefAt, b: Brief): string {
     + (b.goal ? `<div class="bgoal">${esc(ctlText(b.goal))}</div>` : "")
     + (b.detail ? `<div class="bdetail">${esc(ctlText(b.detail))}</div>` : "")
     + (b.best ? `<div class="bdetail best">Your best: ${esc(b.best)}, beat it</div>` : "")
-    + (b.blurb ? `<p class="bblurb">${b.blurb}</p>` : "")
-    + (b.block ?? "")
-    + (b.live ? `<div class="blive">${b.live}</div>` : "")
+    + (b.blurb ? `<p class="bblurb">${ctlText(b.blurb)}</p>` : "")
+    + ctlText(b.block ?? "")
+    + (b.live ? `<div class="blive">${ctlText(b.live)}</div>` : "")
     + (b.reward ? `<p class="breward">Reward: ${esc(b.reward)}</p>` : "")
     + (b.foot ? `<div class="bfoot">${keycaps(b.foot)}</div>` : "");
 }
@@ -90,8 +91,8 @@ export function briefCut(el: HTMLElement, colour?: string) {
   if (colour) el.style.setProperty("--kc", colour); else el.style.removeProperty("--kc");
 }
 
-/** The rest of a job's brief for its title card, as its noticeboard had it: the poster's words only
- *  when the goal isn't already them. */
-export function briefMore(o: Offer, kind: JobKind) {
-  return { blurb: kind.goal ? o.blurb : undefined, block: kind.poster?.(o), reward: o.reward };
+/** The rest of a job's brief for its title card, as its noticeboard had it: the goal stands in for
+ *  the poster's words and its own piece, which you've just read, so the card stays a glance. */
+export function briefMore(o: Offer, _kind: JobKind) {
+  return { reward: o.reward };
 }
