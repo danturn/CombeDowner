@@ -45,7 +45,7 @@ import { strip } from "./controls";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
 import type { Player } from "./player";
-import { hearts, missionEnd, missionStage } from "./missionscreens";
+import { hearts, missionCall } from "./missionscreens";
 import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
 
@@ -942,7 +942,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           SFX.lifeLost();
           const who = id === w.selfId ? "You" : w.nameOf(id);
           w.feed(`<b style="color:${w.colourOf(id)}">${esc(who)}</b> fell: the team's down to ${n} ${n === 1 ? "life" : "lives"}`);
-          missionStage({ title: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, colour: "#d8262e" });
+          missionCall({ text: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, colour: "#d8262e" });
           if (id === w.selfId && n) w.toast(`That cost the team a life: ${n} left`, 3);
           return;
         }
@@ -1063,8 +1063,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           fails++;
           const out = d.why === "lives";
           w.feed(out ? "Out of lives. Back to the bottom" : "Everyone's down. Back to the bottom");
-          SFX.jobDone(false);
-          missionEnd({ result: "failed", title: out ? "Out of lives" : "Everyone's down", lines: ["Back to the bottom: the whole team starts again", `${most} lives for the next go`], colour: COLOUR });
+          SFX.lifeLost();
+          missionCall({ text: out ? "Out of lives" : "Everyone's down", sub: `Back to the bottom: the whole team starts again · ${most} lives for the next go`, colour: "#d8262e", secs: 5 });
           lives = most;
           reset();
           return;

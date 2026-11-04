@@ -34,7 +34,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import * as SFX from "./audio";
 import { award } from "./trophies";
-import { missionActive, missionClear, missionEnd, missionProgress, missionStart } from "./missionscreens";
+import { missionActive, missionBegin, missionClear, missionProgress, missionResult } from "./missionscreens";
 import { nightNow, timeOfDay } from "./daylight";
 import { model, type Part } from "./furniture";
 import type { GameMap, MapData } from "./map";
@@ -598,7 +598,7 @@ export class Bonfire {
       }
       if (this.s.n >= NEED && was.n < NEED && (near < 600 || (had && !has))) {
         missionClear("bonfire");
-        missionEnd({ result: "complete", title: "Bonfire built!", colour: FIRE, lines: ["Kingswood's bonfire is ready", "It's lit at dark"] });
+        missionResult({ result: "won", label: "Bonfire", title: "Bonfire built!", colour: FIRE, lines: ["Kingswood's bonfire is ready", "It's lit at dark"] });
       }
       if (this.s.n >= NEED) this.nag(BUILT);
     }
@@ -621,7 +621,7 @@ export class Bonfire {
     if (busy || (!carrying && near > 500)) { missionClear("bonfire"); return; }
     if (!this.told && carrying) {
       this.told = true;
-      missionStart({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE });
+      missionBegin({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE, countdown: true });
     }
     missionProgress({
       id: "bonfire", label: "Bonfire", colour: FIRE, goal: "Build the bonfire", progress: `${this.s.n} / ${NEED}`, bar: this.s.n / NEED,

@@ -33,7 +33,7 @@ import { dayNumber } from "./daylight";
 import { model } from "./furniture";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
-import { hearts, missionEnd } from "./missionscreens";
+import { hearts, missionCall } from "./missionscreens";
 import { hash, rng, shuffled, esc, type Card, type Job, type Perch, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
 
@@ -673,8 +673,8 @@ registerChallenge({
             won = !!d.won;
             phase = "down"; downT = 0;
             if (!won) {
-              SFX.jobDone(false);
-              missionEnd({ result: "failed", title: "Out of lives", lines: ["Everyone back down: the whole rope again, from the start", `${most} lives for the next go`], colour: COLOUR });
+              SFX.lifeLost();
+              missionCall({ text: "Out of lives", sub: `Everyone back down: the whole rope again, from the start · ${most} lives for the next go`, colour: "#d8262e", secs: 5 });
             }
             return;
         }
