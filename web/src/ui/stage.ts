@@ -9,7 +9,8 @@ import { guide, named, news, noticeClear, noticeLinger, people, reward, score, s
 // the specimens stay up while they're looked at, however long each kind would stay in the game
 noticeLinger(1000);
 import { itemPicture } from "../itempic";
-import { usePrompt, keycaps } from "../useprompt";
+import { usePrompt } from "../useprompt";
+import { keycaps } from "../keycap";
 import { closeModals } from "../modal";
 import { STREETS, controlsPage, ctl, ctlText } from "../controls";
 import { show } from "../show";

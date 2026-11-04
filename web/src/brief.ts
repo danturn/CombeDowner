@@ -15,7 +15,7 @@
 // colour as the swatch by its kind. Nothing here goes over the network.
 import { cutFlag, tearOff } from "./cutting";
 import { addStyle, esc } from "./hudkit";
-import { keycaps } from "./useprompt";
+import { keycaps } from "./keycap";
 import { ctlText } from "./controls";
 import type { JobKind, Offer } from "./quests";
 
@@ -57,8 +57,6 @@ addStyle("brief", `
 .brief .blive .bar i{display:block;height:100%;background:var(--kc,var(--ink))}
 .brief .breward{font-weight:700;font-size:15px;color:#6a4a08;margin:4px 0 0}
 .brief .bfoot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:8px;padding-top:6px;border-top:1px solid var(--ink);font-weight:700;font-size:16px}
-.brief kbd{display:inline-block;min-width:1.3em;padding:1px 6px 0;margin-right:3px;border:1px solid var(--ink);border-bottom-width:3px;border-radius:3px;font:inherit;text-align:center;line-height:1.15}
-.brief.touch kbd[data-ctl]{pointer-events:auto;padding:4px 12px 3px;background:#0001;cursor:pointer}
 @media (max-width:600px),(max-height:500px){
   .brief{padding:8px 14px 10px}
   .brief .btitle{font-size:20px;margin-bottom:3px}
