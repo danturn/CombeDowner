@@ -29,6 +29,7 @@ import { missionBegin, missionNight } from "./missionscreens";
 import * as Paper from "./paper";
 import type { Invasion } from "./invasion";
 import { compassWord, esc, far, hash, type Job, type Link, type Offer, type Quests, type QuestWorld } from "./quests";
+import { guide } from "./notice";
 
 const DEEDS = 3;                 // things done before last orders is called
 const POST_LIFE = 75;            // seconds a follow-up's poster stays up
@@ -240,7 +241,7 @@ export class NightOut {
       SFX.phone();
       this.w.feed(`\u{1F4DE} ${esc(`Last orders! Everyone to ${n} for one for the road, ${where}`)}`);
       // the call to the pub starts the night's last mission: it gets the title card (missionscreens.ts)
-      if (this.quests.running && !this.quests.running.done) this.w.toast(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`, 6);
+      if (this.quests.running && !this.quests.running.done) guide(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`, 6);
       else missionBegin({ label: "Night out", colour: GOLD, title: "Last orders!", goal: `Everyone to ${n} for one for the road, ${where}`, detail: `Get the whole room within ${GATHER} m of the bar` });
     } else if (d.k === "lx") {
       this.drop("lo");

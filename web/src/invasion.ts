@@ -109,6 +109,7 @@ import { FlagJuice } from "./flagjuice";
 import { missionBegin, missionResult, missionStackReady } from "./missionscreens";
 import * as Paper from "./paper";
 import * as Yours from "./yours";
+import { guide } from "./notice";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {
@@ -694,7 +695,7 @@ export class Invasion {
     this.downs++;
     note("flags");
     this.tickAt = performance.now();
-    if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag on this street to clear it (${at ? at.c.n : "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
+    if (this.downs === 1) guide(`Flag down! Shoot every flag on this street to clear it (${at ? at.c.n : "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
     setTimeout(() => SFX.counterTick(), 120);
     this.juice.flag(f.x, f.y, f.z, this.w.trick());
     Yours.flagShot(f.x, f.z, this.w.place());
@@ -1280,7 +1281,7 @@ export class Invasion {
       if (d.t === "grun") this.gafferRuns(d);
       else if (d.t === "gup") {
         SFX.jobStep();
-        if (this.runner) { this.runner.up = true; this.w.toast(`${this.runner.name} has given up! Get up close and cuff him ({use})`, 4); }
+        if (this.runner) { this.runner.up = true; guide(`${this.runner.name} has given up! Get up close and cuff him ({use})`, 4); }
       } else if (d.t === "gcu") {
         SFX.jobDone(true);
         const by = String(d.by ?? ""), who = by === this.w.selfId ? "You" : this.w.nameOf(by);

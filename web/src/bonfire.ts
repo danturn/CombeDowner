@@ -621,7 +621,7 @@ export class Bonfire {
     if (busy || (!carrying && near > 500)) { missionClear("bonfire"); return; }
     if (!this.told && carrying) {
       this.told = true;
-      missionBegin({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE, countdown: true });
+      missionBegin({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE, start: "timed" });
     }
     missionProgress({
       id: "bonfire", label: "Bonfire", colour: FIRE, goal: "Build the bonfire", progress: `${this.s.n} / ${NEED}`, bar: this.s.n / NEED,

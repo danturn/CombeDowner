@@ -19,6 +19,7 @@ if (new URLSearchParams(location.search).has("objects")) registerChallenge({
     const at = openGround(map, home ? [[home.x, home.y]] : []);
     return at ? [{ x: at.x, z: -at.y, name: at.n || "the open ground" }] : null;
   },
+  lineup: { start: "calm" },
   start({ offer, spots, w, cast }) {
     const s = spots[0];
     let held = 0, inside = 0, all = 0;

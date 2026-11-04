@@ -36,6 +36,7 @@ import { openGround } from "./oddments";
 import { hearts, missionCall } from "./missionscreens";
 import { hash, rng, shuffled, esc, type Card, type Job, type Perch, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
+import { guide } from "./notice";
 
 const COLOUR = "#e8743b";
 const GATHER = 40;             // how near the middle counts as being there
@@ -249,6 +250,7 @@ registerChallenge({
   waiting({ offer, spots, w }) { return waitingPair(offer.seed, spots, w); },
   // gathered on the grass, looking at the balloons
   lineup: {
+    start: "timed",
     spots: ({ spots, w }, n) => {
       const a = spots[1] ?? spots[0], b = spots[2] ?? a;
       return ring(w.map, spots[0].x, spots[0].z, n, 2.4, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
@@ -609,7 +611,7 @@ registerChallenge({
             w.mark("@challenge", null);
             SFX.jobStep();
             const pi = pilots.indexOf(me), wi = walkers.indexOf(me);
-            if (pi >= 0) w.toast(`You're flying ${names[pi]}. {rope.in} pulls in, {rope.out} lets out: keep the rope just right`, 6);
+            if (pi >= 0) guide(`You're flying ${names[pi]}. {rope.in} pulls in, {rope.out} lets out: keep the rope just right`, 6);
             else if (wi >= 0) w.toast(wi === 0 ? "You're first on the rope" : `You're number ${wi + 1} on the rope. Watch how the others do it`, 4);
             return;
           }
@@ -634,7 +636,7 @@ registerChallenge({
             if (typeof d.n !== "number") return;
             n = d.n;
             if (Array.isArray(d.c)) crossed = new Set(d.c.map(String));
-            if (current() === me) { over = false; w.toast("Your turn. Out you go", 2.5); }
+            if (current() === me) { over = false; guide("Your turn. Out you go", 2.5); }
             return;
           case "fell": {
             if (fallen) return;
@@ -665,7 +667,7 @@ registerChallenge({
             walkers = d.wk.map(String); n = d.n;
             if (Array.isArray(d.c)) crossed = new Set(d.c.map(String));
             if (was === me) { fall = null; walk = null; over = false; inBasket = null; }
-            if (current() === me) { over = false; w.toast(was === me ? "Your go again. Out you go" : "Your turn. Out you go", 2.5); }
+            if (current() === me) { over = false; guide(was === me ? "Your go again. Out you go" : "Your turn. Out you go", 2.5); }
             return;
           }
           case "down":

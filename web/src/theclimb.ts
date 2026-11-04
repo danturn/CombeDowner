@@ -48,6 +48,7 @@ import type { Player } from "./player";
 import { hearts, missionAux, missionAuxRow, missionCall } from "./missionscreens";
 import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
+import { guide } from "./notice";
 
 const COLOUR = "#d9783a";
 const WIDTH = 12;          // metres across the face on the map
@@ -315,7 +316,7 @@ registerChallenge({
   },
   waiting({ spots, w }) { const f = faceFor(spots, w.map); return f ? waitingFace(w, f) : null; },
   // in front of the face, looking up at it; at GO up to the crag
-  lineup: { spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4, spots[1] ?? spots[0]) },
+  lineup: { start: "timed", spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4, spots[1] ?? spots[0]) },
   start({ offer, spots, w, cast }) {
     const f = faceFor(spots, w.map)!;
     return climb(offer, w, f, cast);
@@ -708,7 +709,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       if (still > 2) cap = Math.min(1, cap + HEAL * dt);
       const k = ledgeAt(pl.pos.x, pl.pos.y, pl.pos.z, true);
       if (k >= 0) reached(k);
-      if (k === S() && L < S() && lastOn !== k) w.toast("Walked round? It only counts if you climb it", 3);
+      if (k === S() && L < S() && lastOn !== k) guide("Walked round? It only counts if you climb it", 3);
       lastOn = k;
     } else lastOn = -1;
     if (cool > 0) { wantGrab = false; return false; }
@@ -729,7 +730,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
         return true;
       }
     }
-    if (grip < 0.08) { if (ask) w.toast("No grip left: rest on something first", 2); return false; }
+    if (grip < 0.08) { if (ask) guide("No grip left: rest on something first", 2); return false; }
     const c = inReach(s, out, pl.pos.y, pl.onGround);
     if (c) { grabbed(c, pl.onGround ? 0 : CATCH_COST); return true; }
     return false;
@@ -751,7 +752,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       grip = Math.min(grip, cap);
       still = 0;
       SFX.grunt(0, 0, seed);
-      w.toast(drop > 4.5 ? "Oof. That one hurt: rest on a ledge to get your grip back" : "Ouch", 2);
+      if (drop > 4.5) guide("Oof. That one hurt: rest on a ledge to get your grip back", 2); else w.toast("Ouch", 2);
     }
   }
 

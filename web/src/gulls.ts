@@ -73,6 +73,7 @@ import { type Card, type Job, type Offer, type PostSpot, type Quarry, type Quest
 import { count as wardCount, earn } from "./wardrobe";
 import { ring } from "./lineup";
 import type { Follow } from "./weapon";
+import { score } from "./notice";
 
 const COLOUR = "#8fd0f0";
 const WAVES = 5;
@@ -201,7 +202,7 @@ registerJob({
     return said ? `<p>It's tight round here, so the benches go out on open ground ${esc(said)}: you start in the middle of them.</p>` : "";
   },
   // everyone in the middle of the benches, facing out at them
-  lineup: { spots: (o, w, n) => { const c = benchesAt(w.map, o); return ring(w.map, c.x, c.z, n, 1.8, "out"); } },
+  lineup: { start: "timed", spots: (o, w, n) => { const c = benchesAt(w.map, o); return ring(w.map, c.x, c.z, n, 1.8, "out"); } },
   start: (o, w, _started, _by, local, cast) => new Seagulls(o, w, local, cast),
 });
 
@@ -1182,7 +1183,7 @@ class Seagulls implements Job {
       case FX_PULL: if (near) this.w.toast("He's pulled out!", 1.6); SFX.gullCry(...hear(x, y, z), true); break;
       case FX_GRAB: if (near) this.w.toast("Big Lad's had a whole sandwich!", 2.2); SFX.gullCry(...hear(x, y, z), true); break;
       case FX_WAVE: SFX.jobStep(); if (x === WAVES) SFX.alarm(); break;
-      case FX_CLEAN: if (near) this.w.toast(`Wave ${x} without a bite lost! +50`, 2.5); break;
+      case FX_CLEAN: if (near) score({ text: `Wave ${x} without a bite lost! +50`, secs: 2.5 }); break;
       case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`, 3); SFX.pickup("ammo"); break;
       case FX_PACK:
         // everyone's gun is their own, so each tops up their own

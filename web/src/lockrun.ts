@@ -46,6 +46,7 @@ import { model } from "./furniture";
 import type { GameMap, Mover } from "./map";
 import { openGround } from "./oddments";
 import { hash, rng, type Card, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
+import { guide } from "./notice";
 
 const LH = 2.15, COPE = 1.2, MITRE = 0.32, BEAM = 4.45;   // as canal.ts draws its locks
 const HW = 1.04;                       // half a narrowboat's beam
@@ -902,6 +903,7 @@ registerChallenge({
   waiting({ offer, spots, w }) { return waitingBoat(offer, spots, w); },
   // on the towpath by the top lock, in rows, facing it
   lineup: {
+    start: "timed",
     spots({ w }, n) {
       const f = flightOf(w.map.canalData);
       if (!f) return [];
@@ -1020,7 +1022,7 @@ registerChallenge({
           if (mv) { splash(mv.x, mv.y + 0.5, mv.z); if (near(mv.x, mv.z, 100)) w.toast(d.why === "slide" ? "A barrel slides off the roof. Plop" : "A barrel goes over the side", 2); }
           break;
         }
-        case "tip": { const mv = R.views[d.b]?.mover; if (mv && near(mv.x, mv.z, 100)) w.toast(`${bn(d.b)}'s caught on the cill! Shut the bottom paddles and get water back in`, 4); break; }
+        case "tip": { const mv = R.views[d.b]?.mover; if (mv && near(mv.x, mv.z, 100)) guide(`${bn(d.b)}'s caught on the cill! Shut the bottom paddles and get water back in`, 4); break; }
         case "slap": { const mv = R.views[d.b]?.mover; if (mv) { SFX.crash(0.5, ...hear(mv.x, mv.y, mv.z)); if (near(mv.x, mv.z, 100)) w.toast(`${bn(d.b)} comes off the cill with a slap`, 2.5); } break; }
         case "aground": w.toast(`${bn(d.b)}'s on the mud: the pound's run dry. Fetch water down from the lock above`, 4); break;
         case "afloat": w.toast(`${bn(d.b)}'s afloat again`, 2); break;
@@ -1108,8 +1110,8 @@ registerChallenge({
       use() {
         const c = choose();
         if (!c) return false;
-        if (c.a.a === "pad" && !c.hint.includes("<b>{use}</b>")) { w.toast(c.hint, 2); return true; }
-        if (c.a.a === "push" && !c.hint.includes("<b>{use}</b>")) { w.toast(c.hint, 2.5); SFX.grind(0, 0, 0.3); return true; }
+        if (c.a.a === "pad" && !c.hint.includes("<b>{use}</b>")) { guide(c.hint, 2); return true; }
+        if (c.a.a === "push" && !c.hint.includes("<b>{use}</b>")) { guide(c.hint, 2.5); SFX.grind(0, 0, 0.3); return true; }
         if (c.a.a === "push") SFX.grind(0, 0, 0.5);
         ask(c.a);
         return true;

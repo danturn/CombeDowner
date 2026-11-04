@@ -547,7 +547,7 @@ registerChallenge({
   place,
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0]),
   // round the vicar at the foot of the tower; at GO up the tower
-  lineup: { spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
+  lineup: { start: "timed", spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
   start({ offer, spots, w, cast }) {
     const board = spots[0], mid = spots[1] ?? spots[0];
     const church = board.name;

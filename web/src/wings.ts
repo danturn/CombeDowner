@@ -21,6 +21,7 @@ import type { Player } from "./player";
 import { angelGlow, angelWings, heavenlyGuitar, wing } from "./angelwings";
 import { earn } from "./wardrobe";
 import { award } from "./trophies";
+import { guide } from "./notice";
 
 const SHOWN = 220;         // the wings over the tower are there when you're this close to the Abbey
 const REACH = 1.4;         // and yours this close to them
@@ -157,7 +158,7 @@ export class Wings {
           this.flight = FLIGHT;
           // a lick to put them on
           [0, 2, 4, 5].forEach((k, i) => setTimeout(() => this.play(NOTE(6 + k), i === 3 ? 0.8 : 0.12, i === 3 ? 2 : 0), i * 110));
-          this.toast(this.told ? "Wings on" : "Angel's wings! Jump off: {jump} flaps, look down to dive. Turn to shred the guitar, look up and down for the high and low notes", 7);
+          if (this.told) this.toast("Wings on", 7); else guide("Angel's wings! Jump off: {jump} flaps, look down to dive. Turn to shred the guitar, look up and down for the high and low notes", 7);
           this.told = true;
           earn("halo");
           award("abbeytop");
@@ -170,7 +171,7 @@ export class Wings {
       if (this.cheat && alive) {
         p.wings = true; p.wingLift = true; this.downT = 0;
         [0, 2, 4, 5].forEach((k, i) => setTimeout(() => this.play(NOTE(6 + k), i === 3 ? 0.8 : 0.12, i === 3 ? 2 : 0), i * 110));
-        this.toast("Wings from heaven: {jump} flaps, and they never tire. Type it again to put them away", 5);
+        guide("Wings from heaven: {jump} flaps, and they never tire. Type it again to put them away", 5);
       } else if (!this.cheat) { p.wings = false; this.toast("Wings away", 2); }
     }
     if (this.cheat) { this.flight = FLIGHT; if (p.wings) p.wingLift = true; }

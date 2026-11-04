@@ -32,8 +32,8 @@
 // never starts a chase in one. Once he's on the run, anything goes.
 import * as SFX from "./audio";
 import { NAUGHTY, CRICKET, RUGBY, SOCIETY, look } from "./naughtyboys";
-import { ctlText } from "./controls";
 import { missionCall, missionResult } from "./missionscreens";
+import { guide } from "./notice";
 import { wantedBlock } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
@@ -144,6 +144,7 @@ registerJob({
     describe(o, d, `The Flag Lads' Gaffer, last seen leaving <b>${esc(f.pub)}</b> in a hurry, and still quick on his feet. `);
     return o;
   },
+  lineup: { start: "timed" },
   start: (o, w, started, _by, _local, cast) => new Wanted(o, w, started, cast),
 });
 
@@ -216,7 +217,7 @@ class Wanted implements Job {
 
   /** As the bounty starts: the title card has said what it is, so just where the poster is. */
   private showSplash() {
-    missionCall({ tier: "note", text: ctlText("{job}: the Wanted poster, with his round and how to catch him"), secs: 4 });
+    guide({ text: "{job}: the Wanted poster, with his round and how to catch him", secs: 4 });
   }
 
   /** His round, the goes left and how to catch him, on the brief J brings back (quests.ts). */

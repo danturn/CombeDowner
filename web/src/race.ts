@@ -65,7 +65,8 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import * as SFX from "./audio";
 import { ctl } from "./controls";
 import { nth } from "./hudkit";
-import { missionAux, missionCall, missionCountdown, missionResult, missionResultDrop, missionWaiting, missionWatching } from "./missionscreens";
+import { missionAux, missionCall, missionResult, missionResultDrop, missionWaiting, missionWatching } from "./missionscreens";
+import { score, guide } from "./notice";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import { type RideKind, TROLLEY_AHEAD, rideModel, rideSpecs } from "./rides";
@@ -75,7 +76,7 @@ import { type PathPoint, type RacePath, along, gatesOf, racePath } from "./racer
 
 const COLOUR = "#3ec7e8";
 const HOLD = 8;            // seconds on the grid from the entries closing to GO
-const RETRY = 3;           // and for a go of your own
+const RETRY = 0.5;         // and for a go of your own, with no countdown: just a moment to settle
 const GO_HUSH = 1.3;       // seconds after GO before the middle of the screen is anyone else's again
 const PASS = 12;           // metres from a checkpoint's middle that counts as through it, at least
 const TOP_SPEED = 48;      // metres a second: nobody's quicker over the whole route than this, boosts and all
@@ -327,7 +328,7 @@ registerJob({
     return boardHtml();
   },
   lineup: {
-    hold: HOLD, verb: "Enter the race",
+    hold: HOLD, verb: "Enter the race", start: "race",
     spots: (o, w, n) => {
       const rt = routeOf(o, w);
       if (!rt) return [];
@@ -551,7 +552,6 @@ class Race implements Job {
   private over = false;                     // I'm over the line
   private roomOver = false;                 // everyone's in, or out of time
   private results: { id: string; t: number }[] = [];
-  private pipped = 4;
   private splits: number[] = [];
   private run: number[] = []; private runT = 0;
   private best: Best | null;
@@ -600,7 +600,7 @@ class Race implements Job {
     this.rt = routeOf(offer, w)!;
     this.medal = medals(this.rt.author);
     this.daily = offer.mode === DAILY;
-    // the room's race starts at GO, from the grid lineup.ts put everyone on; a go of your own has its own 3, 2, 1
+    // the room's race starts at GO, from the grid lineup.ts put everyone on; a go of your own starts after a moment to settle
     this.go = local ? started + RETRY * 1000 : started;
     this.myGo = this.go;
     this.best = bestOf(offer.seed);
@@ -634,11 +634,10 @@ class Race implements Job {
       if (w.me().alive) { this.racing = true; w.moveTo(this.start.x, this.start.z, this.start.yaw); w.ride(this.rt.ride); }
       return;
     }
-    this.pipped = 0;
     if (this.mySlot >= 0 && w.me().alive) {
       this.racing = true;
       if (w.riding() !== this.rt.ride) w.ride(this.rt.ride);
-    } else if (this.mySlot < 0) w.toast(`A race is on: you're watching this one. ${againKey()} to have a go of your own`, 3);
+    } else if (this.mySlot < 0) guide(`A race is on: you're watching this one. ${againKey()} to have a go of your own`, 3);
   }
 
   /** Each leg's time limit and gold pace at each gate, and where the boost pads lie. */
@@ -696,7 +695,7 @@ class Race implements Job {
   restart(): boolean {
     if (!this.w.me().alive || this.waiting()) return false;
     this.own = true; this.racing = true; this.over = false;
-    this.splits = []; this.run = []; this.runT = 0; this.pipped = 4; this.next = 0;
+    this.splits = []; this.run = []; this.runT = 0; this.next = 0;
     this.out = false; this.outT = 0; this.warned = false; this.deadline = 0; this.padUntil = 0; this.padHit.clear(); this.beeped = 6;
     this.dnf = false; this.dnfAt = 0; this.myT = 0; this.holdAt = null; this.shown = false; this.eye = null;
     this.stats = { top: 0, v: 0, boosts: 0, slip: 0, barged: 0, knocked: 0 };
@@ -716,13 +715,6 @@ class Race implements Job {
     const t = this.now, me = this.w.me();
     // coming off for good (killed) on the way: out of the race
     if (this.racing && !this.over && !this.dnf && !this.done && !me.alive) this.dropOut(t);
-    // the countdown: a pip a second and a long one on GO, each number big in the middle with the start lights
-    if (this.racing && !this.over && !this.dnf) {
-      if (t < 0) {
-        const n = Math.ceil(-t);
-        if (n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); missionCountdown(n, COLOUR); }
-      } else if (this.pipped > 0) { this.pipped = 0; SFX.pip(true); missionCountdown(0, COLOUR); }
-    }
     if (!this.roomOver && !this.local) this.judgeRoom();
     if (!this.done) {
       const gaveUp = this.out && !this.over && !this.dnf && Date.now() - this.outT > LATE_MAX * 1000;
@@ -889,7 +881,7 @@ class Race implements Job {
         this.padHit.set(k, t); this.padUntil = t + PAD_SECS; this.stats.boosts++;
         this.w.rideBoost?.(RACE_MUL * PAD_MUL, 3);
         SFX.whoosh();
-        missionCall({ tier: "trick", text: "BOOST!", secs: 0.8 });
+        score({ text: "BOOST!", secs: 0.8 });
       }
     }
     const fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw);
@@ -951,7 +943,7 @@ class Race implements Job {
             this.w.send("qe", { k: "knk", s: this.offer.seed }, o.id);
             this.w.rideBoost?.(RACE_MUL, -Math.min(3, closing * 0.35));
             SFX.thump();
-            missionCall({ tier: "trick", text: `Barged ${o.name} off!`, secs: 1.2 });
+            score({ text: `Barged ${o.name} off!`, secs: 1.2 });
           }
         }
       }

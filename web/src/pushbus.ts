@@ -63,7 +63,7 @@ import { ctl } from "./controls";
 import { carShape, trafficMake } from "./makes";
 import { type GameMap, roadHalf } from "./map";
 import { missionAux, missionAuxRow } from "./missionscreens";
-import { notice } from "./notice";
+import { news, guide } from "./notice";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, leftInRoad, rng, type Job, type QuestWorld, type Waiting } from "./quests";
 import { type BusNow, Passengers } from "./pensioners";
@@ -448,7 +448,7 @@ registerChallenge({
     return { x: a[0], z: a[1], name: `the bottom of ${h.name}` };
   },
   waiting({ offer, spots, w }) { return waitingBus(offer, spots, w); },
-  lineup: { spots: ({ offer, spots, w }, n) => behindBus(offer, spots, w, n) },
+  lineup: { start: "timed", spots: ({ offer, spots, w }, n) => behindBus(offer, spots, w, n) },
   start({ offer, spots, w, cast }) { return pushTheBus(offer, spots, w, cast); },
 });
 
@@ -1083,7 +1083,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
 
   // ---- the job ---------------------------------------------------------------------------------
   w.mark("@challenge", { x: hill.pts[0][0], z: hill.pts[0][1] }, "The broken-down bus", COLOUR);
-  notice({ tier: "note", text: `The bus has broken down at the bottom of ${hill.name}`, secs: 4 });
+  news({ small: true, text: `The bus has broken down at the bottom of ${hill.name}`, secs: 4 });
   const routeLine = { pts: hill.pts.flatMap((p) => [p[0], p[1]]), gates: [] as number[], colour: COLOUR };
 
   const job: Job = {
@@ -1138,7 +1138,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         const b = pose(), x = b.x - b.fx * (hl - 1.2), z = b.z - b.fz * (hl - 1.2);
         w.dust?.(x, bus.y + 0.2, z, -b.fx, -b.fz);
       }
-      if (inCab && hb && heat > 0.7 && (slipT -= dt) <= 0) { slipT = 6; w.toast("The handbrake's smoking and slipping: let it off", 2.5); }
+      if (inCab && hb && heat > 0.7 && (slipT -= dt) <= 0) { slipT = 6; guide("The handbrake's smoking and slipping: let it off", 2.5); }
       // the cab
       if (inCab) {
         if (!me.alive) { leaveCab(); say({ k: "cab", on: 0 }); }
@@ -1260,7 +1260,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       else if (d.k === "car") {
         const [dd, pan] = w.hear?.(carObj.position.x, carObj.position.y, carObj.position.z) ?? [0, 0];
         SFX.screech(dd, pan);
-        if (inCab) w.toast("A car coming down. Pull in: {strafeleft}", 3);
+        if (inCab) guide("A car coming down. Pull in: {strafeleft}", 3);
       }
       else if (d.k === "lost" && mode <= 1) {
         const b = pose(), x = Number.isFinite(d.x) ? d.x : b.x, z = Number.isFinite(d.z) ? d.z : b.z, a = Number.isFinite(d.a) ? d.a : b.a;
@@ -1317,7 +1317,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         bus.inside("cockpit");
         say({ k: "cab", on: 1 });
         sendDrive();
-        w.toast("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake", 5);
+        guide("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake", 5);
         return true;
       }
       return false;

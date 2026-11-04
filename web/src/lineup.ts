@@ -24,14 +24,15 @@ import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import { ctl } from "./controls";
 import { esc } from "./hudkit";
-import { missionBegin, missionCountdown, missionProgress, missionWaiting } from "./missionscreens";
+import { type Start, countdownFor, missionBegin, missionCountdown, missionProgress, missionWaiting } from "./missionscreens";
 import { bestFor } from "./trophies";
 import type { JobKind, Offer, QuestWorld } from "./quests";
 import { briefMore } from "./brief";
+import { guide } from "./notice";
 
 export const ENTRY = 15;        // seconds the entries are open, unless a minigame says otherwise
 export const HOLD = 6;          // seconds from the line-up to GO: the title card, then 3, 2, 1
-const SOLO_HOLD = 5;            // and on your own
+const SOLO_HOLD = 1;            // and on your own, with no countdown: just long enough to be put in place
 const LINEUP_WAIT = 2.5;        // seconds after the entries close to wait for the host's line-up
 const GO_HUSH = 1.3;            // seconds after GO before the middle of the screen is anyone else's again
 const MAX = 64;
@@ -53,6 +54,9 @@ export interface LineupConfig {
   ready?(o: Offer, w: QuestWorld): void;
   /** What E says while the entries are open ("Enter the race"). */
   verb?: string;
+  /** How the mode starts: a "race", any other "timed" clock, or "calm". The 3, 2, 1, GO! follows from
+   *  that and how many are in it (countdownFor). Every mode says which; "timed" if it doesn't. */
+  start?: Start;
 }
 
 /** n places spread round (cx, cz), r metres out (closer in if it can't fit them), each on clear
@@ -92,7 +96,7 @@ export class Lineup {
     const left = Math.ceil((this.close - Date.now()) / 1000);
     if (left <= 0) return;
     if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press {use} and join`, 3);
-    else w.toast(`${w.nameOf(by)} has started ${offer.title}: {use} to join in (${left} s)`, 4);
+    else guide(`${w.nameOf(by)} has started ${offer.title}: {use} to join in (${left} s)`, 4);
   }
 
   /** How long the entries stay open, for whoever takes one: none with nobody else in the room. */
@@ -211,12 +215,19 @@ export class Lineup {
     missionProgress({ id: "job", label: esc(k.label), colour: k.colour, goal: o.title, hint: this.mine ? `<b class="clue">Get ready</b>` : `Under way: ${esc(this.names(this.cast))}` });
     if (!this.mine) return;
     const n = Math.ceil(-t);
-    if (t < 0 && n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); missionCountdown(n, k.colour); }
-    else if (t >= 0 && this.pipped > 0) { this.pipped = 0; SFX.pip(true); missionCountdown(0, this.kind.colour); }
+    if (t < 0 && n <= 3 && n < this.pipped) { this.pipped = n; this.count(n); }
+    else if (t >= 0 && this.pipped > 0) { this.pipped = 0; this.count(0); }
   }
 
   /** The GO itself, if the minigame starts before the next frame's countdown would show it. */
-  goNow() { if (this.mine && this.pipped > 0) { this.pipped = 0; SFX.pip(true); missionCountdown(0, this.kind.colour); } }
+  goNow() { if (this.mine && this.pipped > 0) { this.pipped = 0; this.count(0); } }
+
+  private count(n: number) {
+    const style = countdownFor(this.cfg.start ?? "timed", this.cast?.length ?? 1);
+    if (style === "none") return;
+    SFX.pip(n === 0);
+    missionCountdown(n, this.kind.colour, style);
+  }
 
   /** Where I'm held still till GO, if I'm in it. */
   held(): { x: number; z: number } | null { return this.mine && this.cast && Date.now() < this.goAt ? { x: this.mine.x, z: this.mine.z } : null; }

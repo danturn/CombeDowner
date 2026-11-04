@@ -37,6 +37,7 @@ import * as Paper from "./paper";
 import { rng, type QuestWorld } from "./quests";
 import { splatScreen } from "./gulls";
 import type { Vehicle } from "./vehicles";
+import { guide } from "./notice";
 
 /** Where the bus would be with its middle s metres up and lat across (pushbus.ts poseOn). */
 type PoseAt = (s: number, lat: number) => { x: number; z: number; fx: number; fz: number; rx: number; rz: number };
@@ -262,7 +263,7 @@ export class Passengers {
   /** On your own the bus is chocked at a stop while you sell, as there's nobody else to hold it. */
   chocked(b: BusNow) {
     const k = this.serving(b);
-    if (k >= 0 && this.chock !== k) { this.chock = k; if (this.pens.some((p) => p.k === k && p.st <= PAYING)) this.w.toast("Chocked at the stop: go and sell the tickets at the front door", 3); }
+    if (k >= 0 && this.chock !== k) { this.chock = k; if (this.pens.some((p) => p.k === k && p.st <= PAYING)) guide("Chocked at the stop: go and sell the tickets at the front door", 3); }
     return this.boarding(b);
   }
 
@@ -711,4 +712,4 @@ export class Passengers {
 }
 
 function pickOf<T>(a: T[]): T { return a[Math.floor(Math.random() * a.length)]; }
-function notice(text: string) { missionCall({ text, tier: "stage" }); }
+function notice(text: string) { missionCall({ text }); }

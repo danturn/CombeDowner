@@ -42,7 +42,7 @@ import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { controlsHere, ctl, isKey, stripOf } from "./controls";
 import { type GameMap, type Road, roadHalf } from "./map";
 import { missionReward, missionSheet } from "./missionscreens";
-import { notice } from "./notice";
+import { guide, news } from "./notice";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, hash, rng, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
@@ -545,7 +545,7 @@ registerChallenge({
   },
   waiting({ offer, spots, w }) { return waitingCar(offer, spots, w); },
   // round the learner car, facing it
-  lineup: { spots: ({ spots, w }, n) => { const c = centreOf(spots, w.map); return c ? ring(w.map, c.x, c.z, n, 4) : []; } },
+  lineup: { start: "timed", spots: ({ spots, w }, n) => { const c = centreOf(spots, w.map); return c ? ring(w.map, c.x, c.z, n, 4) : []; } },
   start({ offer, spots, w, cast }) { return drivingTest(offer, spots, w, cast); },
 });
 
@@ -843,7 +843,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
   };
 
   // ---- the job ---------------------------------------------------------------------------------------
-  notice({ tier: "note", text: `${examiner} is waiting in the learner car: one of you in the driver's seat`, secs: 4 });
+  guide({ text: `${examiner} is waiting in the learner car: one of you in the driver's seat`, secs: 4 });
   /** The day's tests are over: the last report is the result card when it agrees with how the day
    *  went (put up again if it's gone), so there's one card at the end rather than two. */
   const final = (won: boolean, text: string) => {
@@ -933,14 +933,14 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
       if (["mir", "bump", "kerb", "esr", "park", "pr"].includes(d.k)) return;
       if (d.k === "say" && typeof d.x === "string") {
         line = d.x;
-        if (near()) { speak(d.x); notice({ tier: "note", text: `${examiner}: “${d.x}”`, secs: 4 }); }
+        if (near()) { speak(d.x); guide({ text: `${examiner}: “${d.x}”`, secs: 4 }); }
       } else if (d.k === "f" && typeof d.x === "string") {
         faults.push({ x: d.x, g: +d.g || 1 });
-        if (mySeat() === 0 && d.g === 1) { SFX.tick(); notice({ tier: "note", text: `${examiner} writes something down`, secs: 2 }); }
+        if (mySeat() === 0 && d.g === 1) { SFX.tick(); news({ small: true, text: `${examiner} writes something down`, secs: 2 }); }
       } else if (d.k === "halt") {
         phase = 3;
         assist("halt", 3);
-        if (near()) { const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); notice({ tier: "note", text: `${examiner} stamps on his brake`, secs: 3 }); }
+        if (near()) { const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); news({ small: true, text: `${examiner} stamps on his brake`, secs: 3 }); }
         if (mySeat() === 0) speakHush();
       } else if (d.k === "es") {
         line = "Stop!";

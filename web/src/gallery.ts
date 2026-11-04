@@ -49,7 +49,7 @@ import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, t
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
 import { missionResult, type ResultHandle } from "./missionscreens";
-import { notice } from "./notice";
+import { news } from "./notice";
 import { SET_PIECES } from "./landmarks/setpieces";
 import { speak } from "./posh";
 import { esc, hash, rng, type Card, type Job, type QuestWorld, type Waiting } from "./quests";
@@ -622,6 +622,7 @@ registerChallenge({
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0], spots[0].name),
   // on the pavement by the door, as goDown leaves you, and up into the gallery at GO
   lineup: {
+    start: "calm",
     spots: ({ spots }, n) => {
       const door = spots[0], [ox, oz] = outOf(spots);
       return Array.from({ length: n }, (_, k) => {
@@ -976,7 +977,7 @@ registerChallenge({
     /** A remark as a note (notice.ts), queued so none is lost. */
     function tick(r: Remark) {
       const v = visitor(r.v);
-      notice({ tier: "note", text: `${v.name} on ${w.nameOf(painters[r.p] ?? "")}'s: “${r.text}” ${r.mark}/10`, colour: v.critic ? "#ff8ab8" : undefined, secs: 3.5 });
+      news({ small: true, text: `${v.name} on ${w.nameOf(painters[r.p] ?? "")}'s: “${r.text}” ${r.mark}/10`, colour: v.critic ? "#ff8ab8" : undefined, secs: 3.5 });
     }
 
     /** The verdict's in, the same on every screen: a moment while the critics confer, then it's read out (revealResult). */

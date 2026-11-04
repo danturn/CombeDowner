@@ -46,6 +46,7 @@ import { esc, hash, rng } from "./quests";
 import { gateModel, ghostModel } from "./race";
 import { type RacePath, along, racePath } from "./raceroute";
 import * as Paper from "./paper";
+import { guide } from "./notice";
 
 export type ScarKind = "pub" | "race" | "tag";
 interface Scar { id: number; k: ScarKind; x: number; z: number; n: string; day: number; c: number }
@@ -545,7 +546,7 @@ export class Scars {
     }
     if (ghostD >= rt.goal) {
       this.run = null;
-      this.w.toast("The ghost got there first. Back to the line and press {use} to go again", 4);
+      guide("The ghost got there first. Back to the line and press {use} to go again", 4);
       if (v?.ghost) v.ghost.position.set(0, 0, 0);
     }
   }

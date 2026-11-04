@@ -12,7 +12,7 @@ import type { GameMap } from "./map";
 import { RIDES } from "./rides";
 import * as SFX from "./audio";
 import { esc } from "./hudkit";
-import { notice } from "./notice";
+import { reward } from "./notice";
 import { WEARABLES, has as wearing } from "./wardrobe";
 import * as Paper from "./paper";
 import { PAGE, ttBar, ttTitle } from "./teletext";
@@ -167,7 +167,7 @@ export const earned = (id: string) => !!state().got[id];
 /** Its award notice (notice.ts): slid in at the top, or written on a result card that's up. */
 function tell(t: Trophy) {
   SFX.trophy(t.tier);
-  notice({ tier: "award", kicker: `Trophy! ${t.tier}`, text: t.name, sub: t.how, colour: TIER_COLOUR[t.tier] });
+  reward({ kicker: `Trophy! ${t.tier}`, text: t.name, sub: t.how, colour: TIER_COLOUR[t.tier] });
 }
 
 /** You've earned it: put it in the cabinet and say so (notice.ts's award tier). Does nothing if you have it already. */
