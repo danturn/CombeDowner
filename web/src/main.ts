@@ -34,7 +34,7 @@ import * as Saves from "./saves";
 import { mine } from "./features";
 import { openLink } from "./link";
 import { easelUp, onEaselRelock } from "./easel";
-import { closeModals, modalUp, onModal, onModalRelock } from "./modal";
+import { closeButton, closeModals, modalUp, onModal, onModalRelock } from "./modal";
 import { Unlit } from "./unlit";
 import { Trackpad } from "./trackpad";
 
@@ -739,7 +739,7 @@ paperHud.onclick = () => readPaper();
 $("hud").appendChild(paperHud);
 /** Put the Chronicle away and go back to the pause menu. */
 function closeChronicle() { $("chronicle").hidden = true; }
-$("chronclose").onclick = () => closeChronicle();
+closeButton($("chronicle").querySelector<HTMLElement>(".chron-sheet")!, () => closeChronicle());
 // Esc shuts the paper first, back to the pause menu it came from
 addEventListener("keydown", (e) => {
   if (e.code !== "Escape" || $("chronicle").hidden) return;
