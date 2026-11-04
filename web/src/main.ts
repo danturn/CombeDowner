@@ -69,7 +69,7 @@ renderer.shadowMap.type = gfx.shadowType;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
-useRenderer(renderer);   // for the treasure trail's picture clues (snapshot.ts)
+useRenderer(renderer);   // for the Chronicle's photographs (snapshot.ts)
 // The scenery's models are kept only on the graphics card once they're there (world.ts), so if
 // the browser resets it (it can when short of memory) they can't be sent again: reload instead.
 canvas.addEventListener("webglcontextrestored", () => location.reload());

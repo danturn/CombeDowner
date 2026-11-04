@@ -108,7 +108,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
   and, when you're playing alone, a moment of slow-motion.
 - **The Flag Lads have a brew while you're busy.** When everyone in the room is on a job, a race,
-  a trail, the bonfire or any other minigame (alone, just you), the flags stop creeping and
+  the bonfire or any other minigame (alone, just you), the flags stop creeping and
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
   haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
@@ -117,9 +117,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
-- **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, dressed as the
-  poster shows (a coloured jacket, maybe a hat, a bag or a dog), doing his round of a pub, a park
-  and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
+- **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
+  of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
   you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the
   screen), and a paintball hit winds him. Get right up to him and press E (the pad's use button, or
   Use on a touch screen) to cuff him. Fall 80 m behind for a few seconds, or let a chase go past two
@@ -129,16 +128,22 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
   screen) brings the poster back, and it ends on a results card.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
-  hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
+  hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
-  has a biscuit tin (a short trail from the bar); the Gaffer cuffed, and his phone gives away the
-  square the Flag Lads are eyeing next; a chest dug up, and the flyer in it starts a race back to
-  the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
+  says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
+  away the square the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
-  Races take entries (a big banner says who's in and counts down; on your own in the room it goes
-  straight to the start), put the entrants on a grid in the street for a big 3, 2, 1, GO! under
-  start lights, run through checkpoints along a route drawn on the map, and end with a results
+  Every job and team challenge starts the same way, as a race always has: taking one opens the
+  entries, and for 15 seconds anyone in the game, wherever they are (even in a car), can press E
+  (□ on a pad, Use on a touch screen) to join in, with a big banner saying who's in and counting
+  down. On your own in the room it goes straight to the start. When the entries close, everyone
+  who joined, and nobody else, is taken out of whatever they were doing (out of a car, a balloon or a
+  trolley, off a ladder or their ride, anything carried put down), patched up to full health and put
+  in the game area, spread out and facing the way, held still for the title card and a 3, 2, 1, GO!
+  under start lights. Anyone who didn't join, or turns up later, is left where they are and can
+  watch. Races put the entrants on a grid in the street on the race's ride,
+  run through checkpoints along a route drawn on the map, and end with a results
   card: your place, time and medal, your best, how the run went and everyone's standings, with a
   fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
   ride, you wait where you stopped, safe, and watch them (Q/E, the d-pad or the arrows on a touch
@@ -151,34 +156,19 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
-  Treasure trails open with a big splash saying what you're after, any clock, how the search circle
-  works and the first clue, large (the big map, or the Clue button on a touch screen, brings the clue back), and end
-  on a results card like a race's. They don't give the answer away (no distances or compass from two
-  stars, and no search circle unless you ask a local: E shows what the hint gives and costs, and only
-  a second E pays; three hints a tin, each circle smaller and always with the tin well inside, and it
-  never shrinks by itself, with a countdown on your card to the next) and, together, have no clock:
-  each leg is worth three brass stars, and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
-  you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
-  look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
-  pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up by holding use or the Clue button, and talks
-  the others in), bearings (two look-outs, each showing whoever's up there a gold line
-  on the ground towards the tin; it's where they cross), clues split in two
-  (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
-  church bell or a busker's tune to follow by ear, a plaque whose table rules out all but one of the
-  tins round the corner, and twin tins to open in quick succession (with friends, or on your own if you're fast).
   Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
-  pavement; if it's tight by the board, the board says where) and puts everyone in the middle of it.
+  pavement; if it's tight by the board, the board says where) and puts everyone who joined in the middle of it.
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
-  and flashing while a gull's after it, and the ring is on the maps. One of the three crates between
-  waves is always a box of rounds: more spare rifle rounds for everyone, instead of an upgrade.
+  and flashing while a gull's after it, and the ring is on the maps. The tourists point out gulls coming
+  in, wave their arms at one after their lunch, duck, cheer a good shot and storm off in a huff,
+  saying so. Each kind of gull has its own look, every wave comes in from one side under a banner
+  saying what's in it and from where, and before every wave each player gets an ammo pack.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
-  and it drops. A trail race lost to K leaves a hole and
-  her note, a riddle to where she hid the rosette within 150 m: dig at the right mound (hold E). A race
+  and it drops. A race
   nobody finished leaves a smug ghost: press E on the line and reach the last gate before it does. A
   Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
-  till 90% is covered. Bigger rooms get more to do: more ties, gates, mounds and tag, and
+  till 90% is covered. Bigger rooms get more to do: more ties, gates and tag, and
   tougher guards. Put one right for a prize.
 - **Dive**: go prone (Z, or hold Circle) mid-sprint and you dive forward as in Call of Duty, landing
   flat with a thud and a moment to get your breath back. Down the mines, crouch mid-sprint to dive.
@@ -260,16 +250,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down through the lock above. Barrels lost make a worse result. With four or more of you a second
   boat comes up the flight the other way, sharing the water and the locks.
 - **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
-  steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
-  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
+  steepest stretch of street on the map, 100 to 200 metres of it (in Bath, Perrymead, Hodshill,
+  Rosemount Lane and the like; Whiteheads Lane in Bradford-on-Avon; Longmarket Street in Cape Town),
+  and it has to be pushed to the top. It stands
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
-  to start. E (Use) at its back puts your hands to it (you lean in low, your hands flat on the panel,
-  shoving on each heave and shaking when you tire, with the road and the hill either side) and you go with it, looking about as you like, till you press E
+  to start. E (Use) at its back puts your hands to it, and the view eases out behind you so you see
+  yourself bent to it with your mates and the bus going up the hill; you go with it, looking about as you like, till you press E
   again or step back (S). Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
   sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
-  right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
-  too late, a good heave). It counts for more when you all heave together. Steady shoving soon tires,
+  on it for a surge, or shout "HEAVE!" into your mic. The bar shows how close you need to be: dead
+  on, in the thin green band, is PERFECT! and shoves it on hard; in the yellow is Good; in the orange,
+  a bit early or late, it's scrappy and does hardly anything; and further off you've missed, lose your
+  grip for a moment and it drops back. A shout gets a little more leeway than a press. Heaving
+  together counts for more the better you each time it: a beat you all get perfect is PERFECT
+  TOGETHER! and a big extra shove, while a beat most of you botch lets it slip back. Steady shoving soon tires,
   so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
   from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
   own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
@@ -304,7 +299,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Climb** (a team challenge): it waits at the foot of the tallest crag in its zone (on
   Signal Hill in Cape Town; where there's no crag, the tallest building, as by the Royal United
   Hospital in Bath and in Bradford-on-Avon), with a big orange flag on top, a rope hanging down one
-  side and crash mats and a bucket of chalk at the foot. Take it on there and everyone by the foot
+  side and crash mats and a bucket of chalk at the foot. Take it on there and everyone who joins
   is lifted up to a crag of its own, a great buttress of honey-coloured limestone standing out of a
   drifting sea of cloud, with heaps of cumulus all round, the same on every map (the street's place
   names and minimap are put away while you're up there); E at the foot on the street takes anyone else up later, and
@@ -329,7 +324,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
-  it, and E again climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
+  it, and at GO everyone who joined climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
   bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
   of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
   screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
@@ -363,8 +358,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
   Holburne, or failing that a big public building near a pedestrian street): an easel on the
   pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
-  starts it and takes you straight up into the gallery (anyone else goes in with E by him when they
-  get there), a long white room, lit the same day or night, with an easel each; once everyone's in (or E to get
+  starts it, and at GO everyone who joined goes straight up into the gallery (anyone else goes in
+  with E by him when they get there), a long white room, lit the same day or night, with an easel
+  each; once everyone who joined is in (or E to get
   on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
   bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
   first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
@@ -446,6 +442,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.
+
+- **E uses what you're looking at**: with two things in reach at once (a strange object by a
+  noticeboard, a ladder by a car), E (or Use) goes for the one under the crosshair, or the nearest
+  when you're looking at neither, and the prompt always says which, with "or look at…" for the
+  other. Whatever you're in or on (a car, a basket, a boat's tiller), or a job's own use like
+  cuffing someone, still comes first.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
   knows, and the game says when it sees one. Left stick walks (click L3 to sprint), right stick looks, R2 shoots and L2 aims; the

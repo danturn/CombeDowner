@@ -5,6 +5,7 @@
 // Each pool is dealt like a shuffled deck, so a line doesn't come round again till the rest have.
 // (B P is spelt out so the voice says the letters.)
 import * as SFX from "./audio";
+import { CRICKET, NAUGHTY, RUGBY } from "./naughtyboys";
 
 const LOAD_IN = [
   "Okay... it's time to put that B P in my B P.",
@@ -113,6 +114,54 @@ const KILL_NAUGHTY = [
   "ASBO served.",
 ];
 
+let cricketSaid = false;
+
+const KILL_CRICKET = [
+  "And that's why I don't like cricket.",
+  "Howzat?",
+  "Out. Leg before wicket.",
+  "That's the end of your innings.",
+  "Bowled him.",
+  "Off you walk to the pavilion.",
+  "Rain stopped play. I'm the rain.",
+  "Tea's off.",
+  "Back to the Rec with you.",
+  "Caught behind.",
+  "That's a duck.",
+  "No-ball? Not a chance.",
+  "Should've worn the box.",
+  "Declared.",
+  "Retired hurt.",
+  "Not cricket? It is now.",
+  "Your whites aren't white any more.",
+  "Middle stump.",
+  "That one's going in the scorebook.",
+  "Bad light. Your bad luck.",
+];
+
+const KILL_RUGBY = [
+  "Back to the Rec with you.",
+  "That's a knock-on.",
+  "Penalty try.",
+  "Sin bin. For good.",
+  "Scrum down.",
+  "Shall I call the physio?",
+  "Swing low, sweet chariot. Swing lower.",
+  "That's a high tackle. Sorry, ref.",
+  "Try scored.",
+  "Over the bar.",
+  "Who's got the magic sponge?",
+  "Cauliflower ears won't save you.",
+  "Ruck off.",
+  "Mind the gap in your gum shield.",
+  "Taken out behind the posts.",
+  "Is that a red card? Looks red.",
+  "Off for a head injury assessment.",
+  "Blue, black and white. Mostly paint now.",
+  "Never mind the third half.",
+  "Into touch.",
+];
+
 const KILL_PLAYER = [
   "Rest in pieces.",
   "Welcome to Combe Down.",
@@ -202,9 +251,14 @@ export function pickup(kind: string) {
   if (pool && !quiet() && Math.random() < PICKUP_CHANCE) say(deal(pool), 0.3);
 }
 
-/** You killed a naughty boy or a player. Sometimes says something about it, after the shot and the groan. */
-export function kill(naughtyBoy: boolean) {
-  if (!quiet() && Math.random() < KILL_CHANCE) say(deal(naughtyBoy ? KILL_NAUGHTY : KILL_PLAYER), 0.35);
+/** You killed a naughty boy or a player. Sometimes says something about it, after the shot and the
+ *  groan. kind: which of naughtyboys.ts's sorts it was, as the cricketers and the rugby lads have
+ *  lines of their own. */
+export function kill(naughtyBoy: boolean, kind = NAUGHTY) {
+  const pool = !naughtyBoy ? KILL_PLAYER : kind === CRICKET ? KILL_CRICKET : kind === RUGBY ? KILL_RUGBY : KILL_NAUGHTY;
+  // the first cricketer you drop always gets the 10cc line: it's the one everyone's waiting for
+  if (pool === KILL_CRICKET && !cricketSaid && !quiet()) { cricketSaid = true; say(KILL_CRICKET[0], 0.35); return; }
+  if (!quiet() && Math.random() < KILL_CHANCE) say(deal(pool), 0.35);
 }
 
 /** Leaving the game: stop talking. */

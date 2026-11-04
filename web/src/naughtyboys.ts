@@ -23,9 +23,7 @@
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
 // boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
-// bring a gang of their own anywhere. A Wanted man wears some of a hat, a coloured jacket, a bag, a
-// dog or a limp, so you can pick him out (they ride on the look number, so every screen draws the
-// same man), and a man a job runs can be made to give up with his hands in the air instead of going
+// bring a gang of their own anywhere, and a man a job runs can be made to give up with his hands in the air instead of going
 // down, to be cuffed and led off. A ringleader can also wear one loud thing (a
 // rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
 // run is drawn on a mobility scooter or in his van, which also rides on his look.
@@ -123,17 +121,8 @@ export const look = (kind: number, kit: number) => kind * 16 + kit;
 export const LOUD = ["", "a red rosette", "a hi-vis tabard", "a big purple hat"] as const;
 export const wearing = (lk: number) => Math.round((lk % 1) * 8) % LOUD.length;
 export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
-/**
- * What a Wanted man has on him: a hat, a jacket (0 his own clothes, 1 to 3 a colour), a bag, a
- * dog and a limp, packed into six bits that ride on his look in 1024ths after the loud thing's
- * eighths. Too small a step for a page that reads only the loud thing to see, so older pages just
- * draw a lad in his own clothes.
- */
-export const FEAT_ARITY = [2, 4, 2, 2, 2] as const;
-export const packFeats = (f: readonly number[]) => f[0] | (f[1] << 1) | (f[2] << 3) | (f[3] << 4) | (f[4] << 5);
-export const withFeats = (lk: number, f: readonly number[]) => Math.floor(lk) + wearing(lk) / 8 + packFeats(f) / 1024;
+/** The bits after the loud thing's eighths, in 1024ths: the Gaffer's mount rides there. */
 const featBits = (lk: number) => Math.max(0, Math.round(((lk % 1) - wearing(lk) / 8) * 1024)) & 63;
-export const featsOf = (lk: number): number[] => { const b = featBits(lk); return [b & 1, (b >> 1) & 3, (b >> 3) & 1, (b >> 4) & 1, (b >> 5) & 1]; };
 /** The Gaffer on the run: how he's travelling (0 on foot, 1 a mobility scooter, 2 his van), carried in his look. */
 export const MOUNTS = ["on foot", "on a mobility scooter", "in his van"] as const;
 export const mountOf = (lk: number) => (lk >> 4 === CHAIR ? featBits(lk) & 3 : 0);
@@ -157,7 +146,7 @@ const GEO = {
   cap: new THREE.SphereGeometry(0.162, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
   brim: box(0.2, 0.025, 0.17),
   chain: new THREE.TorusGeometry(0.1, 0.012, 6, 20),
-  // a Wanted man's loud thing
+  // a ringleader's loud thing
   rosette: new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12).rotateX(Math.PI / 2),
   tail: box(0.05, 0.16, 0.012),
   tabard: box(0.47, 0.5, 0.275),
@@ -216,18 +205,6 @@ const GEO = {
   arm: box(0.09, 0.56, 0.1).translate(0, -0.28, 0),
   locks: box(0.3, 0.42, 0.08),
   bag: box(0.07, 0.15, 0.2).translate(0, -0.42, 0),
-  // a Wanted man's features: a hat, a jacket over his own clothes, a shoulder bag, a dog, a stick
-  trilby: new THREE.CylinderGeometry(0.135, 0.16, 0.2, 12).translate(0, 0.1, 0),
-  trilbyBrim: new THREE.CylinderGeometry(0.25, 0.25, 0.025, 14),
-  coat: box(0.5, 0.58, 0.29),
-  coatSleeve: box(0.145, 0.5, 0.155).translate(0, -0.25, 0),
-  satchel: box(0.3, 0.28, 0.15),
-  satchelStrap: box(0.045, 0.75, 0.02),
-  dogBody: box(0.22, 0.22, 0.55),
-  dogHead: box(0.15, 0.15, 0.2),
-  dogLeg: box(0.06, 0.2, 0.06),
-  dogTail: box(0.04, 0.04, 0.22),
-  walkStick: box(0.03, 0.85, 0.03).translate(0, -0.45, -0.05),
   // the Gaffer on the run: a mobility scooter, or his van
   scooterBase: box(0.55, 0.12, 1.25),
   scooterSeat: box(0.4, 0.1, 0.4),
@@ -252,8 +229,7 @@ const GOLD = new THREE.MeshLambertMaterial({ color: "#d9b143", emissive: "#4a3a1
 const ROSETTE = new THREE.MeshLambertMaterial({ color: "#e0262e", emissive: "#5a0a0a" });
 const HIVIS = new THREE.MeshLambertMaterial({ color: "#d6ff2a", emissive: "#4a5a00" });
 const PURPLE = new THREE.MeshLambertMaterial({ color: "#7a2fc0", emissive: "#2a0a4a" });
-const COATS = ["", "#b8232b", "#2f7a3e", "#c9a227"].map((c) => (c ? lambert(c) : WHITE));
-const HAT = lambert("#4a3b2c"), LEATHER = lambert("#8a5a2b"), DOG = lambert("#c8a06a"), VAN = lambert("#f0eee6"), GLASS = lambert("#3b4a5a"), TYRE = lambert("#1b1b1d"), MOTOR = lambert("#a3202a");
+const VAN = lambert("#f0eee6"), GLASS = lambert("#3b4a5a"), TYRE = lambert("#1b1b1d"), MOTOR = lambert("#a3202a");
 /** Rugby kits: jersey, hoops, shorts. */
 const RUGBY_KITS = [
   ["#1d2a5c", "#f2f0e8", "#f2f0e8"], ["#7a1f2b", "#d9a400", "#1d1d20"], ["#14532d", "#f2f0e8", "#f2f0e8"],
@@ -342,7 +318,6 @@ export class Figure {
   look = -1;
   /** 1: hands up (he's given up); 2: hands behind his back (cuffed). */
   hands = 0;
-  private limp = false;
   private mount = 0;
   // what he's shouting, over his head
   private bubble: THREE.Sprite | null = null;
@@ -372,7 +347,6 @@ export class Figure {
   private wear(look: number) {
     this.look = look;
     this.hands = 0;
-    this.limp = false;
     this.mount = 0;
     this.legL.visible = this.legR.visible = true;
     this.body.clear();
@@ -394,29 +368,6 @@ export class Figure {
       this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, skin, 0, 1.62, 0));
     };
     this.body.scale.setScalar(1);
-    // a Wanted man's features, over whatever he's wearing
-    const extras = () => {
-      const [hat, coat, bag, dog, limp] = featsOf(look);
-      if (coat) {
-        this.body.add(mesh(GEO.coat, COATS[coat], 0, 1.17, 0));
-        for (const arm of [this.armL, this.armR]) arm.add(mesh(GEO.coatSleeve, COATS[coat]));
-      }
-      if (hat) this.body.add(mesh(GEO.trilby, HAT, 0, 1.7, 0), mesh(GEO.trilbyBrim, HAT, 0, 1.71, 0));
-      if (bag) {
-        this.body.add(mesh(GEO.satchel, LEATHER, -0.3, 0.95, 0.02));
-        const strap = mesh(GEO.satchelStrap, LEATHER, -0.04, 1.2, -0.16);
-        strap.rotation.z = -0.55;
-        this.body.add(strap);
-      }
-      if (dog) {
-        const d = new THREE.Group();
-        d.add(mesh(GEO.dogBody, DOG, 0, 0.38, 0), mesh(GEO.dogHead, DOG, 0, 0.5, -0.38), mesh(GEO.dogTail, DOG, 0, 0.5, 0.36));
-        for (const [x, z] of [[-0.08, -0.2], [0.08, -0.2], [-0.08, 0.2], [0.08, 0.2]]) d.add(mesh(GEO.dogLeg, DOG, x, 0.1, z));
-        d.position.set(0.75, 0, -0.35);
-        this.body.add(d);
-      }
-      if (limp) { this.limp = true; this.armL.add(mesh(GEO.walkStick, WOOD)); }
-    };
     if (kind === GIRL) {
       // a going-out tan, the clothes, and long hair down her back
       const [top, skirt, bag] = (GIRL_KITS[kit & 7] ?? GIRL_KITS[0]).map(lambert), tan = pick(TAN), hair = pick(GIRL_HAIR);
@@ -497,7 +448,6 @@ export class Figure {
         ladder.rotation.z = -1.2;
         this.body.add(ladder);
       }
-      extras();
       return;
     }
     if (kind === RUGBY) {
@@ -528,7 +478,6 @@ export class Figure {
       chain.scale.set(1, 1.3, 1);
       this.body.add(mesh(GEO.torso, suit, 0, 1.16, 0), mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15), chain);
     }
-    extras();
     // a ringleader: a size bigger, with a chunky gold chain
     if (look & BOSS) {
       const chain = mesh(GEO.chain, GOLD, 0, 1.3, -0.15);
@@ -536,7 +485,7 @@ export class Figure {
       this.body.add(chain);
       this.body.scale.setScalar(sizeOf(look));
     }
-    // the one loud thing a Wanted man wears, so you can pick him out
+    // the one loud thing a ringleader can wear
     const loud = wearing(look);
     if (loud === 1) {
       this.body.add(mesh(GEO.rosette, ROSETTE, 0.11, 1.32, -0.17));
@@ -611,8 +560,6 @@ export class Figure {
     this.phase += dt * speed * 2.1;
     const swing = this.mount ? 0 : Math.sin(this.phase) * Math.min(0.95, speed * 0.17);
     this.legL.rotation.x = this.mount === 1 ? -1.2 : swing; this.legR.rotation.x = this.mount === 1 ? -1.2 : -swing;
-    // a limp: the bad leg hardly moves, and he dips and sways onto the good one
-    if (this.limp) this.legR.rotation.x *= 0.25;
     this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
     this.armR.rotation.z = 0;
     if (this.kind === CRICKET || this.kind === CHAIR) {
@@ -632,8 +579,8 @@ export class Figure {
       this.armL.rotation.x = this.armR.rotation.x = up ? Math.PI * 0.92 : -0.45;
       this.armL.rotation.z = up ? -0.2 : 0.25; this.armR.rotation.z = up ? 0.2 : -0.25;
     } else this.armL.rotation.z = 0;
-    this.body.position.y = this.mount ? 0 : Math.abs(Math.sin(this.phase)) * 0.05 * run - (this.limp ? Math.max(0, Math.sin(this.phase)) * 0.07 * run : 0);
-    this.body.rotation.z = this.limp ? Math.sin(this.phase) * 0.12 * run : 0;
+    this.body.position.y = this.mount ? 0 : Math.abs(Math.sin(this.phase)) * 0.05 * run;
+    this.body.rotation.z = 0;
     // lean into the run; knocked flat on his back, then up again
     const flat = dead <= 0 ? 0 : dead < DOWN_SECS ? Math.min(1, dead * 3.2) : Math.max(0, 1 - (dead - DOWN_SECS) / UP_SECS);
     this.body.rotation.x = flat * (Math.PI / 2) - (1 - flat) * 0.22 * run;

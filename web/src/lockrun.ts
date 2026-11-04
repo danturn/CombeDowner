@@ -7,7 +7,7 @@
 //   (either beam) swing them in a few seconds, one alone takes the best part of half a minute. Gates
 //   won't open until the water's level on both sides.
 // - The paddles are wound up with a windlass, a notch a press, and there are only so many
-//   windlasses (one for two players, two for up to four, three for more). A windlass left on a
+//   windlasses (one for a crew of two, two for up to four, three for more). A windlass left on a
 //   raised paddle with nobody by it slips: the paddle crashes down, the windlass spins off and
 //   clouts anyone near, and it may land in the cut and be gone. E on a paddle with no windlass on it
 //   drops it.
@@ -35,7 +35,8 @@
 // (a surge, a windlass flung off, someone in the cut: "qe" "fx") for every screen to show; whoever
 // went in the water moves themselves. Where it is comes from the map's canal file alone, so every
 // player puts it in the same place. Until someone takes it on, the first boat lies moored above the
-// top lock with its barrels on the roof, where the run starts from, built on each screen from the day.
+// top lock with its barrels on the roof, where the run starts from, built on each screen from the day;
+// whoever enters (lineup.ts) is the crew, and starts on the towpath by the top lock.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
@@ -899,13 +900,25 @@ registerChallenge({
     return [{ x, z, name: top.n }, { x: bx, z: bz, name: bot.n }];
   },
   waiting({ offer, spots, w }) { return waitingBoat(offer, spots, w); },
-  start({ offer, w }) {
+  // on the towpath by the top lock, in rows, facing it
+  lineup: {
+    spots({ w }, n) {
+      const f = flightOf(w.map.canalData);
+      if (!f) return [];
+      const top = f.locks[0], [mx, mz] = lockAt(top, top.L / 2, 0);
+      return Array.from({ length: n }, (_, k) => {
+        const [x, z] = lockAt(top, top.L + 1.5 + (k % 4) * 1.3, LH + COPE + 2.5 + Math.floor(k / 4) * 1.2);
+        return { x, z, yaw: Math.atan2(x - mx, z - mz) };
+      });
+    },
+  },
+  start({ offer, w, cast }) {
     const f = flightOf(w.map.canalData);
     if (!f) {
       const job: Job = { offer, done: { won: false, text: "There's no flight of locks here" }, update() {}, card: () => ({ line: "" }), end() {} };
       return job;
     }
-    const R = new LockRun(f, offer, w, w.players().map((p) => p.id));
+    const R = new LockRun(f, offer, w, cast);
     if (TESTING) (window as unknown as { __lockrun: LockRun }).__lockrun = R;
     const S = () => R.S;
     const top = f.locks[0];

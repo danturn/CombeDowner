@@ -1,6 +1,5 @@
 // Wanted: one man with a silly made-up title, and you have to catch him. He's marked on everyone's
-// map and compass from the start, dressed so you can pick him out (a coloured jacket, maybe a hat, a
-// bag or a dog, all on the poster), and he does his round of three stops: a pub, then a park or some
+// map and compass from the start, and he does his round of three stops: a pub, then a park or some
 // such, then a bus stop, round and round. A few of his crew hang about with him and have a go at
 // anyone who comes for him.
 //
@@ -18,13 +17,12 @@
 // with his pub on it: he's mode 1 (on foot), 2 (a scooter) or 3 (his van), and the further he went,
 // the quicker he is now.
 //
-// It opens with a big splash (wantedscreens.ts): the poster with how he looks as pictures, his round
-// of stops, the goes and how to catch him. The job control (or the big map) brings the poster back.
+// It opens with a big splash (wantedscreens.ts): the poster with his round of stops, the goes and how
+// to catch him. The job control (or the big map) brings the poster back.
 // While he's running, his puff is on the bar across the top of the screen. The end is a results card.
 //
 // Who decides what: the poster comes from the day's seed (quests.ts), so everyone has the same one,
-// and so does his look, which rides on the naughty boy's look number (naughtyboys.ts) so every screen
-// draws the same man. The host runs him and his mates, decides when he runs, how much puff he has
+// and so does his gang's kit. The host runs him and his mates, decides when he runs, how much puff he has
 // and when he's got away, and sends that round ("at") every second, twice a second in a chase.
 // Cuffing him is asked of the host ("cuff"), who says if it worked ("got"); the host also says when
 // he's got away for now ("lost") or for good ("away"), and what he says ("act", "line").
@@ -32,10 +30,9 @@
 // He never hangs about within 290 m of a nursery or primary school's grounds (safezones.ts), so he
 // never starts a chase in one. Once he's on the run, anything goes.
 import * as SFX from "./audio";
-import { FEAT_ARITY, NAUGHTY, CRICKET, RUGBY, SOCIETY, look, withFeats } from "./naughtyboys";
+import { NAUGHTY, CRICKET, RUGBY, SOCIETY, look } from "./naughtyboys";
 import { summary } from "./racescreens";
-import { callout } from "./trailscreens";
-import { wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
+import { wantedCallout, wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { inSafeZone } from "./safezones";
@@ -54,15 +51,6 @@ const CREWS: { kind: number; name: string; who: string }[] = [
   { kind: CRICKET, name: "cricketers", who: "a cricket club gone bad" },
   { kind: SOCIETY, name: "Flag Lads", who: "a breakaway lot of Flag Lads" },
 ];
-/** What each feature (hat, jacket, bag, dog, limp: naughtyboys.ts) comes to in words, by its value. */
-const FEAT_WORDS: string[][] = [
-  ["", "a hat"],
-  ["", "a red jacket", "a green jacket", "a mustard jacket"],
-  ["", "a bag over his shoulder"],
-  ["", "a dog with him"],
-  ["", "a limp"],
-];
-
 const GOES = 3;             // he gets away this many times and the job's lost
 const LIMIT = 15 * 60;      // seconds on the clock: plenty for three goes
 const SPOOK = 30;           // he runs when anyone's this close (more with more of you)
@@ -97,11 +85,9 @@ function details(o: Offer, w: QuestWorld) {
   let title = pickOf(r, TITLES), crew = CREWS[Math.floor(r() * CREWS.length)];
   const kit = Math.floor(r() * 4);
   if (how) { title = o.title.replace(/^Wanted: /, ""); crew = CREWS[3]; }
-  const feats = [r() < 0.5 ? 1 : 0, 1 + Math.floor(r() * (FEAT_ARITY[1] - 1)), r() < 0.5 ? 1 : 0, r() < 0.3 ? 1 : 0, 0];
-  if (!feats[0] && !feats[2] && !feats[3]) feats[0] = 1;   // a jacket alone is too easy to miss
   const haunts = hauntsFor(o, w, r);
   const ride = pickOf(r, RIDES.filter((k) => k !== "trolley"));
-  return { title, crew, kit, feats, haunts, ride, quick: how ? (how - 1) * 0.6 : 0 };
+  return { title, crew, kit, haunts, ride, quick: how ? (how - 1) * 0.6 : 0 };
 }
 
 /**
@@ -152,18 +138,12 @@ registerJob({
     describe(o, d, `The Flag Lads' Gaffer, last seen leaving <b>${esc(f.pub)}</b> in a hurry, and still quick on his feet. `);
     return o;
   },
-  start: (o, w, started) => new Wanted(o, w, started),
+  start: (o, w, started, _by, _local, cast) => new Wanted(o, w, started, cast),
 });
-
-/** How he looks, in words: "a red jacket, a hat and a dog with him". */
-function looks(feats: number[]) {
-  const w = feats.map((v, f) => FEAT_WORDS[f][v]).filter(Boolean);
-  return w.length > 1 ? `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}` : w[0] ?? "his own clothes";
-}
 
 /** What the poster says, and what he's worth. */
 function describe(o: Offer, d: ReturnType<typeof details>, lead = "") {
-  o.blurb = `${lead}Wears <b>${looks(d.feats)}</b>, and runs with ${esc(d.crew.who)}. Does the rounds of <b>${d.haunts.map((h) => esc(h.label)).join("</b>, then <b>")}</b>.`
+  o.blurb = `${lead}Runs with ${esc(d.crew.who)}. Does the rounds of <b>${d.haunts.map((h) => esc(h.label)).join("</b>, then <b>")}</b>.`
     + `<br>He's quick, but he runs out of puff: catch him and cuff him. Lose him three times and he's gone.`;
   o.reward = `${o.stars + 1} prizes and ${rideSpecs[d.ride].name}`;
 }
@@ -190,7 +170,7 @@ class Wanted implements Job {
   private splashed = false; private splashWait = 0;
   private posterT = 0;
 
-  constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
+  constructor(readonly offer: Offer, private w: QuestWorld, private started: number, private cast: string[]) {
     this.d = details(offer, w);
   }
 
@@ -226,10 +206,8 @@ class Wanted implements Job {
   private posterInfo() {
     return {
       title: this.d.title,
-      feats: this.d.feats,
       stops: this.d.haunts.map((h, k) => ({ label: h.label, kind: (h.bus ? "bus" : h.label.includes("pub") ? "pub" : "park") as "pub" | "park" | "bus", now: k === this.h % this.d.haunts.length })),
       goes: { left: GOES - this.goes, of: GOES },
-      notes: [`Runs with ${esc(this.d.crew.who)}, who'll have a go at you.`],
     };
   }
 
@@ -305,9 +283,9 @@ class Wanted implements Job {
     return at;
   }
 
-  /** His top speed and how close you can get before he runs: more of you, and he's quicker and warier. */
+  /** His top speed and how close you can get before he runs: more of you after him, and he's quicker and warier. */
   private scale() {
-    const extra = Math.max(0, this.w.players().length - 1);
+    const extra = Math.max(0, this.cast.length - 1);
     return { sprint: SPRINT + this.d.quick + Math.min(0.8, extra * 0.2), spook: SPOOK + Math.min(16, extra * 4), mates: Math.min(5, this.offer.stars + Math.floor(extra / 2)) };
   }
 
@@ -387,7 +365,7 @@ class Wanted implements Job {
   /** Host: him and his mates, at his stop. He never fights: he only runs. */
   private bring(sx: number, sz: number) {
     const ch = this.w.naughtyBoys, players = this.w.players(), at = clearSpot(this.w.map, sx, sz, 20) ?? [sx, sz];
-    this.ring = ch.bring(at[0], at[1], withFeats(this.lookCrew(), this.d.feats), 1, players, HP, 0)[0] ?? null;
+    this.ring = ch.bring(at[0], at[1], this.lookCrew(), 1, players, HP, 0)[0] ?? null;
     if (!this.ring) return;
     ch.flee(this.ring.i, this.ring.gen, 1);
     ch.sendTo(this.ring.i, this.ring.gen, at[0], at[1]);
@@ -474,7 +452,7 @@ class Wanted implements Job {
           this.markT = 0;
           SFX.clunk();
           const left = GOES - this.goes;
-          callout("He got away!", `${left} ${left > 1 ? "goes" : "go"} left. He's off to ${esc(this.haunt.label)}: he's on your map`, 5, COLOUR);
+          wantedCallout("He got away!", `${left} ${left > 1 ? "goes" : "go"} left. He's off to ${esc(this.haunt.label)}: he's on your map`);
           this.w.feed(`<b style="color:${COLOUR}">${esc(this.d.title)}</b> got away (${left} ${left > 1 ? "goes" : "go"} left)`);
         }
         break;

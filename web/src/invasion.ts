@@ -60,8 +60,8 @@
 // They never take a pub within 230 m of a nursery or primary school's grounds, and no ladder lad
 // comes to a lamp within 200 m of one or sets off from there (safezones.ts).
 //
-// The Flag Lads hold off while the room is busy: when every player still up is on a job, a race, a
-// trail, the bonfire or any other mission panel, the host stops the creep and spread, the ladder
+// The Flag Lads hold off while the room is busy: when every player still up is on a job, a race,
+// the bonfire or any other mission panel, the host stops the creep and spread, the ladder
 // lads, new takeover calls and the dig-in clocks of takeovers already running (they're pushed back
 // by the time lost), so doing a race never costs you ground. Alone, being busy is enough. If only
 // some are busy it all carries on, so the others can defend, but nobody mid-job is the one a new
@@ -128,7 +128,7 @@ export interface InvasionWorld {
   trick(): string;
   /** Alone in the room, so the game can slow down for a moment. */
   solo(): boolean;
-  /** I'm mid-job, race, trail or minigame. */
+  /** I'm mid-job, race or minigame. */
   busy(): boolean;
   /** The street or place I'm in. */
   place(): string;
