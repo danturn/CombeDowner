@@ -24,6 +24,7 @@ export const GROUPS = [
   { id: "panel", name: "Status panels and slots", blurb: "What stays up, each in its slot, stacking rather than overlapping." },
   { id: "prompt", name: "Prompts and posters", blurb: "What a press does here, and the poster on a noticeboard." },
   { id: "end", name: "Results", blurb: "One card at the end of everything, with variants." },
+  { id: "proposal", name: "Proposals", blurb: "Mock-ups only, not in the game: how a few pieces could join the rest. Each shows what's there now beside the idea." },
   { id: "event", name: "Events and the paper", blurb: "Big celebrations keep their own look on purpose; the Chronicle is the paper itself." },
 ];
 
@@ -97,6 +98,12 @@ export const ELEMENTS: Piece[] = [
     states: ["Job done, with rewards", "Job failed", "Called off", "Race: gold", "Race: did not finish", "Wanted: cuffed", "Wanted: got away", "Bonfire built", "Shift over", "Pub won back", "Town safe", "Long title"] },
   { id: "variants", group: "end", name: "Result card variants", src: "missionscreens.ts missionSheet(), missionNight(), missionResult({ variant: \"verdict\" })",
     used: "the driving test's report, the night out's front page, the gallery's verdict", states: ["Driving test: pass", "Driving test: fail", "Night out front page", "Gallery verdict"] },
+
+  // ---- proposals (proposals.ts): staged mock-ups, nothing the game draws yet
+  { id: "p-board", group: "proposal", name: "One line for E at a noticeboard", src: "ui/proposals.ts (mock)", used: "noticeboards and challenges", note: "The poster's foot is the use prompt.", states: ["Now", "Proposed"] },
+  { id: "p-brief", group: "proposal", name: "A job's brief, board to result", src: "ui/proposals.ts (mock), from cutting.ts", used: "every job and challenge, Wanted", note: "The poster, the title card and J's recall as one cutting.", states: ["At the board", "Title card", "Recall (J)", "Wanted, same frame", "Result"] },
+  { id: "p-meters", group: "proposal", name: "Combos in the meter slot", src: "ui/proposals.ts (mock), missionAux()", used: "riding tricks, the Flag Lads", states: ["Ride combo now", "Ride combo in the slot", "Flag Lads combo in the slot"] },
+  { id: "p-map", group: "proposal", name: "The big map's cards on teletext", src: "ui/proposals.ts (mock), teletext.ts", used: "the big map, Go to a pub", states: ["Pub card on teletext", "Key tip on teletext"] },
 
   // ---- events
   { id: "reveal", group: "event", name: "Zone opening card", src: "reveal.ts Reveal.card() (#reveal)", used: "a zone opening; the whole map", event: true,

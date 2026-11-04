@@ -14,6 +14,7 @@ import { Reveal, type Shot } from "../reveal";
 import { FlagJuice } from "../flagjuice";
 import { Daily } from "../daily";
 import * as THREE from "three";
+import { PROPOSALS } from "./proposals";
 
 const $ = (id: string) => document.getElementById(id)!;
 let hold = 0;          // a timer keeping something that would go by itself on the screen
@@ -49,8 +50,8 @@ function clear() {
   closeModals();
   noticeClear();
   MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null); WS.wantedScreensDown();
-  document.querySelectorAll(".msc,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick").forEach((e) => e.remove());
-  for (const id of ["usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "combo", "touch"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
+  document.querySelectorAll(".msc,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick,.prop,.prop-count,.prop-cap,.prop-map,.prop-tt").forEach((e) => e.remove());
+  for (const id of ["clickhint", "usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "combo", "touch"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("feed").innerHTML = "";
   $("hud").classList.remove("reveal"); document.body.classList.remove("reveal");
   $("scoreboard").classList.remove("join");
@@ -258,9 +259,9 @@ function slotMap(touch: boolean) {
 /** Draw piece id in state (its first, if not given). */
 export function draw(id: string, state: string) {
   clear();
-  const p = DRAW[id];
+  const p = DRAW[id] ?? PROPOSALS[id];
   if (!p) return;
   (p[state] ?? Object.values(p)[0])();
 }
 
-export const states = (id: string) => Object.keys(DRAW[id] ?? {});
+export const states = (id: string) => Object.keys(DRAW[id] ?? PROPOSALS[id] ?? {});
