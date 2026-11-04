@@ -661,8 +661,19 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
         edge = F["pave"].boundary
         # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
         zs = levels_of(m)
+        # (and a flight of steps across paving is drawn on its own strip, never on the pavement: as
+        # furniture.ts stepsDetail, one a metre long with a tread count, handrails or a rise over 0.3 m)
+        ground = terrain(m["t"])
+        def drawn(r):
+            p = r["p"]
+            if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 for q in p) or LineString([q[:2] for q in p]).length < 1:
+                return False
+            return bool(r.get("sc") or r.get("hr")) or abs(ground(*p[-1][:2]) - ground(*p[0][:2])) > 0.3
+        flights = shapely.union_all([LineString([q[:2] for q in r["p"]]).buffer(r.get("w", 1.8) / 2 + 1.0, cap_style="flat")
+                                     for r in roads if drawn(r)] or [Polygon()])
         for g in getattr(F["path"], "geoms", [F["path"]]):
             if g.geom_type != "Polygon" or not inner.intersects(g): continue
+            if g.intersection(flights).area > 0.5 * g.area: continue
             shared = g.exterior.intersection(edge.buffer(0.05))
             # (its longest stretch: a path leaving the pavement at a slant at both ends runs along it nowhere)
             along = longest_run(shared)

@@ -1567,8 +1567,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           // the ends: where it stops at the bank (or the edge of the square)
           if (stone || kind === "beam") for (const [q, dir] of [[run[0], -1], [run[run.length - 1], 1]] as const) {
             if (seam(q) || (q === P[0] && joint(a)) || (q === P[P.length - 1] && joint(b))) continue;
-            const up = stone ? PARAPET : 0.35, fwd = [-q.ny * dir, 0, -q.nx * dir];
-            facing(g, at(q, h, floor(q)), at(q, w, floor(q)), at(q, w, q.top + up), at(q, h, q.top + up), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], stone ? STONE : CONCRETE);
+            const up = stone ? PARAPET : 0.35, fwd = [q.ny * dir, 0, q.nx * dir], col = stone ? STONE : CONCRETE;
+            // on the approach its faces and the deck's top beside the road reach down to the bank,
+            // so the end is closed down to there too, or it stood open as a hollow sheet
+            const ashore = q.s < sa || q.s > sb, e = side * edge(side);
+            const low = (o: number, drop: number) => (ashore ? Math.min(floor(q), ground(q.x + q.nx * o, -(q.y + q.ny * o)) - drop) : floor(q));
+            const lh = low(h, 0.1), lw = low(w, 0.3);
+            facing(g, at(q, h, lh), at(q, w, lw), at(q, w, q.top + up), at(q, h, q.top + up), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], col);
+            if (ashore && floor(q) - Math.min(lh, low(e, 0.1)) > 0.05) facing(g, at(q, e, low(e, 0.1), true), at(q, h, lh), at(q, h, floor(q)), at(q, e, floor(q), true), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], stone ? COPING : CONCRETE);
           }
         }
         if (kind === "suspension" && !seam(P[0]) && !seam(P[P.length - 1])) {
@@ -1611,7 +1617,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         // foot following the ground under it, so it never stands out where the bank falls away
         for (const [sp, dir] of [[0, 1], [s, -1]] as const) {
           if (!supports.includes(sp) || under(sp + dir * 0.5)) continue;
-          const q = lerpAt(sp), underside = q.top - DECK + 0.02, fwd = [-q.ny * dir, 0, -q.nx * dir];
+          const q = lerpAt(sp), underside = q.top - DECK + 0.02, fwd = [q.ny * dir, 0, q.nx * dir];
           const n = Math.max(2, Math.ceil((Ws(1) + Ws(-1)) / 1.0));
           for (let k = 0; k < n; k++) {
             const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
