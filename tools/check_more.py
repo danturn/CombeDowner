@@ -40,6 +40,15 @@
     a roof as world.ts draws it, slowly or falling fast on a slow frame, stands on it at the drawn
     height; no part of an outline is left with no roof over it; and walking across a roof never
     takes you down into it. CD_ROOFS=0 leaves it out.
+23. Paths are whole, as the game draws them (tools/overroad.mjs, in the same look as rule 20, along
+    every path on the ground, half a metre apart along it and a quarter across): the first face seen
+    over a path is the path, or the paving or street it crosses, not the ground's own grass come up
+    through it ("ground drawn over a path") nor bare ground with no path under it at all, where a path
+    is broken into pieces or two ways meet with a gap between them ("path not drawn"); and no two
+    pieces of a path lying side by side on the ground differ in height by more than 0.05 m where they
+    meet (a rise within 2 cm, not a path across a steep bank). Each place's score is its area in m2, or a step's height. Rule 9 counts paths
+    clashing with walls and buildings, and 13 a way inside a building (so a path
+    under a roof is left to them); this counts the path itself coming apart.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
@@ -661,8 +670,19 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
         edge = F["pave"].boundary
         # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
         zs = levels_of(m)
+        # (and a flight of steps across paving is drawn on its own strip, never on the pavement: as
+        # furniture.ts stepsDetail, one a metre long with a tread count, handrails or a rise over 0.3 m)
+        ground = terrain(m["t"])
+        def drawn(r):
+            p = r["p"]
+            if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 for q in p) or LineString([q[:2] for q in p]).length < 1:
+                return False
+            return bool(r.get("sc") or r.get("hr")) or abs(ground(*p[-1][:2]) - ground(*p[0][:2])) > 0.3
+        flights = shapely.union_all([LineString([q[:2] for q in r["p"]]).buffer(r.get("w", 1.8) / 2 + 1.0, cap_style="flat")
+                                     for r in roads if drawn(r)] or [Polygon()])
         for g in getattr(F["path"], "geoms", [F["path"]]):
             if g.geom_type != "Polygon" or not inner.intersects(g): continue
+            if g.intersection(flights).area > 0.5 * g.area: continue
             shared = g.exterior.intersection(edge.buffer(0.05))
             # (its longest stretch: a path leaving the pavement at a slant at both ends runs along it nowhere)
             along = longest_run(shared)

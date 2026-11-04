@@ -74,9 +74,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
   wall rather than in one slope of road.
   Open country is the ground the map data says it is, not lawn: bare grey rock with boulders, heath
-  and scrub grown as low rounded shrubs, many in flower (drifts of heather purple and pink, and
-  fynbos yellow, pink and white), sand on the beaches and rushes in a marsh, from the map down to the
-  minimap and the mountains on the skyline. South of the equator (Cape Town) the sun crosses the
+  and scrub grown as low rounded shrubs, sand on the beaches and rushes in a marsh, from the map down to the
+  minimap and the mountains on the skyline. The heath grows what grows wild there, from the
+  ecoregion the map is in: on Table Mountain it's fynbos, half of it in flower in drifts of purple,
+  pink, yellow and white; in England it's mostly green gorse, bramble and heather, with a little gorse
+  yellow, heather purple and bramble white. Where England's fields would be forest left to
+  themselves, the satellite's "scrub" is grazing and hedgerows, so it's drawn as meadow, and only the
+  heath and scrub OpenStreetMap maps are heath. The grass and the trees belong there too: in
+  Cape Town's summer-dry climate the meadows and verges are going to straw and a quarter of the
+  trees are pines among olive and grey-green leaves, while England keeps its green fields,
+  buttercups and daisies, and its broadleaves with the odd conifer and copper beech. South of the equator (Cape Town) the sun crosses the
   northern sky, so slopes facing north are the sunny ones. A whole day goes by every 24 minutes,
   and the game always opens, and every new game starts, at seven in the morning with the sun just
   up; everyone in a game sees the same time.
@@ -248,10 +255,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   rest open in a sweep round them; where a map starts you in its centre, you start just outside it instead. Each zone has its own structure and a challenge or two, each marked on both maps
   with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
   sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
-  challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
-  cable car open up with the zone they're in, from the second on (before then a bus stop says "No
-  buses out this way yet"), and none of them takes you past the wall. Bath and Cape Town have six
-  zones and Bradford-on-Avon three. Tick
+  challenge and any new way to get about, its card landing with a fanfare, a cheer and a shower of
+  confetti (a bigger one still when the last zone opens). Buses, bus routes, canal boats, balloons,
+  trains and the cable car open up with the zone they're in, from the second on (before then a bus
+  stop says "No buses out this way yet"), and none of them takes you past the wall. Bath and Cape
+  Town have six zones and Bradford-on-Avon three. Tick
   "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
   for the room.
 - **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
@@ -599,6 +607,7 @@ python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 python3 -I tools/ground_kinds.py $MAP
+python3 -I tools/region.py $MAP                # heath, grass and trees, from data/$MAP/region.json
 ```
 
 `prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
@@ -660,12 +669,12 @@ gables do, and a terrace or a pair of semis is decided together, so a row reads 
 steps only where the survey shows it really does; where one roof steps down to another the step
 has its wall, so no roof shows a gap into the house. The roofs for every square are kept in
 `data/$MAP/measured/faces/`; a building the survey can't see, or whose row the new roofs don't fit
-clearly better, keeps the flat, gabled or hipped roof that fits it best. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
+clearly better, keeps the flat, gabled or hipped roof that fits it best; one too far off square for a single rectangle (an L or a T, a church with its apse and chapels, a wedge on a corner plot, a block round a courtyard) gets one roof following its whole outline, hips, valleys and ridges as a roofer would lay them and gables at the ends of a gabled building's wings, rather than a few gables on a flat cap; a block too deep for its pitch is flat on top. The parts a building is split into, and every house of a row, share one roof covering and one wall; a house keeps the ridge the lidar fits to it wherever that fit is plainly better one way than the other and hips no party wall (and its hipped or gabled ends where the fit is plainly sure of those too); where it isn't (most footprints are drawn a metre or two off the survey's building), a house in a row of alike houses takes its row's ridge direction (as its sure houses run, or along the row) and roof form, so a semi's halves are hipped or gabled together, and a corner house or end pavilion of another shape keeps its own. Steps in height between them stay, with the gable wall showing, as Bath's rows climb its hills. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
 without them (a row keeps its old roofs where the new ones don't fit the survey clearly better),
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
-walls or too tall, faces lying over each other and buildings standing in each other. Every roof is
+walls or too tall, faces lying over each other and buildings standing in each other, and, on the pitched roofs too, a roof covering only part of its building, roofs over one building that don't meet, buildings sharing a wall whose roofs differ in covering or colour, alike houses in a row with their ridges turned against each other, and a semi's halves roofed differently. Every roof is
 solid where it's drawn: you stand on the strips closing the slits between its faces, walk into its
 steps rather than through them, land on it however fast you fall, and stand on a building that
 reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run

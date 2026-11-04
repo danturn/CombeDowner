@@ -280,7 +280,7 @@ export class Oddments {
     this.makeSolid();
     zones.set(this.s.f, this.freePlay);
     const q = new URLSearchParams(location.search);
-    // for testing: ?objects=6 has that many turn up round you, and ?zone=3 opens up to the third zone
+    // for testing: ?objects=6 has that many turn up round you, and ?zone=3 opens up to the third zone, fly-overs and all
     const dev = q.get("objects");
     if (dev !== null && Number.isFinite(+dev)) this.devAsk = Math.max(0, Math.min(MOST, Math.round(+dev)));
     const zone = q.get("zone");
@@ -426,9 +426,9 @@ export class Oddments {
       }
       changed = n > 0;
     } else if (d.op === "zone" && Number.isFinite(d.n)) {
-      // for testing: straight to zone n open
+      // for testing: straight to zone n open, with its fly-overs, as if the last socket had just been filled
       const f = this.zones.need(Math.max(0, Math.min(this.zones.count - 1, (d.n | 0) - 1)));
-      if (f !== s.f) { s.f = f; s.o = s.o.slice(0, Math.max(0, this.total - f)); changed = true; }
+      if (f !== s.f) { s.f = f; s.o = s.o.slice(0, Math.max(0, this.total - f)); if (f > 0) s.e = { f, by: from }; changed = true; }
     } else if (d.op === "mine") {
       const r = clean(d.r);
       if (r && further(r, s)) {
@@ -647,7 +647,7 @@ export class Oddments {
     if (!this.on) return;
     if (isHost) this.host(dt, me, others);
     if (this.devAsk && (isHost || this.known)) { this.spawnNear(this.devAsk, isHost); this.devAsk = 0; }
-    if (this.devZone && (isHost || this.known)) { this.openZone(this.devZone, isHost); this.devZone = 0; }
+    if (this.devZone && this.known) { this.openZone(this.devZone, isHost); this.devZone = 0; }
     for (const st of this.structs) {
       const near = Math.hypot(me.x - st.x, me.z - st.z) < SHOWN && this.zones.isOpen(st.zone.i);
       if (near && !st.built) this.build(st);

@@ -118,7 +118,7 @@ export function buildOutskirts(map: GameMap, scene: THREE.Scene, kit: OutskirtsK
         const x = W.tr[i * 3], y = W.tr[i * 3 + 1];
         return [x, y, W.ground(x, -y) + Z0, W.tr[i * 3 + 2]];
       });
-      L.veg = buildVegetation(L.group, trees, [], Z0, kit.vegetation);
+      L.veg = buildVegetation(L.group, trees, [], Z0, kit.vegetation.look, kit.vegetation);
     }
   }
 

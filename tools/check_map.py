@@ -33,19 +33,28 @@ case by case:
     fences or hedges run on top of each other; a front path goes through a garden boundary only at
     a gate; no tree, shrub, boulder or street item stands on a wall or inside a building; no building
     stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
-    pavement); and where the road and the paving meet, neither pokes a point or a sliver into the
-    other (check_more.slivers).
+    pavement); where the road and the paving meet, neither pokes a point or a sliver into the
+    other (check_more.slivers); no flight of steps runs on over a pavement, into the road or into
+    another path; and no boundary stops just short of another, a building, a street or a path.
+10. Under a bridge: there is an open gap, and no wall, building, tree or street item stands in it;
+    no street's carriageway or pavement is drawn on a path passing under it, and no face under the
+    deck has a corner lifted up to it.
 11. Roofs are whole, as the game draws them (web/src/world.ts, roofFaces and addBuilding): no
     open edge left between a lidar roof's faces or between a face and its wall top once the game
     has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
     wall drawn facing indoors, no roof reaching well past its walls, no ridge more than 15 m over
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
-    other, no two buildings standing in each other, and no footprint too small to draw.
+    other, no two buildings standing in each other, and no footprint too small to draw. The roofs the
+    game lays from roofsFit, and the roofs it lays over a whole outline (map.ts hipWhole, checked as
+    the lidar's are), are looked at too (tools/roofs_drawn.ts runs map.ts on the square): no
+    pitched roof leaving much of its building under a flat cap, no roofs over one building that
+    don't meet, and no two buildings sharing a wall (one building's parts, or a row) whose roofs
+    are in different coverings or colours, or don't meet along it at the same eaves.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
-    tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, and
-    whether roofs are solid to stand on.
+    tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, whether
+    roofs are solid to stand on, and whether paths are whole as they're drawn.
 """
-import functools, glob, json, math, multiprocessing, os, sys, collections
+import functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
@@ -368,6 +377,7 @@ def main():
         fit_together(m, tag, note, f)
         roofs_whole(m, tag, note)
         under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
+        flights_and_openings(m, tag, note, ground, roads, marks, rail_pts)
         check_more.square(m, tag, note, f)
         return found
 
@@ -528,6 +538,75 @@ def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
                 if under_deck(x, y, foot): note(f"10 {kind} under a bridge", 1, (tag, round(x), round(y)), f"under {what}")
 
 
+MEETS = 0.5          # metres from something an end of a boundary must lie to meet it
+SHORT_OF = 3.0       # metres: a boundary stopping this short of something is meant to meet it (write_tile.MEET_REACH)
+STEP_OVER = 0.5      # metres of a flight on a street or another path before it is counted
+FACE_ON_PATH = 1.0   # square metres of a street's face on a path under a bridge before it is counted
+
+
+def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
+    """Rules 9 and 10 for steps and the ways under bridges, as the game draws them from the streets'
+    faces (sf): a flight is drawn whole along its line, so one running on over a pavement, into a
+    carriageway or into another path stands its treads there; and the faces under a deck are drawn on
+    the ground, so a street's carriageway or pavement left on a path passing under it, or a face with
+    a corner up at the deck, stands in the opening."""
+    F = check_more.faces_of(m)
+    street = shapely.union_all([F[k] for k in ("road", "service", "pave") if k in F] or [Polygon()]).buffer(-0.1)
+    shapely.prepare(street)
+    line = lambda p: LineString([q[:2] for q in p])
+    walks = [(line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2 - 0.1, cap_style=2), r) for r in roads
+             if r["c"] in PATHS and r["c"] not in ("steps", "pedestrian")]
+    wtree = shapely.STRtree([g for g, _ in walks])
+    for r, mk in zip(roads, marks):
+        if r["c"] != "steps" or any(mk): continue
+        L = line(r["p"])
+        # (as furniture.ts stepsDetail: nothing under a metre long, no treads where the map gives no
+        # count and it barely rises, and nothing at all without handrails either)
+        if L.length < 1: continue
+        rise = abs(ground(*r["p"][-1][:2]) - ground(*r["p"][0][:2]))
+        treads = r.get("sc") or (round(rise / 0.16) if rise > 0.3 else 0)
+        if not min(treads, int(L.length / 0.2)) and not r.get("hr"): continue
+        on = street.intersection(L).length
+        if on > STEP_OVER: note("9 steps onto a street", on, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{on:.1f} m of the flight on a pavement or the road")
+        into = max([walks[int(k)][0].intersection(L).length for k in wtree.query(L)] or [0.0])
+        if into > STEP_OVER: note("9 steps on a path", into, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{into:.1f} m of the flight on a path")
+    # the ways at grade a span passes over, as the game draws a path's strip
+    grade = [(LineString([a[:2], b[:2]]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2, cap_style=2), max(a[2], b[2]))
+             for r, mk in zip(roads, marks) if r["c"] in PATHS and r["c"] != "pedestrian"
+             for (a, b), fa, fb in zip(zip(r["p"], r["p"][1:]), mk, mk[1:]) if not fa and not fb]
+    gtree = shapely.STRtree([g for g, _ in grade])
+    sf = m.get("sf")
+    tris = None
+    if sf and "o" in sf:
+        v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
+        ids = [np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3) for k in ("road", "service", "pave", "path") if sf.get(k)]
+        if ids:
+            tris = v[np.concatenate(ids)]
+            ttree = shapely.STRtree(shapely.polygons(tris[:, :, :2]))
+    sq = box(*m["b"])
+    for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
+        if what == "railway" or len(xy) < 2: continue
+        span = LineString(xy)
+        if span.length < 3 or not sq.contains(span.interpolate(0.5, normalized=True)): continue
+        cum = [0.0]
+        for u, w in zip(xy, xy[1:]): cum.append(cum[-1] + math.dist(u, w))
+        under_at = lambda x, y: float(np.interp(span.project(Point(x, y)), cum, tops)) - depth
+        outline = span.buffer(hl, single_sided=True, cap_style=2).union(span.buffer(-hr, single_sided=True, cap_style=2))
+        for k in gtree.query(outline):
+            g, z = grade[int(k)]
+            x = g.intersection(outline)
+            if x.is_empty or under_at(x.centroid.x, x.centroid.y) - z < 2.0: continue
+            on = street.intersection(x).area
+            if on > FACE_ON_PATH: note("10 street drawn on a path under a bridge", on, (tag, round(x.centroid.x), round(x.centroid.y)), f"{on:.0f} m2 under {what}")
+        if tris is None: continue
+        for k in ttree.query(outline.buffer(-0.3), predicate="intersects"):
+            t = tris[int(k)]
+            cx, cy = t[:, 0].mean(), t[:, 1].mean()
+            u = under_at(cx, cy)
+            if t[:, 2].max() > u - 1.0 and t[:, 2].min() < u - 2.5:
+                note("10 face rising into a bridge", t[:, 2].max() - t[:, 2].min(), (tag, round(cx), round(cy)), f"{t[:, 2].min():.1f} to {t[:, 2].max():.1f} m under {what}")
+
+
 @functools.lru_cache(maxsize=24)
 def _walls_and_gates(path):
     """One square's walls as lines and its gate ends as points. Squares are checked in order, so each
@@ -653,6 +732,38 @@ def fit_together(m, tag, note, f=None):
                             and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt.buffer(0.6)))))
         if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
+    # an end that stops just short of something it should meet: another boundary (not end to end,
+    # which is a gap left between two), a building, or a street's or path's edge, within SHORT_OF
+    # along its own line, with no gateway, drive or front path in between. One ending in the open,
+    # with nothing ahead of it in reach, is a real loose end (a park wall, a ruin), not a fault.
+    F = check_more.faces_of(m)
+    ground_faces = shapely.union_all([F[k] for k in F] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
+    meets = shapely.union_all([ground_faces] + homes).buffer(MEETS)
+    shapely.prepare(meets)
+    ahead = [h.exterior for h in homes if h.geom_type == "Polygon"] + [g for g in getattr(ground_faces.boundary, "geoms", [ground_faces.boundary])]
+    ahead_tree = shapely.STRtree(ahead) if ahead else None
+    openings = ([LineString([(g[0], g[1]), (g[2], g[3])]) for g in m.get("gt") or []]
+                + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.3) for q in m.get("dv") or []]
+                + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.55) for q in m.get("fp") or []])
+    open_tree = shapely.STRtree(openings) if openings else None
+    for i, L in enumerate(bar_lines):
+        if L.length < 1.5 or Point(L.coords[0]).distance(Point(L.coords[-1])) < MEETS: continue    # (a ring meets itself)
+        c = list(L.coords)
+        for pt, back in ((Point(c[0]), c[1:]), (Point(c[-1]), c[-2::-1])):
+            if meets.contains(pt) or (edge is not None and edge.distance(pt) < MEETS): continue
+            if any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < MEETS for k in ends_tree.query(pt.buffer(MEETS))): continue
+            q = next((b for b in back if math.dist(b[:2], (pt.x, pt.y)) >= 0.3), None)
+            if q is None: continue
+            d = math.dist(q[:2], (pt.x, pt.y))
+            ray = LineString([(pt.x, pt.y), (pt.x + (pt.x - q[0]) / d * SHORT_OF, pt.y + (pt.y - q[1]) / d * SHORT_OF)])
+            if open_tree is not None and any(openings[int(k)].intersects(ray) for k in open_tree.query(ray)): continue
+            hit = [h for k in bar_tree.query(ray) if int(k) != i and bar_lines[int(k)].intersects(ray)
+                   for h in [bar_lines[int(k)].intersection(ray)]
+                   if min(Point(bar_lines[int(k)].coords[0]).distance(h), Point(bar_lines[int(k)].coords[-1]).distance(h)) >= 0.3]
+            if not hit and ahead_tree is not None:
+                hit = [k for k in ahead_tree.query(ray) if ahead[int(k)].intersects(ray)]
+            if hit:
+                note("9 boundary stopping short", 1, (tag, round(pt.x), round(pt.y)), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs
     ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.7) for q in m.get("fp") or []]
@@ -772,16 +883,58 @@ def roof_seams(b):
     return strips, opened
 
 
+@functools.lru_cache(maxsize=1)
+def _roofs_drawn_script():
+    """tools/roofs_drawn.ts bundled with the game's map.ts, once; None if that can't be done."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    web = os.path.join(os.path.dirname(here), "web")
+    try:
+        js = subprocess.run([os.path.join(web, "node_modules", ".bin", "esbuild"), "--bundle", "--platform=node", "--format=esm",
+                             "--loader=ts", "--log-level=error", "--banner:js=" + open(os.path.join(here, "roofs", "shim.js")).read()],
+                            input=open(os.path.join(here, "roofs_drawn.ts")).read(), cwd=web, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    f = tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False)
+    f.write(js); f.close()
+    return f.name
+
+
+def roofs_drawn(bl):
+    """The roofs the game draws over each building (tools/roofs_drawn.ts), or None if it can't be run."""
+    js = _roofs_drawn_script()
+    if js is None or not bl: return None
+    with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
+        json.dump(bl, f); f.flush()
+        try: return json.loads(subprocess.run(["node", js, f.name], capture_output=True, text=True, check=True).stdout)
+        except (OSError, subprocess.CalledProcessError, ValueError): return None
+
+
+def _rect(q):
+    return Polygon(q).buffer(0)
+
+
+def _pitched(d):
+    """Whether the game draws a sloping roof on the building (not only flat faces or a flat cap)."""
+    if d.get("p"): return True
+    rm = d.get("rm")
+    if not rm: return False
+    v, t = rm["v"], rm["t"]
+    return max(v[2::3], default=0) - min(v[2::3], default=0) > 0.5
+
+
 def roofs_whole(m, tag, note):
     """Rule 11: every building's roof is whole, as the game draws it."""
     bl = m.get("bl") or []
+    drawn = roofs_drawn(bl)
     polys = []
     for b in bl:
         ring = b["r"][0]
         P = Polygon(ring, b["r"][1:]) if len(ring) >= 3 else None
         if P is not None and not P.is_valid: P = P.buffer(0)
         polys.append(P)
-    for b, P in zip(bl, polys):
+    for bi, (b, P) in enumerate(zip(bl, polys)):
+        if drawn is not None and not b.get("rm") and drawn[bi].get("rm"):
+            b = dict(b, r=drawn[bi]["r"], rm=drawn[bi]["rm"])     # a roof the game lays over the whole outline
         if P is None or P.is_empty or P.area < 1:
             note("11 footprint too small to draw", 1, (tag, round(b["r"][0][0][0]), round(b["r"][0][0][1])), "")
             continue
@@ -810,7 +963,8 @@ def roofs_whole(m, tag, note):
         pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q[:4]])).buffer(0.01) for q in strips]
         try: shut = shapely.union_all(pieces)
         except shapely.errors.GEOSException: shut = shapely.union_all(pieces, grid_size=0.01)
-        bare = P.difference(shut).area
+        try: bare = P.difference(shut).area
+        except shapely.errors.GEOSException: bare = P.difference(shapely.make_valid(shut).buffer(0)).area
         if bare > 1: note("11 footprint left without a roof", bare, at, f"{bare:.1f} m2")
         # (the points' rounding leaves corners a few centimetres open: only a longer opening shows)
         gap = max([o[4] for o in opened if not o[5] and P.buffer(-0.05).intersects(LineString([o[:2], o[2:4]]))], default=0)
@@ -826,6 +980,88 @@ def roofs_whole(m, tag, note):
             if j <= i: continue
             x = p.intersection(q).area
             if x > 2: note("11 buildings standing in each other", x, (tag, round(p.centroid.x), round(p.centroid.y)), f"{x:.0f} m2")
+    roofs_drawn_whole(m, tag, note, polys, drawn)
+
+
+PART_WALL = 2.5     # buildings.groups: two footprints share a wall at least this long
+FLAT_LEFT = 10.0    # m2: a flat-capped part of a pitched building this big is seen as a roof missing
+
+
+def roofs_drawn_whole(m, tag, note, polys, drawn):
+    """Rule 11 on the roofs the game draws from roofsFit as well as the lidar's: a pitched roof that
+    covers only part of its building, roofs laid over one building that don't meet, and buildings
+    sharing a wall (one building's parts, or a row) in different coverings or colours, alike houses
+    in a row with their ridges turned against each other, and a semi's halves roofed differently."""
+    bl = m.get("bl") or []
+    if drawn is None: return
+    for b, d, P in zip(bl, drawn, polys):
+        if P is None or P.is_empty or P.area < 1 or d.get("rm") or not (b.get("rr") and b.get("rp")): continue
+        at = (tag, round(P.centroid.x), round(P.centroid.y))
+        rects = [_rect(r["q"]) for r in d["p"]]
+        flat = P.difference(shapely.union_all(rects)).area if rects else P.area
+        if d["f"] and flat > FLAT_LEFT and flat > 0.1 * P.area:
+            note("11 pitched roof covering only part of its building", flat, at, f"{flat:.0f} m2 of {P.area:.0f} flat")
+        if len(rects) > 1:
+            tree = shapely.STRtree([r.buffer(0.3) for r in rects])
+            seen, parts = set(), 0
+            for i in range(len(rects)):
+                if i in seen: continue
+                parts += 1
+                stack = [i]
+                while stack:
+                    k = stack.pop()
+                    if k in seen: continue
+                    seen.add(k)
+                    stack += [int(j) for j in tree.query(rects[k].buffer(0.3)) if int(j) not in seen]
+            if parts > 1: note("11 roofs over one building that don't meet", parts - 1, at, f"{parts} roofs")
+    ok = [i for i, P in enumerate(polys) if P is not None and P.area >= 1]
+    grown = {i: polys[i].buffer(0.35) for i in ok}
+    tree = shapely.STRtree([grown[i] for i in ok])
+    for a in ok:
+        for k in tree.query(grown[a]):
+            c = ok[int(k)]
+            if c <= a: continue
+            wall = grown[a].intersection(grown[c])
+            if wall.is_empty or wall.area <= 0: continue
+            rr = list(wall.minimum_rotated_rectangle.exterior.coords)[:4]
+            if max(math.dist(rr[0], rr[1]), math.dist(rr[1], rr[2])) < PART_WALL: continue
+            A, C, dA, dC = bl[a], bl[c], drawn[a], drawn[c]
+            if not (_pitched(dA) and _pitched(dC)): continue
+            mid = wall.centroid
+            at = (tag, round(mid.x), round(mid.y))
+            if (A.get("rc") or "") != (C.get("rc") or ""):
+                note("11 joined buildings' roofs in different coverings", 1, at, f"{A.get('rc')} and {C.get('rc')}")
+            if (A.get("rk") or "") != (C.get("rk") or ""):
+                note("11 joined buildings' roofs in different colours", 1, at, f"{A.get('rk')} and {C.get('rk')}")
+            # a step in height between joined roofs, with its gable wall, is how Bath's rows climb a
+            # hill; and the lidar's roofs and the game's whole-outline roofs follow their own outline.
+            # What's wrong is alike houses roofed as though they weren't one row
+            if A.get("rm") or C.get("rm") or dA.get("rm") or dC.get("rm") or not (A.get("rr") and C.get("rr")): continue
+            ua, uc = _ridge_dir(A["rr"]), _ridge_dir(C["rr"])
+            turned = abs(ua[0] * uc[0] + ua[1] * uc[1]) < 0.7
+            if A.get("c") == "semi" and C.get("c") == "semi":
+                if turned or _hipped(A) != _hipped(C):
+                    note("11 semi's halves in different roof shapes", 1, at, "ridges turned" if turned else "one hipped, one gabled")
+            elif turned and _alike(polys[a], polys[c]):
+                note("11 ridge turned against a same-shaped neighbour", 1, at, "")
+
+
+def _ridge_dir(q):
+    dx, dy = q[1][0] - q[0][0], q[1][1] - q[0][1]
+    n = math.hypot(dx, dy) or 1
+    return dx / n, dy / n
+
+
+def _hipped(b):
+    return max(b.get("hp") or [0]) > 0.05
+
+
+def _alike(P, Q):
+    """buildings.rows: two outlines with each side at least ALIKE of the other's are one design."""
+    def sides(R):
+        q = list(R.minimum_rotated_rectangle.exterior.coords)
+        return sorted((math.dist(q[0], q[1]), math.dist(q[1], q[2])))
+    return all(min(x, y) >= 0.75 * max(x, y) for x, y in zip(sides(P), sides(Q)))
 
 
 def set_pieces_near(m):

@@ -906,6 +906,7 @@ void startReady().then(() => {
 (window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
 (window as any).__gfx = gfx;
+(window as any).__sounds = SFX;   // sounds rendered offline to a file, for listening without the game
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs
 
 // back from updating to the new version (freshReload), or a link with join=1: straight on into

@@ -267,7 +267,7 @@ def main(argv):
         if spans:
             print("  " + pool_use("writing", spans, time.time() - tp, jobs), flush=True)
         for k, c in sorted(placed.items()):
-            print(f"partition: {'crossings and lights' if k == 'cx' else 'across paths'} in the squares written: "
+            print(f"partition: {dict(cx='crossings and lights', bd='boundaries').get(k, 'across paths')} in the squares written: "
                   + ", ".join(f"{n} {v}" for n, v in sorted(c.items())), flush=True)
         done = [t for t in todo if t in kept or t in wrote]
         stubs = drop_edge_stubs(out_dir, done)

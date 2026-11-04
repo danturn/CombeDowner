@@ -3,8 +3,10 @@
 // trunks fork into a few limbs. Crowns sway in the wind. Past a short distance each plant swaps to a
 // cheaper crown, further off to a flat picture that always turns to face you, Duke Nukem style
 // (?trees=flat in the address draws every plant like that, close up too), and past the fog it
-// isn't drawn at all. Nothing here goes over the network: everyone grows the same plants from the map.
+// isn't drawn at all. How many are conifers and the tints of their leaves belong to the map's
+// ecoregion (region.ts). Nothing here goes over the network: everyone grows the same plants from the map.
 import * as THREE from "three";
+import type { Region } from "./region";
 import { TREE_TO } from "./view";
 import { show } from "./cull";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -152,6 +154,7 @@ export interface Vegetation {
 /** The leaf and bark materials and the tree and shrub models, built once and shared. */
 export interface VegetationKit {
   time: { value: number };
+  look: Region["trees"];
   foliageMat: THREE.Material; barkMat: THREE.Material; flatMat: THREE.Material;
   geo: { trunk: THREE.BufferGeometry; broad: THREE.BufferGeometry[][]; cone: THREE.BufferGeometry[]; shrub: THREE.BufferGeometry[] };
 }
@@ -172,7 +175,7 @@ interface Chunk {
 
 const LODS = [0, 1];   // the 3D crowns' levels of detail; past them, the flat pictures
 
-function vegetationKit(): VegetationKit {
+function vegetationKit(look: Region["trees"]): VegetationKit {
   const time = { value: 0 };
   const foliageMat = new THREE.MeshLambertMaterial({ map: TX.foliage(), alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true });
   foliageMat.onBeforeCompile = (shader) => {
@@ -242,21 +245,21 @@ function vegetationKit(): VegetationKit {
     cone: LODS.map((l) => coniferCrown(l)),
     shrub: LODS.map((l) => shrubGeo(l)),
   };
-  return { time, foliageMat, barkMat, flatMat, geo };
+  return { time, look, foliageMat, barkMat, flatMat, geo };
 }
 
 /**
  * Builds the trees (x, y, ground, size[, in a wood]) and shrubs (x, y, ground, height) into the
- * scene (or any group in it). Z0 turns ground heights into scene heights. Given a kit from
- * another Vegetation, it shares its materials and models, and that one keeps the wind's time.
+ * scene (or any group in it). Z0 turns ground heights into scene heights. look: the map's trees
+ * (region.ts). Given a kit from another Vegetation, it shares its materials, models and look, and
+ * that one keeps the wind's time.
  */
-export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, shared?: VegetationKit): Vegetation {
-  const kit = shared ?? vegetationKit(), { time, foliageMat, barkMat, flatMat, geo } = kit;
+export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, look: Region["trees"], shared?: VegetationKit): Vegetation {
+  const kit = shared ?? vegetationKit(look), { time, foliageMat, barkMat, flatMat, geo } = kit;
   const made: THREE.InstancedMesh[] = [], ownGeos: THREE.BufferGeometry[] = [];  const SHRUB_TO = [30, 90, 180];
-  // tints over the leaf texture: mostly fresh greens, some darker, some yellower, the odd copper beech
-  const LEAF = [[0.8, 0.8, 0.78], [0.7, 0.76, 0.7], [0.88, 0.84, 0.62], [0.62, 0.7, 0.6], [0.76, 0.8, 0.72], [0.92, 0.8, 0.56], [0.7, 0.5, 0.48]].map((c) => new THREE.Color(...c));
-  const CONIFER = new THREE.Color(0.5, 0.6, 0.58);
-  const SHRUB = [[0.74, 0.78, 0.7], [0.66, 0.74, 0.62], [0.82, 0.78, 0.58], [0.62, 0.66, 0.58], [0.72, 0.82, 0.68]].map((c) => new THREE.Color(...c));
+  // tints over the leaf texture
+  const tint = (c: number[]) => new THREE.Color(c[0], c[1], c[2]);
+  const LEAF = kit.look.leaf.map(tint), CONIFER = tint(kit.look.conifer_leaf), SHRUB = kit.look.shrub.map(tint), CONIFERS = kit.look.conifer;
 
   const chunks: Chunk[] = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
@@ -344,7 +347,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
   let seq = 0;
   for (const list of group(trees, (t) => t)) {
     // trees inside woods are trunks only: the wood canopy is drawn as one surface
-    const kind = list.map((t) => (t.length >= 5 ? -1 : hash(seq++ * 31) < 0.08 ? 2 : hash(seq * 7 + 3) < 0.5 ? 0 : 1));
+    const kind = list.map((t) => (t.length >= 5 ? -1 : hash(seq++ * 31) < CONIFERS ? 2 : hash(seq * 7 + 3) < 0.5 ? 0 : 1));
     const count = (k: number) => kind.filter((v) => v === k).length;
     const trunks = instanced(geo.trunk, barkMat, list.length), tmat = new Float32Array(list.length * 16);
     const meshes = LODS.map((l) => [geo.broad[l][0], geo.broad[l][1], geo.cone[l]].map((g, k) => instanced(g, foliageMat, count(k))));

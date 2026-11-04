@@ -2190,6 +2190,7 @@ if TILE is not None:
 # 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground, and the wild ground's
 # (tools/wild.py): 8 rock, 9 heath and scrub, 10 sand, 11 wetland, under all the rest
 import wild
+from region import open_shrub
 GT = np.zeros(grid.shape, dtype=np.int8)
 for t, poly in wild.mapped(L("land"), polys, lambda g: transform(proj, g)):
     win, inn = cover_xy(poly)
@@ -2214,7 +2215,7 @@ for t, g in layers:
         GT[win][inn] = t
 _from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [q for g, p in L("building") for q in polys(g)],
                        [shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2)
-                        for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS])
+                        for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS], open_shrub=open_shrub(A.id))
 print(f"wild ground: {', '.join(f'{int((GT == k).sum())} points of {n}' for k, n in wild.NAMES.items())} ({_from_cover} from the land cover)")
 
 # ---- buildings ----------------------------------------------------------------
@@ -2491,6 +2492,10 @@ if TILE is not None:
     near_m = [i for i, c in enumerate(cand) if c[0].intersects(BM)]
     cand, info, keys = [cand[i] for i in near_m], [info[i] for i in near_m], [keys[i] for i in near_m]
     if measured: measured = [measured[i] for i in near_m]
+_why = Counter(d["row_roof"] for d in info if d["row_roof"])
+_kept = _why.pop("survey", 0)
+print(f"roofs: {_kept + sum(_why.values())} houses in rows of alike houses: {_kept} keep the survey's roof, the rest take their row's "
+      f"({', '.join(f'{n} {k}' for k, n in _why.most_common())})")
 # tree heights from the lidar too, now the roofs under trees have been measured against the Meta map
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])

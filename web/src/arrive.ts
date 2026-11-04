@@ -37,6 +37,8 @@ export class Arrival {
 
   /** The cover's up: hold the player still and let nothing hurt them. */
   get up() { return this.t >= 0; }
+  /** It's had its first look and isn't up, so the view's yours to show something in (a fly-over). */
+  get clear() { return !!this.from && this.t < 0; }
 
   /** The next jump is this sort of arrival (a respawn, a train), for what the cover says. */
   next(kind: ArrivalKind) { this.kind = kind; }

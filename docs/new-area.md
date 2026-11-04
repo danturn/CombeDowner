@@ -15,6 +15,7 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
 | 2021 Census, accommodation type (TS044) | how many homes in each street are flats, terraced, semi-detached or detached | recommended | England and Wales |
 | Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
+| RESOLVE Ecoregions 2017 | the map's ecoregion and biome: what the heath and scrub grow, and whether the satellite's shrubland is wild heath there, how dry the grass gets, the trees' kinds and leaves | recommended (`tools/region.py`; without it, England's look) | worldwide |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
 **To make a new map, follow the `new-area` skill (`.claude/skills/new-area/SKILL.md`)**: it runs
@@ -474,6 +475,23 @@ data/raw/$MAP/wide` measures each church's tower and spire from the lidar into
 `data/$MAP/measured/towers.json`; run it before the squares are built, which place them.
 `tools/new_area.py build` runs both.
 
+### What the land is like: heath, grass and trees
+
+Every map's data has one small record, `data/$MAP/region.json`, in the same shape wherever the map
+is: the ecoregion, biome and realm its ground lies in, from RESOLVE's Ecoregions 2017 (CC BY 4.0;
+846 ecoregions in 14 biomes over all the world's land), with the source for the credits.
+`python3 -I tools/region.py $MAP fetch` looks it up (it downloads the ecoregions once, 150 MB, into
+`data/raw/ecoregions/`); a map with no land under it in the ecoregions still gets a record, saying
+so, and the plain look. The squares read it (above, wild ground), and `python3 -I tools/region.py
+$MAP` writes `web/public/maps/$MAP-region.json`, the look the game reads: the heath's greens, how
+much of it flowers and the flowers' colours; how far a dry summer browns the grass, meadows and
+bare ground, and the meadows' flowers; how many trees are conifers and the tints of the trees',
+garden shrubs' and woods' leaves. All of it goes by the biome (the table in `tools/region.py`, with
+a few changes by realm), never by the place or the country, and the game never asks which map it
+is. A temperate broadleaf land like England's has the look the game always had; a Mediterranean
+one like the Cape's has fynbos in flower, grass gone to straw and a quarter of its trees pines.
+`tools/new_area.py build` runs both.
+
 ## 4. Landmarks (optional)
 
 The build can't draw what the data doesn't show, such as a church spire, a portico or an
@@ -550,8 +568,12 @@ changed for every area at once.
    beaches and sand, wetland and grassland are each their own kind of ground, under the streets,
    paths and buildings and never inside a garden. Overture's satellite land cover fills in open
    country the land layer hasn't mapped, but never near a building or a street, nor inside any
-   land use but a national park or nature reserve. Boulders are scattered over the bare rock last,
-   clear of everything else.
+   land use but a national park or nature reserve. Its shrubland is heath only where the map's
+   biome has open shrubland of its own (fynbos and maquis, deserts, grassland and savanna, moors
+   above the trees, tundra); where the land would be forest left to itself, as in Britain, the
+   satellite can't tell grazing and hedgerows from scrub, so it's meadow there. The biome comes from
+   `data/<map>/region.json` (`python3 -I tools/region.py <map> fetch`, below). Boulders are scattered
+   over the bare rock last, clear of everything else.
 8. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
    present, tree heights and crowns come from it, with roofs and thin things removed. Trunks are
    kept off roads and pavements.
