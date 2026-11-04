@@ -585,12 +585,13 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 @keyframes bunting-tick { from { transform: scale(1.5); color: #ffd84a; } to { transform: scale(1); } }
 /* A job's brief, read at its noticeboard (brief.ts): pinned up below the crosshair. Its foot says
    what E does, so the use prompt and Click to aim stand down while it's up. */
-#jobposter { position: absolute; left: 50%; top: calc(50% + 26px); transform: translateX(-50%) rotate(-1deg); width: min(400px, calc(100vw - 32px)); pointer-events: none; }
+#jobposter { position: absolute; left: 50%; top: calc(50% + 20px); transform: translateX(-50%) rotate(-1deg); width: min(400px, calc(100vw - 32px)); pointer-events: none; }
 #hud:has(#jobposter:not([hidden])) :is(#usehint, #clickhint) { visibility: hidden; }
 /* however long the poster's words, its foot (what E does) stays on the screen: the words give way */
-#jobposter { display: flex; flex-direction: column; max-height: calc(50vh - 40px); }
+#jobposter { display: flex; flex-direction: column; max-height: calc(50vh - 34px); overflow: hidden; }
 #jobposter > * { flex: none; }
-#jobposter .bblurb { flex: 0 1 auto; min-height: 2.6em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; }
+#jobposter > :not(.cut-flag, .bkind, .btitle, .bfoot) { flex: 0 1 auto; min-height: 0; overflow: hidden; }
+#jobposter .bblurb { min-height: 2.6em; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; }
 #jobrecall { display: flex; flex-direction: column; }
 #jobrecall > * { flex: none; }
 #jobrecall > .wsc { flex: 0 1 auto; min-height: 0; overflow: hidden; }
