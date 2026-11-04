@@ -96,7 +96,7 @@ import { Oddments } from "./oddments";
 import { bonfireKey } from "./saves";
 import { Reveal } from "./reveal";
 import { challengesOn, useChallenges } from "./challenges";
-import { Zones, type TravelFind } from "./zones";
+import { Zones, zoneMapWanted, type TravelFind } from "./zones";
 import { mine as myFeatures, packFeatures, setFeatures, unpackFeatures, type Features } from "./features";
 import "./challengetest";
 import "./lockrun";
@@ -3906,7 +3906,8 @@ export class Game {
     if (!Z.has("bus") && this.vehicles.list.some((v) => v.kind === "bus" || v.kind === "minibus")) this.planTravel();
     if (this.zonesSeen !== Z.version) {
       this.zonesSeen = Z.version;
-      this.minimap.zones = this.map.zoneFence ? { shut: Z.shutCells(), wall: Z.edges(), names: Z.list.map((z) => ({ n: z.name, x: z.x, z: z.z, open: Z.isOpen(z.i) })) } : null;
+      const every = zoneMapWanted ? Z.everyZone() : undefined;
+      this.minimap.zones = this.map.zoneFence || every ? { shut: Z.shutCells(), wall: Z.edges(), names: Z.list.map((z) => ({ n: z.name, x: z.x, z: z.z, open: Z.isOpen(z.i) })), every } : null;
       this.balloons.shut = Z.can("balloon") ? "" : Z.shut("balloon");
       if (this.world.cableway) this.world.cableway.shut = !Z.can("cable");
       this.minimap.spots = this.gameSpots();
