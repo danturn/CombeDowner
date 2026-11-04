@@ -30,33 +30,23 @@ export const GROUPS = [
 
 /** The rules for using the pieces, shown over the catalogue. */
 export const RULES = `
-<h3>Three frames, and props</h3>
+<h3>Three looks</h3>
 <ul>
-<li><b>The paper</b> is Bath talking to you: a cutting from the Chronicle (<code>cutting.ts</code>). A job's brief at its noticeboard, its title card and J's recall (<code>brief.ts</code>), every result card, the Chronicle itself, and the league table under Tab as the top of its page.</li>
-<li><b>BathText</b> is the machine: teletext (<code>teletext.ts</code>, <code>.card.tt</code>, <code>.ttmini</code>). The menu, pause, settings, linking a device, the wardrobe, the trophy cabinet, the big map's key, notes and pub card, and the game's notes about itself (the system tier).</li>
-<li><b>The plate</b> is the HUD while you play (<code>.panel</code>): health, rounds, the vehicle, the boss, the status panels, the Flag Lads' row, and every notice (news, a stage, an award), told apart by size, place and the colour of its edge; meters go in the slot under the crosshair.</li>
-<li><b>Props</b> are things in Bath or of the time, and keep their own look on purpose: the G-Shock watch, the Now Playing amp, the parking ticket when you die, the stone street sign and arrival, the Art Gallery's Paint window, and a zone opening's fly-over (the big celebration). A prop keeps to its slot and gets out of the way of the big map and a result card.</li>
-<li>Every sheet over the game has the same × in its top right corner (<code>modal.ts</code>), and Esc puts it away.</li>
+<li><b>Paper</b>: Bath talking to you. Briefs, title cards, result cards, the Chronicle.</li>
+<li><b>BathText</b>: the machine. Menus, settings, wardrobe, trophies, the big map's cards, system notes.</li>
+<li><b>Plate</b>: the HUD while you play. Panels and every notice.</li>
+<li><b>Props</b> keep their own look: the watch, the amp, the parking ticket, the street sign, Paint, a zone opening.</li>
 </ul>
-<h3>Which notice tier</h3>
+<h3>Notices</h3>
 <ul>
-<li><b>call</b>: news (a kill, a pickup, a ride, a fare) or something worth knowing (a tip, the examiner, a critic). A plate a little above the middle: big for a few words, smaller and wrapped for longer ones (over 64 characters, or <code>tier: "note"</code>). <code>Game.toast</code> / <code>notice()</code>. One queue: nothing is lost, and they wait while a title card, a countdown or the big map is up.</li>
-<li><b>stage</b>: a mission moving on (a wave, a checkpoint, a life gone, out of lives, he got away). A wider plate over the crosshair, edged and titled in the mission's colour. <code>missionCall()</code>.</li>
-<li><b>trick</b>: a score popping as you play (a flag shot, a boost, a barge). The same font and yellow but no plate, in the meter slot under the combo row; never held back.</li>
-<li><b>award</b>: something kept (a trophy, a wardrobe item). The plate with its medal, sliding in at the top; written on the result card instead while one is up.</li>
-<li><b>system</b>: the game about itself (the map stuck loading, someone on another version, safe graphics). A BathText strip along the top that stays till it's put right or closed. <code>systemNote()</code>.</li>
+<li><b>call</b> news or a tip &middot; <b>stage</b> a mission moving on &middot; <b>trick</b> a score pop &middot; <b>award</b> something kept &middot; <b>system</b> the game about itself.</li>
 </ul>
-<h3>Status panel slots</h3>
+<h3>Slots</h3>
 <ul>
-<li><b>Top left</b>: mission panels, the job first, then a bus shift, a shoot-out, the bonfire, then the Flag Lads' row, which stays up on a job. Up to three; talkers above.</li>
-<li><b>Top middle</b>: the title card (a brief), J's recall, then the compass and one bar at a time (a pub's banner, a boss).</li>
-<li><b>Top right</b>: the minimap, the feed under it.</li>
-<li><b>Bottom left</b>: health, the watch above it. <b>Bottom right</b>: rounds or the vehicle, never both. <b>Bottom middle</b>: the street name.</li>
-<li><b>The middle</b>: the stage plate over the crosshair; the use prompt under it, or at a noticeboard the brief, whose foot is the prompt; then one row per meter (<code>missionAux</code>: a gate's clock, a beat, a grip, the wings' flight); then the combo row; then trick pops.</li>
-<li>On a touch screen the top-left slot is the left column, the bottom corners keep clear of the buttons, and a key cap for use or ride (in the prompt or along a brief's foot) is a button.</li>
+<li>Top left: mission panels. Top middle: the brief. Top right: minimap. Bottom: health, rounds, street. Middle: stage, prompt, meters, combo, tricks.</li>
 </ul>
 <h3>Every mission</h3>
-<p>The brief at the board → <code>missionBegin</code> (the same brief as the title card) → <code>missionProgress</code> (+ <code>missionAux</code>) → <code>missionCall</code>, with J bringing the brief back → <code>missionResult</code>. The result card owns the end sound, lists the rewards, hides the use prompt, and has Continue (Space), Again (E) where there is one, × and an 8 s timer.</p>`;
+<p>Brief &rarr; title card &rarr; progress &rarr; calls (J for the brief) &rarr; result card.</p>`;
 
 /** The title card's samples, under the brief. */
 const TITLES = ["Job", "Long goal", "Race", "Wanted", "Challenge, with a best", "Bonfire", "Bus driver", "Pub takeover", "Shoot-out", "Long, two-line title"];
