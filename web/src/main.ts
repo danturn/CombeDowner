@@ -316,12 +316,12 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     // the ride takes what it takes on the real line: whatever the loading hasn't already used of it
     // is added to the game's clock, which the host tells everyone
     skipHours(Math.max(0, carry.journeySecs - (performance.now() - left) / 1000 * 86400 / dayLength()) / 3600);
-    game.news(`Arrived at ${mapName(toMap)}`, 4);
+    game.news(`Arrived at ${mapName(toMap)}`);
   } catch (e: any) {
     (window as any).__travelError = String(e?.message ?? e);
     $("loading").hidden = true;
     $("blackout").hidden = true;
-    old?.news(String(e?.message ?? e), 6);
+    old?.news(String(e?.message ?? e));
   }
 }
 
@@ -392,7 +392,7 @@ const trackpad = new Trackpad(canvas, () => game, () => !!game?.active && freeMo
 addEventListener("keydown", (e) => {
   if (!isKey(e.code, "mouseaim") || e.repeat || !freeMode || !game?.active || e.target instanceof HTMLInputElement) return;
   game.guide(ctlText(trackpad.toggle() ? "Trackpad aim on: move it to look, click to shoot"   // keys-ok: only ever the trackpad
-    : "Trackpad aim off: drag with it to look ({mouseaim} turns it back on)"), 3);
+    : "Trackpad aim off: drag with it to look ({mouseaim} turns it back on)"));
 });
 
 /** Pointer lock was refused, often because the click that asked for it came too long ago. */
@@ -647,8 +647,8 @@ async function play(code: string) {
       if (!(await showMap(pickedMap()))) return cancelLookup();
       if (!(await waitForMic(ctrl.signal))) return;
       start(code, LOCAL, net);
-      if (UP) game!.news(UP_TOAST, 4);
-      else game!.news(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press {pause} for the invite link.`, 6);
+      if (UP) game!.news(UP_TOAST);
+      else game!.news(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press {pause} for the invite link.`);
       return;
     }
     if (!mapInfo(found.map) || !valid(found.map)) {
@@ -682,7 +682,7 @@ async function play(code: string) {
     await showMap(found.map);
     if (!(await waitForMic(ctrl.signal))) return;
     start(code, LOCAL, net, found.ids);
-    if (UP) game!.news(UP_TOAST, 4);
+    if (UP) game!.news(UP_TOAST);
   } catch (e: any) {
     cancelLookup();
     $("menuerr").textContent = String(e.message ?? e);
@@ -806,7 +806,7 @@ const pad = new GamepadControls(() => game && {
   look: (dx, dy) => game!.look(dx, dy),
   driving: () => game!.atWheel,
   button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
-}, (text) => game?.news(text, 4));
+}, (text) => game?.news(text));
 const hold = (code: string) => (down: boolean) => key(code, down);
 // toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
 const press = (code: string) => (down: boolean) => { if (down) tap(code); };
@@ -900,7 +900,7 @@ requestAnimationFrame(frame);
 void startReady().then(() => {
   if (!UP) return;
   if (roomParam && roomParam !== "SOLO") $("play").click();
-  else { start("SOLO", true); game!.news(UP_TOAST, 4); }
+  else { start("SOLO", true); game!.news(UP_TOAST); }
 });
 
 // for automated tests

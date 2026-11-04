@@ -4,7 +4,10 @@
 // out of reach (the Flag Lads' row) are drawn from a copy of their markup, and pieces.ts says so.
 import * as MS from "../missionscreens";
 import * as WS from "../wantedscreens";
-import { guide, news, noticeClear, people, reward, score, systemNote } from "../notice";
+import { guide, named, news, noticeClear, noticeLinger, people, reward, score, systemNote } from "../notice";
+
+// the specimens stay up while they're looked at, however long each kind would stay in the game
+noticeLinger(1000);
 import { itemPicture } from "../itempic";
 import { usePrompt, keycaps } from "../useprompt";
 import { closeModals } from "../modal";
@@ -71,7 +74,7 @@ function clear() {
 const keep = (fn: () => void, ms: number) => { fn(); hold = window.setInterval(fn, ms); };
 /** A countdown going round 3, 2, 1, GO! for as long as it's up. */
 const cycle = (fn: (n: number) => void) => { let k = 0; keep(() => fn([3, 2, 1, 0][k++ % 4]), 900); };
-const feed = (html: string, kind?: "in" | "out") => people(html, { kind, secs: 600 });
+const feed = (html: string, kind?: "in" | "out") => people(html, kind);
 
 const LONG = "Get every last one of the tourists' sandwiches back to the benches by the Abbey before the gulls work out where they went";
 const ENTRIES = (o: { title: string; inIt: boolean; n: string[]; left: number; colour?: string; label?: string }) => {
@@ -121,46 +124,46 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Calm (none)": () => MS.missionBegin({ label: "Art Gallery", colour: "#e0a8d8", title: "Paint the Show", goal: "No countdown, calm: straight in", detail: "At the Holburne" }),
   },
   guide: {
-    Instruction: () => keep(() => guide("Chocked at the stop: go and sell the tickets at the front door", 30), 25000),
-    "With key caps": () => keep(() => guide("A car coming down. Pull in: {strafeleft}", 30), 25000),
-    "Under the use prompt": () => { usePrompt("<b>{use}</b> Get in the Badgerline bus"); keep(() => guide("Your bus is here. {use} to get on", 30), 25000); },
-    "Long instruction": () => keep(() => guide("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake", 30), 25000),
-    "The examiner": () => keep(() => guide("Mr Pratt: “Next left, please. When it's safe. Which it is now.”", 30), 25000),
+    Instruction: () => keep(() => guide("Chocked at the stop: go and sell the tickets at the front door"), 25000),
+    "With key caps": () => keep(() => guide("A car coming down. Pull in: {strafeleft}"), 25000),
+    "Under the use prompt": () => { usePrompt("<b>{use}</b> Get in the Badgerline bus"); keep(() => guide("Your bus is here. {use} to get on"), 25000); },
+    "Long instruction": () => keep(() => guide("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake"), 25000),
+    "The examiner": () => keep(() => guide("Mr Pratt: “Next left, please. When it's safe. Which it is now.”"), 25000),
   },
   news: {
-    "A kill": () => keep(() => news("You splatted Ann", 30), 25000),
-    "A pickup": () => keep(() => news("+25 rifle rounds", 30), 25000),
-    "The speed trap": () => keep(() => news("Speed trap, Ralph Allen Drive: 48 km/h, a best (was 41)", 30), 25000),
-    Arriving: () => keep(() => news("Arrived at Bath", 30), 25000),
-    "Long (wraps smaller)": () => keep(() => news("The Flag Lads have taken over The Hadley Arms! Follow the purple marker and clear them out", 30), 25000),
-    "Small, its own edge": () => keep(() => news({ small: true, text: "Lady Tilly on Ann's: “Bold. Wrong, but bold.” 4/10", colour: "#ff8ab8", secs: 30 }), 25000),
+    "A kill": () => keep(() => news("You splatted Ann"), 25000),
+    "A pickup": () => keep(() => news("+25 rifle rounds"), 25000),
+    "The speed trap": () => keep(() => news("Speed trap, Ralph Allen Drive: 48 km/h, a best (was 41)"), 25000),
+    Arriving: () => keep(() => news("Arrived at Bath"), 25000),
+    "Long (wraps smaller)": () => keep(() => news("The Flag Lads have taken over The Hadley Arms! Follow the purple marker and clear them out"), 25000),
+    "A critic's remark": () => keep(() => news("Lady Tilly on Ann's: “Bold. Wrong, but bold.” 4/10"), 25000),
   },
   stage: {
-    Wave: () => keep(() => MS.missionCall({ text: "Wave 2 of 5: Hoverers", sub: "Hoverers: stare them out · 3 hoverers, in from the north-east", colour: "#8fd0f0", secs: 30 }), 25000),
-    "Checkpoint split": () => keep(() => MS.missionCall({ text: "Checkpoint 2 of 4", sub: "0:41.2 (-1.3 on your best) · -0.8 s on gold pace · +20 s", colour: "#58e06a", secs: 30 }), 25000),
-    "Life lost": () => keep(() => MS.missionCall({ text: "A life gone!", sub: "Ann fell", colour: "#d8262e", secs: 30 }), 25000),
-    "Out of lives": () => keep(() => MS.missionCall({ text: "Out of lives", sub: "Back to the bottom: the whole team starts again · 3 lives for the next go", colour: "#d8262e", secs: 30 }), 25000),
-    "He got away": () => keep(() => MS.missionCall({ text: "He got away!", sub: "2 goes left. He's off to Firs Field: he's on your map", colour: "#e04848", secs: 30 }), 25000),
+    Wave: () => keep(() => MS.missionCall({ text: "Wave 2 of 5: Hoverers", sub: "Hoverers: stare them out · 3 hoverers, in from the north-east", colour: "#8fd0f0" }), 25000),
+    "Checkpoint split": () => keep(() => MS.missionCall({ text: "Checkpoint 2 of 4", sub: "0:41.2 (-1.3 on your best) · -0.8 s on gold pace · +20 s", went: "well" }), 25000),
+    "Life lost": () => keep(() => MS.missionCall({ text: "A life gone!", sub: "Ann fell", went: "badly" }), 25000),
+    "Out of lives": () => keep(() => MS.missionCall({ text: "Out of lives", sub: "Back to the bottom: the whole team starts again · 3 lives for the next go", went: "badly" }), 25000),
+    "He got away": () => keep(() => MS.missionCall({ text: "He got away!", sub: "2 goes left. He's off to Firs Field: he's on your map", colour: "#e04848" }), 25000),
   },
   score: {
-    "Bunting down": () => keep(() => score({ text: "Bunting down! +400", colour: "#ffd34a", secs: 30 }), 25000),
-    "Trick shot": () => keep(() => score({ text: "Trick shot! +150", sub: "from a skateboard", colour: "#ffd34a", secs: 30 }), 25000),
-    Boost: () => keep(() => score({ text: "BOOST!", secs: 30 }), 25000),
-    Barged: () => keep(() => score({ text: "Barged Bo off!", secs: 30 }), 25000),
-    "Combo over": () => keep(() => score({ text: "Combo over: 7 shots, 1840 points", colour: "#fff", secs: 30 }), 25000),
+    "Bunting down": () => keep(() => score({ text: "Bunting down! +400" }), 25000),
+    "Trick shot": () => keep(() => score({ text: "Trick shot! +150", sub: "from a skateboard" }), 25000),
+    Boost: () => keep(() => score({ text: "BOOST!" }), 25000),
+    Barged: () => keep(() => score({ text: "Barged Bo off!" }), 25000),
+    "Combo over": () => keep(() => score({ text: "Combo over: 7 shots, 1840 points", final: true }), 25000),
   },
   reward: {
-    "Trophy: gold": () => reward({ kicker: "Trophy! gold", text: "Top of the Abbey", sub: "Climb Bath Abbey and put on the wings at the top", colour: "#ffc83a", secs: 600 }),
-    "Trophy: silver": () => reward({ kicker: "Trophy! silver", text: "Seagull Attack, two stars", sub: "8 of 83 trophies", colour: "#c8d4dc", secs: 600 }),
-    "Wardrobe item: Deerstalker": () => reward({ kicker: "New in your wardrobe", text: "Deerstalker", pic: itemPicture("deer"), secs: 600 }),
-    "Wardrobe item: Traffic cone": () => reward({ kicker: "New in your wardrobe", text: "Traffic cone", pic: itemPicture("cone"), secs: 600 }),
-    "On the result card": () => { MS.missionResult({ result: "won", label: "Wanted", title: "Cuffed!", lead: "4:12", medal: "★★★", lines: ["The Duke of Disorder is off the streets"], colour: "#e04848", sound: null, secs: 600 }); reward({ kicker: "New in your wardrobe", text: "Deerstalker", pic: itemPicture("deer") }); reward({ kicker: "Trophy! gold", text: "Long Arm of the Law", colour: "#ffc83a" }); },
+    "Trophy: gold": () => reward({ kicker: "Trophy! gold", text: "Top of the Abbey", sub: "Climb Bath Abbey and put on the wings at the top", grade: "gold" }),
+    "Trophy: silver": () => reward({ kicker: "Trophy! silver", text: "Seagull Attack, two stars", sub: "8 of 83 trophies", grade: "silver" }),
+    "Wardrobe item: Deerstalker": () => reward({ kicker: "New in your wardrobe", text: "Deerstalker", pic: itemPicture("deer") }),
+    "Wardrobe item: Traffic cone": () => reward({ kicker: "New in your wardrobe", text: "Traffic cone", pic: itemPicture("cone") }),
+    "On the result card": () => { MS.missionResult({ result: "won", label: "Wanted", title: "Cuffed!", lead: "4:12", medal: "★★★", lines: ["The Duke of Disorder is off the streets"], colour: "#e04848", sound: null }); reward({ kicker: "New in your wardrobe", text: "Deerstalker", pic: itemPicture("deer") }); reward({ kicker: "Trophy! gold", text: "Long Arm of the Law", grade: "gold" }); },
   },
   people: {
-    "Three lines": () => { feed(`<b style="color:#ffd84a">Ann</b> took on a job: <b style="color:#8fd0f0">Seagull Attack</b>`); feed(`<b>The Hadley Arms</b> won back from the Flag Lads`); feed(`Bo fell: the team's down to 2 lives`); },
-    "Someone joined": () => feed(`<b style="color:#7fe08f">Cy</b> joined the game`, "in"),
-    "Someone left": () => feed(`<b style="color:#ff8ab8">Dee</b> left the game`, "out"),
-    "A busy minute": () => { feed(`<b style="color:#7fe08f">Cy</b> joined the game`, "in"); feed(`<b style="color:#ffd84a">Ann</b> splatted <b>Bo</b>`); feed(`You earned <b>Deerstalker</b> for your wardrobe (pause menu)`); feed(`<b>Bo</b> marked the Hadley Arms`); feed(`<b style="color:#ff8ab8">Dee</b> left the game`, "out"); },
+    "Three lines": () => { feed(`${named("Ann", "#ffd84a")} took on a job: ${named("Seagull Attack", "#8fd0f0")}`); feed(`${named("The Hadley Arms")} won back from the Flag Lads`); feed(`Bo fell: the team's down to 2 lives`); },
+    "Someone joined": () => feed(`${named("Cy", "#7fe08f")} joined the game`, "in"),
+    "Someone left": () => feed(`${named("Dee", "#ff8ab8")} left the game`, "out"),
+    "A busy minute": () => { feed(`${named("Cy", "#7fe08f")} joined the game`, "in"); feed(`${named("Ann", "#ffd84a")} splatted ${named("Bo")}`); feed(`You earned ${named("Deerstalker")} for your wardrobe (pause menu)`); feed(`${named("Bo")} marked the Hadley Arms`); feed(`${named("Dee", "#ff8ab8")} left the game`, "out"); },
   },
   combo: {
     Ride: () => comboLine("ride", RIDE),
@@ -325,12 +328,12 @@ function slotMap(touch: boolean) {
   if (touch) $("touch").hidden = false;
   $("where").textContent = "Church Road";
   panel.gulls(); panel.bus(); panel.flags(false);
-  feed("Ann took on a job: <b>Seagull Attack</b>"); feed("Bo fell: the team's down to 2 lives");
+  feed(`Ann took on a job: ${named("Seagull Attack")}`); feed("Bo fell: the team's down to 2 lives");
   usePrompt("<b>{use}</b> Get in the Badgerline bus");
   MS.missionAux("race-gate", `<div class="aux-big">0:24</div><div class="aux-tag">CHECKPOINT 3</div>`);
-  news("You splatted Ann", 60);
-  guide("Pull in: {strafeleft}", 60);
-  score({ text: "Bunting down! +400", colour: "#ffd34a", secs: 60 });
+  news("You splatted Ann");
+  guide("Pull in: {strafeleft}");
+  score({ text: "Bunting down! +400" });
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const out = (id: string, name: string) => {
       const el = document.getElementById(id);

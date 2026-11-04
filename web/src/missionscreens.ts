@@ -31,7 +31,7 @@ import { modal, modalClicked } from "./modal";
 import { cutFlag, cutFront, tearOff } from "./cutting";
 import { addStyle, esc, layer, nth } from "./hudkit";
 import { briefCut, briefHtml } from "./brief";
-import { noticeAwardsTo, noticeHold, noticeTricksTo, type Message } from "./notice";
+import { noticeAwardsTo, noticeHold, noticeTricksTo, readSecs, type Message, type Reward } from "./notice";
 import * as SFX from "./audio";
 
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
@@ -422,15 +422,20 @@ export function missionBegin(o: MissionBegin) {
   paperWait = window.setTimeout(poll, 300);
 }
 
-export interface MissionStage { title: string; sub?: string; colour?: string; life?: number }
-
-function stageCard(o: MissionStage) {
-  putCard("msc-stage", `<div class="title">${esc(ctlText(o.title))}</div>` + (o.sub ? `<div class="goal">${esc(ctlText(o.sub))}</div>` : ""), o.life ?? 3, o.colour);
+/** A stage call: the words, the mission's own colour, and how the moment went for you, if it went
+ *  one way or the other (a split ahead, a life lost, time running short), which the plate shows. */
+export interface MissionCall extends Message {
+  colour?: string;
+  went?: "well" | "badly" | "close";
 }
+const WENT = { well: "#58e06a", badly: "#ff5a4e", close: "#ffb02e" };
 
 /** A stage call: the mission moving on (a wave, a checkpoint, a life gone), on the plate over the
- *  crosshair in the mission's colour. */
-export function missionCall(o: Pick<Message, "text" | "sub" | "colour" | "secs">) { stageCard({ title: o.text, sub: o.sub, colour: o.colour, life: o.secs }); }
+ *  crosshair, up for as long as it takes to read. */
+export function missionCall(o: MissionCall) {
+  const sub = o.sub ? `<div class="goal">${esc(ctlText(o.sub))}</div>` : "";
+  putCard("msc-stage", `<div class="title">${esc(ctlText(o.text))}</div>` + sub, readSecs(o.text + (o.sub ?? ""), 1.6, 5, 1 / 22, 1.4), o.went ? WENT[o.went] : o.colour);
+}
 
 // ---- entries, the countdown, and watching the others ------------------------------------------------------
 
@@ -538,7 +543,7 @@ const FLAGS: Record<string, [string, string]> = {
 
 interface Bit { x: number; y: number; vx: number; vy: number; a: number; va: number; w: number; h: number; c: string }
 
-export interface ResultHandle { rows(rows: ResultRow[]): void; reward(text: string, pic?: Message["pic"]): void; remove(): void }
+export interface ResultHandle { rows(rows: ResultRow[]): void; reward(text: string, pic?: Reward["pic"]): void; remove(): void }
 let ending: ResultHandle | null = null;
 
 /** A result card is up now. */
@@ -546,7 +551,7 @@ export const missionResultUp = () => !!ending;
 /** Take the result card down at once (a new race starting). */
 export function missionResultDrop() { ending?.remove(); }
 /** Something won while the card is up: list it there. False if no card is up to take it. */
-export function missionReward(text: string, pic?: Message["pic"]) { if (!ending) return false; ending.reward(text, pic); return true; }
+export function missionReward(text: string, pic?: Reward["pic"]) { if (!ending) return false; ending.reward(text, pic); return true; }
 noticeAwardsTo(missionReward);
 noticeTricksTo(missionAuxAdopt);
 
@@ -591,7 +596,7 @@ export function missionResult(o: MissionResult): ResultHandle {
       ? `<table><caption>Results</caption>${r.slice(0, 10).map((x, k) => `<tr class="${x.me ? "me" : ""}${x.dnf ? " dnf" : ""}"><td class="n">${x.dnf ? "–" : `${k + 1}.`}</td><td>${esc(x.name)}</td><td class="t">${esc(x.time)}</td></tr>`).join("")}</table>`
       : "";
   };
-  const reward = (text: string, pic?: Message["pic"]) => {
+  const reward = (text: string, pic?: Reward["pic"]) => {
     if ([...list.children].some((li) => li.textContent === text)) return;
     const li = document.createElement("li");
     li.textContent = text;
@@ -693,5 +698,3 @@ export function missionNight(o: { pub: string; head: string; stand: string; by: 
 /** A race place as a word with its ending: "1st". */
 export const placeWord = nth;
 
-/** A stage call by its older name, for the modes still calling it so (invasion.ts). */
-export const missionStage = (o: MissionStage) => stageCard(o);

@@ -28,7 +28,7 @@ import { type Start, countdownFor, missionBegin, missionCountdown, missionProgre
 import { bestFor } from "./trophies";
 import type { JobKind, Offer, QuestWorld } from "./quests";
 import { briefMore } from "./brief";
-import { guide } from "./notice";
+import { guide, named } from "./notice";
 
 export const ENTRY = 15;        // seconds the entries are open, unless a minigame says otherwise
 export const HOLD = 6;          // seconds from the line-up to GO: the title card, then 3, 2, 1
@@ -95,8 +95,8 @@ export class Lineup {
     if (!entrySecs) return;
     const left = Math.ceil((this.close - Date.now()) / 1000);
     if (left <= 0) return;
-    if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press {use} and join`, 3);
-    else guide(`${w.nameOf(by)} has started ${offer.title}: {use} to join in (${left} s)`, 4);
+    if (by === w.selfId) w.toast(`You're in. Everyone else has ${left} s to press {use} and join`);
+    else guide(`${w.nameOf(by)} has started ${offer.title}: {use} to join in (${left} s)`);
   }
 
   /** How long the entries stay open, for whoever takes one: none with nobody else in the room. */
@@ -160,8 +160,8 @@ export class Lineup {
     const k = this.cast.indexOf(this.w.selfId);
     if (k < 0) {
       this.mine = null;
-      if (this.entries.includes(this.w.selfId) && !was) this.w.toast("The entries closed without you: you're watching this one", 3);
-      else if (!was) this.w.feed(`<b style="color:${this.kind.colour}">${esc(this.offer.title)}</b> is under way, ${this.cast.length} in`);
+      if (this.entries.includes(this.w.selfId) && !was) this.w.toast("The entries closed without you: you're watching this one");
+      else if (!was) this.w.feed(`${named(this.offer.title, this.kind.colour)} is under way, ${this.cast.length} in`);
       return;
     }
     const spot = this.spots[k];

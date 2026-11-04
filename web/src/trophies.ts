@@ -167,7 +167,7 @@ export const earned = (id: string) => !!state().got[id];
 /** Its award notice (notice.ts): slid in at the top, or written on a result card that's up. */
 function tell(t: Trophy) {
   SFX.trophy(t.tier);
-  reward({ kicker: `Trophy! ${t.tier}`, text: t.name, sub: t.how, colour: TIER_COLOUR[t.tier] });
+  reward({ kicker: `Trophy! ${t.tier}`, text: t.name, sub: t.how, grade: t.tier });
 }
 
 /** You've earned it: put it in the cabinet and say so (notice.ts's award tier). Does nothing if you have it already. */

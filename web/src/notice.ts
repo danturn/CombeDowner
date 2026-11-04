@@ -7,7 +7,7 @@
 //              look (key caps and all), just under the prompt when one is up (#guide).
 //   news()     News, "what just happened?": a kill, a pickup, the speed trap, a town arrived in, a
 //              pub won back. A plate a little above the middle (#toast): big for a few words,
-//              smaller and wrapped for anything longer than LONG characters or asked for small.
+//              smaller and wrapped for anything longer than LONG characters.
 //   Mission    "How's my job going?": the brief, title card, status panel, stage calls and the result
 //              card, in the mission's colour. All missionscreens.ts (missionCall for a stage call).
 //   score()    Score, "how am I doing right now?": the pops (a flag shot, a boost, a barge) under the
@@ -16,6 +16,10 @@
 //              when one can be drawn), a token. A gold-edged plate with its medal sliding in at the
 //              top, one at a time; while a mission's result card is up it is written on the card.
 //   people()   People, "who's around?": who did what, who joined or left. The feed, top right.
+//
+// Callers say only what happened: the words, a name, an item, a trophy's grade. How each kind looks,
+// where it sits and how long it stays (readSecs, from how long it takes to read) are decided here,
+// so changing a kind is one edit in this file.
 //
 // Outside the six: systemNote() is the game about itself (the map stuck loading, someone on another
 // version), a BathText strip along the top; and speech bubbles, the Chronicle and the phone are
@@ -33,20 +37,24 @@ import { ctlText } from "./controls";
 import { padText } from "./gamepad";
 import { keycaps } from "./useprompt";
 
+/** What a message says: never how it looks or how long it stays, which each kind decides for itself. */
 export interface Message {
   /** Plain text: names can't be taken for html. {use} and the like become the key's name. */
   text: string;
   /** A second, smaller line. */
   sub?: string;
-  /** A small line above it (a reward's kind). */
+}
+export interface Reward extends Message {
+  /** What kind of thing it is, small above it. */
   kicker?: string;
-  secs?: number;
-  /** News: the plate's edge. Score: the words. Rewards: the medal. */
-  colour?: string;
-  /** News: the smaller, wrapped plate, whatever the length. */
-  small?: boolean;
-  /** Rewards: a picture of the thing (a wardrobe item), in place of the medal once it's drawn. */
+  /** A trophy's grade, which the medal shows. */
+  grade?: "gold" | "silver" | "bronze";
+  /** A picture of the thing (a wardrobe item), in place of the medal once it's drawn. */
   pic?: string | Promise<string | null>;
+}
+export interface ScorePop extends Message {
+  /** The run is over (a combo's total): said in white rather than climbing gold. */
+  final?: boolean;
 }
 
 const MIN_UP = 0.9;      // seconds a line is up before a newer one may take its place
@@ -54,7 +62,16 @@ const CLIP = "polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 ca
 const MAX_QUEUE = 5;
 const LONG = 64;
 const REWARD_SECS = 3.6;
-const PEOPLE_ROWS = 5, PEOPLE_SECS = 7;
+const PEOPLE_ROWS = 5, PEOPLE_SECS = 7, PEOPLE_DOOR_SECS = 4.5;
+const GRADE = { gold: "#ffc83a", silver: "#c3ccd6", bronze: "#cd7f32" };
+
+let linger = 1;
+/** The HUD page holds its specimens up: every message stays k times as long. */
+export function noticeLinger(k: number) { linger = k; }
+/** How long a message stays up: a glance plus long enough to read it, between lo and hi seconds. */
+export function readSecs(text: string, lo: number, hi: number, perChar = 1 / 20, glance = 1.2) {
+  return Math.min(hi, Math.max(lo, glance + text.length * perChar)) * linger;
+}
 
 addStyle("notice", `
 #toast.plate{width:max-content;max-width:min(520px,calc(100vw - 32px));box-sizing:border-box;padding:8px 18px 12px;background:var(--panel);clip-path:${CLIP};
@@ -78,6 +95,7 @@ body:has(#bigmap:not([hidden])) #guide{visibility:hidden}
 #trick{position:absolute;left:50%;top:calc(50% + 150px);transform:translateX(-50%);text-align:center;max-width:calc(100vw - 32px);pointer-events:none;font:800 26px/1.1 var(--f-hud);letter-spacing:.04em;
   color:var(--accent);text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 12px rgba(0,0,0,.5);transition:opacity .3s}
 #trick.out{opacity:0}
+#trick.final{color:#fff}
 #maux>#trick{position:static;transform:none;width:auto}
 body:has(#bigmap:not([hidden])) #trick{visibility:hidden}
 #trick small{display:block;font-size:14px;color:#fff;letter-spacing:.06em;text-transform:uppercase}
@@ -118,7 +136,7 @@ const held = () => {
 
 // ---- guidance and news: a queue each -----------------------------------------------------------------
 
-interface Item { text: string; sub: string; secs: number; colour: string; small: boolean }
+interface Item { text: string; sub: string; secs: number }
 
 class Line {
   private queue: Item[] = [];
@@ -176,9 +194,9 @@ class Line {
   }
 }
 
-const item = (o: Message | string, secs?: number): Item => {
-  const m: Message = typeof o === "string" ? { text: o, secs } : o;
-  return { text: m.text, sub: m.sub ?? "", secs: m.secs ?? secs ?? 2, colour: m.colour ?? "", small: !!m.small };
+const item = (o: Message | string): Item => {
+  const m: Message = typeof o === "string" ? { text: o } : o;
+  return { text: m.text, sub: m.sub ?? "", secs: readSecs(m.text + (m.sub ?? ""), 2, 6) };
 };
 /** {use} and the like as the key's name, or the pad's button while a pad's in use. */
 const words = (t: string) => padText(ctlText(t));
@@ -186,8 +204,7 @@ const words = (t: string) => padText(ctlText(t));
 const newsLine = new Line((it) => {
   const el = document.getElementById("toast");
   if (!el) return;
-  el.className = it.small || it.text.length > LONG ? "plate note" : "plate";
-  el.style.setProperty("--kc", it.colour || "var(--accent)");
+  el.className = it.text.length > LONG ? "plate note" : "plate";
   el.textContent = it.text;
   if (it.sub) { const s = document.createElement("small"); s.textContent = it.sub; el.appendChild(s); }
   void el.offsetWidth;
@@ -211,14 +228,14 @@ const guideLine = new Line((it) => {
 }, () => guideEl?.classList.remove("show"));
 
 /** News: something that just happened (see the top of this file). */
-export function news(o: Message | string, secs?: number) {
-  const it = item(o, secs);
+export function news(o: Message | string) {
+  const it = item(o);
   it.text = words(it.text); it.sub = words(it.sub);
   newsLine.put(it);
 }
 
 /** Guidance: what to do now (see the top of this file). */
-export function guide(o: Message | string, secs?: number) { guideLine.put(item(o, secs)); }
+export function guide(o: Message | string) { guideLine.put(item(o)); }
 
 /** A line of guidance or news is on the screen now. */
 export const noticeUp = () => !!newsLine.current || !!guideLine.current;
@@ -238,38 +255,38 @@ let scoreHome: ((el: HTMLElement) => void) | null = null;
 export function noticeTricksTo(fn: (el: HTMLElement) => void) { scoreHome = fn; }
 
 /** Score: a pop as you play (see the top of this file). */
-export function score(o: Message | string, secs?: number) {
-  const n: Message = typeof o === "string" ? { text: o, secs } : o;
+export function score(o: ScorePop | string) {
+  const n: ScorePop = typeof o === "string" ? { text: o } : o;
   if (!scoreEl) { scoreEl = document.createElement("div"); scoreEl.id = "trick"; }
   if (scoreHome) scoreHome(scoreEl);
   else if (!scoreEl.isConnected) layer().appendChild(scoreEl);
   const el = scoreEl;
   el.textContent = n.text;
   if (n.sub) { const s = document.createElement("small"); s.textContent = n.sub; el.appendChild(s); }
-  el.style.color = n.colour ?? "";
+  el.classList.toggle("final", !!n.final);
   el.classList.remove("out");
   pop(el);
   clearTimeout(scoreT);
-  scoreT = window.setTimeout(() => el.classList.add("out"), (n.secs ?? 1.4) * 1000);
+  scoreT = window.setTimeout(() => el.classList.add("out"), readSecs(n.text, 0.9, 2.5, 1 / 25, 0.7) * 1000);
 }
 
 // ---- rewards -----------------------------------------------------------------------------------------
 
-const rewards: Message[] = [];
+const rewards: Reward[] = [];
 let rewardEl: HTMLDivElement | null = null, rewarding = false, rewardT = 0;
-let onCard: ((text: string, pic?: Message["pic"]) => boolean) | null = null;
+let onCard: ((text: string, pic?: Reward["pic"]) => boolean) | null = null;
 /** missionscreens.ts: write a reward on the result card while one is up, instead of sliding it in. */
-export function noticeAwardsTo(fn: (text: string, pic?: Message["pic"]) => boolean) { onCard = fn; }
+export function noticeAwardsTo(fn: (text: string, pic?: Reward["pic"]) => boolean) { onCard = fn; }
 
 /** Rewards: something you keep (see the top of this file). */
-export function reward(n: Message) {
+export function reward(n: Reward) {
   if (onCard?.(n.kicker ? `${n.kicker}: ${n.text}` : n.text, n.pic)) return;
   rewards.push(n);
   if (!rewarding) nextReward();
 }
 
 /** Show pic in place of the medal in el once it's drawn; the medal stays if it can't be. */
-export function rewardPic(el: HTMLElement, pic: Message["pic"]) {
+export function rewardPic(el: HTMLElement, pic: Reward["pic"]) {
   if (!pic) return;
   void Promise.resolve(pic).then((url) => {
     const medal = el.querySelector(".medal");
@@ -291,7 +308,7 @@ function nextReward() {
     layer().appendChild(rewardEl);
   }
   const el = rewardEl;
-  el.style.setProperty("--tc", n.colour ?? "var(--accent)");
+  el.style.setProperty("--tc", n.grade ? GRADE[n.grade] : "var(--accent)");
   el.innerHTML = `<i class="medal"></i><div><b></b><span></span><small></small></div>`;
   el.querySelector("b")!.textContent = n.kicker ?? "";
   el.querySelector("span")!.textContent = n.text;
@@ -299,22 +316,28 @@ function nextReward() {
   rewardPic(el, n.pic);
   void el.offsetWidth;
   el.classList.add("in");
-  rewardT = window.setTimeout(() => { el.classList.remove("in"); rewardT = window.setTimeout(nextReward, 500); }, (n.secs ?? REWARD_SECS) * 1000);
+  rewardT = window.setTimeout(() => { el.classList.remove("in"); rewardT = window.setTimeout(nextReward, 500); }, REWARD_SECS * linger * 1000);
 }
 
 // ---- people ------------------------------------------------------------------------------------------
 
-/** People: who did what, who joined or left, as a line of the feed (html: names already escaped).
- *  kind: someone joining (in) or leaving (out), with the edge to say which. */
-export function people(html: string, o: { kind?: "in" | "out"; secs?: number } = {}) {
+/** A name in a line of the feed (a player, a pub, a job), in its own colour if it has one. Every
+ *  name in the feed is drawn by this, so they all look alike. */
+export function named(text: string, colour?: string) {
+  return colour ? `<b style="color:${esc(colour)}">${esc(text)}</b>` : `<b>${esc(text)}</b>`;
+}
+
+/** People: who did what, who joined or left, as a line of the feed, its names drawn by named().
+ *  door: someone came in or went out, with the edge to say which. */
+export function people(html: string, door?: "in" | "out") {
   const f = document.getElementById("feed");
   if (!f) return;
   const el = document.createElement("div");
   el.innerHTML = html;
-  if (o.kind) el.className = o.kind;
+  if (door) el.className = door;
   f.prepend(el);
   while (f.children.length > PEOPLE_ROWS) f.lastChild!.remove();
-  setTimeout(() => el.remove(), (o.secs ?? PEOPLE_SECS) * 1000);
+  setTimeout(() => el.remove(), (door ? PEOPLE_DOOR_SECS : PEOPLE_SECS) * linger * 1000);
 }
 
 // ---- the game about itself -------------------------------------------------------------------------------

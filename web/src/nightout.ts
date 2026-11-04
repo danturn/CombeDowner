@@ -241,7 +241,7 @@ export class NightOut {
       SFX.phone();
       this.w.feed(`\u{1F4DE} ${esc(`Last orders! Everyone to ${n} for one for the road, ${where}`)}`);
       // the call to the pub starts the night's last mission: it gets the title card (missionscreens.ts)
-      if (this.quests.running && !this.quests.running.done) guide(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`, 6);
+      if (this.quests.running && !this.quests.running.done) guide(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`);
       else missionBegin({ label: "Night out", colour: GOLD, title: "Last orders!", goal: `Everyone to ${n} for one for the road, ${where}`, detail: `Get the whole room within ${GATHER} m of the bar` });
     } else if (d.k === "lx") {
       this.drop("lo");
@@ -263,7 +263,7 @@ export class NightOut {
     const s = text(m, 300);
     if (!s) return;
     if (ring) SFX.phone(); else SFX.jobStep();
-    this.w.toast(s, 6);
+    this.w.toast(s);
     this.w.feed(ring ? `\u{1F4DE} ${esc(s)}` : esc(s));
   }
 

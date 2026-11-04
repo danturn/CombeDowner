@@ -166,7 +166,7 @@ export class FlagJuice {
 
   /** A score pop (notice.ts score); over: the combo's tally, a little quieter. */
   private say(text: string, sub = "", over = false) {
-    score({ text, sub, colour: over ? "#fff" : "#ffd34a", secs: 1.6 });
+    score({ text, sub, final: over });
   }
 
   private spray(x: number, y: number, z: number, n: number, spread: number, up: number) {

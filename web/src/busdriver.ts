@@ -147,13 +147,13 @@ export class BusDriver {
   private fares = 0; private cheers = 0; private moans = 0;
 
   constructor(private map: GameMap, private scene: THREE.Scene, private traffic: Traffic, private ground: (x: number, z: number) => number,
-    private toast: (text: string, secs?: number) => void) {}
+    private toast: (text: string) => void) {}
 
   /** Every frame: v is the bus you're driving, if you're driving one. stops: every bus stop loaded just now. */
   update(dt: number, v: Vehicle | null, stops: () => Stop[]) {
     const now = performance.now();
     if (v && v !== this.bus) this.start(v);
-    else if (v && this.paused) { this.paused = 0; this.toast(`Back at the wheel of the ${this.line!.n}`, 2.5); }
+    else if (v && this.paused) { this.paused = 0; this.toast(`Back at the wheel of the ${this.line!.n}`); }
     else if (!v && this.bus && !this.paused) this.paused = now;
     if (this.paused && now - this.paused > KEEP) this.end();
     const line = this.line, bus = this.bus;
@@ -340,11 +340,11 @@ export class BusDriver {
     if (carried) {
       this.moans += carried;
       this.moan(pick(MISSED), 2);
-      this.toast(`You went past ${st.name}! ${carried === 1 ? "Someone" : `${carried} people`} wanted to get off there`, 3);
+      this.toast(`You went past ${st.name}! ${carried === 1 ? "Someone" : `${carried} people`} wanted to get off there`);
     }
     const left = st.crowd?.length ?? 0;
     if (left) {
-      this.toast(`You left ${left === 1 ? "someone" : left} standing at ${st.name}`, 3);
+      this.toast(`You left ${left === 1 ? "someone" : left} standing at ${st.name}`);
       const p = st.crowd![0];
       this.bubble(p, pick(LEFT));
       SFX.shout(Math.hypot(p.x - this.bus!.x, p.z - this.bus!.z), 0, p.seed);
@@ -360,7 +360,7 @@ export class BusDriver {
       const st = this.serving;
       this.serving = null;
       if (this.boarding.length) {
-        this.toast(`You drove off and left ${this.boarding.length === 1 ? "someone" : this.boarding.length} at ${st.name}`, 3);
+        this.toast(`You drove off and left ${this.boarding.length === 1 ? "someone" : this.boarding.length} at ${st.name}`);
         this.bubble(this.boarding[0], "Oi! Wait!");
         for (const p of this.boarding) { p.tx = p.x; p.tz = p.z; }
         st.crowd = [...st.crowd ?? [], ...this.boarding];
@@ -386,7 +386,7 @@ export class BusDriver {
       this.boarding = crowd.slice(0, Math.max(0, room));
       st.crowd = crowd.slice(this.boarding.length);
       this.boarding.forEach((p, k) => { p.delay = 0.6 + k * 0.7; p.tx = door.x; p.tz = door.z; });
-      if (st.crowd.length) this.toast("The bus is full", 2);
+      if (st.crowd.length) this.toast("The bus is full");
     } else if (this.riders.some((r) => r.missed) && this.stillT > 0.8) {
       // stopped anywhere: those you carried past their stop get off here, and tell you what they think of you
       SFX.busDoors();

@@ -231,7 +231,7 @@ export class GolfDriver {
   private swing = 0;
   private reach = false;   // stood at the open door, with the tape still on the seat
 
-  constructor(private toast: (text: string, secs: number) => void) {
+  constructor(private toast: (text: string) => void) {
     if (Trophies.earned(TROPHY)) addToPlaylist(TAPE);
   }
 
@@ -283,7 +283,7 @@ export class GolfDriver {
   private take() {
     if (!Trophies.award(TROPHY)) return;
     addToPlaylist(TAPE);
-    this.toast(`"Bath Moon Rising", on tape: "${TAPE.name}" is on your music now`, 5);
+    this.toast(`"Bath Moon Rising", on tape: "${TAPE.name}" is on your music now`);
   }
 
   private quiet() {

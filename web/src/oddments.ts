@@ -259,7 +259,7 @@ export class Oddments {
   private hostFree = false;
 
   send: (type: "od" | "odq", d: unknown, to?: string) => void = () => {};
-  toast: (text: string, secs?: number) => void = () => {};
+  toast: (text: string) => void = () => {};
   hear: (x: number, y: number, z: number) => [number, number] = () => [0, 0];
   /** You've just picked one up: whatever else was in your hands is left behind (game.ts). */
   onGot: () => void = () => {};
@@ -481,7 +481,7 @@ export class Oddments {
     if (this.known && this.me) {
       const near = d.o.some((o) => o[0] > was.n && !o[4] && Math.hypot(o[1] - this.me!.x, o[3] - this.me!.z) < 400);
       // a challenge's promised object: on its result card if that's still up, else said
-      if (near && !missionReward("Something strange has turned up")) this.toast("Something strange has turned up", 3);
+      if (near && !missionReward("Something strange has turned up")) this.toast("Something strange has turned up");
     }
     const wasOpen = this.zones.open, wasFree = this.zones.free;
     this.hostFree = !!d.a;

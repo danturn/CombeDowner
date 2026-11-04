@@ -158,7 +158,7 @@ export class Sports {
   /** Yours went in the net, over the posts or hit the stumps: pitch number (pitchId), which end (-1 or 1), and whether it was a hard one. */
   onScore?: (pitch: number, end: number, hard: boolean) => void;
   onSound?: (what: Thud, x: number, y: number, z: number, vol: number) => void;
-  onSay?: (text: string, secs: number) => void;
+  onSay?: (text: string) => void;
   /** Who you are, who else is in the room, and the network ("so" and "sd"; see the top). */
   who?: () => { id: string; name: string };
   players?: () => Mate[];
@@ -332,7 +332,7 @@ export class Sports {
       const obj = this.makeBall("c");
       obj.position.set(x, y + RULES.c.rad, z);
       this.ball = { sport: "c", obj, mark, x, y, z, age: 0, target: -end, hard: false, wind: this.blow("c"), pen: false, first: true, bout: false };
-      guide("A cricket ball! Bowl it at the far stumps for a prize", 3);
+      guide("A cricket ball! Bowl it at the far stumps for a prize");
       return true;
     }
     if (f.sport === "f") {
@@ -344,7 +344,7 @@ export class Sports {
         if (this.map.blocked(x, z, 0.5) || Math.hypot(x - p.x, z - p.z) < 3) continue;
         this.putFootball(end, x, z, hard, this.blow("f"), !hard, true, false);
         if (!hard) this.startSet(f, end);
-        guide(hard ? "A football, out on the edge of the box. Bend one in for a better prize" : "A football on the penalty spot! Three kicks against the keeper: two goals wins a prize", 3);
+        guide(hard ? "A football, out on the edge of the box. Bend one in for a better prize" : "A football on the penalty spot! Three kicks against the keeper: two goals wins a prize");
         return true;
       }
       return false;
@@ -368,7 +368,7 @@ export class Sports {
       const [gx, gz] = this.fromPitch(f, end * f.F, 0);
       obj.rotation.set(TILT, Math.atan2(-(gx - x), -(gz - z)), 0, "YXZ");
       this.ball = { sport: "r", obj, mark, x, y, z, age: 0, target: end, hard, wind: this.blow("r"), pen: false, first: true, bout: false };
-      guide(hard ? "A rugby ball, a long way out. Kick it over the posts for a better prize" : "A rugby ball! Kick it over the posts for a prize", 3);
+      guide(hard ? "A rugby ball, a long way out. Kick it over the posts for a better prize" : "A rugby ball! Kick it over the posts for a prize");
       return true;
     }
     return false;
@@ -407,7 +407,7 @@ export class Sports {
     if (!s) return;
     this.wait = s.goals >= 2 ? rand(40, 75) : rand(6, 14);
     if (!prize) return;
-    this.onSay?.(`${s.goals} from ${SET}${s.goals >= 2 ? ": that's a prize" : ""}`, 3);
+    this.onSay?.(`${s.goals} from ${SET}${s.goals >= 2 ? ": that's a prize" : ""}`);
     if (s.goals >= 2) this.onScore?.(s.pitch, s.end, false);
   }
 
@@ -637,7 +637,7 @@ export class Sports {
       if (this.bout || from === me) return;
       const fresh = !this.call || this.call.owner !== from;
       this.call = { owner: from, pitch: d.p, end: d.e, at: now };
-      if (fresh && Array.isArray(d.m) && this.near(d.p, d.e)) guide(`${String(d.m[0]).slice(0, 20)} wants a keeper: stand on the goal line and press {use}`, 4);
+      if (fresh && Array.isArray(d.m) && this.near(d.p, d.e)) guide(`${String(d.m[0]).slice(0, 20)} wants a keeper: stand on the goal line and press {use}`);
       return;
     }
     if (!d.r.includes(me) || from === me || !Array.isArray(d.g) || d.g.length !== d.r.length || !Array.isArray(d.m) || d.m.length !== d.r.length) return;
@@ -724,7 +724,7 @@ export class Sports {
     if (!g || Math.hypot(player.pos.x - g[0], player.pos.z - g[1]) > GOAL_USE) return false;
     this.send?.("sd", ["k", c.pitch, c.end], c.owner);
     this.call = null;
-    guide(`You're in goal. ${input() === "touch" ? "Tap a Dive button" : "Hold {steer} to one side and press {dive}"} to dive when the kick comes`, 4);
+    guide(`You're in goal. ${input() === "touch" ? "Tap a Dive button" : "Hold {steer} to one side and press {dive}"} to dive when the kick comes`);
     return true;
   }
 
@@ -734,7 +734,7 @@ export class Sports {
     if (!dir || !b || !this.keeping || this.diving || this.dive0.n === b.n) return;
     const f = this.frameOf(b.pitch), g = this.goalSpot(b.pitch, b.end);
     if (!f || !g) return;
-    if (Math.hypot(player.pos.x - g[0], player.pos.z - g[1]) > GOAL_USE + 1.5) { guide("Get on the goal line to dive", 2); return; }
+    if (Math.hypot(player.pos.x - g[0], player.pos.z - g[1]) > GOAL_USE + 1.5) { guide("Get on the goal line to dive"); return; }
     const tx = -f.uy, tz = -f.ux, side = (Math.cos(player.yaw) * tx - Math.sin(player.yaw) * tz) * dir < 0 ? -1 : 1;
     const r = this.kickSeen ? Math.round(performance.now() - this.kickSeen) / 1000 : -1;
     this.dive0.n = b.n; this.dive0.t = 0; this.dive0.side = side; this.dive0.x = player.pos.x; this.dive0.z = player.pos.z; this.dive0.tx = tx; this.dive0.tz = tz;

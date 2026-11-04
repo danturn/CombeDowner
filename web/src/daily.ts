@@ -80,7 +80,7 @@ export class Daily {
 
   /** say: a toast. status: a line or two on how the Flag Lads are doing, as html.
    *  place: the map's name, for the masthead. newsPage: yesterday's news, in pieces. */
-  constructor(private say: (text: string, secs: number) => void, private status: () => string,
+  constructor(private say: (text: string) => void, private status: () => string,
     private place: () => string, private newsPage: () => News) {
     sink = (k, n) => this.add(k, n);
     chroniclePlace(place);
@@ -114,7 +114,7 @@ export class Daily {
         const all = this.got.every((g, j) => g >= this.list[j].n);
         SFX.jobDone(true);
         if (all) { award("daily"); tally("dailydays"); }
-        this.say(all ? `Today's jobs all done: ${m.text}. Back tomorrow for three more` : `Today's job done: ${m.text}`, 3.5);
+        this.say(all ? `Today's jobs all done: ${m.text}. Back tomorrow for three more` : `Today's job done: ${m.text}`);
       }
     });
     // metres ridden come in every frame, so they're saved now and then rather than every time

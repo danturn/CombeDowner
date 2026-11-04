@@ -33,7 +33,7 @@
 import * as SFX from "./audio";
 import { NAUGHTY, CRICKET, RUGBY, SOCIETY, look } from "./naughtyboys";
 import { missionCall, missionResult } from "./missionscreens";
-import { guide } from "./notice";
+import { guide, named } from "./notice";
 import { wantedBlock } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
@@ -217,7 +217,7 @@ class Wanted implements Job {
 
   /** As the bounty starts: the title card has said what it is, so just where the poster is. */
   private showSplash() {
-    guide({ text: "{job}: the Wanted poster, with his round and how to catch him", secs: 4 });
+    guide({ text: "{job}: the Wanted poster, with his round and how to catch him" });
   }
 
   /** His round, the goes left and how to catch him, on the brief J brings back (quests.ts). */
@@ -408,7 +408,7 @@ class Wanted implements Job {
   }
 
   private who(id: string, you = "You") { return id === this.w.selfId ? you : this.w.nameOf(id); }
-  private feedWho(id: string) { return `<b style="color:${this.w.colourOf(id)}">${esc(this.who(id))}</b>`; }
+  private feedWho(id: string) { return `${named(this.who(id), this.w.colourOf(id))}`; }
 
   /** The results card: how it ended, how long it took. */
   private results(won: boolean, by: string) {
@@ -441,15 +441,15 @@ class Wanted implements Job {
           this.markT = 0;
           SFX.clunk();
           const left = GOES - this.goes;
-          missionCall({ text: "He got away!", sub: `${left} ${left > 1 ? "goes" : "go"} left. He's off to ${this.haunt.label}: he's on your map`, colour: COLOUR, secs: 5 });
-          this.w.feed(`<b style="color:${COLOUR}">${esc(this.d.title)}</b> got away (${left} ${left > 1 ? "goes" : "go"} left)`);
+          missionCall({ text: "He got away!", sub: `${left} ${left > 1 ? "goes" : "go"} left. He's off to ${this.haunt.label}: he's on your map`, colour: COLOUR });
+          this.w.feed(`${named(this.d.title, COLOUR)} got away (${left} ${left > 1 ? "goes" : "go"} left)`);
         }
         break;
       }
       case "line": {
         const b = this.drawn();
         if (b && this.ring) this.w.naughtyBoys.hands(this.ring.i, this.ring.gen, 0, String(d.t ?? ""));
-        if (d.n && this.by === this.w.selfId) this.w.toast(String(d.n), 1.5);
+        if (d.n && this.by === this.w.selfId) this.w.toast(String(d.n));
         break;
       }
       case "act":
@@ -460,7 +460,7 @@ class Wanted implements Job {
         const x = Number(d.x), z = Number(d.z), by = String(d.by ?? from);
         if (this.ring) this.w.naughtyBoys.hands(this.ring.i, this.ring.gen, 2, "It's a fair cop.");
         this.done = { won: true, screen: true, text: `${this.who(by)} cuffed ${this.d.title}. Bounty collected!`, x, z, wear: ["deer"], grade: this.grade() };
-        this.w.feed(`${this.feedWho(by)} cuffed <b style="color:${COLOUR}">${esc(this.d.title)}</b>`);
+        this.w.feed(`${this.feedWho(by)} cuffed ${named(this.d.title, COLOUR)}`);
         if (host) for (let k = 0; k <= this.offer.stars; k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), k === 0);
         this.results(true, by);
         this.collect();

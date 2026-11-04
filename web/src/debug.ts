@@ -172,7 +172,7 @@ export class DebugPanel {
     quality.manual();
     setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0], true);
     this.showView();
-    this.game()?.news(`Draw distance ${view.fogFar} m`, 1.5);
+    this.game()?.news(`Draw distance ${view.fogFar} m`);
   }
 
   /** Show the draw distance on the button (Settings changes it too). */
@@ -226,7 +226,7 @@ export class DebugPanel {
       t.remove();
     }
     this.copyBtn.textContent = ok ? "Copied" : "Couldn't copy";
-    this.game()?.news(ok ? `Copied: ${text}` : text, 3);
+    this.game()?.news(ok ? `Copied: ${text}` : text);
     setTimeout(() => (this.copyBtn.textContent = "Copy position (Shift+F3)"), 1500);
   }
 
@@ -241,7 +241,7 @@ export class DebugPanel {
     const raw = /[?&;]at=([^&#\s]+)/.exec(text)?.[1] ?? text.replace(/\s+/g, "");
     let at = null;
     try { at = urlSpot(decodeURIComponent(raw)); } catch { /* not a spot */ }
-    if (!at) { g.news("That isn't a spot: type east,north, such as 1275,2559", 3); return; }
+    if (!at) { g.news("That isn't a spot: type east,north, such as 1275,2559"); return; }
     g.goToSpot(at);
   }
 

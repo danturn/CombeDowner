@@ -31,7 +31,7 @@ async function stage() {
 // ---- the catalogue ---------------------------------------------------------------------------------
 
 const SCREENS = { desktop: [1280, 720], phone: [390, 844] } as const;
-const SCALE = { desktop: 0.62, phone: 0.6 };
+const SCALE = { desktop: 1, phone: 1 };   // a piece shows at the size the game draws it, unless it would not fit its card
 const PAD = 24;   // screen pixels of the game kept round a piece
 
 const CSS = `
@@ -76,7 +76,7 @@ main{overflow-y:auto;padding:34px 40px 80px}
 .rules li:hover{background:#1d2125}
 .rules b{display:inline-block;min-width:130px;color:var(--accent)}
 .rules i{font-style:normal;color:var(--ink);margin-right:10px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:22px;align-items:start}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(460px,100%),1fr));gap:22px;align-items:start}
 .spec{background:var(--card);clip-path:var(--clip);display:flex;flex-direction:column;min-width:0}
 .spec.wide{grid-column:1/-1}
 .spec.hit{box-shadow:inset 0 0 0 2px var(--accent)}
@@ -252,18 +252,19 @@ function catalogue() {
     }
     backdrop() { if (this.ready) this.ui().backdrop(back); }
     resize() { this.drop(); this.ready = false; this.load(); }
-    /** Crop the frame to the piece at one scale; a phone, or a piece that fills the screen, shows whole. */
+    /** Crop the frame to the piece, at full size where it fits; a piece that fills the screen shows whole. */
     private place(b: { x: number; y: number; w: number; h: number } | null) {
       const f = this.frame;
       if (!f) return;
       const [W, H] = SCREENS[size], vw = this.view.clientWidth || 340;
-      const whole = size === "phone" || !b || b.w * b.h > W * H * 0.4;
+      const whole = !b || b.w * b.h > W * H * 0.4;
       let s = SCALE[size], x: number, y = 0, h: number;
       if (whole) {
         s = Math.min(s, vw / W);
         h = H * s;
         x = Math.max(0, (vw - W * s) / 2);
       } else {
+        s = Math.min(s, vw / (b.w + 2 * PAD));
         h = Math.max(110, (b.h + 2 * PAD) * s);
         x = W * s <= vw ? (vw - W * s) / 2 : Math.min(0, Math.max(vw - W * s, vw / 2 - (b.x + b.w / 2) * s));
         y = Math.min(0, Math.max(h - H * s, h / 2 - (b.y + b.h / 2) * s));

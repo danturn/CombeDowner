@@ -446,7 +446,7 @@ interface Rocket { x: number; y: number; z: number; vx: number; vy: number; vz: 
 export class Bonfire {
   /** Hooks into the game. */
   send: (type: "wd" | "wdq", data: unknown, to?: string) => void = () => {};
-  toast: (text: string, secs: number) => void = () => {};
+  toast: (text: string) => void = () => {};
   /** Where a sound at scene (x, y, z) is heard from: distance and pan. */
   hear: (x: number, y: number, z: number) => [number, number] = () => [1e9, 0];
   /** The flash of light each firework bursts with (flash.ts, shared with cars going up). */
@@ -604,7 +604,7 @@ export class Bonfire {
     }
     if (this.s.b && !was.b) {
       this.fresh = this.known;   // lit just now, rather than already going when we got here
-      if (this.known && near < 3000) this.toast("Kingswood's bonfire is lit! Fireworks on the court by Fonthill Road", 4);
+      if (this.known && near < 3000) this.toast("Kingswood's bonfire is lit! Fireworks on the court by Fonthill Road");
     }
     this.known = true;
     this.mission(has, near);
