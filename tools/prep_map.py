@@ -2492,6 +2492,10 @@ if TILE is not None:
     near_m = [i for i, c in enumerate(cand) if c[0].intersects(BM)]
     cand, info, keys = [cand[i] for i in near_m], [info[i] for i in near_m], [keys[i] for i in near_m]
     if measured: measured = [measured[i] for i in near_m]
+_why = Counter(d["row_roof"] for d in info if d["row_roof"])
+_kept = _why.pop("survey", 0)
+print(f"roofs: {_kept + sum(_why.values())} houses in rows of alike houses: {_kept} keep the survey's roof, the rest take their row's "
+      f"({', '.join(f'{n} {k}' for k, n in _why.most_common())})")
 # tree heights from the lidar too, now the roofs under trees have been measured against the Meta map
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])
