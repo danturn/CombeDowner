@@ -5,7 +5,7 @@
 // and pieces.ts says so.
 import * as MS from "../missionscreens";
 import * as WS from "../wantedscreens";
-import { notice, noticeClear } from "../notice";
+import { notice, noticeClear, systemNote } from "../notice";
 import { usePrompt, keycaps } from "../useprompt";
 import { closeModals } from "../modal";
 import { STREETS, controlsPage, ctl, ctlText } from "../controls";
@@ -14,6 +14,7 @@ import { Reveal, type Shot } from "../reveal";
 import { FlagJuice } from "../flagjuice";
 import { Daily } from "../daily";
 import * as THREE from "three";
+import { type Brief, briefCut, briefHtml } from "../brief";
 
 const $ = (id: string) => document.getElementById(id)!;
 let hold = 0;          // a timer keeping something that would go by itself on the screen
@@ -48,10 +49,12 @@ function clear() {
   clearInterval(hold);
   closeModals();
   noticeClear();
-  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null); WS.wantedScreensDown();
-  document.querySelectorAll(".msc,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick").forEach((e) => e.remove());
-  for (const id of ["usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "combo", "touch"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
+  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null);
+  document.querySelectorAll(".msc,#jobrecall,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick").forEach((e) => e.remove());
+  for (const id of ["clickhint", "usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "combo", "touch", "bigmap", "pubcard"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("feed").innerHTML = "";
+  for (const k of ["loading", "version", "safe"]) systemNote(k, null);
+  $("pubcard").classList.remove("held"); $("pubcardgo").hidden = false;
   $("hud").classList.remove("reveal"); document.body.classList.remove("reveal");
   $("scoreboard").classList.remove("join");
 }
@@ -59,7 +62,7 @@ function clear() {
 /** Call fn now and again every ms, for a piece that would otherwise go by itself. */
 const keep = (fn: () => void, ms: number) => { fn(); hold = window.setInterval(fn, ms); };
 /** ridetricks.ts makes its own #combo on the HUD the first time: so does this. */
-const comboEl = () => { let e = document.getElementById("combo"); if (!e) { e = document.createElement("div"); e.id = "combo"; $("hud").appendChild(e); } e.className = ""; return e; };
+const comboEl = () => { let e = document.getElementById("combo"); if (!e) { e = document.createElement("div"); e.id = "combo"; } MS.missionAuxAdopt(e); e.className = ""; e.hidden = false; return e; };
 const feed = (html: string) => { const el = document.createElement("div"); el.innerHTML = html; $("feed").prepend(el); };
 
 const LONG = "Get every last one of the tourists' sandwiches back to the benches by the Abbey before the gulls work out where they went";
@@ -170,13 +173,17 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Touch key cap": () => { $("touch").hidden = false; usePrompt("<b>{use}</b> Take the job"); $("usehint").classList.add("touch"); $("usehint").querySelector("kbd")!.textContent = "Use"; },
     "Keeper (shoot-out)": () => show($("shoothint"), keycaps("You're in goal: hold {steer} to one side and press {dive} to dive"), true),
   },
-  poster: {
-    Job: () => poster("Seagull Attack · ★★☆", "#8fd0f0", "Seagull Attack", "Tourists on the benches with their sandwiches, and the gulls are circling. Five waves, then Big Lad himself.", "Two prizes and the gull hat", "{use} to take the job"),
-    Challenge: () => poster("Challenge · ★★★", "#3a8fd8", "The Lock Run", "Take the boat down the flight with its barrels, working the paddles and gates as you go.", "Something strange, left where you finish", "{use} to start it"),
-    "Done today": () => poster("Race · ★★☆", "#3ec7e8", "BMX climb to Moorlands Recreation Playground", "Up the hill on a BMX, through every checkpoint.", "A traffic cone for your head", "Done today"),
+  brief: {
+    "Board: job": () => brief("board", { ...GULLS, foot: "<b>{use}</b> Take the job" }),
+    "Board: challenge": () => brief("board", { label: "Challenge · ★★★", colour: "#3a8fd8", title: "The Lock Run", blurb: "Take the boat down the flight with its barrels, working the paddles and gates as you go.", reward: "Something strange, left where you finish", foot: "<b>{use}</b> Start it" }),
+    "Board: done today": () => brief("board", { label: "Race · ★★☆", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", blurb: "Up the hill on a BMX, through every checkpoint.", reward: "A traffic cone for your head", foot: "Done today" }),
+    "Board: touch": () => { $("touch").hidden = false; brief("board", { ...GULLS, foot: "<b>{use}</b> Take the job" }, true); },
+    "Title card": () => MS.missionBegin({ label: GULLS.label, colour: GULLS.colour, title: GULLS.title, goal: "Keep the sandwiches out of the gulls' beaks for 5 waves", detail: "At Firs Field", reward: GULLS.reward }),
+    "Recall (J)": () => { panel.gulls(); brief("recall", { ...GULLS, live: `<b>Wave 2 / 5</b> · 6 gulls about<br>5 of 9 bites left · score 120<div class="bar"><i style="width:56%"></i></div>`, foot: "<b>{job}</b> Put it away" }); },
+    "Recall: Wanted": () => brief("recall", { label: "Wanted · ★★☆", colour: "#e04848", title: "Wanted: the Duke of Disorder", blurb: "Runs with a rugby team gone rogue. Does the rounds of a pub, then a park or square, then a bus stop.",
+      block: WS.wantedBlock({ title: "", stops: STOPS, goes: { left: 2, of: 3 } }, ["<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.", "<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.", "<b>Three goes.</b> Fall too far behind and he's off to his next stop."]),
+      live: `He's at <b>the Hadley Arms</b> · <b>12:03</b> left`, reward: "2 prizes and a skateboard", foot: "<b>{job}</b> Put it away" }),
   },
-  wposter: { Poster: () => WS.wantedPoster({ title: "Wanted: the Duke of Disorder", stops: STOPS, goes: { left: 2, of: 3 }, foot: "<b>12:03</b> left",
-    rules: ["<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.", "<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.", "<b>Three goes.</b> Fall too far behind and he's off to his next stop."] }) },
   result: {
     "Job done, with rewards": () => MS.missionResult({ result: "won", label: "Seagull Attack", title: "Seagulls seen off!", lead: "340", medal: "★★☆", lines: ["7 of 9 bites saved"], colour: "#8fd0f0", rewards, sound: null }),
     "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null }),
@@ -201,18 +208,55 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Gallery verdict": () => MS.missionResult({ result: "won", kind: "arts", variant: "verdict", label: "The Art Gallery · private view", title: "A triumph, darling", colour: "#c2185b", lead: "7.2", medal: "needed 6.0", sound: null,
       body: `<div class="cols"><div><h4>Mr Pettigrew</h4>8 · “Bold. Possibly a dog.”</div><div><h4>Lady Stanhope</h4>7 · “I have seen worse in Bristol.”</div><div><h4>The punters</h4>6.5 · “Is it for sale?”</div></div>` }),
   },
-  chron: { "On joining": () => {
-    const d = new Daily(() => {}, () => `<b>The Flag Lads</b> have flagged <b>21%</b> of Bath.`, () => "Bath", () => ({ kicker: "News from Bath", no: 1, strap: "Flag Lads arrive in Bath", lead: "<p>A van full of cable ties was seen at dawn. By breakfast there were flags on the lamp posts.</p>", side: "<h4>How to help</h4><p>Shoot the flags off the lamp posts.</p>", small: "" } as any));
-    const b = $("scoreboard"); b.hidden = false; b.classList.add("join"); d.draw($("daily"));
-  } },
+  chron: {
+    "On joining": () => paper(true),
+    "Tab: league table": () => {
+      paper(false);
+      $("roominfo").textContent = "Practice · Bath · 3 here";
+      $("scores").innerHTML = [["Ann", 12, 3, 4], ["You", 9, 5, 2], ["Bo", 4, 9, 7]].map(([n, k, d, c]) => `<tr class="${n === "You" ? "me" : ""}"><td>${n}</td><td>${k}</td><td>${d}</td><td>${c}</td></tr>`).join("");
+    },
+  },
+  mapcard: {
+    "Pub card": () => mapUp(() => { $("pubcardname").textContent = "The Hadley Arms"; $("pubcardinfo").textContent = "0.4 km · food hygiene 5"; $("pubcardwhy").hidden = true; const c = $("pubcard"); c.hidden = false; Object.assign(c.style, { left: "40%", top: "36%" }); }),
+    "Pub card, held up": () => mapUp(() => { $("pubcardname").textContent = "The Hadley Arms"; $("pubcardinfo").textContent = "0.4 km · food hygiene 5"; const w = $("pubcardwhy"); w.textContent = "Something hostile is after you"; w.hidden = false; $("pubcardgo").hidden = true; const c = $("pubcard"); c.classList.add("held"); c.hidden = false; Object.assign(c.style, { left: "40%", top: "36%" }); }),
+    "Key note": () => mapUp(() => { const t = document.createElement("div"); t.id = "keytip"; t.className = "ttmini ui-copy"; t.textContent = "Team challenges: open as the zones do"; Object.assign(t.style, { left: "30%", top: "30%" }); document.body.appendChild(t); }),
+  },
+  system: {
+    "Map stuck loading": () => systemNote("loading", { text: "Still waiting for 3 squares of the map (nothing new for 41 s).\nCouldn't load 2 times, last: 5_7.json\nbuild 2026-11-04 abc123", close: () => {} }),
+    "Another version": () => systemNote("version", { text: "Ann is on a newer version of the game (tap to refresh)", tone: "warn", tap: () => {} }),
+    "Older version": () => systemNote("version", { text: "Bo is on an older version: some things will look different to them (tap to hide)", tone: "alert", tap: () => {} }),
+    "Safe graphics": () => systemNote("safe", { text: "Your device crashed last time, so the game is in safe graphics; you can change it in Settings.", close: () => {} }),
+  },
   reveal: {
     "New zone": () => revealCard({ kind: "spot", x: 0, z: 0, kicker: "A new part of the map is open", title: "Widcombe", sub: "New challenge: Bell Ringing", lines: ["The buses run out this way now"] }),
     "Whole map": () => revealCard({ kind: "map", x: 0, z: 0, kicker: "Every zone is open", title: "The whole map is yours" }),
   },
 };
 
-function poster(label: string, colour: string, title: string, blurb: string, reward: string, foot: string) {
-  show($("jobposter"), ctlText(`<div class="label" style="color:${colour}">${label}</div><div class="jobtitle">${title}</div><p>${blurb}</p><p class="reward">Reward: ${reward}</p><em>${foot}</em>`), true);
+/** The Chronicle on #scoreboard: on joining, or under Tab with the league table on top. */
+function paper(join: boolean) {
+  const d = new Daily(() => {}, () => `<b>The Flag Lads</b> have flagged <b>21%</b> of Bath.`, () => "Bath", () => ({ kicker: "News from Bath", no: 1, strap: "Flag Lads arrive in Bath", lead: "<p>A van full of cable ties was seen at dawn. By breakfast there were flags on the lamp posts.</p>", side: "<h4>How to help</h4><p>Shoot the flags off the lamp posts.</p>", small: "" } as any));
+  const b = $("scoreboard"); b.hidden = false; b.classList.toggle("join", join); d.draw($("daily"));
+}
+/** The big map open over a plain ground, for its cards. */
+function mapUp(then: () => void) {
+  $("bigmap").hidden = false;
+  const c = $("bigmapcanvas") as HTMLCanvasElement; c.width = c.height = 600;
+  const g = c.getContext("2d")!; g.fillStyle = "#b7c49a"; g.fillRect(0, 0, 600, 600); g.strokeStyle = "#f4f0e2"; g.lineWidth = 6;
+  for (let k = 0; k < 12; k++) { g.beginPath(); g.moveTo(k * 60, 0); g.lineTo(k * 60 - 200, 600); g.stroke(); }
+  then();
+}
+
+const GULLS = { label: "Seagull Attack · ★★☆", colour: "#8fd0f0", title: "Seagull Attack: Chip Tuesday", blurb: "Tourists on the benches with their sandwiches, and the gulls of Bath want them. Five waves, then Big Lad himself.", reward: "2 prizes, and a seagull for your head for three stars" };
+/** A brief as quests.ts puts it up: on the board (in #jobposter) or brought back with J. */
+function brief(at: "board" | "recall", b: Brief, touch = false) {
+  let el = at === "board" ? $("jobposter") : document.getElementById("jobrecall");
+  if (!el) { el = document.createElement("div"); el.id = "jobrecall"; $("hud").appendChild(el); }
+  briefCut(el, b.colour);
+  el.classList.toggle("touch", touch);
+  el.innerHTML = briefHtml(at, b);
+  if (touch) el.querySelectorAll("kbd[data-ctl]").forEach((k) => { k.textContent = "Use"; });
+  el.hidden = false;
 }
 function revealCard(s: Shot) {
   const r = new Reveal(null as never, () => false) as any;

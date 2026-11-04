@@ -132,7 +132,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the third time he's gone for good. Quarter of an hour on the clock. More players and he's
   quicker, warier and has more mates. A Gaffer who got away is a Wanted poster too, and quicker
   still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
-  screen) brings the poster back, and it ends on the result card in the poster's red.
+  screen) brings his brief back with his round of stops on it, and it ends on the result card in the
+  poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
@@ -215,6 +216,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wardrobe items, trophies, a strange object). Space carries on, E goes again where you can, and it
   goes by itself after 8 seconds. Notices queue rather than vanish, and the use prompt draws each key
   as a key cap you can tap on a touch screen.
+- **A job's brief is one cutting from the paper**: what you read at the noticeboard (whose foot says
+  what E does, with no second prompt on top of it) is the title card when it starts, and J (or Poster
+  on a touch screen) brings it back during any job with how it's going written on it. A ride's
+  combo, the Flag Lads' combo and the wings' flight sit together under the crosshair. The big map's
+  key, its notes and a pub's card are BathText pages like the menus, and the game's notes about
+  itself (the map stuck loading, someone on another version) are a BathText strip along the top.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
   and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept
@@ -450,9 +457,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   game the day before. The side column has what's still scarred, a flag league if you had company
   (your own numbers if not) and Gaffer watch for today's Gaffer; a few small items run along the
   bottom. It comes up when you join (once a day, for about 20 seconds, or tap it away) and under Tab
-  (or pause, on a touch screen). It's also on every noticeboard (N, or tap Read the Chronicle) and
-  in the pause menu, where Read the Chronicle opens it on its own sheet over the menu: Esc or the
-  Close button puts it away and you're back at the menu. On a phone it stacks into one column and
+  (or pause, on a touch screen), where the league table is printed across the top of the page. It's also on every noticeboard (N, or tap Read the Chronicle) and
+  in the pause menu, where Read the Chronicle opens it on its own sheet over the menu: Esc or its ×
+  puts it away and you're back at the menu. On a phone it stacks into one column and
   scrolls. Players who play together get the same story; your first day, it's the Flag Lads
   arriving.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and

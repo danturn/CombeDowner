@@ -1,9 +1,10 @@
 // The one set of mission screens, so a job, a race, a bounty, a challenge, the bonfire, a bus shift
 // and a shoot-out all start, run and end alike. Every mode calls these and nothing of its own:
 //
-//   missionBegin     the title card over the crosshair as it starts (its name, what to do, your best),
-//                    optionally followed by a 3, 2, 1, GO! of its own; missionCountdown is that
-//                    countdown on its own, for a line-up that keeps time across the room.
+//   missionBegin     the title card as it starts: the job's brief (brief.ts), the same cutting you read
+//                    at its noticeboard, with what to do and your best; optionally followed by a 3,
+//                    2, 1, GO! of its own. missionCountdown is that countdown on its own, for a
+//                    line-up that keeps time across the room.
 //   missionWaiting   the banner while entries are open and racers line up.
 //   missionProgress  a status panel that stays up (the goal, how far, a clock, the step you're on),
 //                    one per mission id, stacked in the HUD's left column. missionAux is the slot
@@ -28,6 +29,7 @@ import { ctl, ctlText, isKey } from "./controls";
 import { modal, modalClicked } from "./modal";
 import { cutFlag, cutFront, tearOff } from "./cutting";
 import { addStyle, esc, layer, nth } from "./hudkit";
+import { briefCut, briefHtml } from "./brief";
 import { notice, noticeAwardsTo, noticeHold, noticeStage, type Notice } from "./notice";
 import * as SFX from "./audio";
 
@@ -73,6 +75,7 @@ addStyle("mission", `
 #maux .aux-meter{position:relative;width:100%;height:12px;background:rgba(0,0,0,.5);border:2px solid #fff;border-radius:7px;overflow:hidden;box-sizing:border-box}
 #maux .aux-meter.thin{width:96px;height:6px;border-width:1px;border-radius:0}
 #maux .aux-meter>i{position:absolute;top:0;bottom:0;left:0;display:block}
+#maux>:is(#combo,#fj-combo,#wingsbar){position:static;transform:none;margin:0;width:auto}
 #maux .aux-panel{background:var(--panel);padding:6px 14px;border-bottom:3px solid var(--kc,var(--accent));min-width:260px;box-sizing:border-box}
 .msc{position:fixed;left:0;right:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;text-align:center;
   font-family:var(--f-hud);color:#fff;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.6);transition:opacity ${FADE}s;z-index:6}
@@ -80,18 +83,24 @@ addStyle("mission", `
 .msc.out{opacity:0}
 .msc .band{width:100%;padding:12px 16px 16px;box-sizing:border-box;background:linear-gradient(90deg,transparent,rgba(8,14,20,.82) 15%,rgba(8,14,20,.82) 85%,transparent);
   box-shadow:inset 0 -3px 0 var(--kc,var(--accent))}
-.msc-start .band,.msc-stage .band{animation:msc-in .5s cubic-bezier(.2,1.6,.4,1) both}
+.msc-stage .band{animation:msc-in .5s cubic-bezier(.2,1.6,.4,1) both}
 .msc .kind{font-weight:700;font-size:clamp(13px,2.6vw,18px);letter-spacing:.2em;text-transform:uppercase;color:var(--kc,var(--accent))}
 .msc .title{font-weight:800;font-size:clamp(28px,6vw,54px);letter-spacing:.05em;line-height:1}
 .msc .goal{font-weight:600;font-size:clamp(17px,3.6vw,28px);margin-top:6px;line-height:1.15}
 .msc .detail{font-weight:600;font-size:clamp(13px,2.8vw,19px);margin-top:4px;color:#c8d4dc}
 .msc .detail.best{color:#ffd84a}
 .msc .band b{color:var(--kc,var(--accent))}
-.msc-start,.msc-stage{top:auto;bottom:calc(50% + 30px);left:50%;right:auto;transform:translateX(-50%);width:min(760px,94vw)}
-#hud:has(.mprog:not([hidden])) :is(.msc-start,.msc-stage){width:clamp(260px,calc(100vw - 2 * (min(320px,100vw - 230px) + 56px)),760px)}
-:is(.msc-start,.msc-stage) .title{font-size:clamp(26px,4.6vw,46px)}
-:is(.msc-start,.msc-stage) .goal{font-size:clamp(15px,2.4vw,22px)}
+.msc-stage{top:auto;bottom:calc(50% + 30px);left:50%;right:auto;transform:translateX(-50%);width:min(760px,94vw)}
+#hud:has(.mprog:not([hidden])) .msc-stage{width:clamp(260px,calc(100vw - 2 * (min(320px,100vw - 230px) + 56px)),760px)}
+.msc-stage .title{font-size:clamp(26px,4.6vw,46px)}
+.msc-stage .goal{font-size:clamp(15px,2.4vw,22px)}
 .msc-stage .title{font-size:clamp(24px,4.4vw,40px);color:var(--kc,var(--accent))}
+.msc-brief{top:7%;left:50%;right:auto;transform:translateX(-50%)}
+.msc-brief .band.brief{width:min(560px,94vw);padding:14px 22px 16px;background:none;box-shadow:none;color:var(--ink);font-family:"Old Standard TT",Georgia,serif;text-align:left;text-shadow:none;animation:cut-in .4s ease-out both}
+.msc-brief .brief b{color:var(--ink)}
+.msc-brief .brief .btitle{font-size:clamp(26px,4.4vw,38px)}
+#hud:has(.mprog:not([hidden])) .msc-brief .band.brief{width:clamp(260px,calc(100vw - 2 * (min(320px,100vw - 230px) + 40px)),560px)}
+@media (max-width:700px),(max-height:500px){.msc-brief{top:4px}#hud:has(.mprog:not([hidden])) .msc-brief .band.brief{width:clamp(240px,calc(100vw - 2 * (min(240px,100vw - 170px) + 24px)),560px)}}
 .msc-wait{top:36%}
 .msc-wait .band,.msc-watch .band{width:min(760px,94vw);padding:10px 16px 12px}
 .msc-wait .head,.msc-watch .head{font-weight:800;font-size:clamp(30px,7vmin,64px);letter-spacing:.06em;line-height:1;text-transform:uppercase}
@@ -161,12 +170,12 @@ body:has(.msc-count:not([hidden]),.msc-wait:not([hidden])) #clickhint{visibility
 .msc-result .cols h4{margin:0 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.14em}
 .msc-result .verdict{font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;margin:8px 0 0}
 @media (max-width:700px),(max-height:500px){.msc-result .cols{flex-direction:column;gap:4px}.msc-result .cols div+div{border-left:0;padding-left:0}
-  .msc-start,.msc-stage{bottom:calc(50% + 22px)}
-  #hud:has(.mprog:not([hidden])) :is(.msc-start,.msc-stage){width:clamp(240px,calc(100vw - 2 * (min(240px,100vw - 170px) + 40px)),760px)}
-  :is(.msc-start,.msc-stage) .band{padding:6px 10px 8px}
-  :is(.msc-start,.msc-stage) .title{font-size:clamp(22px,4.4vw,32px)}
-  :is(.msc-start,.msc-stage) .goal{font-size:clamp(13px,2.2vw,16px);margin-top:3px}
-  :is(.msc-start,.msc-stage) .detail{font-size:13px;margin-top:2px}
+  .msc-stage{bottom:calc(50% + 22px)}
+  #hud:has(.mprog:not([hidden])) .msc-stage{width:clamp(240px,calc(100vw - 2 * (min(240px,100vw - 170px) + 40px)),760px)}
+  .msc-stage .band{padding:6px 10px 8px}
+  .msc-stage .title{font-size:clamp(22px,4.4vw,32px)}
+  .msc-stage .goal{font-size:clamp(13px,2.2vw,16px);margin-top:3px}
+  .msc-stage .detail{font-size:13px;margin-top:2px}
   .msc-watch{top:56px}.msc-watch .band{width:min(420px,56vw);padding:6px 10px 8px}.msc-watch table{display:none}}
 @keyframes msc-in{from{transform:scale(2.2) rotate(-5deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes msc-punch{0%{transform:scale(2.6);opacity:0}25%{transform:scale(.92);opacity:1}40%{transform:scale(1.04)}70%{transform:scale(1);opacity:1}100%{transform:scale(.96);opacity:0}}
@@ -286,16 +295,29 @@ export function missionClear(id?: string) {
  *  Each key has its own row; null takes it down, and no key at all clears the slot. */
 export function missionAux(key?: string, html?: string | null, colour?: string) {
   let slot = document.getElementById("maux");
-  if (key === undefined) { if (slot) slot.replaceChildren(); return; }
+  if (key === undefined) { slot?.querySelectorAll(":scope>[data-k]").forEach((r) => r.remove()); return; }
   if (!slot) {
     if (!html) return;
-    slot = document.createElement("div"); slot.id = "maux"; layer().appendChild(slot);
+    slot = auxSlot();
   }
   let row = slot.querySelector<HTMLElement>(`:scope>[data-k="${key}"]`);
   if (!html) { if (row && !row.hidden) row.hidden = true; return; }
   if (!row) { row = document.createElement("div"); row.dataset.k = key; slot.appendChild(row); }
   if ((row.style.getPropertyValue("--kc") || undefined) !== colour) colourOn(row, colour);
   show(row, html, true);
+}
+
+function auxSlot() {
+  let slot = document.getElementById("maux");
+  if (!slot) { slot = document.createElement("div"); slot.id = "maux"; layer().appendChild(slot); }
+  return slot;
+}
+
+/** A meter a mode keeps itself (a ride's combo, the Flag Lads' combo, the wings' flight): a row of
+ *  the slot under the crosshair, above the score pops, so it never sits apart or on top of another. */
+export function missionAuxAdopt(el: HTMLElement) {
+  const slot = auxSlot();
+  if (el.parentElement !== slot) slot.insertBefore(el, slot.querySelector(":scope>#trick"));
 }
 
 /** The row a mode drew under the crosshair, to move its bars without writing it again. */
@@ -323,12 +345,13 @@ export function missionCardUp() {
 }
 noticeHold("card", missionCardUp);
 
-function putCard(cls: string, html: string, life: number, colour?: string) {
+function putCard(cls: string, html: string, life: number, colour?: string, cut = false) {
   dropCard();
   const el = (card = document.createElement("div"));
   el.className = `msc ${cls}`;
   colourOn(el, colour);
   el.innerHTML = `<div class="band">${html}</div>`;
+  if (cut) briefCut(el.firstElementChild as HTMLElement, colour);
   layer().appendChild(el);
   cardTimer = window.setTimeout(() => {
     el.classList.add("out");
@@ -347,18 +370,17 @@ export interface MissionBegin {
   best?: string;
   /** A 3, 2, 1, GO! of its own once the card has gone; onGo at GO. */
   countdown?: boolean; onGo?: () => void;
+  /** The rest of the job's brief, as its noticeboard had it (html). */
+  blurb?: string; block?: string; reward?: string;
 }
 
-/** The title card when a mission begins: its name and what you have to do. It waits for the Chronicle to be put away rather than sit on top of it. */
+/** The title card when a mission begins: its brief, with what to do. It waits for the Chronicle to be put away rather than sit on top of it. */
 export function missionBegin(o: MissionBegin) {
-  const html = (o.label ? `<div class="kind">${esc(o.label)}</div>` : "")
-    + `<div class="title">${esc(o.title)}</div><div class="goal">${esc(ctlText(o.goal))}</div>`
-    + (o.detail ? `<div class="detail">${esc(ctlText(o.detail))}</div>` : "")
-    + (o.best ? `<div class="detail best">Your best: ${esc(o.best)} — beat it</div>` : "");
+  const html = briefHtml("title", { label: o.label, colour: o.colour, title: o.title, goal: o.goal, detail: o.detail, best: o.best, blurb: o.blurb, block: o.block, reward: o.reward });
   dropCard();
   ending?.remove();   // the last mission's result makes way for the new one
   const put = () => {
-    putCard("msc-start", html, START_SECS, o.colour);
+    putCard("msc-brief", html, START_SECS, o.colour, true);
     if (o.countdown) {
       for (let n = 3; n >= 0; n--) {
         window.setTimeout(() => { SFX.pip(n === 0); missionCountdown(n, o.colour); if (n === 0) o.onGo?.(); }, (START_SECS + 0.3 + (3 - n)) * 1000);

@@ -33,7 +33,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 ## Streets
 
-- [x] One mission UX: start, updates and results share the same code and layouts across every job, race, minigame and challenge (missionscreens.ts, notice.ts, useprompt.ts; web/ui.html shows them). Still their own: the ride combo and the Flag Lads' combo meters, and the bells' ringing chart
+- [x] One mission UX: start, updates and results share the same code and layouts across every job, race, minigame and challenge (missionscreens.ts, notice.ts, useprompt.ts; web/ui.html shows them). Round 2: a job's brief is one cutting from board to title card to J, the combos sit in the meter slot, the big map's cards and the system notes are BathText, Tab's league table is the top of the paper, and the three frames and props are written into ui.html. Still its own: the bells' ringing chart (a play surface)
 - [x] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south). Done at Combe Down's detail, and everything works across the city: traffic, naughty boys, cats, pickups, buses, cars, pitches
 - [x] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
 - [x] Spencer: canal boats (with working locks, the Sydney Gardens tunnels and the Dundas Aqueduct)

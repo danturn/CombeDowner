@@ -1,23 +1,16 @@
-// A Wanted bounty's poster, brought back on the job control (J) while the bounty runs: his name,
-// his round of stops with the one he's at picked out, the goes you have left, the clock and how to
-// catch him, as a cutting from the Chronicle's police notices (cutting.ts). Everything else of the
-// bounty's (its title card, panel, calls and result) is the shared mission screens'
-// (missionscreens.ts), in the poster's red. The pictures are little SVGs drawn here, so there's
-// nothing to load. Nothing here goes over the network: wanted.ts says what to show.
-import { ctlText } from "./controls";
-import { tearOff, cutFlag } from "./cutting";
-import { addStyle, esc, layer } from "./hudkit";
+// A Wanted bounty's own piece of its brief (brief.ts), when J brings the brief back while the bounty
+// runs: WANTED, his round of stops with the one he's at picked out, the goes you have left, and how
+// to catch him. Everything else of the bounty's (its title card, panel, calls and result) is the
+// shared mission screens' (missionscreens.ts), in the poster's red. The pictures are little SVGs
+// drawn here, so there's nothing to load. Nothing here goes over the network: wanted.ts says what
+// to show.
+import { addStyle, esc } from "./hudkit";
 
 export const RED = "#e04848";
 
 addStyle("wanted", `
-.wsc-card{top:6%;--kc:${RED}}
-.wsc-card .band.cut{width:min(720px,96vw);background:none;box-shadow:none;text-align:left;padding:16px 24px 18px;animation:cut-in .4s ease-out both}
-.wsc .cut b{color:var(--ink)}
-.wsc .cut .small{color:var(--muted);font-style:italic;font-weight:400}
 .wsc .paper{box-sizing:border-box;margin:12px 0 10px;border:1px dashed var(--ink);color:var(--ink);font-size:clamp(14px,2.6vmin,19px);padding:6px 14px 10px}
 .wsc .wanted{font:900 clamp(30px,7vmin,58px)/.9 var(--f-hud);letter-spacing:.14em;color:#8a1a14;text-align:center}
-.wsc .who{font:800 clamp(18px,3.8vmin,30px)/1.05 var(--f-hud);text-align:center;color:#1b1b1d;margin:2px 0 6px}
 .wsc .h{display:block;font:700 clamp(11px,1.9vmin,14px) var(--f-hud);letter-spacing:.18em;text-transform:uppercase;color:#7a2a12;margin:4px 0 2px;text-align:center}
 .wsc .route{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;font:700 clamp(12px,2.2vmin,16px)/1.1 var(--f-hud);color:#1b1b1d}
 .wsc .stop{display:flex;flex-direction:column;align-items:center;width:clamp(48px,9vmin,70px);text-align:center}
@@ -30,7 +23,7 @@ addStyle("wanted", `
 .wsc ul{list-style:none;margin:0;padding:0;text-align:left;color:var(--ink);font-weight:400;font-size:clamp(13px,2.4vmin,16px);line-height:1.3}
 .wsc li{padding-left:1.1em;text-indent:-1.1em;break-inside:avoid}
 .wsc li::before{content:'\\2013  ';color:var(--muted)}
-@media (max-height:520px){.wsc-card{top:2%}.wsc .wanted{font-size:28px}.wsc .who{font-size:17px;margin:0 0 2px}.wsc .paper{margin:4px 0 2px;padding:4px 10px 6px}
+@media (max-height:520px){.wsc .wanted{font-size:28px}.wsc .paper{margin:4px 0 2px;padding:4px 10px 6px}
   .wsc .stop svg{width:28px;height:28px}.wsc ul{font-size:11.5px;line-height:1.2}}`);
 
 const svg = (body: string) => `<svg viewBox="0 0 40 40" aria-hidden="true">${body}</svg>`;
@@ -48,33 +41,11 @@ export interface PosterInfo {
   goes: { left: number; of: number };
 }
 
-function posterHtml(o: PosterInfo) {
-  const route = o.stops.map((s) => `<div class="stop${s.now ? " now" : ""}">${svg(STOP_ART[s.kind])}${esc(s.label.replace(/^an? /, ""))}</div>`).join(`<span class="arrow">→</span>`);
-  return `<div class="paper"><div class="wanted">WANTED</div><div class="who">${esc(o.title)}</div>`
+/** WANTED, his round and the goes left, then how to catch him (html rules), for his brief. */
+export function wantedBlock(o: PosterInfo, rules: string[] = []) {
+  const route = o.stops.map((st) => `<div class="stop${st.now ? " now" : ""}">${svg(STOP_ART[st.kind])}${esc(st.label.replace(/^an? /, ""))}</div>`).join(`<span class="arrow">→</span>`);
+  return `<div class="wsc"><div class="paper"><div class="wanted">WANTED</div>`
     + `<span class="h">His round</span><div class="route">${route}<span class="arrow">↺</span></div>`
-    + `<div class="goes">Goes left <b>${"●".repeat(o.goes.left)}${"○".repeat(Math.max(0, o.goes.of - o.goes.left))}</b></div></div>`;
+    + `<div class="goes">Goes left <b>${"●".repeat(o.goes.left)}${"○".repeat(Math.max(0, o.goes.of - o.goes.left))}</b></div></div>`
+    + (rules.length ? `<ul>${rules.map((r) => `<li>${r}</li>`).join("")}</ul>` : "") + `</div>`;
 }
-
-// ---- the poster ----------------------------------------------------------------------------------------
-
-let cardEl: HTMLDivElement | null = null;
-let written = "";
-
-/** The poster as it stands now, while it's asked for; null takes it down. rules: how to catch him (html). */
-export function wantedPoster(o: (PosterInfo & { foot: string; rules?: string[] }) | null) {
-  if (!o) { if (cardEl && !cardEl.hidden) cardEl.hidden = true; return; }
-  if (!cardEl || !cardEl.isConnected) {
-    cardEl = document.createElement("div");
-    cardEl.className = "msc wsc wsc-card";
-    layer().appendChild(cardEl);
-    tearOff(cardEl);
-  }
-  const html = ctlText(`<div class="band cut">${cutFlag("Police notices · Wanted")}${posterHtml(o)}`
-    + (o.rules?.length ? `<ul>${o.rules.map((r) => `<li>${r}</li>`).join("")}</ul>` : "")
-    + `${o.foot ? `<div class="small">${o.foot}</div>` : ""}</div>`);
-  if (html !== written) { written = html; cardEl.innerHTML = html; }
-  cardEl.hidden = false;
-}
-
-/** Everything of the bounty's down (it's over). */
-export function wantedScreensDown() { wantedPoster(null); }

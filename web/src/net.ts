@@ -10,6 +10,7 @@
 //   Every link is set up for the shortest voice delay (voicelink.ts).
 // - BroadcastChannel, which links tabs in the same browser. Used for solo practice and for
 //   testing multiplayer on one machine (add ?net=local to the URL). It can't carry audio.
+import { systemNote } from "./notice";
 import { getRelaySockets, joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 import { VoiceLink, voiceIn } from "./voicelink";
@@ -330,23 +331,15 @@ class TrysteroNet implements Net {
   }
 }
 
-// Version warnings get a banner of their own at the top of the screen rather than a toast, so
+// Version warnings are the game's note about itself (notice.ts systemNote) at the top of the screen rather than a toast, so
 // "Mic on" and the like can't wipe them, and it's big and bright: players on two versions see some
 // things differently (a car on one is a bus on the other, and worse), so it mustn't be missed. It
 // stays until it's tapped: on a newer version that refreshes the page, otherwise it just goes away.
 // null takes it down.
 function versionNotice(text: string | null, refresh = false) {
-  document.getElementById("vnotice")?.remove();
-  if (!text) return;
-  const el = document.createElement("div");
-  el.id = "vnotice";
-  el.textContent = `${text} ${refresh ? "(tap to refresh)" : "(tap to hide)"}`;
-  el.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(92vw,640px);"
-    + "padding:10px 16px;font:bold 16px/1.35 system-ui,sans-serif;cursor:pointer;text-align:center;border-radius:8px;"
-    + "box-shadow:0 2px 12px rgba(0,0,0,.5);border:2px solid #fff;"
-    + (refresh ? "color:#1a1200;background:#ffb020" : "color:#fff;background:#c0392b");
-  el.onclick = () => (refresh ? freshReload() : el.remove());
-  document.body.append(el);
+  if (!text) { systemNote("version", null); return; }
+  systemNote("version", { text: `${text} ${refresh ? "(tap to refresh)" : "(tap to hide)"}`, tone: refresh ? "warn" : "alert",
+    tap: () => (refresh ? freshReload() : systemNote("version", null)) });
 }
 
 class LocalNet implements Net {

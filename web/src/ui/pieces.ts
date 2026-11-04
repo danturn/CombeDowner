@@ -2,8 +2,8 @@
 // drawn, who uses it and the states to step through, and the rules for which piece to use when.
 // Only the words live here, so the catalogue can list them without loading the game; stage.ts draws
 // each state with the game's own code.
-// A piece marked own is a mode's private copy of a job a shared piece already does: it's listed
-// under the shared one it duplicates. A piece marked event is a deliberate one-off look.
+// A piece marked own is a mode's private copy of a job a shared piece already does (none are left);
+// a piece marked event is a deliberate one-off look.
 
 export interface Piece {
   id: string; group: string; name: string;
@@ -19,41 +19,54 @@ export interface Piece {
 }
 
 export const GROUPS = [
-  { id: "start", name: "Starting", blurb: "The entries, the title card and the countdown." },
-  { id: "call", name: "Notices", blurb: "One family, five tiers, one queue: see the rules above." },
+  { id: "start", name: "Briefs and starting", blurb: "A job's brief, from its noticeboard to its title card and J; the entries and the countdown." },
+  { id: "call", name: "Notices", blurb: "One family, six tiers: see the rules above." },
   { id: "panel", name: "Status panels and slots", blurb: "What stays up, each in its slot, stacking rather than overlapping." },
-  { id: "prompt", name: "Prompts and posters", blurb: "What a press does here, and the poster on a noticeboard." },
+  { id: "prompt", name: "Prompts", blurb: "What a press does here." },
   { id: "end", name: "Results", blurb: "One card at the end of everything, with variants." },
-  { id: "event", name: "Events and the paper", blurb: "Big celebrations keep their own look on purpose; the Chronicle is the paper itself." },
+  { id: "frame", name: "Pages and the big map", blurb: "The paper and BathText: the two frames for anything bigger than the HUD." },
+  { id: "event", name: "Events", blurb: "Big celebrations keep their own look on purpose." },
 ];
 
 /** The rules for using the pieces, shown over the catalogue. */
 export const RULES = `
+<h3>Three frames, and props</h3>
+<ul>
+<li><b>The paper</b> is Bath talking to you: a cutting from the Chronicle (<code>cutting.ts</code>). A job's brief at its noticeboard, its title card and J's recall (<code>brief.ts</code>), every result card, the Chronicle itself, and the league table under Tab as the top of its page.</li>
+<li><b>BathText</b> is the machine: teletext (<code>teletext.ts</code>, <code>.card.tt</code>, <code>.ttmini</code>). The menu, pause, settings, linking a device, the wardrobe, the trophy cabinet, the big map's key, notes and pub card, and the game's notes about itself (the system tier).</li>
+<li><b>The plate</b> is the HUD while you play (<code>.panel</code>): health, rounds, the vehicle, the boss, the status panels, the Flag Lads' row; meters go in the slot under the crosshair.</li>
+<li><b>Props</b> are things in Bath or of the time, and keep their own look on purpose: the G-Shock watch, the Now Playing amp, the parking ticket when you die, the stone street sign and arrival, the Art Gallery's Paint window, and a zone opening's fly-over (the big celebration). A prop keeps to its slot and gets out of the way of the big map and a result card.</li>
+<li>Every sheet over the game has the same × in its top right corner (<code>modal.ts</code>), and Esc puts it away.</li>
+</ul>
 <h3>Which notice tier</h3>
 <ul>
 <li><b>call</b>: something just happened to you (a kill, a pickup, a ride, a fare). Big and yellow, a little above the middle. <code>Game.toast</code> / <code>notice()</code>. Longer than 64 characters it becomes a note.</li>
 <li><b>note</b>: worth knowing but not news (a tip, the examiner, a critic). Same place, smaller and white. Calls and notes share one queue: nothing is lost, and they wait while a title card, a countdown or the big map is up.</li>
-<li><b>stage</b>: a mission moving on (a wave, a checkpoint, a life gone, out of lives, he got away). The band over the crosshair in the mission's colour. <code>missionCall()</code>.</li>
-<li><b>trick</b>: a score popping as you play (a flag shot, a boost, a barge). Low in the middle, over the Flag Lads' combo; never held back.</li>
+<li><b>stage</b>: a mission moving on (a wave, a checkpoint, a life gone, out of lives, he got away). The band over the crosshair in the mission's colour, the one place the band is still used. <code>missionCall()</code>.</li>
+<li><b>trick</b>: a score popping as you play (a flag shot, a boost, a barge). Under the meters in the slot under the crosshair; never held back.</li>
 <li><b>award</b>: something kept (a trophy, a wardrobe item). Slides in at the top; written on the result card instead while one is up.</li>
+<li><b>system</b>: the game about itself (the map stuck loading, someone on another version, safe graphics). A BathText strip along the top that stays till it's put right or closed. <code>systemNote()</code>.</li>
 </ul>
 <h3>Status panel slots</h3>
 <ul>
 <li><b>Top left</b>: mission panels, the job first, then a bus shift, a shoot-out, the bonfire, then the Flag Lads' row, which stays up on a job. Up to three; talkers above.</li>
-<li><b>Top middle</b>: the compass, then one bar at a time (a pub's banner, a boss).</li>
+<li><b>Top middle</b>: the title card (a brief), J's recall, then the compass and one bar at a time (a pub's banner, a boss).</li>
 <li><b>Top right</b>: the minimap, the feed under it.</li>
 <li><b>Bottom left</b>: health, the watch above it. <b>Bottom right</b>: rounds or the vehicle, never both. <b>Bottom middle</b>: the street name.</li>
-<li><b>The middle</b>: title or stage band over the crosshair; the use prompt under it; then one row per meter (<code>missionAux</code>); then trick pops over the Flag Lads' combo.</li>
-<li>On a touch screen the top-left slot is the left column, and the bottom corners keep clear of the buttons.</li>
+<li><b>The middle</b>: the stage band over the crosshair; the use prompt under it, or at a noticeboard the brief, whose foot is the prompt; then one row per meter (<code>missionAux</code>: a gate's clock, a beat, a grip, a ride's combo, the Flag Lads' combo, the wings' flight); then trick pops.</li>
+<li>On a touch screen the top-left slot is the left column, the bottom corners keep clear of the buttons, and a key cap for use or ride (in the prompt or along a brief's foot) is a button.</li>
 </ul>
 <h3>Every mission</h3>
-<p><code>missionBegin</code> → <code>missionProgress</code> (+ <code>missionAux</code>) → <code>missionCall</code> → <code>missionResult</code>. The result card owns the end sound, lists the rewards, hides the use prompt, and has Continue (Space), Again (E) where there is one, × and an 8 s timer. Big celebrations (a zone opening) keep their own look.</p>`;
+<p>The brief at the board → <code>missionBegin</code> (the same brief as the title card) → <code>missionProgress</code> (+ <code>missionAux</code>) → <code>missionCall</code>, with J bringing the brief back → <code>missionResult</code>. The result card owns the end sound, lists the rewards, hides the use prompt, and has Continue (Space), Again (E) where there is one, × and an 8 s timer.</p>`;
 
 export const ELEMENTS: Piece[] = [
   // ---- starting
   { id: "entries", group: "start", name: "Entries banner and line-up", src: "missionscreens.ts missionWaiting(), from lineup.ts",
     used: "every noticeboard job and challenge", note: "Skipped on your own: entries only open with others in the room.", states: ["Entries open", "You're in", "Lining up", "Long title"] },
-  { id: "title", group: "start", name: "Title card", src: "missionscreens.ts missionBegin()",
+  { id: "brief", group: "start", name: "A job's brief", src: "brief.ts briefHtml(); quests.ts Quests.hud() (#jobposter, #jobrecall)",
+    used: "every noticeboard job and challenge, and Wanted's round on J", note: "One cutting at the board, as the title card and on J. At the board its foot is the use prompt.",
+    states: ["Board: job", "Board: challenge", "Board: done today", "Board: touch", "Title card", "Recall (J)", "Recall: Wanted"] },
+  { id: "title", group: "start", name: "Title card (the brief)", src: "missionscreens.ts missionBegin(), drawn by brief.ts",
     used: "every job and challenge, the bonfire, a bus shift, a pub takeover, a shoot-out, the night out",
     states: ["Job", "Long goal", "Race", "Wanted", "Challenge, with a best", "Bonfire", "Bus driver", "Pub takeover", "Shoot-out", "Long, two-line title"] },
   { id: "count", group: "start", name: "Countdown and start lights", src: "missionscreens.ts missionCountdown(); missionBegin({ countdown })",
@@ -64,10 +77,8 @@ export const ELEMENTS: Piece[] = [
     used: "everything: pickups, kills, travel, the phone, examiner, critics, waves, checkpoints, trophies",
     note: "Queued: a newer call waits until the one up has been read, and held ones come one after another.",
     states: ["Call", "Call with a key", "Long call (as a note)", "Note", "Stage: wave", "Stage: checkpoint split", "Stage: life lost", "Stage: out of lives", "Stage: he got away", "Trick", "Award: trophy", "Award: wardrobe"] },
-  { id: "combo", group: "call", name: "Ride combo", src: "ridetricks.ts (#combo, style.css)", used: "riding tricks", own: true, of: "the aux slot",
-    note: "A meter of its own in the middle-top; not moved yet.", states: ["Combo", "Bailed", "New best"] },
-  { id: "fjcombo", group: "call", name: "Flag Lads combo", src: "flagjuice.ts write() (#fj-combo)", used: "Flag Lads", own: true, of: "the aux slot",
-    note: "Sits under the trick pops, low in the middle; its own look kept for now.", states: ["x3", "x7"] },
+  { id: "system", group: "call", name: "The game's notes about itself", src: "notice.ts systemNote(), from loadnote.ts, net.ts, safegfx.ts",
+    used: "the map stuck loading, someone on another version, safe graphics after a crash", states: ["Map stuck loading", "Another version", "Older version", "Safe graphics"] },
 
   // ---- panels
   { id: "mprog", group: "panel", name: "Status panel", src: "missionscreens.ts missionProgress() (.mprog in #mstack)",
@@ -75,8 +86,10 @@ export const ELEMENTS: Piece[] = [
     states: ["Seagull Attack", "Race", "Wanted", "Challenge, with lives", "Bonfire", "Bus driver", "Bus stopping", "Shoot-out", "Flash (just changed)", "Long text"] },
   { id: "stack", group: "panel", name: "Top-left slot, stacked", src: "missionscreens.ts #mstack, with invasion.ts's #bunting as its last row",
     used: "a job, a bus shift and the Flag Lads at once", states: ["Job, bus and Flag Lads", "Job and Flag Lads", "Flag Lads alone"] },
-  { id: "aux", group: "panel", name: "Meter slot under the crosshair", src: "missionscreens.ts missionAux() (#maux, .aux-word/.aux-big/.aux-meter/.aux-panel)",
-    used: "Push the Bus beat and cab, the Climb's grip, a race's gate clock, the bells", states: ["Gate clock", "Gate clock, running out", "Push the Bus beat", "Push the Bus cab", "Climb grip"] },
+  { id: "aux", group: "panel", name: "Meter slot under the crosshair", src: "missionscreens.ts missionAux(), missionAuxAdopt() (#maux, .aux-word/.aux-big/.aux-meter/.aux-panel)",
+    used: "Push the Bus beat and cab, the Climb's grip, a race's gate clock, a ride's combo, the Flag Lads' combo, the wings' flight", states: ["Gate clock", "Gate clock, running out", "Push the Bus beat", "Push the Bus cab", "Climb grip"] },
+  { id: "combo", group: "panel", name: "Ride combo, in the meter slot", src: "ridetricks.ts (#combo, adopted by missionAuxAdopt)", used: "riding tricks", states: ["Combo", "Bailed", "New best"] },
+  { id: "fjcombo", group: "panel", name: "Flag Lads combo, in the meter slot", src: "flagjuice.ts write() (#fj-combo, adopted by missionAuxAdopt)", used: "Flag Lads", states: ["x3", "x7"] },
   { id: "banner", group: "panel", name: "Banner going up", src: "invasion.ts bannerBar() (#banner, .panel)", used: "pub takeovers", states: ["Going up", "Nearly up"] },
   { id: "spec", group: "panel", name: "Watching the others", src: "missionscreens.ts missionWatching()", used: "races, once you're over the line", states: ["Standings"] },
   { id: "feed", group: "panel", name: "Feed", src: "game.ts Game.feed() (#feed)", used: "everything: who took a job, who fell, a takeover", states: ["Three lines"] },
@@ -88,8 +101,6 @@ export const ELEMENTS: Piece[] = [
     used: "everything you can use: vehicles, doors, noticeboards, pubs, buses, the mines door, a job's own use",
     note: "Each key is a key cap; on a touch screen the use and ride caps are buttons. Hidden while a result card is up.",
     states: ["Take the job", "Challenge", "Busy", "Get in", "Riding", "Job's own", "Touch key cap", "Keeper (shoot-out)"] },
-  { id: "poster", group: "prompt", name: "Noticeboard poster", src: "quests.ts Quests.hud() (#jobposter)", used: "noticeboards and challenges", states: ["Job", "Challenge", "Done today"] },
-  { id: "wposter", group: "prompt", name: "Wanted poster", src: "wantedscreens.ts wantedPoster(), on the job control", used: "Wanted, while it runs", states: ["Poster"] },
 
   // ---- results
   { id: "result", group: "end", name: "Result card", src: "missionscreens.ts missionResult()",
@@ -101,5 +112,6 @@ export const ELEMENTS: Piece[] = [
   // ---- events
   { id: "reveal", group: "event", name: "Zone opening card", src: "reveal.ts Reveal.card() (#reveal)", used: "a zone opening; the whole map", event: true,
     note: "The big celebration: its own letterbox look on purpose.", states: ["New zone", "Whole map"] },
-  { id: "chron", group: "event", name: "The Chronicle (today's jobs)", src: "daily.ts Daily.render() into #scoreboard", used: "on joining, Tab, noticeboards", states: ["On joining"] },
+  { id: "chron", group: "frame", name: "The Chronicle, and the league table", src: "daily.ts Daily.draw() into #scoreboard; game.ts renderScores()", used: "on joining, Tab (with the league table as the top of its page), the pause menu, noticeboards", states: ["On joining", "Tab: league table"] },
+  { id: "mapcard", group: "frame", name: "The big map's cards", src: "pubmap.ts (#pubcard), mapkey.ts (#keytip), minimap.ts tooltip(): .ttmini", used: "the big map, Go to a pub", note: "BathText, as the pause menu's Go to a pub (page 600) is.", states: ["Pub card", "Pub card, held up", "Key note"] },
 ];

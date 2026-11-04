@@ -5,6 +5,7 @@
 //
 // Cheap on purpose: one pool of flakes in a single instanced mesh serves the confetti and the torn
 // bunting alike, and nothing is allocated per frame.
+import { missionAuxAdopt } from "./missionscreens";
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { notice } from "./notice";
@@ -165,8 +166,8 @@ export class FlagJuice {
       inject();
       this.el = document.createElement("div");
       this.el.id = "fj-combo";
-      (document.getElementById("hud") ?? document.body).appendChild(this.el);
     }
+    if (html) missionAuxAdopt(this.el);
     this.el.innerHTML = html;
     this.el.hidden = !html;
     if (html) { this.el.classList.remove("pop"); void this.el.offsetWidth; this.el.classList.add("pop"); }
@@ -204,12 +205,12 @@ function inject() {
   if (injected) return;
   injected = true;
   const s = document.createElement("style");
-  s.textContent = `#fj-combo{position:fixed;left:50%;top:calc(50% + 230px);transform:translateX(-50%);font-family:var(--f-hud);text-align:center;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
+  s.textContent = `#fj-combo{font-family:var(--f-hud);text-align:center;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
 #fj-combo b{display:block;font-size:clamp(30px,6vw,52px);color:#ff4a55;font-style:italic;line-height:1}
 #fj-combo i{display:block;font-style:normal;font-weight:700;font-size:clamp(13px,2.4vw,18px)}
 #fj-combo u{display:block;width:120px;margin:4px auto 0;height:4px;background:#fff;border-radius:2px;transform-origin:center;transform:scaleX(var(--left,1));text-decoration:none}
 #fj-combo.pop b{animation:fj-pop .22s ease-out}
-@media (max-height:500px){#fj-combo{top:calc(50% + 130px)}#fj-combo b{font-size:26px}}
+@media (max-height:500px){#fj-combo b{font-size:26px}}
 @keyframes fj-pop{from{transform:scale(1.7)}to{transform:none}}`;
   document.head.appendChild(s);
 }

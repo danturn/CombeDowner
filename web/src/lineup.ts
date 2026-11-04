@@ -27,6 +27,7 @@ import { esc } from "./hudkit";
 import { missionBegin, missionCountdown, missionProgress, missionWaiting } from "./missionscreens";
 import { bestFor } from "./trophies";
 import type { JobKind, Offer, QuestWorld } from "./quests";
+import { briefMore } from "./brief";
 
 export const ENTRY = 15;        // seconds the entries are open, unless a minigame says otherwise
 export const HOLD = 6;          // seconds from the line-up to GO: the title card, then 3, 2, 1
@@ -174,7 +175,7 @@ export class Lineup {
     const many = (this.cast?.length ?? 1) > 1;
     missionBegin({
       title: o.title, goal: k.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), label: k.label, colour: k.colour, best: bestFor(o.kind),
-      detail: many ? `${this.cast!.length} in: ${this.names(this.cast!)}` : o.where ? `At ${o.where}` : undefined,
+      detail: many ? `${this.cast!.length} in: ${this.names(this.cast!)}` : o.where ? `At ${o.where}` : undefined, ...briefMore(o, k),
     });
   }
 
