@@ -49,6 +49,7 @@ import { GameMap, POST_GAP, POST_HEIGHT, footballLayout, pitchId, rugbyLayout } 
 import { Player } from "./player";
 import { STUMPS } from "./pitches";
 import * as Telemetry from "./telemetry";
+import { earn } from "./wardrobe";
 import { AiKeeper, Bout, DIVE_REACH, DIVE_T, MAX_PLAYERS, QUEUE_KICKS, Vane, lineup, roles, stops, totalKicks, winners } from "./shootout";
 
 const SHOOT_COLOUR = "#58e06a";   // the same as its status panel (game.ts)
@@ -618,6 +619,7 @@ export class Sports {
       rewards: mine && !square ? ["A prize behind the goal"] : [],
     });
     if (mine) this.onScore?.(b.pitch, b.end, false);
+    if (mine && !square) earn("guard");
   }
 
   private endBout() {
@@ -1076,6 +1078,7 @@ export class Sports {
       if (f.mine && !f.scored && end === f.target) {
         f.scored = true;
         this.onScore?.(P.i, end, false);
+        earn("sunblock");
       }
       return true;
     }

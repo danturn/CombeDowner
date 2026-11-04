@@ -748,7 +748,7 @@ registerChallenge({
 
     function finish() {
       if (job.done || !ending) return;
-      job.done = { won: ending.won, title: ending.won ? "Rung through!" : ending.why.startsWith("Too many") ? "Stand!" : "A jangle", text: ending.why, x: board.x, z: board.z };
+      job.done = { won: ending.won, title: ending.won ? "Rung through!" : ending.why.startsWith("Too many") ? "Stand!" : "A jangle", text: ending.why, x: board.x, z: board.z, wear: ending.won && !bad ? ["muffs"] : [] };
     }
 
     function drawHud() {

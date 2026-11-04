@@ -1448,6 +1448,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     const said = !all ? "" : !on ? "Not one pensioner aboard. The council has been told"
       : hp >= 70 ? "\"Lovely ride, driver. Ta-ra!\"" : hp >= 40 ? "\"Well, we got here, I suppose.\"" : "\"I'll be writing to the Chronicle about this.\"";
     return {
+      wear: tier === 3 && all > 0 && on === all && hp >= 70 ? ["hood"] : [],
       grade: { tier: tier as 1 | 2 | 3, best: { v: tier * 1e4 - t, text: `${["", "bronze", "silver", "gold"][tier]} in ${clock}` } },
       card: {
         lead: clock, medal: ["", "Bronze", "Silver", "Gold"][tier],

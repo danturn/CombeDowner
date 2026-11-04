@@ -27,6 +27,7 @@
 import * as SFX from "./audio";
 import { missionBegin, missionNight } from "./missionscreens";
 import * as Paper from "./paper";
+import { earn } from "./wardrobe";
 import type { Invasion } from "./invasion";
 import { compassWord, esc, far, hash, type Job, type Link, type Offer, type Quests, type QuestWorld } from "./quests";
 
@@ -270,6 +271,7 @@ export class NightOut {
     const story = Paper.nightStory(since, pub, away)
       ?? { head: "A night to remember", stand: `The night ended at ${pub}.`, by: "By our night reporter", body: [], items: [] };
     missionNight({ pub, ...story });
+    earn("monocle");
     SFX.jobDone(true);   // the front page is quiet itself, so its fanfare is played here
   }
 

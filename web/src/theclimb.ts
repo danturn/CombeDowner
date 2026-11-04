@@ -1072,7 +1072,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
         case "won": {
           if (job.done) return;
           won = true;
-          job.done = { won: true, title: "On top of the crag!", card: { stats: [{ k: "Lives left", v: `${lives} of ${most}` }] }, text: "The whole team stood on top of the crag together", x: ex, z: ez };
+          job.done = { won: true, title: "On top of the crag!", card: { stats: [{ k: "Lives left", v: `${lives} of ${most}` }] }, text: "The whole team stood on top of the crag together", x: ex, z: ez, wear: lives === most ? ["rope"] : [] };
           release();
           return;
         }

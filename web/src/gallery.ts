@@ -43,7 +43,7 @@ import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { ctlText } from "./controls";
-import { CRITICS, THEMES, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
+import { CRITICS, THEMES, TRIUMPH, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
 import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
@@ -1035,7 +1035,7 @@ registerChallenge({
       phase = "out";
       goDown();
       job.done = {
-        won: result.won, screen: carded, x: door.x, z: door.z,
+        won: result.won, screen: carded, x: door.x, z: door.z, wear: result.won && result.score >= result.bar + TRIUMPH ? ["beret"] : [],
         text: result.won ? `The show was a success: ${result.score.toFixed(1)} against ${result.bar.toFixed(1)}` : `The critics panned it: ${result.score.toFixed(1)}, and it needed ${result.bar.toFixed(1)}`,
       };
     }
