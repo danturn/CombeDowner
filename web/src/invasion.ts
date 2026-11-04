@@ -30,7 +30,8 @@
 // WhatsApp group), who remembers how it went: win and he comes back with another trait; lose and he
 // packs it in for the next one. A pub the lads keep gets their "WE RUN THIS" banner outside, signed,
 // till someone tears it down or the day's out (scars.ts), and ten to fifteen flags go up in a
-// cluster or two on its street and the streets running into it.
+// cluster or two on its street and the streets running into it (making room, if the map's full,
+// by taking down their oldest lot elsewhere).
 //
 // The fight is at the pub's front: the crew stand out on the pavement facing the street, and a lad or
 // more go up ladders against the wall to hang the lads' banner. Once the crew turn up a bar across
@@ -73,8 +74,8 @@
 // "pa" in its state so everyone's meter can say so. Older pages ignore all of it.
 //
 // Who decides what: where the Flag Lads start each season, and how many clusters they would have put
-// up by now with nobody fighting them, comes from the clock and the map's streets, so every screen
-// works out the same clusters and a room started any time picks up where the season should be. After
+// up by now with nobody fighting them, comes from the clock, the map's streets and the zones open
+// (zones.ts: they only go where you can get to), so every screen works out the same clusters and a room started any time picks up where the season should be. After
 // that the host runs it (new clusters, the takeovers, the crews and the ladders, the Gaffer and the
 // pubs won back, through naughtyboys.ts) and sends everyone the clusters as "bv" every few seconds:
 // each as [id, road, metres along its street, flags, seed, a bit for each flag down, the pub], with
@@ -425,7 +426,7 @@ export class Invasion {
       if (ch.len < span + 8) continue;
       const a = Math.round(Math.max(4, Math.min(ch.len - 4 - span, (ch.from + ch.to - span) / 2))), seed = Math.floor(rand() * 256);
       const raw = R.spots(r, a, n, seed);
-      if (!raw.every((s) => map.fieldEdgeBase(s.x, s.z) > 30 && ok(s.x, s.z) && !inSafeZone(map, s.x, s.z, 0, squares))) continue;
+      if (!raw.every((s) => map.fieldEdge(s.x, s.z) > 30 && ok(s.x, s.z) && !inSafeZone(map, s.x, s.z, 0, squares))) continue;
       if (this.clusters.some((c) => Math.hypot(c.x - raw[0].x, c.z - raw[0].z) < c.half + span + APART
         && c.raw.some((q) => raw.some((s) => Math.hypot(q.x - s.x, q.z - s.z) < APART)))) continue;
       return { r, a, n, seed };
@@ -478,36 +479,65 @@ export class Invasion {
     this.news("saved", { q: this.quietTill });
   }
 
-  /** Host: the lads kept a pub: ten to fifteen flags go up on its street and the streets running into it. */
+  /** Whether flags at these spots would stand within gap metres of another cluster's. */
+  private overlaps(raw: { x: number; z: number }[], gap: number) {
+    return this.clusters.some((c) => c.raw.some((q) => raw.some((s) => Math.hypot(q.x - s.x, q.z - s.z) < gap)));
+  }
+
+  /** Host: the lads kept a pub: ten to fifteen flags go up on its street and the streets running
+   *  into it (and in a town centre of short streets, the ones running into those). */
   private digIn(c: Call) {
-    const R = this.roads, home = R?.nearest(c.x, c.z, 80);
+    const R = this.roads, home = R?.nearest(c.x, c.z, 80), map = this.w.map;
     if (!R || !home) return;
-    let want = LOST_FEW + Math.floor(Math.random() * (LOST_MANY - LOST_FEW + 1));
-    // there's only so many flags to go round: they take down the oldest of their others to make room
-    while (MAX_UP - this.total < want) {
+    const want = LOST_FEW + Math.floor(Math.random() * (LOST_MANY - LOST_FEW + 1));
+    const key = (r: number) => R.chain(r).name || `#${r}`, seen = new Set([key(home.r)]);
+    const queue = [{ r: home.r, s: home.s, inward: 0, depth: 0 }], plans: { r: number; a: number; n: number; seed: number }[] = [];
+    let placed = 0;
+    while (queue.length && placed < want && placed + FEW <= LOST_MANY) {
+      const p = queue.shift()!;
+      if (p.depth < 2) for (const j of R.joining(p.r, c.x, c.z, 300)) if (!seen.has(key(j.r))) { seen.add(key(j.r)); queue.push({ ...j, depth: p.depth + 1 }); }
+      // the pub's own street takes most; whatever it can't fit goes on the streets round it, five or more a time
+      const left = want - placed;
+      let n = plans.length ? (left - FEW >= FEW ? FEW : Math.max(FEW, left)) : Math.ceil(want * 0.6);
+      if (!plans.length && want - n < FEW) n = want;
+      n = Math.min(n, LOST_MANY - placed);
+      const ch = R.chain(p.r);
+      // a street running in is flagged from the corner along it, or the other way if that's too short
+      for (const d of p.inward ? [p.inward, -p.inward] : [0]) {
+        const room = d > 0 ? ch.len - p.s - 20 : d < 0 ? p.s - 20 : ch.len - 4;
+        const m = Math.min(n, MANY, room >= 0 ? Math.floor(room / SPACING) + 1 : 0);
+        if (m < FEW) continue;
+        const span = (m - 1) * SPACING;
+        const a = Math.round(d > 0 ? p.s + 20 : d < 0 ? p.s - 20 - span : Math.max(2, Math.min(ch.len - 2 - span, p.s - span / 2)));
+        const seed = Math.floor(Math.random() * 256), raw = R.spots(p.r, a, m, seed);
+        if (raw.some((s) => map.fieldEdge(s.x, s.z) < 5 || inSafeZone(map, s.x, s.z)) || this.overlaps(raw, 20)) continue;
+        plans.push({ r: p.r, a, n: m, seed });
+        placed += m;
+        break;
+      }
+    }
+    // there's only so many flags to go round: they take down their oldest elsewhere to make room
+    const need = plans.reduce((t, q) => t + q.n, 0);
+    while (MAX_UP - this.total < need) {
       const k = this.clusters.findIndex((o) => !o.pub);
       if (k < 0) break;
       this.clusters.splice(k, 1);
     }
-    want = Math.min(want, MAX_UP - this.total);
-    let left = want;
-    for (const [k, p] of [{ r: home.r, s: home.s, inward: 0 }, ...R.joining(home.r, c.x, c.z, 120)].entries()) {
-      if (left < FEW) break;
-      const ch = R.chain(p.r), room = p.inward > 0 ? ch.len - p.s - 20 : p.inward < 0 ? p.s - 20 : ch.len - 4;
-      const most = Math.min(MANY, room >= 0 ? Math.floor(room / SPACING) + 1 : 0);
-      let n = k === 0 ? Math.ceil(want * 0.6) : left - FEW >= FEW ? FEW : left;
-      if (left - n < FEW) n = left;
-      n = Math.min(n, most);
-      if (n < FEW) continue;
-      const span = (n - 1) * SPACING;
-      const a = Math.round(p.inward > 0 ? p.s + 20 : p.inward < 0 ? p.s - 20 - span : Math.max(2, Math.min(ch.len - 2 - span, p.s - span / 2)));
-      const seed = Math.floor(Math.random() * 256);
-      if (R.spots(p.r, a, n, seed).some((s) => inSafeZone(this.w.map, s.x, s.z))) continue;
-      const got = this.cluster(++this.clusterN, p.r, a, n, seed, 0, c.name);
-      if (!got) continue;
-      this.clusters.push(got);
-      left -= n;
+    for (const q of plans) {
+      if (MAX_UP - this.total < q.n) break;
+      const got = this.cluster(++this.clusterN, q.r, q.a, q.n, q.seed, 0, c.name);
+      if (got) this.clusters.push(got);
     }
+    this.dirty = true;
+  }
+
+  /** Host: clusters out past the wall (the zones not open yet, zones.ts) can't be reached, so the
+   *  lads move them somewhere that can. */
+  private reachable(alive: Target[]) {
+    const out = this.clusters.filter((c) => this.w.map.fieldEdge(c.x, c.z) < 0);
+    if (!out.length) return;
+    this.clusters = this.clusters.filter((c) => !out.includes(c));
+    for (let k = 0; k < out.length; k++) this.grow(Math.random, this.clearOf(alive), true);
     this.dirty = true;
   }
 
@@ -747,6 +777,7 @@ export class Invasion {
     if (brew) for (const c of this.calls) if (!c.on) c.until += dt * 1000;
     if ((this.tickT -= dt) <= 0) {
       this.tickT = TICK;
+      if (!this.saved) this.reachable(alive);
       if (!this.saved && !brew && (this.growT -= TICK) <= 0) {
         this.growT = GROW_EVERY;
         this.grow(Math.random, this.clearOf(alive), true);

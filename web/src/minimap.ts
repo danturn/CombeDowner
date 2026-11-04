@@ -8,8 +8,8 @@
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
-// and its checkpoints (race.ts) are drawn on every map while it's on. The big map also washes the squares you've cleared faintly green and
-// puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear, and
+// and its checkpoints (race.ts) are drawn on every map while it's on. Both maps show the Flag Lads' clusters
+// of flags as soft red blobs (invasion.ts), and the big map puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear, and
 // a pint on every pub to go to or mark (pubmap.ts), faint till you zoom in so they don't crowd out the rest;
 // one with a job or a stop on top of it is moved out beside that, with a line back, so both can be picked.
 // The minimap is for right now, the big map for planning: zoomed out the big map keeps to what
@@ -197,7 +197,7 @@ export interface Blob { x: number; z: number; r: number; a: number; free?: boole
 function drawTint(g: CanvasRenderingContext2D, tint: Blob[], P: (x: number, z: number) => number[], scale: number, px = 6) {
   for (const t of tint) {
     const [x, y] = P(t.x, t.z), r = Math.max(px, t.r * scale);
-    const rgb = t.free ? "79,209,139" : "214,40,52", a = t.free ? 0.32 : 0.14 + 0.36 * t.a;
+    const rgb = t.free ? "79,209,139" : "214,40,52", a = t.free ? 0.35 : 0.22 + 0.4 * t.a;
     const fill = g.createRadialGradient(x, y, 0, x, y, r);
     fill.addColorStop(0, `rgba(${rgb},${a.toFixed(3)})`);
     fill.addColorStop(0.55, `rgba(${rgb},${(a * 0.65).toFixed(3)})`);
@@ -600,7 +600,7 @@ export class Minimap {
   zones: ZoneView | null = null;
   /** The Flag Lads' clusters and the pubs won back, as blobs (invasion.ts). */
   tint: Blob[] = [];
-  /** The squares you've cleared, today's scars and the pubs you've won back (yours.ts), for the big map. */
+  /** Today's scars and the pubs you've won back (yours.ts), for the big map. */
   mine: Mine | null = null;
   /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
   stops: { x: number; z: number; n?: string }[] = [];
@@ -923,7 +923,7 @@ export class Minimap {
     const mine = on("yours") ? this.mine : null;
     const under = () => {
       if (mine) drawMineUnder(g, mine, P, scale, dpr);
-      if (on("flags")) drawTint(g, this.tint, P, scale, 6 * dpr);
+      if (on("flags")) drawTint(g, this.tint, P, scale, 9 * dpr);
     };
     if (this.zoom === 1 && !this.centre) { g.drawImage(this.full.canvas, 0, 0); under(); g.drawImage(this.full.names, 0, 0); }
     else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {}, under);
