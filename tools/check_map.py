@@ -807,37 +807,6 @@ def _rect(q):
     return Polygon(q).buffer(0)
 
 
-def drawn_roof_at(b, d, x, y):
-    """The height of the roof the game draws over (x, y), as tools/roofs/drawn.ts reads it, or None
-    where only the flat cap (or nothing) is: the lidar's faces, or the pitched rectangles."""
-    if d.get("rm"):
-        v, t, best = d["rm"]["v"], d["rm"]["t"], None
-        for i in range(0, len(t), 3):
-            (ax, ay, az), (bx, by, bz), (cx, cy, cz) = (v[3 * k:3 * k + 3] for k in t[i:i + 3])
-            den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-            if abs(den) < 1e-9: continue
-            l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / den
-            l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / den
-            if min(l1, l2, 1 - l1 - l2) < -1e-4: continue
-            h = l1 * az + l2 * bz + (1 - l1 - l2) * cz
-            best = h if best is None or h > best else best
-        return best
-    eave, best = b["g"] + b["h"], None
-    for roof in d.get("p") or []:
-        q = roof["q"]
-        ux, uy = q[1][0] - q[0][0], q[1][1] - q[0][1]; L = math.hypot(ux, uy) or 1
-        vx, vy = q[3][0] - q[0][0], q[3][1] - q[0][1]; W = math.hypot(vx, vy) or 1
-        mx, my = (q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2
-        su, sv = ((x - mx) * ux + (y - my) * uy) / L, ((x - mx) * vx + (y - my) * vy) / W
-        if abs(su) > L / 2 or abs(sv) > W / 2: continue
-        slope, ridge = roof["rp"] / (W / 2), eave + roof["rp"]
-        h = ridge - abs(sv) * slope
-        if roof["hp"][0]: h = min(h, ridge - max(0, -su - (L / 2 - W / 2)) * slope)
-        if roof["hp"][1]: h = min(h, ridge - max(0, su - (L / 2 - W / 2)) * slope)
-        best = h if best is None or h > best else best
-    return best
-
-
 def _pitched(d):
     """Whether the game draws a sloping roof on the building (not only flat faces or a flat cap)."""
     if d.get("p"): return True
@@ -915,8 +884,8 @@ FLAT_LEFT = 10.0    # m2: a flat-capped part of a pitched building this big is s
 def roofs_drawn_whole(m, tag, note, polys, drawn):
     """Rule 11 on the roofs the game draws from roofsFit as well as the lidar's: a pitched roof that
     covers only part of its building, roofs laid over one building that don't meet, and buildings
-    sharing a wall (one building's parts, or a row) whose roofs don't meet along it or are in
-    different coverings or colours."""
+    sharing a wall (one building's parts, or a row) in different coverings or colours, alike houses
+    in a row with their ridges turned against each other, and a semi's halves roofed differently."""
     bl = m.get("bl") or []
     if drawn is None: return
     for b, d, P in zip(bl, drawn, polys):
@@ -958,18 +927,35 @@ def roofs_drawn_whole(m, tag, note, polys, drawn):
                 note("11 joined buildings' roofs in different coverings", 1, at, f"{A.get('rc')} and {C.get('rc')}")
             if (A.get("rk") or "") != (C.get("rk") or ""):
                 note("11 joined buildings' roofs in different colours", 1, at, f"{A.get('rk')} and {C.get('rk')}")
-            if abs(A["g"] + A["h"] - C["g"] - C["h"]) > 0.5: continue    # a step between them, with its wall
-            # each roof just inside its own side of the wall's middle
-            pa, pc = polys[a].exterior.interpolate(polys[a].exterior.project(mid)), polys[c].exterior.interpolate(polys[c].exterior.project(mid))
-            def inside(P, q):
-                cx, cy = P.centroid.x - q.x, P.centroid.y - q.y
-                n = math.hypot(cx, cy) or 1
-                return q.x + 0.4 * cx / n, q.y + 0.4 * cy / n
-            za, zc = drawn_roof_at(A, dA, *inside(polys[a], pa)), drawn_roof_at(C, dC, *inside(polys[c], pc))
-            za = A["g"] + A["h"] if za is None else za
-            zc = C["g"] + C["h"] if zc is None else zc
-            if abs(za - zc) > 1.0:
-                note("11 joined buildings' roofs not meeting at their wall", abs(za - zc), at, f"{abs(za - zc):.1f} m apart")
+            # a step in height between joined roofs, with its gable wall, is how Bath's rows climb a
+            # hill; and the lidar's roofs and the game's whole-outline roofs follow their own outline.
+            # What's wrong is alike houses roofed as though they weren't one row
+            if A.get("rm") or C.get("rm") or dA.get("rm") or dC.get("rm") or not (A.get("rr") and C.get("rr")): continue
+            ua, uc = _ridge_dir(A["rr"]), _ridge_dir(C["rr"])
+            turned = abs(ua[0] * uc[0] + ua[1] * uc[1]) < 0.7
+            if A.get("c") == "semi" and C.get("c") == "semi":
+                if turned or _hipped(A) != _hipped(C):
+                    note("11 semi's halves in different roof shapes", 1, at, "ridges turned" if turned else "one hipped, one gabled")
+            elif turned and _alike(polys[a], polys[c]):
+                note("11 ridge turned against a same-shaped neighbour", 1, at, "")
+
+
+def _ridge_dir(q):
+    dx, dy = q[1][0] - q[0][0], q[1][1] - q[0][1]
+    n = math.hypot(dx, dy) or 1
+    return dx / n, dy / n
+
+
+def _hipped(b):
+    return max(b.get("hp") or [0]) > 0.05
+
+
+def _alike(P, Q):
+    """buildings.rows: two outlines with each side at least ALIKE of the other's are one design."""
+    def sides(R):
+        q = list(R.minimum_rotated_rectangle.exterior.coords)
+        return sorted((math.dist(q[0], q[1]), math.dist(q[1], q[2])))
+    return all(min(x, y) >= 0.75 * max(x, y) for x, y in zip(sides(P), sides(Q)))
 
 
 def set_pieces_near(m):
