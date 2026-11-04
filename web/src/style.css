@@ -1001,6 +1001,7 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
   #jobposter { top: auto; bottom: 140px; width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 200px); }
   #jobrecall { top: 4px; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 8px); }
+  #jobposter .bblurb, #jobrecall .bblurb { display: none; }
   #hud:has(.mprog:not([hidden])) #jobrecall { width: clamp(240px, calc(100vw - 2 * (min(240px, 100vw - 170px) + 24px)), 440px); }
   #feed { top: 160px; font-size: 15px; }
   #bunting { top: 150px; width: 140px; padding: 3px 8px 16px; }
