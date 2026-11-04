@@ -17,7 +17,7 @@ import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
-import { alignPortals, portalFaces } from "./tunnels";
+import { alignPortals, boreHeight, portalFaces } from "./tunnels";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -229,6 +229,11 @@ export const ANY_HEIGHT = -1e9;
 /** How far under the ground something stands on (a house, a garden wall, a strange structure) you
  *  must be to pass beneath it: in a tunnel under the hill, not down a bank or a cutting beside it. */
 export const UNDERGROUND = 4;
+/** A tunnel's side walls, a kind of wall of their own: they go on up into the hill, so there's no
+ *  top to climb or vault on to. */
+const LINING = 4;
+/** How tall the lining stands over your feet, as far as climbing it goes. */
+const LINING_TALL = 100;
 /** How much of a tree's collision trunk is drawn trunk: rays (shots) go by the drawn one, a little thinner than you bump into. */
 const TRUNK_DRAWN = 0.8;
 
@@ -563,7 +568,7 @@ export class GameMap {
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
         const half = Math.max(boreHalf(t, i), boreHalf(t, i + 1));
-        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half, boreCrown(t)]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half, boreCrown(t), carriesTraffic(t) ? 1 : 0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
         const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
         const seen = new Set<number>();
         for (let s = 0; s <= n; s++) {
@@ -575,7 +580,7 @@ export class GameMap {
         const w = offsetLine(p, (i) => boreHalf(t, i) * side);
         for (let i = 0; i < w.length - 1; i++) {
           const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + boreCrown(t);
-          this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, 0);
+          this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, LINING);
         }
       }
     }
@@ -1271,14 +1276,15 @@ export class GameMap {
     return this.boreAt(x, z)?.[0] ?? null;
   }
 
-  /** The tunnel's floor (scene Y) and its height to the top of the bore at scene (x, z), if there's one under it. */
-  private boreAt(x: number, z: number): [number, number] | null {
-    let best: [number, number] | null = null, bd = Infinity;
+  /** The tunnel's floor (scene Y), its height to the top of the bore, and the lining's height over
+   *  the floor just here (lower towards the walls, under an arch) at scene (x, z), if there's one under it. */
+  private boreAt(x: number, z: number): [number, number, number] | null {
+    let best: [number, number, number] | null = null, bd = Infinity;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const a = this.tA[k], b = this.tB[k], vx = b[0] - a[0], vz = b[1] - a[1];
       const s = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz || 1)));
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
-      if (d < a[3] + 0.2 && d < bd) { bd = d; best = [a[2] + (b[2] - a[2]) * s, a[4]]; }
+      if (d < a[3] + 0.2 && d < bd) { bd = d; best = [a[2] + (b[2] - a[2]) * s, a[4], boreHeight(a[5] === 1, a[3], a[4], d)]; }
     }
     return best ?? this.tileAt(x, z)?.boreAt(x, z) ?? null;
   }
@@ -1286,7 +1292,15 @@ export class GameMap {
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
   inTunnel(x: number, z: number, y: number): number | null {
     const b = this.boreAt(x, z);
-    return b && y < b[0] + b[1] - 0.4 ? b[0] : this.canalBore(x, z, y);
+    // anyone still under the hill is in the bore, however they got up there: the ground over it is
+    // never theirs to be lifted on to
+    return b && (y < b[0] + b[1] - 0.4 || y < this.ground(x, z) - UNDERGROUND) ? b[0] : this.canalBore(x, z, y);
+  }
+
+  /** The tunnel's lining over feet at scene (x, y, z) if they're in one (scene Y), or null. */
+  ceiling(x: number, z: number, y: number): number | null {
+    const b = this.boreAt(x, z);
+    return b && this.inTunnel(x, z, y) === b[0] ? b[0] + b[2] : null;
   }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
@@ -1375,7 +1389,7 @@ export class GameMap {
           if (d < 1e-6) { ex = -vz; ez = vx; } // exactly on the line: push along its normal
           const el = Math.hypot(ex, ez) || 1;
           pos.x = cx + (ex / el) * reach; pos.z = cz + (ez / el) * reach;
-          block = Math.max(block, top - y);
+          block = Math.max(block, this.sKind[i] === LINING ? LINING_TALL : top - y);
         }
         for (const i of this.treeCells.get(k) ?? []) {
           if (this.treeStamp[i] === t) continue;
@@ -1591,7 +1605,7 @@ export class GameMap {
             if (y > this.topAt(i, along) || y < this.sFoot[i] || y < this.sGround[i] - UNDERGROUND) continue;
             let nx = -vz / vl, nz = vx / vl;
             if (nx * dx + nz * dz > 0) { nx = -nx; nz = -nz; }
-            best = { dist: hit, kind: this.sKind[i] === 0 ? "building" : "barrier", nx, ny: 0, nz };
+            best = { dist: hit, kind: this.sKind[i] === 0 || this.sKind[i] === LINING ? "building" : "barrier", nx, ny: 0, nz };
           }
           for (const i of this.treeCells.get(k) ?? []) {
             if (this.treeStamp[i] === t) continue;

@@ -39,6 +39,8 @@ export interface Ground {
   readonly lastBlock: number;
   /** What there is to stand on for feet at y, if not just the ground (car roofs). */
   floor?(x: number, z: number, y: number): number;
+  /** The roof over feet at y, where there's one to bump your head on (a tunnel's lining: map.ts). */
+  ceiling?(x: number, z: number, y: number): number | null;
   /** A low wall's top to grind along on a ride (map.ts), where there are any. */
   grindEdge?(x: number, z: number, y: number, r: number, up: number, down: number, dx: number, dz: number, minDot: number): GrindEdge | null;
 }
@@ -82,6 +84,7 @@ export const CROUCH_EYE = 1.1;
 /** Eye height lying on your front, propped up on your elbows. */
 export const PRONE_EYE = 0.5;
 const RADIUS = 0.35;
+const HEAD = 0.15;         // the top of your head over your eyes
 const GRAVITY = 22;
 const JUMP = 7.2;
 const FALL = 1.35;        // gravity's pull on the way down, over the way up: a jump that doesn't hang
@@ -532,6 +535,11 @@ export class Player {
 
   /** Feet against what's under them: landing, stepping up, or sticking to the ground going downhill. */
   private land(y0: number) {
+    const roof = this.map.ceiling?.(this.pos.x, this.pos.z, y0);
+    if (roof != null && this.pos.y + this.eyeHeight + HEAD > roof) {
+      this.pos.y = Math.max(this.under(this.pos.x, this.pos.z, y0), roof - this.eyeHeight - HEAD);
+      this.vel.y = Math.min(this.vel.y, 0);
+    }
     // coming down, whatever was under the feet at the start of the frame counts: falling fast (or
     // on a slow frame) can carry you more than a step past a roof in one go
     const g = this.under(this.pos.x, this.pos.z, Math.max(y0, this.pos.y));

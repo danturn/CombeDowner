@@ -37,7 +37,7 @@ export type PortalStyle = "a" | "b";
  *  springs no lower than leaves its rise under half the height, so a low wide bore is a flattish
  *  arch on short walls rather than a semicircle on none. */
 function profile(box: boolean, half: number, crown: number, e = 0): number[][] {
-  const H = half + e, wall = crown - Math.min(half, crown * 0.45);
+  const H = half + e, wall = archSpring(half, crown);
   if (box) {
     const out = [[H, 0], [H, wall * 0.5], [H, wall]], top = crown + e;
     for (let k = 0; k <= 10; k++) out.push([H - (2 * H * k) / 10, top]);
@@ -48,6 +48,16 @@ function profile(box: boolean, half: number, crown: number, e = 0): number[][] {
   for (let k = 0; k <= 10; k++) { const t = (k / 10) * Math.PI; out.push([H * Math.cos(t), wall + b * Math.sin(t)]); }
   out.push([-H, wall * 0.5], [-H, 0]);
   return out;
+}
+
+/** Where an arched bore's walls stop and its arch begins, above the floor. */
+export function archSpring(half: number, crown: number) { return crown - Math.min(half, crown * 0.45); }
+
+/** How high the bore's lining is over the floor at `across` from its middle: the arch, or a box's flat top. */
+export function boreHeight(box: boolean, half: number, crown: number, across: number) {
+  if (box) return crown;
+  const spring = archSpring(half, crown), u = Math.min(1, Math.abs(across) / half);
+  return spring + (crown - spring) * Math.sqrt(1 - u * u);
 }
 
 /** Points every STEP metres along a tunnel's floor (data coords [x, y, z]), with distance along, the
