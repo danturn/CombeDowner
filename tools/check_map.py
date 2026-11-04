@@ -35,7 +35,7 @@ case by case:
     stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
     pavement); where the road and the paving meet, neither pokes a point or a sliver into the
     other (check_more.slivers); no flight of steps runs on over a pavement, into the road or into
-    another path; and no boundary meets nothing at either end.
+    another path; and no boundary stops just short of another, a building, a street or a path.
 10. Under a bridge: there is an open gap, and no wall, building, tree or street item stands in it;
     no street's carriageway or pavement is drawn on a path passing under it, and no face under the
     deck has a corner lifted up to it.
@@ -534,6 +534,7 @@ def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
 
 
 MEETS = 0.5          # metres from something an end of a boundary must lie to meet it
+SHORT_OF = 3.0       # metres: a boundary stopping this short of something is meant to meet it (write_tile.MEET_REACH)
 STEP_OVER = 0.5      # metres of a flight on a street or another path before it is counted
 FACE_ON_PATH = 1.0   # square metres of a street's face on a path under a bridge before it is counted
 
@@ -554,6 +555,12 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
     for r, mk in zip(roads, marks):
         if r["c"] != "steps" or any(mk): continue
         L = line(r["p"])
+        # (as furniture.ts stepsDetail: nothing under a metre long, no treads where the map gives no
+        # count and it barely rises, and nothing at all without handrails either)
+        if L.length < 1: continue
+        rise = abs(ground(*r["p"][-1][:2]) - ground(*r["p"][0][:2]))
+        treads = r.get("sc") or (round(rise / 0.16) if rise > 0.3 else 0)
+        if not min(treads, int(L.length / 0.2)) and not r.get("hr"): continue
         on = street.intersection(L).length
         if on > STEP_OVER: note("9 steps onto a street", on, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{on:.1f} m of the flight on a pavement or the road")
         into = max([walks[int(k)][0].intersection(L).length for k in wtree.query(L)] or [0.0])
@@ -720,19 +727,38 @@ def fit_together(m, tag, note, f=None):
                             and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt.buffer(0.6)))))
         if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
-    # and a longer run that meets nothing at either end: no other boundary, gate, building, street or
-    # path, nor the next square's boundary it runs on into
+    # an end that stops just short of something it should meet: another boundary (not end to end,
+    # which is a gap left between two), a building, or a street's or path's edge, within SHORT_OF
+    # along its own line, with no gateway, drive or front path in between. One ending in the open,
+    # with nothing ahead of it in reach, is a real loose end (a park wall, a ruin), not a fault.
     F = check_more.faces_of(m)
-    meets = shapely.union_all([F[k] for k in F] + homes
-                              + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1]).buffer(MEETS)
+    ground_faces = shapely.union_all([F[k] for k in F] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
+    meets = shapely.union_all([ground_faces] + homes).buffer(MEETS)
     shapely.prepare(meets)
+    ahead = [h.exterior for h in homes if h.geom_type == "Polygon"] + [g for g in getattr(ground_faces.boundary, "geoms", [ground_faces.boundary])]
+    ahead_tree = shapely.STRtree(ahead) if ahead else None
+    openings = ([LineString([(g[0], g[1]), (g[2], g[3])]) for g in m.get("gt") or []]
+                + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.3) for q in m.get("dv") or []]
+                + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.55) for q in m.get("fp") or []])
+    open_tree = shapely.STRtree(openings) if openings else None
     for i, L in enumerate(bar_lines):
         if L.length < 1.5 or Point(L.coords[0]).distance(Point(L.coords[-1])) < MEETS: continue    # (a ring meets itself)
-        free = lambda pt: (not meets.contains(pt)
-                           and not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < MEETS for k in ends_tree.query(pt.buffer(MEETS)))
-                           and not (edge is not None and edge.distance(pt) < MEETS))
-        if free(Point(L.coords[0])) and free(Point(L.coords[-1])):
-            note("9 boundary meeting nothing", L.length, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
+        c = list(L.coords)
+        for pt, back in ((Point(c[0]), c[1:]), (Point(c[-1]), c[-2::-1])):
+            if meets.contains(pt) or (edge is not None and edge.distance(pt) < MEETS): continue
+            if any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < MEETS for k in ends_tree.query(pt.buffer(MEETS))): continue
+            q = next((b for b in back if math.dist(b[:2], (pt.x, pt.y)) >= 0.3), None)
+            if q is None: continue
+            d = math.dist(q[:2], (pt.x, pt.y))
+            ray = LineString([(pt.x, pt.y), (pt.x + (pt.x - q[0]) / d * SHORT_OF, pt.y + (pt.y - q[1]) / d * SHORT_OF)])
+            if open_tree is not None and any(openings[int(k)].intersects(ray) for k in open_tree.query(ray)): continue
+            hit = [h for k in bar_tree.query(ray) if int(k) != i and bar_lines[int(k)].intersects(ray)
+                   for h in [bar_lines[int(k)].intersection(ray)]
+                   if min(Point(bar_lines[int(k)].coords[0]).distance(h), Point(bar_lines[int(k)].coords[-1]).distance(h)) >= 0.3]
+            if not hit and ahead_tree is not None:
+                hit = [k for k in ahead_tree.query(ray) if ahead[int(k)].intersects(ray)]
+            if hit:
+                note("9 boundary stopping short", 1, (tag, round(pt.x), round(pt.y)), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs
     ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.7) for q in m.get("fp") or []]
