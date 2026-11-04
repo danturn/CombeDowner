@@ -25,7 +25,9 @@
 // - 5 or more (up to 8): a queue. Everyone takes three kicks in turn and keeps goal for whoever is
 //   next; most goals wins, and a tie is shared.
 // Everyone near the pitch who is within reach of the goal when the keeper volunteers is in. A score
-// card shows the goals and whose turn it is. Winners get the prize.
+// card shows the goals and whose turn it is (game.ts draws it as a status panel). Winners get the
+// prize. A shoot-out starts with the shared title card and ends on the shared result card
+// (missionscreens.ts).
 //
 // Your ball is yours alone: nobody else sees it waiting, but everyone sees it fly when you kick or
 // bowl it. Whether it went in is the kicker's call (like hits, see game.ts); the host places the prize.
@@ -42,11 +44,14 @@
 // most for a moment, and the keeper counts as not having dived if nothing comes.
 import * as THREE from "three";
 import { input } from "./controls";
+import { missionBegin, missionResult } from "./missionscreens";
 import { GameMap, POST_GAP, POST_HEIGHT, footballLayout, pitchId, rugbyLayout } from "./map";
 import { Player } from "./player";
 import { STUMPS } from "./pitches";
 import * as Telemetry from "./telemetry";
 import { AiKeeper, Bout, DIVE_REACH, DIVE_T, MAX_PLAYERS, QUEUE_KICKS, Vane, lineup, roles, stops, totalKicks, winners } from "./shootout";
+
+const SHOOT_COLOUR = "#58e06a";   // the same as its status panel (game.ts)
 
 /** Football ("f"), rugby ("r") or cricket ("c"), as in the map's pitch list. */
 export type Sport = "f" | "r" | "c";
@@ -604,7 +609,14 @@ export class Sports {
   private concluded(b: Bout) {
     const mine = b.won.includes(b.roster.indexOf(this.me()));
     const list = b.won.map((i) => b.names[i]).join(" and ");
-    this.onSay?.(!b.won.length ? "Shoot-out over: someone walked off" : b.won.length === b.roster.length ? "All square: nobody beats anybody" : `${list} win${b.won.length === 1 ? "s" : ""} the shoot-out${mine ? ": a prize!" : ""}`, 4);
+    const square = !b.won.length || b.won.length === b.roster.length;
+    missionResult({
+      result: square ? "over" : mine ? "won" : "lost", kind: "sport", label: "Shoot-out", colour: SHOOT_COLOUR,
+      title: !b.won.length ? "Shoot-out over" : square ? "All square" : `${list} win${b.won.length === 1 ? "s" : ""} the shoot-out`,
+      lines: [!b.won.length ? "Someone walked off" : square ? "Nobody beats anybody" : mine ? "Well kicked" : "Better luck next time"],
+      rows: b.roster.map((id, i) => ({ name: b.names[i], time: `${b.goals[i]} goal${b.goals[i] === 1 ? "" : "s"}`, me: id === this.me() })).sort((x, y) => parseInt(y.time) - parseInt(x.time)),
+      rewards: mine && !square ? ["A prize behind the goal"] : [],
+    });
     if (mine) this.onScore?.(b.pitch, b.end, false);
   }
 
@@ -638,7 +650,7 @@ export class Sports {
       this.seenN = -2;
       b = this.bout = { id: d.i, pitch: d.p, end: d.e, roster: d.r.slice(), names: d.m.map((x: unknown) => String(x).slice(0, 20)), goals: d.g.slice(), n: d.n, wx: 0, wz: 0, over: false, won: [], seen: now };
       this.call = null;
-      this.onSay?.(`Shoot-out! ${b.names[0]} kicks first`, 3);
+      missionBegin({ label: "Shoot-out", colour: SHOOT_COLOUR, title: "Shoot-out!", goal: `${b.names[0]} kicks first` });
     } else if (d.n < b!.n) return;
     b = b!;
     b.n = d.n;
@@ -699,7 +711,7 @@ export class Sports {
     this.bout = b;
     this.publish(b);
     this.refreshCard();
-    this.onSay?.(`Shoot-out! ${roster.length === 2 ? "Five kicks each" : roster.length < 5 ? "Two teams, five kicks each" : "Everyone takes " + QUEUE_KICKS + " kicks"}. You kick first`, 4);
+    missionBegin({ label: "Shoot-out", colour: SHOOT_COLOUR, title: "Shoot-out!", goal: `${roster.length === 2 ? "Five kicks each" : roster.length < 5 ? "Two teams, five kicks each" : "Everyone takes " + QUEUE_KICKS + " kicks"}. You kick first` });
   }
 
   /** E on the goal line, when someone has asked for a keeper. */

@@ -122,7 +122,9 @@ import { carryIcon } from "./carryicons";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
-import { missionActive, missionCardUp } from "./missionscreens";
+import { missionActive, missionProgress, missionClear, missionResultUp, missionReward } from "./missionscreens";
+import { notice, noticeHold, noticeUp } from "./notice";
+import { keycaps, usePrompt } from "./useprompt";
 import { modal, modalClicked } from "./modal";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
@@ -165,7 +167,6 @@ import { freeRoam, passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
-import { pop } from "./pop";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
@@ -557,7 +558,6 @@ export class Game {
   private upFrom: "mine" | "deli" | null = null;   // back up from the mines or the deli, before the square with its door has loaded
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
-  private toastT = 0;
   /** Passive mode for this game (settings.ts): starts as your own setting, then the host's say. */
   private passive = myPassive;
   private myPassiveWas = myPassive;
@@ -589,8 +589,6 @@ export class Game {
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private swapAt: Item | null = null;              // a ride or a ladder at your feet while your hands are full: E swaps for it
   private riding = false;
-  private heldToast: { text: string; secs: number } | null = null;   // a call-out kept back till a race's countdown or a title card is over
-  private calmed = false;
   private hushed = false;                          // a race's countdown had the middle of the screen last frame
   private rideTip = 0;                             // till when the middle of the screen says what to do with what you've just got, or just got on
   private tipSlot: string | null = null;           // what was in your hands last frame, to start that tip when it changes
@@ -765,6 +763,7 @@ export class Game {
     this.player.paved = (x, z) => world.paved(x, z);
     this.player.lift = (x, z) => world.surface(x, z) - map.trueGround(x, z);
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
+    noticeHold("race", () => this.quests.quiet());
     const self = this;
     this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
     this.scars = new Scars({
@@ -785,7 +784,7 @@ export class Game {
     this.quests.onScar = (o, x, z) => { const k = scarKindOf(o.kind); if (k) this.scars.add(k, x, z, k === "tag" ? o.title : o.where || o.title); };
     // something new for your wardrobe: say so, and show everyone
     this.unEarn = onEarn((w) => {
-      this.toast(`New in your wardrobe: ${w.name}!`, 3.5);
+      if (!missionReward(`New in your wardrobe: ${w.name}`)) notice({ tier: "award", kicker: "New in your wardrobe", text: w.name });
       this.feed(`You earned <b>${esc(w.name)}</b> for your wardrobe (pause menu)`);
       SFX.jobStep();
       this.hello();
@@ -2151,7 +2150,7 @@ export class Game {
       if (slot && slot !== it.kind && (isRide(it.kind) || it.kind === "ladder")) { this.swapAt ??= it; continue; }
       const ok = this.wants(it.kind);
       if (ok !== true) {
-        if (this.hintT <= 0 && this.toastT <= 0) { this.toast(ok, 2); this.hintT = 6; }
+        if (this.hintT <= 0 && !noticeUp()) { this.toast(ok, 2); this.hintT = 6; }
         continue;
       }
       this.claim(it);
@@ -4696,8 +4695,6 @@ export class Game {
       ? `Practice · ${where} · on your own`
       : `Room ${this.room} · ${where} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`);
     this.renderTalkers();
-    this.toastT -= dt;
-    $("toast").classList.toggle("show", this.toastT > 0);
     this.placeT -= dt;
     if (this.placeT <= 0) {
       this.placeT = 0.5;
@@ -4778,21 +4775,12 @@ export class Game {
       : ladder || wait;
     // in a race's countdown the prompt waits too, and what to do with the ride is said once it's over
     // and call-outs wait for a mission's title card too, which has the space where they'd go
-    const hush = this.quests.quiet(), calm = hush || missionCardUp();
+    const hush = this.quests.quiet();
     if (this.hushed && !hush && this.riding) this.rideTip = performance.now() + TIP_MS;
-    if (calm && !this.calmed && this.toastT > 0) { this.heldToast = { text: $("toast").textContent ?? "", secs: Math.max(1.5, this.toastT) }; this.toastT = 0; }
-    if (!calm && this.heldToast) {
-      const held = this.heldToast;
-      this.heldToast = null;
-      this.toast(held.text, held.secs);
-    }
     this.hushed = hush;
-    this.calmed = calm;
-    // a results card in the middle: the prompt waits, and a tip about a ride just won waits for it to go
-    const results = !!document.querySelector(".rsc-end:not(.out)");
-    if (results && this.rideTip > performance.now()) this.rideTip = performance.now() + TIP_MS;
-    const quietNow = hush || results;
-    show($("usehint"), quietNow ? "" : ctlText(text), !quietNow && !!text);
+    // a result card in the middle: the prompt goes (useprompt.ts), and a tip about a ride just won waits for it to go
+    if (missionResultUp() && this.rideTip > performance.now()) this.rideTip = performance.now() + TIP_MS;
+    usePrompt(hush ? "" : text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
@@ -4821,11 +4809,12 @@ export class Game {
     const c = this.sports.card;
     if (c !== this.cardShown) {
       this.cardShown = c;
-      show($("shootcard"), c ? `<b>${esc(c.score)}</b><em>${esc(c.turn)}</em>` : "", !!c);
+      if (c) missionProgress({ id: "shootout", label: c.role === "set" ? "Penalties" : "Shoot-out", colour: "#58e06a", goal: c.score, hint: esc(c.turn) });
+      else missionClear("shootout");
     }
     const dives = !!c && c.role === "keeper" && this.alive;
     setHidden($("t-dl"), !dives); setHidden($("t-dr"), !dives);
-    if (dives) say($("shoothint"), input() === "touch" ? "You're in goal: tap a Dive button" : ctlText("You're in goal: hold {steer} to one side and press {dive} to dive"));
+    if (dives) show($("shoothint"), input() === "touch" ? "You're in goal: tap a Dive button" : keycaps("You're in goal: hold {steer} to one side and press {dive} to dive"));
     setHidden($("shoothint"), !dives);
   }
 
@@ -4940,14 +4929,9 @@ export class Game {
 
   /** What a prompt calls a key: its touch button on a touch screen, else the key or the pad's button. */
 
+  /** A call (notice.ts): queued, and held back while a race's countdown or a title card is up. */
   toast(text: string, secs = 2) {
-    // a race's countdown has the middle of the screen: the call-out comes once GO has gone
-    if (this.quests.quiet() || missionCardUp()) { this.heldToast = { text, secs }; return; }
-    text = ctlText(this.freeMode ? text : padText(text));
-    const el = $("toast");
-    if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
-    el.textContent = text;
-    this.toastT = secs;
+    notice({ text: ctlText(this.freeMode ? text : padText(text)), secs });
     // the panel of today's jobs you get on joining sits behind the toast: a toast puts it away
     if (this.dailyT > 0) this.closeDaily();
   }

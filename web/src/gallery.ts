@@ -16,11 +16,12 @@
 // the paintings are hung, each with its card, and the doors open: the critics and a crowd of the
 // public (a nan, a builder, an art student, a child, a Flag Lad, someone from the Council, a Roman,
 // a seagull...) walk round, stop at each painting and say what they make of it, with a mark out of
-// ten (critics.ts). While they're at it you can walk round too, and E by a painting votes for it
+// ten (critics.ts), each remark coming up as a note (notice.ts). While they're at it you can walk round too, and E by a painting votes for it
 // (not your own): the room's favourite gets half a mark. Average enough across the show and it's
 // a success, and one of the strange objects turns up at the gallery door; the more of you there
 // are, the more paintings there are and the higher the bar. The critics confer for a moment, then
-// the verdict comes up on a card that stays until you put it away; after that you can stay and look
+// the verdict comes up as the shared result card (missionscreens.ts), the paintings on it with their
+// marks and a stamp; once it's put away (or gone by itself) you can stay and look
 // round, the marks and prizes on the cards, until you leave (the exit, or E by Mr Pettigrew inside
 // it) or the gallery closes, and you're put back on the pavement looking at the door. Each screen
 // ends the evening for its own player as they leave; the object comes with the first to go.
@@ -47,7 +48,8 @@ import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
-import { modal, modalClicked } from "./modal";
+import { missionResult, type ResultHandle } from "./missionscreens";
+import { notice } from "./notice";
 import { SET_PIECES } from "./landmarks/setpieces";
 import { speak } from "./posh";
 import { esc, hash, rng, type Card, type Job, type QuestWorld, type Waiting } from "./quests";
@@ -661,13 +663,13 @@ registerChallenge({
     let showT0 = 0;
     let result: Verdict | null = null;
     let resultT = 0, closeAt = 0, revealed = false, carded = false, warned = false;
-    let cardStop: AbortController | null = null;
     const votes = new Map<string, number>();
     let myVote = -1;
     const posed = new Set<string>();
     let stage: Card["stage"] = undefined;
-    let ticker: HTMLDivElement | null = null;
-    let cardEl: HTMLDivElement | null = null;
+    let card: ResultHandle | null = null;
+    // the verdict is the shared result card: it's put away by its own buttons as well as by use
+    const cardOn = () => !!card && !!document.querySelector(".msc-result.v-verdict:not(.out)");
     let shown = false;
     let goers: Goer[] = [];
     let saidUpTo = 0;
@@ -971,19 +973,10 @@ registerChallenge({
       }
     }
 
+    /** A remark as a note (notice.ts), queued so none is lost. */
     function tick(r: Remark) {
-      if (!ticker) {
-        ticker = document.createElement("div");
-        ticker.style.cssText = "position:fixed;left:12px;top:205px;width:min(440px,62vw);display:flex;flex-direction:column;gap:5px;pointer-events:none;z-index:6;font:14px/1.3 Georgia,serif";
-        (document.getElementById("hud") ?? document.body).appendChild(ticker);
-      }
-      const el = document.createElement("div");
-      const v = visitor(r.v), mk = r.mark >= 7 ? "#7fe08a" : r.mark >= 4.5 ? "#e8c25a" : "#ff7a6a";
-      el.style.cssText = "background:rgba(14,12,20,.82);color:#f4ecd4;padding:6px 9px;border-radius:8px;border-left:4px solid " + (v.critic ? COLOUR : "#6a7a8a");
-      el.innerHTML = `<b style="color:${v.critic ? "#ff8ab8" : "#cfd8e0"}">${esc(v.name)}</b> on ${esc(w.nameOf(painters[r.p] ?? ""))}'s: “${esc(r.text)}” <b style="color:${mk}">${r.mark}/10</b>`;
-      ticker.prepend(el);
-      while (ticker.children.length > 3) ticker.lastChild!.remove();
-      setTimeout(() => el.remove(), 11000);
+      const v = visitor(r.v);
+      notice({ tier: "note", text: `${v.name} on ${w.nameOf(painters[r.p] ?? "")}'s: “${r.text}” ${r.mark}/10`, colour: v.critic ? "#ff8ab8" : undefined, secs: 3.5 });
     }
 
     /** The verdict's in, the same on every screen: a moment while the critics confer, then it's read out (revealResult). */
@@ -1004,12 +997,7 @@ registerChallenge({
       drawAll();
       if (!(aboard || camInside())) { finish(); return; }
       carded = true;
-      SFX.jobDone(v.won);
-      cardEl?.remove();
-      const el = document.createElement("div");
-      cardEl = el;
-      el.id = "gallerycard";
-      el.style.cssText = "position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;pointer-events:auto;cursor:pointer;touch-action:manipulation;background:#f6f1e3;color:#111;border:3px solid #111;box-shadow:0 12px 40px rgba(0,0,0,.6);padding:14px 18px;width:min(640px,94vw);max-height:90vh;overflow:hidden;font:14px/1.3 Georgia,serif";
+      easel.hide();
       const thumbs = painters.map((id, p) => {
         const c = document.createElement("canvas");
         c.width = W; c.height = H;
@@ -1022,33 +1010,22 @@ registerChallenge({
           <div style="font-weight:700">${esc(w.nameOf(id))}</div><div>${v.final[p].toFixed(1)} / 10</div>${prizes}</div>`;
       }).join("");
       const colour = v.won ? "#1f6a33" : "#a3201c";
-      el.innerHTML = `<div style="text-align:center;border-bottom:2px solid #111;padding-bottom:6px">
-        <div style="font:italic 13px Georgia,serif">The private view at ${esc(gallery.replace(/^the /i, "the "))} · “${esc(themeText)}”</div>
-        <div style="font:900 26px/1.1 Georgia,serif;margin-top:4px">${esc(v.headline)}</div></div>
-        <div style="display:flex;flex-wrap:wrap;justify-content:center;margin:8px 0">${thumbs}</div>
-        <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid #111;padding-top:6px">
-          <div>The show averaged <b>${v.score.toFixed(1)}</b>; it needed <b>${v.bar.toFixed(1)}</b>.</div>
-          <div style="font:900 22px Georgia,serif;color:${colour};border:3px solid ${colour};padding:2px 10px;transform:rotate(-6deg)">${v.won ? "A SUCCESS" : "PANNED"}</div></div>
-        <div style="text-align:center;margin-top:8px;font:italic 13px Georgia,serif;color:#444">${ctlText("<b>{use}</b> or a tap to look round the show: the marks are on the cards")}</div>`;
-      document.body.appendChild(el);
-      // put away by use (job.use), a click or a tap on it or its ×, Esc, Enter or Space
-      const stop = (cardStop = new AbortController()), sig = { capture: true, signal: stop.signal };
-      el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); dismissCard(); }, { signal: stop.signal });
-      addEventListener("keydown", (e) => {
-        if (e.code !== "Escape" && e.code !== "Enter" && e.code !== "Space") return;
-        e.preventDefault(); e.stopImmediatePropagation();
-        if (!e.repeat) dismissCard();
-      }, sig);
-      // a click (or the pad's trigger) puts it away rather than firing a shot, and takes the mouse back
-      addEventListener("mousedown", (e) => { e.stopImmediatePropagation(); dismissCard(); modalClicked(); }, sig);
-      // a card to read: a × to put it away too, and the mouse let go while it's up (modal.ts)
-      modal(el, () => el, () => dismissCard());
+      card = missionResult({
+        result: v.won ? "won" : "lost", kind: "arts", variant: "verdict", colour: COLOUR,
+        label: `The private view at ${gallery} · “${themeText}”`, title: v.headline,
+        body: `<div style="display:flex;flex-wrap:wrap;justify-content:center;margin:8px 0">${thumbs}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--ink);padding-top:6px">
+            <div>The show averaged <b>${v.score.toFixed(1)}</b>; it needed <b>${v.bar.toFixed(1)}</b>.</div>
+            <div style="font-weight:900;font-size:22px;color:${colour};border:3px solid ${colour};padding:2px 10px;transform:rotate(-6deg)">${v.won ? "A SUCCESS" : "PANNED"}</div></div>
+          <div style="text-align:center;margin-top:8px;font-style:italic;font-size:13px;color:var(--muted)">${ctlText("Then look round the show: the marks are on the cards")}</div>`,
+      });
     }
 
     function dismissCard() {
-      if (!cardEl) return;
-      cardStop?.abort(); cardStop = null;
-      cardEl.remove(); cardEl = null;
+      if (!card) return;
+      const c = card;
+      card = null;
+      c.remove();
       closeAt = Math.max(closeAt, performance.now() + LINGER_MS);
     }
 
@@ -1105,8 +1082,9 @@ registerChallenge({
         }
         if (phase === "result") {
           const now = performance.now();
+          if (card && !cardOn()) dismissCard();
           if (!revealed) { if (now - resultT > BEAT_MS) revealResult(); }
-          else if (!cardEl) {
+          else if (!card) {
             if (!aboard) finish();
             else if (now > closeAt) { w.toast("The gallery's closed for the night", 3); finish(); }
             else if (!warned && closeAt - now < 15000) {
@@ -1216,7 +1194,7 @@ registerChallenge({
         if (p.r && !result) showResult(p.r);
       },
       use() {
-        if (cardEl) { dismissCard(); return true; }
+        if (card) { dismissCard(); return true; }
         const m = me();
         if (!aboard) {
           if (phase === "result" || phase === "out") return false;
@@ -1251,7 +1229,7 @@ registerChallenge({
         }
         const lx = m.x - Cx, lz = m.z - Cz;
         if (phase === "result") {
-          if (!revealed || cardEl) return "";
+          if (!revealed || card) return "";
           return atDoor(lx, lz) ? "<b>{use}</b> Leave the gallery" : byPettigrew(lx, lz) ? "<b>{use}</b> Thank Mr Pettigrew and leave" : "";
         }
         if (atDoor(lx, lz) && phase !== "paint") return "<b>{use}</b> Leave the gallery";
@@ -1291,7 +1269,7 @@ registerChallenge({
         if (result) {
           const head = result.won ? "A success!" : "Panned", marks = `${result.score.toFixed(1)} against ${result.bar.toFixed(1)}`;
           if (!revealed) return { line: "The critics confer", stage };
-          if (cardEl || !aboard) return { line: head, sub: marks, stage };
+          if (card || !aboard) return { line: head, sub: marks, stage };
           const left = Math.max(0, Math.ceil((closeAt - performance.now()) / 1000));
           const timer = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
           return { line: `${head} Have a look round`, sub: `${marks}. The gallery closes in ${timer}: {use} by the door or Mr Pettigrew to leave`, timer, stage };
@@ -1299,7 +1277,7 @@ registerChallenge({
         return { line: "The Art Gallery", stage };
       },
       scarAt: () => ({ x: door.x, z: door.z }),
-      quiet: () => !!cardEl,
+      quiet: () => cardOn(),
       aloft: () => aboard,
       indoors: () => aboard || camInside(),
       end() {
@@ -1314,7 +1292,6 @@ registerChallenge({
         if (shown) w.scene.remove(room.root);
         room.dispose();
         welcome.dispose();
-        ticker?.remove();
         w.mark("@challenge", null);
       },
     };

@@ -4,19 +4,19 @@
 // Chronicle's masthead itself (navy, a small "The Bath" over a big heavy "Chronicle") is written
 // here too, so the paper and its cuttings match.
 //
-// Each card's own screen file lays out its words (missionscreens.ts, racescreens.ts,
-// wantedscreens.ts); this gives them the paper. The torn edges are made up afresh
+// Each card's own screen file lays out its words (missionscreens.ts, wantedscreens.ts); this gives them the paper. The torn edges are made up afresh
 // for each card, so no two cuttings tear alike. Kept plain on purpose: one serif in black ink, with
 // navy only for the masthead.
 //
 // Nothing here goes over the network.
+
+import { esc } from "./hudkit";
 
 let place = () => "Bath";
 
 /** daily.ts: where the Chronicle is printed (the map's name), for the mastheads. */
 export function chroniclePlace(fn: () => string) { place = fn; }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** The Chronicle's masthead: a small "The <place>" over a big "Chronicle". */
 export const chronMark = (where = place()) => `<span class="chron-mark"><small>The ${esc(where)}</small>Chronicle</span>`;

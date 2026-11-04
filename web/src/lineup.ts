@@ -22,8 +22,9 @@
 import * as SFX from "./audio";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
-import * as RS from "./racescreens";
-import { missionProgress, missionStart } from "./missionscreens";
+import { ctl } from "./controls";
+import { esc } from "./hudkit";
+import { missionBegin, missionCountdown, missionProgress, missionWaiting } from "./missionscreens";
 import { bestFor } from "./trophies";
 import type { JobKind, Offer, QuestWorld } from "./quests";
 
@@ -66,10 +67,6 @@ export function ring(map: GameMap, cx: number, cz: number, n: number, r = 2.2, f
     out.push({ x, z, yaw: Math.atan2(x - fx, z - fz) });
   }
   return out;
-}
-
-function esc(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -175,7 +172,7 @@ export class Lineup {
   private card() {
     const o = this.offer, k = this.kind;
     const many = (this.cast?.length ?? 1) > 1;
-    missionStart({
+    missionBegin({
       title: o.title, goal: k.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), label: k.label, colour: k.colour, best: bestFor(o.kind),
       detail: many ? `${this.cast!.length} in: ${this.names(this.cast!)}` : o.where ? `At ${o.where}` : undefined,
     });
@@ -192,10 +189,10 @@ export class Lineup {
     const k = this.kind, o = this.offer;
     if (this.open()) {
       const inIt = this.entries.includes(this.w.selfId), left = Math.ceil((this.close - now) / 1000);
-      RS.waiting({
-        kind: o.title, head: `Waiting for players<span class="dots"></span>`, count: left,
+      missionWaiting({
+        kind: o.title, colour: k.colour, head: `Waiting for players<span class="dots"></span>`, count: left,
         sub: `${this.entries.length} in: ${esc(this.names(this.entries))}`,
-        small: inIt ? "You're in" : this.w.me().alive ? `<b>${esc(RS.control("use"))}</b> to join in` : "",
+        small: inIt ? "You're in" : this.w.me().alive ? `<b>${esc(ctl("use"))}</b> to join in` : "",
       });
       missionProgress({
         id: "job", label: esc(k.label), colour: k.colour, goal: o.title,
@@ -205,20 +202,20 @@ export class Lineup {
       return;
     }
     if (!this.cast) {
-      RS.waiting({ kind: o.title, head: `Lining up<span class="dots"></span>`, sub: `${this.entries.length} in: ${esc(this.names(this.entries))}` });
+      missionWaiting({ kind: o.title, head: `Lining up<span class="dots"></span>`, sub: `${this.entries.length} in: ${esc(this.names(this.entries))}` });
       return;
     }
-    RS.waiting(null);
+    missionWaiting(null);
     const t = (now - this.goAt) / 1000;
     missionProgress({ id: "job", label: esc(k.label), colour: k.colour, goal: o.title, hint: this.mine ? `<b class="clue">Get ready</b>` : `Under way: ${esc(this.names(this.cast))}` });
     if (!this.mine) return;
     const n = Math.ceil(-t);
-    if (t < 0 && n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); RS.countdown(n); }
-    else if (t >= 0 && this.pipped > 0) { this.pipped = 0; SFX.pip(true); RS.countdown(0); }
+    if (t < 0 && n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); missionCountdown(n, k.colour); }
+    else if (t >= 0 && this.pipped > 0) { this.pipped = 0; SFX.pip(true); missionCountdown(0, this.kind.colour); }
   }
 
   /** The GO itself, if the minigame starts before the next frame's countdown would show it. */
-  goNow() { if (this.mine && this.pipped > 0) { this.pipped = 0; SFX.pip(true); RS.countdown(0); } }
+  goNow() { if (this.mine && this.pipped > 0) { this.pipped = 0; SFX.pip(true); missionCountdown(0, this.kind.colour); } }
 
   /** Where I'm held still till GO, if I'm in it. */
   held(): { x: number; z: number } | null { return this.mine && this.cast && Date.now() < this.goAt ? { x: this.mine.x, z: this.mine.z } : null; }
@@ -243,5 +240,5 @@ export class Lineup {
     if (Array.isArray(d?.c)) this.event({ k: "lu", ids: d.c, at: d.at }, "");
   }
 
-  dispose() { RS.waiting(null); }
+  dispose() { missionWaiting(null); }
 }

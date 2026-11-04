@@ -26,6 +26,7 @@
 // stands and nothing about them goes over the network.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { missionReward } from "./missionscreens";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import { type GameMap, type RayHit, ANY_HEIGHT, UNDERGROUND, rayCircle } from "./map";
@@ -471,7 +472,8 @@ export class Oddments {
     if (has && !had) { SFX.oddment("up"); this.onGot(); }
     if (this.known && this.me) {
       const near = d.o.some((o) => o[0] > was.n && !o[4] && Math.hypot(o[1] - this.me!.x, o[3] - this.me!.z) < 400);
-      if (near) this.toast("Something strange has turned up", 3);
+      // a challenge's promised object: on its result card if that's still up, else said
+      if (near && !missionReward("Something strange has turned up")) this.toast("Something strange has turned up", 3);
     }
     const wasOpen = this.zones.open, wasFree = this.zones.free;
     this.hostFree = !!d.a;

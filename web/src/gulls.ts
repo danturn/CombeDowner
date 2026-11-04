@@ -68,6 +68,7 @@ import { dayNumber } from "./daylight";
 import { type GameMap, PATHS } from "./map";
 import { type Mood, Sitters } from "./gullfolk";
 import { clearSpot } from "./haunts";
+import { layer } from "./hudkit";
 import { type Card, type Job, type Offer, type PostSpot, type Quarry, type QuestWorld, type Rng, compassWord, esc, far, hash, registerJob, rng, starText } from "./quests";
 import { count as wardCount, earn } from "./wardrobe";
 import { ring } from "./lineup";
@@ -1202,7 +1203,7 @@ class Seagulls implements Job {
     if (!this.splat) {
       const el = (this.splat = document.createElement("div"));
       el.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:5;transition:opacity 0.6s";
-      document.body.appendChild(el);
+      layer().appendChild(el);
     }
     const el = this.splat;
     el.innerHTML = "";
@@ -1551,8 +1552,9 @@ class Seagulls implements Job {
       if (!this.stats.bossPoo) wear.push("brolly");
     }
     this.done = S.won
-      ? { won: true, text: `Seagulls seen off! ${left} of ${total} bites saved ${starText(stars)}, score ${S.sc}`, x: S.cx, z: S.cz, wear, grade: { tier: stars === 3 ? (this.offer.stars === 3 ? 3 : 2) : 1, best: { v: stars, text: `${stars} star${stars > 1 ? "s" : ""}` } } }
-      : { won: false, text: `The gulls got every sandwich. Score ${S.sc}`, wear };
+      ? { won: true, title: "Seagulls seen off!", card: { lead: `${left} of ${total} bites`, medal: starText(stars), stats: [{ k: "Score", v: String(S.sc) }] },
+        text: `Seagulls seen off! ${left} of ${total} bites saved ${starText(stars)}, score ${S.sc}`, x: S.cx, z: S.cz, wear, grade: { tier: stars === 3 ? (this.offer.stars === 3 ? 3 : 2) : 1, best: { v: stars, text: `${stars} star${stars > 1 ? "s" : ""}` } } }
+      : { won: false, title: "The gulls got every sandwich", card: { stats: [{ k: "Score", v: String(S.sc) }] }, text: `The gulls got every sandwich. Score ${S.sc}`, wear };
   }
 
   card(): Card {

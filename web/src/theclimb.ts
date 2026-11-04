@@ -45,7 +45,7 @@ import { strip } from "./controls";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
 import type { Player } from "./player";
-import { hearts, missionEnd, missionStage } from "./missionscreens";
+import { hearts, missionAux, missionAuxRow, missionCall } from "./missionscreens";
 import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
 
@@ -942,7 +942,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           SFX.lifeLost();
           const who = id === w.selfId ? "You" : w.nameOf(id);
           w.feed(`<b style="color:${w.colourOf(id)}">${esc(who)}</b> fell: the team's down to ${n} ${n === 1 ? "life" : "lives"}`);
-          missionStage({ title: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, colour: "#d8262e" });
+          missionCall({ text: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, colour: "#d8262e" });
           if (id === w.selfId && n) w.toast(`That cost the team a life: ${n} left`, 3);
           return;
         }
@@ -1063,8 +1063,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           fails++;
           const out = d.why === "lives";
           w.feed(out ? "Out of lives. Back to the bottom" : "Everyone's down. Back to the bottom");
-          SFX.jobDone(false);
-          missionEnd({ result: "failed", title: out ? "Out of lives" : "Everyone's down", lines: ["Back to the bottom: the whole team starts again", `${most} lives for the next go`], colour: COLOUR });
+          SFX.lifeLost();
+          missionCall({ text: out ? "Out of lives" : "Everyone's down", sub: `Back to the bottom: the whole team starts again · ${most} lives for the next go`, colour: "#d8262e", secs: 5 });
           lives = most;
           reset();
           return;
@@ -1072,7 +1072,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
         case "won": {
           if (job.done) return;
           won = true;
-          job.done = { won: true, text: "The whole team stood on top of the crag together", x: ex, z: ez };
+          job.done = { won: true, title: "On top of the crag!", card: { stats: [{ k: "Lives left", v: `${lives} of ${most}` }] }, text: "The whole team stood on top of the crag together", x: ex, z: ez };
           release();
           return;
         }
@@ -1132,7 +1132,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       for (const d of disposables) d.dispose();
       w.mark("@challenge", null);
       for (const id of posed.keys()) w.pose?.(id, 0, "");
-      bar?.remove(); bar = null;
+      missionAux("grip", null);
     },
   };
 
@@ -1208,18 +1208,18 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   }
 
   // ---- the grip meter ----
-  let bar: HTMLDivElement | null = null;
+  // a thin bar in the shared slot under the crosshair (missionscreens.ts): written once, then only its fills move
   function gripBar(pl: Player | undefined) {
     const show = !!pl && (mode === M.Hang || mode === M.Rope || grip < cap - 0.02 || cap < 0.99) && inRoom(pl.pos.x, pl.pos.y, pl.pos.z);
-    if (!show) { if (bar) bar.style.display = "none"; return; }
-    if (!bar) {
-      bar = document.createElement("div");
-      bar.style.cssText = "position:fixed;left:50%;top:calc(50% + 30px);transform:translateX(-50%);width:96px;height:6px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.5);pointer-events:none;z-index:5";
-      bar.innerHTML = `<div style="position:absolute;left:0;top:0;bottom:0;background:#e9e1cf"></div><div style="position:absolute;top:0;bottom:0;right:0;background:rgba(160,40,30,.7)"></div>`;
-      document.body.appendChild(bar);
+    let row = missionAuxRow("grip");
+    if (!show) { if (row && !row.hidden) row.hidden = true; return; }
+    if (!row) {
+      missionAux("grip", `<div class="aux-meter thin" style="border-color:rgba(255,255,255,.5);background:rgba(0,0,0,.45)"><i style="background:#e9e1cf"></i><i style="left:auto;right:0;background:rgba(160,40,30,.7)"></i></div>`);
+      row = missionAuxRow("grip")!;
     }
-    bar.style.display = "block";
-    const fill = bar.children[0] as HTMLDivElement, hurt = bar.children[1] as HTMLDivElement;
+    if (row.hidden) row.hidden = false;
+    const bar = row.children[0];
+    const fill = bar.children[0] as HTMLElement, hurt = bar.children[1] as HTMLElement;
     fill.style.width = `${Math.max(0, grip) * 100}%`;
     fill.style.background = grip < 0.25 ? (Math.floor(performance.now() / 150) % 2 ? "#ff6a4a" : "#ffd0a0") : "#e9e1cf";
     hurt.style.width = `${(1 - cap) * 100}%`;
