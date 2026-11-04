@@ -74,9 +74,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   each carriageway stands apart on the grass, and two roads meeting at different levels meet at a
   wall rather than in one slope of road.
   Open country is the ground the map data says it is, not lawn: bare grey rock with boulders, heath
-  and scrub grown as low rounded shrubs, many in flower (drifts of heather purple and pink, and
-  fynbos yellow, pink and white), sand on the beaches and rushes in a marsh, from the map down to the
-  minimap and the mountains on the skyline. South of the equator (Cape Town) the sun crosses the
+  and scrub grown as low rounded shrubs, sand on the beaches and rushes in a marsh, from the map down to the
+  minimap and the mountains on the skyline. The heath grows what grows wild there, from the
+  ecoregion the map is in: on Table Mountain it's fynbos, half of it in flower in drifts of purple,
+  pink, yellow and white; in England it's mostly green gorse, bramble and heather, with a little gorse
+  yellow, heather purple and bramble white. Where England's fields would be forest left to
+  themselves, the satellite's "scrub" is grazing and hedgerows, so it's drawn as meadow, and only the
+  heath and scrub OpenStreetMap maps are heath. The grass and the trees belong there too: in
+  Cape Town's summer-dry climate the meadows and verges are going to straw and a quarter of the
+  trees are pines among olive and grey-green leaves, while England keeps its green fields,
+  buttercups and daisies, and its broadleaves with the odd conifer and copper beech. South of the equator (Cape Town) the sun crosses the
   northern sky, so slopes facing north are the sunny ones. A whole day goes by every 24 minutes,
   and the game always opens, and every new game starts, at seven in the morning with the sun just
   up; everyone in a game sees the same time.
@@ -564,6 +571,7 @@ python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 python3 -I tools/ground_kinds.py $MAP
+python3 -I tools/region.py $MAP                # heath, grass and trees, from data/$MAP/region.json
 ```
 
 `prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
