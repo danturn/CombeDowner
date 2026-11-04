@@ -7,15 +7,16 @@
 //          The same place as a call, smaller and white, so the two queue together.
 //   stage  A mission moving on: a wave, a checkpoint, a life gone, he got away, out of lives. The
 //          band over the crosshair in the mission's colour (missionscreens.ts missionCall).
-//   trick  A score popping as you play (a combo, a flag shot): under the crosshair, never held
-//          back, each one replacing the last.
+//   trick  A score popping as you play (a combo, a flag shot, a boost): at the right, by the
+//          combo meter, never held back, each one replacing the last.
 //   award  Something kept: a trophy, a new thing in your wardrobe. Slides in at the top, one at a
 //          time; while a mission's result card is up it is written on the card instead.
 //
-// Calls and notes share one queue: nothing is lost. A new one waits until the one showing has been
+// A call is a few words: one longer than LONG characters is put up as a note, so it wraps small
+// rather than shouting across the screen. Calls and notes share one queue: nothing is lost. A new one waits until the one showing has been
 // up long enough to read its first words, then takes its place; the same words again just keep
 // it up. While a title card, a race's countdown or anything else asks for quiet (noticeHold), they
-// wait, and come one after another once it's over.
+// wait, and come one after another once it's over; so do they while the big map is open.
 //
 // All drawn on this screen only, from what the game already knows: nothing goes over the network.
 import { addStyle, layer } from "./hudkit";
@@ -36,14 +37,16 @@ export interface Notice {
 
 const MIN_UP = 0.9;      // seconds a call is up before a newer one may take its place
 const MAX_QUEUE = 5;
+const LONG = 64;
 const AWARD_SECS = 3.6;
 
 addStyle("notice", `
-#toast.note{font-size:21px;font-weight:700;text-transform:none;letter-spacing:.02em;color:#fff;-webkit-text-stroke:0}
+#toast.note{font-size:21px;font-weight:700;text-transform:none;letter-spacing:.02em;color:#fff;-webkit-text-stroke:0;width:max-content;max-width:min(640px,calc(100vw - 32px));line-height:1.2}
 #toast small{display:block;font-size:.6em;font-weight:700;letter-spacing:.04em;color:#fff;-webkit-text-stroke:0;margin-top:2px}
-#trick{position:absolute;left:50%;top:58%;transform:translateX(-50%);text-align:center;pointer-events:none;font-weight:800;font-size:26px;letter-spacing:.04em;
+#trick{position:absolute;right:18px;top:34%;text-align:right;max-width:40vw;pointer-events:none;font-weight:800;font-size:26px;letter-spacing:.04em;
   color:var(--accent);text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 12px rgba(0,0,0,.5);transition:opacity .3s}
 #trick.out{opacity:0}
+body:has(#bigmap:not([hidden])) #trick{visibility:hidden}
 #trick small{display:block;font-size:14px;color:#fff;letter-spacing:.06em;text-transform:uppercase}
 #award{position:absolute;left:50%;top:10px;z-index:12;transform:translate(-50%,-140%);transition:transform .45s cubic-bezier(.2,1.3,.4,1),opacity .4s;opacity:0;
   pointer-events:none;display:flex;align-items:center;gap:10px;padding:8px 16px 8px 10px;max-width:calc(100vw - 24px);box-sizing:border-box;
@@ -60,7 +63,12 @@ const holds = new Map<string, () => boolean>();
 /** Calls and notes wait while fn says so (a title card, a race's countdown); a second fn under the
  *  same name takes the place of the first (a new game on the same page). */
 export function noticeHold(name: string, fn: () => boolean) { holds.set(name, fn); }
-const held = () => { for (const f of holds.values()) if (f()) return true; return false; };
+const mapOpen = () => { const m = document.getElementById("bigmap"); return !!m && !m.hidden; };
+const held = () => {
+  if (mapOpen()) return true;
+  for (const f of holds.values()) if (f()) return true;
+  return false;
+};
 
 // ---- calls and notes -------------------------------------------------------------------------------
 
@@ -120,7 +128,7 @@ export function notice(o: Notice | string, secs?: number) {
   if (tier === "award") { award(n); return; }
   if (tier === "trick") { trick(n); return; }
   if (tier === "stage") { stageCall?.(n); return; }
-  const it: Item = { tier, text: n.text, sub: n.sub ?? "", secs: n.secs ?? 2, colour: n.colour ?? "" };
+  const it: Item = { tier: tier === "call" && n.text.length > LONG ? "note" : tier, text: n.text, sub: n.sub ?? "", secs: n.secs ?? 2, colour: n.colour ?? "" };
   if (!it.text) return;
   if (current && current.text === it.text && current.sub === it.sub && !held()) {
     current.secs = (performance.now() - shownAt) / 1000 + it.secs;

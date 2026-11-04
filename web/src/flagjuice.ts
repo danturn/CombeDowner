@@ -7,6 +7,7 @@
 // bunting alike, and nothing is allocated per frame.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { notice } from "./notice";
 
 const WINDOW = 4000;                // ms: the next flag has to come this soon to keep a combo going
 const FLAG_PTS = 100, BUNTING_PTS = 400, TRICK_PTS = 150, GRIND_PTS = 300, CLEAR_PTS = 500;
@@ -23,7 +24,7 @@ export interface JuiceWorld {
 export class FlagJuice {
   private count = 0; private total = 0; private lastAt = 0; private shots = 0;
   private slowT = 0; private scale = 1;
-  private el: HTMLDivElement | null = null; private callEl: HTMLDivElement | null = null;
+  private el: HTMLDivElement | null = null;
   private shown = "";
 
   private mesh: THREE.InstancedMesh;
@@ -119,7 +120,7 @@ export class FlagJuice {
     this.scene.remove(this.mesh);
     this.mesh.geometry.dispose();
     (this.mesh.material as THREE.Material).dispose();
-    this.el?.remove(); this.callEl?.remove();
+    this.el?.remove();
   }
 
   private hitCombo(pts: number): number {
@@ -171,18 +172,9 @@ export class FlagJuice {
     if (html) { this.el.classList.remove("pop"); void this.el.offsetWidth; this.el.classList.add("pop"); }
   }
 
-  /** A callout under the crosshair; over: the combo's tally, a little quieter. */
+  /** A score popping up (notice.ts's trick tier); over: the combo's tally, a little quieter. */
   private say(text: string, sub = "", over = false) {
-    if (!this.callEl) {
-      inject();
-      this.callEl = document.createElement("div");
-      this.callEl.id = "fj-call";
-      (document.getElementById("hud") ?? document.body).appendChild(this.callEl);
-    }
-    const c = this.callEl;
-    c.innerHTML = `<b>${text}</b>${sub ? `<i>${sub}</i>` : ""}`;
-    c.classList.toggle("over", over);
-    c.classList.remove("go"); void c.offsetWidth; c.classList.add("go");
+    notice({ tier: "trick", text, sub, colour: over ? "#fff" : "#ffd34a", secs: 1.6 });
   }
 
   private spray(x: number, y: number, z: number, n: number, spread: number, up: number) {
@@ -212,17 +204,11 @@ function inject() {
   if (injected) return;
   injected = true;
   const s = document.createElement("style");
-  s.textContent = `#fj-combo{position:fixed;right:18px;top:34%;text-align:right;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
+  s.textContent = `#fj-combo{position:fixed;right:18px;top:calc(34% + 64px);font-family:var(--f-hud);text-align:right;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
 #fj-combo b{display:block;font-size:clamp(30px,6vw,52px);color:#ff4a55;font-style:italic;line-height:1}
 #fj-combo i{display:block;font-style:normal;font-weight:700;font-size:clamp(13px,2.4vw,18px)}
 #fj-combo u{display:block;height:4px;margin-top:4px;background:#fff;border-radius:2px;transform-origin:right;transform:scaleX(var(--left,1));text-decoration:none}
 #fj-combo.pop b{animation:fj-pop .22s ease-out}
-#fj-call{position:fixed;left:50%;top:58%;transform:translateX(-50%);text-align:center;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;opacity:0;z-index:5}
-#fj-call b{display:block;font-size:clamp(20px,4.4vw,34px);color:#ffd34a;letter-spacing:.04em}
-#fj-call.over b{color:#fff;font-size:clamp(14px,3vw,22px)}
-#fj-call i{display:block;font-style:normal;font-size:clamp(12px,2.2vw,16px)}
-#fj-call.go{animation:fj-call 1.6s ease-out}
-@keyframes fj-pop{from{transform:scale(1.7)}to{transform:none}}
-@keyframes fj-call{0%{opacity:0;transform:translate(-50%,10px) scale(1.4)}12%{opacity:1;transform:translate(-50%,0) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-14px)}}`;
+@keyframes fj-pop{from{transform:scale(1.7)}to{transform:none}}`;
   document.head.appendChild(s);
 }

@@ -106,7 +106,7 @@ import { RIDES } from "./rides";
 import { note } from "./daily";
 import { show } from "./show";
 import { FlagJuice } from "./flagjuice";
-import { missionEnd } from "./missionscreens";
+import { missionBegin, missionResult } from "./missionscreens";
 import * as Paper from "./paper";
 import * as Yours from "./yours";
 
@@ -1251,8 +1251,18 @@ export class Invasion {
       }
       this.onEvent(d.won ? "won" : "lost", d);
       const name = esc(String(d.name ?? "the pub"));
-      if (d.won) { this.w.toast(`${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`, 5.5); this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`); }
-      else { this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5); this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`); }
+      // the result card for those there, a line for everyone else
+      const me = this.w.me(), there = Number.isFinite(+d.x) && Math.hypot(+d.x - me.x, +d.z - me.z) < 250 && !this.w.busy();
+      if (d.won) {
+        const line = `${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`;
+        if (there) missionResult({ result: "won", label: "Pub takeover", title: `${d.name} is won back!`, colour: GREEN, sound: null, lines: ["Flags down, everyone welcome.", "There's a ride outside, and the odd round on the house"] });
+        else this.w.toast(line, 5.5);
+        this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`);
+      } else {
+        if (there) missionResult({ result: "lost", label: "Pub takeover", title: "Too slow", colour: PURPLE, sound: null, lines: [`The Flag Lads keep ${d.name}, and the streets round it fill up with flags`] });
+        else this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5);
+        this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`);
+      }
       if (d.line) setTimeout(() => this.w.feed(esc(String(d.line))), 1500);
       if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 })));
       return;
@@ -1327,9 +1337,8 @@ export class Invasion {
     this.saved = true;
     this.clusters = [];
     if (till) { this.quietTill = Math.max(this.quietTill, till); keepQuiet(this.w.mapId, this.quietTill); }
-    SFX.jobDone(true);
     const town = this.w.town();
-    missionEnd({ result: "complete", title: `${town} is safe from the Flag Lads`, lines: ["Not a flag left on a lamp post.", `They won't be back for ${QUIET_DAYS} days.`] });
+    missionResult({ result: "won", label: "The Flag Lads", title: `${town} is safe from the Flag Lads`, colour: GREEN, lines: ["Not a flag left on a lamp post.", `They won't be back for ${QUIET_DAYS} days.`] });
     this.w.feed(`<b style="color:${GREEN}">${esc(town)}</b> is safe from the Flag Lads`);
   }
 
@@ -1358,7 +1367,8 @@ export class Invasion {
   private ring(name: string, x: number, z: number) {
     SFX.phone();
     const me = this.w.me();
-    this.w.toast(`The Flag Lads have taken over ${name}! Follow the purple marker and clear them out`, 5.5);
+    if (this.w.busy()) this.w.toast(`The Flag Lads have taken over ${name}! Follow the purple marker and clear them out`, 5.5);
+    else missionBegin({ label: "Pub takeover", title: `The Flag Lads have taken over ${name}!`, goal: "Follow the purple marker and clear them out", colour: PURPLE });
     this.w.feed(`📞 The Flag Lads have taken over <b style="color:${PURPLE}">${esc(name)}</b>, ${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`);
   }
 
@@ -1540,8 +1550,8 @@ export class Invasion {
     show($("bunting"), html);
     // it comes up near a cluster with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab.
-    // Never while you're on a job: the job's own panel has the screen then
-    $("bunting").hidden = this.w.busy() || !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
+    // a job's panel stacks over it (missionscreens.ts), so it stays up on a job too
+    $("bunting").hidden = !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
   }
 
