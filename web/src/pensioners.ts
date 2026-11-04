@@ -36,6 +36,7 @@ import { speechBubble } from "./naughtyboys";
 import * as Paper from "./paper";
 import { rng, type QuestWorld } from "./quests";
 import { splatScreen } from "./gulls";
+import { count as wardCount, earn } from "./wardrobe";
 import type { Vehicle } from "./vehicles";
 
 /** Where the bus would be with its middle s metres up and lat across (pushbus.ts poseOn). */
@@ -174,6 +175,8 @@ export class Passengers {
   /** The perfect window's widened by a cheer till then, and your heaves are put off by a splat till then (performance.now()). */
   cheerUntil = 0;
   rattleUntil = 0;
+  /** What's been thrown at you this push (ITEMS' numbers): all of it gets you a thermos. */
+  private hitBy = new Set<number>();
   private rowT = 0;
   private hostRowT = 0;
   private complaints = 0;
@@ -472,6 +475,7 @@ export class Passengers {
     if (c.phase >= 3) return;
     if (c.v === p.fare && c.k >= c.steps.length) {
       this.say({ k: "tk", i, q: 1 });
+      this.sold();
       this.flashDoor("Exact money!", "#4dff8e");
       c.phase = 5;
     } else if (c.v > p.fare) {
@@ -484,6 +488,8 @@ export class Passengers {
       this.speak(i, pickOf(EARLY));
     }
   }
+  /** A ticket sold at the door on this screen, towards the clippie's hat. */
+  private sold() { if (wardCount("tickets") >= 50) earn("clippie"); }
   private flashDoor(t: string, col: string) { this.cnt.say = t; this.cnt.sayCol = col; this.cnt.sayT = 1.2; }
 
   /** The fare being counted out on the seller's screen, a coin at a time. */
@@ -502,7 +508,7 @@ export class Passengers {
     }
     if ((c.t -= dt) <= 0) {
       if (c.phase === 3) { c.phase = 0; c.t = 0.4; }
-      else if (c.phase === 4) { c.phase = 5; this.say({ k: "tk", i, q: 2 }); }
+      else if (c.phase === 4) { c.phase = 5; this.say({ k: "tk", i, q: 2 }); this.sold(); }
       else if (c.phase === 5) c.t = 1;
       else if (c.k < c.steps.length) { c.v += c.steps[c.k++]; c.t = 0.4 + c.r() * 0.35; SFX.tick(); }
       else if (c.phase === 0) { c.phase = 1; c.t = 0.9 + c.r() * 0.6; }
@@ -660,6 +666,9 @@ export class Passengers {
       const [d, pan] = this.w.hear?.(tx, ty, tz) ?? [0, 0];
       SFX.impact(f.it === 2 ? "body" : "barrier", d, pan);
       if (f.to === this.w.selfId) {
+        this.hitBy.add(f.it);
+        if (f.it === 1) earn("stick");
+        if (this.hitBy.size === ITEMS.length) earn("thermos");
         splatScreen({ n: f.it === 2 ? 8 : 5, size: f.it === 0 ? 20 : 14, colours: SPLAT[f.it], secs: 2.5 });
         this.rattleUntil = performance.now() + period * 1000;
         this.w.toast(`Splat! A ${ITEMS[f.it]} right on you: your next heave's off`, 2);

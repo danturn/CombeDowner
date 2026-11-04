@@ -848,7 +848,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
    *  went (put up again if it's gone), so there's one card at the end rather than two. */
   const final = (won: boolean, text: string) => {
     const one = !!lastSheet && lastSheet.pass === won;
-    job.done = { won, text, x: centre.x, z: centre.z, screen: one };
+    job.done = { won, text, x: centre.x, z: centre.z, screen: one, wear: won ? ["lplate"] : [] };
     if (!one) return;
     if (!sheetUp()) sheet(lastSheet!.pass, lastSheet!.who, lastSheet!.n, lastSheet!.list);
     if (won && offer.stars > 0) missionReward(`${offer.stars} prize${offer.stars > 1 ? "s" : ""} where you finished`);

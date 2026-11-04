@@ -27,6 +27,7 @@ import { speechBubble } from "./naughtyboys";
 import { speak } from "./posh";
 import { esc } from "./hudkit";
 import { missionBegin, missionClear, missionProgress, missionResult } from "./missionscreens";
+import { earn } from "./wardrobe";
 import type { Traffic } from "./traffic";
 import type { Stop, Vehicle } from "./vehicles";
 
@@ -145,6 +146,7 @@ export class BusDriver {
   private scanT = 0;
   private said = ""; private saidT = 0;
   private fares = 0; private cheers = 0; private moans = 0;
+  private stranded = 0;               // people left at a stop this shift
 
   constructor(private map: GameMap, private scene: THREE.Scene, private traffic: Traffic, private ground: (x: number, z: number) => number,
     private toast: (text: string, secs?: number) => void) {}
@@ -261,7 +263,7 @@ export class BusDriver {
     this.onLine = false; this.next = null; this.k = 0; this.S = 0;
     for (const st of line.stops) st.served = -Infinity;
     this.locate(line, v, true);
-    this.fares = this.cheers = this.moans = 0;
+    this.fares = this.cheers = this.moans = this.stranded = 0;
     this.scanT = 0;
     missionBegin({ label: `Badgerline · Route ${line.n}`, colour: GREEN, title: `You're on the ${line.n}`, goal: `${HOME} to ${line.end} and back. Follow the green line, and stop for anyone waiting` });
   }
@@ -270,6 +272,8 @@ export class BusDriver {
     if (this.bus && this.fares) {
       missionResult({ result: "over", kind: "bus", label: `Badgerline · Route ${this.line?.n ?? ""}`, title: "Shift over", colour: GREEN,
         lines: [`${this.fares} fare${this.fares === 1 ? "" : "s"}, ${this.cheers} "cheers drive", ${this.moans} moan${this.moans === 1 ? "" : "s"}`] });
+      // a shift counts once the bus has been right round its loop, there and back
+      if (this.line && this.S >= this.line.L && !this.stranded) earn("buscap");
     }
     for (const st of this.line?.stops ?? []) this.clear(st);
     for (const p of this.boarding) gone(p);
@@ -344,6 +348,7 @@ export class BusDriver {
     }
     const left = st.crowd?.length ?? 0;
     if (left) {
+      this.stranded += left;
       this.toast(`You left ${left === 1 ? "someone" : left} standing at ${st.name}`, 3);
       const p = st.crowd![0];
       this.bubble(p, pick(LEFT));
@@ -360,6 +365,7 @@ export class BusDriver {
       const st = this.serving;
       this.serving = null;
       if (this.boarding.length) {
+        this.stranded += this.boarding.length;
         this.toast(`You drove off and left ${this.boarding.length === 1 ? "someone" : this.boarding.length} at ${st.name}`, 3);
         this.bubble(this.boarding[0], "Oi! Wait!");
         for (const p of this.boarding) { p.tx = p.x; p.tz = p.z; }

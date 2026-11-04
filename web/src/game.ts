@@ -167,7 +167,7 @@ import { freeRoam, passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
-import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
+import { count as wardCount, earn, myWear, onEarn, tally } from "./wardrobe";
 import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
 import * as Yours from "./yours";
@@ -240,6 +240,9 @@ const PK_EVERY = 2;                      // seconds between the host's pickup li
 const TIP_MS = 4000;                      // how long the middle of the screen says what to do with what you've got, before it's only by its icon
 const LEFT_LIFE = 120;                    // seconds a ride or a ladder you left for another lies there
 const IDLE_LINE = 25;                    // seconds stood still before you say something about it
+// the named places that count as a park for the pigeon (wardrobe.ts), as the Tightrope finds its field
+const PARKLAND = /\b(park|gardens?|common|green|recreation|playing fields?|meadows?)\b/i;
+const NOT_PARKLAND = /\b(car park|business|retail|industrial|trading|holiday|caravan|hospital|cemetery|science|technology)\b/i;
 const CONV_GAP = 15000;                  // ms: the host takes one score (posts or stumps) per player this often
 /** What landed under the posts, as the kicker hears it. */
 const PRIZE: Partial<Record<Kind, string>> = {
@@ -532,6 +535,10 @@ export class Game {
   private slowT = 0;                             // seconds of wading through seagull muck left (gulls.ts)
   private swarmLife = -1;                        // which life a cat swarm came for you in, to see if you lived through it
   private tummyT = 0;                            // tummy time not yet added to your wardrobe's count
+  private wardT = 0;                             // seconds to the next look at where you are, for the wardrobe
+  private dryT = 0;                              // seconds since you were last in the water
+  private pubAt = "";                            // the pub you're stood outside, and for how long
+  private pubT = 0;
   private unEarn = () => {};
   private cardShown: unknown = null;
   diveReq = 0;                                   // a touch dive button (-1 left, 1 right)
@@ -1512,6 +1519,39 @@ export class Game {
       }
       return inside;
     });
+  }
+
+  /** Once a second: the water, the pubs and the parks you've been in count towards the wardrobe
+   *  (wardrobe.ts). From the map's own water, pubs and named places, so it's the same on every map. */
+  private wardrobeWhere(dt: number) {
+    const p = this.player.pos;
+    if (!this.active || !this.alive) return;
+    const onFoot = !this.ride && !this.riding && !this.basket && this.balloons.aboard < 0 && !this.player.ladder;
+    // stood in it, not crossing a bridge over it or aboard a boat on it
+    const wet = onFoot && p.y < this.map.ground(p.x, p.z) + 0.4 && this.map.inWater(p.x, p.z);
+    if (wet && this.dryT >= 5 && wardCount("wet") >= 10) earn("goggles");
+    this.dryT = wet ? 0 : this.dryT + dt;
+    let pub = "";
+    for (const q of this.pubList) if (Math.hypot(q.x - p.x, q.z - p.z) < 15) { pub = q.name; break; }
+    this.pubT = pub && pub === this.pubAt ? this.pubT + dt : 0;
+    this.pubAt = pub;
+    if (pub && this.pubT >= 20 && this.pubT - dt < 20 && tally("pubs", `${this.mapId}:${pub}`) >= 10) earn("froth");
+    if (this.inPark(p.x, -p.z) && wardCount("park", dt) >= 3600) earn("pigeon");
+  }
+
+  /** Whether data point (x, y) is in a park, a green or a common, by the map's named places. */
+  private inPark(x: number, y: number): boolean {
+    const lists = [this.map.wide?.d.pl ?? [], ...this.map.areas().map((m) => m.d.pl ?? [])];
+    for (const list of lists) for (const pl of list) {
+      if (!pl.n || !PARKLAND.test(pl.n) || NOT_PARKLAND.test(pl.n)) continue;
+      let inside = false;
+      for (let i = 0, j = pl.r.length - 1; i < pl.r.length; j = i++) {
+        const [xi, yi] = pl.r[i], [xj, yj] = pl.r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
   }
 
   /** Nothing may hurt you: out of a race and watching the others finish, or still arriving (arrive.ts). */
@@ -4303,6 +4343,7 @@ export class Game {
     p.rideMul = this.rideMulT > 0 ? this.rideMulV : 1;
     // tummy time counts towards a baby's bonnet
     if (this.alive && p.prone > 0.8 && (this.tummyT += dt) >= 10) { if (wardCount("tummy", this.tummyT) >= 600) earn("bonnet"); this.tummyT = 0; }
+    if ((this.wardT -= dt) <= 0) { this.wardrobeWhere(1 - this.wardT); this.wardT = 1; }
     const look = this.lastLook;
     // stood about doing nothing for a while: say something, and again every minute or so after
     const idle = this.active && this.alive && p.speed < 0.2 && !this.firing && !look.dx && !look.dy;

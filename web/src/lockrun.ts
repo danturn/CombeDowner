@@ -1030,7 +1030,7 @@ registerChallenge({
         case "end":
           if (!job.done) job.done = d.won
             ? { won: true, title: "Down the flight!", card: { lead: `${d.got} of ${d.all} barrels`, medal: d.got >= d.all ? "Gold" : d.got * 2 >= d.all ? "Silver" : "Bronze" },
-              text: String(d.text), x: d.x, z: d.z, grade: { tier: d.got >= d.all ? 3 : d.got * 2 >= d.all ? 2 : 1, best: { v: d.got, text: `${d.got} barrels` } } }
+              text: String(d.text), x: d.x, z: d.z, wear: d.got >= d.all ? ["lockcap"] : [], grade: { tier: d.got >= d.all ? 3 : d.got * 2 >= d.all ? 2 : 1, best: { v: d.got, text: `${d.got} barrels` } } }
             : { won: false, title: String(d.text).includes("sank") ? "Sunk" : "Not a barrel left", text: String(d.text), x: d.x, z: d.z };
           break;
       }

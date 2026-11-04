@@ -486,7 +486,7 @@ registerChallenge({
       putDown();
       const b = basket(1), name = fallen ? (fallen === me ? "You" : w.nameOf(fallen)) : "";
       job.done = won
-        ? { won: true, title: "Across the rope!", text: walkers.length > 1 ? `All ${walkers.length} across the rope, and nobody off` : "Across the rope without coming off", x: b.x, z: b.z }
+        ? { won: true, title: "Across the rope!", text: walkers.length > 1 ? `All ${walkers.length} across the rope, and nobody off` : "Across the rope without coming off", x: b.x, z: b.z, wear: ["pole"] }
         : { won: false, title: "Off the rope", text: `${name} came off the rope, so not everyone got across`, x: b.x, z: b.z };
     };
 

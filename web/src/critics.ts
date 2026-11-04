@@ -822,6 +822,9 @@ function say(v: Visitor, f: Feat, mark: number, r: Rng, used: Set<string>, o: Re
 export interface Prize { title: string; p: number; why: string }
 export interface Verdict { final: number[]; votes: number[]; prizes: Prize[]; score: number; bar: number; won: boolean; headline: string }
 
+/** How far over the bar a show has to be for the top verdict, a triumph (and a beret for everyone in it). */
+export const TRIUMPH = 1.5;
+
 /** What the show needs to average to count as a success: higher the more of you there are. */
 export const barFor = (painters: number) => Math.min(6.5, 5.5 + 0.15 * (painters - 1));
 
@@ -856,7 +859,7 @@ export function verdict(show: Show, paintings: Painting[], votes: number[], seed
   const score = final.reduce((s, x) => s + x, 0) / Math.max(1, n);
   const bar = barFor(n), won = score >= bar;
   const lines = won
-    ? score >= bar + 1.5 ? ["A TRIUMPH ON CANVAS", "CRITICS SPEECHLESS, THEN VERY MUCH NOT", "THE ART WORLD HAS A NEW SENSATION"] : ["CRITICS GRUDGINGLY IMPRESSED", "NOT BAD AT ALL, SAYS EVERYONE, SURPRISED", "LOCAL ARTISTS DO FINE, ACTUALLY"]
+    ? score >= bar + TRIUMPH ? ["A TRIUMPH ON CANVAS", "CRITICS SPEECHLESS, THEN VERY MUCH NOT", "THE ART WORLD HAS A NEW SENSATION"] : ["CRITICS GRUDGINGLY IMPRESSED", "NOT BAD AT ALL, SAYS EVERYONE, SURPRISED", "LOCAL ARTISTS DO FINE, ACTUALLY"]
     : score < bar - 2 ? ["GALLERY APOLOGISES", "EXHIBITION CLOSED, CURATOR LIES DOWN", "\"MY EYES,\" SAYS CRITIC"] : ["SO CLOSE, SAY CRITICS, KINDLY", "NEARLY ART, SAYS ROW OF CRITICS", "SHOW FALLS JUST SHORT OF THE WALL"];
   if (cheeky.length) lines.push("CRITIC SEES ROCKET, INSISTS IT IS A ROCKET", "COUNCIL TAKES NOTES AT PRIVATE VIEW", "NAN 'DIDN'T HAVE HER GLASSES ON'");
   return { final, votes, prizes, score, bar, won, headline: lines[Math.floor(r() * lines.length)] };
