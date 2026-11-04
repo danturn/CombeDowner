@@ -241,6 +241,10 @@ function stack(): HTMLElement {
   return s;
 }
 
+/** Put the Flag Lads' row in the top-left slot before it shows, so it's there whether or not a
+ *  mission has started yet. */
+export function missionStackReady() { stack(); }
+
 /** A status panel: call it as often as you like, it only writes when something changed. */
 export function missionProgress(o: MissionProgress) {
   let p = panels.get(o.id);

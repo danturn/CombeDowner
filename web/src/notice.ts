@@ -169,9 +169,11 @@ export function notice(o: Notice | string, secs?: number) {
 /** A call or a note is on the screen now. */
 export const noticeUp = () => !!current;
 
-/** Clear every call and note, shown or waiting (a new game on the same page). */
+/** Clear every call, note, award and trick, shown or waiting (a new game on the same page). */
 export function noticeClear() {
   queue.length = 0; clearTimeout(pumpT); clearTimeout(endT); current = null; hide();
+  awards.length = 0; clearTimeout(awardT); awarding = false; awardEl?.classList.remove("in");
+  clearTimeout(trickT); trickEl?.classList.add("out");
 }
 
 // ---- stage calls are missionscreens.ts's, in the band over the crosshair ---------------------------
@@ -203,7 +205,7 @@ function trick(n: Notice) {
 // ---- awards ----------------------------------------------------------------------------------------
 
 const awards: Notice[] = [];
-let awardEl: HTMLDivElement | null = null, awarding = false;
+let awardEl: HTMLDivElement | null = null, awarding = false, awardT = 0;
 let onCard: ((text: string) => boolean) | null = null;
 /** missionscreens.ts: write an award on the result card while one is up, instead of sliding it in. */
 export function noticeAwardsTo(fn: (text: string) => boolean) { onCard = fn; }
@@ -232,7 +234,7 @@ function nextAward() {
   el.querySelector("small")!.textContent = n.sub ?? "";
   void el.offsetWidth;
   el.classList.add("in");
-  setTimeout(() => { el.classList.remove("in"); setTimeout(nextAward, 500); }, (n.secs ?? AWARD_SECS) * 1000);
+  awardT = window.setTimeout(() => { el.classList.remove("in"); awardT = window.setTimeout(nextAward, 500); }, (n.secs ?? AWARD_SECS) * 1000);
 }
 
 // ---- the system tier -------------------------------------------------------------------------------

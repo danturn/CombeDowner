@@ -11,11 +11,15 @@ import { STREETS, controlsPage, ctl, ctlText } from "../controls";
 import { show } from "../show";
 import { Reveal, type Shot } from "../reveal";
 import { comboLine } from "../combo";
+import { FlagJuice } from "../flagjuice";
+import * as THREE from "three";
 import { Daily } from "../daily";
 import { type Brief, briefCut, briefHtml } from "../brief";
 
 const $ = (id: string) => document.getElementById(id)!;
 let hold = 0;          // a timer keeping something that would go by itself on the screen
+let street = "";       // the street name as the page has it, put back after a state writes its own
+let juice: FlagJuice | null = null;
 
 /** Put the game's HUD on the page, from the game's own page. */
 export async function ready() {
@@ -38,6 +42,7 @@ export async function ready() {
 .ui-slot b{position:absolute;left:0;top:-18px;background:#ff3df0;color:#000;font:700 12px/16px system-ui,sans-serif;padding:0 5px;white-space:nowrap}`;
   document.head.appendChild(s);
   backdrop("street");
+  street = $("where").textContent ?? "";
 }
 
 export function backdrop(kind: string) { $("uiback").className = kind; }
@@ -51,7 +56,9 @@ function clear() {
   document.querySelectorAll(".msc,#jobrecall,#reveal,.ui-copy,.ui-slot,#award,#trick").forEach((e) => e.remove());
   for (const id of ["clickhint", "usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "touch", "bigmap", "pubcard"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("feed").innerHTML = "";
+  juice?.dispose(); juice = null;
   comboLine("ride", null); comboLine("flags", null);
+  $("where").textContent = street;
   for (const k of ["loading", "version", "safe"]) systemNote(k, null);
   $("pubcard").classList.remove("held"); $("pubcardgo").hidden = false;
   $("hud").classList.remove("reveal"); document.body.classList.remove("reveal");
@@ -72,15 +79,26 @@ const ENTRIES = (o: { title: string; inIt: boolean; n: string[]; left: number; c
 };
 
 const STOPS: WS.PosterInfo["stops"] = [{ label: "the Hadley Arms", kind: "pub", now: false }, { label: "Firs Field", kind: "park", now: true }, { label: "the bus stop on Church Road", kind: "bus", now: false }];
+// a ride's line as ridetricks.ts writes it; the Flag Lads' come from the game's own FlagJuice
 const RIDE = { score: "1,240", mult: "×3", label: "kickflip + manual + rail grind 3.2 m", more: `<span class="bar"><span style="left:38%"></span></span>` };
-const FLAGS = (n: number, total: string, left: number) => ({ score: total, mult: `×${n}`, label: "Flag down", colour: "#ff4a55", more: `<span class="bar"><u style="--left:${left}"></u></span>` });
+const BESTS = (news: boolean) => `<small class="best">${news ? "New best! " : ""}Your bests on the skateboard: grind 6.1 m · air 1.4 m · combo 2,980</small>`;
+const LANDED = (news: boolean) => ({ score: "2,980", mult: "×6", label: "ollie + 50-50 grind 6.1 m + manual", more: BESTS(news), cls: news ? "done new" : "done" });
+const BAILED = { score: "Bailed", label: "1,240 lost", cls: "bail" };
+/** Shoot n of the Flag Lads' flags in a row, the way the game does; trick: what you were riding. */
+const flags = (n: number, o: { trick?: string; ago?: number; then?: "cleared" | "over" } = {}) => {
+  const j = (juice = new FlagJuice(new THREE.Scene(), { ground: () => 0, solo: () => false })) as any;
+  for (let k = 0; k < n; k++) j.flag(0, 0, 0, k === n - 1 ? o.trick ?? "" : "");
+  if (o.then === "cleared") j.cleared(0, 0, 0);
+  if (o.ago) { j.lastAt -= o.ago; j.tick(performance.now(), true); }
+  if (o.then === "over") j.finish();
+};
 
 const panel = {
   gulls: () => MS.missionProgress({ id: "job", label: "Seagull Attack · ★★☆", colour: "#8fd0f0", goal: "Seagull Attack", progress: "Wave 2 / 5", bar: 5 / 9, hint: "Wave 2 of 5 · 6 gulls about", sub: "5 of 9 bites left · score 120 · chips ×1" }),
   bus: (bell = false) => MS.missionProgress({ id: "bus", label: "Badgerline · Route 2", colour: "#7fe08f", goal: "City centre",
     hint: `Next stop: <b>Church Road</b> · 250 m<br>3 waiting there${bell ? `<br><span class="sign">Bus stopping</span>` : ""}`, sub: "On board 4 · Fares 5 · Moans 1<br>“Cheers drive”" }),
-  flags: (here = true) => show($("bunting"), `<div class="label">Flags up <b>27%</b><span class="downs">4 down</span></div><div class="bar"><div style="width:27%"></div></div>`
-    + `<em>Pub takeover at <b>The Hadley Arms</b> · 400 m north · 2:40. Get there and clear them out</em>${here ? `<em>Shoot all <b>8</b> flags on <b>Church Road</b> to clear it</em>` : ""}`, true),
+  flags: (here = true) => { MS.missionStackReady(); show($("bunting"), `<div class="label">Flags up <b>27%</b><span class="downs">4 down</span></div><div class="bar"><div style="width:27%"></div></div>`
+    + `<em>Pub takeover at <b>The Hadley Arms</b> · 400 m north · 2:40. Get there and clear them out</em>${here ? `<em>Shoot all <b>8</b> flags on <b>Church Road</b> to clear it</em>` : ""}`, true); },
 };
 const rewards = ["2 prizes where you finished", "New in your wardrobe: The gull hat", "Trophy! silver: Seagull Attack, two stars"];
 
@@ -108,12 +126,16 @@ const DRAW: Record<string, Record<string, () => void>> = {
   },
   combo: {
     Ride: () => comboLine("ride", RIDE),
-    "Ride: bailed": () => comboLine("ride", { score: "Bailed", label: "1,240 lost", cls: "bail" }),
-    "Ride: new best": () => comboLine("ride", { score: "2,980", mult: "×6", label: "ollie + 50-50 grind 6.1 m + manual", cls: "done new",
-      more: `<small class="best">New best! Your bests on the skateboard: grind 6.1 m · air 1.4 m · combo 2,980</small>` }),
-    "Flags x3": () => comboLine("flags", FLAGS(3, "320", 0.7)),
-    "Flags x7": () => comboLine("flags", FLAGS(7, "1,840", 0.25)),
-    "Both at once": () => { comboLine("ride", RIDE); comboLine("flags", FLAGS(4, "460", 0.8)); },
+    "Ride: landed": () => comboLine("ride", LANDED(false)),
+    "Ride: new best": () => comboLine("ride", LANDED(true)),
+    "Ride: bailed": () => comboLine("ride", BAILED),
+    "Flags ×2": () => flags(2),
+    "Flags ×7": () => flags(7),
+    "Flags: running out": () => flags(5, { ago: 3000 }),
+    "Flags: cluster cleared": () => flags(3, { then: "cleared" }),
+    "Flags: combo over": () => flags(6, { then: "over" }),
+    "Both chained": () => { comboLine("ride", RIDE); flags(4, { trick: "a skateboard" }); },
+    "Both: bailed, flags still going": () => { flags(4); comboLine("ride", BAILED); },
   },
   mprog: {
     "Seagull Attack": panel.gulls,

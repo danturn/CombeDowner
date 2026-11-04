@@ -106,7 +106,7 @@ import { RIDES } from "./rides";
 import { note } from "./daily";
 import { show } from "./show";
 import { FlagJuice } from "./flagjuice";
-import { missionBegin, missionResult } from "./missionscreens";
+import { missionBegin, missionResult, missionStackReady } from "./missionscreens";
 import * as Paper from "./paper";
 import * as Yours from "./yours";
 
@@ -1547,6 +1547,7 @@ export class Invasion {
     const pct = Math.min(100, Math.ceil((this.up * 100) / MAX_UP));
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${pct}%"></div></div>${call}`;
+    missionStackReady();
     show($("bunting"), html);
     // it comes up near a cluster with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab.
