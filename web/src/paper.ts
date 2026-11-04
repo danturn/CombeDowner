@@ -2,7 +2,7 @@
 // the pieces): "Yesterday in <map name>", written each morning from what happened in the game the
 // day before. A small day log keeps the notable things (pubs won back or lost, with the Gaffer and how close it was, flags shot
 // and the best combo, jobs failed, records set, scars
-// left or mended), and on the first load of a new day (midnight GMT, when the Flag Lads start
+// left or mended, a queue of pensioners Push the Bus went straight past), and on the first load of a new day (midnight GMT, when the Flag Lads start
 // again: invasion.ts) yesterday's log becomes the page. It has the flags' peak and end in the strap,
 // a lead story picked by drama (the closest finish, the biggest win or the worst loss), the scars
 // still showing, a flag league if you had company (your own numbers if not), Gaffer watch for
@@ -39,7 +39,7 @@ const MAX_EV = 80, MAX_PHOTOS = 4;
 const PHOTO_REACH = 300;            // metres: further than this and the scenery may not be there to photograph
 
 export interface Ev {
-  k: "pub" | "clr" | "sq" | "free" | "job" | "rec" | "scar" | "fix" | "boss";
+  k: "pub" | "clr" | "sq" | "free" | "job" | "rec" | "scar" | "fix" | "boss" | "cmp";
   i?: string;                       // which event it is, the same in everyone's log for one the whole room saw
   t?: number;                       // when (ms)
   wh?: string;                      // where, in words: the street or the pub
@@ -206,6 +206,12 @@ export function scarFixed(sid: number, x: number, z: number, what: string, by: s
 }
 
 
+/** A bus went straight past a queue (pushbus.ts): a letter to the council, the same for the whole room. */
+export function complaint(street: string, names: string[], key: string) {
+  if (!L || L.ev.some((e) => e.i === `c|${key}`)) return;
+  log({ k: "cmp", wh: street, who: names.slice(0, 3).join(", ") }, `c|${key}`);
+}
+
 /** A new best of mine at something: what, in words ("Race: 4:12"). */
 export function record(what: string) { log({ k: "rec", tx: what, who: myName }); }
 
@@ -224,7 +230,7 @@ export function merge(o: any): boolean {
   if (!L || !o || o.m !== id || o.r !== room || o.d !== L.d || !Array.isArray(o.ev)) return false;
   let added = false;
   for (const x of o.ev.slice(0, MAX_EV)) {
-    if (!x || typeof x !== "object" || typeof x.i !== "string" || !["pub", "clr", "sq", "free", "job", "rec", "scar", "fix", "boss"].includes(x.k)) continue;
+    if (!x || typeof x !== "object" || typeof x.i !== "string" || !["pub", "clr", "sq", "free", "job", "rec", "scar", "fix", "boss", "cmp"].includes(x.k)) continue;
     // a pub or a square can change hands more than once a day: the same one only if it was at the same time
     const t = +x.t || 0, timed = /^(p|q)\||^free$/.test(x.i);
     const same = L.ev.find((e) => e.i === x.i && (!timed || Math.abs((e.t ?? 0) - t) < SAME));
@@ -423,6 +429,9 @@ function items(L: Log, used: Ev | undefined, r: () => number, when: string): Ite
       out.push({ head: "Put right!", text: `${esc(e.wh ?? "")}: ${esc(e.tx ?? "")}, put right${e.who ? ` by ${esc(e.who)}` : ""}.` });
     } else if (e.k === "pub" && e !== used) {
       out.push({ head: e.won ? "Also won back" : "Also lost", text: `${esc(e.pub ?? "A pub")} ${e.won ? "flies the welcome banner again" : "is in the Flag Lads' hands"}${e.g ? `, ${e.won ? "and" : "with"} ${esc(e.g)} ${e.won ? "sent home" : "in charge"}` : ""}.` });
+    } else if (e.k === "cmp") {
+      const who = (e.who ?? "").split(", ").filter(Boolean), by = who.length ? who[0] : "A pensioner";
+      out.push({ head: "Letters: the buses", text: `Sir, I waited at the stop on ${esc(e.wh ?? "the hill")} ${when} and the bus went straight past, pushed by a gang of young people who did not so much as look at us. ${who.length > 1 ? `${esc(who.slice(1).join(" and "))} will back me up. ` : ""}I have written to the council. Disgusted, ${esc(by)}.` });
     } else if (e.k === "boss" && e.tx) {
       out.push({ head: "Change at the top", text: `${esc(e.tx)}.` });
     }

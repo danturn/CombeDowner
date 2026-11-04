@@ -293,14 +293,31 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
   from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
   own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
-  only they can see how fast it's going and what's coming down the hill (a car, a naughty boy on the
-  roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
+  only they can see how fast it's going and what's coming down the hill (a car, the next bus stop),
+  so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
   handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
   smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
   one pusher can take the call (use, on the bus, or shout HEAVE three beats running; stepping back lets go): then the
   heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
-  them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
-  the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
+  them, till they stop and the game counts again. Pull in for the cars coming down; a parked car in
+  its way gets shoved aside. There are bus stops up the hill (two or three, a red flag on a pole),
+  each with a queue of pensioners waiting for this very bus. As the front door comes up to a stop
+  and the bus slows, the queue shuffles over: someone lets go of the bus, goes to the front door
+  and presses E to sell the tickets, while the rest hold the bus (on your own it's chocked while you
+  sell). Each pensioner counts out the fare a coin at a time: press E when it's exactly right, as
+  the money goes green. Too soon and they start counting again; too late and they want change. Each
+  one aboard adds a little weight. Push past a stop without selling a ticket and that queue is left
+  shaking its sticks at you, and a letter about it turns up in the next day's Chronicle. Everyone
+  aboard gets crosser while the bus is slow or rolling back: they lean out of the windows and shout
+  ("I fought in the war for this!", "I can see your bottom!"), and the furious ones ring the bell
+  (the cab is told they want the next stop, and not stopping there makes the queues further up
+  crosser), throw a handbag, a walking stick, sherbet lemons or a thermos at a pusher (it splats
+  your screen and puts your next heave off by a grade), get off in a huff and walk up the hill
+  quicker than the bus, or start a row about the front seat that rocks the bus and takes the edge
+  off the heaves. Keep it going well and they cheer ("Come on, lads!"), which widens the perfect
+  window for the next heave, and now and then a feisty one gets off and helps push. At the top the
+  result card gives your time and a grade from it and how happy the passengers are (anyone left at
+  a stop or gone off in a huff counts as unhappy), so a team that ignores the stops does worse. Let it roll back past
   where it started and it's lost: off it careers backwards on its own, through the bins, the
   traffic and the parked cars and over anyone in its way, till a wall or a car stops it (or the
   water), and there it sits with its hazards going for a few minutes. On your own or two it's the
