@@ -1,9 +1,9 @@
-// The big yellow call-outs (#toast) pop: each time one comes up it springs on to the screen with a
-// tween picked at random (a spring, a slam, a drop, a whip in from the side, a squash and stretch, a
-// wobble) and settles at a slight tilt, like a score in an arcade game. It never leans more than
-// TILT degrees off level. The streets, the mines and the deli all use it. It moves the text with
-// the separate scale, rotate and translate properties, so the page's own centring transform is left
-// alone. Nothing here goes over the network.
+// The call-outs that pop (#toast in the mines and the deli, the score pops in the streets): each
+// time one comes up it springs on to the screen with a tween picked at random (a spring, a slam, a
+// drop, a whip in from the side, a squash and stretch, a wobble) and settles at a slight tilt, like
+// a score in an arcade game. It never leans more than TILT degrees off level. It moves the text
+// with the separate scale, rotate and translate properties, so the page's own centring transform is
+// left alone. Nothing here goes over the network.
 
 const TILT = 4;   // degrees, the most it ever leans
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);

@@ -8,6 +8,7 @@
 // so they can be turned back up there. Phones and tablets also draw shadows more simply and smaller,
 // and ones with a PowerVR or unrecognised chip start with shadows off and a plain picture buffer.
 // Nothing here goes over the network.
+import { systemNote } from "./notice";
 import * as THREE from "three";
 import { setView, view } from "./view";
 
@@ -84,7 +85,7 @@ let ran = -1;
 /** A game is about to be built: if the tab dies before it has run a while, the next visit starts safe. */
 export function starting() {
   ran = 0;
-  document.getElementById("safenote")?.remove();
+  systemNote("safe", null);
   put(START_KEY, String(Date.now()));
 }
 
@@ -103,17 +104,5 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function safeNote() {
-  const box = document.createElement("div");
-  box.id = "safenote";
-  box.setAttribute("role", "status");
-  box.style.cssText = "position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:9999;max-width:min(92vw,520px);" +
-    "padding:8px 30px 8px 12px;background:rgba(20,20,20,.88);color:#fff;font:13px/1.35 system-ui,sans-serif;border-radius:6px";
-  box.textContent = "Your device crashed last time, so the game is in safe graphics; you can change it in Settings.";
-  const close = document.createElement("button");
-  close.textContent = "×";
-  close.setAttribute("aria-label", "Close");
-  close.style.cssText = "position:absolute;right:4px;top:2px;background:none;border:0;color:#fff;font-size:18px;cursor:pointer";
-  close.onclick = () => box.remove();
-  box.append(close);
-  document.body.append(box);
+  systemNote("safe", { text: "Your device crashed last time, so the game is in safe graphics; you can change it in Settings.", close: () => {} });
 }

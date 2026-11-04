@@ -10,8 +10,11 @@
 // sprinting and slows you a little; X sets it down, and if you're downed it drops where you fell,
 // for anyone to pick up. E by the structure sets it in the next socket. Sockets filled glow, and
 // once a structure is full the next zone opens, with a fly-over of it, its name and its challenge
-// (reveal.ts); opening the last plays a fly-over of the whole map. There's no counter anywhere:
-// the structures are the only record, and the big map only shows where the next one stands.
+// (reveal.ts); opening the last plays a fly-over of the whole map. Both maps mark every structure
+// in the zones open so far, with its zone and how many of its sockets are full: green once it's
+// full, red while it wants filling, and the one taking objects now pulses and is pointed to from
+// the minimap's rim however far off it is. Ones in zones not yet open stay hidden, as the zones
+// themselves are. By a full structure with one in your hands, you're told where the next one is.
 //
 // Who decides what: the host keeps where every object lies, who's carrying which, how many sockets
 // are full and which feats have already brought one today. Picking one up, setting one down,
@@ -33,7 +36,8 @@ import { type GameMap, type RayHit, ANY_HEIGHT, UNDERGROUND, rayCircle } from ".
 import { challengesOn, isChallenge } from "./challenges";
 import { feature } from "./features";
 import type { Zone, Zones } from "./zones";
-import type { Job, Offer } from "./quests";
+import { compassWord, esc, far, type Job, type Offer } from "./quests";
+import type { StructSpot } from "./minimap";
 import type { Shot } from "./reveal";
 import { oddKey } from "./saves";
 
@@ -359,10 +363,14 @@ export class Oddments {
     return this.structs.find((t) => f >= this.zones.need(t.zone.i) && f < this.zones.need(t.zone.i) + t.zone.sockets);
   }
 
-  /** Where the structure taking objects is, for the maps. */
-  spot(): { x: number; z: number } | undefined {
-    const c = this.zones.free || !this.on ? undefined : this.cur();
-    return c ? { x: c.x, z: c.z } : undefined;
+  /** The structures in the zones open so far, for the maps. */
+  marks(): StructSpot[] {
+    if (!this.on) return [];
+    const c = this.cur();
+    return this.structs.filter((t) => this.zones.isOpen(t.zone.i)).map((t) => ({
+      x: t.x, z: t.z, place: t.zone.home?.n ?? "", zone: t.zone.name, sockets: t.zone.sockets, next: t === c,
+      filled: Math.max(0, Math.min(t.zone.sockets, this.s.f - this.zones.need(t.zone.i))),
+    }));
   }
 
   /** Whether id is carrying one. */
@@ -618,7 +626,13 @@ export class Oddments {
     if (!me.alive || !this.on) return "";
     if (this.carrying(me.id)) {
       if (this.atStructure(me) && this.s.f < this.total) return "<b>{use}</b> Set it in the structure";
-      if (this.atFull(me)) return "This one's full. The next structure wants it";
+      if (this.atFull(me)) {
+        const c = this.cur();
+        if (!c) return "This one's full, and so is every other";
+        const dx = c.x - me.x, dz = c.z - me.z;
+        const where = c.zone.home?.n ? `at ${c.zone.home.n} in ${c.zone.name}` : `in ${c.zone.name}`;
+        return `This one's full. The next one wants it, ${esc(where)}, ${far(Math.hypot(dx, dz))} ${compassWord(dx, dz)}`;
+      }
       return "";
     }
     return this.nearest(me) ? "<b>{use}</b> Pick it up" : "";

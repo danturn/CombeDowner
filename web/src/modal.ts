@@ -8,7 +8,7 @@
 // the × or its buttons with an ordinary pointer. A click anywhere off the card puts it away and
 // takes the mouse back for aiming. They still go by themselves in time if you leave them, and then
 // the next click takes the mouse back. The sheets over the pause menu (Settings, the wardrobe, the
-// trophy cabinet, linking a device) just get the × (closeButton), as the mouse is free there already.
+// trophy cabinet, linking a device, the Chronicle) just get the × (closeButton), as the mouse is free there already.
 //
 // In full screen Chrome and Edge let the game keep Esc (fullscreen.ts), so a tap of Esc here only
 // puts the card away and full screen stays; Safari and Firefox always leave full screen on Esc.

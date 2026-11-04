@@ -11,6 +11,7 @@
 // Who decides what: they're your own. Whether you're wearing them and flying with them goes out
 // with where you are (game.ts), so the others see your wings, your glow and the guitar in your
 // hands, and each note of the solo goes to everyone ("gtr") for those nearby to hear.
+import { missionAuxAdopt } from "./missionscreens";
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { abbeyClimb } from "./abbeyclimb";
@@ -105,15 +106,16 @@ export class Wings {
     this.view.add(this.left, this.right, this.axe, this.fretHand, this.pickHand);
     this.view.visible = false;
     hands.add(this.view);
-    // what's left of the flight, under the crosshair, and the gold glow round the edges of the screen
+    // what's left of the flight, a row of the meter slot under the crosshair, and the gold glow round the edges of the screen
     this.hud = document.createElement("div");
-    this.hud.style.cssText = "position:fixed;left:50%;top:calc(50% + 30px);width:120px;height:6px;margin-left:-60px;pointer-events:none;z-index:5;border-radius:3px;background:rgba(0,0,0,0.45);overflow:hidden";
+    this.hud.id = "wingsbar";
+    this.hud.style.cssText = "width:120px;height:6px;pointer-events:none;border-radius:3px;background:rgba(0,0,0,0.45);overflow:hidden";
     this.hud.innerHTML = '<div style="height:100%;width:100%;background:#f2cf5b"></div>';
     this.halo = document.createElement("div");
     this.halo.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center, transparent 50%, rgba(255,214,110,0.55));mix-blend-mode:screen";
     this.hud.hidden = this.halo.hidden = true;
     const at = document.getElementById("hud") ?? document.body;
-    at.append(this.halo, this.hud);
+    at.append(this.halo);
     addEventListener("keydown", this.onKey);
   }
 
@@ -188,6 +190,7 @@ export class Wings {
     this.halo.hidden = !this.glowing;
     if (this.glowing) this.halo.style.opacity = String(0.7 + Math.sin(performance.now() / 180) * 0.3);
     this.hud.hidden = !p.wings || !p.wingLift;
+    if (!this.hud.hidden) missionAuxAdopt(this.hud);
     const bar = this.hud.firstElementChild as HTMLDivElement;
     bar.style.width = `${(Math.max(0, this.flight) / FLIGHT) * 100}%`;
     bar.style.background = this.flight < LOW ? "#ff5a4e" : "#f2cf5b";

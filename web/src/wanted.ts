@@ -17,8 +17,8 @@
 // with his pub on it: he's mode 1 (on foot), 2 (a scooter) or 3 (his van), and the further he went,
 // the quicker he is now.
 //
-// It opens with the shared title card and a note that the job control (or the big map) brings up
-// his poster (wantedscreens.ts): his round of stops, the goes and how to catch him.
+// It opens with the shared title card and a note that the job control brings back his brief
+// (brief.ts), with his round of stops, the goes and how to catch him on it (wantedscreens.ts).
 // While he's running, his puff is on the bar across the top of the screen. The end is the shared
 // result card (missionscreens.ts) in the poster's red.
 //
@@ -34,7 +34,7 @@ import * as SFX from "./audio";
 import { NAUGHTY, CRICKET, RUGBY, SOCIETY, look } from "./naughtyboys";
 import { ctlText } from "./controls";
 import { missionCall, missionResult } from "./missionscreens";
-import { wantedPoster, wantedScreensDown } from "./wantedscreens";
+import { wantedBlock } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { inSafeZone } from "./safezones";
@@ -73,7 +73,6 @@ const RULES = [
   `<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.`,
   `<b>Three goes.</b> Fall too far behind and he's off to his next stop. Lose him three times and he's gone.`,
 ];
-const POSTER_UP = 14;       // seconds the poster stays up when it's asked for
 const HP = 100000;          // he can't be shot down: he has to be caught
 const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
 const paperUp = () => { const b = document.getElementById("scoreboard"); return !!b && !b.hidden; };
@@ -175,7 +174,6 @@ class Wanted implements Job {
   // every player
   private markT = 0; private marked = false;
   private splashed = false; private splashWait = 0;
-  private posterT = 0;
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number, private cast: string[]) {
     this.d = details(offer, w);
@@ -206,8 +204,6 @@ class Wanted implements Job {
     }
     // the Chronicle (up for a while when you join, or on Tab) would sit on top of it: it waits its turn
     if (!this.splashed && (!paperUp() || (this.splashWait += dt) > 25)) { this.splashed = true; this.showSplash(); }
-    if (this.posterT > 0) this.posterT -= dt;
-    wantedPoster(this.posterT > 0 && this.w.me().alive ? { ...this.posterInfo(), rules: RULES, foot: `<b>${clock(Math.max(0, this.left))}</b> left` } : null);
   }
 
   private posterInfo() {
@@ -223,12 +219,8 @@ class Wanted implements Job {
     missionCall({ tier: "note", text: ctlText("{job}: the Wanted poster, with his round and how to catch him"), secs: 4 });
   }
 
-  /** The job control: the poster again, or away again. */
-  recall() {
-    if (this.done) return false;
-    this.posterT = this.posterT > 0 ? 0 : POSTER_UP;
-    return true;
-  }
+  /** His round, the goes left and how to catch him, on the brief J brings back (quests.ts). */
+  brief() { return this.done ? "" : wantedBlock(this.posterInfo(), RULES); }
 
   /** Him, if he's close enough for you to cuff. */
   private canCuff() {
@@ -419,7 +411,6 @@ class Wanted implements Job {
 
   /** The results card: how it ended, how long it took. */
   private results(won: boolean, by: string) {
-    wantedScreensDown();
     missionResult({
       result: won ? "won" : "lost", kind: "wanted", label: `Wanted · ${this.d.title}`, title: won ? "Cuffed!" : "He got away", lead: clock((Date.now() - this.started) / 1000),
       medal: won ? "Caught" : "Escaped",
@@ -511,7 +502,6 @@ class Wanted implements Job {
 
   end() {
     if (this.marked) this.w.mark("@wanted", null);
-    wantedScreensDown();
     if (this.ring && !this.done?.won) this.w.naughtyBoys.hands(this.ring.i, this.ring.gen, 0);
     if (this.w.isHost) {
       const ch = this.w.naughtyBoys;

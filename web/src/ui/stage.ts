@@ -1,19 +1,18 @@
 // The stage of the HUD page (ui.html?stage): the game's own HUD markup, taken from index.html, with
 // each piece drawn into it by the game's own functions (missionscreens.ts, notice.ts, useprompt.ts
 // and the rest) and sample words from the modes that use them. The few pieces a mode still builds
-// out of reach (its own combo meter, the Flag Lads' row) are drawn from a copy of their markup,
-// and pieces.ts says so.
+// out of reach (the Flag Lads' row) are drawn from a copy of their markup, and pieces.ts says so.
 import * as MS from "../missionscreens";
 import * as WS from "../wantedscreens";
-import { notice, noticeClear } from "../notice";
+import { notice, noticeClear, systemNote } from "../notice";
 import { usePrompt, keycaps } from "../useprompt";
 import { closeModals } from "../modal";
 import { STREETS, controlsPage, ctl, ctlText } from "../controls";
 import { show } from "../show";
 import { Reveal, type Shot } from "../reveal";
-import { FlagJuice } from "../flagjuice";
+import { comboLine } from "../combo";
 import { Daily } from "../daily";
-import * as THREE from "three";
+import { type Brief, briefCut, briefHtml } from "../brief";
 
 const $ = (id: string) => document.getElementById(id)!;
 let hold = 0;          // a timer keeping something that would go by itself on the screen
@@ -48,18 +47,19 @@ function clear() {
   clearInterval(hold);
   closeModals();
   noticeClear();
-  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null); WS.wantedScreensDown();
-  document.querySelectorAll(".msc,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick").forEach((e) => e.remove());
-  for (const id of ["usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "combo", "touch"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
+  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null);
+  document.querySelectorAll(".msc,#jobrecall,#reveal,.ui-copy,.ui-slot,#award,#trick").forEach((e) => e.remove());
+  for (const id of ["clickhint", "usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "touch", "bigmap", "pubcard"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("feed").innerHTML = "";
+  comboLine("ride", null); comboLine("flags", null);
+  for (const k of ["loading", "version", "safe"]) systemNote(k, null);
+  $("pubcard").classList.remove("held"); $("pubcardgo").hidden = false;
   $("hud").classList.remove("reveal"); document.body.classList.remove("reveal");
   $("scoreboard").classList.remove("join");
 }
 
 /** Call fn now and again every ms, for a piece that would otherwise go by itself. */
 const keep = (fn: () => void, ms: number) => { fn(); hold = window.setInterval(fn, ms); };
-/** ridetricks.ts makes its own #combo on the HUD the first time: so does this. */
-const comboEl = () => { let e = document.getElementById("combo"); if (!e) { e = document.createElement("div"); e.id = "combo"; $("hud").appendChild(e); } e.className = ""; return e; };
 const feed = (html: string) => { const el = document.createElement("div"); el.innerHTML = html; $("feed").prepend(el); };
 
 const LONG = "Get every last one of the tourists' sandwiches back to the benches by the Abbey before the gulls work out where they went";
@@ -72,8 +72,8 @@ const ENTRIES = (o: { title: string; inIt: boolean; n: string[]; left: number; c
 };
 
 const STOPS: WS.PosterInfo["stops"] = [{ label: "the Hadley Arms", kind: "pub", now: false }, { label: "Firs Field", kind: "park", now: true }, { label: "the bus stop on Church Road", kind: "bus", now: false }];
-let juice: FlagJuice | null = null;
-const fj = () => (juice ??= new FlagJuice(new THREE.Scene(), { ground: () => 0, solo: () => true })) as any;
+const RIDE = { score: "1,240", mult: "×3", label: "kickflip + manual + rail grind 3.2 m", more: `<span class="bar"><span style="left:38%"></span></span>` };
+const FLAGS = (n: number, total: string, left: number) => ({ score: total, mult: `×${n}`, label: "Flag down", colour: "#ff4a55", more: `<span class="bar"><u style="--left:${left}"></u></span>` });
 
 const panel = {
   gulls: () => MS.missionProgress({ id: "job", label: "Seagull Attack · ★★☆", colour: "#8fd0f0", goal: "Seagull Attack", progress: "Wave 2 / 5", bar: 5 / 9, hint: "Wave 2 of 5 · 6 gulls about", sub: "5 of 9 bites left · score 120 · chips ×1" }),
@@ -91,18 +91,6 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Lining up": () => MS.missionWaiting({ kind: "The Lock Run", colour: "#3a8fd8", head: `Lining up<span class="dots"></span>`, sub: "3 in: You, Ann, Bo" }),
     "Long title": () => ENTRIES({ title: "Daily race: trolley dash to the Kingsmead Square fountain and back round the Abbey", inIt: false, n: ["Ann", "Bo", "Cy", "Dee", "Ed", "Flo"], left: 3 }),
   },
-  title: {
-    Job: () => MS.missionBegin({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack", goal: "Keep the sandwiches out of the gulls' beaks for 5 waves", detail: "At Firs Field" }),
-    "Long goal": () => MS.missionBegin({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack: the hen do", goal: LONG, detail: "At the benches by the Abbey" }),
-    Race: () => MS.missionBegin({ label: "Race", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", goal: "Race through every checkpoint and over the line first", detail: "3 in: You, Ann, Bo", best: "silver" }),
-    Wanted: () => MS.missionBegin({ label: "Wanted", colour: "#e04848", title: "Wanted: the Duke of Disorder", goal: "Catch him and cuff him. Lose him three times and he's gone", detail: "At the Hadley Arms" }),
-    "Challenge, with a best": () => MS.missionBegin({ label: "Challenge", colour: "#3a8fd8", title: "The Lock Run", goal: "Take the boat down the flight with its barrels", detail: "At Bath Locks", best: "4 barrels" }),
-    Bonfire: () => MS.missionBegin({ title: "Get Wood", goal: "Build Kingswood's bonfire: 25 bundles on the pile", detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: "#ff9a3c" }),
-    "Bus driver": () => MS.missionBegin({ label: "Badgerline · Route 2", colour: "#7fe08f", title: "You're on the 2", goal: "the bus station to Combe Down and back. Follow the green line, and stop for anyone waiting" }),
-    "Pub takeover": () => MS.missionBegin({ label: "Pub takeover", colour: "#b45cff", title: "The Flag Lads have taken over The Hadley Arms!", goal: "Follow the purple marker and clear them out" }),
-    "Shoot-out": () => MS.missionBegin({ label: "Shoot-out", colour: "#58e06a", title: "Shoot-out!", goal: "Five kicks each. You kick first" }),
-    "Long, two-line title": () => MS.missionBegin({ label: "Challenge", colour: "#f2c318", title: "Push the Bus all the way up Horsecombe Vale", goal: "Push the bus to the top of the hill: {use} at its back, then {heave} on every HEAVE! Miss the heaves and it rolls back", detail: "At the bottom of Horsecombe Vale" }),
-  },
   count: Object.fromEntries([["3", 3], ["2", 2], ["1", 1], ["GO!", 0]].map(([k, n]) => [k, () => keep(() => MS.missionCountdown(n as number, "#3ec7e8"), 800)])),
   notice: {
     Call: () => keep(() => notice({ text: "You splatted Ann", secs: 30 }), 25000),
@@ -119,11 +107,14 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Award: wardrobe": () => notice({ tier: "award", kicker: "New in your wardrobe", text: "The gull hat", secs: 60 }),
   },
   combo: {
-    Combo: () => show(comboEl(), `<b>1,240</b> <i>×3</i><small>kickflip + manual + rail grind 3.2 m</small>`),
-    Bailed: () => { show(comboEl(), `<b>1,240</b> <i>×3</i><small>Bailed</small>`); $("combo").className = "bail"; },
-    "New best": () => { show(comboEl(), `<b>2,980</b><small class="best">New best!</small>`); $("combo").className = "new"; },
+    Ride: () => comboLine("ride", RIDE),
+    "Ride: bailed": () => comboLine("ride", { score: "Bailed", label: "1,240 lost", cls: "bail" }),
+    "Ride: new best": () => comboLine("ride", { score: "2,980", mult: "×6", label: "ollie + 50-50 grind 6.1 m + manual", cls: "done new",
+      more: `<small class="best">New best! Your bests on the skateboard: grind 6.1 m · air 1.4 m · combo 2,980</small>` }),
+    "Flags x3": () => comboLine("flags", FLAGS(3, "320", 0.7)),
+    "Flags x7": () => comboLine("flags", FLAGS(7, "1,840", 0.25)),
+    "Both at once": () => { comboLine("ride", RIDE); comboLine("flags", FLAGS(4, "460", 0.8)); },
   },
-  fjcombo: { x3: () => fj().write(`<b>x3!</b><i>300</i><u style="--left:0.70"></u>`, "a"), x7: () => fj().write(`<b>x7!</b><i>1840</i><u style="--left:0.25"></u>`, "b") },
   mprog: {
     "Seagull Attack": panel.gulls,
     Race: () => MS.missionProgress({ id: "job", label: "Race · ★★☆", colour: "#3ec7e8", goal: "BMX climb to Moorlands Recreation Playground", progress: "2 / 4", bar: 0.5, timer: "0:45.2", hint: "120 m to <b>Checkpoint 3/4</b>, north-west", sub: "Gold 1:20 · silver 1:35 · bronze 1:50" }),
@@ -170,13 +161,26 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Touch key cap": () => { $("touch").hidden = false; usePrompt("<b>{use}</b> Take the job"); $("usehint").classList.add("touch"); $("usehint").querySelector("kbd")!.textContent = "Use"; },
     "Keeper (shoot-out)": () => show($("shoothint"), keycaps("You're in goal: hold {steer} to one side and press {dive} to dive"), true),
   },
-  poster: {
-    Job: () => poster("Seagull Attack · ★★☆", "#8fd0f0", "Seagull Attack", "Tourists on the benches with their sandwiches, and the gulls are circling. Five waves, then Big Lad himself.", "Two prizes and the gull hat", "{use} to take the job"),
-    Challenge: () => poster("Challenge · ★★★", "#3a8fd8", "The Lock Run", "Take the boat down the flight with its barrels, working the paddles and gates as you go.", "Something strange, left where you finish", "{use} to start it"),
-    "Done today": () => poster("Race · ★★☆", "#3ec7e8", "BMX climb to Moorlands Recreation Playground", "Up the hill on a BMX, through every checkpoint.", "A traffic cone for your head", "Done today"),
+  brief: {
+    "Board: job": () => brief("board", { ...GULLS, foot: "<b>{use}</b> Take the job" }),
+    "Board: challenge": () => brief("board", { label: "Challenge · ★★★", colour: "#3a8fd8", title: "The Lock Run", blurb: "Take the boat down the flight with its barrels, working the paddles and gates as you go.", reward: "Something strange, left where you finish", foot: "<b>{use}</b> Start it" }),
+    "Board: done today": () => brief("board", { label: "Race · ★★☆", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", blurb: "Up the hill on a BMX, through every checkpoint.", reward: "A traffic cone for your head", foot: "Done today" }),
+    "Board: touch": () => { $("touch").hidden = false; brief("board", { ...GULLS, foot: "<b>{use}</b> Take the job" }, true); },
+    "Title card: Job": () => MS.missionBegin({ label: GULLS.label, colour: GULLS.colour, title: GULLS.title, goal: "Keep the sandwiches out of the gulls' beaks for 5 waves", detail: "At Firs Field", reward: GULLS.reward }),
+    "Title card: Long goal": () => MS.missionBegin({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack: the hen do", goal: LONG, detail: "At the benches by the Abbey" }),
+    "Title card: Race": () => MS.missionBegin({ label: "Race", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", goal: "Race through every checkpoint and over the line first", detail: "3 in: You, Ann, Bo", best: "silver" }),
+    "Title card: Wanted": () => MS.missionBegin({ label: "Wanted", colour: "#e04848", title: "Wanted: the Duke of Disorder", goal: "Catch him and cuff him. Lose him three times and he's gone", detail: "At the Hadley Arms" }),
+    "Title card: Challenge, with a best": () => MS.missionBegin({ label: "Challenge", colour: "#3a8fd8", title: "The Lock Run", goal: "Take the boat down the flight with its barrels", detail: "At Bath Locks", best: "4 barrels" }),
+    "Title card: Bonfire": () => MS.missionBegin({ title: "Get Wood", goal: "Build Kingswood's bonfire: 25 bundles on the pile", detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: "#ff9a3c" }),
+    "Title card: Bus driver": () => MS.missionBegin({ label: "Badgerline · Route 2", colour: "#7fe08f", title: "You're on the 2", goal: "the bus station to Combe Down and back. Follow the green line, and stop for anyone waiting" }),
+    "Title card: Pub takeover": () => MS.missionBegin({ label: "Pub takeover", colour: "#b45cff", title: "The Flag Lads have taken over The Hadley Arms!", goal: "Follow the purple marker and clear them out" }),
+    "Title card: Shoot-out": () => MS.missionBegin({ label: "Shoot-out", colour: "#58e06a", title: "Shoot-out!", goal: "Five kicks each. You kick first" }),
+    "Title card: Long, two-line title": () => MS.missionBegin({ label: "Challenge", colour: "#f2c318", title: "Push the Bus all the way up Horsecombe Vale", goal: "Push the bus to the top of the hill: {use} at its back, then {heave} on every HEAVE! Miss the heaves and it rolls back", detail: "At the bottom of Horsecombe Vale" }),
+    "Recall (J)": () => { panel.gulls(); brief("recall", { ...GULLS, live: `<b>Wave 2 / 5</b> · 6 gulls about<br>5 of 9 bites left · score 120<div class="bar"><i style="width:56%"></i></div>`, foot: "<b>{job}</b> Put it away" }); },
+    "Recall: Wanted": () => brief("recall", { label: "Wanted · ★★☆", colour: "#e04848", title: "Wanted: the Duke of Disorder", blurb: "Runs with a rugby team gone rogue. Does the rounds of a pub, then a park or square, then a bus stop.",
+      block: WS.wantedBlock({ title: "", stops: STOPS, goes: { left: 2, of: 3 } }, ["<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.", "<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.", "<b>Three goes.</b> Fall too far behind and he's off to his next stop."]),
+      live: `He's at <b>the Hadley Arms</b> · <b>12:03</b> left`, reward: "2 prizes and a skateboard", foot: "<b>{job}</b> Put it away" }),
   },
-  wposter: { Poster: () => WS.wantedPoster({ title: "Wanted: the Duke of Disorder", stops: STOPS, goes: { left: 2, of: 3 }, foot: "<b>12:03</b> left",
-    rules: ["<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.", "<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.", "<b>Three goes.</b> Fall too far behind and he's off to his next stop."] }) },
   result: {
     "Job done, with rewards": () => MS.missionResult({ result: "won", label: "Seagull Attack", title: "Seagulls seen off!", lead: "340", medal: "★★☆", lines: ["7 of 9 bites saved"], colour: "#8fd0f0", rewards, sound: null }),
     "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null }),
@@ -201,18 +205,55 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Gallery verdict": () => MS.missionResult({ result: "won", kind: "arts", variant: "verdict", label: "The Art Gallery · private view", title: "A triumph, darling", colour: "#c2185b", lead: "7.2", medal: "needed 6.0", sound: null,
       body: `<div class="cols"><div><h4>Mr Pettigrew</h4>8 · “Bold. Possibly a dog.”</div><div><h4>Lady Stanhope</h4>7 · “I have seen worse in Bristol.”</div><div><h4>The punters</h4>6.5 · “Is it for sale?”</div></div>` }),
   },
-  chron: { "On joining": () => {
-    const d = new Daily(() => {}, () => `<b>The Flag Lads</b> have flagged <b>21%</b> of Bath.`, () => "Bath", () => ({ kicker: "News from Bath", no: 1, strap: "Flag Lads arrive in Bath", lead: "<p>A van full of cable ties was seen at dawn. By breakfast there were flags on the lamp posts.</p>", side: "<h4>How to help</h4><p>Shoot the flags off the lamp posts.</p>", small: "" } as any));
-    const b = $("scoreboard"); b.hidden = false; b.classList.add("join"); d.draw($("daily"));
-  } },
+  chron: {
+    "On joining": () => paper(true),
+    "Tab: league table": () => {
+      paper(false);
+      $("roominfo").textContent = "Practice · Bath · 3 here";
+      $("scores").innerHTML = [["Ann", 12, 3, 4], ["You", 9, 5, 2], ["Bo", 4, 9, 7]].map(([n, k, d, c]) => `<tr class="${n === "You" ? "me" : ""}"><td>${n}</td><td>${k}</td><td>${d}</td><td>${c}</td></tr>`).join("");
+    },
+  },
+  mapcard: {
+    "Pub card": () => mapUp(() => { $("pubcardname").textContent = "The Hadley Arms"; $("pubcardinfo").textContent = "0.4 km · food hygiene 5"; $("pubcardwhy").hidden = true; const c = $("pubcard"); c.hidden = false; Object.assign(c.style, { left: "40%", top: "36%" }); }),
+    "Pub card, held up": () => mapUp(() => { $("pubcardname").textContent = "The Hadley Arms"; $("pubcardinfo").textContent = "0.4 km · food hygiene 5"; const w = $("pubcardwhy"); w.textContent = "Something hostile is after you"; w.hidden = false; $("pubcardgo").hidden = true; const c = $("pubcard"); c.classList.add("held"); c.hidden = false; Object.assign(c.style, { left: "40%", top: "36%" }); }),
+    "Key note": () => mapUp(() => { const t = document.createElement("div"); t.id = "keytip"; t.className = "ttmini ui-copy"; t.textContent = "Team challenges: open as the zones do"; Object.assign(t.style, { left: "30%", top: "30%" }); document.body.appendChild(t); }),
+  },
+  system: {
+    "Map stuck loading": () => systemNote("loading", { text: "Still waiting for 3 squares of the map (nothing new for 41 s).\nCouldn't load 2 times, last: 5_7.json\nbuild 2026-11-04 abc123", close: () => {} }),
+    "Another version": () => systemNote("version", { text: "Ann is on a newer version of the game (tap to refresh)", tone: "warn", tap: () => {} }),
+    "Older version": () => systemNote("version", { text: "Bo is on an older version: some things will look different to them (tap to hide)", tone: "alert", tap: () => {} }),
+    "Safe graphics": () => systemNote("safe", { text: "Your device crashed last time, so the game is in safe graphics; you can change it in Settings.", close: () => {} }),
+  },
   reveal: {
     "New zone": () => revealCard({ kind: "spot", x: 0, z: 0, kicker: "A new part of the map is open", title: "Widcombe", sub: "New challenge: Bell Ringing", lines: ["The buses run out this way now"] }),
     "Whole map": () => revealCard({ kind: "map", x: 0, z: 0, kicker: "Every zone is open", title: "The whole map is yours" }),
   },
 };
 
-function poster(label: string, colour: string, title: string, blurb: string, reward: string, foot: string) {
-  show($("jobposter"), ctlText(`<div class="label" style="color:${colour}">${label}</div><div class="jobtitle">${title}</div><p>${blurb}</p><p class="reward">Reward: ${reward}</p><em>${foot}</em>`), true);
+/** The Chronicle on #scoreboard: on joining, or under Tab with the league table on top. */
+function paper(join: boolean) {
+  const d = new Daily(() => {}, () => `<b>The Flag Lads</b> have flagged <b>21%</b> of Bath.`, () => "Bath", () => ({ kicker: "News from Bath", no: 1, strap: "Flag Lads arrive in Bath", lead: "<p>A van full of cable ties was seen at dawn. By breakfast there were flags on the lamp posts.</p>", side: "<h4>How to help</h4><p>Shoot the flags off the lamp posts.</p>", small: "" } as any));
+  const b = $("scoreboard"); b.hidden = false; b.classList.toggle("join", join); d.draw($("daily"));
+}
+/** The big map open over a plain ground, for its cards. */
+function mapUp(then: () => void) {
+  $("bigmap").hidden = false;
+  const c = $("bigmapcanvas") as HTMLCanvasElement; c.width = c.height = 600;
+  const g = c.getContext("2d")!; g.fillStyle = "#b7c49a"; g.fillRect(0, 0, 600, 600); g.strokeStyle = "#f4f0e2"; g.lineWidth = 6;
+  for (let k = 0; k < 12; k++) { g.beginPath(); g.moveTo(k * 60, 0); g.lineTo(k * 60 - 200, 600); g.stroke(); }
+  then();
+}
+
+const GULLS = { label: "Seagull Attack · ★★☆", colour: "#8fd0f0", title: "Seagull Attack: Chip Tuesday", blurb: "Tourists on the benches with their sandwiches, and the gulls of Bath want them. Five waves, then Big Lad himself.", reward: "2 prizes, and a seagull for your head for three stars" };
+/** A brief as quests.ts puts it up: on the board (in #jobposter) or brought back with J. */
+function brief(at: "board" | "recall", b: Brief, touch = false) {
+  let el = at === "board" ? $("jobposter") : document.getElementById("jobrecall");
+  if (!el) { el = document.createElement("div"); el.id = "jobrecall"; $("hud").appendChild(el); }
+  briefCut(el, b.colour);
+  el.classList.toggle("touch", touch);
+  el.innerHTML = briefHtml(at, b);
+  if (touch) el.querySelectorAll("kbd[data-ctl]").forEach((k) => { k.textContent = "Use"; });
+  el.hidden = false;
 }
 function revealCard(s: Shot) {
   const r = new Reveal(null as never, () => false) as any;

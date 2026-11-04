@@ -139,7 +139,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the third time he's gone for good. Quarter of an hour on the clock. More players and he's
   quicker, warier and has more mates. A Gaffer who got away is a Wanted poster too, and quicker
   still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
-  screen) brings the poster back, and it ends on the result card in the poster's red.
+  screen) brings his brief back with his round of stops on it, and it ends on the result card in the
+  poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
@@ -222,6 +223,14 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   wardrobe items, trophies, a strange object). Space carries on, E goes again where you can, and it
   goes by itself after 8 seconds. Notices queue rather than vanish, and the use prompt draws each key
   as a key cap you can tap on a touch screen.
+- **A job's brief is one cutting from the paper**: what you read at the noticeboard (whose foot says
+  what E does, with no second prompt on top of it) is the title card when it starts, and J (or Poster
+  on a touch screen) brings it back during any job with how it's going written on it. A ride's
+  tricks and a string of the Flag Lads' flags build one combo, a single row under the crosshair
+  (both at once when you shoot flags from a board), with the wings' flight in the same slot. Every notice
+  (news, a mission's stage, a trophy) comes up on the same dark HUD plate, edged in its colour. The big map's
+  key, its notes and a pub's card are BathText pages like the menus, and the game's notes about
+  itself (the map stuck loading, someone on another version) are a BathText strip along the top.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
   and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept
@@ -233,8 +242,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
   anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
-  spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
-  structures are the record, and the room carries on from whoever has got furthest in that room.
+  spawns) is put down right by it. Filled sockets glow. Both maps mark every structure in the zones
+  open so far, green once it's full and red while it wants filling; the one taking objects now pulses,
+  and the minimap's rim points to it from anywhere with how far it is. Point at one on the big map for
+  where it is and how full ("Structure, Firs Field (Combe Down): full"), and carry an object to a full one and
+  it tells you where the next one is and which way. The room carries on from whoever has got furthest
+  in that room.
 - **Zones**: the map opens a part at a time. You start in a small first zone to learn the game in (in
   Bath, the middle of Combe Down), with a pub, places for jobs, a main road and a structure that needs
   only two objects, and a shimmering wall like the force field's round it. The town's busiest streets
@@ -290,14 +303,31 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
   from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
   own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
-  only they can see how fast it's going and what's coming down the hill (a car, a naughty boy on the
-  roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
+  only they can see how fast it's going and what's coming down the hill (a car, the next bus stop),
+  so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
   handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
   smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
   one pusher can take the call (use, on the bus, or shout HEAVE three beats running; stepping back lets go): then the
   heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
-  them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
-  the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
+  them, till they stop and the game counts again. Pull in for the cars coming down; a parked car in
+  its way gets shoved aside. There are bus stops up the hill (two or three, a red flag on a pole),
+  each with a queue of pensioners waiting for this very bus. As the front door comes up to a stop
+  and the bus slows, the queue shuffles over: someone lets go of the bus, goes to the front door
+  and presses E to sell the tickets, while the rest hold the bus (on your own it's chocked while you
+  sell). Each pensioner counts out the fare a coin at a time: press E when it's exactly right, as
+  the money goes green. Too soon and they start counting again; too late and they want change. Each
+  one aboard adds a little weight. Push past a stop without selling a ticket and that queue is left
+  shaking its sticks at you, and a letter about it turns up in the next day's Chronicle. Everyone
+  aboard gets crosser while the bus is slow or rolling back: they lean out of the windows and shout
+  ("I fought in the war for this!", "I can see your bottom!"), and the furious ones ring the bell
+  (the cab is told they want the next stop, and not stopping there makes the queues further up
+  crosser), throw a handbag, a walking stick, sherbet lemons or a thermos at a pusher (it splats
+  your screen and puts your next heave off by a grade), get off in a huff and walk up the hill
+  quicker than the bus, or start a row about the front seat that rocks the bus and takes the edge
+  off the heaves. Keep it going well and they cheer ("Come on, lads!"), which widens the perfect
+  window for the next heave, and now and then a feisty one gets off and helps push. At the top the
+  result card gives your time and a grade from it and how happy the passengers are (anyone left at
+  a stop or gone off in a huff counts as unhappy), so a team that ignores the stops does worse. Let it roll back past
   where it started and it's lost: off it careers backwards on its own, through the bins, the
   traffic and the parked cars and over anyone in its way, till a wall or a car stops it (or the
   water), and there it sits with its hazards going for a few minutes. On your own or two it's the
@@ -436,7 +466,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   R2/L2 or the right stick zoom, A marks and B closes.
 - **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
-  checkpoint, a minigame, the strange structure, a bus stop or a cable car station, and the
+  checkpoint, a minigame, a strange structure, a bus stop or a cable car station, and the
   marker goes exactly on it and says what it is ("Dan marked Push the Bus"); a pub opens its card,
   with Mark it on it; clicking a bunch of jobs
   zooms in on them. In the street a marker on something is a ring of light that fits round that
@@ -454,9 +484,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   game the day before. The side column has what's still scarred, a flag league if you had company
   (your own numbers if not) and Gaffer watch for today's Gaffer; a few small items run along the
   bottom. It comes up when you join (once a day, for about 20 seconds, or tap it away) and under Tab
-  (or pause, on a touch screen). It's also on every noticeboard (N, or tap Read the Chronicle) and
-  in the pause menu, where Read the Chronicle opens it on its own sheet over the menu: Esc or the
-  Close button puts it away and you're back at the menu. On a phone it stacks into one column and
+  (or pause, on a touch screen), where the league table is printed across the top of the page. It's also on every noticeboard (N, or tap Read the Chronicle) and
+  in the pause menu, where Read the Chronicle opens it on its own sheet over the menu: Esc or its ×
+  puts it away and you're back at the menu. On a phone it stacks into one column and
   scrolls. Players who play together get the same story; your first day, it's the Flag Lads
   arriving.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
