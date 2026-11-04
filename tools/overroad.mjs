@@ -19,7 +19,8 @@
 //    one standing more than 0.35 m over its own carriageway, a kerb about 0.1 m high.
 // And for rule 23, along every path on the ground (not a bridge's deck or its steps), every half metre
 // along and a quarter across, from 0.3 m inside one edge to 0.3 m inside the other: the first face seen
-// should be the path, or paving or a street it crosses. The ground's own mesh over the path (grass
+// should be the path, or paving or a street it crosses (a path under a building or a set piece is
+// rules 9 and 13's). The ground's own mesh over the path (grass
 // come up through it) is "ground drawn over a path"; the ground with no path under it at all is "path
 // not drawn", a path broken into pieces or a gap where two ways meet; and two pieces of path lying
 // side by side on the ground with more than 0.05 m between their heights where they meet (a rise
@@ -394,7 +395,9 @@ function probe() {
           const walk = A[2] + (B[2] - A[2]) * f - z0;
           let last = null;
           for (const o of across2(half - 0.3)) {
-            const px = x + nx * o, py = y + ny * o, H = hits(T, px, -py).filter(([h]) => h <= walk + 3 && h >= walk - 3);
+            const px = x + nx * o, py = y + ny * o, all = hits(T, px, -py), H = all.filter(([h]) => h <= walk + 3 && h >= walk - 3);
+            // (a path under a building or a set piece, however high its roof, is rules 9 and 13's: a way inside a building)
+            if (all.some(([h, w]) => h > walk - 0.5 && (w === "building" || w === "set piece or landmark"))) { last = null; continue; }
             const top = H[0];
             if (!top || !OPEN.has(top[1]) && !LAID.has(top[1])) { last = null; continue; }   // (a wall, a building: rule 9's)
             if (top[1] === "ground") {

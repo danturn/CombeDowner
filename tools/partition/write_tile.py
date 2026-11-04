@@ -2561,13 +2561,9 @@ def on_deck(q):
 
 
 def deck_stretches(r):
-    """The stretches of a bridge's record the game draws as its strip. A path's is its deck: each span
-    with the step from it to the abutment at either end (web/src/world.ts strips); the rest, on the
-    ground, is faces like any other path's, so the paths meeting it there join it edge to edge. A
-    street's bridge keeps its whole record as its strip, kerbs and all."""
+    """Each span of a bridge's record with the step from it to the abutment at either end, as the game
+    draws its deck (web/src/world.ts strips)."""
     p, out, run = r["p"], [], []
-    if r["c"] not in GAME_PATHS:
-        return [LineString([q[:2] for q in p])] if any(on_deck(q) for q in p) else []
     for a, b in zip(p, p[1:]):
         if on_deck(a) or on_deck(b):
             run = run or [a[:2]]
@@ -2580,12 +2576,26 @@ def deck_stretches(r):
     return out
 
 
-def bridge_decks(rd, ground=None):
-    """The ground each bridge's deck covers, with room for its parapets, or None. A bridge's deck is
-    drawn as a strip with what holds it up, so the faces leave it out; given the ground, not where a
-    street at grade passes under it."""
+def bridge_decks(rd, ground=None, paths=False):
+    """The ground each bridge's strip covers, with room for its parapets, or None. A bridge is drawn as
+    a strip with what holds it up, so the faces leave it out; given the ground, not where a street at
+    grade passes under it. A path's bridge is its deck only (the span with the step to the abutment at
+    either end): off it, it is faces like any other path's. A street's is its whole record, kerbs and
+    pavements and all; with `paths`, what a path's faces leave out of it, which is only each side's own
+    carriageway and pavement off the deck, so a path beside or across it meets it rather than stopping
+    short at the room left for its parapets."""
     decks = [line.buffer(way_width(r) / 2 + (0.5 if r["c"] in GAME_PATHS else max(r.get("pv") or [0]) + 0.5), cap_style="flat")
              for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
+    for r in rd:
+        if r["c"] in GAME_PATHS or len(r["p"]) < 2 or not any(on_deck(q) for q in r["p"]):
+            continue
+        line, half = LineString([q[:2] for q in r["p"]]), way_width(r) / 2
+        if not paths:
+            decks.append(line.buffer(half + max(r.get("pv") or [0]) + 0.5, cap_style="flat"))
+            continue
+        pl, pr = list(r["pv"]) if r.get("pv") else [PAVE, PAVE] if r["c"] in KERBED else [0, 0]
+        decks += [line.buffer(half + pl, cap_style="flat", single_sided=True),
+                  line.buffer(-(half + pr), cap_style="flat", single_sided=True)]
     if not decks:
         return None
     deck = unary_union(decks)
@@ -3040,6 +3050,9 @@ def thin_to(A, B, r=KERB_POINT, most=KERB_POINT_AREA):
 ALONG_REACH = 2.5      # metres out from a pavement that a footway mapped beside it reaches
 ALONG_LEAST = 4.0      # metres of a path's strip along a pavement before it is taken for that pavement
 ALONG_STEP = 0.4       # metres a footway beside a pavement may lie off its street's level and still be paved as it
+ALONG_SLANT = 20.0     # degrees: a path's line crossing a pavement's edge at less than this runs along it
+ALONG_LEAVE = 6.0      # metres on from a pavement's edge that a path leaving it is further off it than ALONG_REACH
+NEEDLE = 0.25          # metres: half the width a piece of path must have, where it meets a carriageway
 ALONG_CELL = 6.0       # metres: the stretch of such a footway whose level is judged at a time
 
 
@@ -3049,19 +3062,57 @@ def longest_run(lines):
     return max((g.length for g in getattr(parts, "geoms", [parts])), default=0.0)
 
 
-def paths_along_pavements(path, pave, reach=ALONG_REACH, least=ALONG_LEAST, off_level=None):
+def path_mouths(pave, ways, least_angle=ALONG_SLANT, reach=ALONG_REACH):
+    """Where each path leaves the pavement, round the point its line crosses the pavement's edge, as
+    far along that edge as the path's width reaches at its slant. `ways` is (line, half width) for each
+    path. A line crossing at less than `least_angle` degrees, or one that stays within `reach` of the
+    pavement a few metres on (a footway beside the street, stepping on and off it), runs along the
+    pavement, and has no mouth."""
+    edge = pave.boundary
+    if edge.is_empty:
+        return Polygon()
+    rings = [g for g in getattr(edge, "geoms", [edge])]
+    out = []
+    for line, half in ways:
+        hit = line.intersection(edge)
+        for p in (g for g in getattr(hit, "geoms", [hit]) if g.geom_type == "Point"):
+            d = line.project(p)
+            a, b = line.interpolate(max(0.0, d - 0.5)), line.interpolate(min(line.length, d + 0.5))
+            ring = min(rings, key=lambda r: r.distance(p))
+            e = ring.project(p)
+            c, f = ring.interpolate(max(0.0, e - 0.5)), ring.interpolate(min(ring.length, e + 0.5))
+            u, v = (b.x - a.x, b.y - a.y), (f.x - c.x, f.y - c.y)
+            nu, nv = math.hypot(*u), math.hypot(*v)
+            if nu < 1e-6 or nv < 1e-6:
+                continue
+            sin = abs(u[0] * v[1] - u[1] * v[0]) / (nu * nv)
+            if sin < math.sin(math.radians(least_angle)):
+                continue
+            # (the way on from the edge, off the pavement)
+            on = [line.interpolate(min(line.length, max(0.0, d + k * ALONG_LEAVE))) for k in (-1, 1)]
+            if max(q.distance(pave) for q in on) <= reach:
+                continue
+            out.append(p.buffer(half / sin))
+    return unary_union(out) if out else Polygon()
+
+
+def paths_along_pavements(path, pave, reach=ALONG_REACH, least=ALONG_LEAST, off_level=None, ways=()):
     """`path` less the strips of it lying along a pavement, and those strips. A footway mapped beside a
     street (OpenStreetMap's own line for the pavement) gets its own path face, which lay against the
     drawn pavement as a second, rougher strip between it and the walls: it is that pavement, as far
-    out as such a footway reaches. A path leaving the pavement end on, across a verge or into a
-    square, touches it only across its own width, and stays a path. Nor is a footway up a bank beside
-    the street (`off_level`): paved, it would be laid at the street's level, a step below its ground."""
+    out as such a footway reaches. A path leaving the pavement end on or at a slant, across a verge or
+    into a square, touches it only across its own mouth (`ways`, each path's line and half width), and
+    stays a path. Nor is a footway up a bank beside the street (`off_level`): paved, it would be laid
+    at the street's level, a step below its ground."""
     if path.is_empty or pave.is_empty:
         return path, Polygon()
     pave = unary_union([g for g in getattr(pave, "geoms", [pave]) if g.geom_type in ("Polygon", "MultiPolygon")] or [Polygon()])
     near = path.intersection(pave.buffer(reach, join_style="mitre"))
     # (the outlines are simplified together after this, closing a few centimetres between the two)
     edge = pave.boundary.buffer(SURFACE_TOLERANCE + 0.05)
+    mouths = path_mouths(pave, ways)
+    if not mouths.is_empty:
+        edge = edge.difference(mouths)
     shapely.prepare(edge)
     take = []
     for g in getattr(near, "geoms", [near]):
@@ -3617,6 +3668,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     tree = STRtree(lines) if lines else None
     planes = portal_planes(tunnels, lines, heights)
     deck = bridge_decks(rd, ground)
+    path_deck = bridge_decks(rd, ground, paths=True)
     over = bridge_decks(rd)
     if over is not None:
         shapely.prepare(over)
@@ -3689,7 +3741,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
         g = unary_union(polys).intersection(square) if polys else Polygon()
-        return g.difference(deck) if deck is not None else g
+        cut = path_deck if cls == "path" else deck
+        return g.difference(cut) if cut is not None else g
 
     road, pave = shapes("carriageway"), shapes("pavement")
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
@@ -3760,10 +3813,18 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             if lv is not None and abs(z - lv) > ALONG_STEP + PAVE_FALL:
                 return True
         return False
-    path, along = paths_along_pavements(path, pave, off_level=off_level)
+    path, along = paths_along_pavements(path, pave, off_level=off_level,
+                                        ways=[(LineString([q[:2] for q in r["p"]]), way_width(r) / 2) for r in rd
+                                              if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1])
     if not along.is_empty:
         pave = pave.union(along)
         taken = taken.union(along)
+    # a needle of path poking into a carriageway is that carriageway: the path's own outline ran on
+    # across the road to where its line crosses, a hair wide, in a notch of the road's
+    thin = path.difference(path.buffer(-NEEDLE, join_style="mitre").buffer(NEEDLE, join_style="mitre"))
+    needles = thin.intersection(road.buffer(NEEDLE, join_style="mitre").buffer(-NEEDLE, join_style="mitre"))
+    if not needles.is_empty:
+        path, road = path.difference(needles), road.union(needles)
     if bores is not None:
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)

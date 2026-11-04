@@ -670,6 +670,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (i === 0 || j === 0 || i === T.nx - 1 || j === T.ny - 1) sink[j * T.nx + i] = 0;
   }
   yield;
+  // A 4 m cell is drawn at 2 m after all where the ground is let down (or made up) at a 2 m point in
+  // it differently from its corners: drawn at 4 m, that point wasn't drawn, and the grass stood over
+  // a pavement or a path cut into a bank. (A cell left at 4 m has none, so its edges still meet the
+  // 2 m cells beside it.)
+  let fine = map.fine;
+  if (fine) {
+    const cw = (T.nx - 1) / 2, ch = (T.ny - 1) / 2, n = T.nx, out = fine.slice();
+    for (let cj = 0; cj < ch; cj++) for (let ci = 0; ci < cw; ci++) {
+      if (out[cj * cw + ci]) continue;
+      const a = 2 * cj * n + 2 * ci, s00 = sink[a], s10 = sink[a + 2], s01 = sink[a + 2 * n], s11 = sink[a + 2 * n + 2];
+      const off = (k: number, want: number) => Math.abs(sink[k] - want) > 0.02;
+      if (off(a + 1, (s00 + s10) / 2) || off(a + n, (s00 + s01) / 2) || off(a + n + 1, (s10 + s01) / 2) ||
+          off(a + n + 2, (s10 + s11) / 2) || off(a + 2 * n + 1, (s01 + s11) / 2)) out[cj * cw + ci] = 1;
+    }
+    fine = out;
+  }
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
   const tWild = new Uint8Array(T.nx * T.ny * 3);
   const hAt = (i: number, j: number) => T.h[Math.min(T.ny - 1, Math.max(0, j)) * T.nx + Math.min(T.nx - 1, Math.max(0, i))] / 10;
@@ -718,14 +734,23 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.trueGround(x, z);   // out in the wider map
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
     const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
-    const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
+    const h = (k: number) => tPos[k * 3 + 1], n = T.nx;
+    // (where a 4 m cell is drawn as two triangles, its own: the 2 m points inside it aren't drawn,
+    // and one let down under a street beside it would put what lies here under the drawn grass)
+    const F = fine, ci = Math.min((T.nx - 1) / 2 - 1, i >> 1), cj = Math.min((T.ny - 1) / 2 - 1, j >> 1);
+    if (F && !F[cj * ((T.nx - 1) / 2) + ci]) {
+      const a = 2 * cj * n + 2 * ci, U = Math.min(1, Math.max(0, (fi - 2 * ci) / 2)), W = Math.min(1, Math.max(0, (fj - 2 * cj) / 2));
+      if (U + W <= 1) return h(a) + (h(a + 2) - h(a)) * U + (h(a + 2 * n) - h(a)) * W;
+      return h(a + 2 * n + 2) + (h(a + 2 * n) - h(a + 2 * n + 2)) * (1 - U) + (h(a + 2) - h(a + 2 * n + 2)) * (1 - W);
+    }
+    const a = j * n + i;
     if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
     return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
   };
   // the triangles of grid cells i0..i1, j0..j1 (on a 2 m grid drawn adaptively, a 4 m cell is
   // two triangles where it's within reach of its 2 m points: map.ts adaptGrid)
   const cellTris = function* (idx: number[], i0: number, j0: number, i1: number, j1: number): Generator<void> {
-    const F = map.fine, cw = (T.nx - 1) / 2;
+    const F = fine, cw = (T.nx - 1) / 2;
     for (let j = j0; j < j1; j++) { for (let i = i0; i < i1; i++) {
       const a = j * T.nx + i;
       if (F && !F[(j >> 1) * cw + (i >> 1)]) {
@@ -738,66 +763,62 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       idx.push(a, b, cc, b, d, cc);
     } if ((j - j0) % 24 === 23) yield; }
   };
-  /** Triangles of paths (or anything else lying a hair over the ground as it's drawn), each split until
-   *  the ground nowhere rises through it. Their corners are on the ground, but the ground's own
-   *  triangles fold between them: along a crest or an embankment's top the grass came up through
-   *  the middle of a path in ragged patches. Corners are scene [x, y, z], the ground plus lift. An
-   *  edge halved in one triangle is halved in the one beside it too (flush), or the two pieces
-   *  would meet at a step where one follows the ground and the other runs straight over it. */
+  /** Triangles of paths (or anything else lying a hair over the ground as it's drawn), cut along the
+   *  ground's own grid lines and the diagonals that fold its cells, so each piece lies flat on one of
+   *  the ground's triangles. With only their corners on the ground, the ground folding between them
+   *  came up through the middle of a path in ragged patches along a crest or an embankment's top.
+   *  Two triangles sharing an edge are cut at the same points along it, so they meet without a step. */
   const groundTris = () => {
     const tris: [Geo, number[], number[], number[], number[], number[], number[], number][] = [];
-    const mids = new Map<string, number[]>();
-    const spot = (p: number[]) => `${Math.round(p[0] * 100)},${Math.round(p[2] * 100)}`;
-    const edge = (p: number[], q: number[]) => { const a = spot(p), b = spot(q); return a < b ? `${a}|${b}` : `${b}|${a}`; };
-    const ground = (x: number, z: number) => { const h = drawnGround(x, z); return Number.isFinite(h) ? h : -Infinity; };
-    let added = false;
-    const refine = (g: Geo, a: number[], b: number[], c: number[], ua: number[], ub: number[], uc: number[], lift: number, emit: boolean, depth = 0): void => {
-      const len = (p: number[], q: number[]) => Math.hypot(q[0] - p[0], q[2] - p[2]);
-      const la = len(b, c), lb = len(c, a), lc = len(a, b), longest = Math.max(la, lb, lc);
-      const d = (b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2]);
-      const can = depth < 8 && longest > 0.4 && Math.abs(d) > 1e-9;
-      // an edge the triangle beside has halved already (halved here too, however small, so they meet)
-      let forced = -1;
-      if (depth < 16) for (const [k, p, q] of [[2, a, b], [0, b, c], [1, c, a]] as const) if (mids.has(edge(p, q))) { forced = k; break; }
-      let split = forced >= 0;
-      if (can && !split) {
-        const through = (x: number, z: number) => {
-          const s = ((x - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (z - a[2])) / d, t = ((b[0] - a[0]) * (z - a[2]) - (x - a[0]) * (b[2] - a[2])) / d;
-          if (s < -1e-6 || t < -1e-6 || s + t > 1 + 1e-6) return false;
-          return ground(x, z) > a[1] + (b[1] - a[1]) * s + (c[1] - a[1]) * t - lift / 2;
-        };
-        // the ground can stand highest at its own grid points inside, and where its folds cross the edges
-        for (const [p, q, l] of [[a, b, lc], [b, c, la], [c, a, lb]] as const) {
-          const n = Math.ceil(l / 0.7);
-          for (let k = 1; k < n && !split; k++) split = through(p[0] + (q[0] - p[0]) * k / n, p[2] + (q[2] - p[2]) * k / n);
+    const ground = (x: number, z: number) => { const h = drawnGround(x, z); return Number.isFinite(h) ? h : NaN; };
+    // a point as [x, z, u, v, the height its triangle gives it]
+    const lines = [
+      (p: number[]) => (p[0] - T.x0) / T.dx,
+      (p: number[]) => (-p[1] - T.y0) / T.dy,
+      (p: number[]) => (p[0] - T.x0) / T.dx + (-p[1] - T.y0) / T.dy,
+    ];
+    const cut = (poly: number[][], f: (p: number[]) => number, k: number): [number[][], number[][]] => {
+      const lo: number[][] = [], hi: number[][] = [];
+      for (let i = 0; i < poly.length; i++) {
+        const p = poly[i], q = poly[(i + 1) % poly.length], fp = f(p) - k, fq = f(q) - k;
+        if (fp <= 0) lo.push(p);
+        if (fp >= 0) hi.push(p);
+        if ((fp < 0 && fq > 0) || (fp > 0 && fq < 0)) {
+          // (worked from the edge's lower end, so the triangle beside, going the other way round, gets the same point)
+          const [a, b, fa, fb] = p[0] < q[0] || (p[0] === q[0] && p[1] < q[1]) ? [p, q, fp, fq] : [q, p, fq, fp];
+          const t = fa / (fa - fb), m = a.map((v, j) => v + (b[j] - v) * t);
+          lo.push(m); hi.push(m);
         }
-        const i0 = Math.ceil((Math.min(a[0], b[0], c[0]) - T.x0) / T.dx), i1 = Math.floor((Math.max(a[0], b[0], c[0]) - T.x0) / T.dx);
-        const j0 = Math.ceil((-Math.max(a[2], b[2], c[2]) - T.y0) / T.dy), j1 = Math.floor((-Math.min(a[2], b[2], c[2]) - T.y0) / T.dy);
-        for (let j = j0; j <= j1 && !split; j++) for (let i = i0; i <= i1 && !split; i++) split = through(T.x0 + i * T.dx, -(T.y0 + j * T.dy));
       }
-      if (!split) { if (emit) facingTri(g, a, b, c, [0, 1, 0], ua, ub, uc, [1, 1, 1]); return; }
-      const k = forced >= 0 ? forced : longest === lc ? 2 : longest === la ? 0 : 1;
-      const [p, q, r, up, uq, ur] = k === 2 ? [a, b, c, ua, ub, uc] : k === 0 ? [b, c, a, ub, uc, ua] : [c, a, b, uc, ua, ub];
-      const key = edge(p, q);
-      let m = mids.get(key);
-      if (!m) {
-        const mx = (p[0] + q[0]) / 2, mz = (p[2] + q[2]) / 2, mg = ground(mx, mz);
-        mids.set(key, m = [mx, mg > -Infinity ? mg + lift : (p[1] + q[1]) / 2, mz]);
-        added = true;
+      return [lo, hi];
+    };
+    const pieces = (poly: number[][], n: number, out: number[][][]) => {
+      if (n === lines.length) { out.push(poly); return; }
+      const f = lines[n], fs = poly.map(f), top = Math.max(...fs);
+      let rest = poly;
+      for (let k = Math.floor(Math.min(...fs)) + 1; k < top && rest.length >= 3; k++) {
+        const [lo, hi] = cut(rest, f, k);
+        if (lo.length >= 3) pieces(lo, n + 1, out);
+        rest = hi;
       }
-      const um = [(up[0] + uq[0]) / 2, (up[1] + uq[1]) / 2];
-      refine(g, p, m, r, up, um, ur, lift, emit, depth + 1);
-      refine(g, m, q, r, um, uq, ur, lift, emit, depth + 1);
+      if (rest.length >= 3) pieces(rest, n + 1, out);
+    };
+    const lay = (g: Geo, a: number[], b: number[], c: number[], ua: number[], ub: number[], uc: number[], lift: number) => {
+      const out: number[][][] = [];
+      pieces([[a[0], a[2], ua[0], ua[1], a[1]], [b[0], b[2], ub[0], ub[1], b[1]], [c[0], c[2], uc[0], uc[1], c[1]]], 0, out);
+      for (const poly of out) {
+        const P = poly.map((p) => { const h = ground(p[0], p[1]); return [p[0], h === h ? h + lift : p[4], p[1]]; });
+        for (let i = 1; i + 1 < poly.length; i++) {
+          const ux = poly[i][0] - poly[0][0], uz = poly[i][1] - poly[0][1], wx = poly[i + 1][0] - poly[0][0], wz = poly[i + 1][1] - poly[0][1];
+          if (Math.abs(ux * wz - uz * wx) < 1e-8) continue;
+          facingTri(g, P[0], P[i], P[i + 1], [0, 1, 0], poly[0].slice(2, 4), poly[i].slice(2, 4), poly[i + 1].slice(2, 4), [1, 1, 1]);
+        }
+      }
     };
     return {
       add: (g: Geo, a: number[], b: number[], c: number[], ua: number[], ub: number[], uc: number[], lift: number) => { tris.push([g, a, b, c, ua, ub, uc, lift]); },
       *flush(): Generator<void> {
-        for (let pass = 0; pass < 6; pass++) {
-          added = false;
-          for (let k = 0; k < tris.length; k++) { refine(...tris[k], false); if (k % 2000 === 1999) yield; }
-          if (!added) break;
-        }
-        for (let k = 0; k < tris.length; k++) { refine(...tris[k], true); if (k % 2000 === 1999) yield; }
+        for (let k = 0; k < tris.length; k++) { lay(...tris[k]); if (k % 1000 === 999) yield; }
         tris.length = 0;
       },
     };
