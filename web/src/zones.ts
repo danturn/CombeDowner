@@ -5,11 +5,19 @@
 // of it (reveal.ts). Ways to get about (buses, boats, balloons, trains, the cable car) open up with
 // the zones as well, and travel never takes you past the wall.
 //
-// The zones come from the map alone, so they work on any map and every player gets the same ones:
-// the map is cut into cells on its squares' grid, the first zone is the first area (the village on
-// Bath's map) or the cells nearest the start, and the rest grow out from it along the streets, each
-// with a fair share of the town. Each is named after the biggest district in it (<map>-districts.json,
-// from tools/districts.py), or failing that the biggest named park or square.
+// The zones come from the map alone, so they work on any map and every player gets the same ones.
+// The map is cut into cells on its squares' grid. The first zone is a small one to learn the game
+// in, grown from the start along the streets just far enough to hold a pub, a second place for a
+// job, a main road for the buses and open ground for a structure with only two sockets, so the
+// first unlock comes quickly. The busiest knot of streets, the town's heart, is held back as the
+// last zone, and the rest are swept out round it like a clock's hand from where everyone starts,
+// each with a fair share of the town. Each is named after the biggest district in it
+// (<map>-districts.json, from tools/districts.py), or failing that the biggest named park or square.
+//
+// For comparing, ?cut= picks another way: "streets" is the old one (the first area, then growth
+// along the streets, a step into a busy cell cheap); "quiet" grows from the tutorial zone with a
+// busy cell dear instead; "heart" holds the heart back and grows the rest along the streets.
+// ?zonemap=1 draws every zone on the big map, numbered in the order they open.
 //
 // Who decides what: nobody. How many zones are open follows from how many sockets are full, which
 // the host of oddments.ts decides and sends round; so the wall stands in the same place on every
@@ -17,6 +25,7 @@
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
+import { feature } from "./features";
 
 /** A way to get about that opens with a zone. */
 export type TravelKind = "bus" | "busroute" | "boat" | "balloon" | "train" | "cable";
@@ -41,8 +50,25 @@ const TRAVEL_SHUT: Record<TravelKind, string> = {
 const SLOTTED: TravelKind[] = ["bus", "busroute", "boat", "balloon"];
 
 const BUILT_IN = import.meta.glob<{ ds?: [number, number, string, string][] }>("../public/maps/*-districts.json", { eager: true, import: "default" });
+const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | null, number | null][] }>("../public/maps/*-pubs.json", { eager: true, import: "default" });
+const BUS_ROADS = new Set(["trunk", "primary", "secondary", "tertiary"]);
 const RANK: Record<string, number> = { town: 0, suburb: 1, village: 1, quarter: 2, neighbourhood: 3, hamlet: 4 };
 const NEAR = 2;   // cells either way looked at for the wall
+/** Each map's own spawn ring, kept when the zones move where everyone starts. */
+const OWN_SPAWN = new WeakMap<object, number[][] | undefined>();
+const SPAWN_ROOM = 120;   // metres from where anyone starts to the first zone's wall, at least
+
+/** How the zones are cut (?cut=streets|quiet|heart): round the town's heart like a clock unless asked. */
+export type Cut = "streets" | "quiet" | "heart" | "clock";
+const CUTS: Cut[] = ["streets", "quiet", "heart", "clock"];
+// read as the page loads, as starting a game clears the address
+const ASKED = typeof location === "undefined" ? new URLSearchParams() : new URLSearchParams(location.search);
+function cutWanted(): Cut {
+  const v = ASKED.get("cut");
+  return CUTS.includes(v as Cut) ? (v as Cut) : "clock";
+}
+/** ?zonemap: every zone drawn on the big map. */
+export const zoneMapWanted = ASKED.has("zonemap");
 
 export interface Zone {
   i: number;
@@ -75,6 +101,7 @@ export class Zones {
   private grid: Int8Array;
   private cum: number[] = [0];
   private openN = 0;
+  private cut: Cut = "streets";
   private all = false;
   private only = new Map<number, GameMap>();
   private travel = new Map<TravelKind, number>();
@@ -124,11 +151,15 @@ export class Zones {
       }
     }
     const cells = [...Array(n).keys()].filter((k) => inField[k]);
-    const N = Math.max(2, Math.min(7, Math.round(1 + map.field / 1100)));
+    const cut = cutWanted();
+    // a tutorial first zone leaves room for one more, even on a small map
+    const N = Math.max(cut === "streets" ? 2 : 3, Math.min(7, Math.round(1 + map.field / 1100)));
     const total = cells.length, roads = cells.reduce((s, k) => s + road[k], 0) || 1;
     const worth = (k: number) => 0.5 / total + (0.5 * road[k]) / roads;
     // the first zone: the first area, if it's a small part of the map, or else the cells round the start
-    const D = map.d, sp = D.spawn?.length ? D.spawn : [[0, 0]];
+    const D = map.d;
+    if (OWN_SPAWN.has(D)) D.spawn = OWN_SPAWN.get(D);
+    const sp = D.spawn?.length ? D.spawn : [[0, 0]];
     const hx = sp.reduce((s, p) => s + p[0], 0) / sp.length, hy = sp.reduce((s, p) => s + p[1], 0) / sp.length;
     // the first area is squares 0 to 2 each way (tools/area.py), whatever its own box says
     const I = map.tileIndex, S = I ? I.cells * I.dx : 0;
@@ -140,59 +171,220 @@ export class Zones {
     // grown out from there along the streets: a step into a cell with streets in it costs less
     const sorted = cells.map((k) => road[k]).filter((v) => v > 0).sort((a, b) => a - b);
     const ref = sorted[Math.floor(sorted.length * 0.8)] || 1;
-    const dist = new Float64Array(n).fill(Infinity);
     const start = cellOf(hx, hy), far = (k: number) => Math.hypot(centre(k)[0] - hx, centre(k)[1] - hy);
-    const seeds = first.length ? first : start >= 0 && inField[start] ? [start] : [[...cells].sort((a, b) => far(a) - far(b) || a - b)[0]];
-    for (const k of seeds) dist[k] = 0;
-    const done = new Uint8Array(n), order: number[] = [];
-    // a plain Dijkstra over a few hundred cells; ties go by cell number so every machine agrees
-    for (;;) {
-      let best = -1;
-      for (const k of cells) if (!done[k] && dist[k] < Infinity && (best < 0 || dist[k] < dist[best])) best = k;
-      if (best < 0) break;
-      done[best] = 1; order.push(best);
-      const i = best % nx, j = Math.floor(best / nx);
+    const startCell = start >= 0 && inField[start] ? start : [...cells].sort((a, b) => far(a) - far(b) || a - b)[0];
+    if (cut !== "streets") first = [];
+    const seeds = first.length ? first : [startCell];
+    const nbrs = (k: number) => {
+      const i = k % nx, j = Math.floor(k / nx), out: number[] = [];
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const a = i + di, b = j + dj;
-        if (a < 0 || b < 0 || a >= nx || b >= ny) continue;
-        const q = b * nx + a;
-        if (!inField[q] || done[q]) continue;
-        const d = dist[best] + c * (2 - Math.min(1, (road[best] + road[q]) / (2 * ref)));
-        if (d < dist[q]) dist[q] = d;
+        if (a >= 0 && b >= 0 && a < nx && b < ny && inField[b * nx + a]) out.push(b * nx + a);
+      }
+      return out;
+    };
+    const busy = (a: number, b: number) => Math.min(1, (road[a] + road[b]) / (2 * ref));
+    const streetCost = (a: number, b: number) => c * (2 - busy(a, b));
+    // the heart first, on every map, so the tutorial zone can keep out of it
+    const heart = cut === "heart" || cut === "clock" ? this.heart(cells, road, nbrs, worth, 1 / N) : null;
+    let home: [number, number] = [hx, hy];
+    if (cut !== "streets") {
+      if (!heart?.has(startCell)) first = this.tutorial(mapId, cells, [startCell], nbrs, streetCost, cellOf, heart, true).cells;
+      else {
+        // everyone would start in the heart: the tutorial goes to the nearest place outside it, by
+        // the streets, that has all it needs, and everyone starts there instead
+        const near = this.grow(cells, [...heart], nbrs, streetCost, null).filter((k) => !heart.has(k));
+        let pick: { cells: number[]; met: boolean } | null = null;
+        for (const k of near.slice(0, 16)) { const t = this.tutorial(mapId, cells, [k], nbrs, streetCost, cellOf, heart, false); if (t.met) { pick = t; break; } }
+        first = (pick ?? this.tutorial(mapId, cells, [near[0]], nbrs, streetCost, cellOf, heart, false)).cells;
+        home = this.moveSpawn(cells, first, centre(first[0])) ?? centre(first[0]);
       }
     }
-    // cells the growth couldn't reach (cut off by the edge) join the nearest zone in order
-    for (const k of cells) if (!done[k]) order.push(k);
     const firstSet = new Set(first);
     const firstShare = first.length ? first.reduce((s, k) => s + worth(k), 0) : 1 / (N + 2);
-    const each = (1 - firstShare) / (N - 1);
+    const cost = cut === "quiet" ? (a: number, b: number) => c * (1 + 8 * busy(a, b)) : streetCost;
+    let order: number[];
+    if (cut === "clock") {
+      // round the heart like a clock's hand, from the tutorial zone
+      const hs = heart ? [...heart] : [], mid = (ks: number[]) => [ks.reduce((s, k) => s + centre(k)[0], 0) / ks.length, ks.reduce((s, k) => s + centre(k)[1], 0) / ks.length];
+      const [ox, oy] = hs.length ? mid(hs) : home, [tx, ty] = first.length ? mid(first) : home;
+      const from = hs.length ? Math.atan2(ty - oy, tx - ox) : Math.PI / 2, turn = (k: number) => { const [x, y] = centre(k); return ((from - Math.atan2(y - oy, x - ox)) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI); };
+      const rest = cells.filter((k) => !heart?.has(k) && !firstSet.has(k)), t = new Map(rest.map((k) => [k, turn(k)]));
+      order = rest.sort((a, b) => t.get(a)! - t.get(b)! || a - b);
+    } else {
+      order = this.grow(cells, first.length ? first : seeds, nbrs, cost, heart);
+      // the heart can stand between the tutorial and the rest: grow on round it from wherever it was reached
+      if (heart) { const more = this.grow(cells, [...first, ...heart], nbrs, cost, null).filter((k) => !heart.has(k) && !order.includes(k)); order.push(...more); }
+      // cells the growth couldn't reach (cut off by the edge, or behind the heart) join the nearest zone in order
+      const reached = new Set(order);
+      for (const k of cells) if (!reached.has(k) && !heart?.has(k)) order.push(k);
+    }
+    const heartShare = heart ? [...heart].reduce((s, k) => s + worth(k), 0) : 0;
+    const middle = heartShare ? N - 2 : N - 1;
+    const each = (1 - firstShare - heartShare) / middle;
     let z = 0, got = first.length ? firstShare : 0;
     for (const k of order) {
       if (firstSet.has(k)) { zone[k] = 0; continue; }
       const w = worth(k);
       const limit = firstShare + each * z;
-      if (got + w / 2 > limit && z < N - 1) z++;
+      if (got + w / 2 > limit && z < middle) z++;
       zone[k] = z; got += w;
     }
+    if (heart) for (const k of heart) zone[k] = N - 1;
     // smooth the edges a little: a cell with three sides in earlier zones goes in with them
     for (let pass = 0; pass < 2; pass++) for (const k of cells) {
       if (zone[k] <= 0) continue;
-      const i = k % nx, j = Math.floor(k / nx), nb: number[] = [];
-      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const a = i + di, b = j + dj;
-        if (a >= 0 && b >= 0 && a < nx && b < ny && inField[b * nx + a]) nb.push(zone[b * nx + a]);
-      }
+      const nb = nbrs(k).map((q) => zone[q]);
       const before = nb.filter((q) => q < zone[k]);
       if (before.length >= 3 || (before.length >= 2 && nb.length <= 2)) zone[k] = Math.max(...before);
     }
+    if (cut !== "streets") this.mend(cells, zone, nbrs);
     // a zone left with nothing in it (a tiny map) goes, and the rest close up
     const used = [...new Set(cells.map((k) => zone[k]))].sort((a, b) => a - b);
     for (const k of cells) zone[k] = used.indexOf(zone[k]);
     this.grid = zone;
-    this.name(mapId, used.length, cells, road, centre, [hx, hy]);
+    this.cut = cut;
+    this.name(mapId, used.length, cells, road, centre, home, cut !== "streets");
   }
 
-  private name(mapId: string, N: number, cells: number[], road: Float64Array, centre: (k: number) => [number, number], home: [number, number]) {
+  /** A plain Dijkstra over a few hundred cells from the seeds, never into the held-back ones; ties go by cell number so every machine agrees. */
+  private grow(cells: number[], seeds: number[], nbrs: (k: number) => number[], cost: (a: number, b: number) => number, held: Set<number> | null) {
+    const dist = new Float64Array(this.grid.length).fill(Infinity), done = new Uint8Array(this.grid.length), order: number[] = [];
+    for (const k of seeds) dist[k] = 0;
+    for (;;) {
+      let best = -1;
+      for (const k of cells) if (!done[k] && dist[k] < Infinity && (best < 0 || dist[k] < dist[best])) best = k;
+      if (best < 0) break;
+      done[best] = 1; order.push(best);
+      for (const q of nbrs(best)) {
+        if (done[q] || held?.has(q)) continue;
+        const d = dist[best] + cost(best, q);
+        if (d < dist[q]) dist[q] = d;
+      }
+    }
+    return order;
+  }
+
+  /** A small first zone to learn the game in: grown from the start along the streets until it has
+   *  a pub, a second place a job can go up (a race starts from one), a main road for the buses,
+   *  room round every spawn and open ground for the first structure, within a floor and a cap on
+   *  its size. Only the data every
+   *  player has from the start is used (the squares come in later, in no fixed order), so bus stops
+   *  are judged by the roads buses run on. */
+  private tutorial(mapId: string, cells: number[], seeds: number[], nbrs: (k: number) => number[], cost: (a: number, b: number) => number, cellOf: (x: number, y: number) => number, held: Set<number> | null, roomForSpawn: boolean) {
+    const map = this.map, area = this.c * this.c;
+    const floor = Math.max(1, Math.ceil(1.5e6 / area)), cap = Math.max(floor, Math.floor(3e6 / area));
+    const pubs = (BUILT_IN_PUBS[`../public/maps/${mapId}-pubs.json`]?.pb ?? []).map(([x, y]) => [+x, +y]);
+    const places = [...(map.d.pl ?? []), ...(map.wide?.d.pl ?? [])].filter((p) => p.n && p.r.length >= 3)
+      .map((p) => [p.r.reduce((s, q) => s + q[0], 0) / p.r.length, p.r.reduce((s, q) => s + q[1], 0) / p.r.length]);
+    const spots = [...pubs, ...places].filter(([x, y]) => map.fieldEdgeBase(x, -y) > 90);
+    const busRoad = new Set<number>();
+    for (const r of map.wide?.rd ?? map.d.rd) {
+      if (!BUS_ROADS.has(r.c)) continue;
+      for (const q of r.p) { const k = cellOf(q[0], q[1]); if (k >= 0) busRoad.add(k); }
+    }
+    const got = new Set<number>(), saved = this.grid;
+    let tried = 0;
+    const has = () => {
+      const inside = ([x, y]: number[]) => got.has(cellOf(x, y));
+      const mine = spots.filter(inside);
+      return pubs.some(inside) && mine.some((a) => mine.some((b) => Math.hypot(a[0] - b[0], a[1] - b[1]) >= 250)) && [...got].some((k) => busRoad.has(k));
+    };
+    // everyone starts well inside it, not up against the wall, and its structure has open ground
+    const sp = roomForSpawn && map.d.spawn?.length ? map.d.spawn : [];
+    const settled = (slow: boolean) => {
+      this.grid = new Int8Array(saved.length).fill(-1);
+      for (const k of cells) this.grid[k] = got.has(k) ? 0 : 1;
+      const ok = sp.every(([x, y]) => this.edgeIn(x, -y, (g) => g === 0) >= SPAWN_ROOM) && (!slow || !!openGround(this.fenced((g) => g === 0), []));
+      this.grid = saved;
+      return ok;
+    };
+    let met = false;
+    for (const k of this.grow(cells, seeds, nbrs, cost, held)) {
+      if (got.size >= cap) break;
+      got.add(k);
+      if (got.size < floor || !has() || !settled(false)) continue;
+      // looking for open ground is slow, so it's looked for again only as the zone grows by a quarter
+      if (got.size < tried * 1.25) continue;
+      tried = got.size;
+      if (settled(true)) { met = true; break; }
+    }
+    return { cells: [...got], met };
+  }
+
+  /** Everyone starts in the tutorial zone, on open ground near where it was grown from, while the
+   *  zones are being played: a small spawn ring there in place of the map's own. */
+  private moveSpawn(cells: number[], first: number[], near: [number, number]): [number, number] | null {
+    const saved = this.grid, inFirst = new Set(first);
+    this.grid = new Int8Array(saved.length).fill(-1);
+    for (const k of cells) this.grid[k] = inFirst.has(k) ? 0 : 1;
+    const at = openGround(this.fenced((g) => g === 0), [], near);
+    this.grid = saved;
+    if (!at) return null;
+    if (feature("zones")) {
+      const D = this.map.d;
+      if (!OWN_SPAWN.has(D)) OWN_SPAWN.set(D, D.spawn);
+      const R = 12;
+      D.spawn = [[at.x - R, at.y - R], [at.x + R, at.y - R], [at.x + R, at.y + R], [at.x - R, at.y + R]];
+    }
+    return [at.x, at.y];
+  }
+
+  /** The busiest knot of streets, about a zone's share of the town, grown out from the cell whose
+   *  neighbourhood has the most street in it. */
+  private heart(cells: number[], road: Float64Array, nbrs: (k: number) => number[], worth: (k: number) => number, share: number) {
+    const around = new Float64Array(road.length);
+    for (const k of cells) around[k] = road[k] + nbrs(k).reduce((s, q) => s + road[q], 0);
+    const peak = cells.reduce((b, k) => (b < 0 || around[k] > around[b] ? k : b), -1);
+    if (peak < 0) return null;
+    const got = new Set([peak]);
+    let sum = worth(peak);
+    // busy cells first, but kept in a lump: a cell hemmed in by the heart counts for more and one far
+    // from its middle for less, or it runs off along the main roads in a long arm
+    const px = peak % this.nx, py = Math.floor(peak / this.nx);
+    const score = (q: number) => {
+      const touch = nbrs(q).filter((k) => got.has(k)).length, far = Math.hypot((q % this.nx) - px, Math.floor(q / this.nx) - py);
+      return (around[q] * (0.5 + 0.5 * touch)) / (1 + far / 3);
+    };
+    while (sum < share) {
+      let best = -1, bs = -Infinity;
+      for (const k of got) for (const q of nbrs(k)) {
+        if (got.has(q)) continue;
+        const v = score(q);
+        if (v > bs || (v === bs && q < best)) { best = q; bs = v; }
+      }
+      if (best < 0) break;
+      got.add(best); sum += worth(best);
+    }
+    return got;
+  }
+
+  /** Each zone in one piece: a stray bit cut off from the rest of its zone goes in with the neighbour it shares most edge with. */
+  private mend(cells: number[], zone: Int8Array, nbrs: (k: number) => number[]) {
+    for (let pass = 0; pass < 3; pass++) {
+      const seen = new Uint8Array(zone.length), pieces: number[][] = [], keep = new Map<number, number[]>();
+      for (const k of cells) {
+        if (seen[k]) continue;
+        const piece = [k], z = zone[k];
+        seen[k] = 1;
+        for (let h = 0; h < piece.length; h++) for (const q of nbrs(piece[h])) if (!seen[q] && zone[q] === z) { seen[q] = 1; piece.push(q); }
+        pieces.push(piece);
+        if (piece.length > (keep.get(z)?.length ?? 0)) keep.set(z, piece);
+      }
+      let moved = false;
+      for (const piece of pieces) {
+        const z = zone[piece[0]];
+        if (z === 0 || keep.get(z) === piece) continue;
+        const edge = new Map<number, number>();
+        for (const k of piece) for (const q of nbrs(k)) if (zone[q] !== z) edge.set(zone[q], (edge.get(zone[q]) ?? 0) + 1);
+        const to = [...edge].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+        if (to) { for (const k of piece) zone[k] = to[0]; moved = true; }
+      }
+      if (!moved) break;
+    }
+  }
+
+  private name(mapId: string, N: number, cells: number[], road: Float64Array, centre: (k: number) => [number, number], home: [number, number], quickFirst: boolean) {
     const map = this.map, c = this.c;
     const ds = (BUILT_IN[`../public/maps/${mapId}-districts.json`]?.ds ?? []).map(([x, y, n, kind]) => ({ x, y, n: String(n).replace(/\s*\(.*\)\s*$/, ""), r: RANK[kind] ?? 5 }));
     const taken = new Set<string>();
@@ -224,7 +416,7 @@ export class Zones {
         const p = places.find((q) => inside(q.x, q.y) && !taken.has(q.n));
         if (p) { name = p.n; taken.add(p.n); }
       }
-      this.list.push({ i, name: name || (i ? `The far side, part ${i}` : "Where it all starts"), cells: mine.length, km2: (mine.length * c * c) / 1e6, x: mx, z: -my, home: null, sockets: i < N - 1 ? sockets : 0 });
+      this.list.push({ i, name: name || (i ? `The far side, part ${i}` : "Where it all starts"), cells: mine.length, km2: (mine.length * c * c) / 1e6, x: mx, z: -my, home: null, sockets: i === N - 1 ? 0 : i === 0 && quickFirst ? 2 : sockets });
     }
     this.list.forEach((zn, i) => { this.cum[i + 1] = this.cum[i] + zn.sockets; });
     // each structure on open ground in its own zone: the first near where everyone starts, the rest near their middles
@@ -297,15 +489,19 @@ export class Zones {
   limited(k: number): GameMap {
     let m = this.only.get(k);
     if (m) return m;
-    const ok = (g: number) => g === k, base = this.map;
+    m = this.fenced((g) => g === k);
+    this.only.set(k, m);
+    return m;
+  }
+
+  private fenced(ok: (g: number) => boolean): GameMap {
+    const base = this.map;
     const edge = (x: number, z: number) => Math.min(base.fieldEdgeBase(x, z), this.edgeIn(x, z, ok));
     const inside = (x: number, z: number, r: number): [number, number] => {
       const p = base.fieldEdgeBase(x, z) < r ? base.fieldInsideBase(x, z, r) : [x, z] as [number, number];
       return this.edgeIn(p[0], p[1], ok) < r ? this.insideOf(p[0], p[1], r, ok) : p;
     };
-    m = new Proxy(base, { get: (t, p, recv) => (p === "fieldEdge" ? edge : p === "fieldInside" ? inside : Reflect.get(t, p, recv)) });
-    this.only.set(k, m);
-    return m;
+    return new Proxy(base, { get: (t, p, recv) => (p === "fieldEdge" ? edge : p === "fieldInside" ? inside : Reflect.get(t, p, recv)) });
   }
 
   // ---- opening up ------------------------------------------------------------------------------
@@ -340,13 +536,20 @@ export class Zones {
   planTravel(found: TravelFind[]) {
     this.travel.clear();
     this.version++;
+    // on the old cut a bus route waits for every zone it runs through; otherwise it opens with the first
+    const all = (t: TravelFind) => t.all && (this.cut === "streets" || t.kind !== "busroute");
     const zoneOf = (t: TravelFind) => {
       const zs = t.at.map(([x, z]) => Math.max(0, this.zoneAt(x, z)));
-      return zs.length ? (t.all ? Math.max(...zs) : Math.min(...zs)) : 0;
+      return zs.length ? (all(t) ? Math.max(...zs) : Math.min(...zs)) : 0;
     };
     // a kind found in more than one place (two bus routes) opens with the first of them
     const first = new Map<TravelKind, number>();
     for (const t of found) first.set(t.kind, Math.min(first.get(t.kind) ?? Infinity, zoneOf(t)));
+    // each kind opens with the zone it's in, from the second zone on (the tutorial keeps to walking)
+    if (this.cut !== "streets") {
+      for (const [kind, k] of first) this.travel.set(kind, SLOTTED.includes(kind) ? Math.min(this.list.length - 1, Math.max(1, k)) : k);
+      return;
+    }
     // the slotted ones in the order the map can have them, then as listed, from the second zone on
     let slot = 1;
     for (const kind of SLOTTED.filter((k) => first.has(k)).sort((a, b) => first.get(a)! - first.get(b)! || SLOTTED.indexOf(a) - SLOTTED.indexOf(b))) {
@@ -403,6 +606,27 @@ export class Zones {
       }
     }
     return out;
+  }
+
+  /** For ?zonemap: every zone's cells as runs along a row [x0, z0, x1, z1, zone], and the edges between zones, scene coordinates. */
+  everyZone(): { cells: number[][]; lines: number[][]; start: number[] } {
+    const cells: number[][] = [], lines: number[][] = [], c = this.c;
+    for (let j = 0; j < this.ny; j++) {
+      let run = -1;
+      for (let i = 0; i <= this.nx; i++) {
+        const g = i < this.nx ? this.at(i, j) : -1, was = run >= 0 ? this.at(run, j) : -1;
+        if (run >= 0 && g !== was) { cells.push([this.x0 + run * c, -(this.y0 + (j + 1) * c), this.x0 + i * c, -(this.y0 + j * c), was]); run = -1; }
+        if (g >= 0 && run < 0) run = i;
+        if (g < 0) continue;
+        const X = this.x0 + i * c, Y = this.y0 + j * c;
+        if (this.at(i + 1, j) !== g) lines.push([X + c, -Y, X + c, -(Y + c)]);
+        if (this.at(i, j + 1) !== g) lines.push([X, -(Y + c), X + c, -(Y + c)]);
+        if (this.at(i - 1, j) < 0) lines.push([X, -(Y + c), X, -Y]);
+        if (this.at(i, j - 1) < 0) lines.push([X + c, -Y, X, -Y]);
+      }
+    }
+    const sp = this.map.d.spawn?.length ? this.map.d.spawn : [[0, 0]];
+    return { cells, lines, start: [sp.reduce((s, p) => s + p[0], 0) / sp.length, -sp.reduce((s, p) => s + p[1], 0) / sp.length] };
   }
 
   private build() {
