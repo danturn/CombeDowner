@@ -991,7 +991,8 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   #hud:has(#compass:not([hidden])) #talkers { top: 50px; }
   #hud:has(#compass:not([hidden])) #where { top: 118px; }
   #bigmap { gap: 6px; padding: 8px; }
-  #bigmap p, #bigmapclose { font-size: 13px; }
+  #bigmap p { font-size: 13px; }
+  #bigmapclose, #bigmapme { font-size: 18px; }
   #bigmapwrap { display: block; }
   #bigmapcanvas { width: min(92vw, calc(100vh - 92px)); height: min(92vw, calc(100vh - 92px)); }
   #mapkey { position: absolute; width: 160px; left: 4px; top: 4px; max-height: calc(100% - 8px); }
