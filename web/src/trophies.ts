@@ -234,7 +234,7 @@ export function visit(set: string, id: string) {
 export interface Grade { tier: 1 | 2 | 3; /** How to say your best at it, and a number to compare it by. */ best?: { v: number; text: string }; also?: string[] }
 
 /** A job (or a mission) of kind has been won: trophies for each tier reached, and your best kept. */
-export function missionResult(kind: string, g: Grade) {
+export function gradeMission(kind: string, g: Grade) {
   for (let t = 1; t <= g.tier; t++) award(`${PREFIX[kind] ?? kind}${t}`);
   for (const id of g.also ?? []) award(id);
   if (g.best) {

@@ -4,10 +4,9 @@
 // mode running, the piece is drawn from a copy of that markup, and pieces.ts says so: that a piece
 // can't be drawn on its own is part of what this page shows.
 import * as MS from "../missionscreens";
-import * as RS from "../racescreens";
 import * as WS from "../wantedscreens";
 import { closeModals } from "../modal";
-import { STREETS, controlsPage, ctlText } from "../controls";
+import { STREETS, controlsPage, ctl, ctlText } from "../controls";
 import { show } from "../show";
 import { pop } from "../pop";
 import { Reveal, type Shot } from "../reveal";
@@ -46,7 +45,7 @@ export function backdrop(kind: string) { $("uiback").className = kind; }
 function clear() {
   clearInterval(hold);
   closeModals();
-  MS.missionClear(); MS.missionCardDrop(); RS.dropSummary(); RS.waiting(null); RS.spectating(null); WS.wantedScreensDown();
+  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null); WS.wantedScreensDown();
   document.querySelectorAll(".msc,.rsc-end,#reveal,.ui-copy,#fj-combo,#fj-call,#trophytoast").forEach((e) => e.remove());
   for (const id of ["usehint", "jobposter", "bunting", "banner", "buscard", "shootcard", "scoreboard", "combo"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("toast").classList.remove("show"); $("toast").textContent = "";
@@ -72,14 +71,14 @@ const feed = (html: string) => { const el = document.createElement("div"); el.in
 
 const LONG = "Get every last one of the tourists' sandwiches back to the benches by the Abbey before the gulls work out where they went";
 const ENTRIES = (o: { title: string; inIt: boolean; n: string[]; left: number; colour?: string; label?: string }) => {
-  RS.waiting({ kind: o.title, head: `Waiting for players<span class="dots"></span>`, count: o.left, sub: `${o.n.length} in: ${o.n.join(", ")}`,
-    small: o.inIt ? "You're in" : `<b>${RS.control("use")}</b> to join in` });
+  MS.missionWaiting({ kind: o.title, head: `Waiting for players<span class="dots"></span>`, count: o.left, sub: `${o.n.length} in: ${o.n.join(", ")}`,
+    small: o.inIt ? "You're in" : `<b>${ctl("use")}</b> to join in` });
   MS.missionProgress({ id: "job", label: o.label ?? "Race", colour: o.colour ?? "#3ec7e8", goal: o.title,
     hint: o.inIt ? `<b class="clue">You're in</b> · starting in ${o.left} s` : `<b class="clue">Entries open</b>: <b>{use}</b> to join in · ${o.left} s`,
     sub: `${o.n.length} in: ${o.n.join(", ")}`, bar: 1 - o.left / 15 });
 };
 
-const STOPS: WS.PosterInfo["stops"] = [{ label: "the Hadley Arms", kind: "pub", now: true }, { label: "Firs Field", kind: "park", now: false }, { label: "the bus stop on Church Road", kind: "bus", now: false }];
+export const STOPS: WS.PosterInfo["stops"] = [{ label: "the Hadley Arms", kind: "pub", now: true }, { label: "Firs Field", kind: "park", now: false }, { label: "the bus stop on Church Road", kind: "bus", now: false }];
 let juice: FlagJuice | null = null;
 const fj = () => (juice ??= new FlagJuice(new THREE.Scene(), { ground: () => 0, solo: () => true })) as any;
 
@@ -87,24 +86,19 @@ const DRAW: Record<string, Record<string, () => void>> = {
   entries: {
     "Entries open": () => ENTRIES({ title: "BMX climb to Moorlands Recreation Playground", inIt: false, n: ["Ann", "Bo"], left: 11 }),
     "You're in": () => ENTRIES({ title: "Seagull Attack", label: "Seagull Attack", colour: "#8fd0f0", inIt: true, n: ["You", "Ann", "Bo", "Cy"], left: 6 }),
-    "Lining up": () => RS.waiting({ kind: "The Lock Run", head: `Lining up<span class="dots"></span>`, sub: "3 in: You, Ann, Bo" }),
+    "Lining up": () => MS.missionWaiting({ kind: "The Lock Run", head: `Lining up<span class="dots"></span>`, sub: "3 in: You, Ann, Bo" }),
     "Long title": () => ENTRIES({ title: "Daily race: trolley dash to the Kingsmead Square fountain and back round the Abbey", inIt: false, n: ["Ann", "Bo", "Cy", "Dee", "Ed", "Flo"], left: 3 }),
   },
   title: {
-    Job: () => MS.missionStart({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack", goal: "Keep the sandwiches out of the gulls' beaks for 5 waves", detail: "At Firs Field" }),
-    "Long goal": () => MS.missionStart({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack: the hen do", goal: LONG, detail: "At the benches by the Abbey" }),
-    Race: () => MS.missionStart({ label: "Race", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", goal: "Race through every checkpoint and over the line first", detail: "3 in: You, Ann, Bo", best: "silver" }),
-    Wanted: () => MS.missionStart({ label: "Wanted", colour: "#e04848", title: "Wanted: the Duke of Disorder", goal: "Catch him and cuff him. Lose him three times and he's gone", detail: "At the Hadley Arms" }),
-    "Challenge, with a best": () => MS.missionStart({ label: "Challenge", colour: "#3a8fd8", title: "The Lock Run", goal: "Take the boat down the flight with its barrels", detail: "At Bath Locks", best: "4 barrels" }),
-    Bonfire: () => MS.missionStart({ title: "Get Wood", goal: "Build Kingswood's bonfire: 25 bundles on the pile", detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: "#ff9a3c" }),
-    "Long, two-line title": () => MS.missionStart({ label: "Challenge", colour: "#f2c318", title: "Push the Bus all the way up Horsecombe Vale", goal: "Push the bus to the top of the hill: {use} at its back, then {heave} on every HEAVE! Miss the heaves and it rolls back", detail: "At the bottom of Horsecombe Vale" }),
+    Job: () => MS.missionBegin({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack", goal: "Keep the sandwiches out of the gulls' beaks for 5 waves", detail: "At Firs Field" }),
+    "Long goal": () => MS.missionBegin({ label: "Seagull Attack", colour: "#8fd0f0", title: "Seagull Attack: the hen do", goal: LONG, detail: "At the benches by the Abbey" }),
+    Race: () => MS.missionBegin({ label: "Race", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", goal: "Race through every checkpoint and over the line first", detail: "3 in: You, Ann, Bo", best: "silver" }),
+    Wanted: () => MS.missionBegin({ label: "Wanted", colour: "#e04848", title: "Wanted: the Duke of Disorder", goal: "Catch him and cuff him. Lose him three times and he's gone", detail: "At the Hadley Arms" }),
+    "Challenge, with a best": () => MS.missionBegin({ label: "Challenge", colour: "#3a8fd8", title: "The Lock Run", goal: "Take the boat down the flight with its barrels", detail: "At Bath Locks", best: "4 barrels" }),
+    Bonfire: () => MS.missionBegin({ title: "Get Wood", goal: "Build Kingswood's bonfire: 25 bundles on the pile", detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: "#ff9a3c" }),
+    "Long, two-line title": () => MS.missionBegin({ label: "Challenge", colour: "#f2c318", title: "Push the Bus all the way up Horsecombe Vale", goal: "Push the bus to the top of the hill: {use} at its back, then {heave} on every HEAVE! Miss the heaves and it rolls back", detail: "At the bottom of Horsecombe Vale" }),
   },
-  count: Object.fromEntries([["3", 3], ["2", 2], ["1", 1], ["GO!", 0]].map(([k, n]) => [k, () => keep(() => RS.countdown(n as number), 800)])),
-  wsplash: {
-    "At GO": () => WS.wantedSplash({ title: "Wanted: the Duke of Disorder", stops: STOPS, goes: { left: 3, of: 3 }, clock: "15:00 on the clock · ★★",
-      rules: ["He's on your map. Get close and he legs it", "Catch him and cuff him (<b>{use}</b>)", "Three goes: lose him three times and he's gone for good"], again: "<b>{job}</b>: this poster again, any time" }),
-    "Poster again (job key)": () => WS.wantedPoster({ title: "Wanted: the Duke of Disorder", stops: STOPS.map((s, i) => ({ ...s, now: i === 1 })), goes: { left: 2, of: 3 }, foot: "<b>12:03</b> left" }),
-  },
+  count: Object.fromEntries([["3", 3], ["2", 2], ["1", 1], ["GO!", 0]].map(([k, n]) => [k, () => keep(() => MS.missionCountdown(n as number), 800)])),
   tstart: {
     "Bus driver": () => toast("You're on the 2: Combe Down to the city centre and back. Follow the green line, and stop for anyone waiting"),
     "Pub takeover call": () => { toast("The Flag Lads have taken over The Hadley Arms! Follow the purple marker and clear them out"); feed("📞 The Flag Lads have taken over <b>The Hadley Arms</b>, 400 m north"); },
@@ -122,7 +116,6 @@ const DRAW: Record<string, Record<string, () => void>> = {
     Long: () => toast("Oh no. The cats. ALL the cats. Run! Get 120 m away and they'll give up"),
     "With a key": () => toast("A ladder! Face a building and press {ride} to put it up to the roof"),
   },
-  wcall: { "He got away": () => keep(() => WS.wantedCallout("He got away!", "2 goes left. He's off to Firs Field: he's on your map", 30), 25000) },
   rflash: {
     "Checkpoint split": () => copy(`Checkpoint 2 of 4 · 0:41.2 · <span style="color:#58e06a">-1.3</span>`, "position:fixed;left:50%;transform:translateX(-50%);top:calc(50% + 48px);pointer-events:none;z-index:5;text-align:center;font:800 22px 'Barlow Condensed',Impact,sans-serif;text-shadow:0 1px 3px #000;color:#fff"),
     Hurry: () => copy(`Hurry! 8 s to checkpoint 3`, "position:fixed;left:50%;transform:translateX(-50%);top:calc(50% + 48px);pointer-events:none;z-index:5;text-align:center;font:800 22px 'Barlow Condensed',Impact,sans-serif;text-shadow:0 1px 3px #000;color:#ffb02e"),
@@ -169,7 +162,7 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Plenty of time": () => copy(`<div style="font-size:clamp(34px,10vw,58px);color:#fff">0:24</div><div style="font-size:clamp(12px,3.4vw,16px);color:#cde">CHECKPOINT 3</div>`, TIMER),
     "Running out": () => copy(`<div style="font-size:clamp(34px,10vw,58px);color:#ff5a4e">0:07.4</div><div style="font-size:clamp(12px,3.4vw,16px);color:#cde">CHECKPOINT 3</div>`, TIMER),
   },
-  spec: { Standings: () => RS.spectating({ head: "Finished", sub: "2nd, 1:23.4", small: "Watching Bo · ◀ ▶ to switch", rows: [{ name: "Ann", time: "1:20.1" }, { name: "You", time: "1:23.4", me: true }, { name: "Bo", time: "riding", watch: true }], many: true }) },
+  spec: { Standings: () => MS.missionWatching({ head: "Finished", sub: "2nd, 1:23.4", small: "Watching Bo · ◀ ▶ to switch", rows: [{ name: "Ann", time: "1:20.1" }, { name: "You", time: "1:23.4", me: true }, { name: "Bo", time: "riding", watch: true }], many: true }) },
   feed: { "Three lines": () => { feed(`<b style="color:#ffd84a">Ann</b> took on a job: <b style="color:#8fd0f0">Seagull Attack</b>`); feed(`<b>The Hadley Arms</b> won back from the Flag Lads`); feed(`Bo fell: the team's down to 2 lives`); } },
   use: {
     "Take the job": () => show($("usehint"), ctlText("<b>{use}</b> Take the job"), true),
@@ -183,17 +176,11 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Done today": () => poster("Race · ★★☆", "#3ec7e8", "BMX climb to Moorlands Recreation Playground", "Up the hill on a BMX, through every checkpoint.", "A traffic cone for your head", "Done today"),
   },
   end: {
-    "Job done": () => MS.missionEnd({ result: "complete", title: "Job done!", lines: ["Seagulls seen off! 7 of 9 bites saved ★★☆, score 340"], colour: "#8fd0f0" }),
-    "Job failed": () => MS.missionEnd({ result: "failed", title: "Job failed", lines: ["It got away from you, back down Horsecombe Vale and smashed into a car"], colour: "#f2c318" }),
-    "Called off": () => MS.missionEnd({ result: "failed", title: "Job called off", lines: ["Ann called it off"] }),
-    "Place and rows": () => MS.missionEnd({ result: "complete", title: "Bonfire built!", big: MS.placeWord(1), lines: ["1:23.4", "Kingswood's bonfire is ready"], medal: "Gold", best: "NEW BEST! 2.1 s quicker", rows: [{ name: "You", time: "1:23.4", colour: "#fff", me: true }, { name: "Ann", time: "1:25.0", colour: "#fff", me: false }] }),
-    "Long title": () => MS.missionEnd({ result: "complete", title: "The whole team stood on top of the crag together, every one of them", lines: ["Three lives to spare, and nobody carried up the last ledge. The Climb is done for today: a strange thing has turned up where you finished"] }),
-  },
-  summary: {
-    Gold: () => RS.summary({ kind: "BMX climb to Moorlands Recreation Playground", title: "Winner!", place: 1, time: "1:18.6", medal: "gold", lines: ["1.4 s inside gold", "Your best: 1:18.6"], best: "NEW BEST! 2.1 s quicker", stats: [{ k: "Top speed", v: "31 km/h" }, { k: "Boosts", v: "3" }], rows: [{ name: "You", time: "1:18.6", me: true }, { name: "Ann", time: "1:22.0" }, { name: "Bo", time: "–", dnf: true }], reward: "A traffic cone for your head · 2 prizes at the finish" }, () => {}),
-    "Did not finish": () => RS.summary({ kind: "Trolley dash to The Porter", title: "Out of time", dnf: true, time: "2:30.0", medal: "", lines: ["Checkpoint 3 of 5"], stats: [{ k: "Checkpoints", v: "2 / 5" }] }, () => {}),
-    "Wanted: cuffed": () => RS.summary({ kind: "Wanted: the Duke of Disorder", title: "Cuffed!", time: "6:12", medal: "", medalWord: "Caught", lines: ["You cuffed him first go"], stats: [{ k: "Goes left", v: "3/3" }, { k: "Stars", v: "★★" }], reward: "2 prizes and a pogo stick", colour: "#e04848" }),
-    "Wanted: got away": () => RS.summary({ kind: "Wanted: the Duke of Disorder", title: "He got away", dnf: true, time: "15:00", medal: "", medalWord: "Escaped", lines: ["He slipped away for good"], stats: [{ k: "Goes left", v: "0/3" }], colour: "#e04848" }),
+    "Job done": () => MS.missionResult({ result: "won", title: "Job done!", lines: ["Seagulls seen off! 7 of 9 bites saved ★★☆, score 340"], colour: "#8fd0f0" }),
+    "Job failed": () => MS.missionResult({ result: "lost", title: "Job failed", lines: ["It got away from you, back down Horsecombe Vale and smashed into a car"], colour: "#f2c318" }),
+    "Called off": () => MS.missionResult({ result: "lost", title: "Job called off", lines: ["Ann called it off"] }),
+    "Place and rows": () => MS.missionResult({ result: "won", title: "Bonfire built!", place: 1, lead: "1:23.4", lines: ["Kingswood's bonfire is ready"], medal: "Gold", best: "NEW BEST! 2.1 s quicker", rows: [{ name: "You", time: "1:23.4", me: true }, { name: "Ann", time: "1:25.0" }] }),
+    "Long title": () => MS.missionResult({ result: "won", title: "The whole team stood on top of the crag together, every one of them", lines: ["Three lives to spare, and nobody carried up the last ledge. The Climb is done for today: a strange thing has turned up where you finished"] }),
   },
   sheet: {
     Pass: () => MS.missionSheet({ kind: "Driving test report · test 1 of 3", title: "The Driving Test", who: "Candidate: You · Examiner: Mr Pratt", stamp: "PASS", good: true, sections: [{ head: "Minor faults: 2", lines: ["Too far from the kerb", "Late signal"] }, { head: "Serious", lines: [] }, { head: "Dangerous", lines: [] }], foot: "Two minors. Well driven." }),
