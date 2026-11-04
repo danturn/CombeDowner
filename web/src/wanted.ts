@@ -17,9 +17,10 @@
 // with his pub on it: he's mode 1 (on foot), 2 (a scooter) or 3 (his van), and the further he went,
 // the quicker he is now.
 //
-// It opens with a big splash (wantedscreens.ts): the poster with his round of stops, the goes and how
-// to catch him. The job control (or the big map) brings the poster back.
-// While he's running, his puff is on the bar across the top of the screen. The end is a results card.
+// It opens with the shared title card and a note that the job control (or the big map) brings up
+// his poster (wantedscreens.ts): his round of stops, the goes and how to catch him.
+// While he's running, his puff is on the bar across the top of the screen. The end is the shared
+// result card (missionscreens.ts) in the poster's red.
 //
 // Who decides what: the poster comes from the day's seed (quests.ts), so everyone has the same one,
 // and so does his gang's kit. The host runs him and his mates, decides when he runs, how much puff he has
@@ -31,8 +32,9 @@
 // never starts a chase in one. Once he's on the run, anything goes.
 import * as SFX from "./audio";
 import { NAUGHTY, CRICKET, RUGBY, SOCIETY, look } from "./naughtyboys";
-import { summary } from "./racescreens";
-import { wantedCallout, wantedPoster, wantedScreensDown, wantedSplash } from "./wantedscreens";
+import { ctlText } from "./controls";
+import { missionCall, missionResult } from "./missionscreens";
+import { wantedPoster, wantedScreensDown } from "./wantedscreens";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { inSafeZone } from "./safezones";
@@ -66,6 +68,11 @@ const CHASE_MAX = 120;      // and no chase lasts longer than this
 const BRING = 250;          // he and his mates turn up at his stop when someone's this close
 const VANISH = 400;         // and go back out of sight when nobody is, till he's running
 const DWELL_EVERY = 12;     // seconds between the things he says at a stop
+const RULES = [
+  `<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.`,
+  `<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.`,
+  `<b>Three goes.</b> Fall too far behind and he's off to his next stop. Lose him three times and he's gone.`,
+];
 const POSTER_UP = 14;       // seconds the poster stays up when it's asked for
 const HP = 100000;          // he can't be shot down: he has to be caught
 const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
@@ -200,7 +207,7 @@ class Wanted implements Job {
     // the Chronicle (up for a while when you join, or on Tab) would sit on top of it: it waits its turn
     if (!this.splashed && (!paperUp() || (this.splashWait += dt) > 25)) { this.splashed = true; this.showSplash(); }
     if (this.posterT > 0) this.posterT -= dt;
-    wantedPoster(this.posterT > 0 && this.w.me().alive ? { ...this.posterInfo(), foot: `<b>${clock(Math.max(0, this.left))}</b> left` } : null);
+    wantedPoster(this.posterT > 0 && this.w.me().alive ? { ...this.posterInfo(), rules: RULES, foot: `<b>${clock(Math.max(0, this.left))}</b> left` } : null);
   }
 
   private posterInfo() {
@@ -211,25 +218,15 @@ class Wanted implements Job {
     };
   }
 
-  /** The big card as the bounty starts. */
+  /** As the bounty starts: the title card has said what it is, so just where the poster is. */
   private showSplash() {
-    wantedSplash({
-      ...this.posterInfo(),
-      clock: `${clock(LIMIT)} on the clock · ${"★".repeat(this.offer.stars)}`,
-      rules: [
-        `<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.`,
-        `<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.`,
-        `<b>Three goes.</b> Fall too far behind and he's off to his next stop. Lose him three times and he's gone.`,
-      ],
-      again: `<b>{job}</b>: this poster again, any time`,
-    });
+    missionCall({ tier: "note", text: ctlText("{job}: the Wanted poster, with his round and how to catch him"), secs: 4 });
   }
 
   /** The job control: the poster again, or away again. */
   recall() {
     if (this.done) return false;
     this.posterT = this.posterT > 0 ? 0 : POSTER_UP;
-    if (this.posterT > 0) wantedSplash(null);
     return true;
   }
 
@@ -423,12 +420,12 @@ class Wanted implements Job {
   /** The results card: how it ended, how long it took. */
   private results(won: boolean, by: string) {
     wantedScreensDown();
-    summary({
-      kind: `Wanted · ${this.d.title}`, title: won ? "Cuffed!" : "He got away", dnf: !won, time: clock((Date.now() - this.started) / 1000),
-      medal: won ? ["", "bronze", "silver", "gold"][GOES - this.goes] : "", medalWord: won ? "Caught" : "Escaped",
+    missionResult({
+      result: won ? "won" : "lost", kind: "wanted", label: `Wanted · ${this.d.title}`, title: won ? "Cuffed!" : "He got away", lead: clock((Date.now() - this.started) / 1000),
+      medal: won ? "Caught" : "Escaped",
       lines: [won ? `${this.who(by)} cuffed him${this.goes ? ` after he'd got away ${this.goes === 1 ? "once" : "twice"}` : " first go"}` : "He slipped away for good"],
       stats: [{ k: "Goes left", v: `${GOES - this.goes}/${GOES}` }, { k: "Stars", v: "★".repeat(this.offer.stars) }],
-      reward: won ? this.offer.reward : undefined,
+      rewards: won ? [this.offer.reward] : [],
       colour: COLOUR,
     });
   }
@@ -452,7 +449,7 @@ class Wanted implements Job {
           this.markT = 0;
           SFX.clunk();
           const left = GOES - this.goes;
-          wantedCallout("He got away!", `${left} ${left > 1 ? "goes" : "go"} left. He's off to ${esc(this.haunt.label)}: he's on your map`);
+          missionCall({ text: "He got away!", sub: `${left} ${left > 1 ? "goes" : "go"} left. He's off to ${this.haunt.label}: he's on your map`, colour: COLOUR, secs: 5 });
           this.w.feed(`<b style="color:${COLOUR}">${esc(this.d.title)}</b> got away (${left} ${left > 1 ? "goes" : "go"} left)`);
         }
         break;
@@ -470,7 +467,6 @@ class Wanted implements Job {
       case "got": {
         const x = Number(d.x), z = Number(d.z), by = String(d.by ?? from);
         if (this.ring) this.w.naughtyBoys.hands(this.ring.i, this.ring.gen, 2, "It's a fair cop.");
-        SFX.jobStep();
         this.done = { won: true, screen: true, text: `${this.who(by)} cuffed ${this.d.title}. Bounty collected!`, x, z, wear: ["deer"], grade: this.grade() };
         this.w.feed(`${this.feedWho(by)} cuffed <b style="color:${COLOUR}">${esc(this.d.title)}</b>`);
         if (host) for (let k = 0; k <= this.offer.stars; k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), k === 0);

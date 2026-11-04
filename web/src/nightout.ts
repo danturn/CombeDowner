@@ -14,7 +14,8 @@
 // tonight or else the one nearest the night's first deed. When the whole room is within 30 m of the
 // bar (everyone, however many you are; if someone's wandered off, those who came get it when the call
 // runs out after four minutes) the night's card comes up: a front page written from the night's
-// log (paper.ts, missionscreens.ts), and the next night starts from nothing. Only counted things
+// log (paper.ts), the front-page variant of the shared result card (missionscreens.ts), and the next
+// night starts from nothing. The call to the pub gets the shared title card. Only counted things
 // make a night, so a long game of free play never calls last orders.
 //
 // Who decides what: the host. It hears each ending (quests.ts on every screen, invasion.ts through
@@ -24,7 +25,7 @@
 // the pubs won back, the Gaffers who got away) whenever it changes and to anyone who joins, so
 // whoever takes over as host carries the night on. An older page ignores "no" and sees none of it.
 import * as SFX from "./audio";
-import { missionNight } from "./missionscreens";
+import { missionBegin, missionNight } from "./missionscreens";
 import * as Paper from "./paper";
 import type { Invasion } from "./invasion";
 import { compassWord, esc, far, hash, type Job, type Link, type Offer, type Quests, type QuestWorld } from "./quests";
@@ -235,7 +236,12 @@ export class NightOut {
       const e = life(d.e, LAST_LIFE), me = this.w.me(), n = text(d.n, 60);
       this.live.lo = { msg: d, end: now + e * 1000 };
       this.w.mark("@last", { x: d.x, z: d.z }, `Last orders: ${n}`, GOLD);
-      this.said(`Last orders! Everyone to ${n} for one for the road, ${far(Math.hypot(d.x - me.x, d.z - me.z))} ${compassWord(d.x - me.x, d.z - me.z)}. Get the whole room within ${GATHER} m of the bar`, true);
+      const where = `${far(Math.hypot(d.x - me.x, d.z - me.z))} ${compassWord(d.x - me.x, d.z - me.z)}`;
+      SFX.phone();
+      this.w.feed(`\u{1F4DE} ${esc(`Last orders! Everyone to ${n} for one for the road, ${where}`)}`);
+      // the call to the pub starts the night's last mission: it gets the title card (missionscreens.ts)
+      if (this.quests.running && !this.quests.running.done) this.w.toast(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`, 6);
+      else missionBegin({ label: "Night out", colour: GOLD, title: "Last orders!", goal: `Everyone to ${n} for one for the road, ${where}`, detail: `Get the whole room within ${GATHER} m of the bar` });
     } else if (d.k === "lx") {
       this.drop("lo");
       this.said("Last orders came and went with nobody at the bar", false);
@@ -264,7 +270,7 @@ export class NightOut {
     const story = Paper.nightStory(since, pub, away)
       ?? { head: "A night to remember", stand: `The night ended at ${pub}.`, by: "By our night reporter", body: [], items: [] };
     missionNight({ pub, ...story });
-    SFX.jobDone(true);
+    SFX.jobDone(true);   // the front page is quiet itself, so its fanfare is played here
   }
 
   // ---- places ---------------------------------------------------------------------------------------------

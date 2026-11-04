@@ -139,7 +139,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the third time he's gone for good. Quarter of an hour on the clock. More players and he's
   quicker, warier and has more mates. A Gaffer who got away is a Wanted poster too, and quicker
   still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
-  screen) brings the poster back, and it ends on a results card.
+  screen) brings the poster back, and it ends on the result card in the poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
@@ -214,9 +214,14 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   someone's left with the door open and a tape going.
 - **Trophies**: bronze, silver and gold for every kind of job (finish one, then a three-star or silver
   time, then gold), and daft milestones for riding, fighting, pubs, landmarks and wandering about Bath. A
-  "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
+  "Trophy!" slides in when you win one (or is listed on the result card, if a job has just ended). The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Every job, race, challenge and shift ends on the same result card**: a cutting from the Chronicle
+  with the job's own headline, your time or score, and everything you won listed on it (prizes,
+  wardrobe items, trophies, a strange object). Space carries on, E goes again where you can, and it
+  goes by itself after 8 seconds. Notices queue rather than vanish, and the use prompt draws each key
+  as a key cap you can tap on a touch screen.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
   and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept

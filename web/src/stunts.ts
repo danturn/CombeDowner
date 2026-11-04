@@ -1,6 +1,6 @@
 // Stunts: free play on the rides, with nothing to take on. Speed traps stand at the foot of the
 // steepest streets in Bath (one to a street, picked from the roads by how steeply they drop), each a
-// yellow box on a pole: ride through one and it clocks you, against your best there. And a manual
+// yellow box on a pole: go past one, however you're moving, and it clocks you, against your best there. And a manual
 // down Milsom Street is timed, against your longest there. (Big air, grinds and combos are scored
 // by the rides themselves, in ridetricks.ts.) The traps are on the big map, as speed cameras, and on
 // the minimap when you're near one (within a walk, on its rim pointing the way).
@@ -20,12 +20,12 @@ const TRAPS = 16;          // the most speed traps
 const APART = 350;         // metres between them, at least
 const STEEP = 0.08;        // the least a street's drop can be (8 in 100) to have one
 const BUILD = 160;         // built within this far, and taken down past BUILD + 40
-const GATE = 7;            // metres either side of the trap that it clocks
 const CLEAR = 10;          // metres a camera stands from any junction on its road
 const MANUAL = 1;          // seconds on a manual down Milsom Street that count
 const STREET = "Milsom Street";
 
-interface Trap { name: string; x: number; z: number; view?: THREE.Group; cool: number }
+/** ux, uz: the way its road runs, in the scene. reach: how far from the pole the camera sees, to the far kerb and a bit. */
+interface Trap { name: string; x: number; z: number; ux: number; uz: number; reach: number; view?: THREE.Group; cool: number }
 
 const OK = new Set(["residential", "unclassified", "tertiary", "secondary", "primary", "living_street"]);
 
@@ -37,7 +37,7 @@ function groundOf(w: QuestWorld, x: number, z: number) {
 
 /** The foot of the steepest stretch (80 to 200 m) of each steep named street, best first, spread out. */
 function findTraps(w: QuestWorld): Trap[] {
-  const found: { name: string; x: number; z: number; g: number }[] = [];
+  const found: { name: string; x: number; z: number; ux: number; uz: number; reach: number; g: number }[] = [];
   const roads = [...w.map.d.rd, ...w.map.wide?.rd ?? []];
   const ends = roads.filter((r) => !PATHS.has(r.c) && r.p.length > 1).flatMap((r) => [r.p[0], r.p[r.p.length - 1]]);
   for (const r of roads) {
@@ -67,7 +67,7 @@ function findTraps(w: QuestWorld): Trap[] {
     if (out.length >= TRAPS) break;
     if (out.some((o) => o.name === f.name || Math.hypot(o.x - f.x, o.z - f.z) < APART)) continue;
     if (w.map.fieldEdgeBase(f.x, f.z) < 60) continue;
-    out.push({ name: f.name, x: f.x, z: f.z, cool: 0 });
+    out.push({ name: f.name, x: f.x, z: f.z, ux: f.ux, uz: f.uz, reach: f.reach, cool: 0 });
   }
   return out;
 }
@@ -76,7 +76,7 @@ function findTraps(w: QuestWorld): Trap[] {
  *  road until it's CLEAR of every junction on it (the road's own ends and any road ending on its
  *  line), so it's never out in the carriageway or in a side road's mouth. `ends` are the ends of
  *  every road, as [x, y] in data metres. */
-function roadside(r: Road, i: number, ends: number[][]): { x: number; z: number } {
+function roadside(r: Road, i: number, ends: number[][]): { x: number; z: number; ux: number; uz: number; reach: number } {
   const p = r.p, n = p.length, at: number[] = [0];
   for (let k = 1; k < n; k++) at.push(at[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1]));
   const len = at[n - 1];
@@ -97,8 +97,9 @@ function roadside(r: Road, i: number, ends: number[][]): { x: number; z: number 
   const q = point(s);
   const [left, right] = r.pv ?? [PAVE, PAVE];
   const side = left >= right ? 1 : -1, pave = Math.max(left, right);
-  const off = roadHalf(r.c, r.w) + (pave > 0.6 ? 0.4 : 0.6);
-  return { x: q.x - q.uy * off * side, z: -(q.y + q.ux * off * side) };
+  const half = roadHalf(r.c, r.w), off = half + (pave > 0.6 ? 0.4 : 0.6);
+  return { x: q.x - q.uy * off * side, z: -(q.y + q.ux * off * side), ux: q.ux, uz: -q.uy,
+    reach: off + half + Math.min(left, right) + 2 };
 }
 
 /** A speed camera: a yellow box on a grey pole. */
@@ -139,7 +140,7 @@ registerFree({
   update(dt, w) {
     if (dt <= 0) return;
     traps ??= findTraps(w);
-    const me = w.me(), ride = me.alive ? w.riding() : null;
+    const me = w.me();
     // build the traps round you, and take down the ones you've left
     for (const t of traps) {
       const d = Math.hypot(t.x - me.x, t.z - me.z);
@@ -150,14 +151,14 @@ registerFree({
     }
     const was = last;
     last = { x: me.x, y: me.y, z: me.z };
-    if (!was || !ride) { speed = 0; manual = 0; return; }
+    if (!was || !me.alive) { speed = 0; manual = 0; return; }
     const moved = Math.hypot(me.x - was.x, me.z - was.z);
     if (moved > 30) { speed = 0; return; }   // moved to a start line, or respawned
     speed += (moved / dt - speed) * Math.min(1, dt * 6);
-    // through a speed trap: clocked
+    // past a speed trap, on anything and anywhere across its road: clocked
     for (const t of traps) {
-      if (t.cool > 0 || !open(w, t) || Math.hypot(t.x - me.x, t.z - me.z) > GATE + moved) continue;
-      if (segDist(t.x, t.z, was.x, was.z, me.x, me.z) > GATE || speed < 3) continue;
+      if (t.cool > 0 || speed < 3 || !open(w, t) || Math.hypot(t.x - me.x, t.z - me.z) > t.reach + moved) continue;
+      if (!crosses(t, was.x, was.z, me.x, me.z)) continue;
       t.cool = 6;
       const kmh = Math.round(speed * 3.6), b = best("trap-" + t.name);
       note("trap", kmh);
@@ -187,6 +188,14 @@ registerFree({
     last = null;
   },
 });
+
+/** Whether the step from a to b crosses the line across the road at trap t, within its reach. */
+function crosses(t: Trap, ax: number, az: number, bx: number, bz: number) {
+  const sa = (ax - t.x) * t.ux + (az - t.z) * t.uz, sb = (bx - t.x) * t.ux + (bz - t.z) * t.uz;
+  if (sa === sb || (sa > 0) === (sb > 0)) return false;
+  const f = sa / (sa - sb), cx = ax + (bx - ax) * f - t.x, cz = az + (bz - az) * f - t.z;
+  return Math.abs(cx * -t.uz + cz * t.ux) <= t.reach;
+}
 
 /** How far (px, pz) is from the stretch a to b. */
 function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz: number) {

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Combe Downer: the HUD and mission screens</title>
+  <meta name="description" content="Every mission and HUD text piece in Combe Downer, drawn live by the game's own code, to check that they look and read as one game.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=Cinzel:wght@600;800&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap">
+  <script>
+    // This page makes no sound and keeps nothing: the game's modules are loaded as they are, so any
+    // sound they'd make goes into an audio context that can't reach the speakers, speech is dropped,
+    // and anything they'd save (a trophy, today's jobs) goes into a store that's gone when the page is.
+    (function () {
+      var Off = window.OfflineAudioContext;
+      if (Off) {
+        var Silent = function () { return new Off(2, 44100, 44100); };
+        window.AudioContext = Silent; window.webkitAudioContext = Silent;
+      }
+      if (window.speechSynthesis) window.speechSynthesis.speak = function () {};
+      HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
+      var mem = {};
+      var store = {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); }, removeItem: function (k) { delete mem[k]; },
+        clear: function () { mem = {}; }, key: function (i) { return Object.keys(mem)[i] || null; },
+        get length() { return Object.keys(mem).length; },
+      };
+      try { Object.defineProperty(window, "localStorage", { value: store, configurable: true }); } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <script type="module" src="./src/ui/main.ts"></script>
+</body>
+</html>

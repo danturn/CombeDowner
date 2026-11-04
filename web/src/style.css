@@ -527,11 +527,29 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 .panel .bar > div { height: 100%; width: 100%; transition: width 0.15s, background 0.15s; }
 .panel .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), rgba(11, 12, 12, 0.85) calc(10% - 3px) 10%); }
 
-/* The job you're on: the panel is drawn by missionscreens.ts (#mprog) */
+/* Status panels: everything that stays up wears the .panel plate above (a .label, then a big value
+   or a title, a .bar, and an em line under it), coloured by kind through --kc. Each has a fixed
+   slot, and the pieces in a slot stack rather than overlap:
+     top left      the mission panels, one per mission (missionscreens.ts #mstack: the job first,
+                   then a bus shift, a shoot-out or the bonfire), then the Flag Lads' row (#bunting),
+                   which stays up on a job; up to three in all. Who's talking sits above them.
+     top middle    the compass, then one bar at a time: a pub's banner going up or a boss's health.
+     top right     the minimap and the feed under it.
+     bottom left   health, with the watch over it and a boost under the watch.
+     bottom right  rounds, or the vehicle and its speed in their place (#drive): never both.
+     bottom middle the street name, and the arrivals line over it.
+     the middle    a title or stage band over the crosshair, the use prompt under it, then one
+                   row per meter in the slot under that (missionscreens.ts #maux), then score pops
+                   (notice.ts trick) over the Flag Lads' combo.
+   On a touch screen the top-left slot joins the left column (#lstack, below) and the bottom
+   corners keep clear of the buttons. */
+#mstack { position: absolute; left: 16px; top: 64px; width: min(320px, calc(100vw - 230px)); }
+#hud:has(#compass:not([hidden])) #mstack { top: 96px; }
+#mstack > #bunting { position: relative; left: auto; right: auto; top: auto; bottom: auto; width: auto; }
 @keyframes cardflash { 50% { box-shadow: 0 0 0 3px var(--accent), 0 0 28px var(--accent); } }
 /* the Flag Lads meter, under the minimap, and what to do next */
 /* (each panel keeps 16px under its words: its double yellow lines are drawn there) */
-#bunting { top: 204px; bottom: auto; right: 16px; width: 180px; padding: 5px 10px 16px; }
+#bunting { top: 204px; bottom: auto; right: 16px; width: 180px; padding: 5px 10px 16px; box-sizing: border-box; }
 #bunting .label { letter-spacing: 0.1em; margin: 0; }
 #bunting .label b { color: #ff4a52; }
 #bunting .bar { height: 6px; margin-top: 3px; }
@@ -552,7 +570,6 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 #bunting .downs { float: right; display: inline-block; color: #fff; letter-spacing: 0; }
 #bunting.tick .downs { animation: bunting-tick 0.22s ease-out; }
 @keyframes bunting-tick { from { transform: scale(1.5); color: #ffd84a; } to { transform: scale(1); } }
-#hud:has(#bunting:not([hidden])) #feed { top: 262px; }
 /* A job's poster, read at its noticeboard: pinned up below the crosshair */
 #jobposter {
   position: absolute; left: 50%; top: calc(50% + 78px); transform: translateX(-50%) rotate(-1deg); width: min(360px, calc(100vw - 32px));
@@ -642,22 +659,10 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 #windarrow { display: inline-block; font-size: 22px; line-height: 1; color: #bfe3ff; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
-/* Driving a bus on the 2 or the 4 (busdriver.ts): the route, the next stop and who's on, over the speedo */
-#shootcard { left: 50%; top: 64px; bottom: auto; transform: translateX(-50%); text-align: center; max-width: calc(100vw - 32px); padding: 6px 14px 16px; }
-#shootcard b { display: block; font-family: var(--f-hud); font-size: 20px; letter-spacing: 0.04em; }
-#shootcard em { display: block; font-style: normal; color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
-#shoothint { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; max-width: calc(100vw - 32px); pointer-events: none; }
+/* the keeper's prompt in a shoot-out: the use prompt's look (useprompt.ts), lower down, clear of the ball */
+#shoothint { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); background: var(--panel); padding: 5px 14px 4px;
+  font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; max-width: calc(100vw - 32px); pointer-events: none; }
 #shoothint[hidden] { display: none; }
-#buscard { right: 18px; bottom: 132px; width: min(290px, calc(100vw - 260px)); padding-bottom: 18px; }
-#buscard .label { letter-spacing: 0.12em; color: #7fe08f; }
-#buscard .bustitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
-#buscard .busline { font-size: 15px; line-height: 1.3; }
-#buscard .busline b { color: var(--accent); }
-#buscard .bussign { display: inline-block; margin: 5px 0 2px; padding: 2px 8px; background: #d6283a; color: #fff; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; animation: bus-stopping 1s steps(2) infinite; }
-@keyframes bus-stopping { 50% { background: #7a1620; } }
-#buscard .busstat { color: var(--muted); font-size: 13px; margin-top: 4px; }
-#buscard em { display: block; font-size: 16px; line-height: 1.3; margin-top: 5px; color: #fff; }
-#buscard.fresh { animation: cardflash 0.7s ease-in-out 2; }
 
 /* Driving: the vehicle and its speed where the rounds usually are, clear of the car; and the prompt to get in */
 #drive { right: 18px; text-align: right; min-width: 170px; max-width: min(330px, calc(100vw - 260px)); }
@@ -941,10 +946,8 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
   #limit { width: 32px; height: 32px; border-width: 5px; font-size: 15px; vertical-align: 4px; }
-  #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
-  #hud:has(#mprog:not([hidden])) #buscard { top: 190px; }
-  #buscard .bustitle { font-size: 17px; }
-  #buscard .busline, #buscard em { font-size: 13px; }
+  #mstack { top: 54px; left: 8px; width: min(240px, calc(100vw - 170px)); }
+  #hud:has(#compass:not([hidden])) #mstack { top: 50px; }
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
@@ -968,7 +971,6 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   #banner em { font-size: 11px; }
   #bunting .label { display: block; font-size: 11px; }
   #bunting em { font-size: 11px; }
-  #hud:has(#bunting:not([hidden])) #feed { top: 214px; }
   #topleft { font-size: 13px; }
   #talkers { top: 14px; font-size: 13px; }
   #notices { bottom: 22px; font-size: 14px; }
@@ -993,13 +995,20 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   left: calc(10px + var(--sl)); top: 56px; width: var(--col); max-height: calc(100% - 56px - 64px); overflow: hidden;
 }
 #hud:has(#touch:not([hidden])) #lstack > * { position: static; transform: none; margin: 0; max-width: 100%; box-sizing: border-box; }
-#hud:has(#touch:not([hidden])) #lstack > .panel, #hud:has(#touch:not([hidden])) #lstack > #mprog { width: 100%; }
+#hud:has(#touch:not([hidden])) #lstack > .panel, #hud:has(#touch:not([hidden])) #mstack { width: 100%; }
 #hud:has(#touch:not([hidden])) #where { font-size: 12px; padding: 4px 10px 3px; margin-bottom: 10px; overflow: hidden; text-overflow: ellipsis; }
 #hud:has(#touch:not([hidden])) #where::after { bottom: -8px; height: 5px; background: linear-gradient(var(--lines) 0 2px, transparent 2px 3px, var(--lines) 3px 5px); }
 #hud:has(#touch:not([hidden])) #feed { justify-items: start; font-size: 14px; }
 #hud:has(#touch:not([hidden])) #talkers { font-size: 13px; }
 #hud:has(#touch:not([hidden])) #bunting { padding: 4px 9px 16px; }
-#hud:has(#touch:not([hidden])) #bunting em, #hud:has(#touch:not([hidden])) #mprog em { font-size: 12px; }
+#hud:has(#touch:not([hidden])) #mstack em { font-size: 12px; }
+/* the prompt wraps between the left column and the buttons rather than running under either */
+#hud:has(#touch:not([hidden])) #usehint { white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 2 * var(--col) - 40px); }
+/* on a short screen the slot's second and third rows say only what they are, so the Flag Lads' row isn't cut off */
+@media (max-height: 500px) {
+  #hud:has(#touch:not([hidden])) #mstack > .mprog ~ .mprog :is(.jobline, em, .bar) { display: none; }
+  #hud:has(#touch:not([hidden])) #mstack > .mprog ~ #bunting em + em { display: none; }
+}
 #hud:has(#touch:not([hidden])) #touch > #t-pause.tbtn { left: calc(10px + var(--sl)); top: 6px; transform: none; width: 42px; height: 42px; }
 #hud:has(#touch:not([hidden])) #np, #hud:has(#touch:not([hidden])):has(#compass:not([hidden])) #np { left: auto; right: calc(16px + var(--sr)); top: 206px; transform: none; }
 

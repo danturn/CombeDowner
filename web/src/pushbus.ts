@@ -58,6 +58,8 @@ import { ctl } from "./controls";
 import { carShape, trafficMake } from "./makes";
 import { type GameMap, roadHalf } from "./map";
 import { Figure, look, NAUGHTY } from "./naughtyboys";
+import { missionAux, missionAuxRow } from "./missionscreens";
+import { notice } from "./notice";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, leftInRoad, rng, type Job, type Quarry, type QuestWorld, type Waiting } from "./quests";
 import { contact, SPECS, Vehicle, type VKind } from "./vehicles";
@@ -576,30 +578,32 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
 
   // ---- the count on the screen: who's calling, the word, a sweep across a bar to the heave, and how you did.
   // The bar is what to time to: the pips are only a help, and come late through some headphones
-  const beatEl = document.createElement("div");
-  beatEl.id = "pushbeat";
-  beatEl.style.cssText = "position:fixed;left:50%;top:calc(50% + 84px);transform:translateX(-50%);width:min(340px, calc(100vw - 32px));text-align:center;pointer-events:none;color:#fff;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-shadow:0 2px 3px #000;z-index:6;display:none";
-  beatEl.innerHTML = `<div style="font-size:14px;height:18px;color:${COLOUR}"></div>`
-    + `<div style="font-size:30px;line-height:1.1;height:34px"></div>`
-    + `<div style="position:relative;height:14px;margin:6px 0 4px;background:rgba(0,0,0,0.5);border:2px solid #fff;border-radius:8px;overflow:hidden">`
-    + `<div style="position:absolute;top:0;bottom:0;background:#ff8a3a;opacity:0.75"></div>`
-    + `<div style="position:absolute;top:0;bottom:0;background:${COLOUR};opacity:0.8"></div>`
-    + `<div style="position:absolute;top:0;bottom:0;background:#4dff8e"></div>`
-    + `<div style="position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:#fff"></div>`
-    + `<div style="position:absolute;top:-2px;bottom:-2px;width:6px;margin-left:-3px;background:#fff;border-radius:3px;box-shadow:0 0 6px #000"></div></div>`
-    + `<div style="font-size:17px;height:22px"></div>`;
-  document.body.appendChild(beatEl);
-  const [beatWho, beatWord, beatBar, beatSay] = [...beatEl.children] as HTMLElement[];
-  const zones = [...beatBar.children].slice(0, 3) as HTMLElement[], beatDot = beatBar.children[4] as HTMLElement;
-  let sayT = 0, zoneFor = 0;
-  const flash = (text: string, colour: string, big = false) => {
-    beatSay.textContent = text; beatSay.style.color = colour; beatSay.style.fontSize = big ? "24px" : "17px"; sayT = big ? 1.4 : 0.9;
+  // Both are rows of the shared slot under the crosshair (missionscreens.ts): written once, then
+  // only their words and bars moved, so the sweep doesn't rebuild them every frame.
+  const BEAT_ROW = `<div class="aux-word"></div><div class="aux-big" style="font-size:30px;height:34px;line-height:1.1;text-transform:uppercase"></div>`
+    + `<div class="aux-meter" style="height:14px;margin:6px 0 4px">`
+    + `<i style="background:#ff8a3a;opacity:0.75"></i><i style="background:${COLOUR};opacity:0.8"></i><i style="background:#4dff8e"></i>`
+    + `<i style="left:50%;width:2px;margin-left:-1px;background:#fff"></i>`
+    + `<i style="top:-2px;bottom:-2px;width:6px;margin-left:-3px;background:#fff;border-radius:3px;box-shadow:0 0 6px #000"></i></div>`
+    + `<div class="aux-tag" style="height:22px;font-size:17px"></div>`;
+  const auxRow = (key: string, skeleton: string) => {
+    let r = missionAuxRow(key);
+    if (!r) { missionAux(key, skeleton, COLOUR); r = missionAuxRow(key)!; }
+    if (r.hidden) r.hidden = false;
+    return r;
   };
+  const hideRow = (key: string) => { const r = missionAuxRow(key); if (r && !r.hidden) r.hidden = true; };
+  let sayT = 0, zoneFor = 0, sayText = "", sayCol = "#fff", sayBig = false;
+  const flash = (text: string, colour: string, big = false) => { sayText = text; sayCol = colour; sayBig = big; sayT = big ? 1.4 : 0.9; };
   function drawBeat(dt: number, show: boolean) {
-    beatEl.style.display = show ? "block" : "none";
     if (tjump && touchOn()) { const want = onBus && !inCab ? "Heave" : "Jump"; if (tjump.textContent !== want) tjump.textContent = want; }
-    if (!show) return;
-    if (zoneFor !== period) {
+    if (!show) { hideRow("pushbeat"); return; }
+    const row = auxRow("pushbeat", BEAT_ROW);
+    const [beatWho, beatWord, beatBar, beatSay] = [...row.children] as HTMLElement[];
+    const zones = [...beatBar.children].slice(0, 3) as HTMLElement[], beatDot = beatBar.children[4] as HTMLElement;
+    if (beatSay.textContent !== sayText) beatSay.textContent = sayText;
+    beatSay.style.color = sayCol; beatSay.style.fontSize = sayBig ? "24px" : "17px";
+    if (zoneFor !== period || !zones[0].style.width) {
       zoneFor = period;
       [WINDOW, GOOD, PERFECT].forEach((win, i) => { zones[i].style.left = `${50 - (win / period) * 100}%`; zones[i].style.width = `${(2 * win / period) * 100}%`; });
     }
@@ -617,20 +621,15 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   }
 
   // ---- the cab's panel: only the cab can see how fast it's going and what's coming down the hill
-  const cabEl = document.createElement("div");
-  cabEl.id = "pushcab";
-  cabEl.style.cssText = "position:fixed;right:16px;top:214px;min-width:300px;padding:8px 14px;background:rgba(10,10,12,0.72);border:2px solid #fff;border-radius:8px;pointer-events:none;color:#fff;font-weight:700;text-shadow:0 1px 2px #000;z-index:6;display:none;text-align:center";
-  cabEl.innerHTML = `<div style="font-size:26px;letter-spacing:0.04em"></div>`
+  const CAB_ROW = `<div class="aux-panel"><div class="aux-big" style="font-size:26px;letter-spacing:0.04em"></div>`
     + `<div style="font-size:15px;margin-top:4px"></div>`
-    + `<div style="position:relative;height:8px;margin:4px auto 2px;width:220px;background:rgba(255,255,255,0.15);border-radius:4px;overflow:hidden"><div style="position:absolute;top:0;bottom:0;left:0"></div></div>`
-    + `<div style="font-size:16px;margin-top:6px"></div>`;
-  document.body.appendChild(cabEl);
-  const [cabSpeed, cabBrake, cabHeat, cabAhead] = [...cabEl.children] as HTMLElement[];
-  const cabHeatFill = cabHeat.children[0] as HTMLElement;
+    + `<div class="aux-meter" style="height:8px;width:220px;margin:4px auto 2px;border:0;border-radius:4px;background:rgba(255,255,255,0.15)"><i></i></div>`
+    + `<div style="font-size:16px;margin-top:6px"></div></div>`;
   const setText = (el: HTMLElement, t: string, c = "#fff") => { if (el.innerHTML !== t) el.innerHTML = t; el.style.color = c; };
   function drawCab(show: boolean) {
-    cabEl.style.display = show ? "block" : "none";
-    if (!show) return;
+    if (!show) { hideRow("pushcab"); return; }
+    const [cabSpeed, cabBrake, cabHeat, cabAhead] = [...auxRow("pushcab", CAB_ROW).children[0].children] as HTMLElement[];
+    const cabHeatFill = cabHeat.children[0] as HTMLElement;
     if (Math.abs(v) < 0.05) setText(cabSpeed, hb ? "HELD" : "STOOD STILL", "#ffe08a");
     else if (v > 0) setText(cabSpeed, `&#9650; UP ${v.toFixed(1)} m/s`, "#8ef08e");
     else setText(cabSpeed, `&#9660; ROLLING BACK ${(-v).toFixed(1)} m/s`, v < GRIP * 0.6 ? "#ff5a4a" : "#ff9a8a");
@@ -1028,7 +1027,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       }
       if (mode === 4 && !job.done && (settleT += dt) >= SETTLE) {
         const how = wet ? "and into the water" : struck === "car" ? "and smashed into a car" : struck === "wall" ? "and smashed into a wall" : "all the way to the bottom";
-        job.done = { won: false, text: `It got away from you, back down ${hill.name} ${how}`, x: bus.x, z: bus.z };
+        job.done = { won: false, title: "It got away from you", text: `It got away from you, back down ${hill.name} ${how}`, x: bus.x, z: bus.z };
       }
       return;
     }
@@ -1106,7 +1105,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
 
   // ---- the job ---------------------------------------------------------------------------------
   w.mark("@challenge", { x: hill.pts[0][0], z: hill.pts[0][1] }, "The broken-down bus", COLOUR);
-  w.toast(`The bus has broken down at the bottom of ${hill.name}`, 4);
+  notice({ tier: "note", text: `The bus has broken down at the bottom of ${hill.name}`, secs: 4 });
   const routeLine = { pts: hill.pts.flatMap((p) => [p[0], p[1]]), gates: [] as number[], colour: COLOUR };
 
   const job: Job = {
@@ -1323,7 +1322,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       else if (d.k === "won" && !job.done) {
         mode = 3;
         const t = hill.pts[hill.pts.length - 1];
-        job.done = { won: true, text: `You pushed the bus all the way up ${hill.name}`, x: t[0], z: t[1] };
+        job.done = { won: true, title: "All the way up!", text: `You pushed the bus all the way up ${hill.name}`, x: t[0], z: t[1] };
       }
     },
     progress: () => state(),
@@ -1443,8 +1442,8 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     route: () => (job.done ? null : routeLine),
     end() {
       ac.abort();
-      beatEl.remove();
-      cabEl.remove();
+      missionAux("pushbeat", null);
+      missionAux("pushcab", null);
       w.scene.remove(hands);
       if (self) w.scene.remove(self.root);
       armGeo.dispose(); handGeos.forEach((g) => g.dispose()); sleeve.dispose(); shade.dispose(); skin.dispose();
@@ -1572,7 +1571,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   // for checking the beat's sync in a test room: where this screen's beat is, and (on the host) its own
   (window as unknown as Record<string, unknown>).__pushbus = () => {
     const b = pose();
-    return { ph, hph, period, n: wraps, host: w.isHost, caller, heat, hb, v, s, mode, onBus, inCab, oneWay, rear: rearOf(b), front: frontOf(b), fx: b.fx, fz: b.fz, said: beatSay.textContent, slots: [...slots], driver,
+    return { ph, hph, period, n: wraps, host: w.isHost, caller, heat, hb, v, s, mode, onBus, inCab, oneWay, rear: rearOf(b), front: frontOf(b), fx: b.fx, fz: b.fz, said: sayText, slots: [...slots], driver,
       lad: (k: number, i = 0) => { lads[i].kind = k; lads[i].t = 0; }, feel };
   };
   return job;
