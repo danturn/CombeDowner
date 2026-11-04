@@ -17,8 +17,9 @@
 // for it (a Wanted man and his crew) the host runs, through
 // the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
-// The job control (J, a hold of the pad's touchpad, Poster on a touch screen) brings back the
-// running job's own poster, for a job that has one (a Wanted bounty: recall).
+// A job's poster at its noticeboard, its title card and the job control (J, a hold of the pad's
+// touchpad, Poster on a touch screen) are one brief (brief.ts): J brings it back while the job runs,
+// with how it's going written on it and anything of the mode's own (a Wanted bounty's round).
 //
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
@@ -49,14 +50,16 @@ import type { RideKind } from "./rides";
 import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, gradeMission, jobWon } from "./trophies";
-import { show } from "./show";
-import { ctl, ctlText } from "./controls";
-import { esc } from "./hudkit";
+import { ctl, input } from "./controls";
+import { esc, layer } from "./hudkit";
+import { type Brief, briefCut, briefHtml, briefMore } from "./brief";
 import { type MissionResult, missionBegin, missionCall, missionClear, missionProgress, missionResult, missionWaiting } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
 import * as Paper from "./paper";
 import { Lineup, type LineupConfig } from "./lineup";
+
+const RECALL_SECS = 14;     // seconds the brief stays up when J brings it back
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -271,8 +274,8 @@ export interface Job {
   shoot?(q: Quarry, power: number): void;
   /** A boss of the job's own for the boss bar (Big Lad): its name and how much fight is left, 0..1. */
   bossBar?(): { name: string; fill: number } | null;
-  /** The job's poster brought back up (the job control); false if it has none. */
-  recall?(): boolean;
+  /** The job's own piece of its brief when J brings it back (html): a bounty's round of stops. */
+  brief?(): string;
   /** Take down anything the job put up. */
   end(): void;
   /** Backspace: back on the start line for a go of your own. Returns false if it can't. */
@@ -659,6 +662,7 @@ export class Quests {
     }
     if (this.finishT > 0 && (this.finishT -= dt) <= 0) this.clear();
     if (this.ready()) for (const f of free) f.update(dt, this.w);
+    if (this.recallT > 0) this.recallT -= dt;
     this.hud(me);
     this.againButton();
     this.recallButton();
@@ -825,7 +829,7 @@ export class Quests {
   }
 
   private startCard(o: Offer, kind: JobKind) {
-    missionBegin({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind) });
+    missionBegin({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind), ...briefMore(o, kind) });
   }
 
   /** The job you're in, if going off somewhere else would leave it (a race you're riding in, or a
@@ -973,8 +977,13 @@ export class Quests {
   indoors(): boolean { return !!this.job && !!this.job.indoors?.(); }
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
-  /** The job control: the running job's poster again. */
-  recall(): boolean { return !!this.job && !this.job.done && !!this.job.recall?.(); }
+  private recallT = 0;
+  /** The job control: the running job's brief again, or away again. */
+  recall(): boolean {
+    if (!this.job || this.job.done) return false;
+    this.recallT = this.recallT > 0 ? 0 : RECALL_SECS;
+    return true;
+  }
 
   /** On a touch screen, the Poster button, while the running job has one to bring back. */
   private recallButton() {
@@ -986,7 +995,7 @@ export class Quests {
       b.addEventListener("pointerdown", (e) => { e.preventDefault(); this.recall(); });
       touch.appendChild(b);
     }
-    const show = !!this.job && !this.job.done && !!this.job.recall && this.w.me().alive;
+    const show = !!this.job && !this.job.done && this.w.me().alive;
     if (this.posterBtn.hidden === show) this.posterBtn.hidden = !show;
   }
 
@@ -1033,14 +1042,47 @@ export class Quests {
       } else if (!st && this.stageKey === null) this.stageKey = "";
     } else if (!this.lining) missionClear("job");
     const p = this.readingPost();
-    let poster = "";
+    let board: Brief | null = null;
     if (p && this.current?.seed !== p.offer.seed) {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
-      poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
-        + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.current && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "{use} to start it" : `{use} to ${(p.kind.take ?? "Take the job").toLowerCase()}`) : "Step up to take it"}</em>`;
+      board = {
+        label: `${p.kind.label} · ${starText(o.stars)}`, colour: p.kind.colour, title: o.title, blurb: o.blurb, block: p.kind.poster?.(o), reward: o.reward,
+        foot: done ? "Done today" : this.current && !this.local ? "Finish or call off your job first"
+          : this.distTo(p, me.x, me.z) < this.takeReach(p) ? `<b>{use}</b> ${p.kind.challenge ? "Start it" : p.kind.take ?? "Take the job"}` : "Step up to take it",
+      };
     }
-    show($("jobposter"), ctlText(poster), !!poster);
+    this.briefOn($("jobposter"), board && briefHtml("board", board), board?.colour);
+    if (this.recallT > 0 && (!job || job.done || !this.w.me().alive)) this.recallT = 0;
+    let recall: Brief | null = null;
+    if (job && this.recallT > 0) {
+      const o = job.offer, kind = kinds.get(o.kind)!, c = job.card();
+      const live = [c.progress !== undefined && typeof c.progress === "string" ? `<b>${esc(c.progress)}</b>` : "", c.line, c.timer ? `<b>${esc(c.timer)}</b> left` : ""].filter(Boolean).join(" · ")
+        + (c.sub ? `<br>${c.sub}` : "") + (c.bar !== undefined ? `<div class="bar"><i style="width:${Math.round(Math.max(0, Math.min(1, c.bar)) * 100)}%"></i></div>` : "");
+      recall = { label: `${kind.label} · ${starText(o.stars)}`, colour: kind.colour, title: o.title, blurb: o.blurb, block: job.brief?.() ?? kind.poster?.(o), live, reward: o.reward, foot: "<b>{job}</b> Put it away" };
+    }
+    this.briefOn(this.recallEl(), recall && briefHtml("recall", recall), recall?.colour);
+  }
+
+  private written = new WeakMap<HTMLElement, string>();
+  /** Put a brief up in el, or take it down; written only when its words change. */
+  private briefOn(el: HTMLElement, html: string | null, colour?: string) {
+    if (!html) { if (!el.hidden) el.hidden = true; return; }
+    briefCut(el, colour);
+    const touch = input() === "touch";
+    if (el.classList.contains("touch") !== touch) el.classList.toggle("touch", touch);
+    if (this.written.get(el) !== html) { this.written.set(el, html); el.innerHTML = html; }
+    if (el.hidden) el.hidden = false;
+  }
+
+  private recallBox: HTMLDivElement | null = null;
+  private recallEl() {
+    if (!this.recallBox?.isConnected) {
+      this.recallBox = document.createElement("div");
+      this.recallBox.id = "jobrecall";
+      this.recallBox.hidden = true;
+      layer().appendChild(this.recallBox);
+    }
+    return this.recallBox;
   }
 
   dispose() {
@@ -1048,6 +1090,7 @@ export class Quests {
     for (const f of free) f.dispose?.(this.w);
     this.again?.remove();
     this.posterBtn?.remove();
+    this.recallBox?.remove();
     for (const p of this.posts) this.unbuild(p);
   }
 }

@@ -570,22 +570,18 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 #bunting .downs { float: right; display: inline-block; color: #fff; letter-spacing: 0; }
 #bunting.tick .downs { animation: bunting-tick 0.22s ease-out; }
 @keyframes bunting-tick { from { transform: scale(1.5); color: #ffd84a; } to { transform: scale(1); } }
-/* A job's poster, read at its noticeboard: pinned up below the crosshair */
-#jobposter {
-  position: absolute; left: 50%; top: calc(50% + 78px); transform: translateX(-50%) rotate(-1deg); width: min(360px, calc(100vw - 32px));
-  background: #f4ecd4; color: #1b1b1d; padding: 10px 16px 12px; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55); pointer-events: none;
-  border-top: 6px solid #1f4a33;
-}
-#jobposter .label { font: 800 14px var(--f-hud); letter-spacing: 0.16em; text-transform: uppercase; }
-#jobposter .jobtitle { font: 700 22px Georgia, serif; margin: 2px 0 4px; }
-#jobposter p { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
-#jobposter .reward { font-weight: 700; color: #6a4a08; }
-#jobposter em { display: block; font: 800 15px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; color: #1f4a33; }
+/* A job's brief, read at its noticeboard (brief.ts): pinned up below the crosshair. Its foot says
+   what E does, so the use prompt and Click to aim stand down while it's up. */
+#jobposter { position: absolute; left: 50%; top: calc(50% + 26px); transform: translateX(-50%) rotate(-1deg); width: min(400px, calc(100vw - 32px)); pointer-events: none; }
+#hud:has(#jobposter:not([hidden])) :is(#usehint, #clickhint) { visibility: hidden; }
+/* the same brief brought back with J while the job runs */
+#jobrecall { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); width: min(480px, calc(100vw - 32px)); max-height: 84vh; overflow: hidden; pointer-events: none; z-index: 6; }
+#jobrecall[hidden], #jobposter[hidden] { display: none; }
 /* the Chronicle, pinned up on every noticeboard (daily.ts) */
 /* a smaller second line under the prompt, so what E does at the board always shows */
 #paperbtn { position: absolute; left: 50%; top: calc(50% + 74px); transform: translateX(-50%); pointer-events: auto; font: 700 12px var(--f-hud); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 10px 3px; opacity: 0.85; }
 #paperbtn[hidden] { display: none; }
-#hud:has(#paperbtn:not([hidden])) #jobposter { top: calc(50% + 104px); }
+#hud:has(#jobposter:not([hidden])) #paperbtn { top: calc(50% - 66px); }
 
 /* Bendy's health, across the top (under the Now Playing amp) while he's near */
 #boss { top: 92px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 340px)); text-align: center; }
@@ -964,7 +960,8 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   #bigmapclose { padding: 5px 14px 3px; }
   #hud:has(#compass:not([hidden])) #np { display: none; }
   #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
-  #jobposter, #hud:has(#paperbtn:not([hidden])) #jobposter { top: auto; bottom: 140px; font-size: 13px; }
+  #jobposter { top: auto; bottom: 140px; width: min(360px, calc(100vw - 32px)); }
+  #jobrecall { top: 4px; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 8px); }
   #feed { top: 160px; font-size: 15px; }
   #bunting { top: 150px; width: 140px; padding: 3px 8px 16px; }
   #banner { top: 50px; width: min(300px, calc(100vw - 200px)); }

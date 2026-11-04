@@ -15,6 +15,7 @@ import { FlagJuice } from "../flagjuice";
 import { Daily } from "../daily";
 import * as THREE from "three";
 import { PROPOSALS } from "./proposals";
+import { type Brief, briefCut, briefHtml } from "../brief";
 
 const $ = (id: string) => document.getElementById(id)!;
 let hold = 0;          // a timer keeping something that would go by itself on the screen
@@ -49,8 +50,8 @@ function clear() {
   clearInterval(hold);
   closeModals();
   noticeClear();
-  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null); WS.wantedScreensDown();
-  document.querySelectorAll(".msc,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick,.prop,.prop-count,.prop-cap,.prop-map,.prop-tt").forEach((e) => e.remove());
+  MS.missionClear(); MS.missionCardDrop(); MS.missionResultDrop(); MS.missionWaiting(null); MS.missionWatching(null);
+  document.querySelectorAll(".msc,#jobrecall,#reveal,.ui-copy,.ui-slot,#fj-combo,#award,#trick,.prop,.prop-count,.prop-cap,.prop-map,.prop-tt").forEach((e) => e.remove());
   for (const id of ["clickhint", "usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "combo", "touch"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("feed").innerHTML = "";
   $("hud").classList.remove("reveal"); document.body.classList.remove("reveal");
@@ -171,13 +172,17 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Touch key cap": () => { $("touch").hidden = false; usePrompt("<b>{use}</b> Take the job"); $("usehint").classList.add("touch"); $("usehint").querySelector("kbd")!.textContent = "Use"; },
     "Keeper (shoot-out)": () => show($("shoothint"), keycaps("You're in goal: hold {steer} to one side and press {dive} to dive"), true),
   },
-  poster: {
-    Job: () => poster("Seagull Attack · ★★☆", "#8fd0f0", "Seagull Attack", "Tourists on the benches with their sandwiches, and the gulls are circling. Five waves, then Big Lad himself.", "Two prizes and the gull hat", "{use} to take the job"),
-    Challenge: () => poster("Challenge · ★★★", "#3a8fd8", "The Lock Run", "Take the boat down the flight with its barrels, working the paddles and gates as you go.", "Something strange, left where you finish", "{use} to start it"),
-    "Done today": () => poster("Race · ★★☆", "#3ec7e8", "BMX climb to Moorlands Recreation Playground", "Up the hill on a BMX, through every checkpoint.", "A traffic cone for your head", "Done today"),
+  brief: {
+    "Board: job": () => brief("board", { ...GULLS, foot: "<b>{use}</b> Take the job" }),
+    "Board: challenge": () => brief("board", { label: "Challenge · ★★★", colour: "#3a8fd8", title: "The Lock Run", blurb: "Take the boat down the flight with its barrels, working the paddles and gates as you go.", reward: "Something strange, left where you finish", foot: "<b>{use}</b> Start it" }),
+    "Board: done today": () => brief("board", { label: "Race · ★★☆", colour: "#3ec7e8", title: "BMX climb to Moorlands Recreation Playground", blurb: "Up the hill on a BMX, through every checkpoint.", reward: "A traffic cone for your head", foot: "Done today" }),
+    "Board: touch": () => { $("touch").hidden = false; brief("board", { ...GULLS, foot: "<b>{use}</b> Take the job" }, true); },
+    "Title card": () => MS.missionBegin({ label: GULLS.label, colour: GULLS.colour, title: GULLS.title, goal: "Keep the sandwiches out of the gulls' beaks for 5 waves", detail: "At Firs Field", blurb: GULLS.blurb, reward: GULLS.reward }),
+    "Recall (J)": () => { panel.gulls(); brief("recall", { ...GULLS, live: `<b>Wave 2 / 5</b> · 6 gulls about<br>5 of 9 bites left · score 120<div class="bar"><i style="width:56%"></i></div>`, foot: "<b>{job}</b> Put it away" }); },
+    "Recall: Wanted": () => brief("recall", { label: "Wanted · ★★☆", colour: "#e04848", title: "Wanted: the Duke of Disorder", blurb: "Runs with a rugby team gone rogue. Does the rounds of a pub, then a park or square, then a bus stop.",
+      block: WS.wantedBlock({ title: "", stops: STOPS, goes: { left: 2, of: 3 } }, ["<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.", "<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.", "<b>Three goes.</b> Fall too far behind and he's off to his next stop."]),
+      live: `He's at <b>the Hadley Arms</b> · <b>12:03</b> left`, reward: "2 prizes and a skateboard", foot: "<b>{job}</b> Put it away" }),
   },
-  wposter: { Poster: () => WS.wantedPoster({ title: "Wanted: the Duke of Disorder", stops: STOPS, goes: { left: 2, of: 3 }, foot: "<b>12:03</b> left",
-    rules: ["<b>He's on your map.</b> Get close and he legs it: he's quicker than you, but soon out of puff.", "<b>Catch him and cuff him</b> (<b>{use}</b>). A paintball hit winds him.", "<b>Three goes.</b> Fall too far behind and he's off to his next stop."] }) },
   result: {
     "Job done, with rewards": () => MS.missionResult({ result: "won", label: "Seagull Attack", title: "Seagulls seen off!", lead: "340", medal: "★★☆", lines: ["7 of 9 bites saved"], colour: "#8fd0f0", rewards, sound: null }),
     "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null }),
@@ -212,8 +217,16 @@ const DRAW: Record<string, Record<string, () => void>> = {
   },
 };
 
-function poster(label: string, colour: string, title: string, blurb: string, reward: string, foot: string) {
-  show($("jobposter"), ctlText(`<div class="label" style="color:${colour}">${label}</div><div class="jobtitle">${title}</div><p>${blurb}</p><p class="reward">Reward: ${reward}</p><em>${foot}</em>`), true);
+const GULLS = { label: "Seagull Attack · ★★☆", colour: "#8fd0f0", title: "Seagull Attack: Chip Tuesday", blurb: "Tourists on the benches with their sandwiches, and the gulls of Bath want them. Five waves, then Big Lad himself.", reward: "2 prizes, and a seagull for your head for three stars" };
+/** A brief as quests.ts puts it up: on the board (in #jobposter) or brought back with J. */
+function brief(at: "board" | "recall", b: Brief, touch = false) {
+  let el = at === "board" ? $("jobposter") : document.getElementById("jobrecall");
+  if (!el) { el = document.createElement("div"); el.id = "jobrecall"; $("hud").appendChild(el); }
+  briefCut(el, b.colour);
+  el.classList.toggle("touch", touch);
+  el.innerHTML = briefHtml(at, b);
+  if (touch) el.querySelectorAll("kbd[data-ctl]").forEach((k) => { k.textContent = "Use"; });
+  el.hidden = false;
 }
 function revealCard(s: Shot) {
   const r = new Reveal(null as never, () => false) as any;

@@ -60,12 +60,15 @@ export class TouchControls {
     // on a ride: grind a kerb or wall alongside, or hold it for a manual (Shift)
     hold("t-trick", () => (g().player.trickHeld = true), () => (g().player.trickHeld = false));
     // the bus menu's buttons, at a stop; and the prompt's key caps, which are the buttons they name (useprompt.ts)
-    $("usehint").addEventListener("pointerdown", (e) => {
+    const caps = (e: PointerEvent) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-bus]");
       if (b) { e.preventDefault(); e.stopPropagation(); g().callBus(b.dataset.bus as "bus" | "minibus"); return; }
       const cap = (e.target as HTMLElement).closest<HTMLElement>("kbd[data-ctl]")?.dataset.ctl;
       if (cap) { e.preventDefault(); e.stopPropagation(); if (cap === "use") g().useCar(); else if (cap === "ride") g().toggleRide(); }
-    });
+    };
+    $("usehint").addEventListener("pointerdown", caps);
+    // a job's brief at its noticeboard says what E does along its foot, and its key cap is the button (brief.ts)
+    $("jobposter").addEventListener("pointerdown", caps);
     hold("t-pause", onPause);
     hold("t-radio", () => g().voice.radio(true), () => g().voice.radio(false));
   }
