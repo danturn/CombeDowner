@@ -58,6 +58,7 @@ import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
 import * as Paper from "./paper";
 import { Lineup, type LineupConfig } from "./lineup";
+import { named } from "./notice";
 
 const RECALL_SECS = 14;     // seconds the brief stays up when J brings it back
 
@@ -123,7 +124,7 @@ export interface QuestWorld {
   /** Named places (parks, squares, gardens, churchyards...): their middles, scene coordinates. */
   places(): { n: string; x: number; z: number }[];
   send(type: "qe" | "no", data: unknown, to?: string): void;
-  toast(text: string, secs?: number): void;
+  toast(text: string): void;
   feed(html: string): void;
   /** A marker column, compass pip and map pin for a job (id like "@job"), or null to take it down. */
   mark(id: string, at: { x: number; z: number; y?: number } | null, label?: string, colour?: string): void;
@@ -218,7 +219,7 @@ export interface Card {
   /** How far you've got in a few characters ("2 / 5"), and the clock if the job has one. */
   progress?: string; timer?: string;
   /** Where the job has got to (a wave, a checkpoint): when key changes everyone gets a banner. */
-  stage?: { key: string; title: string; sub?: string; colour?: string; life?: number };
+  stage?: { key: string; title: string; sub?: string; colour?: string; went?: "well" | "badly" | "close" };
 }
 
 /** A Gaffer who got away from a pub takeover (invasion.ts) and is the next game day's Wanted poster. how: how he left (naughtyboys.ts MOUNTS). */
@@ -807,7 +808,7 @@ export class Quests {
     if (local) return;
     SFX.jobTaken();
     const who = by === this.w.selfId ? "You" : this.w.nameOf(by);
-    this.w.feed(`<b style="color:${this.w.colourOf(by)}">${esc(who)}</b> took on a job: <b style="color:${kind.colour}">${esc(o.title)}</b>`);
+    this.w.feed(`${named(who, this.w.colourOf(by))} took on a job: ${named(o.title, kind.colour)}`);
   }
 
   /** E while a minigame's entries are open: in, wherever you are. */
@@ -1037,7 +1038,7 @@ export class Quests {
       });
       const st = c.stage;
       if (st && st.key !== this.stageKey) {
-        if (this.stageKey !== null) { missionCall({ text: st.title, sub: st.sub, colour: st.colour ?? kind.colour, secs: st.life }); }
+        if (this.stageKey !== null) { missionCall({ text: st.title, sub: st.sub, colour: st.colour ?? kind.colour, went: st.went }); }
         this.stageKey = st.key;
       } else if (!st && this.stageKey === null) this.stageKey = "";
     } else if (!this.lining) missionClear("job");

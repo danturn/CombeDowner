@@ -38,6 +38,7 @@ import { rng, type QuestWorld } from "./quests";
 import { splatScreen } from "./gulls";
 import { count as wardCount, earn } from "./wardrobe";
 import type { Vehicle } from "./vehicles";
+import { guide } from "./notice";
 
 /** Where the bus would be with its middle s metres up and lat across (pushbus.ts poseOn). */
 type PoseAt = (s: number, lat: number) => { x: number; z: number; fx: number; fz: number; rx: number; rz: number };
@@ -265,7 +266,7 @@ export class Passengers {
   /** On your own the bus is chocked at a stop while you sell, as there's nobody else to hold it. */
   chocked(b: BusNow) {
     const k = this.serving(b);
-    if (k >= 0 && this.chock !== k) { this.chock = k; if (this.pens.some((p) => p.k === k && p.st <= PAYING)) this.w.toast("Chocked at the stop: go and sell the tickets at the front door", 3); }
+    if (k >= 0 && this.chock !== k) { this.chock = k; if (this.pens.some((p) => p.k === k && p.st <= PAYING)) guide("Chocked at the stop: go and sell the tickets at the front door"); }
     return this.boarding(b);
   }
 
@@ -458,7 +459,7 @@ export class Passengers {
       return true;
     }
     if (!this.nearDoor(b)) return false;
-    if (this.seller && this.seller !== this.w.selfId) { this.w.toast(`${this.w.nameOf(this.seller)}'s on the door`, 2); return true; }
+    if (this.seller && this.seller !== this.w.selfId) { this.w.toast(`${this.w.nameOf(this.seller)}'s on the door`); return true; }
     this.say({ k: "tk", on: 1 });
     this.seller = this.w.selfId;
     return true;
@@ -564,7 +565,7 @@ export class Passengers {
     this.w.scene.add(m);
     this.fliers.push({ m, t: 0, from, to, it });
     this.speak(i, pickOf(THROW[it]));
-    if (to === this.w.selfId) this.w.toast(`Incoming ${ITEMS[it]}!`, 1.2);
+    if (to === this.w.selfId) this.w.toast(`Incoming ${ITEMS[it]}!`);
   }
 
   update(dt: number, b: BusNow, period: number) {
@@ -671,7 +672,7 @@ export class Passengers {
         if (this.hitBy.size === ITEMS.length) earn("thermos");
         splatScreen({ n: f.it === 2 ? 8 : 5, size: f.it === 0 ? 20 : 14, colours: SPLAT[f.it], secs: 2.5 });
         this.rattleUntil = performance.now() + period * 1000;
-        this.w.toast(`Splat! A ${ITEMS[f.it]} right on you: your next heave's off`, 2);
+        this.w.toast(`Splat! A ${ITEMS[f.it]} right on you: your next heave's off`);
       } else this.w.dust?.(tx, ty - 1, tz, 0, 0);
     }
   }
@@ -720,4 +721,4 @@ export class Passengers {
 }
 
 function pickOf<T>(a: T[]): T { return a[Math.floor(Math.random() * a.length)]; }
-function notice(text: string) { missionCall({ text, tier: "stage" }); }
+function notice(text: string) { missionCall({ text }); }

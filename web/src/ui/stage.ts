@@ -4,18 +4,26 @@
 // out of reach (the Flag Lads' row) are drawn from a copy of their markup, and pieces.ts says so.
 import * as MS from "../missionscreens";
 import * as WS from "../wantedscreens";
-import { notice, noticeClear, systemNote } from "../notice";
+import { guide, named, news, noticeClear, noticeLinger, people, reward, score, systemNote } from "../notice";
+
+// the specimens stay up while they're looked at, however long each kind would stay in the game
+noticeLinger(1000);
+import { itemPicture } from "../itempic";
 import { usePrompt, keycaps } from "../useprompt";
 import { closeModals } from "../modal";
 import { STREETS, controlsPage, ctl, ctlText } from "../controls";
 import { show } from "../show";
 import { Reveal, type Shot } from "../reveal";
 import { comboLine } from "../combo";
+import { FlagJuice } from "../flagjuice";
+import * as THREE from "three";
 import { Daily } from "../daily";
 import { type Brief, briefCut, briefHtml } from "../brief";
 
 const $ = (id: string) => document.getElementById(id)!;
 let hold = 0;          // a timer keeping something that would go by itself on the screen
+let street = "";       // the street name as the page has it, put back after a state writes its own
+let juice: FlagJuice | null = null;
 
 /** Put the game's HUD on the page, from the game's own page. */
 export async function ready() {
@@ -38,6 +46,8 @@ export async function ready() {
 .ui-slot b{position:absolute;left:0;top:-18px;background:#ff3df0;color:#000;font:700 12px/16px system-ui,sans-serif;padding:0 5px;white-space:nowrap}`;
   document.head.appendChild(s);
   backdrop("street");
+  street = $("where").textContent ?? "";
+  base = new Set(drawables().filter(visible));
 }
 
 export function backdrop(kind: string) { $("uiback").className = kind; }
@@ -51,7 +61,9 @@ function clear() {
   document.querySelectorAll(".msc,#jobrecall,#reveal,.ui-copy,.ui-slot,#award,#trick").forEach((e) => e.remove());
   for (const id of ["clickhint", "usehint", "shoothint", "jobposter", "bunting", "banner", "scoreboard", "touch", "bigmap", "pubcard"]) { const e = document.getElementById(id); if (e) e.hidden = true; }
   $("feed").innerHTML = "";
+  juice?.dispose(); juice = null;
   comboLine("ride", null); comboLine("flags", null);
+  $("where").textContent = street;
   for (const k of ["loading", "version", "safe"]) systemNote(k, null);
   $("pubcard").classList.remove("held"); $("pubcardgo").hidden = false;
   $("hud").classList.remove("reveal"); document.body.classList.remove("reveal");
@@ -60,7 +72,9 @@ function clear() {
 
 /** Call fn now and again every ms, for a piece that would otherwise go by itself. */
 const keep = (fn: () => void, ms: number) => { fn(); hold = window.setInterval(fn, ms); };
-const feed = (html: string) => { const el = document.createElement("div"); el.innerHTML = html; $("feed").prepend(el); };
+/** A countdown going round 3, 2, 1, GO! for as long as it's up. */
+const cycle = (fn: (n: number) => void) => { let k = 0; keep(() => fn([3, 2, 1, 0][k++ % 4]), 900); };
+const feed = (html: string, kind?: "in" | "out") => people(html, kind);
 
 const LONG = "Get every last one of the tourists' sandwiches back to the benches by the Abbey before the gulls work out where they went";
 const ENTRIES = (o: { title: string; inIt: boolean; n: string[]; left: number; colour?: string; label?: string }) => {
@@ -72,15 +86,26 @@ const ENTRIES = (o: { title: string; inIt: boolean; n: string[]; left: number; c
 };
 
 const STOPS: WS.PosterInfo["stops"] = [{ label: "the Hadley Arms", kind: "pub", now: false }, { label: "Firs Field", kind: "park", now: true }, { label: "the bus stop on Church Road", kind: "bus", now: false }];
+// a ride's line as ridetricks.ts writes it; the Flag Lads' come from the game's own FlagJuice
 const RIDE = { score: "1,240", mult: "×3", label: "kickflip + manual + rail grind 3.2 m", more: `<span class="bar"><span style="left:38%"></span></span>` };
-const FLAGS = (n: number, total: string, left: number) => ({ score: total, mult: `×${n}`, label: "Flag down", colour: "#ff4a55", more: `<span class="bar"><u style="--left:${left}"></u></span>` });
+const BESTS = (news: boolean) => `<small class="best">${news ? "New best! " : ""}Your bests on the skateboard: grind 6.1 m · air 1.4 m · combo 2,980</small>`;
+const LANDED = (news: boolean) => ({ score: "2,980", mult: "×6", label: "ollie + 50-50 grind 6.1 m + manual", more: BESTS(news), cls: news ? "done new" : "done" });
+const BAILED = { score: "Bailed", label: "1,240 lost", cls: "bail" };
+/** Shoot n of the Flag Lads' flags in a row, the way the game does; trick: what you were riding. */
+const flags = (n: number, o: { trick?: string; ago?: number; then?: "cleared" | "over" } = {}) => {
+  const j = (juice = new FlagJuice(new THREE.Scene(), { ground: () => 0, solo: () => false })) as any;
+  for (let k = 0; k < n; k++) j.flag(0, 0, 0, k === n - 1 ? o.trick ?? "" : "");
+  if (o.then === "cleared") j.cleared(0, 0, 0);
+  if (o.ago) { j.lastAt -= o.ago; j.tick(performance.now(), true); }
+  if (o.then === "over") j.finish();
+};
 
 const panel = {
   gulls: () => MS.missionProgress({ id: "job", label: "Seagull Attack · ★★☆", colour: "#8fd0f0", goal: "Seagull Attack", progress: "Wave 2 / 5", bar: 5 / 9, hint: "Wave 2 of 5 · 6 gulls about", sub: "5 of 9 bites left · score 120 · chips ×1" }),
   bus: (bell = false) => MS.missionProgress({ id: "bus", label: "Badgerline · Route 2", colour: "#7fe08f", goal: "City centre",
     hint: `Next stop: <b>Church Road</b> · 250 m<br>3 waiting there${bell ? `<br><span class="sign">Bus stopping</span>` : ""}`, sub: "On board 4 · Fares 5 · Moans 1<br>“Cheers drive”" }),
-  flags: (here = true) => show($("bunting"), `<div class="label">Flags up <b>27%</b><span class="downs">4 down</span></div><div class="bar"><div style="width:27%"></div></div>`
-    + `<em>Pub takeover at <b>The Hadley Arms</b> · 400 m north · 2:40. Get there and clear them out</em>${here ? `<em>Shoot all <b>8</b> flags on <b>Church Road</b> to clear it</em>` : ""}`, true),
+  flags: (here = true) => { MS.missionStackReady(); show($("bunting"), `<div class="label">Flags up <b>27%</b><span class="downs">4 down</span></div><div class="bar"><div style="width:27%"></div></div>`
+    + `<em>Pub takeover at <b>The Hadley Arms</b> · 400 m north · 2:40. Get there and clear them out</em>${here ? `<em>Shoot all <b>8</b> flags on <b>Church Road</b> to clear it</em>` : ""}`, true); },
 };
 const rewards = ["2 prizes where you finished", "New in your wardrobe: The gull hat", "Trophy! silver: Seagull Attack, two stars"];
 
@@ -91,29 +116,67 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Lining up": () => MS.missionWaiting({ kind: "The Lock Run", colour: "#3a8fd8", head: `Lining up<span class="dots"></span>`, sub: "3 in: You, Ann, Bo" }),
     "Long title": () => ENTRIES({ title: "Daily race: trolley dash to the Kingsmead Square fountain and back round the Abbey", inIt: false, n: ["Ann", "Bo", "Cy", "Dee", "Ed", "Flo"], left: 3 }),
   },
-  count: Object.fromEntries([["3", 3], ["2", 2], ["1", 1], ["GO!", 0]].map(([k, n]) => [k, () => keep(() => MS.missionCountdown(n as number, "#3ec7e8"), 800)])),
-  notice: {
-    Call: () => keep(() => notice({ text: "You splatted Ann", secs: 30 }), 25000),
-    "Call with a key": () => keep(() => notice({ text: ctlText("Your bus is here. {use} to get on"), secs: 30 }), 25000),
-    "Long call (as a note)": () => keep(() => notice({ text: "The Flag Lads have taken over The Hadley Arms! Follow the purple marker and clear them out", secs: 30 }), 25000),
-    Note: () => keep(() => notice({ tier: "note", text: "Mr Pratt: “Mirrors, signal, manoeuvre. In that order, ideally.”", secs: 30 }), 25000),
-    "Stage: wave": () => keep(() => MS.missionCall({ text: "Wave 2 of 5: Hoverers", sub: "Hoverers: stare them out · 3 hoverers, in from the north-east", colour: "#8fd0f0", secs: 30 }), 25000),
-    "Stage: checkpoint split": () => keep(() => MS.missionCall({ text: "Checkpoint 2 of 4", sub: "0:41.2 (-1.3 on your best) · -0.8 s on gold pace · +20 s", colour: "#58e06a", secs: 30 }), 25000),
-    "Stage: life lost": () => keep(() => MS.missionCall({ text: "A life gone!", sub: "Ann fell", colour: "#d8262e", secs: 30 }), 25000),
-    "Stage: out of lives": () => keep(() => MS.missionCall({ text: "Out of lives", sub: "Back to the bottom: the whole team starts again · 3 lives for the next go", colour: "#d8262e", secs: 30 }), 25000),
-    "Stage: he got away": () => keep(() => MS.missionCall({ text: "He got away!", sub: "2 goes left. He's off to Firs Field: he's on your map", colour: "#e04848", secs: 30 }), 25000),
-    Trick: () => keep(() => notice({ tier: "trick", text: "Bunting down! +400", sub: "from a bus", colour: "#ffd34a", secs: 30 }), 25000),
-    "Award: trophy": () => notice({ tier: "award", kicker: "Trophy! gold", text: "Top of the Abbey", sub: "Climb Bath Abbey and put on the wings at the top", colour: "#ffc83a", secs: 60 }),
-    "Award: wardrobe": () => notice({ tier: "award", kicker: "New in your wardrobe", text: "The gull hat", secs: 60 }),
+  count: {
+    "Gathering (others about)": () => ENTRIES({ title: "The Lock Run", label: "The Lock Run", colour: "#3a8fd8", inIt: true, n: ["You", "Ann"], left: 9 }),
+    "Race lights 3": () => cycle((n) => MS.missionCountdown(n, "#3ec7e8", MS.countdownFor("race", 3))),
+    "Timed plain 3": () => cycle((n) => MS.missionCountdown(n, "#3a8fd8", MS.countdownFor("timed", 3))),
+    "Solo timed (no countdown)": () => MS.missionBegin({ label: "The Lock Run", colour: "#3a8fd8", title: "The Lock Run", goal: "No countdown: the clock starts when you move", detail: "At Bath Locks" }),
+    "Calm (none)": () => MS.missionBegin({ label: "Art Gallery", colour: "#e0a8d8", title: "Paint the Show", goal: "No countdown, calm: straight in", detail: "At the Holburne" }),
+  },
+  guide: {
+    Instruction: () => keep(() => guide("Chocked at the stop: go and sell the tickets at the front door"), 25000),
+    "With key caps": () => keep(() => guide("A car coming down. Pull in: {strafeleft}"), 25000),
+    "Under the use prompt": () => { usePrompt("<b>{use}</b> Get in the Badgerline bus"); keep(() => guide("Your bus is here. {use} to get on"), 25000); },
+    "Long instruction": () => keep(() => guide("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake"), 25000),
+    "The examiner": () => keep(() => guide("Mr Pratt: “Next left, please. When it's safe. Which it is now.”"), 25000),
+  },
+  news: {
+    "A kill": () => keep(() => news("You splatted Ann"), 25000),
+    "A pickup": () => keep(() => news("+25 rifle rounds"), 25000),
+    "The speed trap": () => keep(() => news("Speed trap, Ralph Allen Drive: 48 km/h, a best (was 41)"), 25000),
+    Arriving: () => keep(() => news("Arrived at Bath"), 25000),
+    "Long (wraps smaller)": () => keep(() => news("The Flag Lads have taken over The Hadley Arms! Follow the purple marker and clear them out"), 25000),
+    "A critic's remark": () => keep(() => news("Lady Tilly on Ann's: “Bold. Wrong, but bold.” 4/10"), 25000),
+  },
+  stage: {
+    Wave: () => keep(() => MS.missionCall({ text: "Wave 2 of 5: Hoverers", sub: "Hoverers: stare them out · 3 hoverers, in from the north-east", colour: "#8fd0f0" }), 25000),
+    "Checkpoint split": () => keep(() => MS.missionCall({ text: "Checkpoint 2 of 4", sub: "0:41.2 (-1.3 on your best) · -0.8 s on gold pace · +20 s", went: "well" }), 25000),
+    "Life lost": () => keep(() => MS.missionCall({ text: "A life gone!", sub: "Ann fell", went: "badly" }), 25000),
+    "Out of lives": () => keep(() => MS.missionCall({ text: "Out of lives", sub: "Back to the bottom: the whole team starts again · 3 lives for the next go", went: "badly" }), 25000),
+    "He got away": () => keep(() => MS.missionCall({ text: "He got away!", sub: "2 goes left. He's off to Firs Field: he's on your map", colour: "#e04848" }), 25000),
+  },
+  score: {
+    "Bunting down": () => keep(() => score({ text: "Bunting down! +400" }), 25000),
+    "Trick shot": () => keep(() => score({ text: "Trick shot! +150", sub: "from a skateboard" }), 25000),
+    Boost: () => keep(() => score({ text: "BOOST!" }), 25000),
+    Barged: () => keep(() => score({ text: "Barged Bo off!" }), 25000),
+    "Combo over": () => keep(() => score({ text: "Combo over: 7 shots, 1840 points", final: true }), 25000),
+  },
+  reward: {
+    "Trophy: gold": () => reward({ kicker: "Trophy! gold", text: "Top of the Abbey", sub: "Climb Bath Abbey and put on the wings at the top", grade: "gold" }),
+    "Trophy: silver": () => reward({ kicker: "Trophy! silver", text: "Seagull Attack, two stars", sub: "8 of 83 trophies", grade: "silver" }),
+    "Wardrobe item: Deerstalker": () => reward({ kicker: "New in your wardrobe", text: "Deerstalker", pic: itemPicture("deer") }),
+    "Wardrobe item: Traffic cone": () => reward({ kicker: "New in your wardrobe", text: "Traffic cone", pic: itemPicture("cone") }),
+    "On the result card": () => { MS.missionResult({ result: "won", label: "Wanted", title: "Cuffed!", lead: "4:12", medal: "★★★", lines: ["The Duke of Disorder is off the streets"], colour: "#e04848", sound: null }); reward({ kicker: "New in your wardrobe", text: "Deerstalker", pic: itemPicture("deer") }); reward({ kicker: "Trophy! gold", text: "Long Arm of the Law", grade: "gold" }); },
+  },
+  people: {
+    "Three lines": () => { feed(`${named("Ann", "#ffd84a")} took on a job: ${named("Seagull Attack", "#8fd0f0")}`); feed(`${named("The Hadley Arms")} won back from the Flag Lads`); feed(`Bo fell: the team's down to 2 lives`); },
+    "Someone joined": () => feed(`${named("Cy", "#7fe08f")} joined the game`, "in"),
+    "Someone left": () => feed(`${named("Dee", "#ff8ab8")} left the game`, "out"),
+    "A busy minute": () => { feed(`${named("Cy", "#7fe08f")} joined the game`, "in"); feed(`${named("Ann", "#ffd84a")} splatted ${named("Bo")}`); feed(`You earned ${named("Deerstalker")} for your wardrobe (pause menu)`); feed(`${named("Bo")} marked the Hadley Arms`); feed(`${named("Dee", "#ff8ab8")} left the game`, "out"); },
   },
   combo: {
     Ride: () => comboLine("ride", RIDE),
-    "Ride: bailed": () => comboLine("ride", { score: "Bailed", label: "1,240 lost", cls: "bail" }),
-    "Ride: new best": () => comboLine("ride", { score: "2,980", mult: "×6", label: "ollie + 50-50 grind 6.1 m + manual", cls: "done new",
-      more: `<small class="best">New best! Your bests on the skateboard: grind 6.1 m · air 1.4 m · combo 2,980</small>` }),
-    "Flags x3": () => comboLine("flags", FLAGS(3, "320", 0.7)),
-    "Flags x7": () => comboLine("flags", FLAGS(7, "1,840", 0.25)),
-    "Both at once": () => { comboLine("ride", RIDE); comboLine("flags", FLAGS(4, "460", 0.8)); },
+    "Ride: landed": () => comboLine("ride", LANDED(false)),
+    "Ride: new best": () => comboLine("ride", LANDED(true)),
+    "Ride: bailed": () => comboLine("ride", BAILED),
+    "Flags ×2": () => flags(2),
+    "Flags ×7": () => flags(7),
+    "Flags: running out": () => flags(5, { ago: 3000 }),
+    "Flags: cluster cleared": () => flags(3, { then: "cleared" }),
+    "Flags: combo over": () => flags(6, { then: "over" }),
+    "Both chained": () => { comboLine("ride", RIDE); flags(4, { trick: "a skateboard" }); },
+    "Both: bailed, flags still going": () => { flags(4); comboLine("ride", BAILED); },
   },
   mprog: {
     "Seagull Attack": panel.gulls,
@@ -146,7 +209,6 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "Nearly up": () => { show($("banner"), `<div class="label">Banner going up at <b>The Hadley Arms</b> · 2 on the ladder</div><div class="bar"><div style="width:82%"></div></div><em>Nearly up! Shoot the lads on the ladder to knock it back</em>`, true); $("banner").classList.add("late"); },
   },
   spec: { Standings: () => MS.missionWatching({ head: "Finished", sub: "2nd, 1:23.4", small: "Watching Bo · ◀ ▶ to switch", rows: [{ name: "Ann", time: "1:20.1" }, { name: "You", time: "1:23.4", me: true }, { name: "Bo", time: "riding", watch: true }], many: true }) },
-  feed: { "Three lines": () => { feed(`<b style="color:#ffd84a">Ann</b> took on a job: <b style="color:#8fd0f0">Seagull Attack</b>`); feed(`<b>The Hadley Arms</b> won back from the Flag Lads`); feed(`Bo fell: the team's down to 2 lives`); } },
   slots: {
     Desktop: () => slotMap(false),
     Touch: () => slotMap(true),
@@ -266,11 +328,12 @@ function slotMap(touch: boolean) {
   if (touch) $("touch").hidden = false;
   $("where").textContent = "Church Road";
   panel.gulls(); panel.bus(); panel.flags(false);
-  feed("Ann took on a job: <b>Seagull Attack</b>"); feed("Bo fell: the team's down to 2 lives");
+  feed(`Ann took on a job: ${named("Seagull Attack")}`); feed("Bo fell: the team's down to 2 lives");
   usePrompt("<b>{use}</b> Get in the Badgerline bus");
   MS.missionAux("race-gate", `<div class="aux-big">0:24</div><div class="aux-tag">CHECKPOINT 3</div>`);
-  notice({ text: "You splatted Ann", secs: 60 });
-  notice({ tier: "trick", text: "Bunting down! +400", colour: "#ffd34a", secs: 60 });
+  news("You splatted Ann");
+  guide("Pull in: {strafeleft}");
+  score({ text: "Bunting down! +400" });
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const out = (id: string, name: string) => {
       const el = document.getElementById(id);
@@ -286,19 +349,40 @@ function slotMap(touch: boolean) {
     out("mstack", "top left: mission panels + Flag Lads row");
     out("minimap", "top right: minimap");
     out("feed", "feed");
-    out("trick", "trick");
+    out("trick", "score");
     out("health", "bottom left: health");
     out("ammo", "bottom right: rounds / vehicle");
     out("where", "street name");
     out("usehint", "use prompt");
     out("maux", "meter slot");
-    out("toast", "call / note");
+    out("toast", "news");
+    out("guide", "guidance");
   }));
+}
+
+/** What's on the page that counts as drawn: the HUD's own top-level pieces, the slots' rows, and
+ *  anything put on the page itself (a card, the system strip). */
+const drawables = () => [...document.querySelectorAll<HTMLElement>("#hud > *, #maux > *, #mstack > *, #lstack > *, body > *:not(#uiback):not(#hud):not(script):not(style)")];
+const visible = (e: HTMLElement) => e.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && e.getBoundingClientRect().width > 1;
+let base = new Set<HTMLElement>();
+
+/** Where the drawn piece is on the screen: the box round everything that wasn't up before it, so the
+ *  catalogue can show just that part. */
+export function bbox() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const e of drawables()) {
+    if (base.has(e) || !visible(e) || e.id === "maux" || e.id === "mstack" || e.id === "lstack") continue;
+    const r = e.getBoundingClientRect();
+    x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+  }
+  return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 /** Draw piece id in state (its first, if not given). */
 export function draw(id: string, state: string) {
   clear();
+  // a phone-sized stage has the touch layout, as a phone would
+  if (innerWidth < 900) $("touch").hidden = false;
   const p = DRAW[id];
   if (!p) return;
   (p[state] ?? Object.values(p)[0])();

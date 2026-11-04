@@ -45,13 +45,14 @@ addStyle("combo", `
 @media (max-height:500px){#combo .cb b{font-size:24px}}`);
 
 const lines = new Map<string, { line: ComboLine; at: number }>();
+let started = 0;   // counts lines as they start, so the newer is on top even within one frame
 let shown = "";
 let el: HTMLDivElement | null = null;
 
 /** Draw this source's line in the combo row, or take it away with null. pop: the score just went up. */
 export function comboLine(src: string, line: ComboLine | null, pop = false) {
   if (!line) { if (!lines.delete(src)) return; }
-  else lines.set(src, { line, at: lines.get(src)?.at ?? performance.now() });
+  else lines.set(src, { line, at: lines.get(src)?.at ?? ++started });
   if (!el) { el = document.createElement("div"); el.id = "combo"; }
   if (!lines.size) { el.hidden = true; el.innerHTML = ""; shown = ""; return; }
   missionAuxAdopt(el);

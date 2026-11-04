@@ -106,9 +106,10 @@ import { RIDES } from "./rides";
 import { note } from "./daily";
 import { show } from "./show";
 import { FlagJuice } from "./flagjuice";
-import { missionBegin, missionResult } from "./missionscreens";
+import { missionBegin, missionResult, missionStackReady } from "./missionscreens";
 import * as Paper from "./paper";
 import * as Yours from "./yours";
+import { guide, named } from "./notice";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {
@@ -124,7 +125,7 @@ export interface InvasionWorld {
   /** Which room's Gaffers who got away these are: the map and room code, or "solo". */
   readonly slot: string;
   send(data: unknown, to?: string): void;
-  toast(text: string, secs?: number): void;
+  toast(text: string): void;
   feed(html: string): void;
   nameOf(id: string): string;
   mark(id: string, at: { x: number; z: number } | null, label?: string, colour?: string): void;
@@ -653,7 +654,7 @@ export class Invasion {
   private celebrate(street: string) {
     const me = this.w.me();
     this.juice.cleared(me.x, me.y + 1, me.z);
-    this.w.toast(`That's every flag down${street ? ` on ${street}` : " on this street"}. ${Math.min(100, Math.ceil((this.up * 100) / MAX_UP))}% of them left up round ${this.w.town()}`, 3);
+    this.w.toast(`That's every flag down${street ? ` on ${street}` : " on this street"}. ${Math.min(100, Math.ceil((this.up * 100) / MAX_UP))}% of them left up round ${this.w.town()}`);
   }
 
   /** The game's clock this frame: dips for a moment when you clear a street. */
@@ -694,7 +695,7 @@ export class Invasion {
     this.downs++;
     note("flags");
     this.tickAt = performance.now();
-    if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag on this street to clear it (${at ? at.c.n : "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
+    if (this.downs === 1) guide(`Flag down! Shoot every flag on this street to clear it (${at ? at.c.n : "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`);
     setTimeout(() => SFX.counterTick(), 120);
     this.juice.flag(f.x, f.y, f.z, this.w.trick());
     Yours.flagShot(f.x, f.z, this.w.place());
@@ -1250,18 +1251,18 @@ export class Invasion {
         if (d.won && near && me.alive) Yours.pubWon(String(d.name), +d.x, +d.z);
       }
       this.onEvent(d.won ? "won" : "lost", d);
-      const name = esc(String(d.name ?? "the pub"));
+      const name = String(d.name ?? "the pub");
       // the result card for those there, a line for everyone else
       const me = this.w.me(), there = Number.isFinite(+d.x) && Math.hypot(+d.x - me.x, +d.z - me.z) < 250 && !this.w.busy();
       if (d.won) {
         const line = `${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`;
         if (there) missionResult({ result: "won", label: "Pub takeover", title: `${d.name} is won back!`, colour: GREEN, sound: null, lines: ["Flags down, everyone welcome.", "There's a ride outside, and the odd round on the house"] });
-        else this.w.toast(line, 5.5);
-        this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`);
+        else this.w.toast(line);
+        this.w.feed(`${named(name, GREEN)} won back from the Flag Lads`);
       } else {
         if (there) missionResult({ result: "lost", label: "Pub takeover", title: "Too slow", colour: PURPLE, sound: null, lines: [`The Flag Lads keep ${d.name}, and the streets round it fill up with flags`] });
-        else this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5);
-        this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`);
+        else this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`);
+        this.w.feed(`The Flag Lads kept ${named(name, PURPLE)}`);
       }
       if (d.line) setTimeout(() => this.w.feed(esc(String(d.line))), 1500);
       if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 })));
@@ -1280,39 +1281,39 @@ export class Invasion {
       if (d.t === "grun") this.gafferRuns(d);
       else if (d.t === "gup") {
         SFX.jobStep();
-        if (this.runner) { this.runner.up = true; this.w.toast(`${this.runner.name} has given up! Get up close and cuff him ({use})`, 4); }
+        if (this.runner) { this.runner.up = true; guide(`${this.runner.name} has given up! Get up close and cuff him ({use})`); }
       } else if (d.t === "gcu") {
         SFX.jobDone(true);
         const by = String(d.by ?? ""), who = by === this.w.selfId ? "You" : this.w.nameOf(by);
-        this.w.toast(d.c ? `${who} cuffed ${d.n}! Bonus prizes` : `${who} put ${d.n} down! Bonus prizes`, 5);
-        this.w.feed(`<b style="color:${GREEN}">${esc(String(d.n))}</b> caught by ${esc(who)}`);
+        this.w.toast(d.c ? `${who} cuffed ${d.n}! Bonus prizes` : `${who} put ${d.n} down! Bonus prizes`);
+        this.w.feed(`${named(String(d.n), GREEN)} caught by ${esc(who)}`);
         this.w.mark("@gaffer", null);
         this.onEvent(d.c ? "cuffed" : "down", d);
       } else if (d.t === "gaw") {
         SFX.jobStep();
-        this.w.toast(`${d.n} has got away! He'll be tomorrow's Wanted poster`, 5);
-        this.w.feed(`<b style="color:${PURPLE}">${esc(String(d.n))}</b> got away from ${esc(String(d.pub))}`);
+        this.w.toast(`${d.n} has got away! He'll be tomorrow's Wanted poster`);
+        this.w.feed(`${named(String(d.n), PURPLE)} got away from ${esc(String(d.pub))}`);
         this.w.mark("@gaffer", null);
         this.onEvent("away", d);
       } else if (d.t === "knock") {
         const me = this.w.me();
-        if (Math.hypot(+d.x - me.x, +d.z - me.z) < 250) this.w.toast("Lad shot off the ladder: the banner's set back!", 2.5);
-      } else if (d.t === "hung") this.w.feed(`The Flag Lads have got their banner up at <b style="color:${PURPLE}">${esc(String(d.n))}</b>`);
-      if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
-      else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!", 3.5);
+        if (Math.hypot(+d.x - me.x, +d.z - me.z) < 250) this.w.toast("Lad shot off the ladder: the banner's set back!");
+      } else if (d.t === "hung") this.w.feed(`The Flag Lads have got their banner up at ${named(String(d.n), PURPLE)}`);
+      if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit");
+      else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!");
       else if (d.t === "street") {
         SFX.jobDone(true);
-        const me = this.w.me(), street = d.n ? esc(String(d.n)) : "A street";
-        if (Math.hypot(+d.x - me.x, +d.z - me.z) < 300) this.w.toast(`Street cleared! Not a flag left on ${d.n ? String(d.n) : "this street"}`, 4);
-        else this.w.feed(`<b style="color:${GREEN}">${street}</b> is flag-free again`);
+        const me = this.w.me(), street = d.n ? String(d.n) : "A street";
+        if (Math.hypot(+d.x - me.x, +d.z - me.z) < 300) this.w.toast(`Street cleared! Not a flag left on ${d.n ? String(d.n) : "this street"}`);
+        else this.w.feed(`${named(street, GREEN)} is flag-free again`);
       }
-      else if (d.t === "decorated") this.w.toast(`The Flag Lads have every flag they've got up round ${this.w.town()}. Keep shooting them down`, 5);
-      else if (d.t === "season") this.w.toast("A new day: the Flag Lads are back, with more cable ties", 4);
+      else if (d.t === "decorated") this.w.toast(`The Flag Lads have every flag they've got up round ${this.w.town()}. Keep shooting them down`);
+      else if (d.t === "season") this.w.toast("A new day: the Flag Lads are back, with more cable ties");
       else if (d.t === "greet" || d.t === "mega") {
         const me = this.w.me(), dist = Math.hypot(+d.x - me.x, +d.z - me.z);
         if (dist < 200) SFX.megaphone(dist);
-        if (d.t === "greet") { const s = String(d.s ?? ""); if (dist < 400) this.w.toast(s, 4); this.w.feed(esc(s)); }
-        else if (dist < 250) this.w.toast(`${String(d.n)} is on the megaphone: more lads coming!`, 2.5);
+        if (d.t === "greet") { const s = String(d.s ?? ""); if (dist < 400) this.w.toast(s); this.w.feed(esc(s)); }
+        else if (dist < 250) this.w.toast(`${String(d.n)} is on the megaphone: more lads coming!`);
       }
     }
   }
@@ -1339,7 +1340,7 @@ export class Invasion {
     if (till) { this.quietTill = Math.max(this.quietTill, till); keepQuiet(this.w.mapId, this.quietTill); }
     const town = this.w.town();
     missionResult({ result: "won", label: "The Flag Lads", title: `${town} is safe from the Flag Lads`, colour: GREEN, lines: ["Not a flag left on a lamp post.", `They won't be back for ${QUIET_DAYS} days.`] });
-    this.w.feed(`<b style="color:${GREEN}">${esc(town)}</b> is safe from the Flag Lads`);
+    this.w.feed(`${named(town, GREEN)} is safe from the Flag Lads`);
   }
 
   /** Days till the Flag Lads come back, once the place is safe. */
@@ -1367,16 +1368,16 @@ export class Invasion {
   private ring(name: string, x: number, z: number) {
     SFX.phone();
     const me = this.w.me();
-    if (this.w.busy()) this.w.toast(`The Flag Lads have taken over ${name}! Follow the purple marker and clear them out`, 5.5);
+    if (this.w.busy()) this.w.toast(`The Flag Lads have taken over ${name}! Follow the purple marker and clear them out`);
     else missionBegin({ label: "Pub takeover", title: `The Flag Lads have taken over ${name}!`, goal: "Follow the purple marker and clear them out", colour: PURPLE });
-    this.w.feed(`📞 The Flag Lads have taken over <b style="color:${PURPLE}">${esc(name)}</b>, ${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`);
+    this.w.feed(`📞 The Flag Lads have taken over ${named(name, PURPLE)}, ${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`);
   }
 
   /** The Gaffer legs it: say so, and put him on the map. */
   private gafferRuns(d: any) {
     SFX.megaphone(0);
-    this.w.toast(`${d.n} legs it ${MOUNTS[+d.how] ?? MOUNTS[0]}! Get him before he's 400 m from ${d.pub}`, 5);
-    this.w.feed(`<b style="color:${PURPLE}">${esc(String(d.n))}</b> is making a run for it ${MOUNTS[+d.how] ?? MOUNTS[0]}`);
+    this.w.toast(`${d.n} legs it ${MOUNTS[+d.how] ?? MOUNTS[0]}! Get him before he's 400 m from ${d.pub}`);
+    this.w.feed(`${named(String(d.n), PURPLE)} is making a run for it ${MOUNTS[+d.how] ?? MOUNTS[0]}`);
   }
 
   /** Use at the Gaffer with his hands up. */
@@ -1547,6 +1548,7 @@ export class Invasion {
     const pct = Math.min(100, Math.ceil((this.up * 100) / MAX_UP));
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${pct}%"></div></div>${call}`;
+    missionStackReady();
     show($("bunting"), html);
     // it comes up near a cluster with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab.

@@ -8,7 +8,7 @@
 import { comboLine } from "./combo";
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { notice } from "./notice";
+import { score } from "./notice";
 
 const WINDOW = 4000;                // ms: the next flag has to come this soon to keep a combo going
 const FLAG_PTS = 100, BUNTING_PTS = 400, TRICK_PTS = 150, GRIND_PTS = 300, CLEAR_PTS = 500;
@@ -164,9 +164,9 @@ export class FlagJuice {
       more: `<span class="bar"><u style="--left:${left.toFixed(2)}"></u></span>` }, force);
   }
 
-  /** A score popping up (notice.ts's trick tier); over: the combo's tally, a little quieter. */
+  /** A score pop (notice.ts score); over: the combo's tally, a little quieter. */
   private say(text: string, sub = "", over = false) {
-    notice({ tier: "trick", text, sub, colour: over ? "#fff" : "#ffd34a", secs: 1.6 });
+    score({ text, sub, final: over });
   }
 
   private spray(x: number, y: number, z: number, n: number, spread: number, up: number) {

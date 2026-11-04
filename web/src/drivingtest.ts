@@ -42,7 +42,7 @@ import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { controlsHere, ctl, isKey, stripOf } from "./controls";
 import { type GameMap, type Road, roadHalf } from "./map";
 import { missionReward, missionSheet } from "./missionscreens";
-import { notice } from "./notice";
+import { guide, news, named } from "./notice";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, hash, rng, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
@@ -545,7 +545,7 @@ registerChallenge({
   },
   waiting({ offer, spots, w }) { return waitingCar(offer, spots, w); },
   // round the learner car, facing it
-  lineup: { spots: ({ spots, w }, n) => { const c = centreOf(spots, w.map); return c ? ring(w.map, c.x, c.z, n, 4) : []; } },
+  lineup: { start: "timed", spots: ({ spots, w }, n) => { const c = centreOf(spots, w.map); return c ? ring(w.map, c.x, c.z, n, 4) : []; } },
   start({ offer, spots, w, cast }) { return drivingTest(offer, spots, w, cast); },
 });
 
@@ -843,7 +843,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
   };
 
   // ---- the job ---------------------------------------------------------------------------------------
-  notice({ tier: "note", text: `${examiner} is waiting in the learner car: one of you in the driver's seat`, secs: 4 });
+  guide({ text: `${examiner} is waiting in the learner car: one of you in the driver's seat` });
   /** The day's tests are over: the last report is the result card when it agrees with how the day
    *  went (put up again if it's gone), so there's one card at the end rather than two. */
   const final = (won: boolean, text: string) => {
@@ -933,31 +933,31 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
       if (["mir", "bump", "kerb", "esr", "park", "pr"].includes(d.k)) return;
       if (d.k === "say" && typeof d.x === "string") {
         line = d.x;
-        if (near()) { speak(d.x); notice({ tier: "note", text: `${examiner}: “${d.x}”`, secs: 4 }); }
+        if (near()) { speak(d.x); guide({ text: `${examiner}: “${d.x}”` }); }
       } else if (d.k === "f" && typeof d.x === "string") {
         faults.push({ x: d.x, g: +d.g || 1 });
-        if (mySeat() === 0 && d.g === 1) { SFX.tick(); notice({ tier: "note", text: `${examiner} writes something down`, secs: 2 }); }
+        if (mySeat() === 0 && d.g === 1) { SFX.tick(); news({ text: `${examiner} writes something down` }); }
       } else if (d.k === "halt") {
         phase = 3;
         assist("halt", 3);
-        if (near()) { const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); notice({ tier: "note", text: `${examiner} stamps on his brake`, secs: 3 }); }
+        if (near()) { const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); news({ text: `${examiner} stamps on his brake` }); }
         if (mySeat() === 0) speakHush();
       } else if (d.k === "es") {
         line = "Stop!";
-        if (near()) { SFX.thump(); speak("Stop!"); w.toast(`${examiner} slaps the dashboard: “STOP!”`, 2.5); }
+        if (near()) { SFX.thump(); speak("Stop!"); w.toast(`${examiner} slaps the dashboard: “STOP!”`); }
         if (mySeat() === 0) esT0 = performance.now();
       } else if (d.k === "ask") {
         if (mySeat() === 0) say({ k: "park", gap: kerbGap(), w: d.w });
       } else if (d.k === "yank") {
         assist("yank", 1.1);
         if (near()) { SFX.clunk(); const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); }
-        w.feed(`<b style="color:${w.colourOf(d.by)}">${esc(w.nameOf(d.by))}</b> pulled the handbrake on the driving test`);
+        w.feed(`${named(w.nameOf(d.by), w.colourOf(d.by))} pulled the handbrake on the driving test`);
       } else if (d.k === "out") {
-        if (d.id === w.selfId && mySeat() >= 0) { w.getOut?.(); w.toast("Thrown out of the car. You'll have to walk", 3); }
+        if (d.id === w.selfId && mySeat() >= 0) { w.getOut?.(); w.toast("Thrown out of the car. You'll have to walk"); }
       } else if (d.k === "go") {
         phase = 1; test = +d.n || test; driver = typeof d.d === "string" ? d.d : driver; faults = []; prog = 0;
         routeFor(test);
-        w.feed(`<b style="color:${w.colourOf(driver)}">${esc(w.nameOf(driver))}</b> is taking the driving test`);
+        w.feed(`${named(w.nameOf(driver), w.colourOf(driver))} is taking the driving test`);
       } else if (d.k === "end") {
         phase = 4;
         const list: Fault[] = Array.isArray(d.f) ? d.f.filter((f: unknown) => Array.isArray(f)).map((f: unknown[]) => ({ x: String(f[0]), g: +(f[1] as number) || 1 })) : [];
@@ -995,7 +995,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
         : seat >= 2 ? `In the back: ${stripOf([["radioup", "radio up"], ["radiodown", "down"], ["station", "station"], ["window", "window"], ["handbrake", "handbrake"]])}`
         : `${w.nameOf(driver)} is driving`;
       const last = faults[faults.length - 1];
-      const stage = last ? { key: `t${test}f${faults.length}`, title: ["", "Minor fault", "Serious fault", "Dangerous fault"][last.g] ?? "Fault", sub: last.x, colour: last.g > 1 ? COLOUR : "#ffd84a", life: last.g > 1 ? 3.5 : 2.2 } : undefined;
+      const stage = last ? { key: `t${test}f${faults.length}`, title: ["", "Minor fault", "Serious fault", "Dangerous fault"][last.g] ?? "Fault", sub: last.x, went: last.g > 1 ? "badly" as const : "close" as const } : undefined;
       return {
         line: phase === 3 ? "..." : line || "Listen for the examiner",
         sub, progress: `${minors} minor${minors === 1 ? "" : "s"}`, bar: rt ? Math.min(1, prog / rt.len) : 0, stage,

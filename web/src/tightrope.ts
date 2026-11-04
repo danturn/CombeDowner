@@ -36,6 +36,7 @@ import { openGround } from "./oddments";
 import { hearts, missionCall } from "./missionscreens";
 import { hash, rng, shuffled, esc, type Card, type Job, type Perch, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
+import { guide, named } from "./notice";
 
 const COLOUR = "#e8743b";
 const GATHER = 40;             // how near the middle counts as being there
@@ -249,6 +250,7 @@ registerChallenge({
   waiting({ offer, spots, w }) { return waitingPair(offer.seed, spots, w); },
   // gathered on the grass, looking at the balloons
   lineup: {
+    start: "timed",
     spots: ({ spots, w }, n) => {
       const a = spots[1] ?? spots[0], b = spots[2] ?? a;
       return ring(w.map, spots[0].x, spots[0].z, n, 2.4, { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 });
@@ -455,7 +457,7 @@ registerChallenge({
         if (F.y <= g) {
           F.y = g; F.heap = true; F.t = 0;
           SFX.land(true, 1); SFX.crash(1, 0, 0);
-          w.toast("Flat on your back in the grass. Not a scratch, but you're out", 3.5);
+          w.toast("Flat on your back in the grass. Not a scratch, but you're out");
         }
       }
       if ((sendT -= dt) <= 0) { sendT = SEND; w.send("qe", { k: "w", s: offer.seed, d: 0, th: 0, f: F.heap ? 2 : 1 }); }
@@ -609,8 +611,8 @@ registerChallenge({
             w.mark("@challenge", null);
             SFX.jobStep();
             const pi = pilots.indexOf(me), wi = walkers.indexOf(me);
-            if (pi >= 0) w.toast(`You're flying ${names[pi]}. {rope.in} pulls in, {rope.out} lets out: keep the rope just right`, 6);
-            else if (wi >= 0) w.toast(wi === 0 ? "You're first on the rope" : `You're number ${wi + 1} on the rope. Watch how the others do it`, 4);
+            if (pi >= 0) guide(`You're flying ${names[pi]}. {rope.in} pulls in, {rope.out} lets out: keep the rope just right`);
+            else if (wi >= 0) w.toast(wi === 0 ? "You're first on the rope" : `You're number ${wi + 1} on the rope. Watch how the others do it`);
             return;
           }
           case "b": {
@@ -634,7 +636,7 @@ registerChallenge({
             if (typeof d.n !== "number") return;
             n = d.n;
             if (Array.isArray(d.c)) crossed = new Set(d.c.map(String));
-            if (current() === me) { over = false; w.toast("Your turn. Out you go", 2.5); }
+            if (current() === me) { over = false; guide("Your turn. Out you go"); }
             return;
           case "fell": {
             if (fallen) return;
@@ -654,8 +656,8 @@ registerChallenge({
             lives = k;
             SFX.lifeLost();
             const who = id === me ? "You" : w.nameOf(id);
-            w.feed(`<b style="color:${w.colourOf(id)}">${esc(who)}</b> fell off the rope: ${k ? `${k} ${k === 1 ? "life" : "lives"} left` : "no lives left"}`);
-            if (id === me) w.toast(k ? `That's a life gone. Back to the first basket, and you go again after the others` : "That was the team's last life", 4);
+            w.feed(`${named(who, w.colourOf(id))} fell off the rope: ${k ? `${k} ${k === 1 ? "life" : "lives"} left` : "no lives left"}`);
+            if (id === me) w.toast(k ? `That's a life gone. Back to the first basket, and you go again after the others` : "That was the team's last life");
             return;
           }
           case "back": {
@@ -665,7 +667,7 @@ registerChallenge({
             walkers = d.wk.map(String); n = d.n;
             if (Array.isArray(d.c)) crossed = new Set(d.c.map(String));
             if (was === me) { fall = null; walk = null; over = false; inBasket = null; }
-            if (current() === me) { over = false; w.toast(was === me ? "Your go again. Out you go" : "Your turn. Out you go", 2.5); }
+            if (current() === me) { over = false; guide(was === me ? "Your go again. Out you go" : "Your turn. Out you go"); }
             return;
           }
           case "down":
@@ -674,7 +676,7 @@ registerChallenge({
             phase = "down"; downT = 0;
             if (!won) {
               SFX.lifeLost();
-              missionCall({ text: "Out of lives", sub: `Everyone back down: the whole rope again, from the start · ${most} lives for the next go`, colour: "#d8262e", secs: 5 });
+              missionCall({ text: "Out of lives", sub: `Everyone back down: the whole rope again, from the start · ${most} lives for the next go`, went: "badly" });
             }
             return;
         }

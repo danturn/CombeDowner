@@ -165,7 +165,7 @@ registerFree({
       note("trap", kmh);
       if (kmh >= 60) earn("dazzle");
       if (kmh > b) keep("trap-" + t.name, kmh);
-      w.toast(`Speed trap, ${t.name}: ${kmh} km/h${kmh > b ? (b ? `, a best (was ${b})` : "") : ` (best ${b})`}`, 3);
+      w.toast(`Speed trap, ${t.name}: ${kmh} km/h${kmh > b ? (b ? `, a best (was ${b})` : "") : ` (best ${b})`}`);
       if (kmh > b) SFX.pip(true); else SFX.tick();
     }
     // a manual down Milsom Street: timed while you're on it and on the street
@@ -176,7 +176,7 @@ registerFree({
       if (manual >= MANUAL) {
         const s = Math.round(manual * 10) / 10, b = best("manual-milsom");
         if (s > b) keep("manual-milsom", s);
-        w.toast(`Manual down ${STREET}: ${s.toFixed(1)} s${s > b ? (b ? `, your longest (was ${b.toFixed(1)})` : "") : ` (longest ${b.toFixed(1)})`}`, 2.5);
+        w.toast(`Manual down ${STREET}: ${s.toFixed(1)} s${s > b ? (b ? `, your longest (was ${b.toFixed(1)})` : "") : ` (longest ${b.toFixed(1)})`}`);
         if (s > b) SFX.pip(true);
       }
       manual = 0;

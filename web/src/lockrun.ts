@@ -46,6 +46,7 @@ import { model } from "./furniture";
 import type { GameMap, Mover } from "./map";
 import { openGround } from "./oddments";
 import { hash, rng, type Card, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
+import { guide, named } from "./notice";
 
 const LH = 2.15, COPE = 1.2, MITRE = 0.32, BEAM = 4.45;   // as canal.ts draws its locks
 const HW = 1.04;                       // half a narrowboat's beam
@@ -902,6 +903,7 @@ registerChallenge({
   waiting({ offer, spots, w }) { return waitingBoat(offer, spots, w); },
   // on the towpath by the top lock, in rows, facing it
   lineup: {
+    start: "timed",
     spots({ w }, n) {
       const f = flightOf(w.map.canalData);
       if (!f) return [];
@@ -945,7 +947,7 @@ registerChallenge({
       w.moveTo(x, z, p.yaw);
       w.slow?.(4);
       splash(x, R.levelAt(0) - w.map.z0, z);
-      w.toast(say, 3);
+      w.toast(say);
       wet = 4.5; wetTo = out;
     };
     let wet = 0, wetTo: [number, number] | null = null;
@@ -967,24 +969,24 @@ registerChallenge({
       switch (d.f) {
         case "wind": case "off": { const [x, z] = R.post(d.l, d.e, d.d); SFX.tick(...hear(x, R.copingY(d.l), z)); break; }
         case "drop": { const [x, z] = R.post(d.l, d.e, d.d); SFX.clunk(...hear(x, R.copingY(d.l), z)); break; }
-        case "pick": if (mine) w.toast("You've a windlass", 1.5); break;
+        case "pick": if (mine) w.toast("You've a windlass"); break;
         case "gate": {
           const [x, z] = lockMid(d.l);
           SFX.clunk(...hear(x, 0, z));
-          if (near(x, z)) w.toast(`The ${endName(d.e)} gates of ${lockName(d.l)} are ${d.o ? "open" : "shut"}`, 2);
+          if (near(x, z)) w.toast(`The ${endName(d.e)} gates of ${lockName(d.l)} are ${d.o ? "open" : "shut"}`);
           break;
         }
-        case "jam": { const [x, z] = lockMid(d.l); SFX.crash(0.4, ...hear(x, 0, z)); if (near(x, z)) w.toast("The gates won't shut on the boat", 2); break; }
+        case "jam": { const [x, z] = lockMid(d.l); SFX.crash(0.4, ...hear(x, 0, z)); if (near(x, z)) w.toast("The gates won't shut on the boat"); break; }
         case "leak": {
           const [x, z] = lockMid(d.l);
-          if (near(x, z, 120)) w.toast(`${lockName(d.l)} will never fill (or empty): there's a paddle up at each end, and the pound's running away`, 4);
+          if (near(x, z, 120)) w.toast(`${lockName(d.l)} will never fill (or empty): there's a paddle up at each end, and the pound's running away`);
           break;
         }
         case "slip": {
           const [x, z] = R.post(d.l, d.e, d.d);
           SFX.crash(0.5, ...hear(x, 0, z));
-          if (Array.isArray(d.hit) && d.hit.includes(w.selfId)) { w.knock?.(); w.toast("CLONK. A windlass left on a spindle spun off and caught you", 3); }
-          else if (near(x, z, 80)) w.toast(`A windlass left on a paddle at ${lockName(d.l)} spun off${d.lost ? " and went in the cut" : ""}`, 3);
+          if (Array.isArray(d.hit) && d.hit.includes(w.selfId)) { w.knock?.(); w.toast("CLONK. A windlass left on a spindle spun off and caught you"); }
+          else if (near(x, z, 80)) w.toast(`A windlass left on a paddle at ${lockName(d.l)} spun off${d.lost ? " and went in the cut" : ""}`);
           if (d.lost && near(x, z, 400)) w.feed(`A windlass is at the bottom of ${lockName(d.l)}. ${d.left ? `${d.left} left` : "That was the last one"}`);
           break;
         }
@@ -1005,8 +1007,8 @@ registerChallenge({
           const mv = R.views[d.b]?.mover;
           if (mv) {
             SFX.crash(0.6, ...hear(mv.x, mv.top, mv.z));
-            if (R.onDeck(d.b, p.x, p.y, p.z)) { w.knock?.(); w.toast("The water comes in through the top paddles in a rush, and everyone on deck goes flat", 3); }
-            else if (near(mv.x, mv.z)) w.toast(`Too much paddle! ${bn(d.b)} surges forward`, 2.5);
+            if (R.onDeck(d.b, p.x, p.y, p.z)) { w.knock?.(); w.toast("The water comes in through the top paddles in a rush, and everyone on deck goes flat"); }
+            else if (near(mv.x, mv.z)) w.toast(`Too much paddle! ${bn(d.b)} surges forward`);
           }
           break;
         }
@@ -1017,16 +1019,16 @@ registerChallenge({
         }
         case "barrel": {
           const mv = R.views[d.b]?.mover;
-          if (mv) { splash(mv.x, mv.y + 0.5, mv.z); if (near(mv.x, mv.z, 100)) w.toast(d.why === "slide" ? "A barrel slides off the roof. Plop" : "A barrel goes over the side", 2); }
+          if (mv) { splash(mv.x, mv.y + 0.5, mv.z); if (near(mv.x, mv.z, 100)) w.toast(d.why === "slide" ? "A barrel slides off the roof. Plop" : "A barrel goes over the side"); }
           break;
         }
-        case "tip": { const mv = R.views[d.b]?.mover; if (mv && near(mv.x, mv.z, 100)) w.toast(`${bn(d.b)}'s caught on the cill! Shut the bottom paddles and get water back in`, 4); break; }
-        case "slap": { const mv = R.views[d.b]?.mover; if (mv) { SFX.crash(0.5, ...hear(mv.x, mv.y, mv.z)); if (near(mv.x, mv.z, 100)) w.toast(`${bn(d.b)} comes off the cill with a slap`, 2.5); } break; }
-        case "aground": w.toast(`${bn(d.b)}'s on the mud: the pound's run dry. Fetch water down from the lock above`, 4); break;
-        case "afloat": w.toast(`${bn(d.b)}'s afloat again`, 2); break;
-        case "home": w.feed(`<b style="color:#3a8fd8">${bn(d.b)}</b> is through the flight with ${S().b[d.b]?.barrels ?? 0} barrels`); SFX.jobStep(); break;
-        case "eng": if (mine) w.toast(d.v > 0 ? "Ahead" : d.v < 0 ? "Astern" : "Engine in neutral: she'll coast", 1.2); break;
-        case "sunk": w.toast(`${bn(d.b)} has gone down`, 3); break;
+        case "tip": { const mv = R.views[d.b]?.mover; if (mv && near(mv.x, mv.z, 100)) guide(`${bn(d.b)}'s caught on the cill! Shut the bottom paddles and get water back in`); break; }
+        case "slap": { const mv = R.views[d.b]?.mover; if (mv) { SFX.crash(0.5, ...hear(mv.x, mv.y, mv.z)); if (near(mv.x, mv.z, 100)) w.toast(`${bn(d.b)} comes off the cill with a slap`); } break; }
+        case "aground": w.toast(`${bn(d.b)}'s on the mud: the pound's run dry. Fetch water down from the lock above`); break;
+        case "afloat": w.toast(`${bn(d.b)}'s afloat again`); break;
+        case "home": w.feed(`${named(bn(d.b), "#3a8fd8")} is through the flight with ${S().b[d.b]?.barrels ?? 0} barrels`); SFX.jobStep(); break;
+        case "eng": if (mine) w.toast(d.v > 0 ? "Ahead" : d.v < 0 ? "Astern" : "Engine in neutral: she'll coast"); break;
+        case "sunk": w.toast(`${bn(d.b)} has gone down`); break;
         case "end":
           if (!job.done) job.done = d.won
             ? { won: true, title: "Down the flight!", card: { lead: `${d.got} of ${d.all} barrels`, medal: d.got >= d.all ? "Gold" : d.got * 2 >= d.all ? "Silver" : "Bronze" },
@@ -1087,7 +1089,7 @@ registerChallenge({
         R.draw(dt, w.isHost);
         // the steerer can't see the cill's white line from the back deck
         R.cillMarks.visible = R.steering(p.x, p.y, p.z) < 0;
-        if (wet > 0 && (wet -= dt) <= 0 && wetTo) { w.moveTo(wetTo[0], wetTo[1], p.yaw); w.toast("Someone hauls you out, dripping", 2); wetTo = null; }
+        if (wet > 0 && (wet -= dt) <= 0 && wetTo) { w.moveTo(wetTo[0], wetTo[1], p.yaw); w.toast("Someone hauls you out, dripping"); wetTo = null; }
         // the pin follows the first boat's next lock
         const k = Math.max(0, Math.min(R.n - 1, R.nextLock(0)));
         if (k !== R.marked) {
@@ -1108,8 +1110,8 @@ registerChallenge({
       use() {
         const c = choose();
         if (!c) return false;
-        if (c.a.a === "pad" && !c.hint.includes("<b>{use}</b>")) { w.toast(c.hint, 2); return true; }
-        if (c.a.a === "push" && !c.hint.includes("<b>{use}</b>")) { w.toast(c.hint, 2.5); SFX.grind(0, 0, 0.3); return true; }
+        if (c.a.a === "pad" && !c.hint.includes("<b>{use}</b>")) { guide(c.hint); return true; }
+        if (c.a.a === "push" && !c.hint.includes("<b>{use}</b>")) { guide(c.hint); SFX.grind(0, 0, 0.3); return true; }
         if (c.a.a === "push") SFX.grind(0, 0, 0.5);
         ask(c.a);
         return true;

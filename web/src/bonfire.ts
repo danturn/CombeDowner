@@ -446,7 +446,7 @@ interface Rocket { x: number; y: number; z: number; vx: number; vy: number; vz: 
 export class Bonfire {
   /** Hooks into the game. */
   send: (type: "wd" | "wdq", data: unknown, to?: string) => void = () => {};
-  toast: (text: string, secs: number) => void = () => {};
+  toast: (text: string) => void = () => {};
   /** Where a sound at scene (x, y, z) is heard from: distance and pan. */
   hear: (x: number, y: number, z: number) => [number, number] = () => [1e9, 0];
   /** The flash of light each firework bursts with (flash.ts, shared with cars going up). */
@@ -604,7 +604,7 @@ export class Bonfire {
     }
     if (this.s.b && !was.b) {
       this.fresh = this.known;   // lit just now, rather than already going when we got here
-      if (this.known && near < 3000) this.toast("Kingswood's bonfire is lit! Fireworks on the court by Fonthill Road", 4);
+      if (this.known && near < 3000) this.toast("Kingswood's bonfire is lit! Fireworks on the court by Fonthill Road");
     }
     this.known = true;
     this.mission(has, near);
@@ -621,7 +621,7 @@ export class Bonfire {
     if (busy || (!carrying && near > 500)) { missionClear("bonfire"); return; }
     if (!this.told && carrying) {
       this.told = true;
-      missionBegin({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE, countdown: true });
+      missionBegin({ title: "Get Wood", goal: `Build Kingswood's bonfire: ${NEED} bundles on the pile`, detail: "Carry them down to the court, then walk up to the pile", label: "Bonfire", colour: FIRE, start: "timed" });
     }
     missionProgress({
       id: "bonfire", label: "Bonfire", colour: FIRE, goal: "Build the bonfire", progress: `${this.s.n} / ${NEED}`, bar: this.s.n / NEED,
