@@ -1121,5 +1121,20 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
   position: absolute; right: 16px; bottom: 3.5vh; top: auto; left: auto; transform: none; width: auto; margin: 0; padding: 4px 8px; z-index: 1; background: none; border: 0; box-shadow: none;
   color: rgba(255, 255, 255, 0.65); font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;
 }
+#reveal .rvconfetti { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+#reveal .rvcard { z-index: 2; }
+#reveal .rvskip { z-index: 3; }
+#reveal .rvflash { position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.5), rgba(255, 226, 140, 0.18) 50%, rgba(255, 190, 70, 0.55) 100%); }
+#reveal .rvflash::after { content: ""; position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 18px rgba(255, 200, 80, 0.75); }
+#reveal.landed .rvflash { animation: rvflash 0.9s ease-out; }
+#reveal.landed .rvflash::after { animation: rvglow 2.6s ease-out; }
+#reveal.rvbig.landed .rvflash::after { animation-duration: 5s; }
+#reveal.landed .rvcard h2 { animation: rvstamp 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+#reveal.rvbig .rvcard h2 { color: #ffe27a; }
+@keyframes rvflash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes rvglow { 0% { opacity: 0; } 10% { opacity: 1; } 60% { opacity: 0.7; } 100% { opacity: 0; } }
+@keyframes rvstamp { 0% { opacity: 0; transform: scale(2.4); letter-spacing: 0.3em; } 60% { opacity: 1; } 100% { opacity: 1; transform: scale(1); letter-spacing: 0.06em; } }
+@media (prefers-reduced-motion: reduce) { #reveal.landed .rvflash, #reveal.landed .rvcard h2 { animation: none; } }
 #hud.reveal > :not(#reveal):not(#toast) { visibility: hidden; }
 body.reveal #touch { visibility: hidden; }
