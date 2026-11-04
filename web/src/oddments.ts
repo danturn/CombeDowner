@@ -40,6 +40,7 @@ import { compassWord, esc, far, type Job, type Offer } from "./quests";
 import type { StructSpot } from "./minimap";
 import type { Shot } from "./reveal";
 import { oddKey } from "./saves";
+import { count as wardCount, earn } from "./wardrobe";
 
 /** At most this many objects a game day from feats; challenges won always bring one. */
 const FEATS_A_DAY = 3;
@@ -259,7 +260,7 @@ export class Oddments {
   private hostFree = false;
 
   send: (type: "od" | "odq", d: unknown, to?: string) => void = () => {};
-  toast: (text: string, secs?: number) => void = () => {};
+  toast: (text: string) => void = () => {};
   hear: (x: number, y: number, z: number) => [number, number] = () => [0, 0];
   /** You've just picked one up: whatever else was in your hands is left behind (game.ts). */
   onGot: () => void = () => {};
@@ -481,7 +482,7 @@ export class Oddments {
     if (this.known && this.me) {
       const near = d.o.some((o) => o[0] > was.n && !o[4] && Math.hypot(o[1] - this.me!.x, o[3] - this.me!.z) < 400);
       // a challenge's promised object: on its result card if that's still up, else said
-      if (near && !missionReward("Something strange has turned up")) this.toast("Something strange has turned up", 3);
+      if (near && !missionReward("Something strange has turned up")) this.toast("Something strange has turned up");
     }
     const wasOpen = this.zones.open, wasFree = this.zones.free;
     this.hostFree = !!d.a;
@@ -509,6 +510,12 @@ export class Oddments {
       SFX.oddment("set", dist, pan);
     }
     const before = this.zones.openFor(wasF), after = this.zones.openFor(this.s.f);
+    if (by === me && wardCount("odd") >= 5) earn("orb");
+    if (!this.zones.free && after > before) {
+      if (by === me) earn("party");
+      // everyone in the room when it happens, whoever set the last one
+      if (after >= this.zones.count) earn("crown");
+    }
     if (this.zones.free || after <= before) return;
     for (let k = before; k < after; k++) {
       const zn = this.zones.list[k], ch = challengesOn(this.map).filter((p) => p.zone === k);

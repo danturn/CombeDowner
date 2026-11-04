@@ -43,13 +43,13 @@ import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { ctlText } from "./controls";
-import { CRITICS, THEMES, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
+import { CRITICS, THEMES, TRIUMPH, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
 import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
 import { missionResult, type ResultHandle } from "./missionscreens";
-import { notice } from "./notice";
+import { news } from "./notice";
 import { SET_PIECES } from "./landmarks/setpieces";
 import { speak } from "./posh";
 import { esc, hash, rng, type Card, type Job, type QuestWorld, type Waiting } from "./quests";
@@ -622,6 +622,7 @@ registerChallenge({
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0], spots[0].name),
   // on the pavement by the door, as goDown leaves you, and up into the gallery at GO
   lineup: {
+    start: "calm",
     spots: ({ spots }, n) => {
       const door = spots[0], [ox, oz] = outOf(spots);
       return Array.from({ length: n }, (_, k) => {
@@ -766,7 +767,7 @@ registerChallenge({
       sendBig(`p:${w.selfId}`, text);
       if (w.isHost) checkHung();
       SFX.jobStep();
-      w.toast("Hung. Now wait for the private view", 3);
+      w.toast("Hung. Now wait for the private view");
     }
     function onBig(g: string, text: string) {
       if (g.startsWith("p:")) {
@@ -793,7 +794,7 @@ registerChallenge({
       if (!w.isHost || show || full || staging || !painters.length) return;
       if (phase === "paint") tell({ k: "hang" });
       staging = true;
-      if (eyeState().state === "loading") stage = { key: "arriving", title: "The critics are still arriving", sub: "Mr Pettigrew pours the wine", colour: COLOUR, life: 3 };
+      if (eyeState().state === "loading") stage = { key: "arriving", title: "The critics are still arriving", sub: "Mr Pettigrew pours the wine", colour: COLOUR };
       lookAtThem().finally(() => {
         if (phase === "out" || job.done || show || full) return;
         full = staged();
@@ -856,7 +857,7 @@ registerChallenge({
       if (!room.hung) { room.hang(painters.length); drawAll(); }
       room.setEasels(0);
       buildCrowd();
-      stage = { key: "show", title: "The private view", sub: `${show.cast.length} visitors, ${show.remarks.length} opinions`, colour: COLOUR, life: 3 };
+      stage = { key: "show", title: "The private view", sub: `${show.cast.length} visitors, ${show.remarks.length} opinions`, colour: COLOUR };
       if (aboard || camInside()) SFX.door(0, 0);
     }
 
@@ -976,7 +977,7 @@ registerChallenge({
     /** A remark as a note (notice.ts), queued so none is lost. */
     function tick(r: Remark) {
       const v = visitor(r.v);
-      notice({ tier: "note", text: `${v.name} on ${w.nameOf(painters[r.p] ?? "")}'s: “${r.text}” ${r.mark}/10`, colour: v.critic ? "#ff8ab8" : undefined, secs: 3.5 });
+      news({ text: `${v.name} on ${w.nameOf(painters[r.p] ?? "")}'s: “${r.text}” ${r.mark}/10` });
     }
 
     /** The verdict's in, the same on every screen: a moment while the critics confer, then it's read out (revealResult). */
@@ -985,7 +986,7 @@ registerChallenge({
       phase = "result";
       resultT = performance.now();
       closeAt = resultT + BEAT_MS + CLOSE_MS;
-      stage = { key: "confer", title: "The critics confer", sub: "Mr Pettigrew taps his glass", colour: COLOUR, life: BEAT_MS / 1000 };
+      stage = { key: "confer", title: "The critics confer", sub: "Mr Pettigrew taps his glass", colour: COLOUR };
       if (aboard) speak("Ladies and gentlemen. The critics have conferred.", 99, 2, { voice: 3, pitch: 0.9 });
     }
 
@@ -1035,7 +1036,7 @@ registerChallenge({
       phase = "out";
       goDown();
       job.done = {
-        won: result.won, screen: carded, x: door.x, z: door.z,
+        won: result.won, screen: carded, x: door.x, z: door.z, wear: result.won && result.score >= result.bar + TRIUMPH ? ["beret"] : [],
         text: result.won ? `The show was a success: ${result.score.toFixed(1)} against ${result.bar.toFixed(1)}` : `The critics panned it: ${result.score.toFixed(1)}, and it needed ${result.bar.toFixed(1)}`,
       };
     }
@@ -1086,10 +1087,10 @@ registerChallenge({
           if (!revealed) { if (now - resultT > BEAT_MS) revealResult(); }
           else if (!card) {
             if (!aboard) finish();
-            else if (now > closeAt) { w.toast("The gallery's closed for the night", 3); finish(); }
+            else if (now > closeAt) { w.toast("The gallery's closed for the night"); finish(); }
             else if (!warned && closeAt - now < 15000) {
               warned = true;
-              stage = { key: "closing", title: "The gallery's closing", sub: "Mr Pettigrew is turning the lights off", colour: COLOUR, life: 3 };
+              stage = { key: "closing", title: "The gallery's closing", sub: "Mr Pettigrew is turning the lights off", colour: COLOUR };
             }
           }
         }
@@ -1141,7 +1142,7 @@ registerChallenge({
               goUp([x, z], 0);
               openEasel();
             }
-            stage = { key: "paint", title: `Paint: ${themeText}`, sub: `Judging tonight: ${critics.map((c) => CRITICS[c].name).join(", ")}`, colour: COLOUR, life: 4 };
+            stage = { key: "paint", title: `Paint: ${themeText}`, sub: `Judging tonight: ${critics.map((c) => CRITICS[c].name).join(", ")}`, colour: COLOUR };
             if (aboard) speak(`Tonight's subject: ${themeText}. Brushes at the ready.`, 99, 2, { voice: 3, pitch: 0.9 });
             return;
           }
@@ -1170,7 +1171,7 @@ registerChallenge({
               easel.hide();
               room.hang(painters.length);
               drawAll();
-              stage = { key: "hang", title: "Hanging the show", sub: "The doors open in a moment", colour: COLOUR, life: 2.2 };
+              stage = { key: "hang", title: "Hanging the show", sub: "The doors open in a moment", colour: COLOUR };
             }
             return;
           case "vote":
@@ -1215,7 +1216,7 @@ registerChallenge({
           if (p >= 0 && painters[p] !== w.selfId) {
             myVote = p;
             if (w.isHost) votes.set(w.selfId, p); else send({ k: "vote", p });
-            w.toast(`You voted for ${w.nameOf(painters[p])}'s painting`, 2.5);
+            w.toast(`You voted for ${w.nameOf(painters[p])}'s painting`);
             return true;
           }
         }

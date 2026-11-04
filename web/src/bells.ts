@@ -43,6 +43,7 @@ import { speak } from "./posh";
 import { Avatar } from "./avatar";
 import { esc, hash, type Card, type Job, type Waiting } from "./quests";
 import { ring } from "./lineup";
+import { named } from "./notice";
 
 const COLOUR = "#d9a441";
 const LEAD = 700;            // ms from pulling the rope to the bell sounding
@@ -547,7 +548,7 @@ registerChallenge({
   place,
   waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0]),
   // round the vicar at the foot of the tower; at GO up the tower
-  lineup: { spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
+  lineup: { start: "timed", spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4) },
   start({ offer, spots, w, cast }) {
     const board = spots[0], mid = spots[1] ?? spots[0];
     const church = board.name;
@@ -725,7 +726,7 @@ registerChallenge({
       if (said.has(key)) return;
       said.add(key);
       if (aboard || inside()) speak(text, 7, 0, { voice: 0, pitch: 0.8, rate: 1 });
-      if (title) stage = { key, title, sub, colour: COLOUR, life: 2.2 };
+      if (title) stage = { key, title, sub, colour: COLOUR };
     }
 
     /** Host: the band's done with row r. Bad if any bell in it was missed or struck out of its place. */
@@ -748,7 +749,7 @@ registerChallenge({
 
     function finish() {
       if (job.done || !ending) return;
-      job.done = { won: ending.won, title: ending.won ? "Rung through!" : ending.why.startsWith("Too many") ? "Stand!" : "A jangle", text: ending.why, x: board.x, z: board.z };
+      job.done = { won: ending.won, title: ending.won ? "Rung through!" : ending.why.startsWith("Too many") ? "Stand!" : "A jangle", text: ending.why, x: board.x, z: board.z, wear: ending.won && !bad ? ["muffs"] : [] };
     }
 
     function drawHud() {
@@ -1014,7 +1015,7 @@ registerChallenge({
                 const id = go!.band[b], nm = id === w.selfId ? "You" : esc(w.nameOf(id));
                 return `${nm} on ${bellName(b, go!.n)}${e === null ? " missed the stroke" : e > 0 ? " came in late" : " came in early"}`;
               });
-              w.feed(`<b style="color:${COLOUR}">Clash!</b> ${names.join("; ")}`);
+              w.feed(`${named("Clash!", COLOUR)} ${names.join("; ")}`);
               if (who.some(([b, e]: [number, number | null]) => go!.band[b] === w.selfId && e === null)) flash = { text: "Missed!", colour: "#ff6a5a", t: performance.now() };
             }
             return;
@@ -1023,8 +1024,8 @@ registerChallenge({
             if (ending) return;
             ending = { won: !!d.won, why: String(d.why ?? ""), collapse: !!d.collapse, t: performance.now() };
             phase = "stand";
-            if (ending.collapse) stage = { key: "jangle", title: "It's all gone wrong!", sub: "The bells are clanging over each other", colour: "#ff6a5a", life: 3 };
-            else stage = { key: "well", title: "Well rung!", sub: ending.why, colour: COLOUR, life: 3 };
+            if (ending.collapse) stage = { key: "jangle", title: "It's all gone wrong!", sub: "The bells are clanging over each other", went: "badly" };
+            else stage = { key: "well", title: "Well rung!", sub: ending.why, colour: COLOUR };
             return;
         }
       },

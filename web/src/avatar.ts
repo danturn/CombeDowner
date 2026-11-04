@@ -401,11 +401,13 @@ export class Avatar {
     if (this.beanie) { this.beanie.visible = !hat; this.hairTop!.visible = hat; }
   }
 
-  /** The seagull on their head looks about, and the owl on their shoulder turns a little. t: seconds. */
+  /** The seagull on their head looks about, the owl and the pigeon on their shoulder turn a little, and a strange object bobs. t: seconds. */
   animateWear(t: number) {
     for (const m of this.wear) {
       if (m.name === "gull") m.rotation.y = Math.sin(t * 0.7 + this.wiggle) * 0.35 + Math.sin(t * 2.9 + this.wiggle) * 0.06;
       else if (m.name === "owl") m.rotation.y = Math.sin(t * 0.4 + this.wiggle) * 0.05;
+      else if (m.name === "pigeon") m.rotation.y = Math.sin(t * 1.3 + this.wiggle) * 0.04;
+      else if (m.name === "orb") m.position.y = Math.sin(t * 1.8 + this.wiggle) * 0.02;
     }
   }
 

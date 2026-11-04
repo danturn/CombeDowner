@@ -11,6 +11,8 @@
 //   ("mhurt"). Using things (levers, chests, the winze, picking up a friend) goes through the host
 //   ("muse"), which says what happened to everyone ("mev").
 // - Positions ("st") and names ("hello") go to everyone, as do voices (../voice.ts).
+// - Reaching the bottom level earns a miner's lamp for the streets' wardrobe (../wardrobe.ts), kept
+//   in this browser like everything else you earn: nothing about it goes over the network.
 import * as Telemetry from "../telemetry";
 import * as THREE from "three";
 import * as SFX from "../audio";
@@ -34,6 +36,7 @@ import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT
 import { BossFx } from "./bossfx";
 import { pop } from "../pop";
 import { inverted } from "../invert";
+import { earn, onEarn } from "../wardrobe";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -200,6 +203,8 @@ export class MineGame {
     this.player.diveOnCrouch = true;
     this.player.noDive = () => { const q = this.player.pos, lv = this.level; return !!lv && !!lv.water(q.x, q.z) && q.y < lv.ground(q.x, q.z) + 0.3; };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
+    // the wardrobe is the streets', kept in the same browser: it's worn when you go back up
+    onEarn((w) => { this.toast(`New in your wardrobe: ${w.name}`, 4); this.feed(`You earned <b>${esc(w.name)}</b> for your wardrobe`); });
     this.mapCtx = ($("automap") as HTMLCanvasElement).getContext("2d")!;
     this.bigCtx = ($("bigmapcanvas") as HTMLCanvasElement).getContext("2d")!;
 
@@ -408,6 +413,7 @@ export class MineGame {
     this.scene.add(this.puzzles.group);
     this.levelKey = `${seed}:${depth}`;
     Telemetry.note("mines_depth:" + depth);
+    if (depth === DEPTHS) earn("lamp");
     this.seen = new Uint8Array(this.L.w * this.L.h);
     this.horde = null;
     this.lastMobs = [];

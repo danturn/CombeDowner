@@ -17,6 +17,7 @@ import * as SFX from "./audio";
 import type { Player, RideEvent } from "./player";
 import { note } from "./daily";
 import { best } from "./trophies";
+import { earn } from "./wardrobe";
 import { rideSpecs, type RideKind } from "./rides";
 
 /** Your bests on one ride: metres, metres, seconds and points. */
@@ -49,7 +50,7 @@ export class RideTricks {
   private sound: ReturnType<typeof SFX.rideNoise> = null;
   private bests: Partial<Record<RideKind, Bests>>;
 
-  constructor(private say: (text: string, secs: number) => void) {
+  constructor(private say: (text: string) => void) {
     try { this.bests = JSON.parse(localStorage.getItem(STORE) ?? "{}") ?? {}; } catch { this.bests = {}; }
   }
 
@@ -154,6 +155,7 @@ export class RideTricks {
     if (!c || !c.mult || !kind) return;
     const total = Math.round(c.base * c.mult);
     note("combo", total);
+    if (c.mult >= 10) earn("deck");
     best("combo", total);
     const b = (this.bests[kind] ??= { grind: 0, air: 0, manual: 0, combo: 0 }), news: string[] = [];
     if (c.grind > b.grind + 0.05) { b.grind = c.grind; news.push(`grind ${c.grind.toFixed(1)} m`); }
@@ -165,7 +167,7 @@ export class RideTricks {
     const bests = [b.grind ? `grind ${b.grind.toFixed(1)} m` : "", b.air ? `air ${b.air.toFixed(1)} m` : "", b.manual ? `manual ${b.manual.toFixed(1)} s` : "", `combo ${fmt(b.combo)}`].filter(Boolean).join(" · ");
     this.showResult({ score: fmt(total), mult: `×${c.mult}`, label: c.names.slice(-4).join(" + "),
       more: `<small class="best">${news.length ? "New best! " : ""}Your bests on the ${esc(name)}: ${bests}</small>`, cls: news.length ? "done new" : "done" }, news.length ? 4 : 3);
-    if (news.length) { SFX.jobStep(); this.say(`New best on the ${name}: ${news.join(", ")}`, 2.5); }
+    if (news.length) { SFX.jobStep(); this.say(`New best on the ${name}: ${news.join(", ")}`); }
     else SFX.pip();
   }
 

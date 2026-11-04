@@ -27,8 +27,10 @@
 import * as SFX from "./audio";
 import { missionBegin, missionNight } from "./missionscreens";
 import * as Paper from "./paper";
+import { earn } from "./wardrobe";
 import type { Invasion } from "./invasion";
 import { compassWord, esc, far, hash, type Job, type Link, type Offer, type Quests, type QuestWorld } from "./quests";
+import { guide } from "./notice";
 
 const DEEDS = 3;                 // things done before last orders is called
 const POST_LIFE = 75;            // seconds a follow-up's poster stays up
@@ -240,7 +242,7 @@ export class NightOut {
       SFX.phone();
       this.w.feed(`\u{1F4DE} ${esc(`Last orders! Everyone to ${n} for one for the road, ${where}`)}`);
       // the call to the pub starts the night's last mission: it gets the title card (missionscreens.ts)
-      if (this.quests.running && !this.quests.running.done) this.w.toast(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`, 6);
+      if (this.quests.running && !this.quests.running.done) guide(`Last orders! Everyone to ${n} for one for the road, ${where}. Get the whole room within ${GATHER} m of the bar`);
       else missionBegin({ label: "Night out", colour: GOLD, title: "Last orders!", goal: `Everyone to ${n} for one for the road, ${where}`, detail: `Get the whole room within ${GATHER} m of the bar` });
     } else if (d.k === "lx") {
       this.drop("lo");
@@ -262,7 +264,7 @@ export class NightOut {
     const s = text(m, 300);
     if (!s) return;
     if (ring) SFX.phone(); else SFX.jobStep();
-    this.w.toast(s, 6);
+    this.w.toast(s);
     this.w.feed(ring ? `\u{1F4DE} ${esc(s)}` : esc(s));
   }
 
@@ -270,6 +272,7 @@ export class NightOut {
     const story = Paper.nightStory(since, pub, away)
       ?? { head: "A night to remember", stand: `The night ended at ${pub}.`, by: "By our night reporter", body: [], items: [] };
     missionNight({ pub, ...story });
+    earn("monocle");
     SFX.jobDone(true);   // the front page is quiet itself, so its fanfare is played here
   }
 

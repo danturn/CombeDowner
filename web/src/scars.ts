@@ -42,10 +42,11 @@ import type { JobSpot } from "./minimap";
 import { missionCall } from "./missionscreens";
 import { bannerSpot } from "./bannerspot";
 import { type NaughtyBoys, type Target, SOCIETY, look } from "./naughtyboys";
-import { esc, hash, rng } from "./quests";
+import { hash, rng } from "./quests";
 import { gateModel, ghostModel } from "./race";
 import { type RacePath, along, racePath } from "./raceroute";
 import * as Paper from "./paper";
+import { guide, named } from "./notice";
 
 export type ScarKind = "pub" | "race" | "tag";
 interface Scar { id: number; k: ScarKind; x: number; z: number; n: string; day: number; c: number }
@@ -64,7 +65,7 @@ export interface ScarWorld {
   /** Host: everyone, for the guards to look for. */
   targets(): Target[];
   send(data: unknown, to?: string): void;
-  toast(text: string, secs?: number): void;
+  toast(text: string): void;
   feed(html: string): void;
   nameOf(id: string): string;
   /** Host: a prize on the ground. */
@@ -218,7 +219,7 @@ export class Scars {
     this.say(this.list[this.list.length - 1]);
   }
 
-  private say(s: Scar) { this.w.feed(`<b style="color:${COLOUR}">${esc(SAID[s.k](s.n))}</b>. Go and put it right (the grey ! on the map)`); }
+  private say(s: Scar) { this.w.feed(`${named(SAID[s.k](s.n), COLOUR)}. Go and put it right (the grey ! on the map)`); }
 
   /** Someone joined: the host tells them the day's scars and how far they've got, and anyone else offers theirs to the host. */
   joined(id: string) {
@@ -263,7 +264,7 @@ export class Scars {
       if (!this.w.isHost) this.drop(Number(d.id));
       this.gone.add(Number(d.id));
       this.save();
-      missionCall({ text: "Put right!", secs: 2.5, sub: `${by === this.w.selfId ? "You" : this.w.nameOf(by)} ${VERB[k][1]}`, colour: "#58e06a" });
+      missionCall({ text: "Put right!", sub: `${by === this.w.selfId ? "You" : this.w.nameOf(by)} ${VERB[k][1]}`, went: "well" });
       if (by === this.w.selfId) SFX.solved();
     }
   }
@@ -541,11 +542,11 @@ export class Scars {
     if (Math.hypot(g.x - me.x, g.z - me.z) < Math.max(4.5, g.half + 1.5) && Math.abs(this.w.map.ground(g.x, g.z) - me.y) < 8) {
       run.next++;
       SFX.counterTick();
-      if (run.next >= rt.gates.length) { const id = s.id; this.run = null; this.w.toast("You beat the ghost!", 3); this.claim(id); return; }
+      if (run.next >= rt.gates.length) { const id = s.id; this.run = null; this.w.toast("You beat the ghost!"); this.claim(id); return; }
     }
     if (ghostD >= rt.goal) {
       this.run = null;
-      this.w.toast("The ghost got there first. Back to the line and press {use} to go again", 4);
+      guide("The ghost got there first. Back to the line and press {use} to go again");
       if (v?.ghost) v.ghost.position.set(0, 0, 0);
     }
   }
@@ -583,7 +584,7 @@ export class Scars {
     if (s.k === "race" && !this.run) {
       this.run = { id: s.id, t: 0, next: 0 };
       SFX.counterTick();
-      this.w.toast(`Go! Get to the last gate before the ghost: ${gatesFor(s.c)} gate${gatesFor(s.c) > 1 ? "s" : ""}`, 3);
+      this.w.toast(`Go! Get to the last gate before the ghost: ${gatesFor(s.c)} gate${gatesFor(s.c) > 1 ? "s" : ""}`);
       return true;
     }
     return false;

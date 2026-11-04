@@ -73,6 +73,7 @@ import { type Card, type Job, type Offer, type PostSpot, type Quarry, type Quest
 import { count as wardCount, earn } from "./wardrobe";
 import { ring } from "./lineup";
 import type { Follow } from "./weapon";
+import { score } from "./notice";
 
 const COLOUR = "#8fd0f0";
 const WAVES = 5;
@@ -201,7 +202,7 @@ registerJob({
     return said ? `<p>It's tight round here, so the benches go out on open ground ${esc(said)}: you start in the middle of them.</p>` : "";
   },
   // everyone in the middle of the benches, facing out at them
-  lineup: { spots: (o, w, n) => { const c = benchesAt(w.map, o); return ring(w.map, c.x, c.z, n, 1.8, "out"); } },
+  lineup: { start: "timed", spots: (o, w, n) => { const c = benchesAt(w.map, o); return ring(w.map, c.x, c.z, n, 1.8, "out"); } },
   start: (o, w, _started, _by, local, cast) => new Seagulls(o, w, local, cast),
 });
 
@@ -1163,7 +1164,7 @@ class Seagulls implements Job {
         SFX.gullCry(...hear(x, y, z));
         this.folk.say(a, "stolen");
         break;
-      case FX_SAVE: if (near) this.w.toast("Bite saved!", 1.4); SFX.jobStep(); this.cheerT[a] = 2.5; this.folk.say(a, "saved"); break;
+      case FX_SAVE: if (near) this.w.toast("Bite saved!"); SFX.jobStep(); this.cheerT[a] = 2.5; this.folk.say(a, "saved"); break;
       case FX_POO: case FX_BOMB: {
         const big = code === FX_BOMB;
         SFX.gullMuck(...hear(x, y, z), big);
@@ -1171,22 +1172,22 @@ class Seagulls implements Job {
         if (me.alive && !this.w.passive && Math.hypot(me.x - x, me.z - z) < (big ? BOMB_R : POO_R) && Math.abs(me.y - y) < 4) this.pooed(big);
         break;
       }
-      case FX_HIT: if (near) this.w.toast("Splat! Right on the sandwich", 1.6); break;
-      case FX_BROLLY: if (near) this.w.toast("Bounced off the brolly!", 1.6); SFX.clunk(...hear(x, y, z)); break;
-      case FX_OWL: if (near) this.w.toast("A walker's knocked the owl over!", 2); SFX.clunk(...hear(x, y, z)); break;
-      case FX_STORM: if (near) this.w.toast("That's it, they're off. Sandwich gone.", 2.2); this.folk.say(a, "huff"); break;
+      case FX_HIT: if (near) this.w.toast("Splat! Right on the sandwich"); break;
+      case FX_BROLLY: if (near) this.w.toast("Bounced off the brolly!"); SFX.clunk(...hear(x, y, z)); break;
+      case FX_OWL: if (near) this.w.toast("A walker's knocked the owl over!"); SFX.clunk(...hear(x, y, z)); break;
+      case FX_STORM: if (near) this.w.toast("That's it, they're off. Sandwich gone."); this.folk.say(a, "huff"); break;
       case FX_SHOUT: if (Math.hypot(x - me.x, z - me.z) > 1) SFX.shout(...hear(x, 1.6, z), 7); break;
-      case FX_SCREECH: SFX.gullCry(...hear(x, y, z), true); if (near) { this.w.toast("Big Lad's called in his mates!", 2.5); SFX.alarm(); } break;
-      case FX_BOSSDOWN: this.puff(x, y, z, 120, 3); SFX.gullCry(...hear(x, y, z), true); SFX.boom(...hear(x, y, z)); if (near) this.w.toast("BIG LAD IS DOWN!", 3); break;
-      case FX_DIVE: SFX.gullCry(...hear(x, y, z), true); SFX.flap(...hear(x, y, z), true); if (near) this.w.toast("Big Lad's diving for a sandwich! Shoot him!", 2.2); break;
-      case FX_PULL: if (near) this.w.toast("He's pulled out!", 1.6); SFX.gullCry(...hear(x, y, z), true); break;
-      case FX_GRAB: if (near) this.w.toast("Big Lad's had a whole sandwich!", 2.2); SFX.gullCry(...hear(x, y, z), true); break;
+      case FX_SCREECH: SFX.gullCry(...hear(x, y, z), true); if (near) { this.w.toast("Big Lad's called in his mates!"); SFX.alarm(); } break;
+      case FX_BOSSDOWN: this.puff(x, y, z, 120, 3); SFX.gullCry(...hear(x, y, z), true); SFX.boom(...hear(x, y, z)); if (near) this.w.toast("BIG LAD IS DOWN!"); break;
+      case FX_DIVE: SFX.gullCry(...hear(x, y, z), true); SFX.flap(...hear(x, y, z), true); if (near) this.w.toast("Big Lad's diving for a sandwich! Shoot him!"); break;
+      case FX_PULL: if (near) this.w.toast("He's pulled out!"); SFX.gullCry(...hear(x, y, z), true); break;
+      case FX_GRAB: if (near) this.w.toast("Big Lad's had a whole sandwich!"); SFX.gullCry(...hear(x, y, z), true); break;
       case FX_WAVE: SFX.jobStep(); if (x === WAVES) SFX.alarm(); break;
-      case FX_CLEAN: if (near) this.w.toast(`Wave ${x} without a bite lost! +50`, 2.5); break;
-      case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`, 3); SFX.pickup("ammo"); break;
+      case FX_CLEAN: if (near) score({ text: `Wave ${x} without a bite lost! +50` }); break;
+      case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`); SFX.pickup("ammo"); break;
       case FX_PACK:
         // everyone's gun is their own, so each tops up their own
-        if (me.alive && x > 0) { this.w.ammo?.(x); this.w.toast(`Ammo pack: +${x} rounds`, 2.5); SFX.pickup("ammo"); }
+        if (me.alive && x > 0) { this.w.ammo?.(x); this.w.toast(`Ammo pack: +${x} rounds`); SFX.pickup("ammo"); }
         break;
     }
   }
@@ -1196,7 +1197,7 @@ class Seagulls implements Job {
     this.stats.pooed = true;
     if (this.S.w === WAVES) this.stats.bossPoo = true;
     this.w.slow?.(big ? 3.5 : 2.5);
-    this.w.toast(big ? "Poo bomb! Right on you" : "Ugh. Right on you", 1.6);
+    this.w.toast(big ? "Poo bomb! Right on you" : "Ugh. Right on you");
     if (wardCount("poo") >= 5) earn("splat");
     splatScreen({ n: big ? 9 : 5, size: big ? 22 : 14, colours: ["#fffffa", "#ecebdc", "rgba(220,218,196,0.85)"], secs: big ? 4 : 3 });
   }
@@ -1470,7 +1471,7 @@ class Seagulls implements Job {
         v.stare = on ? v.stare + dt : Math.max(0, v.stare - dt * 2);
         if (v.stare >= STARE) {
           v.stared = true;
-          this.w.toast("Stared it out!", 1.4);
+          this.w.toast("Stared it out!");
           this.send({ k: "stare", i, g: v.gen });
         }
       }
@@ -1491,7 +1492,7 @@ class Seagulls implements Job {
     this.placed = true;
     if (S.w !== 0 || S.ph !== 0 || S.t < FIRST - 4) return;
     const said = whereSaid(w, this.offer.x, this.offer.z, S.cx, S.cz);
-    if (said) w.toast(`Too tight by the noticeboard: the benches are out on open ground ${said}`, 4);
+    if (said) w.toast(`Too tight by the noticeboard: the benches are out on open ground ${said}`);
   }
 
   host(dt: number) { if (!this.local) this.run(dt); }
@@ -1607,7 +1608,7 @@ class Seagulls implements Job {
     if (this.shoutT > 0) return true;
     this.shoutT = S.loud ? SHOUT_EVERY / 2 : SHOUT_EVERY;
     SFX.shout(0, 0, 7);
-    this.w.toast(S.loud ? "OI! (through the megaphone)" : "OI! GERROFF!", 1.2);
+    this.w.toast(S.loud ? "OI! (through the megaphone)" : "OI! GERROFF!");
     this.send({ k: "shout", x: me.x, z: me.z });
     return true;
   }
