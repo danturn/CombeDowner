@@ -197,6 +197,9 @@ kbd {
 .wardtile.on { border-color: var(--paper-ink); background: var(--accent); }
 .wardtile.locked { color: var(--paper-muted); background: #fff; border-style: dashed; cursor: default; text-align: left; }
 .wardtile small { display: block; font-size: 12px; }
+.wardtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.wardtab { padding: 5px 10px 4px; font-size: 15px; border: 2px solid var(--paper-line); }
+.wardtab.on { border-color: var(--paper-ink); background: var(--accent); }
 @media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 150px; height: 200px; } }
 /* the pub menu borrows the big map, over the pause menu; its hint keeps one height so the map never shifts under the pointer */
 .music .hint { flex: 1; min-width: 0; }
@@ -322,6 +325,10 @@ kbd {
 .card.tt .wardtile.on { background: #ff0; color: #000; border-color: #fff; }
 .card.tt .wardtile.on small { color: #000; }
 .card.tt .wardtile.locked { background: #000; color: #088; border-color: #088; }
+.card.tt .wardtab { font-size: 21px; text-transform: none; border: 0; background: #000; color: #ff0; }
+.card.tt .wardtab small { color: #0ff; }
+.card.tt .wardtab.on { background: #0ff; color: #000; }
+.card.tt .wardtab.on small { color: #000; }
 .card.tt .trpct b { font-family: inherit; font-size: 60px; color: #ff0; }
 .card.tt .trpct span, .card.tt .trbits, .card.tt .trbody h3 small { color: #0ff; font-size: 19px; }
 .card.tt .trbits b { color: #fff; }

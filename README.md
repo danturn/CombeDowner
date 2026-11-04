@@ -213,6 +213,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe. And somewhere along the bottom of Royal Victoria Park, follow the guitars to a car that
   someone's left with the door open and a tape going.
+- **The wardrobe** (pause menu): 36 daft things to wear, one on your head, one on your face and one
+  on your back or shoulder, each in its own tab with what's still to earn and how. Everyone you play
+  with sees what you've got on. They come from all over: a seagull for three stars on a Seagull
+  Attack, a chef's hat from the Darling Deli, a crown for being there when the whole map opens, a
+  party hat for setting the last strange object in a structure (and a strange object of your own on
+  your shoulder after five), a bus driver's cap for a clean shift on the buses, a clippie's ticket
+  machine hat for fifty tickets sold in Push the Bus (a pensioner's rain hood for gold with them all
+  happy, a walking stick for being hit by one, a thermos in a string bag for being hit by the lot),
+  earmuffs for a clean touch on the bells, a beret when the critics call your show a triumph, a
+  lock-keeper's cap for gold on the Lock Run, an L-plate for passing the driving test, dazzled eyes
+  for 60 km/h past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
+  shoot-out won, a froth moustache for ten different pubs, a monocle for a night out seen through,
+  sunblock stripes for knocking over the stumps, climbing rope for topping the Climb with no lives
+  lost, a balancing pole for the Tightrope, a miner's lamp for the bottom of the mines, a skateboard
+  for a ×10 combo and a pigeon for an hour in the parks. They work the same on every map.
 - **Trophies**: bronze, silver and gold for every kind of job (finish one, then a three-star or silver
   time, then gold), and daft milestones for riding, fighting, pubs, landmarks and wandering about Bath. A
   "Trophy!" slides in when you win one (or is listed on the result card, if a job has just ended). The pause menu's Trophies cabinet lists them all by category and

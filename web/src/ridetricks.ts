@@ -17,6 +17,7 @@ import * as SFX from "./audio";
 import type { Player, RideEvent } from "./player";
 import { note } from "./daily";
 import { best } from "./trophies";
+import { earn } from "./wardrobe";
 import { rideSpecs, type RideKind } from "./rides";
 
 /** Your bests on one ride: metres, metres, seconds and points. */
@@ -154,6 +155,7 @@ export class RideTricks {
     if (!c || !c.mult || !kind) return;
     const total = Math.round(c.base * c.mult);
     note("combo", total);
+    if (c.mult >= 10) earn("deck");
     best("combo", total);
     const b = (this.bests[kind] ??= { grind: 0, air: 0, manual: 0, combo: 0 }), news: string[] = [];
     if (c.grind > b.grind + 0.05) { b.grind = c.grind; news.push(`grind ${c.grind.toFixed(1)} m`); }
