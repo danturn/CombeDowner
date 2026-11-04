@@ -14,7 +14,7 @@
 // switched off in this game (features.ts) is hidden.
 import { ctlText } from "./controls";
 import { feature, type Feature } from "./features";
-import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, pintIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, pintIcon, ROUTE, spotIcon, stopIcon, STRUCT_FULL, STRUCT_WANTS, structIcon, trapIcon } from "./minimap";
 import { PLAYER_COLOURS } from "./markers";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
@@ -28,7 +28,7 @@ type Draw = (g: CanvasRenderingContext2D, s: number) => void;
 /** A row of the key. layer: what it switches (none: it's always shown, like you). */
 interface Row { layer?: string; label: string; note?: string; icon: Draw; dots?: [string, string][] }
 /** The sections that belong to a part of the game that can be switched off, by their title's start. */
-const SECTION_FEATURE: [string, Feature][] = [["Challenges", "challenges"]];
+const SECTION_FEATURE: [string, Feature][] = [["Challenges", "challenges"], ["Structures", "strange"]];
 
 /** A few words on what each kind of job is, by its id. */
 const JOB_NOTES: Record<string, string> = {
@@ -63,6 +63,11 @@ function sections(): [string, Row[]][] {
   return [
     ["Challenges: find the thing and step up to it", [
       { layer: "challenges", label: "Team challenges", note: "open as the zones do", icon: (g, s) => challengeIcon(g, s / 2, s / 2, s / 19, "#f2c318") },
+    ]],
+    ["Structures: fill one to open the next zone", [
+      { layer: "structures", label: "Strange structures", note: "red while it wants filling, and pulsing where the next strange object goes; green once it's full",
+        icon: (g, s) => { structIcon(g, s * 0.32, s * 0.6, s / 22, STRUCT_WANTS); structIcon(g, s * 0.68, s * 0.4, s / 22, STRUCT_FULL); },
+        dots: [[STRUCT_WANTS, "Wants filling"], [STRUCT_FULL, "Full"]] },
     ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
