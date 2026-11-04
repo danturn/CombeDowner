@@ -35,7 +35,7 @@ import { addStyle, esc, layer } from "./hudkit";
 import { pop } from "./pop";
 import { ctlText } from "./controls";
 import { padText } from "./gamepad";
-import { keycaps } from "./useprompt";
+import { keycaps } from "./keycap";
 
 /** What a message says: never how it looks or how long it stays, which each kind decides for itself. */
 export interface Message {
@@ -83,7 +83,7 @@ addStyle("notice", `
   background:var(--panel);padding:5px 14px 4px;font:700 15px/1.3 var(--f-hud);letter-spacing:.08em;text-transform:uppercase;text-align:center;color:#fff;pointer-events:none;
   opacity:0;transition:opacity .25s}
 #guide.show{opacity:1}
-#guide kbd{display:inline-block;min-width:1.3em;padding:1px 6px 0;margin:0 3px 0 0;border:1px solid var(--accent);border-bottom-width:3px;border-radius:3px;font:inherit;color:var(--accent);text-align:center;line-height:1.15;letter-spacing:.04em}
+#guide{--cap-ink:var(--accent)}
 #guide small{display:block;font-size:13px;color:#c8d4dc;letter-spacing:.06em}
 /* "Click to aim" sits just under the crosshair too; the use prompt's rule outranks this one */
 :has(#clickhint:not([hidden])) #guide{top:calc(50% + 70px)}
