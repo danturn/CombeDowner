@@ -13,7 +13,7 @@ import { show } from "./show";
 
 addStyle("useprompt", `
 #usehint kbd,#shoothint kbd{display:inline-block;min-width:1.3em;padding:1px 6px 0;margin:0 3px 0 0;border:1px solid var(--accent);border-bottom-width:3px;border-radius:3px;
-  font:inherit;color:var(--accent);text-align:center;line-height:1.15;letter-spacing:.04em}
+  font:inherit;color:var(--accent);background:transparent;text-align:center;line-height:1.15;letter-spacing:.04em}
 #usehint.touch kbd[data-ctl]{pointer-events:auto;padding:3px 10px 2px;background:rgba(255,221,0,.12);cursor:pointer}
 body:has(.msc-result:not(.out)) #usehint,body:has(.msc-wait:not([hidden])) #usehint{visibility:hidden}`);
 
