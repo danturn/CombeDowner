@@ -4221,7 +4221,7 @@ export class Game {
     this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
     this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
     this.zoneUpkeep();
-    if (!this.reveal.on) { const shot = this.oddments.nextShot(); if (shot) this.reveal.play(shot, this.camera, { x: p.pos.x, z: p.pos.z }); }
+    if (!this.reveal.on && this.arrival.clear) { const shot = this.oddments.nextShot(); if (shot) this.reveal.play(shot, this.camera, { x: p.pos.x, z: p.pos.z }); }
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.night.update(dt);

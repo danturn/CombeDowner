@@ -2491,17 +2491,19 @@ export function oddment(how: "up" | "set" | "drop", dist = 0, pan = 0) {
   if (how === "set") tone(d, t + 0.25, 1.6, 0.06, base * 4.01, base * 3.9, "triangle", 0.3);
 }
 
-/** A crowd cheering and clapping, into d from t for secs: rising "yay"s over a patter of claps. */
+/** A crowd cheering and clapping, into d from t for secs: rising "yay"s over a patter of claps.
+ *  Each yell and hiss is kept under the noise buffer's two seconds, so a long cheer is many of them. */
 function cheer(d: AudioNode, t: number, secs: number, voices: number, claps: number) {
   for (let k = 0; k < voices; k++) {
-    const p = 1.1 + (k % 5) * 0.12 + Math.random() * 0.08, at = t + Math.random() * 0.35, len = secs * (0.45 + Math.random() * 0.35);
+    const p = 1.1 + (k % 5) * 0.12 + Math.random() * 0.08, len = 0.9 + Math.random() * 0.6;
+    const at = t + (k < 6 ? Math.random() * 0.3 : Math.random() * Math.max(0.3, secs - len));
     say(d, at, len, ["e", "a", "a", "a"], [300, 360, 380, 330].map((x) => x * p), 0.22, pipes(k * 17 + 3), 0.35, 0.04);
   }
   for (let k = 0; k < claps; k++) {
     const at = t + 0.1 + Math.random() * secs * Math.random() ** 0.6;
     burst(d, at, 0.025, 0.09 * vary(0.3), 1300 + Math.random() * 1100, { q: 1.3 });
   }
-  burst(d, t, secs, 0.05, 1500, { q: 0.5, attack: 0.3 });
+  for (let at = 0; at < secs; at += 0.9) burst(d, t + at, 1.6, 0.05 * (1 - at / secs), 1500, { q: 0.5, attack: 0.3 });
 }
 
 /** A held brass chord, two slightly detuned reeds a note so it swells rather than buzzes. */
@@ -2537,11 +2539,13 @@ export function unlockFanfare(big = false): Playing {
     tone(d, t + s + 0.4 + k * step, 0.16, 0.07, f * 2, f * 2, "triangle", 0.015);
   });
   const hit = t + s + 0.4 + run.length * step;
-  burst(d, hit - 0.9, 0.9, 0.1, 6000, { type: "highpass", attack: 0.88 });
+  const swell = Math.min(0.9, hit - t);
+  burst(d, hit - swell, swell, 0.1, 6000, { type: "highpass", attack: swell * 0.97 });
   const hold = big ? 3.6 : 1.8;
   brass(d, hit, hold, big ? [up(-12), up(0), up(4), up(7), up(12), up(16)] : [up(0), up(4), up(7), up(12)], big ? 0.055 : 0.06);
   timp(hit, big ? 0.8 : 0.6);
-  burst(d, hit, big ? 2.6 : 1.6, 0.16, 7000, { type: "highpass", attack: 0.01 });
+  burst(d, hit, 1.8, 0.16, 7000, { type: "highpass", attack: 0.01 });
+  if (big) burst(d, hit + 1.2, 1.8, 0.07, 6000, { type: "highpass", attack: 0.4 });
   if (big) {
     brass(d, hit + 0.5, 0.25, [up(5), up(9), up(12)], 0.04);
     brass(d, hit + 0.8, hold - 0.8, [up(7), up(11), up(14), up(19)], 0.035);

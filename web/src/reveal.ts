@@ -167,18 +167,19 @@ export class Reveal {
     return true;
   }
 
-  /** The card's arrival: the fanfare, the flash and the first burst, and for the finale two more. */
+  /** The card's arrival: the fanfare, the flash and a burst of confetti, with more to follow. */
   private land(s: Shot) {
     this.landed = true;
     const big = s.kind === "map";
-    this.fanfare?.stop();
-    this.fanfare = SFX.unlockFanfare(big);
     this.kick = 1;
     this.el?.classList.add("landed");
     const c = this.confetti;
-    if (!c) return;
-    c.burst(big ? 260 : 150);
-    if (big) for (const [at, n] of [[1.7, 200], [3.6, 220]]) window.setTimeout(() => { if (this.confetti === c && this.shot === s) c.burst(n); }, at * 1000);
+    if (c) {
+      c.burst(big ? 260 : 150);
+      for (const [at, n] of big ? [[1.7, 200], [3.6, 220], [6, 160]] : [[1.4, 90]]) window.setTimeout(() => { if (this.confetti === c && this.shot === s) c.burst(n); }, at * 1000);
+    }
+    this.fanfare?.stop();
+    this.fanfare = SFX.unlockFanfare(big);
   }
 
   private card(s: Shot) {
