@@ -552,8 +552,8 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
      bottom right  rounds, or the vehicle and its speed in their place (#drive): never both.
      bottom middle the street name, and the arrivals line over it.
      the middle    a title or stage band over the crosshair, the use prompt under it, then one
-                   row per meter in the slot under that (missionscreens.ts #maux), then score pops
-                   (notice.ts trick) over the Flag Lads' combo.
+                   row per meter in the slot under that (missionscreens.ts #maux), the combo row
+                   (combo.ts), then score pops (notice.ts trick).
    On a touch screen the top-left slot joins the left column (#lstack, below) and the bottom
    corners keep clear of the buttons. */
 #mstack { position: absolute; left: 16px; top: 64px; width: min(320px, calc(100vw - 230px)); }
@@ -884,7 +884,7 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
 .chron-league td:last-child { text-align: right; }
 .chron-small { display: grid; gap: 8px; margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--news-rule); }
 
-/* Big call-outs ("You shot ...") */
+/* Big call-outs ("You shot ...") in the mines and the deli; the streets draw theirs on the HUD plate (notice.ts) */
 #toast {
   position: absolute; left: 50%; top: 22%; transform: translateX(-50%) scale(0.9); max-width: calc(100vw - 32px);
   font-size: 30px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; color: var(--accent);
@@ -892,20 +892,6 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
   opacity: 0; transition: opacity 0.3s, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.5);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) scale(1); }
-/* A ride's combo (ridetricks.ts), a row of the meter slot under the crosshair: the score and multiplier, what's in it, and a manual's balance */
-#combo {
-  max-width: calc(100vw - 32px); text-align: center;
-  pointer-events: none; color: #fff; font-weight: 800; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 0, 0, 0.5);
-}
-#combo b { font-size: 24px; color: var(--accent); }
-#combo i { font-size: 18px; font-style: normal; }
-#combo small { display: block; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-#combo small.best { font-weight: 600; text-transform: none; opacity: 0.85; }
-#combo.new small.best { color: var(--accent); opacity: 1; }
-#combo.bail b { color: #ff6a4d; }
-#combo.bail small { text-decoration: line-through; }
-#combo .bal { display: block; position: relative; width: 120px; height: 6px; margin: 5px auto 0; border-radius: 3px; background: rgba(0, 0, 0, 0.5); }
-#combo .bal span { position: absolute; top: -3px; width: 4px; height: 12px; margin-left: -2px; background: var(--accent); }
 #clickhint {
   position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); padding: 4px 10px; border-radius: 4px;
   font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #fff; background: rgba(0, 0, 0, 0.55);

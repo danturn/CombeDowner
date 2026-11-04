@@ -1,25 +1,31 @@
 // The game's notices: every line it puts up for a moment to tell you something, in one family with
-// one look, so a pickup, a kill, a job's stage and a trophy read as the same game. Which tier to use:
+// one look, so a pickup, a kill, a job's stage and a trophy read as the same game. They are all the
+// HUD's plate (the dark panel with its clipped corners, in the HUD's font, with an edge along the
+// bottom in the colour it's given), told apart only by size and place. Which tier to use:
 //
-//   call   Something just happened to you or because of you: a kill, a pickup, a ride, a fare, a
-//          town arrived in. The big yellow line a little above the middle (#toast). Game.toast.
-//   note   Something worth knowing that isn't news: a tip, the examiner's remark, a critic's aside.
-//          The same place as a call, smaller and white, so the two queue together.
-//   stage  A mission moving on: a wave, a checkpoint, a life gone, he got away, out of lives. The
-//          band over the crosshair in the mission's colour (missionscreens.ts missionCall).
-//   trick  A score popping as you play (a combo, a flag shot, a boost): low in the middle, over
-//          the Flag Lads' combo meter, never held back, each one replacing the last.
-//   award  Something kept: a trophy, a new thing in your wardrobe. Slides in at the top, one at a
-//          time; while a mission's result card is up it is written on the card instead.
+//   call   News: something just happened to you or because of you (a kill, a pickup, a ride, a
+//          fare, a town arrived in), or something worth knowing (a tip, the examiner's remark, a
+//          critic's aside). A plate a little above the middle (#toast, Game.toast): big for a few
+//          words, smaller and wrapped for anything longer. Asking for the "note" tier, or writing
+//          more than LONG characters, gets the smaller one.
+//   stage  A mission moving on: a wave, a checkpoint, a life gone, he got away, out of lives. A
+//          wider plate over the crosshair, edged in the mission's colour (missionscreens.ts
+//          missionCall).
+//   trick  A score popping as you play (a flag shot, a boost): the same font and colour but no
+//          plate, light and quick, in the meter slot under the crosshair (under the combo row),
+//          never held back, each one replacing the last.
+//   award  Something kept: a trophy, a new thing in your wardrobe. The plate with its medal, sliding
+//          in at the top one at a time; while a mission's result card is up it is written on the
+//          card instead.
 //   system The game telling you about itself, not about Bath: the map stuck loading, someone on
 //          another version, safe graphics after a crash. A thin BathText strip along the top
 //          (systemNote), one per kind, that stays until it's put right or closed.
 //
-// A call is a few words: one longer than LONG characters is put up as a note, so it wraps small
-// rather than shouting across the screen. Calls and notes share one queue: nothing is lost. A new one waits until the one showing has been
-// up long enough to read its first words, then takes its place; the same words again just keep
-// it up. While a title card, a race's countdown or anything else asks for quiet (noticeHold), they
-// wait, and come one after another once it's over; so do they while the big map is open.
+// Calls share one queue, short and long alike: nothing is lost. A new one waits until the one
+// showing has been up long enough to read its first words, then takes its place; the same words
+// again just keep it up. While a title card, a race's countdown or anything else asks for quiet
+// (noticeHold), they wait, and come one after another once it's over; so do they while the big
+// map is open.
 //
 // All drawn on this screen only, from what the game already knows: nothing goes over the network.
 import { addStyle, layer } from "./hudkit";
@@ -35,18 +41,23 @@ export interface Notice {
   /** A small line above it (an award's kind). */
   kicker?: string;
   secs?: number;
+  /** The plate's edge (a trick's words): the HUD's yellow if not given. */
   colour?: string;
 }
 
 const MIN_UP = 0.9;      // seconds a call is up before a newer one may take its place
+const CLIP = "polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))";
 const MAX_QUEUE = 5;
 const LONG = 64;
 const AWARD_SECS = 3.6;
 
 addStyle("notice", `
-#toast.note{font-size:21px;font-weight:700;text-transform:none;letter-spacing:.02em;color:#fff;-webkit-text-stroke:0;width:max-content;max-width:min(640px,calc(100vw - 32px));line-height:1.2}
-#toast small{display:block;font-size:.6em;font-weight:700;letter-spacing:.04em;color:#fff;-webkit-text-stroke:0;margin-top:2px}
-#trick{position:absolute;left:50%;top:calc(50% + 150px);transform:translateX(-50%);text-align:center;max-width:calc(100vw - 32px);pointer-events:none;font-weight:800;font-size:26px;letter-spacing:.04em;
+#toast.plate{width:max-content;max-width:min(520px,calc(100vw - 32px));box-sizing:border-box;padding:8px 18px 12px;background:var(--panel);clip-path:${CLIP};
+  box-shadow:inset 0 -3px 0 var(--kc,var(--accent));color:#fff;font:800 26px/1.1 var(--f-hud);letter-spacing:.02em;text-transform:none;-webkit-text-stroke:0;text-shadow:none}
+#toast.plate.note{max-width:min(560px,calc(100vw - 32px));padding:6px 14px 10px;font-size:18px;font-weight:600;line-height:1.2}
+#toast.plate small{display:block;font-size:.66em;font-weight:600;color:#c8d4dc;margin-top:2px}
+@media (max-width:700px),(max-height:500px){#toast.plate{font-size:21px}#toast.plate.note{font-size:16px}}
+#trick{position:absolute;left:50%;top:calc(50% + 150px);transform:translateX(-50%);text-align:center;max-width:calc(100vw - 32px);pointer-events:none;font:800 26px/1.1 var(--f-hud);letter-spacing:.04em;
   color:var(--accent);text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 12px rgba(0,0,0,.5);transition:opacity .3s}
 #trick.out{opacity:0}
 #maux>#trick{position:static;transform:none;width:auto}
@@ -54,13 +65,13 @@ body:has(#bigmap:not([hidden])) #trick{visibility:hidden}
 #trick small{display:block;font-size:14px;color:#fff;letter-spacing:.06em;text-transform:uppercase}
 @media (max-height:500px){#trick{top:calc(50% + 96px);font-size:20px}}
 #award{position:absolute;left:50%;top:10px;z-index:12;transform:translate(-50%,-140%);transition:transform .45s cubic-bezier(.2,1.3,.4,1),opacity .4s;opacity:0;
-  pointer-events:none;display:flex;align-items:center;gap:10px;padding:8px 16px 8px 10px;max-width:calc(100vw - 24px);box-sizing:border-box;
-  background:var(--panel);border:2px solid var(--tc,var(--accent));box-shadow:0 6px 20px rgba(0,0,0,.5);color:#fff}
+  pointer-events:none;display:flex;align-items:center;gap:10px;padding:8px 18px 11px 10px;max-width:calc(100vw - 24px);box-sizing:border-box;
+  background:var(--panel);clip-path:${CLIP};box-shadow:inset 0 -3px 0 var(--tc,var(--accent));color:#fff;font-family:var(--f-hud)}
 #award.in{transform:translate(-50%,0);opacity:1}
 #award .medal{flex:none;width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff8,var(--tc) 55%);box-shadow:0 0 12px var(--tc)}
-#award b{display:block;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--tc)}
-#award span{font-size:17px;font-weight:700;line-height:1.1}
-#award small{display:block;font-size:12px;color:#c8d4dc;font-weight:500}
+#award b{display:block;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--tc)}
+#award span{font-size:19px;font-weight:700;line-height:1.1}
+#award small{display:block;font-size:13px;color:#c8d4dc;font-weight:500}
 #sysnotes{position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:6px;width:max-content;max-width:min(92vw,640px);pointer-events:none}
 .sysnote{position:relative;display:flex;gap:1ch;align-items:baseline;padding:5px 34px 5px 10px;background:#000;color:#fff;border-left:4px solid #0ff;
   font:19px/1.15 VT323,ui-monospace,Menlo,Consolas,monospace;white-space:pre-line;text-align:left;pointer-events:auto;box-shadow:0 0 0 2px #000,0 6px 18px rgba(0,0,0,.55)}
@@ -94,11 +105,10 @@ const box = () => document.getElementById("toast");
 function render(it: Item) {
   const el = box();
   if (!el) return;
-  el.className = it.tier === "note" ? "note" : "";
-  el.style.color = it.colour;
+  el.className = it.tier === "note" ? "plate note" : "plate";
+  el.style.setProperty("--kc", it.colour || "var(--accent)");
   el.textContent = it.text;
   if (it.sub) { const s = document.createElement("small"); s.textContent = it.sub; el.appendChild(s); }
-  if (it.tier === "call") pop(el);
   void el.offsetWidth;
   el.classList.add("show");
 }
@@ -173,11 +183,13 @@ export function noticeStage(fn: (n: Notice) => void) { stageCall = fn; }
 // ---- tricks ----------------------------------------------------------------------------------------
 
 let trickEl: HTMLDivElement | null = null, trickT = 0;
+let trickHome: ((el: HTMLElement) => void) | null = null;
+/** missionscreens.ts: the meter slot, where tricks pop under the combo row. */
+export function noticeTricksTo(fn: (el: HTMLElement) => void) { trickHome = fn; }
 function trick(n: Notice) {
   if (!trickEl) { trickEl = document.createElement("div"); trickEl.id = "trick"; }
-  // under any meters in the slot under the crosshair (missionscreens.ts #maux), so it never sits on one
-  const home = document.getElementById("maux") ?? layer();
-  if (trickEl.parentElement !== home) home.appendChild(trickEl);
+  if (trickHome) trickHome(trickEl);
+  else if (!trickEl.isConnected) layer().appendChild(trickEl);
   const el = trickEl;
   el.textContent = n.text;
   if (n.sub) { const s = document.createElement("small"); s.textContent = n.sub; el.appendChild(s); }

@@ -219,7 +219,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **A job's brief is one cutting from the paper**: what you read at the noticeboard (whose foot says
   what E does, with no second prompt on top of it) is the title card when it starts, and J (or Poster
   on a touch screen) brings it back during any job with how it's going written on it. A ride's
-  combo, the Flag Lads' combo and the wings' flight sit together under the crosshair. The big map's
+  tricks and a string of the Flag Lads' flags build one combo, a single row under the crosshair
+  (both at once when you shoot flags from a board), with the wings' flight in the same slot. Every notice
+  (news, a mission's stage, a trophy) comes up on the same dark HUD plate, edged in its colour. The big map's
   key, its notes and a pub's card are BathText pages like the menus, and the game's notes about
   itself (the map stuck loading, someone on another version) are a BathText strip along the top.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched

@@ -1,11 +1,11 @@
 // The fun on top of shooting the Flag Lads' flags (invasion.ts does the counting): a combo for flags
-// shot in quick succession, confetti and fluttering bunting, the moment a cluster of flags is cleared, and a
+// shot in quick succession (its line in the combo row under the crosshair, combo.ts), confetti and fluttering bunting, the moment a cluster of flags is cleared, and a
 // bonus for shooting from a moving ride. All of it is yours alone: nobody else sees your combo or
 // your slow-motion, and none of it changes what the host counts. The scores here are for show.
 //
 // Cheap on purpose: one pool of flakes in a single instanced mesh serves the confetti and the torn
 // bunting alike, and nothing is allocated per frame.
-import { missionAuxAdopt } from "./missionscreens";
+import { comboLine } from "./combo";
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { notice } from "./notice";
@@ -25,8 +25,8 @@ export interface JuiceWorld {
 export class FlagJuice {
   private count = 0; private total = 0; private lastAt = 0; private shots = 0;
   private slowT = 0; private scale = 1;
-  private el: HTMLDivElement | null = null;
   private shown = "";
+  private last = "Flag down";   // what the latest shot brought down, to label the combo
 
   private mesh: THREE.InstancedMesh;
   private next = 0; private live = 0;
@@ -48,7 +48,7 @@ export class FlagJuice {
 
   /** A flag of mine has just come down. trick: what I was riding or grinding, if anything. */
   flag(x: number, y: number, z: number, trick: string) {
-    const n = this.hitCombo(FLAG_PTS);
+    const n = this.hitCombo(FLAG_PTS, "Flag down");
     this.spray(x, y, z, 10 + 2 * Math.min(n, 8), 1, 4);
     SFX.comboNote(n);
     if (trick) this.trickShot(trick);
@@ -56,7 +56,7 @@ export class FlagJuice {
 
   /** I've shot a string of bunting down. at: points along it, x y z in turn. */
   bunting(at: number[], trick: string) {
-    const n = this.hitCombo(BUNTING_PTS);
+    const n = this.hitCombo(BUNTING_PTS, "Bunting down");
     this.fall(at, 2.3);
     SFX.buntingDrop();
     SFX.comboNote(n);
@@ -75,7 +75,7 @@ export class FlagJuice {
 
   /** The last flag in a cluster. */
   cleared(x: number, y: number, z: number) {
-    this.hitCombo(CLEAR_PTS);
+    this.hitCombo(CLEAR_PTS, "Cleared");
     this.spray(x, y + 0.5, z, 70, 1.6, 7);
     for (let k = 0; k < 28; k++) this.spawn(x + (Math.random() - 0.5) * 8, y + 4 + Math.random() * 3, z + (Math.random() - 0.5) * 8, 0, 0, 0, 2.3, k % 2 ? WHITE : RED);
     SFX.squareCleared();
@@ -121,12 +121,13 @@ export class FlagJuice {
     this.scene.remove(this.mesh);
     this.mesh.geometry.dispose();
     (this.mesh.material as THREE.Material).dispose();
-    this.el?.remove();
+    comboLine("flags", null);
   }
 
-  private hitCombo(pts: number): number {
+  private hitCombo(pts: number, what: string): number {
     const now = performance.now();
     if (this.count && now - this.lastAt > WINDOW) this.finish();
+    this.last = what;
     this.count++;
     this.shots++;
     this.lastAt = now;
@@ -147,30 +148,20 @@ export class FlagJuice {
   private finish() {
     if (this.count >= 2) this.say(`Combo over: ${this.shots} shots, ${this.total} points`, "", true);
     this.count = this.total = this.shots = 0;
-    this.write("");
+    this.shown = "";
+    comboLine("flags", null);
   }
 
   private tick(now: number, force = false) {
     if (!this.count) return;
     const left = Math.max(0, 1 - (now - this.lastAt) / WINDOW);
-    const html = this.count < 2 ? "" : `<b>x${this.count}!</b><i>${this.total}</i><u style="--left:${left.toFixed(2)}"></u>`;
+    if (this.count < 2) return;
     // the bar only needs redrawing a few times a second
-    const key = html && `${this.count}|${this.total}|${Math.round(left * 12)}`;
-    if (force || key !== this.shown) this.write(html, key);
-  }
-
-  private write(html: string, key = "") {
+    const key = `${this.count}|${this.total}|${Math.round(left * 12)}`;
+    if (!force && key === this.shown) return;
     this.shown = key;
-    if (!this.el) {
-      if (!html) return;
-      inject();
-      this.el = document.createElement("div");
-      this.el.id = "fj-combo";
-    }
-    if (html) missionAuxAdopt(this.el);
-    this.el.innerHTML = html;
-    this.el.hidden = !html;
-    if (html) { this.el.classList.remove("pop"); void this.el.offsetWidth; this.el.classList.add("pop"); }
+    comboLine("flags", { score: this.total.toLocaleString("en-GB"), mult: `×${this.count}`, label: this.last, colour: "#ff4a55",
+      more: `<span class="bar"><u style="--left:${left.toFixed(2)}"></u></span>` }, force);
   }
 
   /** A score popping up (notice.ts's trick tier); over: the combo's tally, a little quieter. */
@@ -198,19 +189,4 @@ export class FlagJuice {
     this.mesh.setColorAt(k, c);
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
-}
-
-let injected = false;
-function inject() {
-  if (injected) return;
-  injected = true;
-  const s = document.createElement("style");
-  s.textContent = `#fj-combo{font-family:var(--f-hud);text-align:center;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
-#fj-combo b{display:block;font-size:clamp(30px,6vw,52px);color:#ff4a55;font-style:italic;line-height:1}
-#fj-combo i{display:block;font-style:normal;font-weight:700;font-size:clamp(13px,2.4vw,18px)}
-#fj-combo u{display:block;width:120px;margin:4px auto 0;height:4px;background:#fff;border-radius:2px;transform-origin:center;transform:scaleX(var(--left,1));text-decoration:none}
-#fj-combo.pop b{animation:fj-pop .22s ease-out}
-@media (max-height:500px){#fj-combo b{font-size:26px}}
-@keyframes fj-pop{from{transform:scale(1.7)}to{transform:none}}`;
-  document.head.appendChild(s);
 }

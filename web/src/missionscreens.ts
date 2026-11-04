@@ -9,7 +9,7 @@
 //   missionProgress  a status panel that stays up (the goal, how far, a clock, the step you're on),
 //                    one per mission id, stacked in the HUD's left column. missionAux is the slot
 //                    under the crosshair for a mode's meter (a beat bar, a grip, a gate's clock).
-//   missionCall      a stage call in the band over the crosshair (a wave, a checkpoint, a life gone,
+//   missionCall      a stage call on the plate over the crosshair (a wave, a checkpoint, a life gone,
 //                    out of lives), or any other notice tier (notice.ts says which to use when).
 //   missionWatching  the banner while you watch the others after you've finished.
 //   missionResult    the card at the end: a cutting from the Chronicle (cutting.ts) with the section
@@ -30,7 +30,7 @@ import { modal, modalClicked } from "./modal";
 import { cutFlag, cutFront, tearOff } from "./cutting";
 import { addStyle, esc, layer, nth } from "./hudkit";
 import { briefCut, briefHtml } from "./brief";
-import { notice, noticeAwardsTo, noticeHold, noticeStage, type Notice } from "./notice";
+import { notice, noticeAwardsTo, noticeHold, noticeStage, noticeTricksTo, type Notice } from "./notice";
 import * as SFX from "./audio";
 
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
@@ -75,7 +75,7 @@ addStyle("mission", `
 #maux .aux-meter{position:relative;width:100%;height:12px;background:rgba(0,0,0,.5);border:2px solid #fff;border-radius:7px;overflow:hidden;box-sizing:border-box}
 #maux .aux-meter.thin{width:96px;height:6px;border-width:1px;border-radius:0}
 #maux .aux-meter>i{position:absolute;top:0;bottom:0;left:0;display:block}
-#maux>:is(#combo,#fj-combo,#wingsbar){position:static;transform:none;margin:0;width:auto}
+#maux>:is(#combo,#wingsbar){position:static;transform:none;margin:0;width:auto}
 #maux .aux-panel{background:var(--panel);padding:6px 14px;border-bottom:3px solid var(--kc,var(--accent));min-width:260px;box-sizing:border-box}
 .msc{position:fixed;left:0;right:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;text-align:center;
   font-family:var(--f-hud);color:#fff;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.6);transition:opacity ${FADE}s;z-index:6}
@@ -83,7 +83,7 @@ addStyle("mission", `
 .msc.out{opacity:0}
 .msc .band{width:100%;padding:12px 16px 16px;box-sizing:border-box;background:linear-gradient(90deg,transparent,rgba(8,14,20,.82) 15%,rgba(8,14,20,.82) 85%,transparent);
   box-shadow:inset 0 -3px 0 var(--kc,var(--accent))}
-.msc-stage .band{animation:msc-in .5s cubic-bezier(.2,1.6,.4,1) both}
+.msc-stage .band{animation:msc-in .5s cubic-bezier(.2,1.6,.4,1) both;background:var(--panel);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));text-shadow:0 2px 0 #000}
 .msc .kind{font-weight:700;font-size:clamp(13px,2.6vw,18px);letter-spacing:.2em;text-transform:uppercase;color:var(--kc,var(--accent))}
 .msc .title{font-weight:800;font-size:clamp(28px,6vw,54px);letter-spacing:.05em;line-height:1}
 .msc .goal{font-weight:600;font-size:clamp(17px,3.6vw,28px);margin-top:6px;line-height:1.15}
@@ -313,7 +313,7 @@ function auxSlot() {
   return slot;
 }
 
-/** A meter a mode keeps itself (a ride's combo, the Flag Lads' combo, the wings' flight): a row of
+/** A meter a mode keeps itself (the combo row, the wings' flight): a row of
  *  the slot under the crosshair, above the score pops, so it never sits apart or on top of another. */
 export function missionAuxAdopt(el: HTMLElement) {
   const slot = auxSlot();
@@ -519,6 +519,7 @@ export function missionResultDrop() { ending?.remove(); }
 /** Something won while the card is up: list it there. False if no card is up to take it. */
 export function missionReward(text: string) { if (!ending) return false; ending.reward(text); return true; }
 noticeAwardsTo(missionReward);
+noticeTricksTo(missionAuxAdopt);
 
 /** The card at the end of every mission. It stays till Continue, its × or its timer. */
 export function missionResult(o: MissionResult): ResultHandle {
