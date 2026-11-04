@@ -12,6 +12,7 @@ import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
 import { Culler, show, traverseAll } from "./cull";
 import { buildVegetation } from "./trees";
+import { region } from "./region";
 import { buildGrass, type Grass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
@@ -503,6 +504,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     new THREE.Color("#cdbf98"), // sand and beaches
     new THREE.Color("#536a46"), // wetland
   ];
+  // a dry summer (region.ts) browns the meadows most and watered gardens and pitches least
+  const look = region(D.id), STRAW = new THREE.Color("#a39566");
+  for (const [kind, share] of [[0, 0.5], [1, 0.2], [2, 0.3], [3, 1], [4, 0.6], [7, 0.6], [9, 0.5]]) GROUND[kind].lerp(STRAW, look.grass.dry * share);
   const earth = new THREE.Color("#7a6a4c");
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   const width = (r: { c: string; w?: number }) => r.w ?? RW[r.c] ?? 4;   // a pedestrianised street has its own (wall to wall)
@@ -2405,7 +2409,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   mark("walls-fences");
   // ---- trees and shrubs ------------------------------------------------------------------
-  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, S.vegKit);
+  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, look.trees, S.vegKit);
   S.vegKit ??= vegetation.kit;
   buildBoulders(scene, D.rk ?? [], Z0, culler, () => view.sceneryFar * 0.6);
   yield;
@@ -2453,7 +2457,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       return n ? (s / n) * (0.55 + 0.45 * n / 4) : 0;
     };
     const geos = new Map<string, Geo>();
-    const LEAVES = [[0.36, 0.5, 0.24], [0.32, 0.46, 0.22], [0.4, 0.53, 0.26], [0.34, 0.44, 0.2]];
+    const LEAVES = look.trees.canopy;
     for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
       const h = hAtC(i, j);
       if (!h) continue;

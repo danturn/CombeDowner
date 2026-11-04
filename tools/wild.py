@@ -13,7 +13,7 @@ country nobody has mapped: never inside any mapped land use but a protected area
 a nature reserve), and never near a street or a building a street comes near (one that might have a
 garden, gardens.py), so it can't turn gardens, verges or the edges of a town into heath, though a
 hut on a mountain top stands on the mountain. The land cover's shrubland is heath only where open
-shrubland is the land's own wild ground (tools/flora.py, from the map's ecoregion): in a land that
+shrubland is the land's own wild ground (tools/region.py, from the map's ecoregion): in a land that
 would be forest it's mostly grazing and hedgerows the satellite can't tell from scrub, so it's
 meadow there, and only the mapped heath and scrub are heath. It's the same for every map, from its
 own data.
@@ -71,7 +71,7 @@ def fill(GT, cover_xy, land_cover, land_use, polys, footprints, streets, open_sh
     """Paint the satellite land cover's wild kinds onto the ground still unmarked (GT == 0) out in
     open country. footprints: projected building outlines; streets: projected carriageways
     (polygons). cover_xy(poly) gives a window of the grid and the vertices in it inside poly.
-    open_shrub: the land cover's shrubland is heath (tools/flora.py), not meadow.
+    open_shrub: the land cover's shrubland is heath (tools/region.py), not meadow.
     Returns how many vertices it painted."""
     built = np.zeros(GT.shape, dtype=bool)
     for g, p in land_use:

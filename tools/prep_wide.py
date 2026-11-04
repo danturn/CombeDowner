@@ -178,7 +178,8 @@ def flat_ring(pts):
 # ---- ground types per vertex ----------------------------------------------------------
 # as in prep_map.py: 0 grass, 1 pitch, 2 wood floor, 3 farmland/meadow, 4 cemetery,
 # 5 hard standing, 6 flowerbed, 7 playground, and the wild ground's (tools/wild.py)
-import wild, flora
+import wild
+from region import open_shrub
 GT = np.zeros(grid.shape, dtype=np.uint8)
 
 
@@ -411,7 +412,7 @@ for r in roads:
     if len(pts) > 1: road_lines.append(shapely.LineString(pts).buffer(4.5))
 road_tree = shapely.STRtree(road_lines)
 # the satellite land cover's wild ground, out in the open country (as in the squares)
-_from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [c[0] for c in cand], road_lines, open_shrub=flora.open_shrub(A.id))
+_from_cover = wild.fill(GT, cover_xy, L("land_cover"), L("land_use"), polys, [c[0] for c in cand], road_lines, open_shrub=open_shrub(A.id))
 print(f"wild ground: {', '.join(f'{int((GT == k).sum())} points of {n}' for k, n in wild.NAMES.items())} ({_from_cover} from the land cover)")
 trees = []
 TILE = 2000.0
