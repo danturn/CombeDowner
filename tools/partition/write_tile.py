@@ -2589,6 +2589,27 @@ def bridge_decks(rd, ground=None):
     return deck.difference(unary_union(kept)) if kept else deck
 
 
+def paths_under_decks(rd, ground):
+    """Where a path at grade passes under a bridge high enough to walk under: the stretch of it the
+    deck's cut leaves for the faces (`bridge_decks`). The partition is laid flat, so there the faces
+    are the bridge's own street, its carriageway and pavements, which were drawn on the ground under
+    the deck with a kerb across the path and a corner lifted to the deck's height. They are the
+    path's."""
+    paths = [r for r in rd if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1]
+    if not paths:
+        return Polygon()
+    walk = [r for r in rd if r not in paths]
+    deck_all = bridge_decks(walk)
+    if deck_all is None:
+        return Polygon()
+    deck_kept = bridge_decks(walk + paths, ground)
+    under = deck_all.difference(deck_kept) if deck_kept is not None else Polygon()
+    strips = unary_union([LineString([a[:2], b[:2]]).buffer(way_width(r) / 2 + 0.3, cap_style="flat")
+                          for r in paths for a, b in zip(r["p"], r["p"][1:])
+                          if not any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))])
+    return under.intersection(strips)
+
+
 HEADROOM = 2.5             # metres: a deck at least this far above the ground has room for a street under it
 FRONT_PATH_HALF = 0.55      # metres: half a front path's width, as the game drew its strip
 STREET_STEP = 4.0           # metres: the longest edge of a street's or pavement's outline, the spacing of its line's points
@@ -3668,6 +3689,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return g.difference(deck) if deck is not None else g
 
     road, pave = shapes("carriageway"), shapes("pavement")
+    walked_under = paths_under_decks(rd, ground).intersection(square)
+    if not walked_under.is_empty:
+        road, pave = _minus(road, walked_under), _minus(pave, walked_under)
+    path_faces = shapes("path").union(walked_under)
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
                                              for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
     if unpaved:
@@ -3719,16 +3744,16 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
     buildings = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
     fitted = pave
-    pave = pave_to_walls(pave, br, buildings, unary_union([road, plaza, shapes("path"), deck or Polygon(),
+    pave = pave_to_walls(pave, br, buildings, unary_union([road, plaza, path_faces, deck or Polygon(),
                                                             strips(dv, DRIVE_WIDTH / 2), strips(fp, FRONT_PATH_HALF)])).intersection(square)
     if filled is not None:
         filled.append((pave, pave.difference(fitted)))
-    road = road_cracks(road, unary_union([pave, plaza, shapes("path"), *buildings]))
+    road = road_cracks(road, unary_union([pave, plaza, path_faces, *buildings]))
     # (after the pavements' own widths are taken from it: a strip paved between two ways is neither's)
-    pave = pave_slivers(pave, [road, plaza, shapes("path")], buildings,
+    pave = pave_slivers(pave, [road, plaza, path_faces], buildings,
                         unary_union([shapes("plot"), green if green is not None else Polygon()])).intersection(square)
     taken = unary_union([road, pave, plaza, *buildings])
-    path = drawn_paths(shapes("path"), rd, taken).difference(taken)
+    path = drawn_paths(path_faces, rd, taken).difference(taken)
     def off_level(seam):
         for x, y in shapely.get_coordinates(shapely.segmentize(seam, 2.0)):
             k, z = nearest(x, y), ground(x, y)
@@ -3977,6 +4002,46 @@ def drop_paths_along_streets(rd):
                 out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
                                       for x, y, z in piece.coords]))
     return out, cut
+
+
+FLIGHT_LEAST = 2.0      # metres: a flight left shorter than this by its ends' cut is left as it was mapped
+
+
+def flights_to_their_ends(rd, streets):
+    """A flight of steps starts at the back of the pavement and stops at the edge of the path it
+    climbs to. The map joins steps to the middle of the street or path they meet, so the treads ran
+    on across the pavement into the carriageway, and up into the path at the top. Each end lying on
+    a street (`streets`, its carriageway and pavements) or on another path is cut back to where the
+    flight leaves it; only its ends, and only where enough of the flight is left. Returns how many
+    flights were cut."""
+    ways = [LineString([q[:2] for q in r["p"]]).buffer(way_width(r) / 2) for r in rd
+            if r["c"] in GAME_PATHS and r["c"] not in ("steps", "pedestrian") and len(r["p"]) > 1]
+    under = unary_union(([streets] if streets is not None else []) + ways)
+    if under.is_empty:
+        return 0
+    shapely.prepare(under)
+    cut = 0
+    for r in rd:
+        p = r["p"]
+        if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 for q in p):
+            continue
+        flat = LineString([q[:2] for q in p])
+        a, b = Point(flat.coords[0]), Point(flat.coords[-1])
+        on_a, on_b = under.contains(a), under.contains(b)
+        if not (on_a or on_b):
+            continue
+        rest = [g for g in getattr(flat.difference(under), "geoms", [flat.difference(under)])
+                if g.geom_type == "LineString" and g.length > 0]
+        if not rest:
+            continue
+        s0 = min(flat.project(Point(g.coords[0])) for g in rest) if on_a else 0.0
+        s1 = max(flat.project(Point(g.coords[-1])) for g in rest) if on_b else flat.length
+        if s1 - s0 < FLIGHT_LEAST:
+            continue
+        line = LineString([q[:3] for q in p])
+        r["p"] = [[round(x, 1), round(y, 1), round(z, 1)] for x, y, z in substring(line, s0, s1).coords]
+        cut += 1
+    return cut
 
 
 INDOORS_FLOOR = 2.0     # metres of a way inside a building before it is stopped at the wall: less is a corner clipped
@@ -4783,7 +4848,7 @@ def measured_not_drawn(measured, drawn, sq, ground, blocked, houses, paths=()):
     shapely.prepare(taken)
     strips = [(line.buffer(half + PATH_GAP, cap_style="flat"), 2 * (half + PATH_GAP)) for line, half in paths]
     strip_tree = STRtree([g for g, _ in strips]) if strips else None
-    out = []
+    out, seen_only = [], []
     for b in measured:
         if b["c"] not in BARRIER or len(b["p"]) < 2:
             continue
@@ -4814,7 +4879,30 @@ def measured_not_drawn(measured, drawn, sq, ground, blocked, houses, paths=()):
                 length = LineString([q[:2] for q in run]).length
                 out.append(dict(c=BARRIER[b["c"]], p=run, h=b.get("h", HEIGHT.get(BARRIER[b["c"]], 1.2)),
                                 _k=(True, False, round(length, 1), len(out))))
-    return out
+                seen_only.append("h" in b)
+    return _without_free_runs(out, seen_only, taken, [sq.exterior] + [g for g, _ in strips])
+
+
+SEEN_ALONE = 14.0       # metres: twice the shortest run walls.py believes, for one that meets nothing
+END_MEETS = 0.5         # metres from another boundary, a building, a road or a path an end must lie to meet it
+
+
+def _without_free_runs(runs, seen_only, taken, strips):
+    """The measured runs less the short ones only the lidar saw that meet nothing at either end: a
+    ridge a few metres long standing alone on a lawn or a car park is more likely a van, a shed or a
+    row of bins than a hedge or a wall, and as a boundary it bounds nothing. A mapped one stays, as
+    does one running on over the square's edge."""
+    if not any(seen_only):
+        return runs
+    lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+    held = unary_union([taken, *strips]).buffer(END_MEETS)
+    shapely.prepare(held)
+
+    def meets(i, pt):
+        return held.contains(pt) or any(j != i and ln.distance(pt) < END_MEETS for j, ln in enumerate(lines))
+    return [r for i, (r, ln, lidar) in enumerate(zip(runs, lines, seen_only))
+            if not lidar or ln.length >= SEEN_ALONE
+            or meets(i, Point(ln.coords[0])) or meets(i, Point(ln.coords[-1]))]
 
 
 LONE_STUB = 1.5        # metres: a run shorter than this with nothing at either end is not a wall
@@ -6393,6 +6481,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     carry_flags(rd, tile.get("rd") or [])
     rd, _ = ways_out_of_buildings(rd, houses + buildings_next_door(ti, tj, base, sq))
     rd, _ = drop_paths_along_streets(rd)
+    flights_to_their_ends(rd, fitted[1] if fitted else None)
     whole_spans(rd, sq, road_ground, wet)
     paths_on_the_towpath(rd, canal)
     no_span_over_tunnels(rd, canal, [Polygon(w["r"][0]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]

@@ -33,8 +33,12 @@ case by case:
     fences or hedges run on top of each other; a front path goes through a garden boundary only at
     a gate; no tree, shrub, boulder or street item stands on a wall or inside a building; no building
     stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
-    pavement); and where the road and the paving meet, neither pokes a point or a sliver into the
-    other (check_more.slivers).
+    pavement); where the road and the paving meet, neither pokes a point or a sliver into the
+    other (check_more.slivers); no flight of steps runs on over a pavement, into the road or into
+    another path; and no boundary meets nothing at either end.
+10. Under a bridge: there is an open gap, and no wall, building, tree or street item stands in it;
+    no street's carriageway or pavement is drawn on a path passing under it, and no face under the
+    deck has a corner lifted up to it.
 11. Roofs are whole, as the game draws them (web/src/world.ts, roofFaces and addBuilding): no
     open edge left between a lidar roof's faces or between a face and its wall top once the game
     has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
@@ -368,6 +372,7 @@ def main():
         fit_together(m, tag, note, f)
         roofs_whole(m, tag, note)
         under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
+        flights_and_openings(m, tag, note, ground, roads, marks, rail_pts)
         check_more.square(m, tag, note, f)
         return found
 
@@ -528,6 +533,68 @@ def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
                 if under_deck(x, y, foot): note(f"10 {kind} under a bridge", 1, (tag, round(x), round(y)), f"under {what}")
 
 
+MEETS = 0.5          # metres from something an end of a boundary must lie to meet it
+STEP_OVER = 0.5      # metres of a flight on a street or another path before it is counted
+FACE_ON_PATH = 1.0   # square metres of a street's face on a path under a bridge before it is counted
+
+
+def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
+    """Rules 9 and 10 for steps and the ways under bridges, as the game draws them from the streets'
+    faces (sf): a flight is drawn whole along its line, so one running on over a pavement, into a
+    carriageway or into another path stands its treads there; and the faces under a deck are drawn on
+    the ground, so a street's carriageway or pavement left on a path passing under it, or a face with
+    a corner up at the deck, stands in the opening."""
+    F = check_more.faces_of(m)
+    street = shapely.union_all([F[k] for k in ("road", "service", "pave") if k in F] or [Polygon()]).buffer(-0.1)
+    shapely.prepare(street)
+    line = lambda p: LineString([q[:2] for q in p])
+    walks = [(line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2 - 0.1, cap_style=2), r) for r in roads
+             if r["c"] in PATHS and r["c"] not in ("steps", "pedestrian")]
+    wtree = shapely.STRtree([g for g, _ in walks])
+    for r, mk in zip(roads, marks):
+        if r["c"] != "steps" or any(mk): continue
+        L = line(r["p"])
+        on = street.intersection(L).length
+        if on > STEP_OVER: note("9 steps onto a street", on, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{on:.1f} m of the flight on a pavement or the road")
+        into = max([walks[int(k)][0].intersection(L).length for k in wtree.query(L)] or [0.0])
+        if into > STEP_OVER: note("9 steps on a path", into, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{into:.1f} m of the flight on a path")
+    # the ways at grade a span passes over, as the game draws a path's strip
+    grade = [(LineString([a[:2], b[:2]]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2, cap_style=2), max(a[2], b[2]))
+             for r, mk in zip(roads, marks) if r["c"] in PATHS and r["c"] != "pedestrian"
+             for (a, b), fa, fb in zip(zip(r["p"], r["p"][1:]), mk, mk[1:]) if not fa and not fb]
+    gtree = shapely.STRtree([g for g, _ in grade])
+    sf = m.get("sf")
+    tris = None
+    if sf and "o" in sf:
+        v = np.cumsum(np.asarray(sf["v"], float).reshape(-1, 3), axis=0) / 100 + [sf["o"][0], sf["o"][1], 0]
+        ids = [np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3) for k in ("road", "service", "pave", "path") if sf.get(k)]
+        if ids:
+            tris = v[np.concatenate(ids)]
+            ttree = shapely.STRtree(shapely.polygons(tris[:, :, :2]))
+    sq = box(*m["b"])
+    for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
+        if what == "railway" or len(xy) < 2: continue
+        span = LineString(xy)
+        if span.length < 3 or not sq.contains(span.interpolate(0.5, normalized=True)): continue
+        cum = [0.0]
+        for u, w in zip(xy, xy[1:]): cum.append(cum[-1] + math.dist(u, w))
+        under_at = lambda x, y: float(np.interp(span.project(Point(x, y)), cum, tops)) - depth
+        outline = span.buffer(hl, single_sided=True, cap_style=2).union(span.buffer(-hr, single_sided=True, cap_style=2))
+        for k in gtree.query(outline):
+            g, z = grade[int(k)]
+            x = g.intersection(outline)
+            if x.is_empty or under_at(x.centroid.x, x.centroid.y) - z < 2.0: continue
+            on = street.intersection(x).area
+            if on > FACE_ON_PATH: note("10 street drawn on a path under a bridge", on, (tag, round(x.centroid.x), round(x.centroid.y)), f"{on:.0f} m2 under {what}")
+        if tris is None: continue
+        for k in ttree.query(outline.buffer(-0.3), predicate="intersects"):
+            t = tris[int(k)]
+            cx, cy = t[:, 0].mean(), t[:, 1].mean()
+            u = under_at(cx, cy)
+            if t[:, 2].max() > u - 1.0 and t[:, 2].min() < u - 2.5:
+                note("10 face rising into a bridge", t[:, 2].max() - t[:, 2].min(), (tag, round(cx), round(cy)), f"{t[:, 2].min():.1f} to {t[:, 2].max():.1f} m under {what}")
+
+
 @functools.lru_cache(maxsize=24)
 def _walls_and_gates(path):
     """One square's walls as lines and its gate ends as points. Squares are checked in order, so each
@@ -653,6 +720,19 @@ def fit_together(m, tag, note, f=None):
                             and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt.buffer(0.6)))))
         if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
+    # and a longer run that meets nothing at either end: no other boundary, gate, building, street or
+    # path, nor the next square's boundary it runs on into
+    F = check_more.faces_of(m)
+    meets = shapely.union_all([F[k] for k in F] + homes
+                              + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1]).buffer(MEETS)
+    shapely.prepare(meets)
+    for i, L in enumerate(bar_lines):
+        if L.length < 1.5 or Point(L.coords[0]).distance(Point(L.coords[-1])) < MEETS: continue    # (a ring meets itself)
+        free = lambda pt: (not meets.contains(pt)
+                           and not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < MEETS for k in ends_tree.query(pt.buffer(MEETS)))
+                           and not (edge is not None and edge.distance(pt) < MEETS))
+        if free(Point(L.coords[0])) and free(Point(L.coords[-1])):
+            note("9 boundary meeting nothing", L.length, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs
     ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.7) for q in m.get("fp") or []]
