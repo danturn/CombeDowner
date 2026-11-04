@@ -235,7 +235,7 @@ take right there (the prompt is up), a tap uses it instead. Circle crouches on a
 down on a hold, and either again stands you up.
 
 One button does everything you interact with: use (E on the keys, Square on a pad, Use on a touch
-screen) gets you in a car, opens a tin, takes the call on Push the Bus, goes again after a race,
+screen) gets you in a car, opens a tin, takes the call or sells the tickets on Push the Bus, goes again after a race,
 leans on a lock beam, cuffs, votes for a painting and the rest. Where two things are near, it does
 the one the prompt names. Minigames that play quite differently (the tin lock, the bell chamber, the
 Climb, the tightrope, the easel, the big map, the Driving Test's back seat) show their own controls
@@ -787,6 +787,25 @@ When a structure is full, the next [zone](#zones) opens:
 the camera flies over to it and its name comes up (E, Space or a tap skips it), and its challenges
 have noticeboards of their own from then on, every day. Everyone in a room sees the fly-overs, and a
 room carries on from whoever has filled the most sockets on that map; it never goes backwards.
+
+### Push the Bus
+
+A team challenge: a broken-down bus to shove up the steepest stretch of street on the map, heaving
+on the count (the README has the whole of it). Up the hill are bus stops with pensioners queueing
+for it. Bring the front door up to a stop and slow down, and the queue shuffles over: one of you
+lets go, goes to the front door and presses use to sell the tickets, while the others hold the bus
+(on your own it's chocked at the stop while you sell). Each pensioner counts out the fare a coin at
+a time under the crosshair: press use as it goes green, exactly right. Too soon and they start
+again, too late and they want change. Each one aboard makes the bus a little heavier, and go past a
+stop without selling and that queue shakes its sticks at you and writes to the Chronicle.
+
+Those aboard get crosser while the bus is slow or rolling back. They lean out of the windows and
+shout, ring the bell (the cab hears they want the next stop; not stopping there makes the queues
+further up crosser), throw handbags, walking sticks, sherbet lemons and thermoses at the pushers
+(a splat on your screen, and your next heave is a grade worse), walk off up the hill in a huff, or
+start a row about the front seat that rocks the bus and weakens the heaves. Going well, they cheer,
+and for the next heave the perfect window is wider; now and then a feisty one gets off and pushes.
+The result card gives your time, a grade, and how happy the passengers were at the top.
 
 ### Get Wood
 

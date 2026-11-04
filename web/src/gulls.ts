@@ -555,8 +555,6 @@ class Seagulls implements Job {
   private fv: Float32Array;          // the feathers' velocities, and how long each has left
   private fl: Float32Array;
   private fNext = 0;
-  private splat: HTMLDivElement | null = null;
-  private splatT = 0;
   private shoutT = 0;
   private seenTourists = "";
   private badges: THREE.Points;      // one over each tourist, seen through anything, so you can find them
@@ -1200,21 +1198,7 @@ class Seagulls implements Job {
     this.w.slow?.(big ? 3.5 : 2.5);
     this.w.toast(big ? "Poo bomb! Right on you" : "Ugh. Right on you", 1.6);
     if (wardCount("poo") >= 5) earn("splat");
-    if (!this.splat) {
-      const el = (this.splat = document.createElement("div"));
-      el.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:5;transition:opacity 0.6s";
-      layer().appendChild(el);
-    }
-    const el = this.splat;
-    el.innerHTML = "";
-    for (let k = 0; k < (big ? 9 : 5); k++) {
-      const s = 8 + Math.random() * (big ? 22 : 14), b = document.createElement("div");
-      b.style.cssText = `position:absolute;left:${Math.random() * 90}%;top:${Math.random() * 80}%;width:${s}vmin;height:${s * (0.7 + Math.random() * 0.5)}vmin;`
-        + `border-radius:48% 52% 45% 55%;background:radial-gradient(circle at 40% 35%,#fffffa,#ecebdc 55%,rgba(220,218,196,0.85) 75%,rgba(220,218,196,0) 78%);transform:rotate(${Math.random() * 360}deg)`;
-      el.appendChild(b);
-    }
-    el.style.opacity = "1";
-    this.splatT = big ? 4 : 3;
+    splatScreen({ n: big ? 9 : 5, size: big ? 22 : 14, colours: ["#fffffa", "#ecebdc", "rgba(220,218,196,0.85)"], secs: big ? 4 : 3 });
   }
   private puff(x: number, y: number, z: number, n: number, speed = 1) {
     const pos = this.feathers.geometry.attributes.position as THREE.BufferAttribute, N = this.fl.length;
@@ -1464,8 +1448,6 @@ class Seagulls implements Job {
       if (this.fl[i] <= 0) pos.setXYZ(i, 0, -9999, 0);
     }
     if (any) pos.needsUpdate = true;
-    // muck on your screen, fading
-    if (this.splat && this.splatT > 0 && (this.splatT -= dt) <= 1) this.splat.style.opacity = String(Math.max(0, this.splatT));
   }
 
   // ---- the Job ---------------------------------------------------------------------------------
@@ -1702,7 +1684,31 @@ class Seagulls implements Job {
         if (m !== MAT) m.dispose();
       }
     });
-    this.splat?.remove();
-    this.splat = null;
+    splatClear();
   }
 }
+
+// ---- muck on your screen ------------------------------------------------------------------------
+
+let splat: HTMLDivElement | null = null, splatTimer = 0;
+/** Something splattered over your screen (seagull muck, a thrown thermos), fading over its last second. */
+export function splatScreen(o: { n: number; size: number; colours: [string, string, string]; secs: number }) {
+  if (!splat) {
+    splat = document.createElement("div");
+    splat.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:5";
+    layer().appendChild(splat);
+  }
+  const el = splat, [a, b, c] = o.colours;
+  el.innerHTML = "";
+  for (let k = 0; k < o.n; k++) {
+    const s = 8 + Math.random() * o.size, d = document.createElement("div");
+    d.style.cssText = `position:absolute;left:${Math.random() * 90}%;top:${Math.random() * 80}%;width:${s}vmin;height:${s * (0.7 + Math.random() * 0.5)}vmin;`
+      + `border-radius:48% 52% 45% 55%;background:radial-gradient(circle at 40% 35%,${a},${b} 55%,${c} 75%,rgba(0,0,0,0) 78%);transform:rotate(${Math.random() * 360}deg)`;
+    el.appendChild(d);
+  }
+  el.style.transition = "none";
+  el.style.opacity = "1";
+  clearTimeout(splatTimer);
+  splatTimer = window.setTimeout(() => { el.style.transition = "opacity 1s linear"; el.style.opacity = "0"; }, Math.max(0, o.secs - 1) * 1000);
+}
+export function splatClear() { clearTimeout(splatTimer); splat?.remove(); splat = null; }
