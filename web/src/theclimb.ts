@@ -48,6 +48,7 @@ import type { Player } from "./player";
 import { hearts, missionAux, missionAuxRow, missionCall } from "./missionscreens";
 import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
+import { guide, named } from "./notice";
 
 const COLOUR = "#d9783a";
 const WIDTH = 12;          // metres across the face on the map
@@ -315,7 +316,7 @@ registerChallenge({
   },
   waiting({ spots, w }) { const f = faceFor(spots, w.map); return f ? waitingFace(w, f) : null; },
   // in front of the face, looking up at it; at GO up to the crag
-  lineup: { spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4, spots[1] ?? spots[0]) },
+  lineup: { start: "timed", spots: ({ spots, w }, n) => ring(w.map, spots[0].x, spots[0].z, n, 2.4, spots[1] ?? spots[0]) },
   start({ offer, spots, w, cast }) {
     const f = faceFor(spots, w.map)!;
     return climb(offer, w, f, cast);
@@ -577,7 +578,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
         const t = Math.min(1, tT / tLen), e = t * t * (3 - 2 * t);
         place(pl, from.s + (to.s - from.s) * e, from.y + (to.y - from.y) * e, from.out + (to.out - from.out) * e);
       } else place(pl, to.s, to.y, to.out);
-      if (grip <= 0) { grip = 0; w.toast("Your grip's gone", 2); letGo(); return true; }
+      if (grip <= 0) { grip = 0; w.toast("Your grip's gone"); letGo(); return true; }
       if (crouched) { letGo(); return true; }
       if (moving) return true;
       const [ix, iy] = [mx, my];
@@ -708,7 +709,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       if (still > 2) cap = Math.min(1, cap + HEAL * dt);
       const k = ledgeAt(pl.pos.x, pl.pos.y, pl.pos.z, true);
       if (k >= 0) reached(k);
-      if (k === S() && L < S() && lastOn !== k) w.toast("Walked round? It only counts if you climb it", 3);
+      if (k === S() && L < S() && lastOn !== k) guide("Walked round? It only counts if you climb it");
       lastOn = k;
     } else lastOn = -1;
     if (cool > 0) { wantGrab = false; return false; }
@@ -729,7 +730,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
         return true;
       }
     }
-    if (grip < 0.08) { if (ask) w.toast("No grip left: rest on something first", 2); return false; }
+    if (grip < 0.08) { if (ask) guide("No grip left: rest on something first"); return false; }
     const c = inReach(s, out, pl.pos.y, pl.onGround);
     if (c) { grabbed(c, pl.onGround ? 0 : CATCH_COST); return true; }
     return false;
@@ -751,7 +752,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       grip = Math.min(grip, cap);
       still = 0;
       SFX.grunt(0, 0, seed);
-      w.toast(drop > 4.5 ? "Oof. That one hurt: rest on a ledge to get your grip back" : "Ouch", 2);
+      if (drop > 4.5) guide("Oof. That one hurt: rest on a ledge to get your grip back"); else w.toast("Ouch");
     }
   }
 
@@ -927,7 +928,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
             if (+d.d >= BIG_FALL) SFX.groan(dd, pan, seed);
           }
           const who = from === w.selfId ? "You" : w.nameOf(from);
-          if (+d.d >= BIG_FALL) w.feed(`<b style="color:${w.colourOf(from)}">${esc(who)}</b> ${FALLS[(+d.l || 0) % FALLS.length]} and ${from === w.selfId ? "are" : "is"} out cold`);
+          if (+d.d >= BIG_FALL) w.feed(`${named(who, w.colourOf(from))} ${FALLS[(+d.l || 0) % FALLS.length]} and ${from === w.selfId ? "are" : "is"} out cold`);
           if (w.isHost && +d.d >= BIG_FALL && !status.has(from)) hostSay({ k: "ko", id: from, t: DOWN_SECS });
           if (w.isHost && +d.d >= LIFE_FALL && lives > 0 && (climbers.has(from) || !climbers.size)) {
             hostSay({ k: "lv", n: lives - 1, id: from });
@@ -941,9 +942,9 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           lives = n;
           SFX.lifeLost();
           const who = id === w.selfId ? "You" : w.nameOf(id);
-          w.feed(`<b style="color:${w.colourOf(id)}">${esc(who)}</b> fell: the team's down to ${n} ${n === 1 ? "life" : "lives"}`);
-          missionCall({ text: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, colour: "#d8262e" });
-          if (id === w.selfId && n) w.toast(`That cost the team a life: ${n} left`, 3);
+          w.feed(`${named(who, w.colourOf(id))} fell: the team's down to ${n} ${n === 1 ? "life" : "lives"}`);
+          missionCall({ text: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, went: "badly" });
+          if (id === w.selfId && n) w.toast(`That cost the team a life: ${n} left`);
           return;
         }
         case "ko": {
@@ -952,7 +953,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           if (id === w.selfId) {
             if (mode !== M.Out) { mode = M.Out; koVy = 0; pt = null; }
             if (carrying) { carrying = ""; }
-            w.toast(`Out cold. A mate has to carry you up to the ledge the team's on within ${Math.round(+d.t || DOWN_SECS)}s`, 4);
+            w.toast(`Out cold. A mate has to carry you up to the ledge the team's on within ${Math.round(+d.t || DOWN_SECS)}s`);
           }
           if (carrying === id) carrying = "";
           return;
@@ -970,7 +971,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
         case "carry": {
           const id = String(d.id), by = String(d.by), s = status.get(id);
           if (s) s.by = by;
-          if (by === w.selfId) { carrying = id; SFX.effort(0, 0, seed); w.toast(`Got ${w.nameOf(id)}. Get them up to ledge ${cp} in time`, 3); }
+          if (by === w.selfId) { carrying = id; SFX.effort(0, 0, seed); w.toast(`Got ${w.nameOf(id)}. Get them up to ledge ${cp} in time`); }
           if (id === w.selfId) { mode = M.Carried; carriedBy = by; }
           return;
         }
@@ -994,18 +995,18 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
             const l = route.ledges[Math.min(i, S())];
             const [s2] = local(pl.pos.x, pl.pos.z);
             if (i > 0) { L = Math.max(L, i - 1); onto(i, s2); } else { L = Math.max(L, 0); pl.vel.set(0, 0, 0); }
-            if (l) w.toast("Back on your feet", 2);
+            if (l) w.toast("Back on your feet");
             SFX.checkpoint();
           }
-          w.feed(`<b style="color:${w.colourOf(id)}">${esc(id === w.selfId ? "You" : w.nameOf(id))}</b> ${id === w.selfId ? "are" : "is"} back on ${id === w.selfId ? "your" : "their"} feet`);
+          w.feed(`${named(id === w.selfId ? "You" : w.nameOf(id), w.colourOf(id))} ${id === w.selfId ? "are" : "is"} back on ${id === w.selfId ? "your" : "their"} feet`);
           return;
         }
         case "out": {
           const id = String(d.id), s = status.get(id);
           if (s?.by === w.selfId) carrying = "";
           status.set(id, { st: "ghost", left: 0, by: "" });
-          if (id === w.selfId) { mode = M.Ghost; carriedBy = ""; pl.prone = 0; w.toast("You're out: a ghost, till someone drops a rope from the next ledge", 4); }
-          w.feed(`<b style="color:${w.colourOf(id)}">${esc(id === w.selfId ? "You" : w.nameOf(id))}</b> ${id === w.selfId ? "are" : "is"} out`);
+          if (id === w.selfId) { mode = M.Ghost; carriedBy = ""; pl.prone = 0; w.toast("You're out: a ghost, till someone drops a rope from the next ledge"); }
+          w.feed(`${named(id === w.selfId ? "You" : w.nameOf(id), w.colourOf(id))} ${id === w.selfId ? "are" : "is"} out`);
           return;
         }
         case "rope": {
@@ -1018,7 +1019,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
             const [x, z] = P(route.ledges[i].rope, ropeOut(route.ledges[i]));
             const [dd, pan] = w.hear?.(x, route.ledges[i].y, z) ?? [0, 0];
             SFX.lash(dd, pan);
-            w.feed(`<b style="color:${w.colourOf(from)}">${esc(from === w.selfId ? "You" : w.nameOf(from))}</b> dropped a rope from ledge ${i === S() ? "at the top" : i}`);
+            w.feed(`${named(from === w.selfId ? "You" : w.nameOf(from), w.colourOf(from))} dropped a rope from ledge ${i === S() ? "at the top" : i}`);
           }
           if (w.isHost) {
             const ghosts = [...status].filter(([, s]) => s.st === "ghost").map(([id]) => id);
@@ -1034,7 +1035,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
               mode = M.Free; grip = cap = 1;
               L = Math.max(L, i - 1);
               onto(i, route.ledges[i].rope);
-              w.toast("Back in! Up the rope with you", 3);
+              w.toast("Back in! Up the rope with you");
               SFX.checkpoint();
             }
           }
@@ -1048,7 +1049,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           mode = M.Tween; pt = null; rope = -1;
           const ss = Math.max(l.s0 + 0.4, Math.min(l.s1 - 0.4, +d.ps || s));
           tween({ s, y: pl.pos.y, out }, { s: ss, y: l.y, out: standOut(i, ss) }, PULL_T, () => { L = Math.max(L, i - 1); onto(i, +d.ps || s); });
-          w.toast(`${w.nameOf(from)} hauls you up`, 2);
+          w.toast(`${w.nameOf(from)} hauls you up`);
           SFX.effort(0, 0, seed + 1);
           return;
         }
@@ -1064,7 +1065,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           const out = d.why === "lives";
           w.feed(out ? "Out of lives. Back to the bottom" : "Everyone's down. Back to the bottom");
           SFX.lifeLost();
-          missionCall({ text: out ? "Out of lives" : "Everyone's down", sub: `Back to the bottom: the whole team starts again · ${most} lives for the next go`, colour: "#d8262e", secs: 5 });
+          missionCall({ text: out ? "Out of lives" : "Everyone's down", sub: `Back to the bottom: the whole team starts again · ${most} lives for the next go`, went: "badly" });
           lives = most;
           reset();
           return;

@@ -116,7 +116,7 @@ function tendStones(dt: number, w: QuestWorld) {
   glowStone = fade(glowStone, onLedge && !above && top !== -Infinity);
   if (roof && !toldLedge && !onLedge && !above && ledgeLayer.reach >= STONE_SLIDE) {
     toldLedge = true;
-    w.toast("Up on the ledge round the tower", 4);
+    w.toast("Up on the ledge round the tower");
   }
   drive(ledgeLayer, wantLedge, LEDGE_DOWN, dt, w, glowLedge);
   drive(stoneLayer, wantStones, DOWN, dt, w, glowStone);
@@ -138,7 +138,7 @@ registerFree({
     const foot = ab.frame.at(CLIMB.ladder.x - 1, 0, CLIMB.ladder.z), [, ly] = ab.frame.local(me.x, me.y, me.z);
     if (Math.hypot(me.x - foot.x, me.z - foot.z) < HINT && ly < 3) {
       told = true;
-      w.toast("They say one of the Abbey's ladders of angels can really be climbed, and there's something at the top of the tower", 5);
+      w.toast("They say one of the Abbey's ladders of angels can really be climbed, and there's something at the top of the tower");
     }
   },
   spots(w): JobSpot[] {

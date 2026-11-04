@@ -63,7 +63,7 @@ import { ctl } from "./controls";
 import { carShape, trafficMake } from "./makes";
 import { type GameMap, roadHalf } from "./map";
 import { missionAux, missionAuxRow } from "./missionscreens";
-import { notice } from "./notice";
+import { news, guide } from "./notice";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, leftInRoad, rng, type Job, type QuestWorld, type Waiting } from "./quests";
 import { type BusNow, Passengers } from "./pensioners";
@@ -448,7 +448,7 @@ registerChallenge({
     return { x: a[0], z: a[1], name: `the bottom of ${h.name}` };
   },
   waiting({ offer, spots, w }) { return waitingBus(offer, spots, w); },
-  lineup: { spots: ({ offer, spots, w }, n) => behindBus(offer, spots, w, n) },
+  lineup: { start: "timed", spots: ({ offer, spots, w }, n) => behindBus(offer, spots, w, n) },
   start({ offer, spots, w, cast }) { return pushTheBus(offer, spots, w, cast); },
 });
 
@@ -769,7 +769,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
 
   function takeCall() {
     if (mode > 1) return;
-    if (w.players().length < CALL_MIN) { w.toast(`Calling the heaves is for ${CALL_MIN} or more of you`, 2); return; }
+    if (w.players().length < CALL_MIN) { w.toast(`Calling the heaves is for ${CALL_MIN} or more of you`); return; }
     say({ k: "call", on: caller === w.selfId ? 0 : 1 });
   }
 
@@ -1083,7 +1083,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
 
   // ---- the job ---------------------------------------------------------------------------------
   w.mark("@challenge", { x: hill.pts[0][0], z: hill.pts[0][1] }, "The broken-down bus", COLOUR);
-  notice({ tier: "note", text: `The bus has broken down at the bottom of ${hill.name}`, secs: 4 });
+  news({ text: `The bus has broken down at the bottom of ${hill.name}` });
   const routeLine = { pts: hill.pts.flatMap((p) => [p[0], p[1]]), gates: [] as number[], colour: COLOUR };
 
   const job: Job = {
@@ -1138,7 +1138,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         const b = pose(), x = b.x - b.fx * (hl - 1.2), z = b.z - b.fz * (hl - 1.2);
         w.dust?.(x, bus.y + 0.2, z, -b.fx, -b.fz);
       }
-      if (inCab && hb && heat > 0.7 && (slipT -= dt) <= 0) { slipT = 6; w.toast("The handbrake's smoking and slipping: let it off", 2.5); }
+      if (inCab && hb && heat > 0.7 && (slipT -= dt) <= 0) { slipT = 6; guide("The handbrake's smoking and slipping: let it off"); }
       // the cab
       if (inCab) {
         if (!me.alive) { leaveCab(); say({ k: "cab", on: 0 }); }
@@ -1255,12 +1255,12 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         if (onBus || inCab) d.k === "pt" ? flash("PERFECT TOGETHER!", "#4dff8e", true) : flash("Off the beat! It's slipping back", "#ff5a4a", true);
         return;
       }
-      if (d.k === "go") { mode = 1; if (Math.hypot(w.me().x - bus.x, w.me().z - bus.z) < 60) w.toast("The chocks are out. Push!", 2.5); }
-      else if (d.k === "away") { if (onBus) w.toast("It's getting away from you!", 2.5); stepOff(); slots.fill(""); }
+      if (d.k === "go") { mode = 1; if (Math.hypot(w.me().x - bus.x, w.me().z - bus.z) < 60) w.toast("The chocks are out. Push!"); }
+      else if (d.k === "away") { if (onBus) w.toast("It's getting away from you!"); stepOff(); slots.fill(""); }
       else if (d.k === "car") {
         const [dd, pan] = w.hear?.(carObj.position.x, carObj.position.y, carObj.position.z) ?? [0, 0];
         SFX.screech(dd, pan);
-        if (inCab) w.toast("A car coming down. Pull in: {strafeleft}", 3);
+        if (inCab) guide("A car coming down. Pull in: {strafeleft}");
       }
       else if (d.k === "lost" && mode <= 1) {
         const b = pose(), x = Number.isFinite(d.x) ? d.x : b.x, z = Number.isFinite(d.z) ? d.z : b.z, a = Number.isFinite(d.a) ? d.a : b.a;
@@ -1274,7 +1274,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         Object.assign(runAt, { x, z, a });
         const [dd, pan] = w.hear?.(x, bus.y, z) ?? [0, 0];
         SFX.screech(dd, pan);
-        w.toast("It's away! Back past the bottom and still going", 3);
+        w.toast("It's away! Back past the bottom and still going");
       }
       else if (d.k === "bang") {
         const x = +d.x, z = +d.z;
@@ -1306,18 +1306,18 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       if (onBus) { if (canCall()) takeCall(); else stepOff(); return true; }
       if (pax.use(busNow())) return true;
       if (nearRear()) {
-        if (v <= GRIP) { w.toast("Too fast: you can't hold it", 1.5); return true; }
+        if (v <= GRIP) { w.toast("Too fast: you can't hold it"); return true; }
         onBus = true; stickFree = false; freshAt = performance.now();
         sentOn = true; sentT = 1; say({ k: "p", on: 1 });
         return true;
       }
       if (nearCab()) {
-        if (driver && driver !== w.selfId) { w.toast(`${w.nameOf(driver)}'s in the cab`, 2); return true; }
+        if (driver && driver !== w.selfId) { w.toast(`${w.nameOf(driver)}'s in the cab`); return true; }
         inCab = true; myHb = hb; mySteer = 0;
         bus.inside("cockpit");
         say({ k: "cab", on: 1 });
         sendDrive();
-        w.toast("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake", 5);
+        guide("In the cab: only you can see how fast it's going and what's coming, so call it out. {steer} steer, {handbrake} handbrake");
         return true;
       }
       return false;
@@ -1543,8 +1543,8 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     const was = caller, me = w.me();
     caller = id;
     if (Math.hypot(me.x - bus.x, me.z - bus.z) > 60) return;
-    if (id) w.toast(id === w.selfId ? "You call the heaves now: the beat follows you" : `${w.nameOf(id)} calls the heaves: heave with them`, 2.5);
-    else if (was) w.toast("The game's counting again", 2);
+    if (id) w.toast(id === w.selfId ? "You call the heaves now: the beat follows you" : `${w.nameOf(id)} calls the heaves: heave with them`);
+    else if (was) w.toast("The game's counting again");
   }
 
   function setDriver(id: string) {

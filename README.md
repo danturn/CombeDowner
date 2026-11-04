@@ -154,8 +154,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down. On your own in the room it goes straight to the start. When the entries close, everyone
   who joined, and nobody else, is taken out of whatever they were doing (out of a car, a balloon or a
   trolley, off a ladder or their ride, anything carried put down), patched up to full health and put
-  in the game area, spread out and facing the way, held still for the title card and a 3, 2, 1, GO!
-  under start lights. Anyone who didn't join, or turns up later, is left where they are and can
+  in the game area, spread out and facing the way, and held still for the title card. A 3, 2, 1, GO!
+  comes only when more than one of you start together at one moment: under start lights for a race,
+  a plain count in the job's colour for anything against the clock. On your own there's no count,
+  and a calm job (the gallery, the test challenge) never has one. Anyone who didn't join, or turns up later, is left where they are and can
   watch. Races put the entrants on a grid in the street on the race's ride,
   run through checkpoints along a route drawn on the map, and end with a results
   card: your place, time and medal, your best, how the run went and everyone's standings, with a
@@ -242,8 +244,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   what E does, with no second prompt on top of it) is the title card when it starts, and J (or Poster
   on a touch screen) brings it back during any job with how it's going written on it. A ride's
   tricks and a string of the Flag Lads' flags build one combo, a single row under the crosshair
-  (both at once when you shoot flags from a board), with the wings' flight in the same slot. Every notice
-  (news, a mission's stage, a trophy) comes up on the same dark HUD plate, edged in its colour. The big map's
+  (both at once when you shoot flags from a board), with the wings' flight in the same slot. Every message
+  has one place by the question it answers: what to do now is a strip under the crosshair, drawn
+  like the use prompt; what just happened is a plate a little above the middle; how your job is
+  going is the job's own brief, panel and stage calls in its colour; your score is the combo row
+  under the crosshair; what you've earned to keep is a gold-edged plate at the top (a new wardrobe
+  item shows a little picture of it), or a line on the result card when one is up; and who's
+  about is the feed, top right. The big map's
   key, its notes and a pub's card are BathText pages like the menus, and the game's notes about
   itself (the map stuck loading, someone on another version) are a BathText strip along the top.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched

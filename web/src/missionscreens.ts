@@ -10,7 +10,8 @@
 //                    one per mission id, stacked in the HUD's left column. missionAux is the slot
 //                    under the crosshair for a mode's meter (a beat bar, a grip, a gate's clock).
 //   missionCall      a stage call on the plate over the crosshair (a wave, a checkpoint, a life gone,
-//                    out of lives), or any other notice tier (notice.ts says which to use when).
+//                    out of lives). The other kinds of message are notice.ts's (guide, news, score,
+//                    reward, people).
 //   missionWatching  the banner while you watch the others after you've finished.
 //   missionResult    the card at the end: a cutting from the Chronicle (cutting.ts) with the section
 //                    chosen by the kind of mission, the mode's own title and words, a results table,
@@ -30,7 +31,7 @@ import { modal, modalClicked } from "./modal";
 import { cutFlag, cutFront, tearOff } from "./cutting";
 import { addStyle, esc, layer, nth } from "./hudkit";
 import { briefCut, briefHtml } from "./brief";
-import { notice, noticeAwardsTo, noticeHold, noticeStage, noticeTricksTo, type Notice } from "./notice";
+import { noticeAwardsTo, noticeHold, noticeTricksTo, readSecs, type Message, type Reward } from "./notice";
 import * as SFX from "./audio";
 
 const COLOURS = ["#3ec7e8", "#ffd84a", "#ff5a7a", "#58e06a", "#ffffff", "#c99cff", "#ff9a3c"];
@@ -113,6 +114,10 @@ body:has(.msc-count:not([hidden]),.msc-wait:not([hidden])) #clickhint{visibility
 .msc-count .num{font-weight:900;font-size:clamp(150px,42vmin,420px);line-height:.85;animation:msc-punch .9s cubic-bezier(.15,1.5,.4,1) both}
 .msc-count .num.go{color:var(--kc,var(--accent));font-size:clamp(130px,36vmin,360px)}
 .msc-count .lights{display:flex;gap:clamp(10px,2.4vmin,22px);margin-bottom:clamp(8px,2vmin,20px);padding:clamp(6px,1.4vmin,12px) clamp(10px,2.4vmin,20px);background:#111a;border:2px solid #000;border-radius:8px}
+.msc-count.plain .plate{background:var(--panel);padding:clamp(4px,1.2vmin,12px) clamp(28px,7vmin,70px) clamp(8px,2vmin,18px);border-bottom:4px solid var(--kc,var(--accent));text-shadow:0 3px 0 #000;
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+.msc-count.plain .num{font-size:clamp(90px,26vmin,260px)}
+.msc-count.plain .num.go{font-size:clamp(80px,22vmin,220px)}
 .msc-count .lamp{width:clamp(26px,6vmin,56px);height:clamp(26px,6vmin,56px);border-radius:50%;background:#2a1414;border:3px solid #000;box-shadow:inset 0 -4px 0 #0006}
 .msc-count .lamp.red{background:radial-gradient(circle at 40% 35%,#ffb4a8,#ff2a1a 55%,#a00);box-shadow:0 0 22px #ff2a1a,inset 0 -4px 0 #0004}
 .msc-count .lamp.green{background:radial-gradient(circle at 40% 35%,#d8ffd0,#38e04a 55%,#0a8a1a);box-shadow:0 0 26px #38e04a,inset 0 -4px 0 #0004}
@@ -153,6 +158,8 @@ body:has(.msc-count:not([hidden]),.msc-wait:not([hidden])) #clickhint{visibility
 .msc-result .rewards::before{content:"Rewards";display:block;font-size:12px;font-weight:400;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .msc-result .rewards li{padding-left:1.1em;text-indent:-1.1em}
 .msc-result .rewards li::before{content:"\\2605  ";color:var(--kc,var(--ink))}
+.msc-result .rewards li.haspic::before{content:none}
+.msc-result .rewards li img.pic{width:32px;height:32px;object-fit:contain;vertical-align:middle;margin:-6px 6px -6px 0}
 .msc-result .go{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
 .msc-result button{pointer-events:auto;font:700 15px 'Old Standard TT',Georgia,serif;letter-spacing:.02em;text-transform:none;padding:7px 16px 6px;
   color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:0;cursor:pointer;box-shadow:none;text-shadow:none;position:relative;overflow:hidden}
@@ -240,6 +247,10 @@ function stack(): HTMLElement {
   if (flags) s.appendChild(flags);
   return s;
 }
+
+/** Put the Flag Lads' row in the top-left slot before it shows, so it's there whether or not a
+ *  mission has started yet. */
+export function missionStackReady() { stack(); }
 
 /** A status panel: call it as often as you like, it only writes when something changed. */
 export function missionProgress(o: MissionProgress) {
@@ -362,14 +373,27 @@ function putCard(cls: string, html: string, life: number, colour?: string, cut =
 /** The Chronicle (the scoreboard panel) is up in the middle of the screen. */
 const paperUp = () => { const b = document.getElementById("scoreboard"); return !!b && !b.hidden; };
 
+/** How a mode starts, which is all it says: "race" is a timed race, "timed" any other clock, "calm" has no timed start. */
+export type Start = "race" | "timed" | "calm";
+/** How a start looks on the screen. */
+export type Countdown = "race" | "plain" | "none";
+
+/** The 3, 2, 1, GO! a start gets: only where several start together, the lights for a race, a plain one for any other
+ *  clock, none for a calm mode, and none alone (the clock starts as the card goes). */
+export function countdownFor(start: Start, players: number): Countdown {
+  if (start === "calm" || players < 2) return "none";
+  return start === "race" ? "race" : "plain";
+}
+
 export interface MissionBegin {
   title: string; goal: string; detail?: string;
   /** The kind of mission, small over the title, in its colour. */
   label?: string; colour?: string;
   /** Your best at this kind of mission, in words ("gold", "3 stars"). */
   best?: string;
-  /** A 3, 2, 1, GO! of its own once the card has gone; onGo at GO. */
-  countdown?: boolean; onGo?: () => void;
+  /** How the mode starts, and how many players start together: they decide the 3, 2, 1, GO! (countdownFor).
+   *  onGo at GO, or as the card goes with no countdown. Left out: nothing follows the card. */
+  start?: Start; players?: number; onGo?: () => void;
   /** The rest of the job's brief, as its noticeboard had it (html). */
   blurb?: string; block?: string; reward?: string;
 }
@@ -381,9 +405,11 @@ export function missionBegin(o: MissionBegin) {
   ending?.remove();   // the last mission's result makes way for the new one
   const put = () => {
     putCard("msc-brief", html, START_SECS, o.colour, true);
-    if (o.countdown) {
+    const style = o.start ? countdownFor(o.start, o.players ?? 1) : null;
+    if (style === "none") window.setTimeout(() => o.onGo?.(), (START_SECS + 0.3) * 1000);
+    else if (style) {
       for (let n = 3; n >= 0; n--) {
-        window.setTimeout(() => { SFX.pip(n === 0); missionCountdown(n, o.colour); if (n === 0) o.onGo?.(); }, (START_SECS + 0.3 + (3 - n)) * 1000);
+        window.setTimeout(() => { SFX.pip(n === 0); missionCountdown(n, o.colour, style); if (n === 0) o.onGo?.(); }, (START_SECS + 0.3 + (3 - n)) * 1000);
       }
     }
   };
@@ -396,16 +422,20 @@ export function missionBegin(o: MissionBegin) {
   paperWait = window.setTimeout(poll, 300);
 }
 
-export interface MissionStage { title: string; sub?: string; colour?: string; life?: number }
-
-function stageCard(o: MissionStage) {
-  putCard("msc-stage", `<div class="title">${esc(ctlText(o.title))}</div>` + (o.sub ? `<div class="goal">${esc(ctlText(o.sub))}</div>` : ""), o.life ?? 3, o.colour);
+/** A stage call: the words, the mission's own colour, and how the moment went for you, if it went
+ *  one way or the other (a split ahead, a life lost, time running short), which the plate shows. */
+export interface MissionCall extends Message {
+  colour?: string;
+  went?: "well" | "badly" | "close";
 }
-noticeStage((n) => stageCard({ title: n.text, sub: n.sub, colour: n.colour, life: n.secs }));
+const WENT = { well: "#58e06a", badly: "#ff5a4e", close: "#ffb02e" };
 
-/** A call during a mission: by default a stage call in the band over the crosshair; any other tier
- *  goes to the shared notices (notice.ts). */
-export function missionCall(o: Notice) { notice({ ...o, tier: o.tier ?? "stage" }); }
+/** A stage call: the mission moving on (a wave, a checkpoint, a life gone), on the plate over the
+ *  crosshair, up for as long as it takes to read. */
+export function missionCall(o: MissionCall) {
+  const sub = o.sub ? `<div class="goal">${esc(ctlText(o.sub))}</div>` : "";
+  putCard("msc-stage", `<div class="title">${esc(ctlText(o.text))}</div>` + sub, readSecs(o.text + (o.sub ?? ""), 1.6, 5, 1 / 22, 1.4), o.went ? WENT[o.went] : o.colour);
+}
 
 // ---- entries, the countdown, and watching the others ------------------------------------------------------
 
@@ -423,15 +453,19 @@ export function missionWaiting(o: { kind?: string; head: string; sub: string; sm
 let count: HTMLDivElement | null = null;
 let countT = 0;
 
-/** A number of the countdown (3, 2, 1, or 0 for GO!) punching in over the middle of the screen with
- *  the start lights over it; it fades by itself. */
-export function missionCountdown(n: number, colour?: string) {
+/** A number of the countdown (3, 2, 1, or 0 for GO!) punching in over the middle of the screen; it
+ *  fades by itself. "race" has the start lights over it, "plain" is the number alone on a plate in
+ *  the mode's colour; "none" shows nothing. */
+export function missionCountdown(n: number, colour?: string, style: Countdown = "race") {
   dropCard();
+  if (style === "none") { if (count) count.hidden = true; return; }
   if (!count || !count.isConnected) count = banner("msc-count");
   colourOn(count, colour);
+  count.classList.toggle("plain", style === "plain");
   const lamps = [0, 1, 2].map((k) => `<div class="lamp ${n === 0 ? "green" : k < 4 - n ? "red" : ""}"></div>`).join("");
+  const num = `<div class="num${n === 0 ? " go" : ""}">${n === 0 ? "GO!" : n}</div>`;
   // written afresh each time, so its punch plays again
-  count.innerHTML = `<div class="lights">${lamps}</div><div class="num${n === 0 ? " go" : ""}">${n === 0 ? "GO!" : n}</div>`;
+  count.innerHTML = style === "plain" ? `<div class="plate">${num}</div>` : `<div class="lights">${lamps}</div>${num}`;
   count.hidden = false;
   clearTimeout(countT);
   countT = window.setTimeout(() => { if (count) count.hidden = true; }, n === 0 ? 1100 : 950);
@@ -509,7 +543,7 @@ const FLAGS: Record<string, [string, string]> = {
 
 interface Bit { x: number; y: number; vx: number; vy: number; a: number; va: number; w: number; h: number; c: string }
 
-export interface ResultHandle { rows(rows: ResultRow[]): void; reward(text: string): void; remove(): void }
+export interface ResultHandle { rows(rows: ResultRow[]): void; reward(text: string, pic?: Reward["pic"]): void; remove(): void }
 let ending: ResultHandle | null = null;
 
 /** A result card is up now. */
@@ -517,7 +551,7 @@ export const missionResultUp = () => !!ending;
 /** Take the result card down at once (a new race starting). */
 export function missionResultDrop() { ending?.remove(); }
 /** Something won while the card is up: list it there. False if no card is up to take it. */
-export function missionReward(text: string) { if (!ending) return false; ending.reward(text); return true; }
+export function missionReward(text: string, pic?: Reward["pic"]) { if (!ending) return false; ending.reward(text, pic); return true; }
 noticeAwardsTo(missionReward);
 noticeTricksTo(missionAuxAdopt);
 
@@ -562,11 +596,12 @@ export function missionResult(o: MissionResult): ResultHandle {
       ? `<table><caption>Results</caption>${r.slice(0, 10).map((x, k) => `<tr class="${x.me ? "me" : ""}${x.dnf ? " dnf" : ""}"><td class="n">${x.dnf ? "–" : `${k + 1}.`}</td><td>${esc(x.name)}</td><td class="t">${esc(x.time)}</td></tr>`).join("")}</table>`
       : "";
   };
-  const reward = (text: string) => {
+  const reward = (text: string, pic?: Reward["pic"]) => {
     if ([...list.children].some((li) => li.textContent === text)) return;
     const li = document.createElement("li");
     li.textContent = text;
     list.appendChild(li);
+    if (pic) void Promise.resolve(pic).then((url) => { if (url) { const img = document.createElement("img"); img.className = "pic"; img.alt = ""; img.src = url; li.prepend(img); li.classList.add("haspic"); } }, () => {});
   };
   const remove = () => {
     if (gone) return;
@@ -663,5 +698,3 @@ export function missionNight(o: { pub: string; head: string; stand: string; by: 
 /** A race place as a word with its ending: "1st". */
 export const placeWord = nth;
 
-/** A stage call by its older name, for the modes still calling it so (invasion.ts). */
-export const missionStage = (o: MissionStage) => stageCard(o);

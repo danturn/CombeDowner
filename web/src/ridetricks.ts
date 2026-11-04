@@ -50,7 +50,7 @@ export class RideTricks {
   private sound: ReturnType<typeof SFX.rideNoise> = null;
   private bests: Partial<Record<RideKind, Bests>>;
 
-  constructor(private say: (text: string, secs: number) => void) {
+  constructor(private say: (text: string) => void) {
     try { this.bests = JSON.parse(localStorage.getItem(STORE) ?? "{}") ?? {}; } catch { this.bests = {}; }
   }
 
@@ -167,7 +167,7 @@ export class RideTricks {
     const bests = [b.grind ? `grind ${b.grind.toFixed(1)} m` : "", b.air ? `air ${b.air.toFixed(1)} m` : "", b.manual ? `manual ${b.manual.toFixed(1)} s` : "", `combo ${fmt(b.combo)}`].filter(Boolean).join(" · ");
     this.showResult({ score: fmt(total), mult: `×${c.mult}`, label: c.names.slice(-4).join(" + "),
       more: `<small class="best">${news.length ? "New best! " : ""}Your bests on the ${esc(name)}: ${bests}</small>`, cls: news.length ? "done new" : "done" }, news.length ? 4 : 3);
-    if (news.length) { SFX.jobStep(); this.say(`New best on the ${name}: ${news.join(", ")}`, 2.5); }
+    if (news.length) { SFX.jobStep(); this.say(`New best on the ${name}: ${news.join(", ")}`); }
     else SFX.pip();
   }
 
