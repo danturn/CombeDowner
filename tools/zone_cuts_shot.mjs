@@ -81,10 +81,11 @@ for (const map of opt.maps.split(",")) for (const cut of opt.cuts.split(",")) {
     const places = [...new Set([...(m.d.pl ?? []), ...(m.wide?.d.pl ?? [])].filter((p) => p.n && p.r.length >= 3 && inFirst(p.r.reduce((s, q) => s + q[0], 0) / p.r.length, p.r.reduce((s, q) => s + q[1], 0) / p.r.length)).map((p) => p.n))];
     const mainRoads = [...new Set((m.wide?.rd ?? []).filter((r) => ["trunk", "primary", "secondary", "tertiary"].includes(r.c) && r.p.some((q) => inFirst(q[0], q[1]))).map((r) => r.n).filter(Boolean))];
     const h = Z.list[0].home;
-    return { pubs, places, mainRoads, structure: h && { at: [Math.round(h.x), Math.round(-h.z)], on: h.n || "open ground" } };
+    const sp = m.d.spawn ?? [[0, 0]];
+    return { spawn: [Math.round(sp.reduce((s, p) => s + p[0], 0) / sp.length), Math.round(sp.reduce((s, p) => s + p[1], 0) / sp.length)], pubs, places, mainRoads, structure: h && { at: [Math.round(h.x), Math.round(-h.z)], on: h.n || "open ground" } };
   }, map);
   (summary[map] ??= {})[cut] = { zones, travel, first };
-  console.log(`  first zone: ${first.pubs.length} pubs (${first.pubs.slice(0, 4).join(", ")}), places ${first.places.slice(0, 6).join(", ")}, main roads ${first.mainRoads.slice(0, 4).join(", ")}, structure on ${first.structure?.on}`);
+  console.log(`  first zone: spawn ${first.spawn}, ${first.pubs.length} pubs (${first.pubs.slice(0, 4).join(", ")}), places ${first.places.slice(0, 6).join(", ")}, main roads ${first.mainRoads.slice(0, 4).join(", ")}, structure on ${first.structure?.on}`);
   console.log(`${map} ${cut}${calm ? "" : " (not calm: timed out)"}: ${zones.map((z) => `${z.order}. ${z.name} (${z.km2} km²)`).join("; ")}; travel ${travel}; ${zones.filter((z) => z.sockets && !z.structure).length} zones lacking a structure${errs.length ? `  errors: ${errs.slice(0, 3).join(" | ")}` : ""}`);
   note = await silenceNote(page);
   await page.close();

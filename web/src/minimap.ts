@@ -292,7 +292,7 @@ function fieldEdge(g: CanvasRenderingContext2D, map: GameMap, P: (x: number, y: 
   g.beginPath(); edge(); g.stroke();
 }
 
-export interface ZoneView { shut: number[][]; wall: number[][]; names: { n: string; x: number; z: number; open: boolean }[]; every?: { cells: number[][]; lines: number[][] } }
+export interface ZoneView { shut: number[][]; wall: number[][]; names: { n: string; x: number; z: number; open: boolean }[]; every?: { cells: number[][]; lines: number[][]; start: number[] } }
 
 /** The zones not open yet, shaded, and the wall round the ones that are. P turns scene (x, z) into canvas pixels. */
 function drawZones(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, z: number) => number[], dpr: number, names: number) {
@@ -331,6 +331,10 @@ function drawEveryZone(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, 
   g.beginPath();
   for (const [ax, az, bx, bz] of z.every!.lines) { const a = P(ax, az), b = P(bx, bz); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
   g.stroke();
+  const [sx, sy] = P(z.every!.start[0], z.every!.start[1]);
+  g.beginPath(); g.arc(sx, sy, 9 * dpr, 0, Math.PI * 2);
+  g.fillStyle = "#ffffff"; g.fill(); g.lineWidth = 3 * dpr; g.strokeStyle = "#0b1622"; g.stroke();
+  g.beginPath(); g.arc(sx, sy, 4 * dpr, 0, Math.PI * 2); g.fillStyle = "#d22"; g.fill();
   const size = Math.max(14, names || 18);
   g.font = `700 ${size}px "Barlow Condensed", system-ui, sans-serif`;
   g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";

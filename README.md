@@ -213,14 +213,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
   spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
   structures are the record, and the room carries on from whoever has got furthest in that room.
-- **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
-  (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
-  field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
+- **Zones**: the map opens a part at a time. You start in a small first zone to learn the game in (in
+  Bath, the middle of Combe Down), with a pub, places for jobs, a main road and a structure that needs
+  only two objects, and a shimmering wall like the force field's round it. The town's busiest streets
+  (in Bath, the city centre from Bath Spa up to the Royal Crescent) are always the last zone, and the
+  rest open in a sweep round them; where a map starts you in its centre, you start just outside it instead. Each zone has its own structure and a challenge or two, each marked on both maps
   with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
   sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
   challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
-  cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
-  of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
+  cable car open up with the zone they're in, from the second on (before then a bus stop says "No
+  buses out this way yet"), and none of them takes you past the wall. Bath and Cape Town have six
+  zones and Bradford-on-Avon three. Tick
   "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
   for the room.
 - **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
