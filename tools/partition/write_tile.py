@@ -2576,53 +2576,51 @@ def deck_stretches(r):
     return out
 
 
-def bridge_decks(rd, ground=None, paths=False):
+def bridge_decks(rd, ground=None, under=False):
     """The ground each bridge's strip covers, with room for its parapets, or None. A bridge is drawn as
-    a strip with what holds it up, so the faces leave it out; given the ground, not where a street at
-    grade passes under it. A path's bridge is its deck only (the span with the step to the abutment at
-    either end): off it, it is faces like any other path's. A street's is its whole record, kerbs and
-    pavements and all; with `paths`, what a path's faces leave out of it, which is only each side's own
-    carriageway and pavement off the deck, so a path beside or across it meets it rather than stopping
-    short at the room left for its parapets."""
+    a strip with what holds it up, so the faces leave it out; given the ground, not where a way passes
+    under it. A bridge's strip is its deck only (each span with the step to the abutment at either
+    end): off it, a street or a path is faces like any other, so what meets or crosses it at grade
+    meets its faces rather than stopping short at room left for parapets that aren't there. With
+    `under`, also what of the paths passing under a deck is theirs to draw there."""
     decks = [line.buffer(way_width(r) / 2 + (0.5 if r["c"] in GAME_PATHS else max(r.get("pv") or [0]) + 0.5), cap_style="flat")
              for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
-    for r in rd:
-        if r["c"] in GAME_PATHS or len(r["p"]) < 2 or not any(on_deck(q) for q in r["p"]):
-            continue
-        line, half = LineString([q[:2] for q in r["p"]]), way_width(r) / 2
-        if not paths:
-            decks.append(line.buffer(half + max(r.get("pv") or [0]) + 0.5, cap_style="flat"))
-            continue
-        pl, pr = list(r["pv"]) if r.get("pv") else [PAVE, PAVE] if r["c"] in KERBED else [0, 0]
-        decks += [line.buffer(half + pl, cap_style="flat", single_sided=True),
-                  line.buffer(-(half + pr), cap_style="flat", single_sided=True)]
     if not decks:
-        return None
+        return (None, None) if under else None
     deck = unary_union(decks)
     if ground is None:
-        return deck
+        return (deck, None) if under else deck
     # (a road at grade under a deck high enough to walk under keeps its faces there: cut out with the
     # deck, the ground showed through in a grass strip across the carriageway with a step at each side.
-    # Only a road that far below the deck: one up on the bank beside it is still the deck's ground)
-    def flying(a, b):
-        z = ground((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-        return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b)) and z is not None and min(a[2], b[2]) - z > HEADROOM
+    # Only a way far enough below the deck by its own height: one up on the bank beside it is still the
+    # deck's ground. The ground under a deck is no guide, as the survey often has the deck or its
+    # abutments' bank there, and a footway through a short underpass was cut out with the deck above)
+    def on_span(a, b):
+        return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b))
     high = [(LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat"),
              min(a[2], b[2]))
-            for r in rd for a, b in zip(r["p"], r["p"][1:]) if flying(a, b)]
-    below = [(LineString([a[:2], b[:2]]).buffer(r.get("w", 4) / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])),
-                                                cap_style="flat"), max(a[2], b[2]))
+            for r in rd for a, b in zip(r["p"], r["p"][1:]) if on_span(a, b)]
+    below = [(LineString([a[:2], b[:2]]), r, max(a[2], b[2]))
              for r in rd for a, b in zip(r["p"], r["p"][1:])
              if not any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))]
     if not high or not below:
+        return (deck, None) if under else deck
+    room = [(l.buffer(r.get("w", 4) / 2 + (0.3 if r["c"] in GAME_PATHS else max(r.get("pv") or [0])), cap_style="flat"), r, z)
+            for l, r, z in below]
+    tree = STRtree([g for g, _, _ in room])
+    under_deck = [(g.intersection(h), r, k) for h, top in high for k in tree.query(h)
+                  for g, r, z in (room[int(k)],) if z <= top - HEADROOM]
+    kept = [g for g, r, _ in under_deck if r["c"] not in GAME_PATHS or r["c"] == "pedestrian"]
+    deck = deck.difference(unary_union(kept)) if kept else deck
+    if not under:
         return deck
-    tree = STRtree([g for g, _ in below])
-    kept = [g.intersection(h) for h, top in high for g, z in (below[int(k)] for k in tree.query(h))
-            if z <= top - HEADROOM]
-    return deck.difference(unary_union(kept)) if kept else deck
+    # (a path under a deck is the path's, at its own width: the partition gave it to the street above)
+    paths = [below[int(k)][0].buffer(way_width(r) / 2, cap_style="flat").intersection(g)
+             for g, r, k in under_deck if r["c"] in GAME_PATHS and r["c"] != "pedestrian"]
+    return deck, (unary_union(paths) if paths else None)
 
 
-HEADROOM = 2.5             # metres: a deck at least this far above the ground has room for a street under it
+HEADROOM = 2.5             # metres: a deck at least this far above a way has room for it to pass under
 FRONT_PATH_HALF = 0.55      # metres: half a front path's width, as the game drew its strip
 STREET_STEP = 4.0           # metres: the longest edge of a street's or pavement's outline, the spacing of its line's points
 PATH_STEP = 3.0             # metres: the longest edge of a path's outline, so it can follow the ground (a 4 m grid)
@@ -3655,8 +3653,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     pedestrianised street is paved wall to wall. Paving that is no kerbed street's (a pedestrian
     street, a square) is drawn as a drive is, on the ground and flush with the paths across it. A path's, a front path's or a drive's point is at the
     ground, and its outline has a point every `PATH_STEP` so it can lie on the ground as it's drawn. A
-    bridge keeps its strip, with what holds it up, so it is cut out of the faces; a path's bridge only
-    along its deck, the rest of its record having faces, and `sp` says so.
+    bridge keeps its strip, with what holds it up, so it is cut out of the faces, but only along its
+    deck, the rest of its record having faces (`sp` 2 says so; 1 was a path's bridge only); a way under
+    a deck keeps its faces there, a path's as a path's.
 
     The outlines are simplified together, by `SURFACE_TOLERANCE`: the partition's are sampled every
     few centimetres, which took a square's file from 3.4 to 8.7 MB; simplified apart, a carriageway
@@ -3667,8 +3666,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     heights = [LineString([q[:3] for q in r["p"]]) for r in streets]
     tree = STRtree(lines) if lines else None
     planes = portal_planes(tunnels, lines, heights)
-    deck = bridge_decks(rd, ground)
-    path_deck = bridge_decks(rd, ground, paths=True)
+    deck, path_under = bridge_decks(rd, ground, under=True)
     over = bridge_decks(rd)
     if over is not None:
         shapely.prepare(over)
@@ -3741,8 +3739,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     def shapes(cls):
         polys = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
         g = unary_union(polys).intersection(square) if polys else Polygon()
-        cut = path_deck if cls == "path" else deck
-        return g.difference(cut) if cut is not None else g
+        g = g.difference(deck) if deck is not None else g
+        return g.union(path_under.intersection(square)) if cls == "path" and path_under is not None else g
 
     road, pave = shapes("carriageway"), shapes("pavement")
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
@@ -3981,8 +3979,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     for k in PATH_FACE.values():
         if not out[k]:
             del out[k]
-    # (the game draws only a path's bridge's deck as its strip where the faces say they cover the rest)
-    out["sp"] = 1
+    # (the game draws only a bridge's deck as its strip where the faces say they cover the rest)
+    out["sp"] = 2
     return out if any(out.get(k) for k in SF_LISTS) else None
 
 

@@ -591,12 +591,52 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   // under a face, as under a strip: well down beneath a carriageway, a little beneath a pavement, and
   // just beneath the face's lowest corner for the grid points round it, so no hillside shows through
+  /** The height grid point (i, j) must come down to so that none of the ground's triangles with it as a
+   *  corner stands over face triangle o (top: how high over the face the ground may be), or Infinity. */
+  const clearOf = (o: number, i: number, j: number, top: number) => {
+    const F = faceXYZ, n = T.nx;
+    const P = (a: number, b: number) => {
+      const k = Math.min(T.ny - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a));
+      return [T.x0 + a * T.dx, T.y0 + b * T.dy, Math.min(T.h[k] / 10, roundTo[k], underTo[k])];
+    };
+    const face = [[F[o], F[o + 1], F[o + 2]], [F[o + 3], F[o + 4], F[o + 5]], [F[o + 6], F[o + 7], F[o + 8]]];
+    /** weights of (x, y) in triangle A, or null outside it */
+    const at = (A: number[][], x: number, y: number) => {
+      const d = (A[1][1] - A[2][1]) * (A[0][0] - A[2][0]) + (A[2][0] - A[1][0]) * (A[0][1] - A[2][1]);
+      if (Math.abs(d) < 1e-12) return null;
+      const wa = ((A[1][1] - A[2][1]) * (x - A[2][0]) + (A[2][0] - A[1][0]) * (y - A[2][1])) / d;
+      const wb = ((A[2][1] - A[0][1]) * (x - A[2][0]) + (A[0][0] - A[2][0]) * (y - A[2][1])) / d, wc = 1 - wa - wb;
+      return wa < -1e-9 || wb < -1e-9 || wc < -1e-9 ? null : [wa, wb, wc];
+    };
+    // (each cell is drawn as (i, j), (i+1, j), (i, j+1) and (i+1, j), (i+1, j+1), (i, j+1)); the corner first
+    const round = [[P(i, j), P(i + 1, j), P(i, j + 1)], [P(i, j), P(i - 1, j + 1), P(i - 1, j)], [P(i, j), P(i, j + 1), P(i - 1, j + 1)],
+      [P(i, j), P(i, j - 1), P(i + 1, j - 1)], [P(i, j), P(i + 1, j - 1), P(i + 1, j)], [P(i, j), P(i - 1, j), P(i, j - 1)]];
+    let to = Infinity;
+    for (const G of round) {
+      // the ground can stand highest over the face at a corner of either, or where their edges cross
+      const pts: number[][] = [...face, ...G];
+      for (let e = 0; e < 3; e++) for (let f = 0; f < 3; f++) {
+        const [ax, ay] = face[e], [bx, by] = face[(e + 1) % 3], [cx, cy] = G[f], [dx, dy] = G[(f + 1) % 3];
+        const den = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+        if (Math.abs(den) < 1e-12) continue;
+        const s = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / den, u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / den;
+        if (s >= 0 && s <= 1 && u >= 0 && u <= 1) pts.push([ax + (bx - ax) * s, ay + (by - ay) * s]);
+      }
+      for (const [x, y] of pts) {
+        const wf = at(face, x, y), wg = at(G, x, y);
+        if (!wf || !wg || wg[0] < 1e-3) continue;
+        const z = wf[0] * face[0][2] + wf[1] * face[1][2] + wf[2] * face[2][2] + top, others = wg[1] * G[1][2] + wg[2] * G[2][2];
+        to = Math.min(to, (z - others) / wg[0]);
+      }
+    }
+    return to;
+  };
   if (LEVEL) for (let t = 0; t < faceKind.length; t++) {
     if (t % 400 === 399) yield;
     if (faceKind[t] > 2) continue;     // (paths and drives lie on the ground as it's drawn)
-    const F = faceXYZ, o = t * 9, reach = T.dx * 0.75, pave = faceKind[t] === 2;
-    const i0 = Math.max(0, Math.floor((Math.min(F[o], F[o + 3], F[o + 6]) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(F[o], F[o + 3], F[o + 6]) + reach - T.x0) / T.dx));
-    const j0 = Math.max(0, Math.floor((Math.min(F[o + 1], F[o + 4], F[o + 7]) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(F[o + 1], F[o + 4], F[o + 7]) + reach - T.y0) / T.dy));
+    const F = faceXYZ, o = t * 9, reach = T.dx * 0.75, pave = faceKind[t] === 2, far = T.dx * 1.5;
+    const i0 = Math.max(0, Math.floor((Math.min(F[o], F[o + 3], F[o + 6]) - far - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(F[o], F[o + 3], F[o + 6]) + far - T.x0) / T.dx));
+    const j0 = Math.max(0, Math.floor((Math.min(F[o + 1], F[o + 4], F[o + 7]) - far - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(F[o + 1], F[o + 4], F[o + 7]) + far - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, v = j * T.nx + i;
       if (faceWeights(t, x, y) >= 0) {
@@ -617,7 +657,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       // (the grass comes up to just under the face's top, as a verge or a garden meets it, rather
       // than leaving a dark step down from a pavement's back or a lane's edge)
-      if (d2 < reach * reach) roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : 0.04));
+      if (d2 < reach * reach) { roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : 0.04)); continue; }
+      // and further out, a corner of one of the ground's triangles over the face comes down only as far as
+      // it must for that triangle to clear it: on a coarse grid a corner up a bank (under a bridge's
+      // abutment, say) carried the grass over the pavement
+      // (never below the face's edge, as a corner the triangle only just touches would otherwise go far down)
+      if (pave) { const to = Math.max(clearOf(o, i, j, 0.14), near + 0.14); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
     }
   }
   // the grid points just inside a face's edge are let down less, as the ground's triangles from them
@@ -670,19 +715,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (i === 0 || j === 0 || i === T.nx - 1 || j === T.ny - 1) sink[j * T.nx + i] = 0;
   }
   yield;
-  // A 4 m cell is drawn at 2 m after all where the ground is let down (or made up) at a 2 m point in
-  // it differently from its corners: drawn at 4 m, that point wasn't drawn, and the grass stood over
-  // a pavement or a path cut into a bank. (A cell left at 4 m has none, so its edges still meet the
-  // 2 m cells beside it.)
+  // A 4 m cell is drawn at 2 m after all where a street or path beside it needs the ground at a 2 m
+  // point in it lower than the cell's own triangles would draw it: drawn at 4 m, that point wasn't
+  // drawn, and a corner up on a bank (under a bridge's abutment, say) carried the grass over the
+  // pavement. (A cell left at 4 m has no such point, so its edges still meet the 2 m cells beside it.)
   let fine = map.fine;
   if (fine) {
     const cw = (T.nx - 1) / 2, ch = (T.ny - 1) / 2, n = T.nx, out = fine.slice();
+    const at = (k: number) => T.h[k] / 10 - sink[k];
+    const over = (k: number, want: number) => (roundTo[k] < Infinity || underTo[k] < Infinity) && want - at(k) > 0.02;
     for (let cj = 0; cj < ch; cj++) for (let ci = 0; ci < cw; ci++) {
       if (out[cj * cw + ci]) continue;
-      const a = 2 * cj * n + 2 * ci, s00 = sink[a], s10 = sink[a + 2], s01 = sink[a + 2 * n], s11 = sink[a + 2 * n + 2];
-      const off = (k: number, want: number) => Math.abs(sink[k] - want) > 0.02;
-      if (off(a + 1, (s00 + s10) / 2) || off(a + n, (s00 + s01) / 2) || off(a + n + 1, (s10 + s01) / 2) ||
-          off(a + n + 2, (s10 + s11) / 2) || off(a + 2 * n + 1, (s01 + s11) / 2)) out[cj * cw + ci] = 1;
+      const a = 2 * cj * n + 2 * ci, h00 = at(a), h10 = at(a + 2), h01 = at(a + 2 * n), h11 = at(a + 2 * n + 2);
+      if (over(a + 1, (h00 + h10) / 2) || over(a + n, (h00 + h01) / 2) || over(a + n + 1, (h10 + h01) / 2) ||
+          over(a + n + 2, (h10 + h11) / 2) || over(a + 2 * n + 1, (h01 + h11) / 2)) out[cj * cw + ci] = 1;
     }
     fine = out;
   }
@@ -1742,9 +1788,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const faced = !!sf && SURFACES;
     if (faced) yield* surfaceFaces(sf!, geo);
     const spans = own ? joinSpans(rd.filter(own)) : [];
-    // (where the faces cover a path's bridge off its deck, its strip is only the deck, so the paths
-    // meeting it on the ground join its faces rather than a strip laid over and beside them)
-    const laid = faced && sf!.sp && own ? rd.flatMap((r) => (own(r) && !r.piece && PATHS.has(r.c) ? deckStretches(r) : [r])) : rd;
+    // (where the faces cover a bridge off its deck, its strip is only the deck, so what meets it on the
+    // ground joins its faces rather than a strip laid over and beside them: sp 1 says so of paths'
+    // bridges, sp 2 of every bridge)
+    const laid = faced && sf!.sp && own ? rd.flatMap((r) => (own(r) && !r.piece && (PATHS.has(r.c) || sf!.sp! > 1) ? deckStretches(r) : [r])) : rd;
     for (let k = 0; k < laid.length; k += 15) {
       const part = laid.slice(k, k + 15).filter((r) => !faced || own?.(r) || r.piece), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
