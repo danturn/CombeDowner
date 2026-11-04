@@ -218,7 +218,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
   with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
   sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
-  challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
+  challenge and any new way to get about, its card landing with a fanfare, a cheer and a shower of
+  confetti (a bigger one still when the last zone opens). Buses, bus routes, canal boats, balloons, trains and the
   cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
   of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
   "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
