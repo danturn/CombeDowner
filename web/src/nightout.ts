@@ -2,8 +2,8 @@
 // a related follow-up comes up nearby within the minute, as a poster on the spot or a phone call:
 //  - a pub won back: the landlord says last one to the next pub buys, a race (race.ts) from his pub
 //    to the nearest other pub far enough off to be worth it;
-//  - the Gaffer cuffed: his phone gives away the square the Flag Lads are eyeing next (a call, with a
-//    marker on it);
+//  - the Gaffer cuffed: his phone gives away the street the Flag Lads are eyeing next (a call, with a
+//    marker on it), where their next cluster of flags goes up;
 //  - Seagull Attack won: a tourist's tip-off, and a marker on a ladder crew putting flags up
 //    (invasion.ts).
 // A Gaffer who gets away is tomorrow's Wanted poster as ever (wanted.ts), and goes on the night's card.
@@ -122,7 +122,7 @@ export class NightOut {
     const sq = this.invasion.eyeing();
     if (!sq) return;
     const near = this.placeNear(sq.x, sq.z);
-    this.call(sq, "Flag Lads' next target", `${gaffer || "The Gaffer"}'s phone has the Flag Lads' plan: they're eyeing the square ${far(Math.hypot(sq.x - from.x, sq.z - from.z))} ${compassWord(sq.x - from.x, sq.z - from.z)}${near ? `, round ${near}` : ""}`);
+    this.call(sq, "Flag Lads' next target", `${gaffer || "The Gaffer"}'s phone has the Flag Lads' plan: they're eyeing a street ${far(Math.hypot(sq.x - from.x, sq.z - from.z))} ${compassWord(sq.x - from.x, sq.z - from.z)}${near ? `, round ${near}` : ""}`);
   }
 
   private crewTip(from: { x: number; z: number }) {

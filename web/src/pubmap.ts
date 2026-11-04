@@ -7,6 +7,7 @@
 // Going there can be held up: the card says what's stopping you instead of offering to go (something
 // hostile after you, a shoot-out, being hurt), or, where it's yours to walk away from (a race on your
 // own, a challenge on your own, a pub takeover), asks whether to leave it. Game.travelHold decides.
+// A pub the Flag Lads are taking over can't be gone to at all: you have to get there yourself.
 //
 // Nothing here goes over the network: going to a pub just moves you (Game.goTo), and everyone else
 // sees you turn up there in your next position update; marking it is the usual map marker.
@@ -25,6 +26,8 @@ export interface TravelHold { why: string; leave?: { yes: string; go(): void } }
 export interface PubHost {
   pubs(): PubSpot[];
   hold(): TravelHold | null;
+  /** Why you can't go to this pub in particular (it's being taken over), if you can't. */
+  refuse?(p: PubSpot): string | null;
   /** Go there; returns why not, if you can't after all. */
   goTo(i: number): string | null;
   mark(p: PubSpot): void;
@@ -107,6 +110,8 @@ export class PubMap {
   go(): boolean {
     const p = this.pubs[this.picked];
     if (!p) return false;
+    const no = this.host.refuse?.(p);
+    if (no) { this.note = no; this.say(); return false; }
     this.hold = this.host.hold();
     if (this.hold && !this.hold.leave) { this.say(); return false; }
     this.hold?.leave?.go();
@@ -127,8 +132,9 @@ export class PubMap {
     const p = this.pubs[this.picked];
     if (!p) return;
     const as = input(), named = as !== "touch", h = this.hold;
-    const why = this.note || h?.why || "";
-    const goes = !this.note && (!h || !!h.leave);
+    const no = this.host.refuse?.(p) ?? "";
+    const why = this.note || no || h?.why || "";
+    const goes = !this.note && !no && (!h || !!h.leave);
     const goWord = h?.leave?.yes ?? "Go there";
     const key = `${p.i}|${far(p.far)}|${why}|${goes}|${goWord}|${as}`;
     if (key === this.shown) return;

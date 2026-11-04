@@ -1,14 +1,14 @@
-// What's yours: every square of the map you've cleared of the Flag Lads' flags, and each pub you've
-// won back, kept from day to day. The big map (minimap.ts drawFull) shows it, quietly, over its own
-// ground: a faint green wash on the squares you've cleared, a small pint on each pub you've won
-// back, and a thin amber ring round today's scars, under the Flag Lads' red. A line in the map's
-// corner says how much of the place is yours (the squares you've cleared), and pointing at or
-// tapping a square says its name and what you've done in it.
+// What's yours: the Flag Lads' flags you've shot and each pub you've won back, kept from day to day.
+// The big map (minimap.ts drawFull) shows it, quietly, over its own ground: a small pint on each pub
+// you've won back, and a thin amber ring round today's scars, under the Flag Lads' red. A line in
+// the map's corner says how many flags you've shot and pubs you've won back. There's no record of
+// streets or bits of the map cleared: the prize is the whole map, made safe (invasion.ts). Squares
+// cleared under the old flags are still in what's saved, and left alone.
 //
 // Who decides what: all your own, kept on this device per map (local storage, "cd-yourmap:<map id>")
 // and never sent anywhere. The game tells it where you are once a second, and a visit is only
 // written when you walk into a new square; the invasion (invasion.ts) tells it when you shoot a
-// flag, clear a square or are there when a pub is won back. The scars are today's from scars.ts
+// flag or are there when a pub is won back. The scars are today's from scars.ts
 // (the host's list).
 // What you do is also passed to the morning paper (paper.ts), which writes it up tomorrow.
 import type { GameMap } from "./map";
@@ -21,7 +21,7 @@ const today = () => Math.floor(Date.now() / DAY);
 
 interface Store {
   v: Record<string, [number, number]>;            // squares been to: first day, last day
-  c: Record<string, [number, number, number]>;    // squares cleared by you: times, first day, last day
+  c: Record<string, [number, number, number]>;    // squares cleared under the old flags: kept, not shown
   f: Record<string, number>;                      // flags shot in each square
   p: Record<string, [string, number, number]>;    // pubs won back: square, times, last day
   n: number;                                      // flags shot, all time
@@ -89,14 +89,6 @@ export function flagShot(x: number, z: number, place: string) {
   Paper.myFlag(run, place);
 }
 
-/** You shot the last flag in the square at (x, z). */
-export function cleared(x: number, z: number, place: string) {
-  const sq = squareOf(x, z), d = today();
-  if (sq) { const c = S.c[sq]; S.c[sq] = [(c?.[0] ?? 0) + 1, c?.[1] ?? d, d]; dirty = true; }
-  Paper.cleared(place);
-  flush();
-}
-
 /** You were there when a pub was won back. */
 export function pubWon(name: string, x: number, z: number) {
   const sq = squareOf(x, z), p = S.p[name];
@@ -153,46 +145,25 @@ export function nameOf(sq: string): string {
   return n ? `Round ${n}` : "Fields and lanes";
 }
 
-/** How many squares there are, how many you've cleared and how many pubs you've won back. */
-function totals() {
-  const all = allSquares(), have = new Set(all.map((q) => q.key));
-  return { squares: all.length, cleared: Object.keys(S.c).filter((k) => have.has(k)).length, pubs: Object.keys(S.p).length };
-}
 
 // ---- on the big map --------------------------------------------------------------------------------
 
 const AMBER = "#d79a2b";
-const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/** A square of the map, scene x0 and z0 its north-west corner, s metres across. */
-export interface Box { x0: number; z0: number; s: number }
 /** What the big map draws of yours. */
-export interface Mine { cleared: Box[]; scars: Box[]; pubs: { x: number; z: number; name?: string }[] }
+export interface Mine { scars: { x: number; z: number }[]; pubs: { x: number; z: number; name?: string }[] }
 
 /** What's yours, for the big map: pubs is the game's pubs, to find the ones you've won back. */
 export function mine(pubs: { name: string; x: number; z: number }[]): Mine {
-  const all = allSquares(), scarred = new Set(scars().map((s) => s.sq));
-  const box = (q: Sq): Box => ({ x0: q.x0, z0: q.z0, s: q.s });
-  return {
-    cleared: all.filter((q) => S.c[q.key]).map(box),
-    scars: all.filter((q) => scarred.has(q.key)).map(box),
-    pubs: pubs.filter((p) => S.p[p.name]),
-  };
+  return { scars: scarList().map((s) => ({ x: s.x, z: s.z })), pubs: pubs.filter((p) => S.p[p.name]) };
 }
 
-/** The faint wash and the rings, drawn under the street names. flagged: whether the Flag Lads hold
- *  the square at a corner today, where their red shows instead of your green. */
-export function drawMineUnder(g: CanvasRenderingContext2D, m: Mine, P: (x: number, z: number) => number[], scale: number, dpr: number, flagged: (x0: number, z0: number) => boolean) {
-  g.fillStyle = "rgba(120,224,160,0.13)";
-  for (const b of m.cleared) {
-    if (flagged(b.x0, b.z0)) continue;
-    const [x, y] = P(b.x0, b.z0);
-    g.fillRect(x, y, b.s * scale, b.s * scale);
-  }
+/** A thin amber ring round each of today's scars, drawn under the street names. */
+export function drawMineUnder(g: CanvasRenderingContext2D, m: Mine, P: (x: number, z: number) => number[], scale: number, dpr: number) {
   g.strokeStyle = AMBER; g.globalAlpha = 0.8; g.lineWidth = Math.max(1, 1.2 * dpr);
-  for (const b of m.scars) {
-    const [x, y] = P(b.x0, b.z0), w = b.s * scale, i = Math.min(3 * dpr, w * 0.06);
-    g.strokeRect(x + i, y + i, w - 2 * i, w - 2 * i);
+  for (const s of m.scars) {
+    const [x, y] = P(s.x, s.z);
+    g.beginPath(); g.arc(x, y, Math.max(6 * dpr, 60 * scale), 0, Math.PI * 2); g.stroke();
   }
   g.globalAlpha = 1;
 }
@@ -210,25 +181,8 @@ export function drawMinePubs(g: CanvasRenderingContext2D, m: Mine, P: (x: number
   }
 }
 
-/** The line in the big map's corner: how much of the place is yours. */
-export function share(place: string) {
-  const t = totals(), pct = t.squares ? Math.floor((t.cleared / t.squares) * 100) : 0;
-  return `${pct}% of ${place} is yours` + (t.pubs ? ` · ${t.pubs} pub${t.pubs === 1 ? "" : "s"} won back` : "");
-}
-
-/** What you've done in the square at scene (x, z), in a line, or "" off the squares. level: how much the Flag Lads hold it today, 0 to 1. */
-export function tipAt(x: number, z: number, level: number) {
-  const sq = squareOf(x, z);
-  if (!allSquares().some((q) => q.key === sq)) return "";
-  const c = S.c[sq], f = S.f[sq] ?? 0;
-  const day = (d: number) => (d === today() ? "today" : d === today() - 1 ? "yesterday" : today() - d < 7 ? `on ${DAY_NAMES[new Date(d * DAY).getUTCDay()]}` : `${today() - d} days ago`);
-  const bits = [
-    c ? `cleared by you ${c[0] === 1 ? "once" : c[0] === 2 ? "twice" : `${c[0]} times`}, last ${day(c[2])}` : "not cleared by you yet",
-    f ? `${f} flag${f === 1 ? "" : "s"} shot here` : "",
-    level > 0.1 ? `the Flag Lads hold ${Math.round(level * 100)}% today` : "",
-    ...Object.entries(S.p).filter(([, p]) => p[0] === sq).map(([n]) => `${n} won back`),
-    S.bestAt === sq && S.best > 1 ? `your best combo, x${S.best}` : "",
-    ...scars().filter((s) => s.sq === sq).map((s) => `scar: ${s.what}`),
-  ].filter(Boolean);
-  return `${nameOf(sq)}: ${bits.join(" · ")}`;
+/** The line in the big map's corner: what you've done against the Flag Lads. */
+export function share() {
+  const n = S.n, pubs = Object.keys(S.p).length;
+  return `${n ? `${n} of the Flag Lads' flag${n === 1 ? "" : "s"} shot by you` : "No flags shot yet"}` + (pubs ? ` · ${pubs} pub${pubs === 1 ? "" : "s"} won back` : "");
 }
