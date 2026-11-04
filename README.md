@@ -226,8 +226,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
   anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
-  spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
-  structures are the record, and the room carries on from whoever has got furthest in that room.
+  spawns) is put down right by it. Filled sockets glow. Both maps mark every structure in the zones
+  open so far, green once it's full and red while it wants filling; the one taking objects now pulses,
+  and the minimap's rim points to it from anywhere with how far it is. Point at one on the big map for
+  where it is and how full ("Structure, Firs Field (Combe Down): full"), and carry an object to a full one and
+  it tells you where the next one is and which way. The room carries on from whoever has got furthest
+  in that room.
 - **Zones**: the map opens a part at a time. You start in a small first zone to learn the game in (in
   Bath, the middle of Combe Down), with a pub, places for jobs, a main road and a structure that needs
   only two objects, and a shimmering wall like the force field's round it. The town's busiest streets
@@ -428,7 +432,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   R2/L2 or the right stick zoom, A marks and B closes.
 - **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
-  checkpoint, a minigame, the strange structure, a bus stop or a cable car station, and the
+  checkpoint, a minigame, a strange structure, a bus stop or a cable car station, and the
   marker goes exactly on it and says what it is ("Dan marked Push the Bus"); a pub opens its card,
   with Mark it on it; clicking a bunch of jobs
   zooms in on them. In the street a marker on something is a ring of light that fits round that

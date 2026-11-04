@@ -2451,8 +2451,7 @@ export class Game {
   /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
   private gameSpots() {
     const named = (s: { x: number; z: number } | undefined, name?: string) => s && { x: s.x, z: s.z, name };
-    // (the strange structure goes unnamed, on the map as everywhere else)
-    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood"), named(this.oddments.spot())].filter((s) => !!s);
+    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood")].filter((s) => !!s);
   }
 
   private targets(): Target[] {
@@ -4608,6 +4607,7 @@ export class Game {
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[NAUGHTY], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
     this.minimap.jobs = this.quests.spots().concat(this.scars.spots());
+    this.minimap.structures = this.oddments.marks();
     this.minimap.bus = this.busDriver.route();
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();

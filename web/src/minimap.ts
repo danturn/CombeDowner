@@ -17,7 +17,9 @@
 // zoomed in. Whatever's under the pointer is named, and a marker put down on it says what it's on.
 // Off the minimap's edge, a job's marker sits on the rim its way with how far it is, and a search
 // circle you're well outside gets an arrow on the rim with how far to its edge (unless a job's marker
-// inside it already points there), so the minimap alone says which way to go.
+// inside it already points there), so the minimap alone says which way to go. The strange
+// structures (oddments.ts) are marked on both, green when full and red while they want filling; the
+// one taking objects now pulses, and sits on the minimap's rim with how far it is from anywhere.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
@@ -53,6 +55,10 @@ export interface Mate { x: number; z: number; yaw: number; colour: string; name:
  *  point-of-interest marker on every map, saying something's here but not what, and a beacon in
  *  the street (beacon.ts). */
 export interface Spot { x: number; z: number; name?: string }
+/** A strange structure (oddments.ts): where it stands, the open ground it's on ("" if unnamed), its
+ *  zone, how many of its sockets are full, and next: it's the one taking objects now. */
+export interface StructSpot { x: number; z: number; place: string; zone: string; filled: number; sockets: number; next: boolean }
+export const STRUCT_FULL = "#3fcf6e", STRUCT_WANTS = "#ee3b4b";
 /** The colour of the marker and of the beacon's light. */
 export const POI = "#38e6ff";
 
@@ -254,6 +260,36 @@ function drawBendyIcon(g: CanvasRenderingContext2D, x: number, y: number, k: num
   g.beginPath(); g.arc(0, -2.2 * k, 1.9 * k, 0, Math.PI * 2);
   g.fillStyle = lamp; g.fill();
   g.restore();
+}
+
+/** A strange structure's badge: a square in its colour with two dark frames stacked askew on it.
+ *  next: the one taking objects now, which swells and glows with a white ring so it's the one to head for. */
+export function structIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, next = false) {
+  const beat = next ? challengeBeat() : 0;
+  sprite(g, x, y, 30 * k + 2, `struct|${k}|${colour}|${next}|${beat}`, true, (s, x, y) => drawStructIcon(s, x, y, k, colour, next, beat));
+}
+function drawStructIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, next: boolean, beat: number) {
+  g.save();
+  g.translate(x, y);
+  const r = (next ? 6.4 + 0.8 * beat : 5.4) * k;
+  g.shadowColor = colour; g.shadowBlur = (next ? 4 + 8 * beat : 2) * k;
+  g.beginPath(); g.roundRect(-r, -r, 2 * r, 2 * r, 1.6 * k);
+  g.fillStyle = colour; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = (next ? 1.8 : 1.2) * k; g.strokeStyle = next ? "#ffffff" : "#14161c"; g.stroke();
+  g.strokeStyle = "#14161c"; g.lineWidth = 1.1 * k;
+  for (const [s, dy, a] of [[3.3, 1.4, 0], [2.3, -1.6, 0.35]]) {
+    g.save(); g.translate(0.3 * dy * -k, dy * k); g.rotate(a);
+    g.strokeRect(-s * k, -s * 0.55 * k, 2 * s * k, 1.1 * s * k);
+    g.restore();
+  }
+  g.restore();
+}
+
+/** What a structure's marker is called. */
+export function structName(s: StructSpot) {
+  const state = s.filled >= s.sockets ? "full" : `${s.filled} of ${s.sockets}`;
+  return `Structure, ${s.place ? `${s.place} (${s.zone})` : s.zone}: ${state}${s.next ? ", the one taking them now" : ""}`;
 }
 
 /** A job's badge, a speed trap's camera, or a challenge's question mark. */
@@ -590,6 +626,8 @@ export class Minimap {
   private size = 0;
   /** The minigames' doors, marked on every map. */
   spots: Spot[] = [];
+  /** The strange structures in the zones open so far. */
+  structures: StructSpot[] = [];
   /** The players' map markers (markers.ts), set by the game each frame. */
   markers: Marker[] = [];
   /** Today's jobs (quests.ts), and any areas to search. */
@@ -941,7 +979,7 @@ export class Minimap {
     if (on("games")) {
       // hit where each is drawn, fanned out, but marked where it really is
       const drawn = drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
-      this.spots.forEach((s, i) => this.hit(drawn[i][0], drawn[i][1], 12 * dpr, s.x, s.z, s.name ?? "Something here", s.name ? "game" : "structure"));
+      this.spots.forEach((s, i) => this.hit(drawn[i][0], drawn[i][1], 12 * dpr, s.x, s.z, s.name ?? "Something here", "game"));
     }
     drawRoutes(g, this.routes, P, dpr);
     for (const r of this.routes) {
@@ -981,6 +1019,8 @@ export class Minimap {
       }
     }
     this.drawJobs(g, P, S, dpr, on);
+    // over the jobs, which often have noticeboards on the same open ground
+    if (on("structures")) this.drawStructs(g, P, S, dpr);
     if (pintsOnTop) this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the map markers, with whose they are and what they're on
     g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -1054,6 +1094,24 @@ export class Minimap {
     for (let i = 0; i < t.length; i += 4) if (l < t[i] + t[i + 2] && l + w > t[i] && y < t[i + 1] + t[i + 3] && y + h > t[i + 1]) return false;
     t.push(l, y, w, h);
     return true;
+  }
+
+  /** The structures on the big map, the next one last so it's on top, with how full it is under it
+   *  (and under the others too once zoomed in). */
+  private drawStructs(g: CanvasRenderingContext2D, P: (x: number, z: number) => number[], S: number, dpr: number) {
+    const k = 1.9 * dpr;
+    g.font = `700 ${Math.max(10, Math.round(S / 90))}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
+    for (const s of [...this.structures].sort((a, b) => +a.next - +b.next)) {
+      const [x, y] = P(s.x, s.z), full = s.filled >= s.sockets, colour = full ? STRUCT_FULL : STRUCT_WANTS;
+      structIcon(g, x, y, k, colour, s.next);
+      this.hit(x, y, 14 * dpr, s.x, s.z, structName(s), "structure");
+      if (!s.next && this.zoom < LABELS_ZOOM) continue;
+      const text = full ? "Full" : `${s.filled} of ${s.sockets}`, ty = y + 16 * dpr;
+      if (!this.room(x, ty, g.measureText(text).width + 4 * dpr, 14 * dpr)) continue;
+      g.strokeStyle = "rgba(20,24,28,0.9)"; g.lineWidth = 3 * dpr; g.strokeText(text, x, ty);
+      g.fillStyle = colour; g.fillText(text, x, ty);
+    }
   }
 
   /** Today's jobs, speed traps and challenges on the big map, all of them at every zoom. Jobs right on
@@ -1453,10 +1511,10 @@ export class Minimap {
    *  only now and then (the zones, the bus stops, a route's line) count by which list it is. */
   private drawKey(x: number, z: number, yaw: number, dpr: number, blips: Blip[], mates: Mate[]): string {
     if (this.circles.some((c) => c.pulse)) return "";
-    const beat = this.jobs.some((j) => j.challenge && !j.done) ? challengeBeat() : 0;
+    const beat = this.jobs.some((j) => j.challenge && !j.done) || this.structures.some((s) => s.next) ? challengeBeat() : 0;
     const bus = this.bus;
     return JSON.stringify([this.size, dpr, x, z, yaw, beat, fontLoads, !!this.map?.wide, idOf(this.zones), idOf(this.stops), idOf(this.tint), [...this.off],
-      blips, mates, this.jobs, this.circles, this.markers, this.spots, this.boss,
+      blips, mates, this.jobs, this.circles, this.markers, this.spots, this.structures, this.boss,
       this.routes.map((r) => [idOf(r.pts), r.gates, r.colour]), bus && [idOf(bus.pts), bus.colour, bus.stops]]);
   }
   private drawn = "";
@@ -1566,6 +1624,21 @@ export class Minimap {
       }
       g.save(); g.translate(dx, dz); g.rotate(-yaw);
       spotIcon(g, 0, 0, 1.45 * dpr);
+      g.restore();
+    }
+    // the structures: on the map, or on the rim pointing the way, within a walk or (the one taking
+    // objects now) from anywhere, saying how far
+    for (const s of on("structures") ? this.structures : []) {
+      let dx = (s.x - x) * scale, dz = (s.z - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 14 * dpr, off = d > edge;
+      if (off) {
+        if (d / scale > SPOT_RANGE && !s.next) continue;
+        dx *= edge / d; dz *= edge / d;
+      }
+      const colour = s.filled >= s.sockets ? STRUCT_FULL : STRUCT_WANTS;
+      g.save(); g.translate(dx, dz); g.rotate(-yaw);
+      structIcon(g, 0, 0, (s.next ? 1.3 : 1.1) * dpr, colour, s.next);
+      if (off && s.next) rimLabel(g, metres(d / scale), -(dx / edge) * 24 * dpr, -(dz / edge) * 24 * dpr, yaw, colour, dpr);
       g.restore();
     }
     // Bendy: on the map, or on the rim pointing his way
