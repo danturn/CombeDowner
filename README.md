@@ -614,12 +614,12 @@ gables do, and a terrace or a pair of semis is decided together, so a row reads 
 steps only where the survey shows it really does; where one roof steps down to another the step
 has its wall, so no roof shows a gap into the house. The roofs for every square are kept in
 `data/$MAP/measured/faces/`; a building the survey can't see, or whose row the new roofs don't fit
-clearly better, keeps the flat, gabled or hipped roof that fits it best. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
+clearly better, keeps the flat, gabled or hipped roof that fits it best; one too far off square for a single rectangle but with no real wings (a wedge on a corner plot) gets one hipped roof over the whole of it rather than a few gables on a flat cap. The parts a building is split into, and every house of a row, share one roof covering and one wall. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
 without them (a row keeps its old roofs where the new ones don't fit the survey clearly better),
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
-walls or too tall, faces lying over each other and buildings standing in each other. Every roof is
+walls or too tall, faces lying over each other and buildings standing in each other, and, on the pitched roofs too, a roof covering only part of its building, roofs over one building that don't meet, and buildings sharing a wall whose roofs don't meet along it or differ in covering or colour. Every roof is
 solid where it's drawn: you stand on the strips closing the slits between its faces, walk into its
 steps rather than through them, land on it however fast you fall, and stand on a building that
 reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run

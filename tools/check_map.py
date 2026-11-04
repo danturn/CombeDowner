@@ -40,12 +40,16 @@ case by case:
     has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
     wall drawn facing indoors, no roof reaching well past its walls, no ridge more than 15 m over
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
-    other, no two buildings standing in each other, and no footprint too small to draw.
+    other, no two buildings standing in each other, and no footprint too small to draw. The roofs the
+    game lays from roofsFit are looked at too (tools/roofs_drawn.ts runs map.ts on the square): no
+    pitched roof leaving much of its building under a flat cap, no roofs over one building that
+    don't meet, and no two buildings sharing a wall (one building's parts, or a row) whose roofs
+    are in different coverings or colours, or don't meet along it at the same eaves.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
     tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, and
     whether roofs are solid to stand on.
 """
-import functools, glob, json, math, multiprocessing, os, sys, collections
+import functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
@@ -772,6 +776,76 @@ def roof_seams(b):
     return strips, opened
 
 
+@functools.lru_cache(maxsize=1)
+def _roofs_drawn_script():
+    """tools/roofs_drawn.ts bundled with the game's map.ts, once; None if that can't be done."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    web = os.path.join(os.path.dirname(here), "web")
+    try:
+        js = subprocess.run([os.path.join(web, "node_modules", ".bin", "esbuild"), "--bundle", "--platform=node", "--format=esm",
+                             "--loader=ts", "--log-level=error", "--banner:js=" + open(os.path.join(here, "roofs", "shim.js")).read()],
+                            input=open(os.path.join(here, "roofs_drawn.ts")).read(), cwd=web, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    f = tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False)
+    f.write(js); f.close()
+    return f.name
+
+
+def roofs_drawn(bl):
+    """The roofs the game draws over each building (tools/roofs_drawn.ts), or None if it can't be run."""
+    js = _roofs_drawn_script()
+    if js is None or not bl: return None
+    with tempfile.NamedTemporaryFile("w", suffix=".json") as f:
+        json.dump(bl, f); f.flush()
+        try: return json.loads(subprocess.run(["node", js, f.name], capture_output=True, text=True, check=True).stdout)
+        except (OSError, subprocess.CalledProcessError, ValueError): return None
+
+
+def _rect(q):
+    return Polygon(q).buffer(0)
+
+
+def drawn_roof_at(b, d, x, y):
+    """The height of the roof the game draws over (x, y), as tools/roofs/drawn.ts reads it, or None
+    where only the flat cap (or nothing) is: the lidar's faces, or the pitched rectangles."""
+    if d.get("rm"):
+        v, t, best = d["rm"]["v"], d["rm"]["t"], None
+        for i in range(0, len(t), 3):
+            (ax, ay, az), (bx, by, bz), (cx, cy, cz) = (v[3 * k:3 * k + 3] for k in t[i:i + 3])
+            den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            if abs(den) < 1e-9: continue
+            l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / den
+            l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / den
+            if min(l1, l2, 1 - l1 - l2) < -1e-4: continue
+            h = l1 * az + l2 * bz + (1 - l1 - l2) * cz
+            best = h if best is None or h > best else best
+        return best
+    eave, best = b["g"] + b["h"], None
+    for roof in d.get("p") or []:
+        q = roof["q"]
+        ux, uy = q[1][0] - q[0][0], q[1][1] - q[0][1]; L = math.hypot(ux, uy) or 1
+        vx, vy = q[3][0] - q[0][0], q[3][1] - q[0][1]; W = math.hypot(vx, vy) or 1
+        mx, my = (q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2
+        su, sv = ((x - mx) * ux + (y - my) * uy) / L, ((x - mx) * vx + (y - my) * vy) / W
+        if abs(su) > L / 2 or abs(sv) > W / 2: continue
+        slope, ridge = roof["rp"] / (W / 2), eave + roof["rp"]
+        h = ridge - abs(sv) * slope
+        if roof["hp"][0]: h = min(h, ridge - max(0, -su - (L / 2 - W / 2)) * slope)
+        if roof["hp"][1]: h = min(h, ridge - max(0, su - (L / 2 - W / 2)) * slope)
+        best = h if best is None or h > best else best
+    return best
+
+
+def _pitched(d):
+    """Whether the game draws a sloping roof on the building (not only flat faces or a flat cap)."""
+    if d.get("p"): return True
+    rm = d.get("rm")
+    if not rm: return False
+    v, t = rm["v"], rm["t"]
+    return max(v[2::3], default=0) - min(v[2::3], default=0) > 0.5
+
+
 def roofs_whole(m, tag, note):
     """Rule 11: every building's roof is whole, as the game draws it."""
     bl = m.get("bl") or []
@@ -826,6 +900,72 @@ def roofs_whole(m, tag, note):
             if j <= i: continue
             x = p.intersection(q).area
             if x > 2: note("11 buildings standing in each other", x, (tag, round(p.centroid.x), round(p.centroid.y)), f"{x:.0f} m2")
+    roofs_drawn_whole(m, tag, note, polys)
+
+
+PART_WALL = 2.5     # buildings.groups: two footprints share a wall at least this long
+FLAT_LEFT = 10.0    # m2: a flat-capped part of a pitched building this big is seen as a roof missing
+
+
+def roofs_drawn_whole(m, tag, note, polys):
+    """Rule 11 on the roofs the game draws from roofsFit as well as the lidar's: a pitched roof that
+    covers only part of its building, roofs laid over one building that don't meet, and buildings
+    sharing a wall (one building's parts, or a row) whose roofs don't meet along it or are in
+    different coverings or colours."""
+    bl = m.get("bl") or []
+    drawn = roofs_drawn(bl)
+    if drawn is None: return
+    for b, d, P in zip(bl, drawn, polys):
+        if P is None or P.is_empty or P.area < 1 or d.get("rm") or not (b.get("rr") and b.get("rp")): continue
+        at = (tag, round(P.centroid.x), round(P.centroid.y))
+        rects = [_rect(r["q"]) for r in d["p"]]
+        flat = P.difference(shapely.union_all(rects)).area if rects else P.area
+        if d["f"] and flat > FLAT_LEFT and flat > 0.1 * P.area:
+            note("11 pitched roof covering only part of its building", flat, at, f"{flat:.0f} m2 of {P.area:.0f} flat")
+        if len(rects) > 1:
+            tree = shapely.STRtree([r.buffer(0.3) for r in rects])
+            seen, parts = set(), 0
+            for i in range(len(rects)):
+                if i in seen: continue
+                parts += 1
+                stack = [i]
+                while stack:
+                    k = stack.pop()
+                    if k in seen: continue
+                    seen.add(k)
+                    stack += [int(j) for j in tree.query(rects[k].buffer(0.3)) if int(j) not in seen]
+            if parts > 1: note("11 roofs over one building that don't meet", parts - 1, at, f"{parts} roofs")
+    ok = [i for i, P in enumerate(polys) if P is not None and P.area >= 1]
+    grown = {i: polys[i].buffer(0.35) for i in ok}
+    tree = shapely.STRtree([grown[i] for i in ok])
+    for a in ok:
+        for k in tree.query(grown[a]):
+            c = ok[int(k)]
+            if c <= a: continue
+            wall = grown[a].intersection(grown[c])
+            if wall.is_empty or wall.area <= 0: continue
+            rr = list(wall.minimum_rotated_rectangle.exterior.coords)[:4]
+            if max(math.dist(rr[0], rr[1]), math.dist(rr[1], rr[2])) < PART_WALL: continue
+            A, C, dA, dC = bl[a], bl[c], drawn[a], drawn[c]
+            if not (_pitched(dA) and _pitched(dC)): continue
+            mid = wall.centroid
+            at = (tag, round(mid.x), round(mid.y))
+            if (A.get("rc") or "") != (C.get("rc") or ""):
+                note("11 joined buildings' roofs in different coverings", 1, at, f"{A.get('rc')} and {C.get('rc')}")
+            if (A.get("rk") or "") != (C.get("rk") or ""):
+                note("11 joined buildings' roofs in different colours", 1, at, f"{A.get('rk')} and {C.get('rk')}")
+            if abs(A["g"] + A["h"] - C["g"] - C["h"]) > 0.5: continue    # a step between them, with its wall
+            # each roof just inside its own side of the wall's middle
+            pa, pc = polys[a].exterior.interpolate(polys[a].exterior.project(mid)), polys[c].exterior.interpolate(polys[c].exterior.project(mid))
+            def inside(P, q):
+                cx, cy = P.centroid.x - q.x, P.centroid.y - q.y
+                n = math.hypot(cx, cy) or 1
+                return q.x + 0.4 * cx / n, q.y + 0.4 * cy / n
+            za, zc = drawn_roof_at(A, dA, *inside(polys[a], pa)), drawn_roof_at(C, dC, *inside(polys[c], pc))
+            za = A["g"] + A["h"] if za is None else za
+            zc = C["g"] + C["h"] if zc is None else zc
+            if abs(za - zc) > 1.0:
+                note("11 joined buildings' roofs not meeting at their wall", abs(za - zc), at, f"{abs(za - zc):.1f} m apart")
 
 
 def set_pieces_near(m):

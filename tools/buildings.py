@@ -640,13 +640,26 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     near_wall = near_walls(polys, certs)
     # (the mapped facades count as well, for where an old core's fronts are painted)
     near_data = near_walls(polys, [{"wall": w} if (w := _data_wall(p, c)) else None for p, c in zip(props, certs or [None] * len(props))])
+    # the parts one building was split into (where its roof levels change, or its wings) are no
+    # neighbours of each other, but they are one building: one draw of materials for them all and
+    # for any row they stand in, so a school's wings don't come out one in slate and one in tiles
+    lead = {}
+    def top(r):
+        while lead.get(r, r) != r: r = lead[r]
+        return r
+    by_whole = {}
+    for i, p in enumerate(props):
+        w = p.get("_whole_geom")
+        if w is None: continue
+        a, b = top(comp[i][0]), top(comp[by_whole.setdefault(id(w), i)][0])
+        if a != b: lead[max(a, b)] = min(a, b)
+    mat = [top(comp[i][0]) for i in range(len(polys))]
     out = []
     cluster_seed = {}
     group_key = {}
     if keys is not None:
         for i in range(len(polys)):
-            root = comp[i][0]
-            group_key[root] = min(group_key.get(root, keys[i]), keys[i])
+            group_key[mat[i]] = min(group_key.get(mat[i], keys[i]), keys[i])
     for i, (poly, p) in enumerate(zip(polys, props)):
         cls = p.get("class") or p.get("subtype") or ""
         name = (p.get("names") or {}).get("primary") or ""
@@ -656,9 +669,11 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         floors = p.get("num_floors") or 0
         root, size = comp[i]
         area = p.get("_whole") or poly.area      # a wing of a big building is classed as the whole building
-        # one random draw per group, so a whole terrace shares its height and materials
-        cr = cluster_seed.setdefault(root, random.Random((group_key[root] if keys is not None else root) * 7919 + 17))
-        r_group = cr.random()
+        # one random draw per group, so a whole terrace shares its height and materials (a draw
+        # for each house from the group's stream gave every house of a row its own roof)
+        if mat[i] not in cluster_seed:
+            cluster_seed[mat[i]] = random.Random((group_key[mat[i]] if keys is not None else mat[i]) * 7919 + 17).random()
+        r_group = cluster_seed[mat[i]]
         r_self = random.Random(keys[i] * 31 + 3).random() if keys is not None else rnd.random()
         prior = p.get("_prior") or {}
         core_wall = core_shade = None
