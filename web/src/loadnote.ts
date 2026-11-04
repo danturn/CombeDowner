@@ -1,9 +1,11 @@
 // A note on screen when the map stops coming in, so a player whose game never loads (a phone short
 // of memory, a bad connection) can see what it's stuck on and tell us, instead of looking at an
 // endless "Loading". It says how many squares of Bath are still to come, the last thing that went
-// wrong, if the graphics gave out, and which build the page is. Nothing here goes over the network.
+// wrong, if the graphics gave out, and which build the page is, as the game's own note about itself
+// (notice.ts systemNote). Nothing here goes over the network.
 import { tileTrouble } from "./tiles";
 import { buildLabel } from "./version";
+import { systemNote } from "./notice";
 
 const STALL = 30;   // seconds without a square coming in before saying so
 
@@ -13,20 +15,6 @@ export function watchLoading(canvas: HTMLCanvasElement) {
   addEventListener("unhandledrejection", (e) => { lastError = String((e.reason as Error)?.message ?? e.reason); });
   canvas.addEventListener("webglcontextlost", () => { lost = true; });
   canvas.addEventListener("webglcontextrestored", () => { lost = false; });
-
-  const box = document.createElement("div");
-  box.setAttribute("role", "status");
-  box.style.cssText = "position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:9999;max-width:min(92vw,520px);" +
-    "padding:8px 30px 8px 12px;background:rgba(20,20,20,.88);color:#fff;font:13px/1.35 system-ui,sans-serif;border-radius:6px;white-space:pre-line";
-  const text = document.createElement("span");
-  const close = document.createElement("button");
-  close.textContent = "×";
-  close.setAttribute("aria-label", "Close");
-  close.style.cssText = "position:absolute;right:4px;top:2px;background:none;border:0;color:#fff;font-size:18px;cursor:pointer";
-  close.onclick = () => { dismissed = key; box.hidden = true; };
-  box.append(text, close);
-  box.hidden = true;
-  document.body.append(box);
 
   let pending = -1, since = performance.now(), shown = since, wasShown = true;
   setInterval(() => {
@@ -54,7 +42,6 @@ export function watchLoading(canvas: HTMLCanvasElement) {
     const msg = lines.join("\n");
     // closing it keeps it closed until something changes (seconds ticking by don't count)
     key = msg ? `${lost}|${menuLoading}|${p}|${tileTrouble.failed}|${lastError}` : "";
-    if (msg && key !== dismissed) { text.textContent = msg; box.hidden = false; }
-    else box.hidden = true;
+    systemNote("loading", msg && key !== dismissed ? { text: msg, close: () => { dismissed = key; } } : null);
   }, 1000);
 }
