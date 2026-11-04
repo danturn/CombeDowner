@@ -571,7 +571,6 @@ export class Game {
   private mapBackTo: (() => void) | null = null;   // opened from the pause menu: closing it goes back there
   private pvp = new Map<string, number>();         // players you've traded shots with, and when (ms), so a pub's no escape
   private yourT = 0;                             // seconds till what's yours and the paper next hear where you are
-  private minePoint: { x: number; z: number } | null = null;   // the square pointed at on the big map, for what you've done there
   /** The watch on your wrist, bottom left: the time of day. */
   private watch = new Watch(document.getElementById("watchlcd") as HTMLCanvasElement);
   /** The big map's key, which switches layers off the maps. */
@@ -742,6 +741,7 @@ export class Game {
     this.pubMap = new PubMap({
       pubs: () => this.pubs(),
       hold: () => this.travelHold(),
+      refuse: (p) => this.takenOver(p.name),
       goTo: (i) => {
         const why = this.goTo(i);
         if (!why && this.mapOpen) { this.mapBackTo = null; this.toggleMap(); }
@@ -809,6 +809,8 @@ export class Game {
       solo: () => this.remotes.size === 0,
       busy: () => (!!this.quests.running && !this.quests.running.done) || !!missionActive(),
       place: () => $("where").textContent || "Bath",
+      town: () => this.placeName(),
+      get mapId() { return self.mapId; },
     });
     this.quests.fugitives = () => this.invasion.fugitives();
     this.night = new NightOut(this.questWorld(), this.quests, this.invasion);
@@ -1067,7 +1069,6 @@ export class Game {
     this.minimap.resetFull();     // and the whole map shows
     this.mapKey.hideTip();
     this.firing = false;
-    this.minePoint = null;
     this.showMine();
   }
 
@@ -1162,7 +1163,6 @@ export class Game {
     this.minimap.panFull(cu - u, cv - v);
     this.minimap.cursor = [cu, cv];
     this.mapKey.pointAt(r.left + cu * r.width, r.top + cv * r.height);
-    this.pointMap(r.left + cu * r.width, r.top + cv * r.height);
   }
 
   /** Touches and an uncaptured mouse on the full map: a tap (or click) marks a spot, a drag moves
@@ -1184,7 +1184,6 @@ export class Game {
       const p = down.get(e.pointerId);
       if (!p) {
         if (e.pointerType !== "mouse") return;
-        this.pointMap(e.clientX, e.clientY);
         const [u, v] = frac(e.clientX, e.clientY);
         this.minimap.hover = [u, v];
         c.style.cursor = this.minimap.pickAt(u, v) ? "pointer" : "";
@@ -1204,17 +1203,14 @@ export class Game {
       }
       p.x = e.clientX; p.y = e.clientY;
     });
-    // (a finger lifting leaves too, and what it tapped should stay said)
     c.addEventListener("pointerleave", (e) => {
       if (e.pointerType === "mouse") this.minimap.hover = null;
-      if (!down.size && e.pointerType === "mouse") this.pointMap();
     });
     const up = (e: PointerEvent) => {
       if (!down.delete(e.pointerId)) return;
       c.style.cursor = "";
       if (!down.size && moved <= 5 && e.type === "pointerup") {
         this.markOnMap(e.clientX, e.clientY, e.pointerType !== "mouse");
-        this.pointMap(e.clientX, e.clientY);
       }
     };
     c.addEventListener("pointerup", up);
@@ -1657,24 +1653,15 @@ export class Game {
     }
   }
 
-  /** How flagged the square at scene (x, z) is today, 0 to 1. */
-  flagLevel(x: number, z: number) { return this.invasion.levelAt(x, z); }
   /** What the paper and the big map call the place. Bath's map is named after the village it grew from,
    *  but it's all of Bath now, and the paper has always been the Bath Chronicle. */
   placeName() { return TOWN[this.mapId] ?? this.map.d.name ?? mapName(this.mapId); }
-  /** What's yours on the big map, and the line in its corner: what you've done in the square pointed at, or how much of the place is yours. */
+  /** What's yours on the big map, and the line in its corner. */
   private showMine() {
     if ($("bigmap").hidden) return;
     this.minimap.mine = Yours.mine(this.pubs());
-    const at = this.minePoint, tip = at ? Yours.tipAt(at.x, at.z, this.flagLevel(at.x, at.z)) : "";
-    const el = $("bigmapmine"), text = tip || Yours.share(this.placeName());
+    const el = $("bigmapmine"), text = Yours.share();
     if (el.textContent !== text) el.textContent = text;
-  }
-  /** The pointer, the crosshair or a tap is at a page point on the big map (none: it's left). */
-  private pointMap(clientX?: number, clientY?: number) {
-    const at = clientX === undefined || clientY === undefined ? undefined : this.minimap.fromFull(clientX, clientY);
-    this.minePoint = at ? { x: at.x, z: at.z } : null;
-    this.showMine();
   }
 
   /** Where to stand outside a pub that has no sign in the map: on the pavement between it and
@@ -1799,10 +1786,17 @@ export class Game {
     if (!this.passive && this.remotes.has(id)) this.pvp.set(id, performance.now());
   }
 
+  /** Why you can't go straight to this pub: the Flag Lads have it, and you'll have to get there yourself. */
+  private takenOver(name: string): string | null {
+    return this.invasion.takenOver(name) ? `The Flag Lads have taken over ${name}. You can't just turn up: get there on foot, on a ride or by bus.` : null;
+  }
+
   /** Go straight to pub i (from pubs()). Returns why not, if you can't just now. */
   goTo(i: number): string | null {
     const pub = this.pubList[i];
     if (!pub) return "That pub isn't on this map.";
+    const taken = this.takenOver(pub.name);
+    if (taken) return taken;
     const held = this.travelHold();
     if (held && !held.leave) return held.why;
     const at = this.outside(pub);
@@ -4618,7 +4612,7 @@ export class Game {
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
     this.minimap.routes = this.quests.routes();
-    if (this.mapOpen || !$("bigmap").hidden) this.minimap.tint = this.invasion.tint();
+    this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markerList();
     this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;

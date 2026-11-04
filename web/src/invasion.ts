@@ -4,28 +4,34 @@
 // not on the flag itself, and not on who anybody is. When you win a pub back it flies a banner that
 // says everyone's welcome.
 //
-// Bath is split into its squares (tiles.ts), and each square is flagged from 0 to 100%. The meter
-// under the minimap ("Flags up: 27%") is the average, with what to do next under it; it only comes
-// up during a takeover or just after you've shot a flag, and the rest of the time how the Flag Lads
-// are doing is in today's jobs (daily.ts, status() here), under Tab. In a flagged
-// square the street lamps fly the flag (the more flagged it is, the more of them), with red and
-// white bunting strung between them once it's mostly taken. The Flag Lads don't hang about the
-// streets: they only turn up at the pubs they've taken over (below), and their ladder lads only to
-// put flags back. Shoot a flag down and the square drops a little; ladder lads come and put cleared
-// flags back up, and run from you rather than fight. Squares nobody's in creep up, and a square
-// that's mostly taken spreads to the squares next to it. Shoot every flag in a square and it's
-// cleared (set to nothing). No square flies more than CAP flags, and each one shot takes exactly
-// one off: the panel counts the square you're in, and while you're at it the nearest flag left
-// flaps where you can hear it, but you have to go and find it.
+// The flags go up in clusters: five to fifteen of them on neighbouring lamp posts along one street
+// (flagroads.ts), never scattered about, so you find them by finding the right street. There are
+// never more than MAX_UP on the whole map, so two flags are 1%, and the meter under the minimap
+// ("Flags up: 27%") is how many are up out of that; shoot two and it drops a point on your screen
+// at once, before the host's word comes back. It only comes up during a takeover, near a cluster or
+// just after you've shot a flag; the rest of the time how the Flag Lads are doing is in today's jobs
+// (daily.ts, status() here), under Tab. The big map and the minimap show each cluster as a soft red
+// blob about a street across, a little off its middle, so it tells you which streets to try rather
+// than which lamp. Bunting is strung from each flag to the next along the street. The Flag Lads don't
+// hang about the streets: they only turn up at the pubs they've taken over (below), and their ladder
+// lads only to put flags back, on the lamps of a cluster's street, and they run from you rather than
+// fight. Every so often a new cluster goes up, on a street near the others or somewhere quiet,
+// nowhere near anyone playing. Shoot every flag in a cluster and it goes, with a little confetti;
+// nothing is kept of streets cleared, as the prize is the whole map. The
+// panel counts the cluster you're nearest, and while you're at it the nearest flag left flaps where
+// you can hear it, but you have to go and find it.
 //
 // Every few minutes the phone goes: the Flag Lads have taken over a pub. A purple marker goes up on
-// it; get there and clear out the lads and the Gaffer to win the square back (its flags drop
-// sharply, and there are prizes). The crew grows with the room, and a big room gets two takeovers
-// at once (the second under the Gaffer's cousin). There's one Gaffer at a time, with a name and a
-// trait or two (a gazebo, a megaphone, a right-hand man, the whole WhatsApp group), who remembers
-// how it went: win and he comes back with another trait; lose and he packs it in for the next one.
-// A pub the lads keep gets their "WE RUN THIS" banner outside, signed, till someone tears it down
-// or the day's out (scars.ts).
+// it; get there and clear out the lads and the Gaffer to win it back (the clusters round it come
+// down, and there are prizes). You can't pick it on the big map and go straight there (pubmap.ts):
+// you have to get there yourself. No new flags go up near it while it's on. The crew grows with the
+// room, and a big room gets two takeovers at once (the second under the Gaffer's cousin). There's one
+// Gaffer at a time, with a name and a trait or two (a gazebo, a megaphone, a right-hand man, the whole
+// WhatsApp group), who remembers how it went: win and he comes back with another trait; lose and he
+// packs it in for the next one. A pub the lads keep gets their "WE RUN THIS" banner outside, signed,
+// till someone tears it down or the day's out (scars.ts), and ten to fifteen flags go up in a
+// cluster or two on its street and the streets running into it (making room, if the map's full,
+// by taking down their oldest lot elsewhere).
 //
 // The fight is at the pub's front: the crew stand out on the pavement facing the street, and a lad or
 // more go up ladders against the wall to hang the lads' banner. Once the crew turn up a bar across
@@ -39,56 +45,59 @@
 // The lads are left to the players and the pub is won as before, once they are cleared. Catch him
 // within 400 m (cuff him with E once he gives up, or put him down) for bonus prizes. If he gets away
 // he is the next game day's Wanted poster (wanted.ts), kept by the host like the day's scars.
-// A pub won back flies the welcome banner, leaves a ride and the odd free round out, and its square
-// stays flag-free for the rest of the day. Leave a takeover too long and the lads dig in: that
-// square and the ones round it jump up. Get the meter to 0% and Bath is flag-free till tomorrow;
-// each day (a "season" in the code, from midnight GMT) the Flag Lads start again from a few new
-// squares.
+// A pub won back flies the welcome banner, leaves a ride and the odd free round out, and no flags go
+// up near it for the rest of the day. Shoot the last flag on the map and a card says the place (by
+// the map's own name) is safe from the Flag Lads, and none go up for QUIET_DAYS days. Each day (a
+// "season" in the code, from midnight GMT) the Flag Lads start again with a few new clusters.
 //
 // The fun of shooting them (flagjuice.ts) is yours alone: a combo for flags shot within four
 // seconds of each other, a string of bunting that comes down if you shoot along it (a bonus, and
-// it tears down the flags on the lamps at both ends too, each counted as a flag you shot, so one
-// string can be a combo of three; it stays down until those flags are put back up and the square
-// is mostly taken again, and the "bun" message that shows it falling is ignored by older
-// pages), confetti and a moment of slow-motion when you clear a square, and a callout for shots
-// from a ride or mid-grind.
+// it tears down the flags at both ends too, each counted as a flag you shot, so one string can be a
+// combo of three; it's strung again once both are put back, and the "bun" message that shows it
+// falling is ignored by older pages), confetti and a moment of slow-motion when you clear a street,
+// and a callout for shots from a ride or mid-grind.
 //
-// The flags you shoot and the squares you clear are kept as yours (yours.ts), shown on the big map,
+// The flags you shoot are kept as yours (yours.ts), counted on the big map,
 // and the day's pubs, with the Gaffer and how close each one came, go into tomorrow's paper (paper.ts). The "out" message
 // carries those extras; older pages ignore them.
 //
-// They never take a pub within 230 m of a nursery or primary school's grounds, and no ladder lad
-// comes to a lamp within 200 m of one or sets off from there (safezones.ts).
+// They never take a pub within 230 m of a nursery or primary school's grounds, put a flag within
+// 200 m of one, or send a ladder lad there (safezones.ts).
 //
 // The Flag Lads hold off while the room is busy: when every player still up is on a job, a race,
-// the bonfire or any other mission panel, the host stops the creep and spread, the ladder
-// lads, new takeover calls and the dig-in clocks of takeovers already running (they're pushed back
-// by the time lost), so doing a race never costs you ground. Alone, being busy is enough. If only
-// some are busy it all carries on, so the others can defend, but nobody mid-job is the one a new
-// takeover is called in to. Each player says when they start or stop being busy (and every few
-// seconds while they are) in a "busy" message through "bv"; the host forgets anyone it hasn't heard
-// from for a while, and sends "pa" in its state so everyone's meter can say so. Older pages ignore
-// all of it and carry on as before. The levels only come from the clock for a room's first state
-// and a new day, so paused time is never added back: once the host speaks, its levels are the truth.
+// the bonfire or any other mission panel, the host stops new clusters, the ladder lads, new takeover
+// calls and the dig-in clocks of takeovers already running (they're pushed back by the time lost),
+// so doing a race never costs you ground. Alone, being busy is enough. If only some are busy it all
+// carries on, so the others can defend, but nobody mid-job is the one a new takeover is called in
+// to. Each player says when they start or stop being busy (and every few seconds while they are) in
+// a "busy" message through "bv"; the host forgets anyone it hasn't heard from for a while, and sends
+// "pa" in its state so everyone's meter can say so. Older pages ignore all of it.
 //
-// Who decides what: where the Flag Lads start each season, and how far they would have got by now
-// with nobody fighting them, comes from the clock, so a room started any time picks up where the
-// season should be. After that the host runs it (the spreading, the takeovers, the crews and the
-// ladders, the Gaffer and the pubs won back, through naughtyboys.ts) and sends everyone the levels, the
-// flags shot down, the takeovers (with how many lads are left and how far the banner has got and how
-// fast it is filling, which everyone draws climbing in between), the Gaffer, the chase if he is on
-// the run (so a new host carries on from it) and the pubs won back as "bv" every few seconds. The
-// Gaffers who got away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag down tells everyone at once, so it drops on every
-// screen; the host counts it (on the shooter's word for its square, if the host hasn't that square
-// loaded). Whoever shoots the last flag in a square says so, and the host clears it.
+// Who decides what: where the Flag Lads start each season, and how many clusters they would have put
+// up by now with nobody fighting them, comes from the clock, the map's streets and the zones open
+// (zones.ts: they only go where you can get to), so every screen works out the same clusters and a room started any time picks up where the season should be. After
+// that the host runs it (new clusters, the takeovers, the crews and the ladders, the Gaffer and the
+// pubs won back, through naughtyboys.ts) and sends everyone the clusters as "bv" every few seconds:
+// each as [id, road, metres along its street, flags, seed, a bit for each flag down, the pub], with
+// the takeovers (with how many lads are left and how far the banner has got and how fast it is
+// filling, which everyone draws climbing in between), the Gaffer, the chase if he is on the run (so
+// a new host carries on from it), the pubs won back, and the season the Flag Lads come back in if
+// the map's been made safe ("qt", kept on every device too, so it holds over a reload or a new
+// host). Older pages find none of the squares they expect in it and ignore it. The Gaffers who got
+// away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag
+// down tells everyone at once ("down", with the cluster and the flag), so it drops on every screen;
+// the host counts it, and clears the street when its last flag is down.
 // The night out (nightout.ts) listens in: it is told, on every screen, when a pub is won or lost and
-// when the Gaffer is caught or gets away, and it can ask the host which square the lads are eyeing
-// next and to send a ladder crew somewhere. Nothing of that goes over the network from here.
+// when the Gaffer is caught or gets away, and it can ask the host which street the lads are eyeing
+// next (which is then where their next cluster goes) and to send a ladder crew somewhere. Nothing of
+// that goes over the network from here.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { CHAIR, LADDER, MOUNTS, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
 import { Chase, Fugitives, escapeBy, RUNS_AT } from "./gaffer";
 import { clearSpot, streetSpot } from "./haunts";
+import { FlagRoads, SPACING, type Spot } from "./flagroads";
+import type { Blob } from "./minimap";
 import { inSafeZone } from "./safezones";
 import type { GameMap } from "./map";
 import type { Kind } from "./pickups";
@@ -97,7 +106,7 @@ import { RIDES } from "./rides";
 import { note } from "./daily";
 import { show } from "./show";
 import { FlagJuice } from "./flagjuice";
-import { missionActive, missionStage } from "./missionscreens";
+import { missionEnd } from "./missionscreens";
 import * as Paper from "./paper";
 import * as Yours from "./yours";
 
@@ -132,25 +141,29 @@ export interface InvasionWorld {
   busy(): boolean;
   /** The street or place I'm in. */
   place(): string;
+  /** The map's own name for the place ("Bath", "Cape Town"). */
+  town(): string;
+  /** Which map this is, for what this device remembers of it. */
+  readonly mapId: string;
 }
 
 const SEASON = 24 * 3600 * 1000;   // ms: each day the Flag Lads start again
-const TICK = 10;                   // seconds between steps of the spreading
-const CATCH_UP = 80;               // seconds a step, working out where they'd have got to by now
-const GROW = 1 / 38400;            // a flagged square nobody's in fills up in ten and a half hours
-const SPREAD = 1 / 38400;          // and once one's past TIPPING it spreads next door about as fast
-const TIPPING = 0.7;
-const SEEDS = 3;                   // squares the Flag Lads start each season in
-const START = 0.15;                // and how flagged they start
-const CAP = 30;                    // flags in a square that's completely taken, at most, so every square can be cleared
-const WON = 0.4, WON_NEXT = 0.15;  // winning a pub back: off its square, and off the squares round it
-const LOST = 0.25, LOST_NEXT = 0.1;
+const TICK = 10;                   // seconds between the host's looks at how it's going
+const GROW_EVERY = 2400;           // seconds between new clusters, where nobody's stopping them
+const SEEDS = 3;                   // clusters the Flag Lads start each season with
+const MAX_UP = 200;                // flags on the whole map at most: two flags are 1% on the meter
+const FEW = 5, MANY = 15;          // flags in a cluster
+const LOST_FEW = 10, LOST_MANY = 15;   // flags put up on a lost pub's streets
+const QUIET_DAYS = 3;              // seasons with no flags once the map's been made safe
+const WON_REACH = 300;             // a pub won back takes down the clusters this close, and none goes up there again today
+const APART = 60;                  // metres a new cluster's flags keep from any other cluster's
+const STREET = 150;                // metres: the panel counts the nearest cluster this close
 const NEAR = 220;                  // flags are drawn (and can be shot) this close
 const MAX_FLAGS = 400, MAX_PENNANTS = 1600;
 const PURPLE = "#b45cff", GREEN = "#4fd18b";
 const CALL_ID = "@bunting";
 const BONUS_SECS = 90;             // clear a pub this quickly for extra prizes
-const LULL = 180;                  // seconds a square gets no ladder crews after you catch one there
+const LULL = 180;                  // seconds a cluster gets no ladder crews after you catch one there
 const FREE_ROUND = 120;            // seconds between the free rounds left out at a pub won back
 const TWO_CALLS = 5;               // this many in the room and the Flag Lads take two pubs at once
 const SEND_EVERY = 4;              // seconds between the host's updates
@@ -166,14 +179,27 @@ const CUFF_REACH = 3;              // close enough to cuff the Gaffer
 const CAUGHT_PRIZES = 4;           // for the Gaffer caught: this many on the ground, two of the better sort
 const $ = (id: string) => document.getElementById(id)!;
 
-/** A street lamp that can fly a flag: its id (the same for everyone), the post, and its arm's angle.
- *  h: it flies the flag once its square is flagged past h (above 1 for lamps that never do, so a
- *  square with lots of lamps still has no more than CAP flags); per: what one flag is of its square. */
-interface Lamp { id: string; x: number; z: number; g: number; a: number; sq: number; h: number; per: number }
+/** A cluster: n flags on neighbouring lamps along one street (flagroads.ts), the same on every screen.
+ *  r: the road, a: metres along its street to the first flag, seed: which side the first is on,
+ *  down: a bit for each flag shot down, pub: the pub whose streets they took, if that's how it went up.
+ *  The rest is worked out here: its middle and reach, the street's name, and where its flags go. */
+interface Cluster {
+  id: number; r: number; a: number; n: number; seed: number; down: number; pub: string;
+  x: number; z: number; half: number; name: string;
+  raw: { x: number; z: number; a: number }[]; placed: Spot[] | null; stamp: string;
+}
+
+const bits = (v: number) => { let n = 0; for (; v; v &= v - 1) n++; return n; };
+const quietKey = (map: string) => `cd-flagfree:${map}`;
+/** The season the Flag Lads come back in after this map was last made safe, as this device remembers it. */
+function readQuiet(map: string) { try { return Number(localStorage.getItem(quietKey(map))) || 0; } catch { return 0; } }
+function keepQuiet(map: string, till: number) {
+  try { if (till > readQuiet(map)) localStorage.setItem(quietKey(map), String(till)); } catch { /* storage may be blocked */ }
+}
 
 /** The takeover: a pub the Flag Lads have taken. Host only: the crew they sent, and (for everyone) how many are left. */
 interface Call {
-  id: number; name: string; x: number; z: number; sq: number;
+  id: number; name: string; x: number; z: number;
   until: number;                   // ms since 1970: the lads dig in then, unless you've turned up
   on: boolean;                     // the crew's there, and the fight's on
   onAt: number;                    // when they turned up (ms): clear it quickly for a bonus
@@ -265,17 +291,15 @@ function bannerTexture() {
 
 
 export class Invasion {
-  // the squares: their tileKey order, which is the same for everyone
-  private sqs: { ti: number; tj: number; x: number; z: number }[] = [];
-  private index = new Map<string, number>();
-  private next: number[][] = [];
-  private size = 0; private x0 = 0; private y0 = 0;
-  private L = new Float32Array(0);                 // how far the Flag Lads have got in each square: which lamps fly a flag
-  private D = new Float32Array(0);                 // and how much of that's been shot down since (flags down, as a share)
-  private cleared = new Set<string>();
+  private roads: FlagRoads | null = null;
+  private clusters: Cluster[] = [];
+  private clusterN = 0;
+  private growT = GROW_EVERY;                      // host: seconds till the next cluster goes up
+  private plan: { r: number; a: number; n: number; seed: number } | null = null;   // host: the street they're eyeing next, once someone's found out
   private pending = new Map<string, number>();     // flags I shot down, till the host's word catches up
   private season = -1;
-  private saved = false;                           // the meter got to 0: nothing more this season
+  private saved = false;                           // the map's been made safe: nothing more till quietTill
+  private quietTill = 0;                           // the season the Flag Lads come back in
   private decorated = false;
   private heard = false;                           // had the host's word this game
   private calls: Call[] = [];
@@ -290,23 +314,21 @@ export class Invasion {
   private runnerPack: unknown = null;              // the host's last word on the chase, to carry on from if the host leaves
   private runnerT = 0;                          // seconds till the Gaffer's marker next moves
   private gaffers: Fugitives;
-  private freed: { n: string; x: number; z: number; sq: number; t: number }[] = [];   // pubs won back this season
+  private freed: { n: string; x: number; z: number; t: number }[] = [];   // pubs won back this season
   private ladders: { i: number; gen: number; id: string; x: number; z: number; t: number; leaving: boolean }[] = [];
   private ladderT = 60;
-  private lull = new Map<number, number>();        // host: squares with no ladder crews till then (ms)
+  private lull = new Map<number, number>();        // host: clusters with no ladder crews till then (ms)
   private tickT = 0; private sendT = 0; private dirty = false;
   private flagT = 0;
   /** A pub won or lost, the Gaffer cuffed, put down or away (nightout.ts): d is the message that said so. */
   onEvent: (what: "won" | "lost" | "cuffed" | "down" | "away", d: any) => void = () => {};
   private downs = 0;                               // flags I've had down this game
-  // the square you're in: its flags up at the most since you got here, how many are left, the nearest one
-  private here: { sq: number; top: number; left: number; near: { x: number; z: number; d: number } | null } = { sq: -1, top: 0, left: 0, near: null };
-  private claimed = -1;                            // the square I last told everyone I'd cleared
-  private shotSq = -1;                             // the square of the last flag I shot
+  // the cluster you're nearest: its flags, how many are left, the nearest one
+  private here: { c: Cluster | null; top: number; left: number; near: { x: number; z: number; d: number } | null } = { c: null, top: 0, left: 0, near: null };
   private flapT = 0;
   private tickAt = 0;
+  private blobs: Blob[] = []; private blobKey = "";
   // drawn
-  private lamps = new WeakMap<GameMap, Lamp[]>();
   private shown: { id: string; x: number; y: number; z: number; a: number }[] = [];
   private flags: THREE.InstancedMesh; private poles: THREE.InstancedMesh;
   private pennants: THREE.InstancedMesh; private strings: THREE.LineSegments;
@@ -321,7 +343,6 @@ export class Invasion {
 
   constructor(private w: InvasionWorld) {
     this.gaffers = new Fugitives(() => w.slot, () => w.isHost, (d, to) => w.send(d, to));
-    const I = w.map.tileIndex;
     this.bannerMat = new THREE.MeshLambertMaterial({ map: bannerTexture(), side: THREE.DoubleSide });
     this.freeMat = new THREE.MeshLambertMaterial({ map: freeTexture(), side: THREE.DoubleSide });
     // a shot banner tears down the middle: each half keeps its side of the picture
@@ -333,7 +354,8 @@ export class Invasion {
     const banner = new THREE.PlaneGeometry(0.8, 0.6).translate(0.5, -0.32, 0);
     const pole = new THREE.BoxGeometry(0.92, 0.035, 0.035).translate(0.46, 0, 0);
     this.flags = new THREE.InstancedMesh(banner, this.bannerMat, MAX_FLAGS);
-    this.poles = new THREE.InstancedMesh(pole, new THREE.MeshLambertMaterial({ color: "#d8d4c2" }), MAX_FLAGS);
+    // the flags' poles, and stood on end, the lads' own posts where a street has no lamp: one mesh
+    this.poles = new THREE.InstancedMesh(pole, new THREE.MeshLambertMaterial({ color: "#d8d4c2" }), MAX_FLAGS * 2);
     this.pennants = new THREE.InstancedMesh(new THREE.ConeGeometry(0.11, 0.22, 3).rotateX(Math.PI).translate(0, -0.11, 0),
       new THREE.MeshLambertMaterial({ color: "#ffffff" }), MAX_PENNANTS);
     const colours = ["#c8202a", "#f4f4f2"].map((c) => new THREE.Color(c));
@@ -343,217 +365,298 @@ export class Invasion {
     this.strings.frustumCulled = false;
     this.juice = new FlagJuice(w.scene, { ground: (x, z) => w.map.ground(x, z), solo: () => w.solo() });
     w.scene.add(this.flags, this.poles, this.pennants, this.strings);
-    if (!I) return;
-    // every square of Bath inside the force field, the village's included
-    const S = (this.size = I.cells * I.dx);
-    this.x0 = I.x0; this.y0 = I.y0;
-    const tis = I.tiles.map((t) => t[0]), tjs = I.tiles.map((t) => t[1]);
-    for (let ti = Math.min(...tis) - 1; ti <= Math.max(...tis) + 1; ti++) {
-      for (let tj = Math.min(...tjs) - 1; tj <= Math.max(...tjs) + 1; tj++) {
-        const x = I.x0 + (ti + 0.5) * S, z = -(I.y0 + (tj + 0.5) * S);
-        if (Math.hypot(x - w.map.fieldX, z - w.map.fieldZ) > w.map.field + S * 0.3) continue;
-        this.index.set(`${ti},${tj}`, this.sqs.length);
-        this.sqs.push({ ti, tj, x, z });
-      }
-    }
-    this.next = this.sqs.map((s) => [[1, 0], [-1, 0], [0, 1], [0, -1]]
-      .map(([a, b]) => this.index.get(`${s.ti + a},${s.tj + b}`)).filter((n): n is number => n !== undefined));
-    this.L = new Float32Array(this.sqs.length);
-    this.D = new Float32Array(this.sqs.length);
+    const roads = new FlagRoads(w.map);
+    if (roads.usable.length) this.roads = roads;
+    this.quietTill = readQuiet(w.mapId);
   }
 
-  get on() { return this.sqs.length > 0; }
+  get on() { return !!this.roads; }
   /** The pub whose takeover is being fought within r metres of (x, z), if there is one. */
   fightNear(x: number, z: number, r: number): string | null {
     return this.calls.find((c) => c.on && Math.hypot(c.x - x, c.z - z) < r)?.name ?? null;
   }
+  /** The Flag Lads have taken this pub over just now. */
+  takenOver(name: string) { return this.calls.some((c) => c.name === name); }
 
-  /** Which square scene (x, z) is in, or -1. */
-  squareAt(x: number, z: number) {
-    if (!this.size) return -1;
-    return this.index.get(`${Math.floor((x - this.x0) / this.size)},${Math.floor((-z - this.y0) / this.size)}`) ?? -1;
+  private isUp(c: Cluster, j: number) { return !((c.down >> j) & 1) && !this.pending.has(`${c.id}:${j}`); }
+  /** Flags up in a cluster, as this screen has them (my own shots counted straight away). */
+  private upIn(c: Cluster) { let t = 0; for (let j = 0; j < c.n; j++) if (this.isUp(c, j)) t++; return t; }
+  /** Host: flags up on the whole map. */
+  private get total() { let t = 0; for (const c of this.clusters) t += c.n - bits(c.down); return t; }
+  /** Flags up on the whole map, as this screen has them. */
+  private get up() { let t = 0; for (const c of this.clusters) t += this.upIn(c); return t; }
+  /** The meter: how many of the most flags there can be are up, 0 to 1. */
+  get meter() { return Math.min(1, this.up / MAX_UP); }
+  /** Flags up on the clusters within r metres of (x, z). */
+  flagsAround(x: number, z: number, r = 400) { let t = 0; for (const c of this.clusters) if (Math.hypot(c.x - x, c.z - z) < r) t += this.upIn(c); return t; }
+  private freeNear(x: number, z: number) { return this.freed.some((f) => Math.hypot(f.x - x, f.z - z) < WON_REACH); }
+  private flagId(c: Cluster, j: number) { return `${c.id}:${j}`; }
+  private byId(id: string): { c: Cluster; j: number } | null {
+    const [a, b] = id.split(":").map(Number), c = this.clusters.find((o) => o.id === a);
+    return c && Number.isInteger(b) && b >= 0 && b < c.n ? { c, j: b } : null;
   }
-  /** How flagged the square at (x, z) is, 0 to 1. */
-  levelAt(x: number, z: number) { const s = this.squareAt(x, z); return s < 0 ? 0 : this.level(s); }
-  /** How flagged square i is, with the flags shot down taken off. */
-  private level(i: number) { return Math.max(0, this.L[i] - this.D[i]); }
-  /** The meter: how much of Bath is flagged, 0 to 1. */
-  get meter() { let t = 0; for (let i = 0; i < this.L.length; i++) t += this.level(i); return this.sqs.length ? t / this.sqs.length : 0; }
+
+  // ---- the clusters ---------------------------------------------------------------------------------
+
+  /** A cluster from its record, with where its flags go worked out; null if the record's no good here. */
+  private cluster(id: number, r: number, a: number, n: number, seed: number, down: number, pub: string): Cluster | null {
+    const R = this.roads;
+    if (!R || !Number.isInteger(r) || r < 0 || r >= R.roads.length || !Number.isInteger(n) || n < 1 || n > MANY || !Number.isFinite(a)) return null;
+    const raw = R.spots(r, a, n, seed);
+    const x = raw.reduce((t, s) => t + s.x, 0) / n, z = raw.reduce((t, s) => t + s.z, 0) / n;
+    const half = Math.max(...raw.map((s) => Math.hypot(s.x - x, s.z - z))) + 20;
+    return { id, r, a, n, seed: seed | 0, down: down & ((1 << n) - 1), pub, x, z, half, name: R.chain(r).name, raw, placed: null, stamp: "" };
+  }
+
+  /** Where a cluster's flags hang just now: on the lamps of whichever squares are loaded round it. */
+  private spotsOf(c: Cluster): Spot[] {
+    const stamp = this.w.map.tilesNear(c.x, c.z, c.half).map((t) => t.d.tile?.join("_")).join("|");
+    if (!c.placed || stamp !== c.stamp) { c.placed = this.roads!.place(c.raw); c.stamp = stamp; }
+    return c.placed;
+  }
+
+  /** Somewhere for n flags: a street 150 to 600 m from at, or with no at, anywhere in the force
+   *  field; clear of the other clusters and the schools, and of whatever ok rules out. */
+  private findStreet(rand: () => number, n: number, at: { x: number; z: number } | null, ok: (x: number, z: number) => boolean, squares: boolean) {
+    const R = this.roads, map = this.w.map, span = (n - 1) * SPACING;
+    if (!R) return null;
+    const pool = at ? R.usable.filter((i) => { const d = Math.hypot(R.mids[i * 2] - at.x, R.mids[i * 2 + 1] - at.z); return d > 150 && d < 600; }) : R.usable;
+    for (let tries = 0; tries < 40 && pool.length; tries++) {
+      const r = pool[Math.floor(rand() * pool.length)], ch = R.chain(r);
+      if (ch.len < span + 8) continue;
+      const a = Math.round(Math.max(4, Math.min(ch.len - 4 - span, (ch.from + ch.to - span) / 2))), seed = Math.floor(rand() * 256);
+      const raw = R.spots(r, a, n, seed);
+      if (!raw.every((s) => map.fieldEdge(s.x, s.z) > 30 && ok(s.x, s.z) && !inSafeZone(map, s.x, s.z, 0, squares))) continue;
+      if (this.clusters.some((c) => Math.hypot(c.x - raw[0].x, c.z - raw[0].z) < c.half + span + APART
+        && c.raw.some((q) => raw.some((s) => Math.hypot(q.x - s.x, q.z - s.z) < APART)))) continue;
+      return { r, a, n, seed };
+    }
+    return null;
+  }
+
+  /** Another cluster goes up, near one already up or somewhere quiet, if there's room under MAX_UP. */
+  private grow(rand: () => number, ok: (x: number, z: number) => boolean, squares: boolean): boolean {
+    const room = MAX_UP - this.total;
+    if (room < FEW) return false;
+    const n = Math.min(room, FEW + Math.floor(rand() * (MANY - FEW + 1)));
+    const near = this.clusters.length && rand() < 0.6 ? this.clusters[Math.floor(rand() * this.clusters.length)] : null;
+    const plan = this.plan && this.plan.n <= room && this.roads!.spots(this.plan.r, this.plan.a, this.plan.n, this.plan.seed).every((s) => ok(s.x, s.z)) ? this.plan : null;
+    this.plan = null;
+    const got = plan ?? this.findStreet(rand, n, near, ok, squares);
+    const c = got && this.cluster(++this.clusterN, got.r, got.a, got.n, got.seed, 0, "");
+    if (!c) return false;
+    this.clusters.push(c);
+    this.dirty = true;
+    return true;
+  }
+
+  /** Host: what keeps a new cluster away: anyone playing, a takeover going on, a pub won back. */
+  private clearOf(alive: Target[]) {
+    return (x: number, z: number) => !alive.some((p) => Math.hypot(p.x - x, p.z - z) < 250)
+      && !this.calls.some((c) => Math.hypot(c.x - x, c.z - z) < 500) && !this.freeNear(x, z);
+  }
+
+  /** Host: every flag on a street is down: it's cleared. */
+  private streetCleared(c: Cluster, by: string) {
+    const k = this.clusters.indexOf(c);
+    if (k < 0) return;
+    this.clusters.splice(k, 1);
+    this.dirty = true;
+    this.sendT = Math.min(this.sendT, 0.5);
+    this.news("street", { n: c.name, x: Math.round(c.x), z: Math.round(c.z), by });
+    this.checkSaved();
+  }
+
+  /** Host: not a flag left on the map: it's safe, and the Flag Lads stay away for QUIET_DAYS. */
+  private checkSaved() {
+    if (this.saved || this.clusters.some((c) => bits(c.down) < c.n)) return;
+    this.saved = true;
+    this.clusters = [];
+    this.quietTill = this.season + QUIET_DAYS;
+    keepQuiet(this.w.mapId, this.quietTill);
+    for (const c of [...this.calls]) this.endCall(c, null);
+    this.dirty = true;
+    this.news("saved", { q: this.quietTill });
+  }
+
+  /** Whether flags at these spots would stand within gap metres of another cluster's. */
+  private overlaps(raw: { x: number; z: number }[], gap: number) {
+    return this.clusters.some((c) => c.raw.some((q) => raw.some((s) => Math.hypot(q.x - s.x, q.z - s.z) < gap)));
+  }
+
+  /** Host: the lads kept a pub: ten to fifteen flags go up on its street and the streets running
+   *  into it (and in a town centre of short streets, the ones running into those). */
+  private digIn(c: Call) {
+    const R = this.roads, home = R?.nearest(c.x, c.z, 80), map = this.w.map;
+    if (!R || !home) return;
+    const want = LOST_FEW + Math.floor(Math.random() * (LOST_MANY - LOST_FEW + 1));
+    const key = (r: number) => R.chain(r).name || `#${r}`, seen = new Set([key(home.r)]);
+    const queue = [{ r: home.r, s: home.s, inward: 0, depth: 0 }], plans: { r: number; a: number; n: number; seed: number }[] = [];
+    let placed = 0;
+    while (queue.length && placed < want && placed + FEW <= LOST_MANY) {
+      const p = queue.shift()!;
+      if (p.depth < 2) for (const j of R.joining(p.r, c.x, c.z, 300)) if (!seen.has(key(j.r))) { seen.add(key(j.r)); queue.push({ ...j, depth: p.depth + 1 }); }
+      // the pub's own street takes most; whatever it can't fit goes on the streets round it, five or more a time
+      const left = want - placed;
+      let n = plans.length ? (left - FEW >= FEW ? FEW : Math.max(FEW, left)) : Math.ceil(want * 0.6);
+      if (!plans.length && want - n < FEW) n = want;
+      n = Math.min(n, LOST_MANY - placed);
+      const ch = R.chain(p.r);
+      // a street running in is flagged from the corner along it, or the other way if that's too short
+      for (const d of p.inward ? [p.inward, -p.inward] : [0]) {
+        const room = d > 0 ? ch.len - p.s - 20 : d < 0 ? p.s - 20 : ch.len - 4;
+        const m = Math.min(n, MANY, room >= 0 ? Math.floor(room / SPACING) + 1 : 0);
+        if (m < FEW) continue;
+        const span = (m - 1) * SPACING;
+        const a = Math.round(d > 0 ? p.s + 20 : d < 0 ? p.s - 20 - span : Math.max(2, Math.min(ch.len - 2 - span, p.s - span / 2)));
+        const seed = Math.floor(Math.random() * 256), raw = R.spots(p.r, a, m, seed);
+        if (raw.some((s) => map.fieldEdge(s.x, s.z) < 5 || inSafeZone(map, s.x, s.z)) || this.overlaps(raw, 20)) continue;
+        plans.push({ r: p.r, a, n: m, seed });
+        placed += m;
+        break;
+      }
+    }
+    // there's only so many flags to go round: they take down their oldest elsewhere to make room
+    const need = plans.reduce((t, q) => t + q.n, 0);
+    while (MAX_UP - this.total < need) {
+      const k = this.clusters.findIndex((o) => !o.pub);
+      if (k < 0) break;
+      this.clusters.splice(k, 1);
+    }
+    for (const q of plans) {
+      if (MAX_UP - this.total < q.n) break;
+      const got = this.cluster(++this.clusterN, q.r, q.a, q.n, q.seed, 0, c.name);
+      if (got) this.clusters.push(got);
+    }
+    this.dirty = true;
+  }
+
+  /** Host: clusters out past the wall (the zones not open yet, zones.ts) can't be reached, so the
+   *  lads move them somewhere that can. */
+  private reachable(alive: Target[]) {
+    const out = this.clusters.filter((c) => this.w.map.fieldEdge(c.x, c.z) < 0);
+    if (!out.length) return;
+    this.clusters = this.clusters.filter((c) => !out.includes(c));
+    for (let k = 0; k < out.length; k++) this.grow(Math.random, this.clearOf(alive), true);
+    this.dirty = true;
+  }
 
   // ---- the season, from the clock ---------------------------------------------------------------
 
-  /** Where the Flag Lads would have got to by now this season, with nobody fighting them. */
+  /** Where the Flag Lads would have got to by now this season, with nobody fighting them: the same
+   *  on every screen, from the clock and the map's streets. */
   private fresh(season: number) {
     this.season = season;
-    this.L.fill(0); this.D.fill(0);
-    this.cleared.clear();
+    this.clusters = []; this.clusterN = 0; this.plan = null;
     this.freed = [];
-    this.saved = this.decorated = false;
+    this.decorated = false;
+    this.saved = season < this.quietTill;
     this.chair = newChair(rng(hash("chair", season)));
-    let h = hash("bunting", season);
-    for (let k = 0; k < SEEDS && this.sqs.length; k++) {
-      h = hash(h, k);
-      this.L[h % this.sqs.length] = START;
-    }
-    const steps = Math.floor(Math.min(SEASON, Date.now() - season * SEASON) / 1000 / CATCH_UP);
-    for (let k = 0; k < steps; k++) this.grow(CATCH_UP, new Set());
+    this.growT = GROW_EVERY;
+    if (this.saved || !this.roads) return;
+    const r = rng(hash("bunting", season)), any = () => true;
+    for (let k = 0; k < SEEDS; k++) this.grow(r, any, false);
+    const steps = Math.floor(Math.min(SEASON, Date.now() - season * SEASON) / 1000 / GROW_EVERY);
+    for (let k = 0; k < steps; k++) this.grow(r, any, false);
   }
 
-  /** dt seconds of spreading. Squares with a player in them, and ones won back, hold. */
-  private grow(dt: number, held: Set<number>) {
-    const L = this.L, was = L.map((_, i) => this.level(i));
-    for (const f of this.freed) held.add(f.sq);
-    for (let i = 0; i < L.length; i++) {
-      if (held.has(i)) continue;
-      let v = L[i];
-      if (v > 0) v += dt * GROW;
-      let top = 0;
-      for (const n of this.next[i]) top = Math.max(top, was[n]);
-      if (top > TIPPING) v += (dt * SPREAD * (top - TIPPING)) / (1 - TIPPING);
-      L[i] = Math.min(1, v);
-    }
-  }
-
-  private isFree(sq: number) { return this.freed.some((f) => f.sq === sq); }
-
-  // ---- lamps and flags ----------------------------------------------------------------------------
-
-  private lampsOf(area: GameMap): Lamp[] {
-    let out = this.lamps.get(area);
-    if (out) return out;
-    out = [];
-    const tag = area.d.tile ? `${area.d.tile[0]}_${area.d.tile[1]}` : "v";
-    let k = 0;
-    for (const f of area.d.fx ?? []) {
-      if (f[0] !== "lamp") continue;
-      const id = `${tag}:${k++}`, x = +f[1], z = -f[2], sq = this.squareAt(x, z);
-      // (the hash stirred through rng: on its own its top bits barely change from one lamp to the next)
-      out.push({ id, x, z, g: +f[3] - area.z0, a: +f[4], sq, h: rng(hash("lamp", id))(), per: 0 });
-    }
-    // each square's lamps in a shuffled order: the first CAP of them (or all, in a square with
-    // fewer) take turns to fly a flag as the square fills up, evenly, and the rest never do
-    const bySq = new Map<number, Lamp[]>();
-    for (const l of out) { const list = bySq.get(l.sq); if (list) list.push(l); else bySq.set(l.sq, [l]); }
-    for (const list of bySq.values()) {
-      list.sort((a, b) => a.h - b.h);
-      const m = Math.min(list.length, CAP);
-      list.forEach((l, k) => { l.h = k < m ? (k + 0.5) / m : 2; l.per = 1 / m; });
-    }
-    this.lamps.set(area, out);
-    return out;
-  }
-
-  private lampsNear(x: number, z: number, r: number): Lamp[] {
-    const out: Lamp[] = [];
-    for (const area of [this.w.map, ...this.w.map.tilesNear(x, z, r)]) {
-      for (const l of this.lampsOf(area)) if (Math.abs(l.x - x) < r && Math.abs(l.z - z) < r && Math.hypot(l.x - x, l.z - z) < r) out.push(l);
-    }
-    return out;
-  }
-
-  private flagged(l: Lamp) {
-    return l.sq >= 0 && l.h < this.L[l.sq] && !this.cleared.has(l.id) && !this.pending.has(l.id);
-  }
+  // ---- flags ----------------------------------------------------------------------------------------
 
   /** Which way a lamp's flag turns: out the way its arm reaches, across the street. */
-  private fly(l: Lamp) { return l.a - Math.PI / 2; }
+  private fly(a: number) { return a - Math.PI / 2; }
 
-  /** Where a lamp's banner hangs (its middle), for hitting it. */
-  private bannerAt(l: Lamp) {
-    const px = Math.cos(this.fly(l)), pz = -Math.sin(this.fly(l));
-    return { x: l.x + px * 0.5, y: l.g + 4.1, z: l.z + pz * 0.5 };
+  /** Where a flag's banner hangs (its middle), for hitting it. */
+  private bannerAt(s: Spot) {
+    const px = Math.cos(this.fly(s.a)), pz = -Math.sin(this.fly(s.a));
+    return { x: s.x + px * 0.5, y: s.g + 4.1, z: s.z + pz * 0.5 };
   }
 
   /** Put the flags and bunting up round you. */
   private drawFlags(me: { x: number; z: number }) {
-    const lamps = this.lampsNear(me.x, me.z, NEAR).filter((l) => this.flagged(l));
-    lamps.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
+    const stood = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2), post = new THREE.Vector3(5, 2.5, 2.5);
+    const lit: { c: Cluster; j: number; s: Spot; d: number }[] = [], posts: Spot[] = [];
+    for (const c of this.clusters) {
+      if (Math.hypot(c.x - me.x, c.z - me.z) > NEAR + c.half) continue;
+      const spots = this.spotsOf(c);
+      for (let j = 0; j < c.n; j++) {
+        const s = spots[j], d = Math.hypot(s.x - me.x, s.z - me.z);
+        if (d > NEAR) continue;
+        if (!s.lamp) posts.push(s);
+        if (this.isUp(c, j)) lit.push({ c, j, s, d });
+      }
+    }
+    lit.sort((a, b) => a.d - b.d);
+    if (lit.length > MAX_FLAGS) lit.length = MAX_FLAGS;
     this.shown = [];
     let n = 0;
-    for (const l of lamps) {
-      if (n >= MAX_FLAGS) break;
-      q.setFromAxisAngle(up, this.fly(l));
-      m4.compose(p.set(l.x, l.g + 4.42, l.z), q, one);
+    for (const f of lit) {
+      q.setFromAxisAngle(up, this.fly(f.s.a));
+      m4.compose(p.set(f.s.x, f.s.g + 4.42, f.s.z), q, one);
       this.flags.setMatrixAt(n, m4); this.poles.setMatrixAt(n, m4);
-      this.shown.push({ id: l.id, ...this.bannerAt(l), a: this.fly(l) });
+      this.shown.push({ id: this.flagId(f.c, f.j), ...this.bannerAt(f.s), a: this.fly(f.s.a) });
       n++;
     }
-    this.flags.count = this.poles.count = n;
+    let k = n;
+    for (const s of posts) { if (k >= MAX_FLAGS * 2) break; m4.compose(p.set(s.x, s.g, s.z), stood, post); this.poles.setMatrixAt(k++, m4); }
+    this.flags.count = n; this.poles.count = k;
     this.flags.instanceMatrix.needsUpdate = this.poles.instanceMatrix.needsUpdate = true;
-    // bunting strung from each lamp to the next one along, in squares that are mostly taken
-    const pos: number[] = [];
-    let k = 0;
-    const done = new Set<string>(), dir = new THREE.Vector3();
+    // bunting strung from each flag to the next one along its street
+    const pos: number[] = [], dir = new THREE.Vector3(), byId = new Map(lit.map((f) => [this.flagId(f.c, f.j), f]));
+    let pk = 0;
     this.strands = [];
-    for (const a of lamps) {
-      if (this.L[a.sq] < 0.5 || Math.hypot(a.x - me.x, a.z - me.z) > 150) continue;
-      let best: Lamp | null = null, bd = 40;
-      for (const b of lamps) {
-        if (b === a) continue;
-        const d = Math.hypot(b.x - a.x, b.z - a.z);
-        if (d > 10 && d < bd && !done.has(`${b.id}>${a.id}`)) { bd = d; best = b; }
-      }
-      if (!best) continue;
-      done.add(`${a.id}>${best.id}`);
-      const key = `${a.id}>${best.id}`;
-      const ya = a.g + 5.3, yb = best.g + 5.3, sag = Math.min(1.6, bd * 0.05), steps = Math.max(2, Math.round(bd / 0.75));
-      this.strands.push({ key, ia: a.id, ib: best.id, ax: a.x, ay: ya, az: a.z, bx: best.x, by: yb, bz: best.z, sag });
-      const at = (t: number) => [a.x + (best!.x - a.x) * t, ya + (yb - ya) * t - sag * 4 * t * (1 - t), a.z + (best!.z - a.z) * t];
+    for (const a of lit) {
+      const b = byId.get(this.flagId(a.c, a.j + 1));
+      if (!b || a.d > 150) continue;
+      const bd = Math.hypot(b.s.x - a.s.x, b.s.z - a.s.z);
+      if (bd < 6 || bd > 48) continue;
+      const key = `${this.flagId(a.c, a.j)}>${this.flagId(b.c, b.j)}`;
+      const top = (s: Spot) => s.g + (s.lamp ? 5.3 : 4.55);
+      const ya = top(a.s), yb = top(b.s), sag = Math.min(1.6, bd * 0.05), steps = Math.max(2, Math.round(bd / 0.75));
+      this.strands.push({ key, ia: this.flagId(a.c, a.j), ib: this.flagId(b.c, b.j), ax: a.s.x, ay: ya, az: a.s.z, bx: b.s.x, by: yb, bz: b.s.z, sag });
+      const at = (t: number) => [a.s.x + (b.s.x - a.s.x) * t, ya + (yb - ya) * t - sag * 4 * t * (1 - t), a.s.z + (b.s.z - a.s.z) * t];
       for (let s = 0; s < 8; s++) pos.push(...at(s / 8), ...at((s + 1) / 8));
-      dir.set(best.x - a.x, 0, best.z - a.z).normalize();
+      dir.set(b.s.x - a.s.x, 0, b.s.z - a.s.z).normalize();
       q.setFromAxisAngle(up, Math.atan2(dir.x, dir.z) + Math.PI / 2);
-      for (let s = 1; s < steps && k < MAX_PENNANTS; s++) {
+      for (let s = 1; s < steps && pk < MAX_PENNANTS; s++) {
         const [x, y, z] = at(s / steps);
         m4.compose(p.set(x, y, z), q, one);
-        this.pennants.setMatrixAt(k++, m4);
+        this.pennants.setMatrixAt(pk++, m4);
       }
     }
-    this.pennants.count = k;
+    this.pennants.count = pk;
     this.pennants.instanceMatrix.needsUpdate = true;
     this.strings.geometry.dispose();
     this.strings.geometry = new THREE.BufferGeometry();
     this.strings.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   }
 
-  /** The square you're in: how many flags are up in it, and where the nearest is. Shoot the last
-   *  one (or win a pub back that takes the rest) and the square's cleared: I tell the host, who
-   *  sets it to nothing, so it only fills up again if the squares next door are mostly flagged. */
+  /** The cluster you're nearest: how many of its flags are up, and where the nearest of them is. */
   private lookRound(me: { x: number; z: number }) {
-    const sq = this.squareAt(me.x, me.z), h = this.here;
-    if (sq !== h.sq) { h.sq = sq; h.top = 0; }
-    h.left = 0; h.near = null;
-    if (sq < 0) return;
-    for (const area of [this.w.map, ...this.w.map.tilesNear(me.x, me.z, this.size * 1.5)]) {
-      for (const l of this.lampsOf(area)) {
-        if (l.sq !== sq || !this.flagged(l)) continue;
-        h.left++;
-        const d = Math.hypot(l.x - me.x, l.z - me.z);
-        if (!h.near || d < h.near.d) h.near = { x: l.x, z: l.z, d };
-      }
+    const h = this.here;
+    h.c = null; h.top = h.left = 0; h.near = null;
+    let bd = STREET;
+    for (const c of this.clusters) {
+      if (Math.hypot(c.x - me.x, c.z - me.z) > c.half + STREET) continue;
+      const spots = this.spotsOf(c);
+      let d = Infinity, near: { x: number; z: number; d: number } | null = null;
+      spots.forEach((s, j) => {
+        const e = Math.hypot(s.x - me.x, s.z - me.z);
+        d = Math.min(d, e);
+        if (this.isUp(c, j) && (!near || e < near.d)) near = { x: s.x, z: s.z, d: e };
+      });
+      if (d < bd) { bd = d; h.c = c; h.top = c.n; h.left = this.upIn(c); h.near = near; }
     }
-    h.top = Math.max(h.top, h.left);
-    // only from someone who's just shot a flag here, so a newcomer's guess at the levels can't clear one
-    if (h.left === 0 && h.top > 0 && this.L[sq] > 0 && this.claimed !== sq && this.shotSq === sq && this.onIt() && (this.heard || this.w.isHost)) {
-      this.claimed = sq;
-      this.celebrate();
-      Yours.cleared(me.x, me.z, this.w.place());
-      const msg = { k: "clr", sq };
-      this.w.send(msg);
-      this.onMessage(msg, this.w.selfId);
-    }
-    if (h.left > 0 && this.claimed === sq) this.claimed = -1;
   }
 
-  private celebrate() {
+  /** A little cheer for a cluster gone; the real one is for the whole map (madeSafe). */
+  private celebrate(street: string) {
     const me = this.w.me();
     this.juice.cleared(me.x, me.y + 1, me.z);
-    const place = this.w.place();
-    if (missionActive()) this.w.toast(`Square cleared! ${place}`, 3);
-    else missionStage({ title: "Square cleared!", sub: place, colour: "#ff4a55", life: 3 });
+    this.w.toast(`That's every flag down${street ? ` on ${street}` : " on this street"}. ${Math.min(100, Math.ceil((this.up * 100) / MAX_UP))}% of them left up round ${this.w.town()}`, 3);
   }
 
-  /** The game's clock this frame: dips for a moment when you clear a square. */
+  /** The game's clock this frame: dips for a moment when you clear a street. */
   timeScale(dt: number) { return this.juice.timeScale(dt); }
 
   /** While you're on the job, the nearest flag flaps where you can hear it, from the side it's on. */
@@ -575,26 +678,28 @@ export class Invasion {
       const ex = f.x - o.x, ey = f.y - o.y, ez = f.z - o.z, t = ex * d.x + ey * d.y + ez * d.z;
       if (t <= 0 || t > maxDist || (best && t > best.dist)) continue;
       const miss = Math.hypot(ex - d.x * t, ey - d.y * t, ez - d.z * t);
-      if (miss < 0.42 && !this.cleared.has(f.id) && !this.pending.has(f.id)) best = { id: f.id, dist: t, x: f.x, y: f.y, z: f.z, a: f.a };
+      const at = this.byId(f.id);
+      if (miss < 0.42 && at && this.isUp(at.c, at.j)) best = { id: f.id, dist: t, x: f.x, y: f.y, z: f.z, a: f.a };
     }
     return best;
   }
 
-  /** I shot a flag down: it tears and drops on every screen, the host counts it, and my count goes up. */
+  /** I shot a flag down: it tears and drops on every screen, the host counts it, and my count goes up
+   *  (and the meter drops on my screen straight away). */
   shoot(f: { id: string; x: number; y: number; z: number; a: number }) {
+    const at = this.byId(f.id);
     this.pending.set(f.id, performance.now());
-    this.shotSq = this.squareAt(f.x, f.z);
     this.drop(f.x, f.y, f.z, f.a);
     this.flagT = 0;
     this.downs++;
     note("flags");
     this.tickAt = performance.now();
-    if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag in this square to clear it (${this.here.top || "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
+    if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag on this street to clear it (${at ? at.c.n : "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
     setTimeout(() => SFX.counterTick(), 120);
     this.juice.flag(f.x, f.y, f.z, this.w.trick());
     Yours.flagShot(f.x, f.z, this.w.place());
-    const l = this.lampById(f.id);
-    const msg = { k: "down", id: f.id, sq: l ? l.sq : -1, per: l ? l.per : 0 };
+    if (at && this.upIn(at.c) === 0) this.celebrate(at.c.name);
+    const msg = { k: "down", id: f.id };
     this.w.send(msg);
     if (this.w.isHost) this.onMessage(msg, this.w.selfId);
   }
@@ -614,7 +719,7 @@ export class Invasion {
   }
 
   /** I shot a string of bunting down. It's a bonus for me and a show for everyone, and it tears the
-   *  flags off the lamps at both ends, each shot like any other so the host's count still holds. */
+   *  flags off at both ends, each shot like any other so the host's count still holds. */
   shootBunting(b: { key: string }) {
     const s = this.strands.find((q) => q.key === b.key);
     const at = this.takeDown(b.key);
@@ -622,13 +727,13 @@ export class Invasion {
     this.w.send({ k: "bun", key: b.key });
     if (!s) return;
     for (const id of [s.ia, s.ib]) {
-      const f = this.shown.find((q) => q.id === id);
-      if (f && !this.cleared.has(id) && !this.pending.has(id)) this.shoot(f);
+      const f = this.shown.find((q) => q.id === id), here = this.byId(id);
+      if (f && here && this.isUp(here.c, here.j)) this.shoot(f);
     }
   }
 
-  /** A string of bunting comes down, and its points flutter to the ground. It stays down while the
-   *  flags at its ends do, and is strung again when they are put back and the square is mostly taken. */
+  /** A string of bunting comes down, and its points flutter to the ground. It's strung again once
+   *  the flags at both its ends are back up. */
   private takeDown(key: string): number[] | null {
     const s = this.strands.find((q) => q.key === key);
     this.flagT = 0;
@@ -655,7 +760,7 @@ export class Invasion {
     });
   }
 
-  // ---- the host: spreading, call-outs, crews and ladders --------------------------------------
+  // ---- the host: new clusters, call-outs, crews and ladders --------------------------------------
 
   private hostUpdate(dt: number) {
     const now = Date.now(), season = Math.floor(now / SEASON);
@@ -663,7 +768,7 @@ export class Invasion {
       const had = this.season >= 0;
       for (const c of [...this.calls]) this.endCall(c, null);
       this.fresh(season);
-      if (had) this.news("season");
+      if (had && !this.saved) this.news("season");
       this.dirty = true;
     }
     const players = this.w.players(), alive = players.filter((p) => p.alive);
@@ -672,22 +777,14 @@ export class Invasion {
     if (brew) for (const c of this.calls) if (!c.on) c.until += dt * 1000;
     if ((this.tickT -= dt) <= 0) {
       this.tickT = TICK;
-      if (!this.saved && !brew) this.grow(TICK, new Set(alive.map((p) => this.squareAt(p.x, p.z))));
-      // flags shot down in squares that have dropped below them don't need remembering
-      for (const id of this.cleared) {
-        const l = this.lampById(id);
-        if (l && l.h >= this.L[l.sq]) { this.cleared.delete(id); this.D[l.sq] = Math.max(0, this.D[l.sq] - l.per); }
+      if (!this.saved) this.reachable(alive);
+      if (!this.saved && !brew && (this.growT -= TICK) <= 0) {
+        this.growT = GROW_EVERY;
+        this.grow(Math.random, this.clearOf(alive), true);
       }
-      for (let i = 0; i < this.D.length; i++) this.D[i] = Math.min(this.D[i], this.L[i]);
-      const m = this.meter;
-      if (!this.saved && m < 0.002 && this.L.every((_, i) => this.level(i) < 0.01)) {
-        this.saved = true;
-        this.L.fill(0); this.D.fill(0);
-        for (const c of [...this.calls]) this.endCall(c, null);
-        this.news("saved");
-      }
-      if (!this.decorated && m > 0.99) { this.decorated = true; this.news("decorated"); }
-      if (m < 0.9) this.decorated = false;
+      const t = this.total;
+      if (!this.decorated && t >= MAX_UP - 2) { this.decorated = true; this.news("decorated"); }
+      if (t < MAX_UP * 0.9) this.decorated = false;
       this.dirty = true;
     }
     if (!this.chase && this.runnerPack) {
@@ -706,14 +803,6 @@ export class Invasion {
     if (this.sendT <= 0 || (this.dirty && this.sendT < SEND_EVERY - 0.5)) { this.sendT = SEND_EVERY; this.dirty = false; this.w.send(this.state()); }
   }
 
-  private lampById(id: string): Lamp | undefined {
-    const [tag, k] = id.split(":");
-    let area: GameMap | undefined;
-    if (tag === "v") area = this.w.map;
-    else { const [ti, tj] = tag.split("_").map(Number); area = [...this.w.map.tiles.values()].find((m) => m.d.tile?.[0] === ti && m.d.tile?.[1] === tj); }
-    return area ? this.lampsOf(area)[+k] : undefined;
-  }
-
   /** Host: one takeover at a time, or two at once in a big room, so a crowd splits up. */
   private hostCalls(dt: number, alive: Target[], room: number, busy: Target[]) {
     const want = room >= TWO_CALLS ? 2 : 1, free = alive.filter((p) => !busy.includes(p));
@@ -726,15 +815,15 @@ export class Invasion {
 
   /** Host: the Flag Lads take a pub, weighted to where they're strongest, away from any other takeover. */
   private newCall(alive: Target[], vice: boolean) {
-    const pubs = this.w.pubs().map((p) => ({ ...p, sq: this.squareAt(p.x, p.z), d: Math.min(...alive.map((t) => Math.hypot(t.x - p.x, t.z - p.z))) }))
-      .filter((p) => p.sq >= 0 && p.d > 120 && p.d < 1500 && !this.freed.some((f) => f.n === p.name) && !inSafeZone(this.w.map, p.x, p.z, 30)
+    const pubs = this.w.pubs().map((p) => ({ ...p, d: Math.min(...alive.map((t) => Math.hypot(t.x - p.x, t.z - p.z))) }))
+      .filter((p) => p.d > 120 && p.d < 1500 && !this.freed.some((f) => f.n === p.name) && !inSafeZone(this.w.map, p.x, p.z, 30)
         && !this.calls.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < 600));
     if (!pubs.length) return false;
-    const weight = (p: { sq: number }) => this.level(p.sq) + 0.05;
+    const weight = (p: { x: number; z: number }) => this.flagsAround(p.x, p.z, 600) / 20 + 0.05;
     let r = Math.random() * pubs.reduce((s, p) => s + weight(p), 0);
     const p = pubs.find((o) => (r -= weight(o)) <= 0) ?? pubs[0];
     this.calls.push({
-      id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z, sq: p.sq,
+      id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z,
       until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30, left: -1, boss: 0,
       bar: 0, rate: 0, lads: [], ladT: 0, fled: false,
     });
@@ -920,29 +1009,27 @@ export class Invasion {
     this.dirty = true;
     this.sendT = 0;
     if (won === null) return;
-    const sq = c.sq, was = this.chair;
+    const was = this.chair;
     // for the morning paper: who the Gaffer was, and how close it came
     const story = { x: Math.round(c.x), z: Math.round(c.z), g: c.vice ? "" : was.name, tr: c.vice ? [] : [...was.traits], v: c.vice ? 1 : 0,
       sp: c.onAt ? Math.max(0, Math.round((c.until - c.onAt) / 1000)) : 0, du: c.onAt ? Math.round((Date.now() - c.onAt) / 1000) : 0 };
     let line = "";
     if (won) {
-      this.L[sq] = Math.max(0, this.L[sq] - WON);
-      for (const n of this.next[sq]) this.L[n] = Math.max(0, this.L[n] - WON_NEXT);
+      this.clusters = this.clusters.filter((o) => Math.hypot(o.x - c.x, o.z - c.z) > WON_REACH);
       // closed down inside 90 seconds of the crew turning up: a bonus
       const quick = Date.now() - c.onAt < BONUS_SECS * 1000, n = quick ? 5 : 3;
       for (let j = 0; j < n; j++) { const a = (j / n) * Math.PI * 2; this.w.prize(c.x + Math.cos(a) * 2, c.z + Math.sin(a) * 2, j === 0 || (quick && j === 1)); }
       if (quick) this.news("quick");
-      // the pub's won back for the day: a ride left outside, a free round now and then, and a quiet square
-      this.freed.push({ n: c.name, x: c.x, z: c.z, sq, t: Date.now() });
+      // the pub's won back for the day: a ride left outside, a free round now and then, and quiet streets
+      this.freed.push({ n: c.name, x: c.x, z: c.z, t: Date.now() });
       this.w.give(c.x - 2, c.z + 2, RIDES[Math.floor(Math.random() * (RIDES.length - 1))]);
       if (!c.vice) {
         this.chair = newChair(Math.random, was.name);
         line = `${was.name} has packed it in. ${this.chair.name} is the new Gaffer, and ${this.chair.traits.map((t) => TRAITS[t]).join(", and ")}`;
       }
     } else {
-      this.L[sq] = Math.min(1, this.L[sq] + LOST);
-      for (const n of this.next[sq]) this.L[n] = Math.min(1, this.L[n] + LOST_NEXT);
-      this.freed = this.freed.filter((f) => f.sq !== sq);
+      this.freed = this.freed.filter((f) => f.n !== c.name);
+      this.digIn(c);
       this.w.scar?.(c.x, c.z, c.name, c.vice ? "the Gaffer's cousin" : `${was.name}, the Gaffer`);
       if (!c.vice) {
         was.wins++; was.took = c.name;
@@ -957,6 +1044,7 @@ export class Invasion {
     const msg = { k: "out", won: won ? 1 : 0, name: c.name, line, ...story };
     this.w.send(msg);
     this.onMessage(msg, this.w.selfId);
+    if (won) this.checkSaved();
   }
 
   /** Host: a pub won back leaves a round out for anyone who comes by. */
@@ -970,7 +1058,7 @@ export class Invasion {
     }
   }
 
-  /** Host: ladder crews go and put back the flags you've shot down near you. */
+  /** Host: ladder crews go and put back the flags you've shot down near you, on their clusters' streets. */
   private hostLadders(dt: number, alive: Target[]) {
     const ch = this.w.naughtyBoys, near = (x: number, z: number, r: number) => alive.some((t) => Math.hypot(t.x - x, t.z - z) < r);
     for (let k = this.ladders.length - 1; k >= 0; k--) {
@@ -980,12 +1068,9 @@ export class Invasion {
       if (Math.hypot(at.x - l.x, at.z - l.z) > 1.8) { l.t = 0; continue; }
       if ((l.t += dt) < 4) continue;
       // up the ladder and the flag's back
-      if (this.cleared.delete(l.id)) {
-        this.dirty = true;
-        const lamp = this.lampById(l.id);
-        if (lamp) this.D[lamp.sq] = Math.max(0, this.D[lamp.sq] - lamp.per);
-      }
-      const next = this.cleared.size ? this.lampsNear(l.x, l.z, 100).find((o) => this.cleared.has(o.id) && !this.ladders.some((m) => m.id === o.id)) : undefined;
+      const f = this.byId(l.id);
+      if (f && (f.c.down >> f.j) & 1) { f.c.down &= ~(1 << f.j); this.dirty = true; }
+      const next = this.downNear(l.x, l.z, 100);
       if (next) { Object.assign(l, { id: next.id, ...this.foot(next), t: 0 }); ch.sendTo(l.i, l.gen, l.x, l.z); }
       else {
         l.leaving = true;
@@ -995,15 +1080,29 @@ export class Invasion {
     }
     if ((this.ladderT -= dt) > 0) return;
     this.ladderT = 100 - 60 * this.meter;
-    if (this.ladders.length >= 3 || !this.cleared.size) return;
-    const anchor = alive[Math.floor(Math.random() * alive.length)];
-    const lamp = this.lampsNear(anchor.x, anchor.z, 180).find((o) => this.cleared.has(o.id) && !this.ladders.some((m) => m.id === o.id) && !this.isFree(o.sq) && !((this.lull.get(o.sq) ?? 0) > Date.now()) && !inSafeZone(this.w.map, o.x, o.z));
-    if (!lamp) return;
-    this.sendCrew(lamp, alive);
+    if (this.ladders.length >= 3) return;
+    const anchor = alive[Math.floor(Math.random() * alive.length)], now = Date.now();
+    const f = this.downNear(anchor.x, anchor.z, 180, (c, s) => !this.freeNear(s.x, s.z) && !((this.lull.get(c.id) ?? 0) > now) && !inSafeZone(this.w.map, s.x, s.z));
+    if (f) this.sendCrew(f, alive);
   }
 
-  /** Host: a ladder lad sets off for a lamp, from a street not far off that nobody is near. */
-  private sendCrew(lamp: Lamp, alive: Target[]): { x: number; z: number } | null {
+  /** Host: the nearest flag shot down within r of (x, z) that no ladder lad is already on its way to. */
+  private downNear(x: number, z: number, r: number, ok: (c: Cluster, s: Spot) => boolean = () => true) {
+    let best: (Spot & { id: string; d: number }) | null = null;
+    for (const c of this.clusters) {
+      if (!c.down || Math.hypot(c.x - x, c.z - z) > r + c.half) continue;
+      const spots = this.spotsOf(c);
+      for (let j = 0; j < c.n; j++) {
+        const s = spots[j], id = this.flagId(c, j), d = Math.hypot(s.x - x, s.z - z);
+        if (!((c.down >> j) & 1) || d > r || (best && d > best.d) || this.ladders.some((m) => m.id === id) || !ok(c, s)) continue;
+        best = { ...s, id, d };
+      }
+    }
+    return best;
+  }
+
+  /** Host: a ladder lad sets off for a flag's lamp, from a street not far off that nobody is near. */
+  private sendCrew(lamp: Spot & { id: string }, alive: Target[]): { x: number; z: number } | null {
     if (inSafeZone(this.w.map, lamp.x, lamp.z)) return null;   // not near a nursery or primary school
     const ch = this.w.naughtyBoys;
     const from = streetSpot(this.w.map, lamp.x, lamp.z, 40, 90, 0.6, (x, z) => !alive.some((t) => Math.hypot(t.x - x, t.z - z) < 35) && !inSafeZone(this.w.map, x, z));
@@ -1016,33 +1115,43 @@ export class Invasion {
     return foot;
   }
 
-  /** Host: send a ladder crew to a lamp near (x, z), for a tip-off (nightout.ts); where they'll be, or null if there's nowhere. */
+  /** Host: send a ladder crew to a cluster's lamp near (x, z), for a tip-off (nightout.ts); where they'll be, or null if there's nowhere. */
   crewNear(x: number, z: number): { x: number; z: number } | null {
-    const alive = this.w.players().filter((p) => p.alive);
-    const lamps = this.lampsNear(x, z, 500).filter((l) => l.sq >= 0 && Math.hypot(l.x - x, l.z - z) > 60 && !this.ladders.some((m) => m.id === l.id))
-      .sort((a, b) => Number(this.cleared.has(b.id)) - Number(this.cleared.has(a.id)) || Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
-    for (const l of lamps.slice(0, 6)) { const at = this.sendCrew(l, alive); if (at) return at; }
+    const alive = this.w.players().filter((p) => p.alive), all: (Spot & { id: string; down: boolean; d: number })[] = [];
+    for (const c of this.clusters) {
+      if (Math.hypot(c.x - x, c.z - z) > 500 + c.half) continue;
+      this.spotsOf(c).forEach((s, j) => {
+        const id = this.flagId(c, j), d = Math.hypot(s.x - x, s.z - z);
+        if (d > 60 && d < 500 && !this.ladders.some((m) => m.id === id)) all.push({ ...s, id, down: !!((c.down >> j) & 1), d });
+      });
+    }
+    all.sort((a, b) => Number(b.down) - Number(a.down) || a.d - b.d);
+    for (const l of all.slice(0, 6)) { const at = this.sendCrew(l, alive); if (at) return at; }
     return null;
   }
 
-  /** The square the Flag Lads are eyeing next: the most flagged one beside a square that's been cleared or won back. Its middle, or null if there's none. */
+  /** Host: the street the Flag Lads are eyeing next, near their biggest cluster; their next cluster
+   *  goes there. Its middle, or null if there's nowhere. */
   eyeing(): { x: number; z: number } | null {
-    let best = -1, top = 0.05;
-    for (let i = 0; i < this.sqs.length; i++) {
-      const lv = this.level(i);
-      if (lv > top && this.next[i].some((n) => this.level(n) < 0.02 || this.isFree(n))) { top = lv; best = i; }
+    if (!this.roads || this.saved) return null;
+    if (!this.plan) {
+      const big = [...this.clusters].sort((a, b) => this.upIn(b) - this.upIn(a))[0] ?? null;
+      const alive = this.w.players().filter((p) => p.alive);
+      this.plan = this.findStreet(Math.random, FEW + Math.floor(Math.random() * (MANY - FEW + 1)), big, this.clearOf(alive), true);
     }
-    return best < 0 ? null : { x: this.sqs[best].x, z: this.sqs[best].z };
+    if (!this.plan) return null;
+    const raw = this.roads.spots(this.plan.r, this.plan.a, this.plan.n, this.plan.seed);
+    return { x: raw.reduce((t, s) => t + s.x, 0) / raw.length, z: raw.reduce((t, s) => t + s.z, 0) / raw.length };
   }
 
   /** Where a ladder goes up a lamp: at its foot, on the street side. */
-  private foot(l: Lamp) {
+  private foot(l: { x: number; z: number; a: number }) {
     const c = clearSpot(this.w.map, l.x + Math.sin(l.a) * 0.9, l.z + Math.cos(l.a) * 0.9, 3);
     return c ? { x: c[0], z: c[1] } : { x: l.x, z: l.z };
   }
 
-  /** Host: something naughtyboys.ts runs went down. A ladder crew caught means no more ladders in that
-   *  square for a while. (The call-outs check their own crews for themselves.) */
+  /** Host: something naughtyboys.ts runs went down. A ladder crew caught means no more ladders on that
+   *  street for a while. (The call-outs check their own crews for themselves.) */
   naughtyBoyDown(i: number, _by: string) {
     if (this.chase?.i === i) { this.gafferCaught(_by, false); return; }
     for (const c of this.calls) {
@@ -1058,8 +1167,8 @@ export class Invasion {
     }
     const k = this.ladders.findIndex((l) => l.i === i);
     if (k < 0) return;
-    const l = this.ladders[k];
-    this.lull.set(this.squareAt(l.x, l.z), Date.now() + LULL * 1000);
+    const l = this.ladders[k], f = this.byId(l.id);
+    if (f) this.lull.set(f.c.id, Date.now() + LULL * 1000);
     this.ladders.splice(k, 1);
     this.news("ladder", { by: _by });
   }
@@ -1070,7 +1179,8 @@ export class Invasion {
     const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 }));
     const g = this.runner;
     return {
-      k: "s", pa: this.paused ? 1 : 0, se: this.season, sv: this.saved ? 1 : 0, L: [...this.L].map((v) => Math.round(v * 1000)), D: [...this.D].map((v) => Math.round(v * 10000)), cl: [...this.cleared],
+      k: "s", pa: this.paused ? 1 : 0, se: this.season, sv: this.saved ? 1 : 0, qt: this.quietTill,
+      fc: this.clusters.map((c) => [c.id, c.r, c.a, c.n, c.seed, c.down, c.pub || 0]),
       c: cs[0] ?? null, cs, fr: this.freed.map((f) => [f.n, Math.round(f.x), Math.round(f.z)]),
       chr: { n: this.chair.name, t: this.chair.traits, w: this.chair.wins },
       gf: this.chase ? this.chase.pack() : 0, gu: g?.up ? 1 : 0,
@@ -1092,16 +1202,14 @@ export class Invasion {
     }
     if (d.k === "s") {
       if (this.w.isHost && from !== this.w.selfId) return;
-      if (!Array.isArray(d.L) || d.L.length !== this.L.length) return;
+      if (!Array.isArray(d.fc)) return;
       this.heard = true;
       this.season = Number(d.se) || 0;
       this.saved = !!d.sv;
       this.paused = !!d.pa;
-      d.L.forEach((v: number, i: number) => (this.L[i] = Math.max(0, Math.min(1, (Number(v) || 0) / 1000))));
-      this.D.fill(0);
-      if (Array.isArray(d.D) && d.D.length === this.D.length) d.D.forEach((v: number, i: number) => (this.D[i] = Math.max(0, Math.min(1, (Number(v) || 0) / 10000))));
-      this.cleared = new Set(Array.isArray(d.cl) ? d.cl.map(String) : []);
-      if (Array.isArray(d.fr)) this.freed = d.fr.map((f: any[]) => ({ n: String(f[0]), x: +f[1], z: +f[2], sq: this.squareAt(+f[1], +f[2]), t: 0 }));
+      if (Number.isInteger(d.qt)) { this.quietTill = d.qt; keepQuiet(this.w.mapId, d.qt); }
+      this.setClusters(d.fc);
+      if (Array.isArray(d.fr)) this.freed = d.fr.map((f: any[]) => ({ n: String(f[0]), x: +f[1], z: +f[2], t: 0 }));
       if (d.chr && typeof d.chr.n === "string") Object.assign(this.chair, { name: d.chr.n, traits: Array.isArray(d.chr.t) ? d.chr.t.filter((t: string) => t in TRAITS) : [], wins: +d.chr.w || 0 });
       this.setCalls(Array.isArray(d.cs) ? d.cs : d.c ? [d.c] : []);
       this.runnerPack = Array.isArray(d.gf) ? d.gf : null;
@@ -1110,22 +1218,19 @@ export class Invasion {
       this.flagT = 0;
       return;
     }
-    if (d.k === "down" && typeof d.id === "string") {
+    if (d.k === "down" && typeof d.id === "string" && d.id.length < 24) {
+      const at = this.byId(d.id);
       if (from !== this.w.selfId) {
         Paper.flagBy(from);
         const f = this.shown.find((s) => s.id === d.id);
-        if (f && !this.cleared.has(f.id)) this.drop(f.x, f.y, f.z, f.a);
-        if (!this.w.isHost) this.cleared.add(d.id);
+        if (f && at && this.isUp(at.c, at.j)) this.drop(f.x, f.y, f.z, f.a);
         this.flagT = 0;
       }
+      if (!at || (at.c.down >> at.j) & 1) return;
+      at.c.down |= 1 << at.j;
       if (this.w.isHost) {
-        // the host may not have that square loaded: then it goes on the shooter's word for where it was
-        const l = this.lampById(d.id), sq = l ? l.sq : Number.isInteger(d.sq) ? d.sq : -1, per = l ? l.per : Math.min(0.2, Math.max(0, +d.per || 0));
-        if (sq >= 0 && sq < this.L.length && (!l || l.h < this.L[sq]) && !this.cleared.has(d.id)) {
-          this.cleared.add(d.id);
-          this.D[sq] = Math.min(this.L[sq], this.D[sq] + per);
-          this.dirty = true;
-        }
+        this.dirty = true;
+        if (bits(at.c.down) >= at.c.n) this.streetCleared(at.c, from);
       }
       return;
     }
@@ -1133,15 +1238,6 @@ export class Invasion {
       if (from === this.w.selfId) return;
       const at = this.takeDown(d.key), me = this.w.me();
       if (at && Math.hypot(at[18] - me.x, at[20] - me.z) < 120) this.juice.fall(at, 2.3);
-      return;
-    }
-    if (d.k === "clr" && Number.isInteger(d.sq) && d.sq >= 0 && d.sq < this.L.length) {
-      if (this.w.isHost && this.L[d.sq] > 0) {
-        this.L[d.sq] = this.D[d.sq] = 0;
-        this.dirty = true;
-        this.sendT = Math.min(this.sendT, 0.5);
-        this.news("square", { sq: d.sq });
-      }
       return;
     }
     if (d.k === "out") {
@@ -1168,8 +1264,8 @@ export class Invasion {
       return;
     }
     if (d.k === "news") {
-      if (d.t === "saved" || d.t === "square") Paper.log({ k: d.t === "saved" ? "free" : "sq" }, d.t === "saved" ? "free" : `q|${d.sq}`);
-      if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till tomorrow", 6); }
+      if (d.t === "saved") Paper.log({ k: "free" }, "free");
+      if (d.t === "saved") this.madeSafe(+d.q || 0);
       else if (d.t === "ladder") { if (d.by === this.w.selfId) note("ladder"); }
       if (d.t === "grun") this.gafferRuns(d);
       else if (d.t === "gup") {
@@ -1194,13 +1290,13 @@ export class Invasion {
       } else if (d.t === "hung") this.w.feed(`The Flag Lads have got their banner up at <b style="color:${PURPLE}">${esc(String(d.n))}</b>`);
       if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
       else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!", 3.5);
-      else if (d.t === "square") {
+      else if (d.t === "street") {
         SFX.jobDone(true);
-        const me = this.w.me();
-        if (this.squareAt(me.x, me.z) === +d.sq) this.w.toast("Square cleared! Not a flag left round here, and it stays that way unless the streets next door fill up", 5);
-        else this.w.feed(`A square of Bath is <b style="color:${GREEN}">flag-free</b> again`);
+        const me = this.w.me(), street = d.n ? esc(String(d.n)) : "A street";
+        if (Math.hypot(+d.x - me.x, +d.z - me.z) < 300) this.w.toast(`Street cleared! Not a flag left on ${d.n ? String(d.n) : "this street"}`, 4);
+        else this.w.feed(`<b style="color:${GREEN}">${street}</b> is flag-free again`);
       }
-      else if (d.t === "decorated") this.w.toast("There's a flag on every lamp post in Bath. Keep shooting them down", 5);
+      else if (d.t === "decorated") this.w.toast(`The Flag Lads have every flag they've got up round ${this.w.town()}. Keep shooting them down`, 5);
       else if (d.t === "season") this.w.toast("A new day: the Flag Lads are back, with more cable ties", 4);
       else if (d.t === "greet" || d.t === "mega") {
         const me = this.w.me(), dist = Math.hypot(+d.x - me.x, +d.z - me.z);
@@ -1211,6 +1307,35 @@ export class Invasion {
     }
   }
 
+  /** The clusters as the host says they are, keeping what's been worked out for the ones I have. */
+  private setClusters(list: unknown[]) {
+    const out: Cluster[] = [];
+    for (const f of list) {
+      if (!Array.isArray(f) || out.length >= MAX_UP) continue;
+      const [id, r, a, n, seed, down] = f.map(Number), pub = typeof f[6] === "string" ? f[6].slice(0, 60) : "";
+      const had = this.clusters.find((c) => c.id === id && c.r === r && c.a === a && c.n === n && c.seed === seed);
+      if (had) { had.down = down & ((1 << n) - 1); had.pub = pub; out.push(had); continue; }
+      const c = this.cluster(id, r, a, n, seed, down, pub);
+      if (c) out.push(c);
+    }
+    this.clusters = out;
+    this.clusterN = Math.max(this.clusterN, ...out.map((c) => c.id));
+  }
+
+  /** Not a flag left: the card that says the place is safe, and quiet for the next few days. */
+  private madeSafe(till: number) {
+    this.saved = true;
+    this.clusters = [];
+    if (till) { this.quietTill = Math.max(this.quietTill, till); keepQuiet(this.w.mapId, this.quietTill); }
+    SFX.jobDone(true);
+    const town = this.w.town();
+    missionEnd({ result: "complete", title: `${town} is safe from the Flag Lads`, lines: ["Not a flag left on a lamp post.", `They won't be back for ${QUIET_DAYS} days.`] });
+    this.w.feed(`<b style="color:${GREEN}">${esc(town)}</b> is safe from the Flag Lads`);
+  }
+
+  /** Days till the Flag Lads come back, once the place is safe. */
+  private quietDays() { return Math.max(1, this.quietTill - Math.floor(Date.now() / SEASON)); }
+
   /** The call-outs as the host says they are (on everyone else's screen). */
   private setCalls(list: any[]) {
     if (this.w.isHost) return;
@@ -1220,7 +1345,7 @@ export class Invasion {
       const was = this.calls.find((o) => o.id === +c.id);
       if (!was) this.ring(String(c.n), +c.x, +c.z);
       out.push({
-        id: +c.id, name: String(c.n), x: +c.x, z: +c.z, sq: this.squareAt(+c.x, +c.z), until: +c.u, on: !!c.on, onAt: +c.a || 0, vice: !!c.v,
+        id: +c.id, name: String(c.n), x: +c.x, z: +c.z, until: +c.u, on: !!c.on, onAt: +c.a || 0, vice: !!c.v,
         gazebo: Array.isArray(c.gz) ? { x: +c.gz[0], z: +c.gz[1] } : null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 0,
         left: c.l === undefined ? -1 : +c.l, boss: +c.b || 0,
         bar: Math.max(0, Math.min(1, (+c.bn || 0) / 1000)), rate: (+c.br || 0) / 100000, lads: [], ladT: 0, fled: !!c.fl,
@@ -1385,7 +1510,6 @@ export class Invasion {
   /** The meter under the minimap, the nearest call-out under it, and your count of flags down. */
   private hud(me: { x: number; z: number }) {
     this.bannerBar(me);
-    const m = this.meter;
     const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     let call = "";
     if (c) {
@@ -1402,20 +1526,19 @@ export class Invasion {
       }
       if (this.calls.length > 1) call += ` <span>(and ${esc(this.calls.find((o) => o !== c)!.name)})</span>`;
     }
-    // the square you're in, takeover or not: how many of its flags are down (where the rest are is
-    // for you to find: listen for them flapping)
-    const h = this.here;
+    // the street you're nearest, takeover or not: how many of its flags are down (where the rest
+    // are is for you to find: listen for them flapping)
+    const h = this.here, street = h.c?.name ? `<b>${esc(h.c.name)}</b>` : "this street";
     let here = "";
-    if (this.saved) here = "Bath is flag-free till tomorrow";
-    else if (h.top && h.left) here = h.top === h.left ? `Shoot all <b>${h.top}</b> flags in this square to clear it` : `This square: <b>${h.top - h.left}/${h.top}</b> flags down`;
-    else if (h.top) here = "This square's clear of flags";
-    else if (!c) here = "No flags in this square: head for the red on the map";
+    if (this.saved) here = `${esc(this.w.town())} is safe from the Flag Lads for ${this.quietDays() === 1 ? "another day" : `${this.quietDays()} more days`}`;
+    else if (h.c && h.left) here = h.top === h.left ? `Shoot all <b>${h.top}</b> flags on ${street} to clear it` : `${h.c.name ? street : "This street"}: <b>${h.top - h.left}/${h.top}</b> flags down`;
+    else if (!c) here = "No flags round here: head for the red on the map";
     call = [call, here].filter(Boolean).map((s) => `<em>${s}</em>`).join("");
-    const pct = Math.round(m * 100);
+    const pct = Math.min(100, Math.ceil((this.up * 100) / MAX_UP));
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
-    const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call}`;
+    const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${pct}%"></div></div>${call}`;
     show($("bunting"), html);
-    // it comes up while you're in a square with flags up, while there's a takeover on, or for a
+    // it comes up near a cluster with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab.
     // Never while you're on a job: the job's own panel has the screen then
     $("bunting").hidden = this.w.busy() || !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
@@ -1437,27 +1560,34 @@ export class Invasion {
   /** How the Flag Lads are doing, for today's jobs (daily.ts): a line or two of html. */
   status(): string {
     if (!this.on) return "";
-    const me = this.w.me(), pct = Math.round(this.meter * 100);
+    const me = this.w.me(), pct = Math.min(100, Math.ceil((this.up * 100) / MAX_UP)), town = esc(this.w.town());
     const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     // the Chronicle's headline over the story (today's jobs panel prints it as the front page)
     const hl = this.saved ? "City declared flag-free" : c ? `Flag Lads seize ${esc(c.name)}`
-      : pct >= 60 ? "Flag Lads tighten grip on city" : pct >= 25 ? `Bunting row as lads flag ${pct}% of Bath` : "Flag Lads on the back foot";
-    const head = this.saved ? "<b>The Flag Lads</b>: Bath is flag-free till tomorrow"
-      : `<b>The Flag Lads</b> have flagged <b class="pct">${pct}%</b> of Bath. Shoot every flag off the lamp posts in a square to clear it, and win their pubs back to knock out loads at once`;
+      : pct >= 60 ? "Flag Lads tighten grip on city" : pct >= 25 ? `Bunting row as lads flag ${pct}% of ${town}` : "Flag Lads on the back foot";
+    const head = this.saved ? `<b>The Flag Lads</b>: ${town} is safe from them for ${this.quietDays() === 1 ? "another day" : `${this.quietDays()} more days`}`
+      : `<b>The Flag Lads</b> have <b class="pct">${pct}%</b> of their flags up round ${town}, in clusters along the streets (the red on the map). Shoot every flag on a street to clear it, and win their pubs back to knock out loads at once`;
     const gaffer = this.saved ? "" : `<small>The Gaffer is ${esc(this.chair.name)}, who ${this.chair.traits.map((t) => esc(TRAITS[t])).join(" and ")}${this.freed.length ? ` · won back today: ${this.freed.map((f) => esc(f.n)).join(", ")}` : ""}</small>`;
     const now = c ? `<small class="now">Right now they've taken over <b>${esc(c.name)}</b>, ${far(Math.hypot(c.x - me.x, c.z - me.z))} ${compassWord(c.x - me.x, c.z - me.z)}: follow the purple marker</small>` : "";
     return `<h3 class="hl">${hl}</h3>` + head + now + gaffer;
   }
 
-  /** The squares for the maps, tinted by how flagged they are (scene coordinates). */
-  tint(): { x0: number; z0: number; s: number; a: number; free?: boolean }[] {
-    const out: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
-    this.sqs.forEach((q, i) => {
-      const free = this.isFree(i);
-      const a = this.level(i);
-      if (a > 0.02 || free) out.push({ x0: q.x - this.size / 2, z0: q.z - this.size / 2, s: this.size, a, free });
-    });
-    return out;
+  /** The clusters for the maps, each a soft blob about a street across, a little off its middle so it
+   *  points you at the streets rather than the lamp; and the pubs won back, green. The same list
+   *  comes back till something changes, so the minimap can tell. */
+  tint(): Blob[] {
+    const key = this.clusters.map((c) => `${c.id}:${this.upIn(c)}`).join() + "|" + this.freed.map((f) => f.n).join();
+    if (key === this.blobKey) return this.blobs;
+    this.blobKey = key;
+    this.blobs = [];
+    for (const c of this.clusters) {
+      const up = this.upIn(c);
+      if (!up) continue;
+      const r = Math.max(90, Math.min(280, c.half + 50)), j = rng(hash("blob", c.id, c.r)), a = j() * Math.PI * 2, d = j() * r * 0.35;
+      this.blobs.push({ x: c.x + Math.cos(a) * d, z: c.z + Math.sin(a) * d, r, a: 0.25 + (0.75 * up) / c.n });
+    }
+    for (const f of this.freed) this.blobs.push({ x: f.x, z: f.z, r: WON_REACH, a: 1, free: true });
+    return this.blobs;
   }
 
   dispose() {

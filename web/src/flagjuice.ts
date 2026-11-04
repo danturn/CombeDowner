@@ -1,5 +1,5 @@
 // The fun on top of shooting the Flag Lads' flags (invasion.ts does the counting): a combo for flags
-// shot in quick succession, confetti and fluttering bunting, the moment a square is cleared, and a
+// shot in quick succession, confetti and fluttering bunting, the moment a cluster of flags is cleared, and a
 // bonus for shooting from a moving ride. All of it is yours alone: nobody else sees your combo or
 // your slow-motion, and none of it changes what the host counts. The scores here are for show.
 //
@@ -71,7 +71,7 @@ export class FlagJuice {
     }
   }
 
-  /** The last flag in a square. */
+  /** The last flag in a cluster. */
   cleared(x: number, y: number, z: number) {
     this.hitCombo(CLEAR_PTS);
     this.spray(x, y + 0.5, z, 70, 1.6, 7);
@@ -81,7 +81,7 @@ export class FlagJuice {
     this.say(`+${CLEAR_PTS}`);
   }
 
-  /** The game's clock this frame, given the real dt: dips for a moment after clearing a square. */
+  /** The game's clock this frame, given the real dt: dips for a moment after clearing a cluster. */
   timeScale(dt: number): number {
     if (this.slowT > 0) { this.slowT -= dt; this.scale = SLOW_TO; }
     else if (this.scale < 1) this.scale = Math.min(1, this.scale + dt * 3);
