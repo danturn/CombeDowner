@@ -3107,18 +3107,19 @@ def paths_along_pavements(path, pave, reach=ALONG_REACH, least=ALONG_LEAST, off_
     pave = unary_union([g for g in getattr(pave, "geoms", [pave]) if g.geom_type in ("Polygon", "MultiPolygon")] or [Polygon()])
     near = path.intersection(pave.buffer(reach, join_style="mitre"))
     # (the outlines are simplified together after this, closing a few centimetres between the two)
-    edge = pave.boundary.buffer(SURFACE_TOLERANCE + 0.05)
+    whole = pave.boundary.buffer(SURFACE_TOLERANCE + 0.05)
     mouths = path_mouths(pave, ways)
-    if not mouths.is_empty:
-        edge = edge.difference(mouths)
+    edge = whole.difference(mouths) if not mouths.is_empty else whole
     shapely.prepare(edge)
     take = []
     for g in getattr(near, "geoms", [near]):
         if g.geom_type != "Polygon" or g.area < 0.5:
             continue
         # (its longest stretch along it: a path leaving the pavement at a slant at each end shares more
-        # than its width in all, but runs along it nowhere)
-        shared = longest_run(g.exterior.intersection(edge))
+        # than its width in all, but runs along it nowhere; and one leaving end on part way along a
+        # footway beside the street takes only its mouth out of that stretch, not the stretch apart)
+        seam = g.exterior.intersection(whole)
+        shared = longest_run(seam) - (seam.intersection(mouths).length if not mouths.is_empty else 0.0)
         if shared <= least:
             continue
         if off_level is None:
