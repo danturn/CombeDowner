@@ -1,4 +1,4 @@
-// What the game draws over its streets, for tools/check_more.py's rule 20: the scenery as the game
+// What the game draws over its streets and paths, for tools/check_more.py's rules 20 and 23: the scenery as the game
 // builds it, not the map's polygons. It serves a built game (web/dist, with the maps read from
 // web/public/maps so a rebuilt map needs no new game build) in a muted headless Chrome, goes round
 // every square of the map from the menu's backdrop, waits until the squares there are built, and
@@ -17,7 +17,15 @@
 //    mesh, a path) and the pavement stands more than 0.3 m over it, the pavement is "on a lip" (the
 //    game stands a pavement a kerb, 0.15 to 0.3 m, over the grass beside it on purpose); and so is
 //    one standing more than 0.35 m over its own carriageway, a kerb about 0.1 m high.
-// Each sample stands for a square metre, so a place's score is its area in m2 (a lip's is its height).
+// And for rule 23, along every path on the ground (not a bridge's deck or its steps), every half metre
+// along and a quarter across, from 0.3 m inside one edge to 0.3 m inside the other: the first face seen
+// should be the path, or paving or a street it crosses. The ground's own mesh over the path (grass
+// come up through it) is "ground drawn over a path"; the ground with no path under it at all is "path
+// not drawn", a path broken into pieces or a gap where two ways meet; and two pieces of path lying
+// side by side on the ground with more than 0.05 m between their heights where they meet (a rise
+// within 2 cm, not a slope) is a step between them.
+// Each sample stands for a square metre (a path's for a quarter of one), so a place's score is its area
+// in m2 (a lip's or a step's is its height).
 // Bridges, tunnels and anything more than 3 m over the road (a bridge or a deck over it, an arch) are
 // left out. Samples of one kind next to each other on one street are one place.
 //
@@ -125,6 +133,15 @@ const out = [];
 for (const p of places) {
   const what = Object.entries(p.whats).sort((a, b) => b[1] - a[1])[0][0];
   const lip = p.rule === "lip";
+  if (p.rule.startsWith("path-")) {
+    const area = p.n / 4;
+    out.push({
+      rule: p.rule === "path-ground" ? "23 ground drawn over a path" : p.rule === "path-none" ? "23 path not drawn (broken, or a gap where ways meet)" : "23 step between two pieces of path",
+      score: p.rule === "path-step" ? +p.top.toFixed(2) : area, x: +p.x.toFixed(1), y: +p.y.toFixed(1),
+      what: `${p.street || "(no name)"} ${p.rule === "path-step" ? `${p.top.toFixed(2)} m, ${what}` : `${area} m2${p.rule === "path-ground" ? `, up to ${p.top.toFixed(2)} m over its ${what}` : ""}`}`,
+    });
+    continue;
+  }
   out.push({
     rule: lip ? "20 pavement on a lip" : p.rule === "wide" ? "20 road drawn wider than its record" : p.rule === "road" ? `20 something over the road: ${what}` : p.rule === "none" ? `20 no road drawn: ${what}` : `20 something on the pavement: ${what}`,
     score: lip ? +p.top.toFixed(2) : p.n, x: +p.x.toFixed(1), y: +p.y.toFixed(1),
@@ -163,6 +180,31 @@ function probe() {
   const SKIP = new Set(["sky", "trees", "woods", "outskirts", "field", "lamps", "grass", "grass-build", "furniture", "shops", "face-cells"]);
   const PHASE = { ground: "ground", buildings: "building", "walls-fences": "wall", "doors-bays": "steps or door", "landmarks-tunnels": "set piece or landmark", pitches: "pitch", roads: "bridge or works" };
   const ROAD = new Set(["road", "service"]), PAVING = new Set(["pave", "drive", "front", "path"]), OPEN = new Set(["ground", "grass", "dirt", "gravel", "path"]);
+  const PATHC = new Set(["footway", "path", "steps", "cycleway", "bridleway", "track"]);
+  const PW = { footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  // what a path may be drawn as (crossing a street, it is the street), and what of that lies on the ground
+  const LAID = new Set(["path", "grass", "dirt", "gravel", "pave", "front", "drive", "road", "service", "paving"]);
+  const ON_GROUND = new Set(["path", "grass", "dirt", "gravel", "front", "drive"]);
+  const STEP = 0.05;    // metres between two pieces of path lying side by side on the ground: a step you see
+  /** The height of the path seen from above at (x, y), or NaN where it isn't a path on the ground. */
+  const pathTop = (T, x, y, walk) => {
+    const top = hits(T, x, -y).filter(([h]) => h <= walk + 3 && h >= walk - 3)[0];
+    return top && ON_GROUND.has(top[1]) ? top[0] : NaN;
+  };
+  /** The rise over the steepest 2 cm between two points on a path, found by halving. */
+  const stepIn = (T, ax, ay, ha, bx, by, hb, walk) => {
+    while (Math.hypot(bx - ax, by - ay) > 0.02) {
+      const mx = (ax + bx) / 2, my = (ay + by) / 2, hm = pathTop(T, mx, my, walk);
+      if (!(hm === hm)) return 0;
+      if (Math.abs(hm - ha) >= Math.abs(hb - hm)) { bx = mx; by = my; hb = hm; } else { ax = mx; ay = my; ha = hm; }
+    }
+    return Math.abs(hb - ha);
+  };
+  const across2 = (reach) => {
+    if (!(reach > 0.2)) return [0];
+    const k = Math.ceil(reach / 0.25);
+    return Array.from({ length: 2 * k + 1 }, (_, i) => -reach + (reach * i) / k);
+  };
   const label = (o) => {
     for (let p = o; p; p = p.parent) if (p.name) return SKIP.has(p.name) ? null : PHASE[p.name] ?? p.name;
     return "other";
@@ -321,6 +363,54 @@ function probe() {
             const ko = side * (half - 0.3), kx = x + nx * ko, ky = y + ny * ko;
             const K = hits(T, kx, -ky).filter(([h]) => h <= walk + 3)[0];
             if (K && ROAD.has(K[1]) && top[0] - K[0] > 0.35) out.push({ rule: "lip", n: r.n ?? "", side, x: kx, y: ky, h: top[0] - K[0], what: "road" });
+          }
+        }
+        along += len;
+      }
+    }
+    // Rule 23: every path on the ground, half a metre apart along and across it (its edges left to
+    // the ground beside it), as the game lays it: the first face seen should be the path or paving.
+    for (const m of maps) for (const r of m.d.rd) {
+      if (!PATHC.has(r.c) || r.p.length < 2) continue;
+      const half = (r.w ?? PW[r.c] ?? 1.6) / 2, z0 = m.z0 ?? 0;
+      const lens = [];
+      for (let k = 0; k + 1 < r.p.length; k++) lens.push(Math.hypot(r.p[k + 1][0] - r.p[k][0], r.p[k + 1][1] - r.p[k][1]));
+      const total = lens.reduce((a, b) => a + b, 0);
+      let along = 0;
+      for (let k = 0; k + 1 < r.p.length; k++) {
+        const A = r.p[k], B = r.p[k + 1], len = lens[k];
+        // (a bridge's deck and its steps down to the ground are the bridges' own rules)
+        if (len < 0.01 || A[3] || B[3]) { along += len; continue; }
+        const tx = (B[0] - A[0]) / len, ty = (B[1] - A[1]) / len, nx = -ty, ny = tx;
+        for (let s = (Math.ceil(along * 2) / 2 - along); s < len; s += 0.5) {
+          const from = along + s;
+          // (the last half metre of a way that just stops is its end, drawn square or round)
+          if (from < 0.5 || total - from < 0.5) continue;
+          const f = s / len, x = A[0] + (B[0] - A[0]) * f, y = A[1] + (B[1] - A[1]) * f;
+          if (x < x0 || x >= x1 || y < y0 || y >= y1) continue;
+          const sk = `p${Math.round(x * 4)},${Math.round(y * 4)}`;
+          if (seen.has(sk)) continue;
+          seen.add(sk);
+          const walk = A[2] + (B[2] - A[2]) * f - z0;
+          let last = null;
+          for (const o of across2(half - 0.3)) {
+            const px = x + nx * o, py = y + ny * o, H = hits(T, px, -py).filter(([h]) => h <= walk + 3 && h >= walk - 3);
+            const top = H[0];
+            if (!top || !OPEN.has(top[1]) && !LAID.has(top[1])) { last = null; continue; }   // (a wall, a building: rule 9's)
+            if (top[1] === "ground") {
+              const under = H.find(([h, w]) => LAID.has(w) && top[0] - h < 0.5);
+              out.push({ rule: under ? "path-ground" : "path-none", n: r.n ?? "", side: 0, x: px, y: py, h: under ? top[0] - under[0] : 0, what: under ? under[1] : "ground" });
+              last = null;
+              continue;
+            }
+            // (across the path, from one piece of it to the next: a step where the two lie at different
+            // heights. A rise between the two samples is narrowed down to the 2 cm it happens in, so a
+            // path across a steep bank, which rises all the way, is no step; a flight of steps steps)
+            if (r.c !== "steps" && last && ON_GROUND.has(top[1]) && ON_GROUND.has(last[1]) && Math.abs(top[0] - last[0]) > STEP) {
+              const jump = stepIn(T, last.x, last.y, last[0], px, py, top[0], walk);
+              if (jump > STEP) out.push({ rule: "path-step", n: r.n ?? "", side: 0, x: px, y: py, h: jump, what: `${last[1]}/${top[1]}` });
+            }
+            last = ON_GROUND.has(top[1]) ? Object.assign(top, { x: px, y: py }) : null;
           }
         }
         along += len;

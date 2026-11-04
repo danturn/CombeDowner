@@ -42,8 +42,8 @@ case by case:
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
-    tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, and
-    whether roofs are solid to stand on.
+    tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, whether
+    roofs are solid to stand on, and whether paths are whole as they're drawn.
 """
 import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np

@@ -40,6 +40,14 @@
     a roof as world.ts draws it, slowly or falling fast on a slow frame, stands on it at the drawn
     height; no part of an outline is left with no roof over it; and walking across a roof never
     takes you down into it. CD_ROOFS=0 leaves it out.
+23. Paths are whole, as the game draws them (tools/overroad.mjs, in the same look as rule 20, along
+    every path on the ground, half a metre apart along it and a quarter across): the first face seen
+    over a path is the path, or the paving or street it crosses, not the ground's own grass come up
+    through it ("ground drawn over a path") nor bare ground with no path under it at all, where a path
+    is broken into pieces or two ways meet with a gap between them ("path not drawn"); and no two
+    pieces of a path lying side by side on the ground differ in height by more than 0.05 m where they
+    meet (a rise within 2 cm, not a path across a steep bank). Each place's score is its area in m2, or a step's height. Rule 9 counts paths
+    clashing with walls and buildings; this counts the path itself coming apart.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
