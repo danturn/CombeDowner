@@ -5045,6 +5045,24 @@ def _meeting_lines(runs, houses, corridor):
     return lines, edges
 
 
+def _beside(segs, other):
+    """How far the segments run alongside another boundary a metre or so off it, near parallel."""
+    c = list(other.coords)
+    total = 0.0
+    for u, v in zip(c, c[1:]):
+        o = LineString([u, v])
+        if o.length < 1e-6:
+            continue
+        ang = math.atan2(v[1] - u[1], v[0] - u[0])
+        near, beside = o.buffer(ALONGSIDE, quad_segs=16), o.buffer(BESIDE, quad_segs=16)
+        for s in segs:
+            (x0, y0), (x1, y1) = s.coords[0], s.coords[-1]
+            if s.length < 1e-6 or abs((math.atan2(y1 - y0, x1 - x0) - ang + math.pi / 2) % math.pi - math.pi / 2) > ALONG_TURN:
+                continue
+            total += s.intersection(beside).length - s.intersection(near).length
+    return total
+
+
 def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, ground):
     """A boundary that stops just short of another, of a building or of a street or path's edge runs
     on along its own line to meet it, as far as `MEET_REACH`; never across a gateway or any other
@@ -5083,24 +5101,18 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
             x_ = o.intersection(way)
             if any(Point(c).distance(far) > 0.05 for g in getattr(x_, "geoms", [x_]) if not g.is_empty for c in g.coords):
                 return False
-        close, beside = way.buffer(ALONGSIDE, cap_style="flat"), way.buffer(BESIDE, cap_style="flat")
-        mine = lines[i].buffer(BESIDE, cap_style="flat").difference(lines[i].buffer(ALONGSIDE, cap_style="flat"))
+        close = way.buffer(ALONGSIDE, cap_style="flat")
+        own = [LineString(uv) for uv in zip(lines[i].coords, list(lines[i].coords)[1:])]
         for o in near:
             c = list(o.coords)
-            added = already = 0.0
             for u, v in zip(c, c[1:]):
-                seg = LineString([u, v])
-                if seg.length < 1e-6:
-                    continue
                 turn = abs((math.atan2(v[1] - u[1], v[0] - u[0]) - heading + math.pi / 2) % math.pi - math.pi / 2)
-                if turn >= ALONG_TURN:
-                    continue
-                if seg.intersection(close).length > 0.3:
+                if turn < ALONG_TURN and LineString([u, v]).intersection(close).length > 0.3:
                     return False
-                added += seg.intersection(beside).length - seg.intersection(close).length
-                already += seg.intersection(mine).length
             # (a metre beside it is one boundary drawn twice once the two run side by side for long)
-            if added > 0.3 and added + already > BESIDE_LONG:
+            before = _beside(own, o)
+            gained = _beside([way], o)
+            if gained > 0.05 and before + gained > BESIDE_LONG:
                 return False
         return True
 
