@@ -1,7 +1,7 @@
 // The yesterday half of the Chronicle (daily.ts is the paper and lays out its one page; this writes
 // the pieces): "Yesterday in <map name>", written each morning from what happened in the game the
 // day before. A small day log keeps the notable things (pubs won back or lost, with the Gaffer and how close it was, flags shot
-// and the best combo, squares cleared, jobs failed, records set, scars
+// and the best combo, jobs failed, records set, scars
 // left or mended), and on the first load of a new day (midnight GMT, when the Flag Lads start
 // again: invasion.ts) yesterday's log becomes the page. It has the flags' peak and end in the strap,
 // a lead story picked by drama (the closest finish, the biggest win or the worst loss), the scars
@@ -19,7 +19,7 @@
 // Who decides what: the day log is kept per map, per room and per day, on each player's machine
 // ("cd-paper:<map id>:<room>:<day>", "solo" for a game on your own, with a list of them under
 // "cd-paper:<map id>"), so yesterday's paper is about that room, and players who play together get
-// the same story. Room events (pubs won and lost, squares cleared, the town flag-free, scars left
+// the same story. Room events (pubs won and lost, the town made safe from the Flag Lads, scars left
 // and put right) are the host's, heard in the messages it sends everyone; your own (flags, combos,
 // jobs, records) you log yourself, and the league is counted from everyone's "flag down" messages.
 // When someone joins, each of us sends them our log for the room and day ("pl", without the
@@ -205,8 +205,6 @@ export function scarFixed(sid: number, x: number, z: number, what: string, by: s
   log({ k: "fix", wh: nameOf(squareOf(x, z)), tx: what, who: by === "you" ? myName : by }, `f|${sid}`);
 }
 
-/** I cleared a square of flags. */
-export function cleared(where: string) { log({ k: "clr", wh: where, who: myName }); }
 
 /** A new best of mine at something: what, in words ("Race: 4:12"). */
 export function record(what: string) { log({ k: "rec", tx: what, who: myName }); }
@@ -366,7 +364,7 @@ function lead(L: Log, r: () => number, when: string): Story {
         head: fill(pick(["{place} flag-free!", "Not a flag left in {place}", "Lamp posts bare across {place}"]), v),
         stand: fill(pick(["Every lamp post in {place} was bare by {clock}, and the Flag Lads have gone home to rethink.", "By {clock} there wasn't a flag left up anywhere in {place}. The Flag Lads blame the wind."]), v),
         by: "By our chief reporter", ev: e, art: "won",
-        body: [pick(["A spokesman for the Flag Lads said they had \"loads more\" and would be back. He was right, as it turns out: see today's lamp posts.",
+        body: [pick(["A spokesman for the Flag Lads said they had \"loads more\" and would be back. Not for three days, though, by the look of the empty van.",
           "Cable ties were found in bins all over town. The council has asked that they be recycled, and not on lamp posts."])],
         cap: fill(pick(["{place}, as it looked by {clock}.", "Not a flag in sight."]), v),
       }));
@@ -381,19 +379,6 @@ function lead(L: Log, r: () => number, when: string): Story {
       by: `By our ${v.wh} correspondent`, art: "flags",
       body: [pick(["\"It was like watching washing come in off the line,\" said a neighbour.", "The bunting came down in a flutter. The lamp posts are said to be relieved."])],
       cap: fill(pick(["{wh}, after.", "Where the flags were, on {wh}."]), v),
-    }));
-  }
-  const by = new Map<string, Ev[]>();
-  for (const e of L.ev) if (e.k === "clr" && e.who) by.set(e.who, [...(by.get(e.who) ?? []), e]);
-  const [cw, mine] = [...by].sort((a, b) => b[1].length - a[1].length)[0] ?? ["", []];
-  if (mine.length >= 2) {
-    const v = { n: NUM[mine.length] ?? String(mine.length), who: cw, wh: mine[mine.length - 1].wh ?? place };
-    consider(40 + mine.length, () => ({
-      head: fill(pick(["{N} squares cleared by one resident", "Street by street: {n} squares freed"]), { ...v, N: cap(v.n) }),
-      stand: fill(pick(["{who} cleared {n} squares of flags {when}, the last of them round {wh}.", "Not a flag left in {n} squares, thanks to {who}."]), { ...v, when }),
-      by: "By our lamp post correspondent", art: "flags",
-      body: [pick(["The Flag Lads say they will be putting them back. Their ladder is said to be \"in the van\".", "Ladder lads were seen arriving afterwards, looking at the empty lamp posts and then at each other."])],
-      cap: fill("Round {wh}, cleared.", v),
     }));
   }
   return best.s();
@@ -442,8 +427,6 @@ function items(L: Log, used: Ev | undefined, r: () => number, when: string): Ite
       out.push({ head: "Change at the top", text: `${esc(e.tx)}.` });
     }
   }
-  const sq = L.ev.filter((e) => e.k === "sq").length;
-  if (sq && out.length < 3) out.push({ head: "Squares cleared", text: `${sq} square${sq === 1 ? "" : "s"} of ${esc(place)} ${sq === 1 ? "was" : "were"} cleared of flags ${when}.` });
   const pool = [...FILLER];
   while (out.length < 3) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
   return out;
@@ -474,12 +457,12 @@ function render(ed: Log | null, no: number): News {
       by: "By our chief reporter",
       body: [
         "They say they're \"taking the streets back\". Nobody is quite sure from whom. The Crier asked one of them what the flags were for. \"I'm not being funny, but,\" he said, and then didn't finish.",
-        "Residents can help: shoot the flags off the lamp posts to clear a square, and when the phone goes, get down the pub they've taken over and see them off. Each square you clear shows on the big map ({map}).",
+        "Residents can help: shoot the flags off the lamp posts (they go up a streetful at a time, and the big map ({map}) shows roughly where), and when the phone goes, get down the pub they've taken over and see them off. Get every last flag down and the lads stay away for days.",
       ],
       cap: "The first flag goes up. It won't be the last, the lads say.",
     };
     strap = ["Flags up: just getting started", pick(WEATHER), pick(GULLS)];
-    side = `<div class="chron-box scars"><h4>How to help</h4><ul><li>Shoot the flags off the lamp posts. Every flag in a square and it's cleared.</li><li>When the Flag Lads take a pub, get there and clear them out.</li><li>Catch a ladder lad and they stop for a bit.</li></ul></div>`;
+    side = `<div class="chron-box scars"><h4>How to help</h4><ul><li>Shoot the flags off the lamp posts. Every last one down and the place is safe for three days.</li><li>When the Flag Lads take a pub, get there and clear them out.</li><li>Catch a ladder lad and they stop for a bit.</li></ul></div>`;
   } else {
     story = lead(ed, r, when);
     strap = [`Flags up ${when}: peaked ${ed.pk}%, ended ${ed.end}%`, pick(WEATHER), pick(GULLS)];
@@ -496,10 +479,9 @@ function render(ed: Log | null, no: number): News {
     if (lg.length > 1) {
       side += `<div class="chron-box"><h4>Flag league, ${esc(when)}</h4><table class="chron-league"><tbody>${lg.slice(0, 5).map(([n, k], i) => `<tr><td>${i + 1}. ${esc(n)}</td><td>${k} flag${k === 1 ? "" : "s"}</td></tr>`).join("")}${combo}</tbody></table></div>`;
     } else {
-      const cleared = ed.ev.filter((e) => e.k === "clr" && e.who === ed.me).length;
       const pubs = ed.ev.filter((e) => e.k === "pub" && e.won && (e.who ?? "").split(", ").includes(ed.me)).length;
       side += `<div class="chron-box"><h4>Your day, ${esc(when)}</h4><table class="chron-league"><tbody><tr><td>Flags shot</td><td>${ed.lg[ed.me] ?? 0}</td></tr>`
-        + `${combo || "<tr><td>Best combo</td><td>none</td></tr>"}<tr><td>Squares cleared</td><td>${cleared}</td></tr><tr><td>Pubs won back</td><td>${pubs}</td></tr></tbody></table></div>`;
+        + `${combo || "<tr><td>Best combo</td><td>none</td></tr>"}<tr><td>Pubs won back</td><td>${pubs}</td></tr></tbody></table></div>`;
     }
   }
   const small = ed ? items(ed, story.ev, r, when) : [FILLER[0], FILLER[6], FILLER[3]];

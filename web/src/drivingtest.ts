@@ -12,7 +12,9 @@
 // Somewhere along the way he slaps the dashboard and shouts "Stop!", and he asks you to pull up on the
 // left, once on the way round and once back at the centre, and sees how close to the kerb you got.
 // A serious fault and he stamps on his own brake, says nothing for a moment, and then: "I'm afraid
-// that's a fail." Either way a test report comes up at the end with every fault on it.
+// that's a fail." Either way a test report comes up at the end with every fault on it (the shared
+// result card's report, missionscreens.ts), and the last of the day is the job's result too. What he
+// says and does along the way comes up as notes (notice.ts).
 //
 // The ones in the back can make a nuisance of themselves: turn the radio up or down or change the
 // station, wind the window down, or pull the handbrake, which skids the car and gets them thrown out
@@ -39,7 +41,8 @@ import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { controlsHere, ctl, isKey, stripOf } from "./controls";
 import { type GameMap, type Road, roadHalf } from "./map";
-import { missionSheet } from "./missionscreens";
+import { missionReward, missionSheet } from "./missionscreens";
+import { notice } from "./notice";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, hash, rng, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
 import { ring } from "./lineup";
@@ -821,7 +824,10 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
       : (inp: Controls) => ({ ...inp, throttle: 0, handbrake: true });
   }
 
+  let lastSheet: { pass: boolean; who: string; n: number; list: Fault[] } | null = null;
+  const sheetUp = () => !!document.querySelector(".msc-result.v-sheet:not(.out)");
   const sheet = (pass: boolean, who: string, n: number, list: Fault[]) => {
+    lastSheet = { pass, who, n, list };
     const group = (g: number) => {
       const m = new Map<string, number>();
       for (const f of list) if (f.g === g) m.set(f.x, (m.get(f.x) ?? 0) + 1);
@@ -837,7 +843,16 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
   };
 
   // ---- the job ---------------------------------------------------------------------------------------
-  w.toast(`${examiner} is waiting in the learner car: one of you in the driver's seat`, 4);
+  notice({ tier: "note", text: `${examiner} is waiting in the learner car: one of you in the driver's seat`, secs: 4 });
+  /** The day's tests are over: the last report is the result card when it agrees with how the day
+   *  went (put up again if it's gone), so there's one card at the end rather than two. */
+  const final = (won: boolean, text: string) => {
+    const one = !!lastSheet && lastSheet.pass === won;
+    job.done = { won, text, x: centre.x, z: centre.z, screen: one };
+    if (!one) return;
+    if (!sheetUp()) sheet(lastSheet!.pass, lastSheet!.who, lastSheet!.n, lastSheet!.list);
+    if (won && offer.stars > 0) missionReward(`${offer.stars} prize${offer.stars > 1 ? "s" : ""} where you finished`);
+  };
   if (TESTING) (window as unknown as Record<string, unknown>).__drivingTest = { car, route: () => routeFor(test), phase: () => phase, prog: () => prog, faults: () => faults, line: () => line };
   const job: Job = {
     offer, done: null,
@@ -918,14 +933,14 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
       if (["mir", "bump", "kerb", "esr", "park", "pr"].includes(d.k)) return;
       if (d.k === "say" && typeof d.x === "string") {
         line = d.x;
-        if (near()) { speak(d.x); w.toast(`${examiner}: “${d.x}”`, 4); }
+        if (near()) { speak(d.x); notice({ tier: "note", text: `${examiner}: “${d.x}”`, secs: 4 }); }
       } else if (d.k === "f" && typeof d.x === "string") {
         faults.push({ x: d.x, g: +d.g || 1 });
-        if (mySeat() === 0 && d.g === 1) { SFX.tick(); w.toast(`${examiner} writes something down`, 2); }
+        if (mySeat() === 0 && d.g === 1) { SFX.tick(); notice({ tier: "note", text: `${examiner} writes something down`, secs: 2 }); }
       } else if (d.k === "halt") {
         phase = 3;
         assist("halt", 3);
-        if (near()) { const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); w.toast(`${examiner} stamps on his brake`, 3); }
+        if (near()) { const [dd, pan] = w.hear?.(car.x, car.y, car.z) ?? [0, 0]; SFX.screech(dd, pan); notice({ tier: "note", text: `${examiner} stamps on his brake`, secs: 3 }); }
         if (mySeat() === 0) speakHush();
       } else if (d.k === "es") {
         line = "Stop!";
@@ -948,12 +963,11 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: 
         const list: Fault[] = Array.isArray(d.f) ? d.f.filter((f: unknown) => Array.isArray(f)).map((f: unknown[]) => ({ x: String(f[0]), g: +(f[1] as number) || 1 })) : [];
         if (Array.isArray(d.pb)) passedBy = d.pb.filter((x: unknown) => typeof x === "string");
         sheet(!!d.pass, typeof d.d === "string" ? d.d : driver, +d.n || test, list);
-        SFX.jobDone(!!d.pass);
       } else if (d.k === "won" && !job.done) {
         const who = passedBy.map((id) => w.nameOf(id)).join(" and ");
-        job.done = { won: true, text: `${who || "Someone"} passed the driving test`, x: centre.x, z: centre.z };
+        final(true, `${who || "Someone"} passed the driving test`);
       } else if (d.k === "lost" && !job.done) {
-        job.done = { won: false, text: "Nobody passed. That's enough tests for one day", x: centre.x, z: centre.z };
+        final(false, "Nobody passed. That's enough tests for one day");
       }
     },
     progress: () => ({ ...state(), f: faults.map((f) => [f.x, f.g]), pb: passedBy, tr: tried }),

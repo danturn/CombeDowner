@@ -64,7 +64,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
 import { ctl } from "./controls";
-import * as RS from "./racescreens";
+import { nth } from "./hudkit";
+import { missionAux, missionCall, missionCountdown, missionResult, missionResultDrop, missionWaiting, missionWatching } from "./missionscreens";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import { type RideKind, TROLLEY_AHEAD, rideModel, rideSpecs } from "./rides";
@@ -443,10 +444,10 @@ function boardHtml(): string {
 
 // ---- on the screen ----------------------------------------------------------------------------------
 
-/** A bit of the HUD of the race's own: the arrow over the crosshair, and the splits under it. */
+/** The race's arrow over the crosshair, pointing at the next gate. */
 function hudBit(css: string): HTMLDivElement {
   const el = document.createElement("div");
-  el.style.cssText = `position:fixed;left:50%;pointer-events:none;z-index:5;text-align:center;font:800 22px 'Barlow Condensed',Impact,sans-serif;text-shadow:0 1px 3px #000;${css}`;
+  el.style.cssText = `position:fixed;left:50%;pointer-events:none;z-index:5;text-align:center;font:800 22px var(--f-hud);text-shadow:0 1px 3px #000;${css}`;
   el.hidden = true;
   (document.getElementById("hud") ?? document.body).appendChild(el);
   return el;
@@ -480,7 +481,6 @@ export function ghostModel(ride: RideKind, colour: string): THREE.Mesh {
 interface Ghost { id: string; name: string; colour: string; b: Best; pts: number[]; view?: THREE.Mesh; heading: number }
 
 /** "1st", "2nd", "11th". */
-const nth = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 
 /** A gate across the street: two posts and a banner, in the race's colour with what it is on it, or
  *  chequered for the finish. One mesh for the posts and one for the banner. */
@@ -576,8 +576,8 @@ class Race implements Job {
 
   private stats = { top: 0, v: 0, boosts: 0, slip: 0, barged: 0, knocked: 0 };
   private arrow = hudBit("top:calc(50% - 96px);width:48px;margin-left:-24px;color:" + COLOUR);
-  private flash = hudBit("top:calc(50% + 48px);width:260px;margin-left:-130px");
-  private flashT = 0;
+  private split = "";                       // the last checkpoint's split, for its stage call
+  private splitCol = COLOUR;
   private firstT = 0;
   private daily: boolean;
   private legs: number[] = [];              // seconds allowed to reach each gate from the one before
@@ -595,8 +595,6 @@ class Race implements Job {
   private knockedAt = new Map<string, number>();
   private immune = 0;                       // when I can be knocked off again, ms since 1970
   private beeped = 6;
-  private timer = hudBit("top:112px;width:240px;margin-left:-120px;line-height:1");
-  private timerHtml = "";
 
   constructor(readonly offer: Offer, private w: QuestWorld, started: number, private local: boolean, cast: string[]) {
     this.rt = routeOf(offer, w)!;
@@ -703,7 +701,7 @@ class Race implements Job {
     this.dnf = false; this.dnfAt = 0; this.myT = 0; this.holdAt = null; this.shown = false; this.eye = null;
     this.stats = { top: 0, v: 0, boosts: 0, slip: 0, barged: 0, knocked: 0 };
     this.myGo = Date.now() + RETRY * 1000;
-    RS.dropSummary();
+    missionResultDrop();
     this.unwatch();
     this.lineGates();
     this.w.moveTo(this.start.x, this.start.z, this.start.yaw);
@@ -722,8 +720,8 @@ class Race implements Job {
     if (this.racing && !this.over && !this.dnf) {
       if (t < 0) {
         const n = Math.ceil(-t);
-        if (n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); RS.countdown(n); }
-      } else if (this.pipped > 0) { this.pipped = 0; SFX.pip(true); RS.countdown(0); }
+        if (n <= 3 && n < this.pipped) { this.pipped = n; SFX.pip(false); missionCountdown(n, COLOUR); }
+      } else if (this.pipped > 0) { this.pipped = 0; SFX.pip(true); missionCountdown(0, COLOUR); }
     }
     if (!this.roomOver && !this.local) this.judgeRoom();
     if (!this.done) {
@@ -755,7 +753,6 @@ class Race implements Job {
     this.drawTimer(live && t >= 0, t);
     this.drawPads(me);
     this.drawArrow(me, target, live);
-    if (this.flashT > 0 && (this.flashT -= dt) <= 0) this.flash.hidden = true;
     this.drawGhosts(t);
     this.drawGate(me, live, t);
     this.drawArch(me);
@@ -855,7 +852,7 @@ class Race implements Job {
     const head = this.dnf ? "Out of the race" : `Finished${mine >= 0 ? ` — ${nth(mine + 1)}` : ""}, ${clock(this.myT, true)}`;
     const sw = ctl("watch");
     const left = this.results.length ? Math.max(0, Math.ceil(AFTER - (Date.now() - this.firstT) / 1000)) : 0;
-    RS.spectating({
+    missionWatching({
       head,
       sub: them ? `Watching <b>${esc(them.name)}</b>${ids.length > 1 ? ` · ${esc(sw)} to switch` : ""}` : "Waiting for the others",
       small: `${ids.length} still racing${left ? ` · results in ${left} s at most` : ""}`,
@@ -867,7 +864,7 @@ class Race implements Job {
   private unwatch() {
     if (this.keys) { removeEventListener("keydown", this.keys, true); this.keys = null; }
     this.eye = null;
-    RS.spectating(null);
+    missionWatching(null);
   }
 
   /** Waiting for the others, alive: held still where I stopped, looking on from behind whoever I'm watching. */
@@ -892,7 +889,7 @@ class Race implements Job {
         this.padHit.set(k, t); this.padUntil = t + PAD_SECS; this.stats.boosts++;
         this.w.rideBoost?.(RACE_MUL * PAD_MUL, 3);
         SFX.whoosh();
-        this.show(`<span style="font-size:40px;color:#ffd23a">BOOST!</span>`, 0.8);
+        missionCall({ tier: "trick", text: "BOOST!", secs: 0.8 });
       }
     }
     const fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw);
@@ -906,7 +903,7 @@ class Race implements Job {
     this.w.rideBoost?.(RACE_MUL * (this.padUntil > t ? PAD_MUL : 1) * (this.slip ? SLIP_MUL : 1));
     if (this.out) return;
     const left = this.deadline - t;
-    if (left <= WARN && !this.warned && left > 5) { this.warned = true; SFX.urgent(5); this.show(`<span style="font-size:30px;color:#ffb02e">Hurry! ${Math.ceil(left)} s to checkpoint ${this.next + 1}</span>`, 1.6); }
+    if (left <= WARN && !this.warned && left > 5) { this.warned = true; SFX.urgent(5); missionCall({ text: `Hurry! ${Math.ceil(left)} s to checkpoint ${this.next + 1}`, colour: "#ffb02e", secs: 1.6 }); }
     if (left <= 5 && Math.ceil(left) < this.beeped && left > 0) { this.beeped = Math.ceil(left); SFX.urgent(this.beeped); }
     if (left <= 0 && me.alive) this.timeUp();
   }
@@ -915,7 +912,7 @@ class Race implements Job {
   private timeUp() {
     this.out = true; this.outT = Date.now();
     SFX.urgent(0);
-    this.show(`<span style="font-size:40px;color:#ff5a4e">OUT OF TIME</span><div style="font-size:16px;color:#ddd">Ride on to the finish for your time (no medal), or ${esc(againKey())} to go again</div>`, 4);
+    missionCall({ text: "OUT OF TIME", sub: `Ride on to the finish for your time (no medal), or ${againKey()} to go again`, colour: "#ff5a4e", secs: 4 });
     if (!this.own) {
       const msg = { k: "out", s: this.offer.seed };
       this.w.send("qe", msg);
@@ -923,16 +920,14 @@ class Race implements Job {
     }
   }
 
-  /** The countdown to the next gate, big at the top of the screen. */
+  /** The countdown to the next gate, in the slot under the crosshair. */
   private drawTimer(on: boolean, t: number) {
-    if (!on) { if (!this.timer.hidden) this.timer.hidden = true; return; }
+    if (!on) { missionAux("race-gate", null); return; }
     const left = this.out ? 0 : Math.max(0, this.deadline - t), low = left <= 10;
     const tag = this.out ? "OUT OF TIME: NO MEDAL" : this.padUntil > t ? "BOOST" : this.slip ? "SLIPSTREAM" : `CHECKPOINT ${Math.min(this.next + 1, this.gates.length - 1)}`;
     const col = this.out ? "#ff5a4e" : left <= 5 && Math.floor(left * 2) % 2 ? "#fff" : low ? "#ff5a4e" : left <= WARN ? "#ffb02e" : "#fff";
     const big = this.out ? clock(Math.max(0, t), true) : `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}${low ? `.${Math.floor((left % 1) * 10)}` : ""}`;
-    const html = `<div style="font-size:clamp(34px,10vw,58px);color:${col}">${big}</div><div style="font-size:clamp(12px,3.4vw,16px);color:#cde">${tag}</div>`;
-    if (html !== this.timerHtml) { this.timerHtml = html; this.timer.innerHTML = html; }
-    this.timer.hidden = false;
+    missionAux("race-gate", `<div class="aux-big" style="color:${col}">${big}</div><div class="aux-tag">${tag}</div>`);
   }
 
   /** Other racers' speeds from how far they moved, and a barge hard enough to knock one off. */
@@ -956,7 +951,7 @@ class Race implements Job {
             this.w.send("qe", { k: "knk", s: this.offer.seed }, o.id);
             this.w.rideBoost?.(RACE_MUL, -Math.min(3, closing * 0.35));
             SFX.thump();
-            this.show(`<span style="font-size:30px;color:#ffd23a">Barged ${esc(o.name)} off!</span>`, 1.2);
+            missionCall({ tier: "trick", text: `Barged ${o.name} off!`, secs: 1.2 });
           }
         }
       }
@@ -1015,8 +1010,6 @@ class Race implements Job {
   }
   route() { return this.done ? null : this.routeLine; }
 
-  private show(html: string, secs: number) { this.flash.innerHTML = html; this.flash.hidden = false; this.flashT = secs; }
-
   /** Through my next gate, at t on my clock: a checkpoint, or the finish once they're all done. */
   private through(t: number) {
     const k = this.next, n = this.gates.length - 1;
@@ -1026,13 +1019,13 @@ class Race implements Job {
     this.splits.push(t);
     const was = this.best && this.best.cp === n ? this.best.sp[k] : undefined;
     const diff = was !== undefined ? t - was : null;
-    const col = diff === null ? "#fff" : diff <= 0 ? "#58e06a" : "#ff5a4e";
     this.deadline += this.legs[k + 1] ?? 0;
     this.beeped = 6; this.warned = false;
-    const par = t - this.parAt[k], pc = par <= 0 ? "#58e06a" : "#ff5a4e";
-    this.show(`<div style="font-size:16px;color:#ddd">Checkpoint ${k + 1} of ${n}</div><span style="color:#fff">${clock(t, true)}</span>`
-      + (diff !== null ? ` <span style="color:${col}">${diff <= 0 ? "-" : "+"}${Math.abs(diff).toFixed(1)}</span>` : "")
-      + `<div style="font-size:16px;color:${pc}">${par <= 0 ? "-" : "+"}${Math.abs(par).toFixed(1)} s on gold pace${this.out ? "" : ` · +${Math.round(this.legs[k + 1] ?? 0)} s`}</div>`, 2.5);
+    // the split goes on the checkpoint's stage call (card()), green ahead of gold pace and red behind
+    const par = t - this.parAt[k];
+    this.split = `${clock(t, true)}${diff !== null ? ` (${diff <= 0 ? "-" : "+"}${Math.abs(diff).toFixed(1)} on your best)` : ""}`
+      + ` · ${par <= 0 ? "-" : "+"}${Math.abs(par).toFixed(1)} s on gold pace${this.out ? "" : ` · +${Math.round(this.legs[k + 1] ?? 0)} s`}`;
+    this.splitCol = par <= 0 ? "#58e06a" : "#ff5a4e";
     SFX.checkpoint();
     if (!this.own && !this.out) {
       const msg = { k: "cp", s: this.offer.seed, i: k, t: Math.round(t * 10) / 10 };
@@ -1048,7 +1041,6 @@ class Race implements Job {
     t = Math.round(t * 10) / 10;
     this.myT = t;
     this.hold();
-    this.flash.hidden = true;
     if (this.out) {
       // over the line after the clock ran out: a time to know, but no place, medal or best
       if (!this.own && !this.local) { this.w.send("qe", { k: "home", s: this.offer.seed }); this.homes.add(this.w.selfId); }
@@ -1089,8 +1081,7 @@ class Race implements Job {
     this.dnf = true;
     this.dnfAt = Math.max(0, Math.round(t * 10) / 10);
     this.hold();
-    this.flash.hidden = true;
-    this.timer.hidden = true;
+    missionAux("race-gate", null);
     this.arrow.hidden = true;
     this.rideNormally();
     this.lineGates();
@@ -1169,17 +1160,19 @@ class Race implements Job {
     const reward = finished && !this.own && !this.local
       ? [place === 1 ? "A traffic cone for your head" : "", `${this.offer.stars} prize${this.offer.stars > 1 ? "s" : ""} at the finish`, medal ? `${medal === "author" ? "Gold" : medal[0].toUpperCase() + medal.slice(1)} in your trophy cabinet` : ""].filter(Boolean).join(" · ")
       : "";
-    RS.summary({
-      kind: this.offer.title,
+    const sound = this.dnf ? "dnf" : medal === "gold" || medal === "author" ? "gold" : medal ? "medal" : "none";
+    const list = multi ? this.standings(true) : [];
+    missionResult({
+      result: finished ? "won" : "lost", kind: "race", label: this.offer.title, colour: COLOUR,
       title: this.dnf ? "Out of the race" : this.out ? "Out of time" : place === 1 ? "Winner!" : place ? "Over the line!"
         : medal === "author" ? "Beat the author!" : medal ? `${medal[0].toUpperCase()}${medal.slice(1)}!` : "Finished!",
-      dnf: this.dnf || this.out, place, time: clock(t, true), medal, medalWord: medal === "author" ? "Author" : this.dnf ? "DNF" : this.out ? "No medal" : undefined,
-      lines, best, stats,
-      podium: multi ? this.results.slice(0, 3).map((r) => ({ name: this.who(r.id), time: clock(r.t, true) })) : undefined,
-      rows: multi ? this.standings(true) : undefined,
-      reward,
-    }, this.w.me().alive ? () => this.again() : undefined);
-    SFX.raceEnd(this.dnf ? "dnf" : medal === "gold" || medal === "author" ? "gold" : medal ? "medal" : "none");
+      place, lead: clock(t, true),
+      medal: medal === "author" ? "Author" : this.dnf ? "DNF" : this.out ? "No medal" : medal ? `${medal[0].toUpperCase()}${medal.slice(1)} medal` : "No medal",
+      lines, best, stats, rows: list.length > 1 ? list : undefined,
+      rewards: reward ? reward.split(" · ") : [],
+      again: this.w.me().alive ? () => this.again() : undefined,
+      sound: () => SFX.raceEnd(sound),
+    });
   }
 
   /** Again, from the results card: back on the line, as Backspace. */
@@ -1228,8 +1221,8 @@ class Race implements Job {
   }
 
   private hideHud() {
-    this.arrow.hidden = true; this.flash.hidden = true; this.timer.hidden = true;
-    RS.waiting(null); this.unwatch();
+    this.arrow.hidden = true; missionAux("race-gate", null);
+    missionWaiting(null); this.unwatch();
     this.rideNormally(); this.dropPads(); this.padKey = "";
     for (const g of this.ghosts.values()) if (g.view) g.view.visible = false;
     this.dropGate(); this.dropArch();
@@ -1331,7 +1324,7 @@ class Race implements Job {
       this.stats.knocked++;
       this.w.knock?.();
       SFX.thump();
-      this.show(`<span style="font-size:34px;color:#ff5a4e">KNOCKED OFF!</span>`, 1.5);
+      missionCall({ text: "KNOCKED OFF!", colour: "#ff5a4e", secs: 1.5 });
     } else if (d.k === "cp") {
       const i = Number(d.i), had = this.cps.get(from) ?? 0;
       if (i === had && i < this.gates.length - 1) this.cps.set(from, i + 1);
@@ -1419,7 +1412,7 @@ class Race implements Job {
     return {
       ...c, progress: k < last ? `${k} / ${last}` : "Finish", timer: clock(Math.max(0, this.now), true),
       // (no banner for GO: the countdown has its own)
-      stage: k === 0 ? undefined : { key: `cp${k}`, title: k < last ? `Checkpoint ${k} of ${last}` : "Head for the finish", sub: k < last ? undefined : this.rt.to.n, life: k === 0 ? 1.5 : 1.8 },
+      stage: k === 0 ? undefined : { key: `cp${k}`, title: k < last ? `Checkpoint ${k} of ${last}` : "Head for the finish", sub: k < last ? this.split : `${this.rt.to.n} · ${this.split}`, colour: this.splitCol, life: 2.5 },
     };
   }
 
@@ -1469,9 +1462,8 @@ class Race implements Job {
     this.dropGate();
     this.dropArch();
     this.arrow.remove();
-    this.flash.remove();
-    this.timer.remove();
-    RS.waiting(null); this.unwatch();
+    missionAux("race-gate", null);
+    missionWaiting(null); this.unwatch();
     this.rideNormally();
     this.dropPads();
   }

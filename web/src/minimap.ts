@@ -8,8 +8,8 @@
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
-// and its checkpoints (race.ts) are drawn on every map while it's on. The big map also washes the squares you've cleared faintly green and
-// puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear, and
+// and its checkpoints (race.ts) are drawn on every map while it's on. Both maps show the Flag Lads' clusters
+// of flags as soft red blobs (invasion.ts), and the big map puts a pint on each pub you've won back (yours.ts), under the street names so they stay clear, and
 // a pint on every pub to go to or mark (pubmap.ts), faint till you zoom in so they don't crowd out the rest;
 // one with a job or a stop on top of it is moved out beside that, with a line back, so both can be picked.
 // The minimap is for right now, the big map for planning: zoomed out the big map keeps to what
@@ -188,12 +188,22 @@ function drawJobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: numbe
   g.restore();
 }
 
-/** The Flag Lads' squares, washed red by how much of each they hold, and liberated ones green. */
-function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[], P: (x: number, z: number) => number[], scale: number) {
+/** Where the Flag Lads have a cluster of flags up (invasion.ts): a soft blob r metres round, a from 0
+ *  to 1 by how many are still up; free, a pub won back. */
+export interface Blob { x: number; z: number; r: number; a: number; free?: boolean }
+
+/** The Flag Lads' clusters, each a soft red blob fading out at its edge, and pubs won back green.
+ *  Never smaller than px pixels across, so they still show zoomed right out. */
+function drawTint(g: CanvasRenderingContext2D, tint: Blob[], P: (x: number, z: number) => number[], scale: number, px = 6) {
   for (const t of tint) {
-    const [x, y] = P(t.x0, t.z0);
-    g.fillStyle = t.free ? "rgba(79,209,139,0.45)" : `rgba(214,40,52,${(0.08 + 0.3 * t.a).toFixed(3)})`;
-    g.fillRect(x, y, t.s * scale, t.s * scale);
+    const [x, y] = P(t.x, t.z), r = Math.max(px, t.r * scale);
+    const rgb = t.free ? "79,209,139" : "214,40,52", a = t.free ? 0.35 : 0.22 + 0.4 * t.a;
+    const fill = g.createRadialGradient(x, y, 0, x, y, r);
+    fill.addColorStop(0, `rgba(${rgb},${a.toFixed(3)})`);
+    fill.addColorStop(0.55, `rgba(${rgb},${(a * 0.65).toFixed(3)})`);
+    fill.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = fill;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
   }
 }
 
@@ -588,9 +598,9 @@ export class Minimap {
   routes: RouteLine[] = [];
   /** The zones not open yet, the wall round the ones that are, and each zone's name (zones.ts), scene coordinates. */
   zones: ZoneView | null = null;
-  /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
-  tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
-  /** The squares you've cleared, today's scars and the pubs you've won back (yours.ts), for the big map. */
+  /** The Flag Lads' clusters and the pubs won back, as blobs (invasion.ts). */
+  tint: Blob[] = [];
+  /** Today's scars and the pubs you've won back (yours.ts), for the big map. */
   mine: Mine | null = null;
   /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
   stops: { x: number; z: number; n?: string }[] = [];
@@ -912,11 +922,8 @@ export class Minimap {
     const on = (layer?: string) => !layer || !this.off.has(layer);
     const mine = on("yours") ? this.mine : null;
     const under = () => {
-      if (mine) {
-        const held = new Set(on("flags") ? this.tint.filter((t) => t.a > 0.1 || t.free).map((t) => `${Math.round(t.x0)},${Math.round(t.z0)}`) : []);
-        drawMineUnder(g, mine, P, scale, dpr, (x0, z0) => held.has(`${Math.round(x0)},${Math.round(z0)}`));
-      }
-      if (on("flags")) drawTint(g, this.tint, P, scale);
+      if (mine) drawMineUnder(g, mine, P, scale, dpr);
+      if (on("flags")) drawTint(g, this.tint, P, scale, 9 * dpr);
     };
     if (this.zoom === 1 && !this.centre) { g.drawImage(this.full.canvas, 0, 0); under(); g.drawImage(this.full.names, 0, 0); }
     else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {}, under);
@@ -1448,7 +1455,7 @@ export class Minimap {
     if (this.circles.some((c) => c.pulse)) return "";
     const beat = this.jobs.some((j) => j.challenge && !j.done) ? challengeBeat() : 0;
     const bus = this.bus;
-    return JSON.stringify([this.size, dpr, x, z, yaw, beat, fontLoads, !!this.map?.wide, idOf(this.zones), idOf(this.stops), [...this.off],
+    return JSON.stringify([this.size, dpr, x, z, yaw, beat, fontLoads, !!this.map?.wide, idOf(this.zones), idOf(this.stops), idOf(this.tint), [...this.off],
       blips, mates, this.jobs, this.circles, this.markers, this.spots, this.boss,
       this.routes.map((r) => [idOf(r.pts), r.gates, r.colour]), bus && [idOf(bus.pts), bus.colour, bus.stops]]);
   }
@@ -1481,6 +1488,7 @@ export class Minimap {
     else g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
     const on = (layer?: string) => !layer || !this.off.has(layer);
     if (this.zones) drawZones(g, this.zones, (px, pz) => [(px - x) * scale, (pz - z) * scale], dpr, 0);
+    if (on("flags")) drawTint(g, this.tint.filter((t) => Math.hypot(t.x - x, t.z - z) < RANGE * 1.5 + t.r), (px, pz) => [(px - x) * scale, (pz - z) * scale], scale, 0);
     // the bus route you're driving, under everything else; then the bus stops, upright
     const bus = on("route") ? this.bus : null;
     if (bus) routeLine(g, bus, (px, pz) => [(px - x) * scale, (pz - z) * scale], 3.2 * dpr);

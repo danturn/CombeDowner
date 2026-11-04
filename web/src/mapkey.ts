@@ -66,7 +66,7 @@ function sections(): [string, Row[]][] {
     ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
-      { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
+      { layer: "traps", label: "Speed traps", note: "go past one fast, on anything, to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
       { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "pubs", label: "Pubs", note: "faint till you zoom in; {map.mark} one to go there or mark it", icon: (g, s) => pintIcon(g, s / 2, s / 2, s / 15, s / 16) },
@@ -89,13 +89,16 @@ function sections(): [string, Row[]][] {
       { label: "Your bus, the ball", icon: dots(["#3fd06a", "#f4f1e8"]), dots: [["#3fd06a", "Your bus coming"], ["#f4f1e8", "The ball"]] },
     ]],
     ["The map", [
-      { layer: "flags", label: "Flag Lads' squares", note: "red held, green freed", icon: (g, s) => {
-        g.fillStyle = "rgba(214,40,52,0.6)"; g.fillRect(s * 0.1, s * 0.1, s * 0.4, s * 0.8);
-        g.fillStyle = "rgba(79,209,139,0.6)"; g.fillRect(s * 0.5, s * 0.1, s * 0.4, s * 0.8);
+      { layer: "flags", label: "Flag Lads' flags", note: "red round a street with their flags up, green round a pub won back", icon: (g, s) => {
+        for (const [x, c] of [[0.32, "214,40,52"], [0.7, "79,209,139"]] as const) {
+          const f = g.createRadialGradient(s * x, s / 2, 0, s * x, s / 2, s * 0.32);
+          f.addColorStop(0, `rgba(${c},0.75)`); f.addColorStop(1, `rgba(${c},0)`);
+          g.fillStyle = f; g.fillRect(0, 0, s, s);
+        }
       } },
-      { layer: "yours", label: "Squares you've cleared", note: "faint green; a pint on each pub you've won back, an amber ring where a scar's waiting", icon: (g, s) => {
-        g.fillStyle = "rgba(120,224,160,0.35)"; g.fillRect(s * 0.1, s * 0.1, s * 0.8, s * 0.8);
-        g.strokeStyle = "#d79a2b"; g.lineWidth = s / 14; g.strokeRect(s * 0.16, s * 0.16, s * 0.68, s * 0.68);
+      { layer: "yours", label: "What's yours", note: "a pint on each pub you've won back, an amber ring where a scar's waiting", icon: (g, s) => {
+        g.fillStyle = "#d9932b"; g.fillRect(s * 0.18, s * 0.25, s * 0.28, s * 0.5);
+        g.strokeStyle = "#d79a2b"; g.lineWidth = s / 14; g.beginPath(); g.arc(s * 0.68, s / 2, s * 0.22, 0, Math.PI * 2); g.stroke();
       } },
       { layer: "streets", label: "Street names", icon: (g, s) => {
         g.fillStyle = "#f4f1ea"; g.font = `600 ${s * 0.6}px "Barlow Condensed", system-ui, sans-serif`;

@@ -96,13 +96,22 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.
+- **The Flag Lads' flags** go up a streetful at a time: five to fifteen on neighbouring lamp posts
+  along one road (on a pole of their own where a street has no lamp), so you find them by finding
+  the right street. The big map and the minimap show each lot as a soft red blob about a street
+  across, not a pin. There are never more than 200 flags up on the whole map, so the meter
+  ("Flags up 27%") drops 1% for every two you shoot, straight away on your screen. New lots go up
+  now and then, and ladder lads come to put shot flags back on their street. Get every last flag
+  on the map down and a card says the place (Bath, Bradford-on-Avon, Hackney, Cape Town, by the
+  map's own name) is safe from the Flag Lads, and they stay away for three days, kept over a reload
+  and whoever's hosting. Every day from midnight GMT they start again with a few new lots.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
   string of red and white bunting and the whole string flutters down for a bonus and rips the flags
   off the lamps at both ends, each counting as a flag you shot (so one string can start a combo).
-  It stays down until the ladder lads put those flags back and the square is mostly taken again. Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
-  callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
-  and, when you're playing alone, a moment of slow-motion.
+  It's strung again once the ladder lads put those flags back. Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
+  callout, and shoot the last flag on a street for a bit of confetti and, when you're playing
+  alone, a moment of slow-motion.
 - **The Flag Lads have a brew while you're busy.** When everyone in the room is on a job, a race,
   the bonfire or any other minigame (alone, just you), the flags stop creeping and
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
@@ -110,8 +119,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
 - **A pub takeover can be lost.** The Flag Lads fight at the pub's front, and lads on ladders hang a
   banner on it while a bar across the top of the screen fills (150 seconds alone, quicker with
-  friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
-  drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
+  friends, with more lads up ladders). Fill it and the pub is theirs, and ten to fifteen flags go up
+  on its street and the streets running into it; shoot a lad off a ladder and it drops back. You
+  can't pick a pub that's being taken over on the big map and go straight there: get there yourself. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
 - **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
   of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
@@ -122,12 +132,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the third time he's gone for good. Quarter of an hour on the clock. More players and he's
   quicker, warier and has more mates. A Gaffer who got away is a Wanted poster too, and quicker
   still if he left on his scooter or in his van. J (hold the pad's touchpad, or Poster on a touch
-  screen) brings the poster back, and it ends on a results card.
+  screen) brings the poster back, and it ends on the result card in the poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, race across town and fight off Seagull Attack.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
   says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
-  away the square the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
+  away the street the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
   Every job and team challenge starts the same way, as a race always has: taking one opens the
@@ -182,7 +192,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
   one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60; C goes round the chase camera, the driver's seat and a racing game's bonnet camera; at speed the tyres grip and let go like a driving game's: Space at speed with some lock on swings the back end out into a slide, the throttle holds it in a rear-drive car, hold it too long and it spins, and steering the other way catches it, with a wag of the tail as it grips again; a bus or a coach just leans on its tyres and turns, and at a crawl Space and the lock still do donuts), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car (in through a passage in the engine house at the back of each station, up steps where the platform stands above the ground),
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field takes in
-  the town and the fields round it, down Trowbridge Road past the canal bridge at Widbrook to the marina; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. A pub with a job or a bus stop on top of it has its pint moved out beside it, with a thin line back, so you can pick either. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
+  the town and the fields round it, down Trowbridge Road past the canal bridge at Widbrook to the marina; it opens its doors on the platform side; the others stop with them shut, "Not in service" on the boards). Every pub has a pint on the big map (M), faint till you zoom in: point at one for its name, how far it is and its food hygiene rating, and click or tap it for a card that goes there or marks it, any of about a hundred. A pub with a job or a bus stop on top of it has its pint moved out beside it, with a thin line back, so you can pick either. Go to a pub, in the pause menu, opens the same map with the pints picked out. You can't use a pub to get out of trouble: not with anything after you within 40 m (naughty boys, the posh teams, Flag Lads, cats, Bendy), within 10 seconds of trading shots with another player, or 5 of being hurt, and the card says what's stopping you. Nor can you go straight to a pub the Flag Lads are taking over. In a race or a challenge, or fighting a pub takeover, it asks whether you want to leave it first (with others in a race or a challenge, you see it through or call it off from the pause menu).
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go. The rifle's balls lob
   out of a hopper you refill from a pod; the sniper fires finned First Strike rounds from a clear
@@ -197,9 +207,14 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   someone's left with the door open and a tape going.
 - **Trophies**: bronze, silver and gold for every kind of job (finish one, then a three-star or silver
   time, then gold), and daft milestones for riding, fighting, pubs, landmarks and wandering about Bath. A
-  "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
+  "Trophy!" slides in when you win one (or is listed on the result card, if a job has just ended). The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Every job, race, challenge and shift ends on the same result card**: a cutting from the Chronicle
+  with the job's own headline, your time or score, and everything you won listed on it (prizes,
+  wardrobe items, trophies, a strange object). Space carries on, E goes again where you can, and it
+  goes by itself after 8 seconds. Notices queue rather than vanish, and the use prompt draws each key
+  as a key cap you can tap on a touch screen.
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
   and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept
@@ -420,12 +435,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   thing, so you can see what was picked when you get there. Each player's markers and arrow are in
   their own colour on the maps, never one the maps use for something else; click your marker, or the
   thing it's on, again to take it down.
-- **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
-  streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
-  waiting; the Flag Lads' red still shows where they hold a square today. A line in the map's
-  corner says how much of Bath is yours (the squares you've cleared). Point at or tap a square for
-  its name and what you've done there. "Squares you've cleared" in the map's key switches it off.
-  It's kept on your device from day to day.
+- **What's yours**: the big map (M) shows a small pint on each pub you've won back and a thin
+  amber ring where a scar's waiting, under the Flag Lads' red. A line in the map's corner says how
+  many of their flags you've shot and pubs you've won back. "What's yours" in the map's key switches
+  it off. It's kept on your device from day to day.
 - **The Chronicle**: the game's newspaper, named after the map you're on ("The Combe Down
   Chronicle"), as one big front page with no tabs. Down the main column are today's three jobs and
   how the Flag Lads are doing, then "Yesterday in ...": yesterday's lead story with its photo (the

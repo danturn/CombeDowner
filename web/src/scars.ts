@@ -39,7 +39,7 @@ import * as SFX from "./audio";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import type { JobSpot } from "./minimap";
-import { missionStage } from "./missionscreens";
+import { missionCall } from "./missionscreens";
 import { bannerSpot } from "./bannerspot";
 import { type NaughtyBoys, type Target, SOCIETY, look } from "./naughtyboys";
 import { esc, hash, rng } from "./quests";
@@ -263,7 +263,7 @@ export class Scars {
       if (!this.w.isHost) this.drop(Number(d.id));
       this.gone.add(Number(d.id));
       this.save();
-      missionStage({ title: "Put right!", sub: `${by === this.w.selfId ? "You" : this.w.nameOf(by)} ${VERB[k][1]}`, colour: "#58e06a", life: 2.5 });
+      missionCall({ text: "Put right!", secs: 2.5, sub: `${by === this.w.selfId ? "You" : this.w.nameOf(by)} ${VERB[k][1]}`, colour: "#58e06a" });
       if (by === this.w.selfId) SFX.solved();
     }
   }

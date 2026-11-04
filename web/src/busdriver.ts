@@ -15,6 +15,9 @@
 // on them are made up on the driver's machine: nothing goes over the network, so anyone riding along
 // sees the bus stop and go but not the passengers. Get out and the shift's paused; get back in the
 // same bus within two minutes and it carries on, otherwise the passengers wander off.
+//
+// The shift wears the shared mission screens (missionscreens.ts): a title card as it starts, the
+// route's status panel while you drive, and a short result card when it's over.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { model, type Part } from "./furniture";
@@ -22,7 +25,8 @@ import type { GameMap } from "./map";
 import { type BusLine, ROUTE } from "./minimap";
 import { speechBubble } from "./naughtyboys";
 import { speak } from "./posh";
-import { show } from "./show";
+import { esc } from "./hudkit";
+import { missionBegin, missionClear, missionProgress, missionResult } from "./missionscreens";
 import type { Traffic } from "./traffic";
 import type { Stop, Vehicle } from "./vehicles";
 
@@ -154,8 +158,7 @@ export class BusDriver {
     if (this.paused && now - this.paused > KEEP) this.end();
     const line = this.line, bus = this.bus;
     this.walk(dt);
-    if (!line || !bus) { show(card(), "", false); return; }
-    if (this.paused) { show(card(), "", false); return; }
+    if (!line || !bus || this.paused) { missionClear("bus"); return; }
     if ((this.scanT -= dt) <= 0) { this.scanT = 1; this.find(line, stops()); }
     this.follow(line, bus);
     this.atStops(dt, line, bus);
@@ -260,11 +263,14 @@ export class BusDriver {
     this.locate(line, v, true);
     this.fares = this.cheers = this.moans = 0;
     this.scanT = 0;
-    this.toast(`You're on the ${line.n}: ${HOME} to ${line.end} and back. Follow the green line, and stop for anyone waiting`, 5);
+    missionBegin({ label: `Badgerline · Route ${line.n}`, colour: GREEN, title: `You're on the ${line.n}`, goal: `${HOME} to ${line.end} and back. Follow the green line, and stop for anyone waiting` });
   }
 
   private end() {
-    if (this.bus && this.fares) this.toast(`Shift over: ${this.fares} fare${this.fares === 1 ? "" : "s"}, ${this.cheers} "cheers drive", ${this.moans} moan${this.moans === 1 ? "" : "s"}`, 4);
+    if (this.bus && this.fares) {
+      missionResult({ result: "over", kind: "bus", label: `Badgerline · Route ${this.line?.n ?? ""}`, title: "Shift over", colour: GREEN,
+        lines: [`${this.fares} fare${this.fares === 1 ? "" : "s"}, ${this.cheers} "cheers drive", ${this.moans} moan${this.moans === 1 ? "" : "s"}`] });
+    }
     for (const st of this.line?.stops ?? []) this.clear(st);
     for (const p of this.boarding) gone(p);
     this.boarding = [];
@@ -272,7 +278,7 @@ export class BusDriver {
     this.serving = null;
     this.bus = this.line = this.next = null;
     this.paused = 0;
-    show(card(), "", false);
+    missionClear("bus");
   }
 
   /** Where the bus is on the line. everywhere: look all round the loop (when it's lost its place). */
@@ -419,8 +425,7 @@ export class BusDriver {
   private moan(text: string, distance = 4) {
     this.said = text; this.saidT = 4;
     speak(text, Math.floor(Math.random() * 1000), distance);
-    const el = card();
-    el.classList.remove("fresh"); void el.offsetWidth; el.classList.add("fresh");
+    this.saidN++;
   }
 
   private clear(st: RStop) {
@@ -503,6 +508,7 @@ export class BusDriver {
 
   // ---- the card -------------------------------------------------------------------------------------
 
+  private saidN = 0;               // each new thing said flashes the panel
   private hud(line: Line) {
     const st = this.next, bell = this.riders.some((r) => r.bell && !r.missed);
     const to = this.onLine && this.s >= line.turn ? HOME.replace("the ", "") : line.end;
@@ -514,15 +520,13 @@ export class BusDriver {
       where = `Next stop: <b>${esc(st.name)}</b>${a > 30 ? ` · ${a < 1000 ? `${Math.round(a / 10) * 10} m` : `${(a / 1000).toFixed(1)} km`}` : ""}`;
     }
     const waiting = st?.crowd?.length ?? 0;
-    const html = `<div class="label">Badgerline · Route ${line.n}</div><div class="bustitle">${esc(to)}</div>`
-      + `<div class="busline">${where}</div>`
-      + (waiting && this.onLine ? `<div class="busline">${waiting} waiting there</div>` : "")
-      + (bell ? `<div class="bussign">Bus stopping</div>` : "")
-      + `<div class="busstat">On board ${this.riders.length} · Fares ${this.fares} · Moans ${this.moans}</div>`
-      + (this.saidT > 0 && this.said ? `<em>“${esc(this.said)}”</em>` : "");
-    show(card(), html, true);
+    missionProgress({
+      id: "bus", label: `Badgerline · Route ${line.n}`, colour: GREEN, goal: to,
+      hint: where + (waiting && this.onLine ? `<br>${waiting} waiting there` : "") + (bell ? `<br><span class="sign">Bus stopping</span>` : ""),
+      sub: `On board ${this.riders.length} · Fares ${this.fares} · Moans ${this.moans}` + (this.saidT > 0 && this.said ? `<br>“${esc(this.said)}”` : ""),
+      flash: `${bell ? "bell" : ""}|${this.saidN}`,
+    });
   }
 }
 
-const card = () => document.getElementById("buscard")!;
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const GREEN = "#7fe08f";

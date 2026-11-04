@@ -48,11 +48,11 @@ import type { Player } from "./player";
 import type { RideKind } from "./rides";
 import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
-import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
+import { type Grade, bestFor, gradeMission, jobWon } from "./trophies";
 import { show } from "./show";
 import { ctl, ctlText } from "./controls";
-import * as RS from "./racescreens";
-import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
+import { esc } from "./hudkit";
+import { type MissionResult, missionBegin, missionCall, missionClear, missionProgress, missionResult, missionWaiting } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
 import * as Paper from "./paper";
@@ -96,9 +96,7 @@ export function compassWord(dx: number, dz: number) {
 }
 /** "★★☆" for 2 stars out of 3. */
 export const starText = (n: number) => "★".repeat(n) + "☆".repeat(Math.max(0, 3 - n));
-export function esc(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-}
+export { esc };
 
 // ---- what a job is ------------------------------------------------------------------------------
 
@@ -264,8 +262,9 @@ export interface Job {
   /** What to call the job's boss (a Wanted ringleader) on the boss bar. */
   boss?(): string;
   /** Set once the job's over: won or not, what to say, where the prizes go, and anything you've
-   *  earned for your wardrobe (wardrobe.ts). screen: the job has put up its own end card. */
-  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[]; screen?: boolean; grade?: Grade } | null;
+   *  earned for your wardrobe (wardrobe.ts). screen: the job has put up its own result card.
+   *  title: the result card's headline in the job's own words; card: anything more for it. */
+  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[]; screen?: boolean; grade?: Grade; title?: string; card?: Partial<MissionResult> } | null;
   /** A shot from o along d (a unit vector), up to max metres: did it hit anything of the job's? */
   hit?(o: THREE.Vector3, d: THREE.Vector3, max: number): Quarry | null;
   /** And you hit it, this hard (a sniper round counts for more). */
@@ -820,13 +819,13 @@ export class Quests {
     if (!lu.started) return;
     const kind = kinds.get(lu.offer.kind)!;
     lu.goNow();
-    RS.waiting(null);
+    missionWaiting(null);
     this.job = kind.start(lu.offer, this.w, lu.go, lu.by, false, lu.cast!);
     if (this.luP !== undefined) { this.job.restore?.(this.luP); this.luP = undefined; }
   }
 
   private startCard(o: Offer, kind: JobKind) {
-    missionStart({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind) });
+    missionBegin({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind) });
   }
 
   /** The job you're in, if going off somewhere else would leave it (a race you're riding in, or a
@@ -848,17 +847,24 @@ export class Quests {
     this.clear();
   }
 
-  private endCard(won: boolean, title: string, line: string) {
-    missionEnd({ result: won ? "complete" : "failed", title, lines: line ? [line] : [], colour: this.current ? kinds.get(this.current.kind)?.colour : undefined });
+  /** The result card for a job that hasn't drawn its own: it plays the end sound too. */
+  private endCard(won: boolean, title: string, line: string, more?: Partial<MissionResult>, rewards: string[] = []) {
+    const k = this.current ? kinds.get(this.current.kind) : undefined;
+    missionResult({
+      result: won ? "won" : "lost", kind: k?.challenge ? "challenge" : "job", label: this.current?.title, title,
+      lines: line ? [line] : [], colour: k?.colour, rewards, ...more,
+    });
   }
 
   private finish() {
     const job = this.job!, d = job.done!;
     missionClear("job");
-    if (!d.screen) this.endCard(d.won, d.won ? "Job done!" : "Job failed", d.text);
+    const prizes = d.won && !this.local && job.offer.stars > 0 ? [`${job.offer.stars} prize${job.offer.stars > 1 ? "s" : ""} where you finished`] : [];
+    // a job that gives a lead figure has said what its line would: the line goes
+    if (!d.screen) this.endCard(d.won, d.title ?? (d.won ? "Job done!" : "Job failed"), d.card?.lead ? "" : d.text, d.card, prizes);
     // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
     for (const id of d.wear ?? []) earn(id);
-    if (d.won) { jobWon(); missionResult(job.offer.kind, d.grade ?? { tier: 1 }); }
+    if (d.won) { jobWon(); gradeMission(job.offer.kind, d.grade ?? { tier: 1 }); }
     Paper.job(kinds.get(job.offer.kind)?.label ?? "Job", job.offer.title, job.offer.where, d.won);
     if (d.won && !this.local) earn("specs");
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
@@ -866,7 +872,6 @@ export class Quests {
     this.finishT = 6;
     if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
-    SFX.jobDone(d.won);
     this.onDone(d.won);
     if (!d.won) this.scar();
     if (d.won && this.w.isHost && !this.local) {
@@ -1023,7 +1028,7 @@ export class Quests {
       });
       const st = c.stage;
       if (st && st.key !== this.stageKey) {
-        if (this.stageKey !== null) { missionStage({ title: st.title, sub: st.sub, colour: st.colour ?? kind.colour, life: st.life }); }
+        if (this.stageKey !== null) { missionCall({ text: st.title, sub: st.sub, colour: st.colour ?? kind.colour, secs: st.life }); }
         this.stageKey = st.key;
       } else if (!st && this.stageKey === null) this.stageKey = "";
     } else if (!this.lining) missionClear("job");

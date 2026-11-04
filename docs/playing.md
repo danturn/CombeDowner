@@ -339,7 +339,8 @@ Come down sideways or mid-trick and you bail, back on in under two seconds. Some
 trolley can give a mate a lift: they walk up to the basket and press E to climb in.
 
 Speed traps (yellow boxes on poles, on the maps as yellow cameras) at the foot of Bath's steepest
-streets clock you as you ride through, and a manual down Milsom Street is timed. Both keep your
+streets clock you as you go past, however you're moving (on foot, on a ride, in a car or
+on a bus) and anywhere across the road, and a manual down Milsom Street is timed. Both keep your
 best.
 
 ### Ladders
