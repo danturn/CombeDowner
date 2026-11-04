@@ -2,9 +2,13 @@
 // flowering shrubs on heath and scrub, swaying in the wind and shrinking into the ground towards
 // the edge of a circle that follows the player. The ground is split into cells; cells that come
 // into range are filled, cells left behind are reused. A coarse mask keeps grass off buildings,
-// roads, paths, driveways and water.
+// roads, paths, driveways and water. What the heath grows (its greens, how much of it is in flower
+// and the flowers' colours), how far a dry summer browns the grass and what flowers in the meadows
+// belong to the map's ecoregion (region.ts): fynbos on Table Mountain and straw-coloured grass by
+// summer; mostly green gorse, bramble and heather in England, and meadows of buttercups and daisies.
 import * as THREE from "three";
 import { boreHalf, type MapData } from "./map";
+import { region } from "./region";
 
 function hash2(i: number, j: number, k: number) {
   let x = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(k + 0x1b873593, 0x27d4eb2f);
@@ -221,24 +225,27 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   // per kind of ground: chance of a tuft, height in metres, and flowers (meadows); w: how wide a tuft
   // spreads for its height, dry: how many of them are browned off; bush: how many of the places a
   // tuft could go have a shrub instead (heath: they're wider, so fewer of them cover the ground)
+  // (a dry summer browns watered gardens and pitches least, and the meadows most)
+  const { heath, grass: wild } = region(D.id), dry = (k: number) => wild.dry * k || undefined;
   const KIND: Record<number, { p: number; h: number; flowers: number; w?: number; dry?: number; bush?: number }> = {
-    0: { p: 0.8, h: 0.24, flowers: 0.02 },   // gardens and verges
-    1: { p: 0.95, h: 0.13, flowers: 0 },     // sports pitches: mown
-    2: { p: 0.22, h: 0.3, flowers: 0 },      // woodland floor: sparse
-    3: { p: 1, h: 0.42, flowers: 0.1 },      // farmland and meadow: long, with buttercups and daisies
-    4: { p: 0.75, h: 0.22, flowers: 0.03 },  // cemetery
-    7: { p: 0.3, h: 0.16, flowers: 0 },      // playgrounds
-    9: { p: 0.95, h: 0.4, flowers: 0.5, w: 0.7, dry: 0.3, bush: 0.55 },  // heath and scrub: low rounded shrubs, many in flower
+    0: { p: 0.8, h: 0.24, flowers: 0.02, dry: dry(0.5) },   // gardens and verges
+    1: { p: 0.95, h: 0.13, flowers: 0, dry: dry(0.2) },     // sports pitches: mown
+    2: { p: 0.22, h: 0.3, flowers: 0, dry: dry(0.3) },      // woodland floor: sparse
+    3: { p: 1, h: 0.42, flowers: 0.1, dry: dry(1) },        // farmland and meadow: long, with flowers
+    4: { p: 0.75, h: 0.22, flowers: 0.03, dry: dry(0.6) },  // cemetery
+    7: { p: 0.3, h: 0.16, flowers: 0, dry: dry(0.6) },      // playgrounds
+    9: { p: 0.95, h: 0.4, flowers: heath.flowers, w: 0.7, dry: heath.dry, bush: 0.55 },  // heath and scrub: low rounded shrubs
     11: { p: 1, h: 0.75, flowers: 0 },                          // wetland: rushes
   };
-  const DRY = new THREE.Color("#6f6549"), LEAF = new THREE.Color("#4c5a33");
-  // heath in flower: heather's purples and pinks, and fynbos's yellows, pinks and whites, in drifts
-  const BLOOMS = ["#8f4fa0", "#b0559a", "#d87fae", "#e3c23a", "#f0ece0", "#e0913a"].map((c) => new THREE.Color(c));
+  const DRY = new THREE.Color("#6f6549"), STRAW = new THREE.Color("#b3a468"), LEAVES = heath.leaf.map((c) => new THREE.Color(c));
+  const BLOOMS = heath.bloom.map((c) => new THREE.Color(c)), [MEADOW1, MEADOW2] = wild.flowers.map((c) => new THREE.Color(c));
   const glsl = (c: THREE.Color) => `vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)})`;
   const shapes = { grass: tuftGeo(true, false), bush: tuftGeo(false, true), both: tuftGeo(true, true) };
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const uPlayer = { value: new THREE.Vector3() };
-  // aFlower: for a grass tuft 0 (none), 1 (buttercup) or 2 (daisy); for a shrub 10 + its bloom (0 none)
+  // the flowers' colours are written into the shader, so two maps' palettes mustn't share one program
+  mat.customProgramCacheKey = () => [...heath.bloom, ...wild.flowers].join();
+  // aFlower: for a grass tuft 0 (none), 1 (buttercup) or 2 (daisy), or whatever the meadows grow; for a shrub 10 + its bloom (0 none)
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
     shader.uniforms.uPlayer = uPlayer;
@@ -247,7 +254,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
         float bush = step(9.5, aFlower), fl = aFlower - 10.0 * bush;
         vec3 bloom = vec3(1.0);
         ${BLOOMS.map((c, k) => `${k ? "else " : ""}if (fl < ${k + 1.5}) bloom = ${glsl(c)};`).join("\n        ")}
-        if (aPart > ${HEAD - 0.5} && aPart < ${HEAD + 0.5}) vColor = fl > 1.5 ? vec3(1.0, 1.0, 0.95) : vec3(1.0, 0.82, 0.12);
+        if (aPart > ${HEAD - 0.5} && aPart < ${HEAD + 0.5}) vColor = fl > 1.5 ? ${glsl(MEADOW2)} : ${glsl(MEADOW1)};
         else if (aPart > ${BLOOM - 0.5}) vColor = bloom;
         else if (aPart > ${BUSH - 0.01} && fl > 0.5) vColor = mix(vColor, bloom * color.r, (aPart - ${BUSH.toFixed(1)}) * 1.4);`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>
@@ -301,8 +308,8 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
       const tint = 0.95 + 0.3 * H(6);
       colour.copy(kinds[k] ?? kinds[0]).multiplyScalar(tint * 1.05);
       colour.g *= 1.04 + 0.08 * patch;
-      if (isBush) colour.lerp(LEAF, 0.3 + 0.5 * H(11));
-      if (spec.dry) colour.lerp(DRY, spec.dry * H(8));
+      if (isBush) colour.lerp(LEAVES[Math.floor(H(15) * LEAVES.length)], 0.3 + 0.5 * H(11));
+      if (spec.dry) colour.lerp(spec.bush ? DRY : STRAW, spec.dry * H(8));
       mesh.setColorAt(count, colour);
       const fl = H(7);
       if (isBush) {

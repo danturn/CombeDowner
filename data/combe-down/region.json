@@ -1,0 +1,12 @@
+{
+ "source": {
+  "name": "RESOLVE Ecoregions 2017",
+  "licence": "CC BY 4.0, RESOLVE (Dinerstein et al. 2017)",
+  "url": "https://ecoregions.appspot.com/"
+ },
+ "ecoregion": "English Lowlands beech forests",
+ "eco_id": 663,
+ "biome": 4,
+ "biome_name": "Temperate Broadleaf & Mixed Forests",
+ "realm": "Palearctic"
+}

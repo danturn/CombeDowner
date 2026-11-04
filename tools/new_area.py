@@ -317,7 +317,9 @@ def build(args):
     marker = os.path.join(ROOT, raw, "terrain15", ".lidar-ground")
     regrade = lidar and not os.path.exists(marker)
     steps = [
-        # the railway first: the squares cut the ground to its levels
+        # the ecoregion first: it says what the satellite's shrubland is
+        ("ecoregion", [*py, "tools/region.py", map_id, "fetch"], False),
+        # then the railway: the squares cut the ground to its levels
         ("railway", [*py, "tools/railway.py", map_id, raw, f"{maps}-rail.json"], False),
         *([("church towers", [*py, "tools/towers.py", map_id, raw], False)] if lidar else []),
         squares, wide,
@@ -328,6 +330,7 @@ def build(args):
         ("minimap ground", [*py, "tools/ground_kinds.py", map_id], True),
         ("pubs", [*py, "tools/pubs.py", map_id, raw, f"{maps}-pubs.json"], False),
         ("district names", [*py, "tools/districts.py", map_id], False),
+        ("region look", [*py, "tools/region.py", map_id], False),
     ]
     t1 = time.time()
     if dry: run_steps(steps, dry)
