@@ -11,6 +11,8 @@ import { SET_PIECES, type SetPiece } from "./landmarks/setpieces";
 import type { GameMap } from "./map";
 import { RIDES } from "./rides";
 import * as SFX from "./audio";
+import { esc } from "./hudkit";
+import { notice } from "./notice";
 import { WEARABLES, has as wearing } from "./wardrobe";
 import * as Paper from "./paper";
 import { PAGE, ttBar, ttTitle } from "./teletext";
@@ -162,55 +164,19 @@ const MILESTONES = LIST.filter((t) => t.goal);
 
 export const earned = (id: string) => !!state().got[id];
 
-const queue: Trophy[] = [];
-let toastEl: HTMLDivElement | null = null, showing = false, styled = false;
-
-function style() {
-  if (styled) return;
-  styled = true;
-  const s = document.createElement("style");
-  s.textContent = `
-#trophytoast{position:fixed;left:50%;top:10px;z-index:12;transform:translate(-50%,-140%);transition:transform .45s cubic-bezier(.2,1.3,.4,1),opacity .4s;opacity:0;
-  pointer-events:none;display:flex;align-items:center;gap:10px;padding:8px 16px 8px 10px;max-width:calc(100vw - 24px);box-sizing:border-box;
-  background:rgba(11,12,12,.9);border:2px solid var(--tc,#ffc83a);box-shadow:0 6px 20px rgba(0,0,0,.5);font-family:var(--f-hud,sans-serif);color:#fff}
-#trophytoast.in{transform:translate(-50%,0);opacity:1}
-#trophytoast .medal{flex:none;width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff8,var(--tc) 55%);box-shadow:0 0 12px var(--tc)}
-#trophytoast b{display:block;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--tc)}
-#trophytoast span{font-size:17px;font-weight:700;line-height:1.1}
-#trophytoast small{display:block;font-size:12px;color:#c8d4dc;font-weight:500}`;
-  document.head.appendChild(s);
-}
-
-function nextToast() {
-  const t = queue.shift();
-  if (!t) { showing = false; return; }
-  showing = true;
-  style();
-  if (!toastEl || !toastEl.isConnected) {
-    toastEl = document.createElement("div");
-    toastEl.id = "trophytoast";
-    toastEl.setAttribute("aria-live", "polite");
-    (document.getElementById("hud") ?? document.body).appendChild(toastEl);
-  }
-  const el = toastEl;
-  el.style.setProperty("--tc", TIER_COLOUR[t.tier]);
-  el.innerHTML = `<i class="medal"></i><div><b>Trophy! ${t.tier}</b><span></span><small></small></div>`;
-  el.querySelector("span")!.textContent = t.name;
-  el.querySelector("small")!.textContent = t.how;
-  void el.offsetWidth;
-  el.classList.add("in");
+/** Its award notice (notice.ts): slid in at the top, or written on a result card that's up. */
+function tell(t: Trophy) {
   SFX.trophy(t.tier);
-  setTimeout(() => { el.classList.remove("in"); setTimeout(nextToast, 500); }, 3600);
+  notice({ tier: "award", kicker: `Trophy! ${t.tier}`, text: t.name, sub: t.how, colour: TIER_COLOUR[t.tier] });
 }
 
-/** You've earned it: put it in the cabinet and slide the toast in. Does nothing if you have it already. */
+/** You've earned it: put it in the cabinet and say so (notice.ts's award tier). Does nothing if you have it already. */
 export function award(id: string): boolean {
   const t = BY_ID.get(id), s = state();
   if (!t || s.got[id]) return false;
   s.got[id] = Date.now();
   dirty = true;
-  queue.push(t);
-  if (!showing) nextToast();
+  tell(t);
   return true;
 }
 
@@ -346,12 +312,9 @@ addEventListener("keydown", (e) => {
   if (e.code === "Escape" && page) { e.stopImmediatePropagation(); e.preventDefault(); closeCabinet(); }
 }, true);
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
 /** The trophy cabinet over the pause menu: every trophy by category, with how far you are. */
 export function openCabinet(closed: () => void) {
   if (page) return;
-  style();
   cabinetStyle();
   flush();
   const c = completion(), s = state();
