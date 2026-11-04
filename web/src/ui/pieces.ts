@@ -34,17 +34,16 @@ export const RULES = `
 <ul>
 <li><b>The paper</b> is Bath talking to you: a cutting from the Chronicle (<code>cutting.ts</code>). A job's brief at its noticeboard, its title card and J's recall (<code>brief.ts</code>), every result card, the Chronicle itself, and the league table under Tab as the top of its page.</li>
 <li><b>BathText</b> is the machine: teletext (<code>teletext.ts</code>, <code>.card.tt</code>, <code>.ttmini</code>). The menu, pause, settings, linking a device, the wardrobe, the trophy cabinet, the big map's key, notes and pub card, and the game's notes about itself (the system tier).</li>
-<li><b>The plate</b> is the HUD while you play (<code>.panel</code>): health, rounds, the vehicle, the boss, the status panels, the Flag Lads' row; meters go in the slot under the crosshair.</li>
+<li><b>The plate</b> is the HUD while you play (<code>.panel</code>): health, rounds, the vehicle, the boss, the status panels, the Flag Lads' row, and every notice (news, a stage, an award), told apart by size, place and the colour of its edge; meters go in the slot under the crosshair.</li>
 <li><b>Props</b> are things in Bath or of the time, and keep their own look on purpose: the G-Shock watch, the Now Playing amp, the parking ticket when you die, the stone street sign and arrival, the Art Gallery's Paint window, and a zone opening's fly-over (the big celebration). A prop keeps to its slot and gets out of the way of the big map and a result card.</li>
 <li>Every sheet over the game has the same × in its top right corner (<code>modal.ts</code>), and Esc puts it away.</li>
 </ul>
 <h3>Which notice tier</h3>
 <ul>
-<li><b>call</b>: something just happened to you (a kill, a pickup, a ride, a fare). Big and yellow, a little above the middle. <code>Game.toast</code> / <code>notice()</code>. Longer than 64 characters it becomes a note.</li>
-<li><b>note</b>: worth knowing but not news (a tip, the examiner, a critic). Same place, smaller and white. Calls and notes share one queue: nothing is lost, and they wait while a title card, a countdown or the big map is up.</li>
-<li><b>stage</b>: a mission moving on (a wave, a checkpoint, a life gone, out of lives, he got away). The band over the crosshair in the mission's colour, the one place the band is still used. <code>missionCall()</code>.</li>
-<li><b>trick</b>: a score popping as you play (a flag shot, a boost, a barge). Under the meters in the slot under the crosshair; never held back.</li>
-<li><b>award</b>: something kept (a trophy, a wardrobe item). Slides in at the top; written on the result card instead while one is up.</li>
+<li><b>call</b>: news (a kill, a pickup, a ride, a fare) or something worth knowing (a tip, the examiner, a critic). A plate a little above the middle: big for a few words, smaller and wrapped for longer ones (over 64 characters, or <code>tier: "note"</code>). <code>Game.toast</code> / <code>notice()</code>. One queue: nothing is lost, and they wait while a title card, a countdown or the big map is up.</li>
+<li><b>stage</b>: a mission moving on (a wave, a checkpoint, a life gone, out of lives, he got away). A wider plate over the crosshair, edged and titled in the mission's colour. <code>missionCall()</code>.</li>
+<li><b>trick</b>: a score popping as you play (a flag shot, a boost, a barge). The same font and yellow but no plate, in the meter slot under the combo row; never held back.</li>
+<li><b>award</b>: something kept (a trophy, a wardrobe item). The plate with its medal, sliding in at the top; written on the result card instead while one is up.</li>
 <li><b>system</b>: the game about itself (the map stuck loading, someone on another version, safe graphics). A BathText strip along the top that stays till it's put right or closed. <code>systemNote()</code>.</li>
 </ul>
 <h3>Status panel slots</h3>
@@ -53,22 +52,22 @@ export const RULES = `
 <li><b>Top middle</b>: the title card (a brief), J's recall, then the compass and one bar at a time (a pub's banner, a boss).</li>
 <li><b>Top right</b>: the minimap, the feed under it.</li>
 <li><b>Bottom left</b>: health, the watch above it. <b>Bottom right</b>: rounds or the vehicle, never both. <b>Bottom middle</b>: the street name.</li>
-<li><b>The middle</b>: the stage band over the crosshair; the use prompt under it, or at a noticeboard the brief, whose foot is the prompt; then one row per meter (<code>missionAux</code>: a gate's clock, a beat, a grip, a ride's combo, the Flag Lads' combo, the wings' flight); then trick pops.</li>
+<li><b>The middle</b>: the stage plate over the crosshair; the use prompt under it, or at a noticeboard the brief, whose foot is the prompt; then one row per meter (<code>missionAux</code>: a gate's clock, a beat, a grip, the wings' flight); then the combo row; then trick pops.</li>
 <li>On a touch screen the top-left slot is the left column, the bottom corners keep clear of the buttons, and a key cap for use or ride (in the prompt or along a brief's foot) is a button.</li>
 </ul>
 <h3>Every mission</h3>
 <p>The brief at the board → <code>missionBegin</code> (the same brief as the title card) → <code>missionProgress</code> (+ <code>missionAux</code>) → <code>missionCall</code>, with J bringing the brief back → <code>missionResult</code>. The result card owns the end sound, lists the rewards, hides the use prompt, and has Continue (Space), Again (E) where there is one, × and an 8 s timer.</p>`;
 
+/** The title card's samples, under the brief. */
+const TITLES = ["Job", "Long goal", "Race", "Wanted", "Challenge, with a best", "Bonfire", "Bus driver", "Pub takeover", "Shoot-out", "Long, two-line title"];
+
 export const ELEMENTS: Piece[] = [
   // ---- starting
   { id: "entries", group: "start", name: "Entries banner and line-up", src: "missionscreens.ts missionWaiting(), from lineup.ts",
     used: "every noticeboard job and challenge", note: "Skipped on your own: entries only open with others in the room.", states: ["Entries open", "You're in", "Lining up", "Long title"] },
-  { id: "brief", group: "start", name: "A job's brief", src: "brief.ts briefHtml(); quests.ts Quests.hud() (#jobposter, #jobrecall)",
-    used: "every noticeboard job and challenge, and Wanted's round on J", note: "One cutting at the board, as the title card and on J. At the board its foot is the use prompt.",
-    states: ["Board: job", "Board: challenge", "Board: done today", "Board: touch", "Title card", "Recall (J)", "Recall: Wanted"] },
-  { id: "title", group: "start", name: "Title card (the brief)", src: "missionscreens.ts missionBegin(), drawn by brief.ts",
-    used: "every job and challenge, the bonfire, a bus shift, a pub takeover, a shoot-out, the night out",
-    states: ["Job", "Long goal", "Race", "Wanted", "Challenge, with a best", "Bonfire", "Bus driver", "Pub takeover", "Shoot-out", "Long, two-line title"] },
+  { id: "brief", group: "start", name: "A job's brief: the board, the title card, J", src: "brief.ts briefHtml(); quests.ts Quests.hud() (#jobposter, #jobrecall); missionscreens.ts missionBegin() (the title card)",
+    used: "every noticeboard job and challenge, the bonfire, a bus shift, a pub takeover, a shoot-out, the night out, and Wanted's round on J", note: "One cutting at the board, as the title card and on J. At the board its foot is the use prompt.",
+    states: ["Board: job", "Board: challenge", "Board: done today", "Board: touch", ...TITLES.map((t) => `Title card: ${t}`), "Recall (J)", "Recall: Wanted"] },
   { id: "count", group: "start", name: "Countdown and start lights", src: "missionscreens.ts missionCountdown(); missionBegin({ countdown })",
     used: "every job and challenge, a race's go of your own, the bonfire", states: ["3", "2", "1", "GO!"] },
 
@@ -87,9 +86,10 @@ export const ELEMENTS: Piece[] = [
   { id: "stack", group: "panel", name: "Top-left slot, stacked", src: "missionscreens.ts #mstack, with invasion.ts's #bunting as its last row",
     used: "a job, a bus shift and the Flag Lads at once", states: ["Job, bus and Flag Lads", "Job and Flag Lads", "Flag Lads alone"] },
   { id: "aux", group: "panel", name: "Meter slot under the crosshair", src: "missionscreens.ts missionAux(), missionAuxAdopt() (#maux, .aux-word/.aux-big/.aux-meter/.aux-panel)",
-    used: "Push the Bus beat and cab, the Climb's grip, a race's gate clock, a ride's combo, the Flag Lads' combo, the wings' flight", states: ["Gate clock", "Gate clock, running out", "Push the Bus beat", "Push the Bus cab", "Climb grip"] },
-  { id: "combo", group: "panel", name: "Ride combo, in the meter slot", src: "ridetricks.ts (#combo, adopted by missionAuxAdopt)", used: "riding tricks", states: ["Combo", "Bailed", "New best"] },
-  { id: "fjcombo", group: "panel", name: "Flag Lads combo, in the meter slot", src: "flagjuice.ts write() (#fj-combo, adopted by missionAuxAdopt)", used: "Flag Lads", states: ["x3", "x7"] },
+    used: "Push the Bus beat and cab, the Climb's grip, a race's gate clock, the combo row, the wings' flight", states: ["Gate clock", "Gate clock, running out", "Push the Bus beat", "Push the Bus cab", "Climb grip"] },
+  { id: "combo", group: "panel", name: "The combo row, in the meter slot", src: "combo.ts comboLine(), fed by ridetricks.ts and flagjuice.ts",
+    used: "riding tricks, and shooting the Flag Lads' flags", note: "One row: each source keeps its own count and scoring and labels its line. Both at once stack, the newer on top.",
+    states: ["Ride", "Ride: bailed", "Ride: new best", "Flags x3", "Flags x7", "Both at once"] },
   { id: "banner", group: "panel", name: "Banner going up", src: "invasion.ts bannerBar() (#banner, .panel)", used: "pub takeovers", states: ["Going up", "Nearly up"] },
   { id: "spec", group: "panel", name: "Watching the others", src: "missionscreens.ts missionWatching()", used: "races, once you're over the line", states: ["Standings"] },
   { id: "feed", group: "panel", name: "Feed", src: "game.ts Game.feed() (#feed)", used: "everything: who took a job, who fell, a takeover", states: ["Three lines"] },
