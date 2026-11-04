@@ -860,7 +860,8 @@ export class Quests {
     const job = this.job!, d = job.done!;
     missionClear("job");
     const prizes = d.won && !this.local && job.offer.stars > 0 ? [`${job.offer.stars} prize${job.offer.stars > 1 ? "s" : ""} where you finished`] : [];
-    if (!d.screen) this.endCard(d.won, d.title ?? (d.won ? "Job done!" : "Job failed"), d.text, d.card, prizes);
+    // a job that gives a lead figure has said what its line would: the line goes
+    if (!d.screen) this.endCard(d.won, d.title ?? (d.won ? "Job done!" : "Job failed"), d.card?.lead ? "" : d.text, d.card, prizes);
     // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
     for (const id of d.wear ?? []) earn(id);
     if (d.won) { jobWon(); gradeMission(job.offer.kind, d.grade ?? { tier: 1 }); }
