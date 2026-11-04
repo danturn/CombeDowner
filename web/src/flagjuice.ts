@@ -204,7 +204,7 @@ function inject() {
   if (injected) return;
   injected = true;
   const s = document.createElement("style");
-  s.textContent = `#fj-combo{position:fixed;left:50%;top:calc(50% + 196px);transform:translateX(-50%);font-family:var(--f-hud);text-align:center;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
+  s.textContent = `#fj-combo{position:fixed;left:50%;top:calc(50% + 230px);transform:translateX(-50%);font-family:var(--f-hud);text-align:center;pointer-events:none;color:#fff;text-shadow:0 2px 4px #000;z-index:5}
 #fj-combo b{display:block;font-size:clamp(30px,6vw,52px);color:#ff4a55;font-style:italic;line-height:1}
 #fj-combo i{display:block;font-style:normal;font-weight:700;font-size:clamp(13px,2.4vw,18px)}
 #fj-combo u{display:block;width:120px;margin:4px auto 0;height:4px;background:#fff;border-radius:2px;transform-origin:center;transform:scaleX(var(--left,1));text-decoration:none}

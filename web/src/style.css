@@ -1002,6 +1002,13 @@ body[data-input="pad"] #clickhint, body[data-input="touch"] #clickhint { display
 #hud:has(#touch:not([hidden])) #talkers { font-size: 13px; }
 #hud:has(#touch:not([hidden])) #bunting { padding: 4px 9px 16px; }
 #hud:has(#touch:not([hidden])) #mstack em { font-size: 12px; }
+/* the prompt wraps between the left column and the buttons rather than running under either */
+#hud:has(#touch:not([hidden])) #usehint { white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 2 * var(--col) - 40px); }
+/* on a short screen the slot's second and third rows say only what they are, so the Flag Lads' row isn't cut off */
+@media (max-height: 500px) {
+  #hud:has(#touch:not([hidden])) #mstack > .mprog ~ .mprog :is(.jobline, em, .bar) { display: none; }
+  #hud:has(#touch:not([hidden])) #mstack > .mprog ~ #bunting em + em { display: none; }
+}
 #hud:has(#touch:not([hidden])) #touch > #t-pause.tbtn { left: calc(10px + var(--sl)); top: 6px; transform: none; width: 42px; height: 42px; }
 #hud:has(#touch:not([hidden])) #np, #hud:has(#touch:not([hidden])):has(#compass:not([hidden])) #np { left: auto; right: calc(16px + var(--sr)); top: 206px; transform: none; }
 

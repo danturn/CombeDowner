@@ -46,6 +46,7 @@ addStyle("notice", `
 #trick{position:absolute;left:50%;top:calc(50% + 150px);transform:translateX(-50%);text-align:center;max-width:calc(100vw - 32px);pointer-events:none;font-weight:800;font-size:26px;letter-spacing:.04em;
   color:var(--accent);text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 12px rgba(0,0,0,.5);transition:opacity .3s}
 #trick.out{opacity:0}
+#maux>#trick{position:static;transform:none;width:auto}
 body:has(#bigmap:not([hidden])) #trick{visibility:hidden}
 #trick small{display:block;font-size:14px;color:#fff;letter-spacing:.06em;text-transform:uppercase}
 @media (max-height:500px){#trick{top:calc(50% + 96px);font-size:20px}}
@@ -161,7 +162,10 @@ export function noticeStage(fn: (n: Notice) => void) { stageCall = fn; }
 
 let trickEl: HTMLDivElement | null = null, trickT = 0;
 function trick(n: Notice) {
-  if (!trickEl || !trickEl.isConnected) { trickEl = document.createElement("div"); trickEl.id = "trick"; layer().appendChild(trickEl); }
+  if (!trickEl) { trickEl = document.createElement("div"); trickEl.id = "trick"; }
+  // under any meters in the slot under the crosshair (missionscreens.ts #maux), so it never sits on one
+  const home = document.getElementById("maux") ?? layer();
+  if (trickEl.parentElement !== home) home.appendChild(trickEl);
   const el = trickEl;
   el.textContent = n.text;
   if (n.sub) { const s = document.createElement("small"); s.textContent = n.sub; el.appendChild(s); }
