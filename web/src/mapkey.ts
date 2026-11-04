@@ -66,7 +66,7 @@ function sections(): [string, Row[]][] {
     ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
-      { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
+      { layer: "traps", label: "Speed traps", note: "go past one fast, on anything, to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
       { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "pubs", label: "Pubs", note: "faint till you zoom in; {map.mark} one to go there or mark it", icon: (g, s) => pintIcon(g, s / 2, s / 2, s / 15, s / 16) },
