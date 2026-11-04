@@ -225,7 +225,10 @@ const CELL = 8;
 /** The deepest a bridge's deck is drawn, top to underside (world.ts KINDS). */
 const DECK_DEPTH = 1.1;
 /** Feet so far down that blocked() finds every trunk and post, wherever it stands. */
-const ANY_HEIGHT = -1e9;
+export const ANY_HEIGHT = -1e9;
+/** How far under the ground something stands on (a house, a garden wall, a strange structure) you
+ *  must be to pass beneath it: in a tunnel under the hill, not down a bank or a cutting beside it. */
+export const UNDERGROUND = 4;
 /** How much of a tree's collision trunk is drawn trunk: rays (shots) go by the drawn one, a little thinner than you bump into. */
 const TRUNK_DRAWN = 0.8;
 
@@ -315,6 +318,7 @@ export class GameMap {
   private sTopB: number[] = [];   // the top at its far end: a wall up a hill rises along its length, as it's drawn
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
   private sFoot: number[] = [];   // a wall's foot: you walk under one whose foot is over your head (a set piece's terrace, a lintel)
+  private sGround: number[] = []; // the ground a house or garden wall stands on: deep under it you're in a tunnel, clear of it
   // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
   private blocks: { x: number; z: number; a: number; hl: number; hw: number; top: number }[] = [];
   private blockCells = new Map<number, number[]>();
@@ -586,7 +590,7 @@ export class GameMap {
       if (this.spent(4)) yield;
       const top = b.rm ? roofMeshTop(b) - this.z0 : b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
-      for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
+      for (let i = first; i < this.sAx.length; i++) { this.sRoof[i] = b.g - this.z0 + b.h; this.sGround[i] = b.g - this.z0; }
       // under a lidar roof a wall stands as high as the roof over it (a gable, or the higher house
       // in a stepped row), so it's only over once you're up on the roof there, not at the eaves
       if (b.rm) {
@@ -633,6 +637,8 @@ export class GameMap {
       const l = d.br[k], p = l.p;
       for (let i = 0; i < p.length - 1; i++) {
         this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0), barrierLook(l.c).t / 2);   // (2: a hedge, which can't be ground along)
+        // a retaining wall's ground may be the top of the bank it holds up
+        this.sGround[this.sAx.length - 1] = Math.min(p[i][2], p[i + 1][2]) - this.z0 - barrierHeight(l);
       }
     }
     // a tank's walls, where they stand above the ground (world.ts builds them)
@@ -1101,7 +1107,7 @@ export class GameMap {
 
   private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity, topB = top, half = 0) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot); this.sHalf.push(half);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot); this.sGround.push(-Infinity); this.sHalf.push(half);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
@@ -1356,6 +1362,7 @@ export class GameMap {
           this.stamp[i] = t;
           if (this.sKind[i] === 3) continue;    // a gate standing ajar: you go through it
           if (Math.max(this.sTop[i], this.sTopB[i]) < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
+          if (this.sGround[i] > y + UNDERGROUND && y !== ANY_HEIGHT) continue;
           const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
           const l2 = vx * vx + vz * vz || 1;
           const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
@@ -1581,7 +1588,7 @@ export class GameMap {
             const y = oy + dy * hit;
             const vx = this.sBx[i] - this.sAx[i], vz = this.sBz[i] - this.sAz[i], vl = Math.hypot(vx, vz) || 1;
             const along = Math.min(1, Math.max(0, ((ox + dx * hit - this.sAx[i]) * vx + (oz + dz * hit - this.sAz[i]) * vz) / (vl * vl)));
-            if (y > this.topAt(i, along) || y < this.sFoot[i]) continue;
+            if (y > this.topAt(i, along) || y < this.sFoot[i] || y < this.sGround[i] - UNDERGROUND) continue;
             let nx = -vz / vl, nz = vx / vl;
             if (nx * dx + nz * dz > 0) { nx = -nx; nz = -nz; }
             best = { dist: hit, kind: this.sKind[i] === 0 ? "building" : "barrier", nx, ny: 0, nz };

@@ -28,7 +28,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
-import { type GameMap, type RayHit, rayCircle } from "./map";
+import { type GameMap, type RayHit, ANY_HEIGHT, UNDERGROUND, rayCircle } from "./map";
 import { challengesOn, isChallenge } from "./challenges";
 import { feature } from "./features";
 import type { Zone, Zones } from "./zones";
@@ -289,7 +289,7 @@ export class Oddments {
     this.pusher = (pos, y, r) => {
       let block = -Infinity;
       for (const t of solid) {
-        if (y > t.top) continue;
+        if (y > t.top || (y < t.y - UNDERGROUND && y !== ANY_HEIGHT)) continue;
         const dx = pos.x - t.x, dz = pos.z - t.z, d = Math.hypot(dx, dz), m = SOLID + r;
         if (d >= m) continue;
         const ux = d > 1e-6 ? dx / d : 1, uz = d > 1e-6 ? dz / d : 0;
