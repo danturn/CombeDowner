@@ -40,7 +40,6 @@ const PIECES = 180;
 
 addStyle("mission", `
 #mstack{display:flex;flex-direction:column;gap:8px}
-#mstack:empty{display:none}
 .mprog{position:relative;bottom:auto;left:auto;width:100%;padding-bottom:18px;box-sizing:border-box}
 .mprog[hidden]{display:none}
 .mprog .label{letter-spacing:.12em}
@@ -56,6 +55,8 @@ addStyle("mission", `
 .mprog .bar{margin-top:6px;height:8px}
 .mprog .bar::after{display:none}
 .mprog .bar>div{background:var(--kc,var(--accent))}
+.mprog .sign{display:inline-block;margin:5px 0 2px;padding:2px 8px;background:#d6283a;color:#fff;font-weight:800;font-size:14px;letter-spacing:.14em;text-transform:uppercase;animation:msc-blink 1s steps(2) infinite}
+@keyframes msc-blink{50%{opacity:.35}}
 .mprog em{display:block;font-style:normal;color:var(--muted);font-size:13px;margin-top:4px;line-height:1.3}
 @media (max-width:700px),(max-height:500px){
   .mprog .jobtitle{font-size:17px}
@@ -217,14 +218,17 @@ export function hearts(left: number, of: number) {
   return `<span style="color:#ff4a5a;letter-spacing:2px" aria-label="${n} of ${of} lives">${"♥".repeat(n)}<span style="opacity:.3">${"♥".repeat(of - n)}</span></span>`;
 }
 
-/** The HUD's left column of mission panels, under the street name and over the Flag Lads' row. */
+/** The HUD's top-left slot of status panels: the job's first, then any other mission's (a bus
+ *  shift, a shoot-out, the bonfire), then the Flag Lads' row (invasion.ts writes #bunting), which
+ *  stays up during a job. On a touch screen the slot sits in the left column (#lstack). */
 function stack(): HTMLElement {
   let s = document.getElementById("mstack");
   if (s) return s;
   s = document.createElement("div");
   s.id = "mstack";
-  const col = document.getElementById("lstack");
-  if (col) col.insertBefore(s, document.getElementById("bunting")); else layer().appendChild(s);
+  const col = document.getElementById("lstack"), flags = document.getElementById("bunting");
+  if (col) col.insertBefore(s, flags); else layer().appendChild(s);
+  if (flags) s.appendChild(flags);
   return s;
 }
 
@@ -235,7 +239,7 @@ export function missionProgress(o: MissionProgress) {
     const el = document.createElement("div");
     el.className = "panel mprog"; el.hidden = true;
     el.dataset.mission = o.id;
-    if (o.id === "job") { el.id = "mprog"; stack().prepend(el); } else stack().appendChild(el);
+    if (o.id === "job") { el.id = "mprog"; stack().prepend(el); } else stack().insertBefore(el, document.getElementById("bunting"));
     p = { el, flash: "" };
     panels.set(o.id, p);
   }

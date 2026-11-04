@@ -124,7 +124,7 @@ import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
 import { missionActive, missionProgress, missionClear, missionResultUp, missionReward } from "./missionscreens";
 import { notice, noticeHold, noticeUp } from "./notice";
-import { usePrompt } from "./useprompt";
+import { keycaps, usePrompt } from "./useprompt";
 import { modal, modalClicked } from "./modal";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
@@ -4814,7 +4814,7 @@ export class Game {
     }
     const dives = !!c && c.role === "keeper" && this.alive;
     setHidden($("t-dl"), !dives); setHidden($("t-dr"), !dives);
-    if (dives) say($("shoothint"), input() === "touch" ? "You're in goal: tap a Dive button" : ctlText("You're in goal: hold {steer} to one side and press {dive} to dive"));
+    if (dives) show($("shoothint"), input() === "touch" ? "You're in goal: tap a Dive button" : keycaps("You're in goal: hold {steer} to one side and press {dive} to dive"));
     setHidden($("shoothint"), !dives);
   }
 
