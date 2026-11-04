@@ -195,7 +195,7 @@ export class MapKey {
     }
     el.append(head, body);
     // the note shows as soon as the pointer's on a row, not the browser's slow little label
-    this.tip.id = "keytip"; this.tip.hidden = true;
+    this.tip.id = "keytip"; this.tip.className = "ttmini"; this.tip.hidden = true;
     document.body.append(this.tip);
     body.addEventListener("pointerover", (e) => this.showTip((e.target as HTMLElement).closest<HTMLElement>("[data-tip]")));
     body.addEventListener("pointerleave", () => this.showTip(null));

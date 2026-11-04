@@ -1219,16 +1219,17 @@ export class Minimap {
     g.beginPath(); g.arc(h.x, h.y, h.r + 3 * dpr, 0, Math.PI * 2);
     g.lineWidth = 2.5 * dpr; g.strokeStyle = "#ffffff"; g.stroke();
     if (name) {
-      g.font = `700 ${Math.round(14 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
+      // the same small BathText card as the key's notes and a pub's card (style.css .ttmini)
+      g.font = `${Math.round(19 * dpr)}px VT323, ui-monospace, Menlo, monospace`;
       g.textAlign = "left"; g.textBaseline = "middle";
-      const w = g.measureText(name).width + 14 * dpr, bh = 22 * dpr;
+      const w = g.measureText(name).width + 14 * dpr, bh = 24 * dpr;
       let bx = h.x + h.r + 8 * dpr, by = h.y - bh / 2;
       if (bx + w > S - 4 * dpr) bx = h.x - h.r - 8 * dpr - w;
       by = Math.max(4 * dpr, Math.min(S - bh - 4 * dpr, by));
-      g.fillStyle = "rgba(14,16,18,0.92)";
-      g.beginPath(); g.roundRect(bx, by, w, bh, 4 * dpr); g.fill();
-      g.lineWidth = 1 * dpr; g.strokeStyle = "rgba(255,255,255,0.35)"; g.stroke();
-      g.fillStyle = "#f4f1ea"; g.fillText(name, bx + 7 * dpr, by + bh / 2 + 1 * dpr);
+      g.fillStyle = "#000";
+      g.fillRect(bx, by, w, bh);
+      g.fillStyle = "#00f"; g.fillRect(bx, by, 3 * dpr, bh);
+      g.fillStyle = "#ff0"; g.fillText(name, bx + 8 * dpr, by + bh / 2 + 1 * dpr);
     }
     g.restore();
   }
