@@ -5110,10 +5110,10 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                 turn = abs((math.atan2(v[1] - u[1], v[0] - u[0]) - heading + math.pi / 2) % math.pi - math.pi / 2)
                 if turn < ALONG_TURN and LineString([u, v]).intersection(close).length > 0.3:
                     return False
-            # (a metre beside it is one boundary drawn twice once the two run side by side for long)
+            # (a metre beside it is one boundary drawn twice once the two run side by side for long; two
+            # already side by side are drawn twice anyway, and running on only closes the gap at the end)
             before = _beside(own, o)
-            gained = _beside([way], o)
-            if gained > 0.05 and before + gained > BESIDE_LONG:
+            if before <= BESIDE_LONG < before + _beside([way], o):
                 return False
         return True
 
