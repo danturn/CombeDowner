@@ -262,28 +262,41 @@ def decide(poly, got, max_rise=MAX_RISE):
     hipped = not flat and got["fall"] < -0.25
     out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped, base=base)
     fit = choose_roof(got["fit"])
-    out["sure"] = False
+    out["sure"] = out["sure_hips"] = False
     if fit is not None:
         # the fitted roof planes, where they explain the survey well: the ridge's direction,
         # which ends are hipped, and the pitch
         out.update(u=fit["u"], hips=fit["hips"], hipped=any(fit["hips"]), flat=fit["flat"])
         if not fit["flat"]:
             out["ridge"] = eaves + fit["rise"]
-            out["sure"] = sure_way(got["fit"], fit)
+            out["sure"], out["sure_hips"] = sure_way(got["fit"], fit)
     return out
 
 
-SURE = 0.1          # metres RMS: a ridge the other way must fit at least this much worse for the survey to say which way it runs
+# metres RMS by which the survey's best roof must beat the next best for it to be believed, on a
+# footprint drawn a metre or two off the survey's building (two metres is typical in Bath): lining
+# 425 of Bath's terraced and semi-detached houses up on the survey changed how much better one way
+# of the ridge fits than the other by less than SURE_WAY nine times in ten, and how much better a
+# hipped roof fits than a gabled one by less than SURE_HIPS
+SURE_WAY = 0.3
+SURE_HIPS = 0.2
 
 
 def sure_way(tried, fit):
-    """Whether the survey says which way a pitched roof's ridge runs: the best roof with its ridge
-    the other way misses the survey by SURE more. A footprint drawn a metre or two off the
-    survey's building, as the open data often is, reads both ways about as well."""
+    """Whether the survey says which way a pitched roof's ridge runs, and whether it says if its ends
+    are hipped: the best roof the other way, or with the other kind of ends, misses the survey by
+    SURE_WAY or SURE_HIPS more. A roof with no slope the other way says nothing (on a footprint
+    drawn off the building, that fit failing is as likely as not to point the wrong way)."""
     ux, uy = fit["u"]
-    other = [f[0] for f in tried["fits"] if f[5] > 0.1 and abs(f[2][0] * ux + f[2][1] * uy) < 0.7]
-    mine = [f[0] for f in tried["fits"] if f[5] > 0.1 and abs(f[2][0] * ux + f[2][1] * uy) >= 0.7]
-    return bool(mine) and (not other or min(other) >= min(mine) + SURE)
+    sloped = [f for f in tried["fits"] if f[5] > 0.1]
+    mine = [f for f in sloped if abs(f[2][0] * ux + f[2][1] * uy) >= 0.7]
+    other = [f[0] for f in sloped if abs(f[2][0] * ux + f[2][1] * uy) < 0.7]
+    if not mine or not other: return False, False
+    way = min(other) >= min(f[0] for f in mine) + SURE_WAY
+    hipped = [f[0] for f in mine if any(f[3])]
+    gabled = [f[0] for f in mine if not any(f[3])]
+    hips = bool(hipped and gabled) and abs(min(hipped) - min(gabled)) >= SURE_HIPS
+    return way, way and hips
 
 
 def rough(z, keep, shape):

@@ -376,14 +376,16 @@ def _sides(poly):
 def rows(polys, adj, measured=None, shapes=None):
     """The roofs of rows of alike houses, where the survey can't give a house its own: houses
     joined by a party wall with outlines of much the same size were built together. A house keeps
-    the roof the survey fits to it wherever that fit is sure of its ridge's way (lidar.sure_way)
-    and the roof works, with no hip against a party wall. The others take their row's roof: the
-    ridge the way the sure ones in the row run (along the row if most don't face the street, or
-    none is sure), and the row's free ends hipped or gabled as its sure houses are, or else as
-    mapped. A footprint drawn off the survey's building reads both ways about as well, which
-    turned ridges house by house along a row and hipped one half of a semi.
+    the ridge the survey fits to it wherever that fit is sure which way it runs (lidar.sure_way)
+    and the roof works, with no hip against a party wall, and its hipped or gabled ends where the
+    survey is sure of those too. The others take their row's: the ridge the way the sure ones in
+    the row run (along the row if most don't face the street, or none is sure), and the row's free
+    ends hipped or gabled as its sure houses are, or else as mapped. A footprint drawn off the
+    survey's building reads both ways about as well, which turned ridges house by house along a
+    row and hipped one half of a semi.
     shapes: the roof shape mapped for each house.
-    Returns ({house: ridge direction}, {house: whether the row's free ends are hipped, or None},
+    Returns ({house: ridge direction}, {house: whether the row's free ends are hipped, or None,
+    for each house without the survey's own},
     {house in a row: "survey" where it keeps the survey's roof, or why it takes the row's})."""
     sides = [_sides(p) if HOUSE_M2[0] <= p.area <= HOUSE_M2[1] else None for p in polys]
 
@@ -421,7 +423,7 @@ def rows(polys, adj, measured=None, shapes=None):
         fam = set(members)
         own = {k: max((wall_dir(w) for j, w in adj[k].items() if j in fam), key=lambda d: d[2]) for k in members}
         across = along = 0
-        sure_ends, mapped_ends, guessed_ends, follow = [], [], [], []
+        sure_ends, mapped_ends, guessed_ends, follow, own_way = [], [], [], [], []
         for k in members:
             m = measured[k] if measured else None
             end = sum(j in fam for j in adj[k]) == 1
@@ -430,7 +432,10 @@ def rows(polys, adj, measured=None, shapes=None):
                 c = abs(m["u"][0] * own[k][0] + m["u"][1] * own[k][1])
                 across += c > 0.7
                 along += c < 0.3
-                if end: sure_ends.append(bool(m["hipped"]))
+                if m.get("sure_hips"):
+                    if end: sure_ends.append(bool(m["hipped"]))
+                else:
+                    own_way.append(k)
                 why[k] = "survey"
                 continue
             follow.append(k)
@@ -440,9 +445,10 @@ def rows(polys, adj, measured=None, shapes=None):
             elif end and m: guessed_ends.append(bool(m["hipped"]))
         turn = across > 0 and across * 3 >= (across + along) * 2
         ends = sure_ends or mapped_ends or guessed_ends
-        for k in follow:
-            wx, wy, _ = own[k]
-            ridge[k] = (wx, wy) if turn else (-wy, wx)
+        for k in follow + own_way:
+            if k in follow:
+                wx, wy, _ = own[k]
+                ridge[k] = (wx, wy) if turn else (-wy, wx)
             hipped[k] = sum(ends) * 2 >= len(ends) if ends else None
     return ridge, hipped, why
 
@@ -960,10 +966,10 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     hip0, hip1 = (half if h else 0.0 for h in m["hips"][::1 if same > 0 else -1])
                 elif m["hipped"]:
                     hip0 = hip1 = half
-                if i in row_ridge:
-                    if row_hipped.get(i) is not None: hip0 = hip1 = half if row_hipped[i] else 0.0
+                if i in row_hipped:
+                    if row_hipped[i] is not None: hip0 = hip1 = half if row_hipped[i] else 0.0
                     touching = walls
-                if (hip0 or hip1) and kind == "semi" and touching and i not in row_ridge:
+                if (hip0 or hip1) and kind == "semi" and touching and i not in row_hipped:
                     # only the outer end is hipped: the other is the party wall, whatever the
                     # survey's fit made of the neighbour's roof running on past it
                     _, _, (wx, wy) = touching[0]
@@ -1010,8 +1016,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     else: hip1 = half
                 elif kind in ("institution", "flats") and r_group < 0.5:
                     hip0 = hip1 = half
-                if i in row_ridge:
-                    if row_hipped.get(i) is not None and shape not in HIPPED + GABLED:
+                if i in row_hipped:
+                    if row_hipped[i] is not None and shape not in HIPPED + GABLED:
                         hip0 = hip1 = half if row_hipped[i] else 0.0
                     # a row's roofs run on into each other: no hip against a party wall
                     for (ax, ay), (bx, by), (wx, wy) in walls:
