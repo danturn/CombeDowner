@@ -614,7 +614,7 @@ gables do, and a terrace or a pair of semis is decided together, so a row reads 
 steps only where the survey shows it really does; where one roof steps down to another the step
 has its wall, so no roof shows a gap into the house. The roofs for every square are kept in
 `data/$MAP/measured/faces/`; a building the survey can't see, or whose row the new roofs don't fit
-clearly better, keeps the flat, gabled or hipped roof that fits it best; one too far off square for a single rectangle but with no real wings (a wedge on a corner plot) gets one hipped roof over the whole of it rather than a few gables on a flat cap. The parts a building is split into, and every house of a row, share one roof covering and one wall. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
+clearly better, keeps the flat, gabled or hipped roof that fits it best; one too far off square for a single rectangle (an L or a T, a church with its apse and chapels, a wedge on a corner plot, a block round a courtyard) gets one roof following its whole outline, hips, valleys and ridges as a roofer would lay them and gables at the ends of a gabled building's wings, rather than a few gables on a flat cap; a block too deep for its pitch is flat on top. The parts a building is split into, and every house of a row, share one roof covering and one wall. `python3 -I tools/roofs/shapes.py ti,tj ...` fits the roofs over a square as last built
 without them (a row keeps its old roofs where the new ones don't fit the survey clearly better),
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts

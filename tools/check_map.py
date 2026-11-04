@@ -41,7 +41,8 @@ case by case:
     wall drawn facing indoors, no roof reaching well past its walls, no ridge more than 15 m over
     the eaves, no roof below its ground or not a number, no faces of one roof lying over each
     other, no two buildings standing in each other, and no footprint too small to draw. The roofs the
-    game lays from roofsFit are looked at too (tools/roofs_drawn.ts runs map.ts on the square): no
+    game lays from roofsFit, and the roofs it lays over a whole outline (map.ts hipWhole, checked as
+    the lidar's are), are looked at too (tools/roofs_drawn.ts runs map.ts on the square): no
     pitched roof leaving much of its building under a flat cap, no roofs over one building that
     don't meet, and no two buildings sharing a wall (one building's parts, or a row) whose roofs
     are in different coverings or colours, or don't meet along it at the same eaves.
@@ -849,13 +850,16 @@ def _pitched(d):
 def roofs_whole(m, tag, note):
     """Rule 11: every building's roof is whole, as the game draws it."""
     bl = m.get("bl") or []
+    drawn = roofs_drawn(bl)
     polys = []
     for b in bl:
         ring = b["r"][0]
         P = Polygon(ring, b["r"][1:]) if len(ring) >= 3 else None
         if P is not None and not P.is_valid: P = P.buffer(0)
         polys.append(P)
-    for b, P in zip(bl, polys):
+    for bi, (b, P) in enumerate(zip(bl, polys)):
+        if drawn is not None and not b.get("rm") and drawn[bi].get("rm"):
+            b = dict(b, r=drawn[bi]["r"], rm=drawn[bi]["rm"])     # a roof the game lays over the whole outline
         if P is None or P.is_empty or P.area < 1:
             note("11 footprint too small to draw", 1, (tag, round(b["r"][0][0][0]), round(b["r"][0][0][1])), "")
             continue
@@ -884,7 +888,8 @@ def roofs_whole(m, tag, note):
         pieces = [U] + [shapely.make_valid(Polygon([s[:2] for s in q[:4]])).buffer(0.01) for q in strips]
         try: shut = shapely.union_all(pieces)
         except shapely.errors.GEOSException: shut = shapely.union_all(pieces, grid_size=0.01)
-        bare = P.difference(shut).area
+        try: bare = P.difference(shut).area
+        except shapely.errors.GEOSException: bare = P.difference(shapely.make_valid(shut).buffer(0)).area
         if bare > 1: note("11 footprint left without a roof", bare, at, f"{bare:.1f} m2")
         # (the points' rounding leaves corners a few centimetres open: only a longer opening shows)
         gap = max([o[4] for o in opened if not o[5] and P.buffer(-0.05).intersects(LineString([o[:2], o[2:4]]))], default=0)
@@ -900,20 +905,19 @@ def roofs_whole(m, tag, note):
             if j <= i: continue
             x = p.intersection(q).area
             if x > 2: note("11 buildings standing in each other", x, (tag, round(p.centroid.x), round(p.centroid.y)), f"{x:.0f} m2")
-    roofs_drawn_whole(m, tag, note, polys)
+    roofs_drawn_whole(m, tag, note, polys, drawn)
 
 
 PART_WALL = 2.5     # buildings.groups: two footprints share a wall at least this long
 FLAT_LEFT = 10.0    # m2: a flat-capped part of a pitched building this big is seen as a roof missing
 
 
-def roofs_drawn_whole(m, tag, note, polys):
+def roofs_drawn_whole(m, tag, note, polys, drawn):
     """Rule 11 on the roofs the game draws from roofsFit as well as the lidar's: a pitched roof that
     covers only part of its building, roofs laid over one building that don't meet, and buildings
     sharing a wall (one building's parts, or a row) whose roofs don't meet along it or are in
     different coverings or colours."""
     bl = m.get("bl") or []
-    drawn = roofs_drawn(bl)
     if drawn is None: return
     for b, d, P in zip(bl, drawn, polys):
         if P is None or P.is_empty or P.area < 1 or d.get("rm") or not (b.get("rr") and b.get("rp")): continue

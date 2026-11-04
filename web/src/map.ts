@@ -18,6 +18,7 @@ import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
 import { alignPortals, portalFaces } from "./tunnels";
+import { straightSkeleton } from "./skeleton";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -394,7 +395,6 @@ export class GameMap {
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
   constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null, cableData: CableData | null = null) {
     if (SIMPLE_ROOFS) for (const b of d.bl ?? []) delete b.rm;
-    else for (const b of d.bl ?? []) hipWhole(b);
     // A map whose ground all comes in squares (tiles.ts) has no terrain or scenery of its own: it
     // gets an empty grid, which nothing is ever inside, so the ground, collision and scenery
     // everywhere are the squares' (or the wider map's, where no square is loaded).
@@ -585,6 +585,8 @@ export class GameMap {
     for (let bi = 0; bi < d.bl.length; bi++) {
       const b = d.bl[bi];
       if (this.spent(4)) yield;
+      // (here, a slice at a time, as an outline-following roof takes a little working out)
+      if (!SIMPLE_ROOFS) hipWhole(b);
       const top = b.rm ? roofMeshTop(b) - this.z0 : b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
       for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
@@ -1792,50 +1794,64 @@ export function roofsFit(b: Building): Roof[] {
   fits.set(b, out);
   return out;
 }
-/** The most the hull of an outline may cover beyond the outline itself for it to take one hipped
- *  roof over the lot: past that it has real wings, which roofsFit roofs one by one. */
-const HIP_HULL = 1.03;
-/** Building b's roof, when its rectangle doesn't stand on its walls but the outline is near enough
- *  a single convex block (a wedge on a corner plot, a house with a slanted end), as one hipped roof
- *  over the whole of it: each wall's slope rises from its eaves at the pitch of the map's roof, and
- *  the slopes meet in hips and a ridge as a roofer would lay them. Carving such a block into
- *  rectangles left gables of several sizes standing on a flat cap. It comes as a RoofMesh, so it is
- *  drawn, stood on and walled up to like a roof from the lidar; the outline gains a point wherever
- *  a hip meets a wall, and the walls in any notch of the outline rise to the roof over them. */
+/** The steepest a gable end may stand for a wall to be taken as one: its corners square, give or take. */
+const GABLE_SQUARE = Math.cos((60 * Math.PI) / 180);
+/** Building b's roof, when its rectangle doesn't stand on its walls (an L, a T, a church with its
+ *  apse and chapels, a wedge on a corner plot, a block round a courtyard), as one roof following its
+ *  whole outline (skeleton.ts): each wall's slope rises from its eaves at the pitch of the map's roof
+ *  and the slopes meet in hips, valleys and ridges as a roofer would lay them. Carving such a block
+ *  into rectangles left gables of several sizes standing on a flat cap over the rest. A gabled
+ *  building (the map gives no hips) keeps gables at the ends of its wings, the walls rising to the
+ *  roof there. The ridge stops rising a little over the map's ridge height, so a deep block is flat
+ *  on top rather than a cathedral. It comes as a RoofMesh, so it
+ *  is drawn, stood on and walled up to like a roof from the lidar. Where the outline defeats the
+ *  skeleton the building keeps today's roof. */
 export function hipWhole(b: Building): void {
-  if (!b.rr || !b.rp || b.rm || b.r.length !== 1 || b.r[0].length < 3) return;
+  if (!b.rr || !b.rp || b.rm || b.r.some((g) => g.length < 3)) return;
   const { miss, n, notched } = rectFit(b);
   if (miss / n <= 0.08 && !notched) return;
-  const ring = b.r[0], hull = convexHull(ring);
-  const area = ringArea(ring);
-  if (hull.length < 3 || area < 1 || ringArea(hull) > HIP_HULL * area) return;
-  // each slope as z = A x + B y + C, rising one metre for each metre in from its wall
-  const planes = hull.map((a, i) => {
-    const c = hull[(i + 1) % hull.length], l = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
-    const nx = -(c[1] - a[1]) / l, ny = (c[0] - a[0]) / l;
-    return [nx, ny, -(nx * a[0] + ny * a[1])];
+  const signed = (g: number[][]) => { let a = 0; for (let i = 0, j = g.length - 1; i < g.length; j = i++) a += g[j][0] * g[i][1] - g[i][0] * g[j][1]; return a / 2; };
+  // the outline anticlockwise and its courtyards clockwise, each without repeated or in-line points
+  const rings = b.r.map((g, ri) => {
+    let pts = g.filter((p, i) => Math.hypot(p[0] - g[(i + 1) % g.length][0], p[1] - g[(i + 1) % g.length][1]) > 0.02);
+    pts = pts.filter((p, i) => {
+      const a = pts[(i + pts.length - 1) % pts.length], c = pts[(i + 1) % pts.length];
+      return Math.abs((p[0] - a[0]) * (c[1] - a[1]) - (p[1] - a[1]) * (c[0] - a[0])) > 1e-4 * Math.hypot(c[0] - a[0], c[1] - a[1]);
+    });
+    return (signed(pts) > 0) === (ri === 0) ? pts : [...pts].reverse();
   });
-  const faces: { k: number; p: number[][] }[] = [];
-  let peak = 0;
-  planes.forEach((pj, j) => {
-    let p = hull;
-    for (let i = 0; i < planes.length && p.length >= 3; i++) {
-      if (i === j) continue;
-      const pi = planes[i];
-      p = clipHalf(p, pj[0] - pi[0], pj[1] - pi[1], pj[2] - pi[2]);
-    }
-    if (p.length >= 3 && ringArea(p) > 1e-3) {
-      faces.push({ k: j, p });
-      for (const [x, y] of p) peak = Math.max(peak, pj[0] * x + pj[1] * y + pj[2]);
-    }
-  });
-  if (!faces.length || peak <= 0) return;
-  // the map's pitch (its rise over half the rectangle's width), lowered where the hips would meet
-  // well above the ridge it gives
+  if (rings.some((g) => g.length < 3) || signed(rings[0]) < 4) return;
   const W = Math.hypot(b.rr[3][0] - b.rr[0][0], b.rr[3][1] - b.rr[0][1]) || 1;
-  const k = Math.min(STEEPEST, b.rp / (W / 2), (1.25 * b.rp) / peak);
+  const top = Math.min(12, 1.25 * b.rp);
+  // a gabled building's wing ends: a wall between two square corners, shorter than the walls beside it
+  const outer = rings[0], m = outer.length, gabled = !(b.hp ?? [0, 0]).some((h) => h);
+  const gable = outer.map((p, i) => {
+    if (!gabled) return false;
+    const a = outer[(i + m - 1) % m], c = outer[(i + 1) % m], d = outer[(i + 2) % m];
+    const len = (u: number[], v: number[]) => Math.hypot(v[0] - u[0], v[1] - u[1]);
+    const corner = (u: number[], v: number[], w: number[]) => {
+      const x1 = v[0] - u[0], y1 = v[1] - u[1], x2 = w[0] - v[0], y2 = w[1] - v[1];
+      const l = Math.hypot(x1, y1) * Math.hypot(x2, y2) || 1;
+      return x1 * y2 - y1 * x2 > 0 && Math.abs(x1 * x2 + y1 * y2) / l < GABLE_SQUARE;
+    };
+    const here = len(p, c);
+    return corner(a, p, c) && corner(p, c, d) && here < len(a, p) && here < len(c, d);
+  });
+  // the pitch puts the map's ridge over the middle of the main body: half the rectangle's width in,
+  // or less where the outline's deepest part is narrower than that
+  let sk = straightSkeleton(rings, gable, 1, Infinity);
+  if (!sk || !sk.tris.length) return;
+  let deepest = 0;
+  for (let i = 2; i < sk.tris.length; i += 3) deepest = Math.max(deepest, sk.tris[i]);
+  const k = Math.min(STEEPEST, b.rp / Math.max(0.5, Math.min(W / 2, deepest)));
+  if (k * deepest <= top) {
+    for (let i = 2; i < sk.tris.length; i += 3) sk.tris[i] *= k;
+    for (const pts of sk.gables.values()) for (const p of pts) p[2] *= k;
+  } else {
+    sk = straightSkeleton(rings, gable, k, top);
+    if (!sk || !sk.tris.length) return;
+  }
   const eaves = b.g + b.h;
-  const roofAt = (x: number, y: number) => eaves + k * Math.max(0, Math.min(...planes.map((p) => p[0] * x + p[1] * y + p[2])));
   const v: number[] = [], t: number[] = [], index = new Map<string, number>();
   const vid = (x: number, y: number, z: number) => {
     const key = `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
@@ -1843,62 +1859,37 @@ export function hipWhole(b: Building): void {
     if (i === undefined) { i = v.length / 3; index.set(key, i); v.push(x, y, z); }
     return i;
   };
-  for (const { k: j, p } of faces) {
-    const pl = planes[j], z = (q: number[]) => eaves + k * Math.max(0, pl[0] * q[0] + pl[1] * q[1] + pl[2]);
-    const ids = p.map((q) => vid(q[0], q[1], z(q)));
-    for (let i = 1; i + 1 < ids.length; i++) t.push(ids[0], ids[i], ids[i + 1]);
+  for (let i = 0; i < sk.tris.length; i += 9) {
+    const a = vid(sk.tris[i], sk.tris[i + 1], eaves + sk.tris[i + 2]);
+    const c = vid(sk.tris[i + 3], sk.tris[i + 4], eaves + sk.tris[i + 5]);
+    const d = vid(sk.tris[i + 6], sk.tris[i + 7], eaves + sk.tris[i + 8]);
+    if (a !== c && c !== d && d !== a) t.push(a, c, d);
   }
-  // the outline, with a point wherever the roof over a wall changes slope along it
-  const r: number[][] = [], zs: number[] = [];
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i], c = ring[(i + 1) % ring.length];
-    const at = (s: number) => [a[0] + (c[0] - a[0]) * s, a[1] + (c[1] - a[1]) * s];
-    const cuts = [0];
-    for (const f of faces) for (let e = 0; e < f.p.length; e++) {
-      const s = crossAt(a, c, f.p[e], f.p[(e + 1) % f.p.length]);
-      if (s !== null && s > 1e-3 && s < 1 - 1e-3) cuts.push(s);
+  // the walls rise to the roof only under a gable: there the outline gains a point wherever the
+  // roof's line over the wall bends
+  const r = rings.map((g) => g.map((p) => [p[0], p[1]]));
+  const z = rings.map((g) => g.flatMap(() => [eaves, eaves]));
+  const out: number[][] = [], zo: number[] = [];
+  for (let i = 0; i < m; i++) {
+    const a = outer[i], c = outer[(i + 1) % m], pts = sk.gables.get(i);
+    out.push(r[0][i]);
+    if (!pts) { zo.push(eaves, eaves); continue; }
+    const L = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
+    const along = pts.map((p) => [((p[0] - a[0]) * (c[0] - a[0]) + (p[1] - a[1]) * (c[1] - a[1])) / (L * L), p[2]])
+      .filter((p) => p[0] > 1e-3 && p[0] < 1 - 1e-3).sort((x, y) => x[0] - y[0]);
+    zo.push(eaves);
+    for (const [s, h] of along) {
+      const q = [a[0] + (c[0] - a[0]) * s, a[1] + (c[1] - a[1]) * s], prev = out[out.length - 1];
+      if (Math.hypot(q[0] - prev[0], q[1] - prev[1]) < 0.02 || Math.hypot(q[0] - c[0], q[1] - c[1]) < 0.02) continue;
+      zo.push(eaves + h);
+      out.push(q);
+      zo.push(eaves + h);
     }
-    cuts.sort((x, y) => x - y);
-    const pts = cuts.filter((s, m) => m === 0 || s - cuts[m - 1] > 1e-3).map(at);
-    for (let m = 0; m < pts.length; m++) {
-      const q = pts[m], nq = m + 1 < pts.length ? pts[m + 1] : c;
-      r.push([Math.round(q[0] * 100) / 100, Math.round(q[1] * 100) / 100]);
-      zs.push(roofAt(q[0], q[1]), roofAt(nq[0], nq[1]));
-    }
+    zo.push(eaves);
   }
-  b.r = [r];
-  b.rm = { v, t, z: [zs] };
-}
-/** The convex hull of the points, anticlockwise. */
-function convexHull(pts: number[][]): number[][] {
-  const p = [...pts].sort((a, c) => a[0] - c[0] || a[1] - c[1]);
-  const turn = (o: number[], a: number[], c: number[]) => (a[0] - o[0]) * (c[1] - o[1]) - (a[1] - o[1]) * (c[0] - o[0]);
-  const lower: number[][] = [], upper: number[][] = [];
-  for (const q of p) { while (lower.length >= 2 && turn(lower[lower.length - 2], lower[lower.length - 1], q) <= 1e-9) lower.pop(); lower.push(q); }
-  for (const q of p.reverse()) { while (upper.length >= 2 && turn(upper[upper.length - 2], upper[upper.length - 1], q) <= 1e-9) upper.pop(); upper.push(q); }
-  return lower.slice(0, -1).concat(upper.slice(0, -1));
-}
-/** The part of convex polygon p where A x + B y + C <= 0. */
-function clipHalf(p: number[][], A: number, B: number, C: number): number[][] {
-  const out: number[][] = [];
-  for (let i = 0; i < p.length; i++) {
-    const a = p[i], c = p[(i + 1) % p.length];
-    const fa = A * a[0] + B * a[1] + C, fc = A * c[0] + B * c[1] + C;
-    if (fa <= 1e-9) out.push(a);
-    if ((fa < -1e-9 && fc > 1e-9) || (fa > 1e-9 && fc < -1e-9)) {
-      const s = fa / (fa - fc);
-      out.push([a[0] + (c[0] - a[0]) * s, a[1] + (c[1] - a[1]) * s]);
-    }
-  }
-  return out;
-}
-/** How far along a -> c (0 to 1) the segment p -> q crosses it, or null where they don't cross. */
-function crossAt(a: number[], c: number[], p: number[], q: number[]): number | null {
-  const rx = c[0] - a[0], ry = c[1] - a[1], sx = q[0] - p[0], sy = q[1] - p[1];
-  const d = rx * sy - ry * sx;
-  if (Math.abs(d) < 1e-12) return null;
-  const s = ((p[0] - a[0]) * sy - (p[1] - a[1]) * sx) / d, u = ((p[0] - a[0]) * ry - (p[1] - a[1]) * rx) / d;
-  return u >= -1e-6 && u <= 1 + 1e-6 ? s : null;
+  r[0] = out; z[0] = zo;
+  b.r = r;
+  b.rm = { v, t, z };
 }
 /** The height above sea level of building b's roof over (x, y) as world.ts draws it, or null off it:
  *  the highest of its faces and of the strips roofSeams lays across the slits between them, since
