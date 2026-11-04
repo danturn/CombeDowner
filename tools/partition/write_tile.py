@@ -5023,6 +5023,7 @@ ALONGSIDE = 0.6         # metres: a run on within this of another, and near para
 BESIDE = 1.2            # metres: within this it stands beside it, one boundary drawn twice if for longer than
 BESIDE_LONG = 3.0       # metres side by side
 ALONG_TURN = math.radians(25)
+BESIDE_BACK = math.sin(math.radians(10))   # a corner up to this far behind square across its end is beside it
 
 
 def _end_heading(coords, end):
@@ -5085,8 +5086,18 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
     made = []
 
     def ahead(x, y, head, c):
+        # (or out to one side of it: a corner beside the end, not behind it, is still the one it meets)
         dx, dy = c.x - x, c.y - y
-        return dx * head[0] + dy * head[1] >= 0
+        return dx * head[0] + dy * head[1] >= -BESIDE_BACK * math.hypot(dx, dy)
+
+    def facing(x, y, head, other_pts, e, c):
+        # (two ends heading at each other along one line are a gap left between them; side by side,
+        # the one further on than across, they are a corner just missed)
+        other = _end_heading(other_pts, e)
+        if other is None or head[0] * other[0] + head[1] * other[1] >= -math.cos(LINE_TURN):
+            return False
+        dx, dy = c.x - x, c.y - y
+        return dx * head[0] + dy * head[1] > abs(dx * head[1] - dy * head[0])
 
     def clear_way(i, a, b):
         way = LineString([a, b])
@@ -5110,10 +5121,13 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                 turn = abs((math.atan2(v[1] - u[1], v[0] - u[0]) - heading + math.pi / 2) % math.pi - math.pi / 2)
                 if turn < ALONG_TURN and LineString([u, v]).intersection(close).length > 0.3:
                     return False
-            # (a metre beside it is one boundary drawn twice once the two run side by side for long; two
-            # already side by side are drawn twice anyway, and running on only closes the gap at the end)
-            before = _beside(own, o)
-            if before <= BESIDE_LONG < before + _beside([way], o):
+            # (a metre beside it is one boundary drawn twice once the two run side by side for long, as far
+            # as each lies beside the other; two already side by side are drawn twice anyway, and
+            # running on only closes the gap at the end)
+            theirs = [LineString(uv) for uv in zip(o.coords, list(o.coords)[1:])]
+            before = min(_beside(own, o), _beside(theirs, lines[i]))
+            after = min(_beside(own, o) + _beside([way], o), _beside(theirs, lines[i]) + _beside(theirs, way))
+            if before <= BESIDE_LONG < after:
                 return False
         return True
 
@@ -5151,9 +5165,7 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                 continue
             if corners:
                 j, e, c = min(corners, key=lambda t: p.distance(t[2]))
-                other = _end_heading(runs[j]["p"], e)
-                end_on = other is not None and head[0] * other[0] + head[1] * other[1] < -math.cos(LINE_TURN)
-                if end_on or not clear_way(i, (x, y), (c.x, c.y)):
+                if facing(x, y, head, runs[j]["p"], e, c) or not clear_way(i, (x, y), (c.x, c.y)):
                     continue
                 hit, meeting = c, (j, e)
             else:
@@ -5190,8 +5202,7 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                         and own.distance(now_at[(j, e)]) >= MET]
                 if near:
                     j, e, c = min(near, key=lambda t: p.distance(t[2]))     # (the first it comes to)
-                    other = _end_heading(runs[j]["p"], e)
-                    if other is not None and head[0] * other[0] + head[1] * other[1] < -math.cos(LINE_TURN):
+                    if facing(x, y, head, runs[j]["p"], e, c):
                         continue
                     if not clear_way(i, (x, y), (c.x, c.y)):
                         continue
