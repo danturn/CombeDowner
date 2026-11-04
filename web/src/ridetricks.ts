@@ -3,15 +3,15 @@
 // player.ts) add up into one combo, THPS style: each adds points and puts the multiplier up one,
 // doing the same thing again in a combo is worth less each time, a manual on the flat keeps the
 // chain going between them, and coming off loses the lot. The combo ends once you've been rolling
-// along on the ground for a moment, and its score shows as a row of the meter slot under the
-// crosshair (missionscreens.ts), with your bests on that ride (longest grind, biggest air, longest manual, best combo),
+// along on the ground for a moment, and its score shows as its line of the combo row under the
+// crosshair (combo.ts), with your bests on that ride (longest grind, biggest air, longest manual, best combo),
 // which this browser keeps for each ride.
 //
 // The feel: the view widens as you go faster, the wind gets up in your ears, the wheels rumble
 // and grinds scrape, and the view shakes a little on grass, paths and grinds.
 //
 // Who decides what: nothing here goes over the network. Your tricks and score are yours alone.
-import { missionAuxAdopt } from "./missionscreens";
+import { comboLine, type ComboLine } from "./combo";
 import type * as THREE from "three";
 import * as SFX from "./audio";
 import type { Player, RideEvent } from "./player";
@@ -40,22 +40,16 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 export class RideTricks {
   /** Degrees to widen the view by, going fast. */
   fov = 0;
-  private el: HTMLElement;
   private combo: Combo | null = null;
   private grace = 0;
   private kind: RideKind | null = null;
   private shown = "";
-  private result = "";        // the last combo's score (or the bail), shown for a moment
-  private resultClass = "";
+  private result: ComboLine | null = null;   // the last combo's score (or the bail), shown for a moment
   private resultT = 0;
   private sound: ReturnType<typeof SFX.rideNoise> = null;
   private bests: Partial<Record<RideKind, Bests>>;
 
   constructor(private say: (text: string, secs: number) => void) {
-    this.el = document.createElement("div");
-    this.el.id = "combo";
-    this.el.hidden = true;
-    document.getElementById("hud")?.appendChild(this.el);
     try { this.bests = JSON.parse(localStorage.getItem(STORE) ?? "{}") ?? {}; } catch { this.bests = {}; }
   }
 
@@ -150,7 +144,7 @@ export class RideTricks {
     const c = this.combo;
     this.combo = null;
     if (!c || !c.mult) return;
-    this.showResult(`<b>Bailed</b><small>${fmt(c.base * c.mult)} lost</small>`, "bail", 1.6);
+    this.showResult({ score: "Bailed", label: `${fmt(c.base * c.mult)} lost`, cls: "bail" }, 1.6);
   }
 
   /** Rolled away clean: bank it, and see how it stacks up against your bests on this ride. */
@@ -169,20 +163,20 @@ export class RideTricks {
     try { localStorage.setItem(STORE, JSON.stringify(this.bests)); } catch { /* storage may be blocked */ }
     const name = rideSpecs[kind].name.replace(/^an? /, "");
     const bests = [b.grind ? `grind ${b.grind.toFixed(1)} m` : "", b.air ? `air ${b.air.toFixed(1)} m` : "", b.manual ? `manual ${b.manual.toFixed(1)} s` : "", `combo ${fmt(b.combo)}`].filter(Boolean).join(" · ");
-    this.showResult(`<b>${fmt(total)}</b> <i>×${c.mult}</i><small>${esc(c.names.slice(-4).join(" + "))}</small>`
-      + `<small class="best">${news.length ? "New best! " : ""}Your bests on the ${esc(name)}: ${bests}</small>`, news.length ? "done new" : "done", news.length ? 4 : 3);
+    this.showResult({ score: fmt(total), mult: `×${c.mult}`, label: c.names.slice(-4).join(" + "),
+      more: `<small class="best">${news.length ? "New best! " : ""}Your bests on the ${esc(name)}: ${bests}</small>`, cls: news.length ? "done new" : "done" }, news.length ? 4 : 3);
     if (news.length) { SFX.jobStep(); this.say(`New best on the ${name}: ${news.join(", ")}`, 2.5); }
     else SFX.pip();
   }
 
-  private showResult(html: string, cls: string, secs: number) {
-    this.result = html; this.resultClass = cls; this.resultT = secs;
+  private showResult(line: ComboLine, secs: number) {
+    this.result = line; this.resultT = secs;
   }
 
   /** The counter: the combo going on, or the last one's score for a moment. */
   private draw(dt: number, p: Player, on: boolean) {
     this.resultT = Math.max(0, this.resultT - dt);
-    let html = "", cls = "";
+    let line: ComboLine | null = null;
     const c = this.combo;
     if (c && on) {
       // what's under way counts already
@@ -193,15 +187,12 @@ export class RideTricks {
       }
       else if (p.manual) { base += 50 + 40 * p.manual; mult++; live = `${p.ride!.manual} ${p.manual.toFixed(1)} s`; }
       const names = [...c.names.slice(-3), live].filter(Boolean).join(" + ");
-      html = `<b>${fmt(base * Math.max(1, mult))}</b> <i>×${Math.max(1, mult)}</i><small>${esc(names)}</small>`;
-      if (p.manual || (p.grind && p.grind.t > 0.9)) html += `<span class="bal"><span style="left:${(50 + 50 * Math.max(-1, Math.min(1, p.grind ? p.grind.bal : p.balance))).toFixed(0)}%"></span></span>`;
-    } else if (this.resultT > 0) { html = this.result; cls = this.resultClass; }
-    const key = cls + html;
+      line = { score: fmt(base * Math.max(1, mult)), mult: `×${Math.max(1, mult)}`, label: names };
+      if (p.manual || (p.grind && p.grind.t > 0.9)) line.more = `<span class="bar"><span style="left:${(50 + 50 * Math.max(-1, Math.min(1, p.grind ? p.grind.bal : p.balance))).toFixed(0)}%"></span></span>`;
+    } else if (this.resultT > 0) line = this.result;
+    const key = line ? JSON.stringify(line) : "";
     if (key === this.shown) return;
     this.shown = key;
-    if (html) missionAuxAdopt(this.el);
-    this.el.hidden = !html;
-    this.el.className = cls;
-    this.el.innerHTML = html;
+    comboLine("ride", line);
   }
 }
