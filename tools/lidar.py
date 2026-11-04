@@ -262,13 +262,28 @@ def decide(poly, got, max_rise=MAX_RISE):
     hipped = not flat and got["fall"] < -0.25
     out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped, base=base)
     fit = choose_roof(got["fit"])
+    out["sure"] = False
     if fit is not None:
         # the fitted roof planes, where they explain the survey well: the ridge's direction,
         # which ends are hipped, and the pitch
         out.update(u=fit["u"], hips=fit["hips"], hipped=any(fit["hips"]), flat=fit["flat"])
         if not fit["flat"]:
             out["ridge"] = eaves + fit["rise"]
+            out["sure"] = sure_way(got["fit"], fit)
     return out
+
+
+SURE = 0.1          # metres RMS: a ridge the other way must fit at least this much worse for the survey to say which way it runs
+
+
+def sure_way(tried, fit):
+    """Whether the survey says which way a pitched roof's ridge runs: the best roof with its ridge
+    the other way misses the survey by SURE more. A footprint drawn a metre or two off the
+    survey's building, as the open data often is, reads both ways about as well."""
+    ux, uy = fit["u"]
+    other = [f[0] for f in tried["fits"] if f[5] > 0.1 and abs(f[2][0] * ux + f[2][1] * uy) < 0.7]
+    mine = [f[0] for f in tried["fits"] if f[5] > 0.1 and abs(f[2][0] * ux + f[2][1] * uy) >= 0.7]
+    return bool(mine) and (not other or min(other) >= min(mine) + SURE)
 
 
 def rough(z, keep, shape):
