@@ -679,8 +679,9 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 #windarrow { display: inline-block; font-size: 22px; line-height: 1; color: #bfe3ff; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
-/* the keeper's prompt in a shoot-out: the use prompt's look (useprompt.ts), lower down, clear of the ball */
-#shoothint { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); background: var(--panel); padding: 5px 14px 4px;
+/* the keeper's prompt in a shoot-out: the use prompt, in its place, standing in for it while you're in goal */
+#hud:has(#shoothint:not([hidden])) #usehint { visibility: hidden; }
+#shoothint { position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); background: var(--panel); padding: 5px 14px 4px;
   font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; max-width: calc(100vw - 32px); pointer-events: none; }
 #shoothint[hidden] { display: none; }
 
