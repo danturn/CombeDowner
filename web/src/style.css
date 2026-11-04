@@ -853,9 +853,9 @@ body:has(#bigmap:not([hidden])) #usehint { z-index: auto; }
   opacity: 0; transition: opacity 0.3s, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.5);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) scale(1); }
-/* A ride's combo (ridetricks.ts): the score and multiplier, what's in it, and a manual's balance */
+/* A ride's combo (ridetricks.ts), a row of the meter slot under the crosshair: the score and multiplier, what's in it, and a manual's balance */
 #combo {
-  position: absolute; left: 50%; top: 31%; transform: translateX(-50%); max-width: calc(100vw - 32px); text-align: center;
+  max-width: calc(100vw - 32px); text-align: center;
   pointer-events: none; color: #fff; font-weight: 800; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 0, 0, 0.5);
 }
 #combo b { font-size: 24px; color: var(--accent); }

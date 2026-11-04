@@ -75,6 +75,7 @@ addStyle("mission", `
 #maux .aux-meter{position:relative;width:100%;height:12px;background:rgba(0,0,0,.5);border:2px solid #fff;border-radius:7px;overflow:hidden;box-sizing:border-box}
 #maux .aux-meter.thin{width:96px;height:6px;border-width:1px;border-radius:0}
 #maux .aux-meter>i{position:absolute;top:0;bottom:0;left:0;display:block}
+#maux>:is(#combo,#fj-combo,#wingsbar){position:static;transform:none;margin:0;width:auto}
 #maux .aux-panel{background:var(--panel);padding:6px 14px;border-bottom:3px solid var(--kc,var(--accent));min-width:260px;box-sizing:border-box}
 .msc{position:fixed;left:0;right:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;text-align:center;
   font-family:var(--f-hud);color:#fff;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.6);transition:opacity ${FADE}s;z-index:6}
@@ -294,16 +295,29 @@ export function missionClear(id?: string) {
  *  Each key has its own row; null takes it down, and no key at all clears the slot. */
 export function missionAux(key?: string, html?: string | null, colour?: string) {
   let slot = document.getElementById("maux");
-  if (key === undefined) { if (slot) slot.replaceChildren(); return; }
+  if (key === undefined) { slot?.querySelectorAll(":scope>[data-k]").forEach((r) => r.remove()); return; }
   if (!slot) {
     if (!html) return;
-    slot = document.createElement("div"); slot.id = "maux"; layer().appendChild(slot);
+    slot = auxSlot();
   }
   let row = slot.querySelector<HTMLElement>(`:scope>[data-k="${key}"]`);
   if (!html) { if (row && !row.hidden) row.hidden = true; return; }
   if (!row) { row = document.createElement("div"); row.dataset.k = key; slot.appendChild(row); }
   if ((row.style.getPropertyValue("--kc") || undefined) !== colour) colourOn(row, colour);
   show(row, html, true);
+}
+
+function auxSlot() {
+  let slot = document.getElementById("maux");
+  if (!slot) { slot = document.createElement("div"); slot.id = "maux"; layer().appendChild(slot); }
+  return slot;
+}
+
+/** A meter a mode keeps itself (a ride's combo, the Flag Lads' combo, the wings' flight): a row of
+ *  the slot under the crosshair, above the score pops, so it never sits apart or on top of another. */
+export function missionAuxAdopt(el: HTMLElement) {
+  const slot = auxSlot();
+  if (el.parentElement !== slot) slot.insertBefore(el, slot.querySelector(":scope>#trick"));
 }
 
 /** The row a mode drew under the crosshair, to move its bars without writing it again. */

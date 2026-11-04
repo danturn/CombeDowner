@@ -3,14 +3,15 @@
 // player.ts) add up into one combo, THPS style: each adds points and puts the multiplier up one,
 // doing the same thing again in a combo is worth less each time, a manual on the flat keeps the
 // chain going between them, and coming off loses the lot. The combo ends once you've been rolling
-// along on the ground for a moment, and its score shows in one small counter in the middle of the
-// screen, with your bests on that ride (longest grind, biggest air, longest manual, best combo),
+// along on the ground for a moment, and its score shows as a row of the meter slot under the
+// crosshair (missionscreens.ts), with your bests on that ride (longest grind, biggest air, longest manual, best combo),
 // which this browser keeps for each ride.
 //
 // The feel: the view widens as you go faster, the wind gets up in your ears, the wheels rumble
 // and grinds scrape, and the view shakes a little on grass, paths and grinds.
 //
 // Who decides what: nothing here goes over the network. Your tricks and score are yours alone.
+import { missionAuxAdopt } from "./missionscreens";
 import type * as THREE from "three";
 import * as SFX from "./audio";
 import type { Player, RideEvent } from "./player";
@@ -198,6 +199,7 @@ export class RideTricks {
     const key = cls + html;
     if (key === this.shown) return;
     this.shown = key;
+    if (html) missionAuxAdopt(this.el);
     this.el.hidden = !html;
     this.el.className = cls;
     this.el.innerHTML = html;

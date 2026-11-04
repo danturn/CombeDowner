@@ -61,7 +61,7 @@ function clear() {
 /** Call fn now and again every ms, for a piece that would otherwise go by itself. */
 const keep = (fn: () => void, ms: number) => { fn(); hold = window.setInterval(fn, ms); };
 /** ridetricks.ts makes its own #combo on the HUD the first time: so does this. */
-const comboEl = () => { let e = document.getElementById("combo"); if (!e) { e = document.createElement("div"); e.id = "combo"; $("hud").appendChild(e); } e.className = ""; return e; };
+const comboEl = () => { let e = document.getElementById("combo"); if (!e) { e = document.createElement("div"); e.id = "combo"; } MS.missionAuxAdopt(e); e.className = ""; return e; };
 const feed = (html: string) => { const el = document.createElement("div"); el.innerHTML = html; $("feed").prepend(el); };
 
 const LONG = "Get every last one of the tourists' sandwiches back to the benches by the Abbey before the gulls work out where they went";
