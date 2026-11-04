@@ -1,7 +1,7 @@
 // The Driving Test, a team challenge (challenges.ts): a learner car waits at the kerb outside the
 // test centre, by a car park on a decent road, with the examiner stood by it, clipboard in hand.
-// One of you drives (whoever's in the driver's seat), the examiner sits beside them, and two more can
-// ride in the back. He gives directions as you go ("At the end of the road, turn left", "Take the
+// Everyone who enters (lineup.ts) starts round the car. One of you drives (whoever's in the
+// driver's seat), the examiner sits beside them, and two more can ride in the back. He gives directions as you go ("At the end of the road, turn left", "Take the
 // second road on the right"), round a loop of the real streets near the centre, a few minutes long,
 // and marks you as a real examiner would: up to fifteen minor faults is still a pass, and one serious
 // or dangerous fault is a fail on the spot. He's watching your signals at every turn, your speed
@@ -42,6 +42,7 @@ import { type GameMap, type Road, roadHalf } from "./map";
 import { missionSheet } from "./missionscreens";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, hash, rng, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
+import { ring } from "./lineup";
 import { SPECS, Vehicle, type Controls } from "./vehicles";
 
 const COLOUR = "#d8262e";
@@ -540,7 +541,9 @@ registerChallenge({
     return f.spots;
   },
   waiting({ offer, spots, w }) { return waitingCar(offer, spots, w); },
-  start({ offer, spots, w }) { return drivingTest(offer, spots, w); },
+  // round the learner car, facing it
+  lineup: { spots: ({ spots, w }, n) => { const c = centreOf(spots, w.map); return c ? ring(w.map, c.x, c.z, n, 4) : []; } },
+  start({ offer, spots, w, cast }) { return drivingTest(offer, spots, w, cast); },
 });
 
 // ---- the test --------------------------------------------------------------------------------------
@@ -548,10 +551,10 @@ registerChallenge({
 interface Fault { x: string; g: number }   // g: 1 minor, 2 serious, 3 dangerous
 const RADIO = [0, 0.45, 1, 1.9, 3.2];       // the radio's volume at each notch, against the music's own
 
-function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
+function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld, cast: string[]): Job {
   const centre = centreOf(spots, w.map)!;
   const examiner = examinerOf(offer.seed);
-  const maxTests = Math.max(3, Math.min(6, w.players().length + 1));
+  const maxTests = Math.max(3, Math.min(6, cast.length + 1));
   const car = w.vehicle!(CAR_ID + (offer.seed % 100000), KIND, PAINT, centre.x, centre.z, centre.ang, CAR_NAME);
   car.kept.add(1);
   const kit = learnerKit(car), sat = seatedExaminer(car);
@@ -630,7 +633,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
       driver = seatDriver;
       if (passedBy.length && test >= 1) {
         idleT = driver ? 0 : idleT + dt;
-        if (idleT > 14 || ps.every((p) => tried.includes(p.id))) { tell({ k: "won" }); return; }
+        if (idleT > 14 || cast.every((id) => !here.has(id) || tried.includes(id))) { tell({ k: "won" }); return; }
       } else if (test >= maxTests) {
         if (phaseT > 6) tell({ k: "lost" });
         return;

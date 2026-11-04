@@ -130,9 +130,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   away the square the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
   and it lapses in a minute or so. After three things done, everyone is called to one pub for last
   orders, and when the whole room is at the bar the night's front page comes up.
-  Races take entries (a big banner says who's in and counts down; on your own in the room it goes
-  straight to the start), put the entrants on a grid in the street for a big 3, 2, 1, GO! under
-  start lights, run through checkpoints along a route drawn on the map, and end with a results
+  Every job and team challenge starts the same way, as a race always has: taking one opens the
+  entries, and for 15 seconds anyone in the game, wherever they are (even in a car), can press E
+  (□ on a pad, Use on a touch screen) to join in, with a big banner saying who's in and counting
+  down. On your own in the room it goes straight to the start. When the entries close, everyone
+  who joined, and nobody else, is taken out of whatever they were doing (out of a car, a balloon or a
+  trolley, off a ladder or their ride, anything carried put down), patched up to full health and put
+  in the game area, spread out and facing the way, held still for the title card and a 3, 2, 1, GO!
+  under start lights. Anyone who didn't join, or turns up later, is left where they are and can
+  watch. Races put the entrants on a grid in the street on the race's ride,
+  run through checkpoints along a route drawn on the map, and end with a results
   card: your place, time and medal, your best, how the run went and everyone's standings, with a
   fanfare. Killed on the way, you're out of the race. Over the line or out of it while others still
   ride, you wait where you stopped, safe, and watch them (Q/E, the d-pad or the arrows on a touch
@@ -146,10 +153,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
-  pavement; if it's tight by the board, the board says where) and puts everyone in the middle of it.
+  pavement; if it's tight by the board, the board says where) and puts everyone who joined in the middle of it.
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
-  and flashing while a gull's after it, and the ring is on the maps. One of the three crates between
-  waves is always a box of rounds: more spare rifle rounds for everyone, instead of an upgrade.
+  and flashing while a gull's after it, and the ring is on the maps. The tourists point out gulls coming
+  in, wave their arms at one after their lunch, duck, cheer a good shot and storm off in a huff,
+  saying so. Each kind of gull has its own look, every wave comes in from one side under a banner
+  saying what's in it and from where, and before every wave each player gets an ammo pack.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
   and it drops. A race
@@ -204,14 +213,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
   spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
   structures are the record, and the room carries on from whoever has got furthest in that room.
-- **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
-  (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
-  field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
+- **Zones**: the map opens a part at a time. You start in a small first zone to learn the game in (in
+  Bath, the middle of Combe Down), with a pub, places for jobs, a main road and a structure that needs
+  only two objects, and a shimmering wall like the force field's round it. The town's busiest streets
+  (in Bath, the city centre from Bath Spa up to the Royal Crescent) are always the last zone, and the
+  rest open in a sweep round them; where a map starts you in its centre, you start just outside it instead. Each zone has its own structure and a challenge or two, each marked on both maps
   with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
   sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
   challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
-  cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
-  of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
+  cable car open up with the zone they're in, from the second on (before then a bus stop says "No
+  buses out this way yet"), and none of them takes you past the wall. Bath and Cape Town have six
+  zones and Bradford-on-Avon three. Tick
   "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
   for the room.
 - **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
@@ -286,7 +298,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Climb** (a team challenge): it waits at the foot of the tallest crag in its zone (on
   Signal Hill in Cape Town; where there's no crag, the tallest building, as by the Royal United
   Hospital in Bath and in Bradford-on-Avon), with a big orange flag on top, a rope hanging down one
-  side and crash mats and a bucket of chalk at the foot. Take it on there and everyone by the foot
+  side and crash mats and a bucket of chalk at the foot. Take it on there and everyone who joins
   is lifted up to a crag of its own, a great buttress of honey-coloured limestone standing out of a
   drifting sea of cloud, with heaps of cumulus all round, the same on every map (the street's place
   names and minimap are put away while you're up there); E at the foot on the street takes anyone else up later, and
@@ -311,7 +323,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
-  it, and E again climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
+  it, and at GO everyone who joined climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
   bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
   of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
   screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
@@ -345,8 +357,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
   Holburne, or failing that a big public building near a pedestrian street): an easel on the
   pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
-  starts it and takes you straight up into the gallery (anyone else goes in with E by him when they
-  get there), a long white room, lit the same day or night, with an easel each; once everyone's in (or E to get
+  starts it, and at GO everyone who joined goes straight up into the gallery (anyone else goes in
+  with E by him when they get there), a long white room, lit the same day or night, with an easel
+  each; once everyone who joined is in (or E to get
   on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
   bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
   first (three critics for a show of four or more). Each of you paints in an old-fashioned paint

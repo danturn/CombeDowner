@@ -292,10 +292,11 @@ function fieldEdge(g: CanvasRenderingContext2D, map: GameMap, P: (x: number, y: 
   g.beginPath(); edge(); g.stroke();
 }
 
-export interface ZoneView { shut: number[][]; wall: number[][]; names: { n: string; x: number; z: number; open: boolean }[] }
+export interface ZoneView { shut: number[][]; wall: number[][]; names: { n: string; x: number; z: number; open: boolean }[]; every?: { cells: number[][]; lines: number[][]; start: number[] } }
 
 /** The zones not open yet, shaded, and the wall round the ones that are. P turns scene (x, z) into canvas pixels. */
 function drawZones(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, z: number) => number[], dpr: number, names: number) {
+  if (z.every) { drawEveryZone(g, z, P, dpr, names); return; }
   g.save();
   g.fillStyle = "rgba(10, 20, 35, 0.5)";
   g.beginPath();
@@ -314,6 +315,39 @@ function drawZones(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, z: n
       g.fillStyle = n.open ? "#f4f1ea" : "#9fb6c8"; g.fillText(n.n.toUpperCase(), x, y);
     }
   }
+  g.restore();
+}
+
+/** For ?zonemap: every zone tinted by when it opens, green first to red last, with its number and name. */
+function drawEveryZone(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, z: number) => number[], dpr: number, names: number) {
+  const n = Math.max(2, z.names.length);
+  g.save();
+  for (const [x0, z0, x1, z1, k] of z.every!.cells) {
+    const [ax, ay] = P(x0, z0), [bx, by] = P(x1, z1);
+    g.fillStyle = `hsla(${Math.round(120 - (120 * k) / (n - 1))}, 85%, 50%, 0.42)`;
+    g.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax) + 0.5, Math.abs(by - ay) + 0.5);
+  }
+  g.strokeStyle = "#0b1622"; g.lineWidth = 3 * dpr; g.lineCap = "round";
+  g.beginPath();
+  for (const [ax, az, bx, bz] of z.every!.lines) { const a = P(ax, az), b = P(bx, bz); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+  g.stroke();
+  const [sx, sy] = P(z.every!.start[0], z.every!.start[1]);
+  g.beginPath(); g.arc(sx, sy, 9 * dpr, 0, Math.PI * 2);
+  g.fillStyle = "#ffffff"; g.fill(); g.lineWidth = 3 * dpr; g.strokeStyle = "#0b1622"; g.stroke();
+  g.beginPath(); g.arc(sx, sy, 4 * dpr, 0, Math.PI * 2); g.fillStyle = "#d22"; g.fill();
+  const size = Math.max(14, names || 18);
+  g.font = `700 ${size}px "Barlow Condensed", system-ui, sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  const placed: number[][] = [];
+  z.names.forEach((nm, i) => {
+    const t = `${i + 1}. ${nm.n.toUpperCase()}`, w = g.measureText(t).width / 2 + 4, h = size * 0.6;
+    let [x, y] = P(nm.x, nm.z);
+    // two middles close together would print one name over the other
+    while (placed.some(([px, py, pw]) => Math.abs(px - x) < pw + w && Math.abs(py - y) < 2 * h)) y += 2 * h;
+    placed.push([x, y, w]);
+    g.strokeStyle = "rgba(10,14,18,0.95)"; g.lineWidth = 5 * dpr; g.strokeText(t, x, y);
+    g.fillStyle = "#ffffff"; g.fillText(t, x, y);
+  });
   g.restore();
 }
 

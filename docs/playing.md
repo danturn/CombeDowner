@@ -673,9 +673,14 @@ who drops poo bombs and dives for whole sandwiches; his beak's the weak spot. Th
 the nearest open ground, clear and flat all round (if it's tight by the noticeboard, the board says
 how far and which way), and everyone starts in the middle of them, facing a tourist. A pin over each
 tourist shows through walls and hedges, green to red as their sandwich goes, flashing while a gull's
-after it; the ring is on the minimap. Between waves, pick a crate: one is always a box of rounds (90
-more rifle rounds for everyone), the others an upgrade (chips as a decoy, a plastic owl, a brolly, a
-megaphone, second helpings). Stars for how much sandwich is left, a daily twist (bank holiday, Chip
+after it; the ring is on the minimap. The tourists point out gulls on the way, wave their arms and
+shoo, duck, shout for help if you're far off, cheer a good shot and storm off when their sandwich is
+gone. Each wave comes in from one side, with a banner naming what's in it, and every kind looks
+different: white herring gulls, slate-winged hoverers in an amber ring (it goes green as you stare),
+a small dark gang coming in low and tight, brown walkers on foot, fat yellowish poopers trailing
+drips. Before every wave each player gets an ammo pack (about 30 to 90 rounds, more on the later
+waves and for a harder poster): enough if you aim, not if you hold the trigger down. Between waves,
+pick an upgrade crate (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings). Stars for how much sandwich is left, a daily twist (bank holiday, Chip
 Tuesday, a hen do, bin day), and Backspace for another go. Losing leaves no scar.
 
 ### The night out

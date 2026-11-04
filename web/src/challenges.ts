@@ -4,8 +4,9 @@
 // left out of a map that hasn't got one. Once open it has no noticeboard: the thing itself stands
 // waiting at the very spot it'll happen that day (the broken-down bus, the balloons on the grass),
 // with its badge on the maps, and you walk up to it to start it. That runs it as a job (quests.ts),
-// so it goes round the room, joins and restores the way jobs do, and the job's own things take
-// over in the same place. A challenge won leaves one of the strange objects where it finished.
+// so it goes round the room, joins and restores the way jobs do, and starts the way every
+// minigame does (lineup.ts: the entries, then everyone who entered put at its spots, a title card
+// and a countdown); at GO the job's own things take over in the same place. A challenge won leaves one of the strange objects where it finished.
 // docs/challenges.md is the guide to writing one.
 //
 // Who decides what: nobody. Where each challenge goes comes from the map alone, and which are open
@@ -18,6 +19,7 @@ import { feature } from "./features";
 import { dayNumber } from "./daylight";
 import type { Zones } from "./zones";
 import { hash, registerJob, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
+import type { LineupConfig, LineupSpot } from "./lineup";
 
 /** A place a challenge uses, scene coordinates: its first is where it starts and where the fly-over looks. */
 export interface ChallengeSpot { x: number; z: number; name: string; y?: number; a?: number }
@@ -25,8 +27,10 @@ export interface ChallengeSpot { x: number; z: number; name: string; y?: number;
 /** What a challenge is lent when it starts. */
 export interface ChallengeStart {
   offer: Offer; spots: ChallengeSpot[]; w: QuestWorld;
-  /** When it was taken (ms since 1970) and by whom: the same on every screen. */
+  /** GO (ms since 1970) and who took it: the same on every screen. */
   started: number; by: string;
+  /** Who entered (lineup.ts), in order: everyone else just watches. */
+  cast: string[];
 }
 
 export interface Challenge {
@@ -53,6 +57,8 @@ export interface Challenge {
   /** What stands there waiting to be taken, built from the poster (offer.seed is the day's) and the
    *  map alone, and where start's own things will be; left out, just a ring of light. */
   waiting?(s: ChallengeWait): Waiting | null;
+  /** How it starts (lineup.ts): where those who enter are put, and so on. Left out, round its place. */
+  lineup?: Omit<LineupConfig, "spots"> & { spots?(s: ChallengeWait, n: number): LineupSpot[] };
 }
 
 /** What a challenge is lent to build what waits at its place. */
@@ -135,7 +141,8 @@ export function useChallenges(map: GameMap, zones: Zones, sockets: () => number)
         const at = c.where?.(seed, p.spots, map) ?? p.spots[0];
         return [offer(seed, at.x, at.z, at.name)];
       },
-      start: (o, w, started, by) => c.start({ offer: o, spots: p?.spots ?? [{ x: o.x, z: o.z, name: o.where }], w, started, by }),
+      start: (o, w, started, by, _local, cast) => c.start({ offer: o, spots: p?.spots ?? [{ x: o.x, z: o.z, name: o.where }], w, started, by, cast }),
+      lineup: c.lineup && { ...c.lineup, spots: c.lineup.spots && p ? (o, w, n) => c.lineup!.spots!({ offer: o, spots: p.spots, w }, n) : undefined },
       waiting: c.waiting && p ? (o, w) => c.waiting!({ offer: o, spots: p.spots, w }) : undefined,
     });
   }

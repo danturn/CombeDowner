@@ -1,6 +1,6 @@
 // A stand-in team challenge, only there to try the challenge machinery out (challenges.ts): it
-// joins the game only with the testing option ?objects=N (oddments.ts). Everyone in the room
-// stands on one spot together for a few seconds, and it's done.
+// joins the game only with the testing option ?objects=N (oddments.ts). Everyone who entered
+// (lineup.ts, which starts them round it) stands on one spot together for a few seconds, and it's done.
 //
 // Who decides what: the host says when everyone has stood there long enough ("qe", as any job's
 // step), and every screen ends it then.
@@ -19,14 +19,14 @@ if (new URLSearchParams(location.search).has("objects")) registerChallenge({
     const at = openGround(map, home ? [[home.x, home.y]] : []);
     return at ? [{ x: at.x, z: -at.y, name: at.n || "the open ground" }] : null;
   },
-  start({ offer, spots, w }) {
+  start({ offer, spots, w, cast }) {
     const s = spots[0];
     let held = 0, inside = 0, all = 0;
     w.mark("@challenge", { x: s.x, z: s.z }, offer.title, "#c86bff");
     const job: Job = {
       offer, done: null,
       update(dt) {
-        const ps = w.players().filter((p) => p.alive);
+        const ps = w.players().filter((p) => p.alive && cast.includes(p.id));
         all = ps.length;
         inside = ps.filter((p) => Math.hypot(p.x - s.x, p.z - s.z) < CLOSE).length;
         held = all && inside === all ? held + dt : 0;

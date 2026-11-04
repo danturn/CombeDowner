@@ -1,6 +1,7 @@
 // Push the Bus, a team challenge (challenges.ts): a Badgerline bus has broken down at the foot of
 // the steepest stretch of street on the map (100 to 200 metres of it), and it has to be pushed all the
-// way to the top. E (Use) at its back puts your hands to it and you go with it, the view easing out
+// way to the top. Everyone who enters (lineup.ts) is lined up at its back and starts with their
+// hands to it; anyone else joins in with E (Use) at its back. Pushing, you go with it, the view easing out
 // behind you so you see yourself, your mates and the bus, free to look about, till you press E again
 // or step back. Every couple of seconds comes a count, "one, two, HEAVE!", shown big on the screen
 // with a sweep across a bar; Space (the Heave button on a touch screen) on the heave gives a surge,
@@ -59,7 +60,8 @@ import { type GameMap, roadHalf } from "./map";
 import { Figure, look, NAUGHTY } from "./naughtyboys";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, leftInRoad, rng, type Job, type Quarry, type QuestWorld, type Waiting } from "./quests";
-import { contact, Vehicle, type VKind } from "./vehicles";
+import { contact, SPECS, Vehicle, type VKind } from "./vehicles";
+import type { LineupSpot } from "./lineup";
 import { voiceLevel } from "./voicelevel";
 import { myWear } from "./wardrobe";
 
@@ -438,8 +440,21 @@ registerChallenge({
     return { x: a[0], z: a[1], name: `the bottom of ${h.name}` };
   },
   waiting({ offer, spots, w }) { return waitingBus(offer, spots, w); },
-  start({ offer, spots, w, by }) { return pushTheBus(offer, spots, w, by); },
+  lineup: { spots: ({ offer, spots, w }, n) => behindBus(offer, spots, w, n) },
+  start({ offer, spots, w, cast }) { return pushTheBus(offer, spots, w, cast); },
 });
+
+/** Where those who enter line up (lineup.ts): behind the bus where it waits, three across in rows,
+ *  facing up the hill, as pushTheBus will stand it. */
+function behindBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, n: number): LineupSpot[] {
+  const { hill } = dayHill(offer.seed, hillsFor(spots, w.map));
+  const S = SPECS[busKind(Math.max(1, w.players().length))], hl = S.L / 2, hw = S.W / 2;
+  const rest = restOn(hill, hl, hw, offer.mode ? offer.mode / 10 : clearRest(hill, hl, hw, w.map)), b = poseOn(hill, rest.s, rest.lat);
+  return Array.from({ length: n }, (_, k) => {
+    const al = -(hl + 1.1 + Math.floor(k / 3) * 1.2), ac = ((k % 3) - 1) * (hw - 0.25);
+    return { x: b.x + b.fx * al + b.rx * ac, z: b.z + b.fz * al + b.rz * ac, yaw: Math.atan2(-b.fx, -b.fz) };
+  });
+}
 
 /** The day's hill and how hard a day it is, from the day's seed alone, so the bus waits where the push starts. */
 function dayHill(seed: number, hills: ReturnType<typeof hillsOf>) {
@@ -447,7 +462,7 @@ function dayHill(seed: number, hills: ReturnType<typeof hillsOf>) {
   return { diff, hill: hills[Math.max(0, Math.min(hills.length - 1, 2 - diff))] ?? hills[0] };
 }
 
-function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, by: string): Job {
+function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, cast: string[]): Job {
   clearWreck();
   const r = rng(offer.seed);
   const { diff, hill } = dayHill(offer.seed, hillsFor(spots, w.map));
@@ -1123,10 +1138,10 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
         shoutUsed = voiceLevel.shoutAt;
         if (onBus && voiceLevel.shoutRise > SHOUT_RISE) heave(true, (performance.now() - voiceLevel.shoutAt) / 1000 + SHOUT_LAG);
       }
-      // whoever took it on, stood at its back, starts with their shoulder already to it
+      // everyone who entered, lined up at its back, starts with their shoulder already to it
       if (!toldHow && mode <= 1) {
         toldHow = true;
-        if (by === w.selfId && nearRear() && v > GRIP) onBus = true;
+        if (cast.includes(w.selfId) && nearRear() && v > GRIP) onBus = true;
       }
       // on the bus till you let go, walk off, or it's away from you
       const stick = w.stick?.() ?? { x: 0, y: 0 };
