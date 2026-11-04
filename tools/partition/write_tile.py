@@ -5019,6 +5019,8 @@ LINE_OFF = 1.0          # metres off its line, and
 LINE_TURN = math.radians(15)   # degrees off its heading, that are still in line with it
 CORNER = 1.0            # metres: an end this near where another run ends meets it there, at the corner
 ALONGSIDE = 0.6         # metres: a run on within this of another, and near parallel, would double it
+BESIDE = 1.2            # metres: within this it stands beside it, one boundary drawn twice if for longer than
+BESIDE_LONG = 3.0       # metres side by side
 ALONG_TURN = math.radians(25)
 
 
@@ -5063,6 +5065,10 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
     held = set()        # ends another has run on to meet: they stay put, or that one would end short of them
     made = []
 
+    def ahead(x, y, head, c):
+        dx, dy = c.x - x, c.y - y
+        return dx * head[0] + dy * head[1] >= 0
+
     def clear_way(i, a, b):
         way = LineString([a, b])
         if gate_tree is not None and any(gate_lines[int(k)].intersects(way) for k in gate_tree.query(way)):
@@ -5070,25 +5076,35 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
         if blocked is not None and way.buffer(0.05).intersects(blocked):
             return False
         heading = math.atan2(b[1] - a[1], b[0] - a[0])
-        near = [lines[int(k)] for k in tree.query(way.buffer(ALONGSIDE)) if int(k) < len(lines) and int(k) != i] + made
+        near = [lines[int(k)] for k in tree.query(way.buffer(BESIDE)) if int(k) < len(lines) and int(k) != i] + made
         # (across another run on the way it would poke out past it)
         far = Point(b)
         for o in near:
             x_ = o.intersection(way)
             if any(Point(c).distance(far) > 0.05 for g in getattr(x_, "geoms", [x_]) if not g.is_empty for c in g.coords):
                 return False
+        close, beside = way.buffer(ALONGSIDE, cap_style="flat"), way.buffer(BESIDE, cap_style="flat")
+        mine = lines[i].buffer(BESIDE, cap_style="flat").difference(lines[i].buffer(ALONGSIDE, cap_style="flat"))
         for o in near:
             c = list(o.coords)
+            added = already = 0.0
             for u, v in zip(c, c[1:]):
                 seg = LineString([u, v])
                 if seg.length < 1e-6:
                     continue
                 turn = abs((math.atan2(v[1] - u[1], v[0] - u[0]) - heading + math.pi / 2) % math.pi - math.pi / 2)
-                if turn < ALONG_TURN and seg.intersection(way.buffer(ALONGSIDE, cap_style="flat")).length > 0.3:
+                if turn >= ALONG_TURN:
+                    continue
+                if seg.intersection(close).length > 0.3:
                     return False
+                added += seg.intersection(beside).length - seg.intersection(close).length
+                already += seg.intersection(mine).length
+            # (a metre beside it is one boundary drawn twice once the two run side by side for long)
+            if added > 0.3 and added + already > BESIDE_LONG:
+                return False
         return True
 
-    out, joined = [], 0
+    out, ran_on = [], []
     for i, r in enumerate(runs):
         pts = [list(q) for q in r["p"]]
         for end in (0, -1):
@@ -5107,6 +5123,19 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
             # its own line instead would carry it past the corner
             corners = [run_ends[int(k)][:2] for k in end_tree.query(p.buffer(CORNER + MEET_REACH)) if run_ends[int(k)][0] != i]
             corners = [(j, e, now_at[(j, e)]) for j, e in corners if p.distance(now_at[(j, e)]) < CORNER]
+            # (one it has already run past, lying on its own line behind its end, it is cut back to)
+            own = LineString([q[:2] for q in pts])
+            passed = [(j, e, c) for j, e, c in corners if own.distance(c) < MET]
+            corners = [(j, e, c) for j, e, c in corners if own.distance(c) >= MET and ahead(x, y, head, c)]
+            if passed and not corners:
+                j, e, c = min(passed, key=lambda t: p.distance(t[2]))
+                d = own.project(c)
+                keep = substring(LineString(pts), d, own.length) if end == 0 else substring(LineString(pts), 0, d)
+                if 0.05 < (d if end == 0 else own.length - d) < CORNER and keep.geom_type == "LineString" and keep.length > 0.5:
+                    pts = [[round(a, 1), round(b, 1), round(z, 1)] for a, b, z in keep.coords]
+                    now_at[(i, end)] = Point(pts[end][:2])
+                    held.add((j, e))
+                continue
             if corners:
                 j, e, c = min(corners, key=lambda t: p.distance(t[2]))
                 other = _end_heading(runs[j]["p"], e)
@@ -5142,7 +5171,10 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                 # where it lands by another run's end it meets that run there, at the corner, unless
                 # the two are end to end, a gap left between them
                 near = [run_ends[int(k)][:2] for k in end_tree.query(hit.buffer(CORNER + MEET_REACH)) if run_ends[int(k)][0] != i]
-                near = [(j, e, now_at[(j, e)]) for j, e in near if hit.distance(now_at[(j, e)]) < CORNER]
+                own = LineString([q[:2] for q in pts])
+                near = [(j, e, now_at[(j, e)]) for j, e in near
+                        if hit.distance(now_at[(j, e)]) < CORNER and ahead(x, y, head, now_at[(j, e)])
+                        and own.distance(now_at[(j, e)]) >= MET]
                 if near:
                     j, e, c = min(near, key=lambda t: p.distance(t[2]))     # (the first it comes to)
                     other = _end_heading(runs[j]["p"], e)
@@ -5163,9 +5195,96 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
             now_at[(i, end)] = Point(q[:2])
             if meeting:
                 held.add(meeting)
-            joined += 1
+            ran_on.append((i, end))
         out.append(dict(r, p=pts))
-    return out, joined
+    out, ran_on = _settle_run_ons(out, ran_on, ground)
+    out = _square_the_tees(out, ran_on, gate_lines)
+    return out, sum(1 for i, end in ran_on if out[i]["p"][end] != runs[i]["p"][end])
+
+
+def _settle_run_ons(runs, ran_on, ground):
+    """Each end run on stops at the first boundary it meets as they all finally lie: one run on
+    earlier was laid against the others as they stood, and another run on after it could cross it,
+    or it could cross another's. Cut back to where it first meets one, or taken back off if that
+    leaves next to nothing."""
+    ran_on = list(ran_on)
+    for _ in range(4):
+        lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+        tree = STRtree(lines)
+        changed = False
+        for i, end in list(ran_on):
+            pts = runs[i]["p"]
+            if len(pts) < 3:
+                continue
+            tip, base = pts[end], pts[1] if end == 0 else pts[-2]
+            ext = LineString([base[:2], tip[:2]])
+            if ext.length < 0.05:
+                continue
+            first = None
+            for k in tree.query(ext):
+                if int(k) == i:
+                    continue
+                x_ = lines[int(k)].intersection(ext)
+                for g in getattr(x_, "geoms", [x_]):
+                    if g.is_empty:
+                        continue
+                    for c in g.coords:
+                        d = ext.project(Point(c))
+                        if ext.length - d > 0.05 and (first is None or d < first):
+                            first = d
+            if first is None:
+                continue
+            changed = True
+            if first < 0.05:
+                pts = pts[1:] if end == 0 else pts[:-1]
+                ran_on.remove((i, end))
+            else:
+                c = ext.interpolate(first)
+                z = ground(c.x, c.y)
+                q = [round(c.x, 1), round(c.y, 1), round(z if z is not None else tip[2], 1)]
+                pts = [q] + pts[1:] if end == 0 else pts[:-1] + [q]
+            runs[i] = dict(runs[i], p=pts)
+        if not changed:
+            break
+    return runs, ran_on
+
+
+TEE_TAIL = 1.0          # metres: the most of a boundary left past where another runs on to meet it
+
+
+def _square_the_tees(runs, ran_on, gate_lines):
+    """An end run on to meet another boundary within a metre of that one's end leaves the end poking
+    out past it. Where that end meets nothing else it is cut back to the meeting, a corner; where it
+    meets something it stays, and the end run on goes back to where it stopped."""
+    lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+    tree = STRtree(lines)
+    gates = STRtree(gate_lines) if gate_lines else None
+
+    def free(k, pt, but):
+        if any(int(j) not in (k, but) and lines[int(j)].distance(pt) < MET for j in tree.query(pt.buffer(MET))):
+            return False
+        return gates is None or not any(gate_lines[int(j)].distance(pt) < MET for j in gates.query(pt.buffer(MET)))
+
+    for i, end in ran_on:
+        if len(runs[i]["p"]) < 3:
+            continue
+        tip = Point(runs[i]["p"][end][:2])
+        for k in tree.query(tip.buffer(0.05)):
+            k = int(k)
+            if k == i or lines[k].distance(tip) > 0.05 or lines[k].length < 2 * TEE_TAIL:
+                continue
+            t = lines[k].project(tip)
+            for kend, tail in ((0, t), (-1, lines[k].length - t)):
+                if not 0.05 < tail < TEE_TAIL:
+                    continue
+                keep = substring(LineString(runs[k]["p"]), t, lines[k].length) if kend == 0 else substring(LineString(runs[k]["p"]), 0, t)
+                if free(k, Point(runs[k]["p"][kend][:2]), i) and keep.geom_type == "LineString":
+                    runs[k] = dict(runs[k], p=[[round(c[0], 1), round(c[1], 1), round(c[2], 1)] for c in keep.coords])
+                else:
+                    runs[i] = dict(runs[i], p=runs[i]["p"][1:] if end == 0 else runs[i]["p"][:-1])
+                lines[k], lines[i] = LineString([q[:2] for q in runs[k]["p"]]), LineString([q[:2] for q in runs[i]["p"]])
+                break
+    return runs
 
 
 def without_strays(runs, houses, corridor, gate_ends, square):
