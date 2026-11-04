@@ -5,17 +5,19 @@
 // of it (reveal.ts). Ways to get about (buses, boats, balloons, trains, the cable car) open up with
 // the zones as well, and travel never takes you past the wall.
 //
-// The zones come from the map alone, so they work on any map and every player gets the same ones:
-// the map is cut into cells on its squares' grid, the first zone is the first area (the village on
-// Bath's map) or the cells nearest the start, and the rest grow out from it along the streets, each
-// with a fair share of the town. Each is named after the biggest district in it (<map>-districts.json,
-// from tools/districts.py), or failing that the biggest named park or square.
+// The zones come from the map alone, so they work on any map and every player gets the same ones.
+// The map is cut into cells on its squares' grid. The first zone is a small one to learn the game
+// in, grown from the start along the streets just far enough to hold a pub, a second place for a
+// job, a main road for the buses and open ground for a structure with only two sockets, so the
+// first unlock comes quickly. The busiest knot of streets, the town's heart, is held back as the
+// last zone, and the rest are swept out round it like a clock's hand from where everyone starts,
+// each with a fair share of the town. Each is named after the biggest district in it
+// (<map>-districts.json, from tools/districts.py), or failing that the biggest named park or square.
 //
-// For trying other cuts, ?cut= picks another way of growing them: "quiet" makes a step into a busy
-// cell dear, so the quiet edges go first and the busy middle fills in late; "heart" holds the
-// busiest knot of streets back as the last zone and grows the rest round it; "clock" holds the
-// heart back too and sweeps round it like a clock's hand from where everyone starts. ?zonemap=1
-// draws every zone on the big map, numbered in the order they open.
+// For comparing, ?cut= picks another way: "streets" is the old one (the first area, then growth
+// along the streets, a step into a busy cell cheap); "quiet" grows from the tutorial zone with a
+// busy cell dear instead; "heart" holds the heart back and grows the rest along the streets.
+// ?zonemap=1 draws every zone on the big map, numbered in the order they open.
 //
 // Who decides what: nobody. How many zones are open follows from how many sockets are full, which
 // the host of oddments.ts decides and sends round; so the wall stands in the same place on every
@@ -47,17 +49,20 @@ const TRAVEL_SHUT: Record<TravelKind, string> = {
 const SLOTTED: TravelKind[] = ["bus", "busroute", "boat", "balloon"];
 
 const BUILT_IN = import.meta.glob<{ ds?: [number, number, string, string][] }>("../public/maps/*-districts.json", { eager: true, import: "default" });
+const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | null, number | null][] }>("../public/maps/*-pubs.json", { eager: true, import: "default" });
+const BUS_ROADS = new Set(["trunk", "primary", "secondary", "tertiary"]);
 const RANK: Record<string, number> = { town: 0, suburb: 1, village: 1, quarter: 2, neighbourhood: 3, hamlet: 4 };
 const NEAR = 2;   // cells either way looked at for the wall
+const SPAWN_ROOM = 120;   // metres from where anyone starts to the first zone's wall, at least
 
-/** How the zones are cut, for trying other ways (?cut=quiet|heart|clock); the streets' way unless asked. */
+/** How the zones are cut (?cut=streets|quiet|heart): round the town's heart like a clock unless asked. */
 export type Cut = "streets" | "quiet" | "heart" | "clock";
 const CUTS: Cut[] = ["streets", "quiet", "heart", "clock"];
 // read as the page loads, as starting a game clears the address
 const ASKED = typeof location === "undefined" ? new URLSearchParams() : new URLSearchParams(location.search);
 function cutWanted(): Cut {
   const v = ASKED.get("cut");
-  return CUTS.includes(v as Cut) ? (v as Cut) : "streets";
+  return CUTS.includes(v as Cut) ? (v as Cut) : "clock";
 }
 /** ?zonemap: every zone drawn on the big map. */
 export const zoneMapWanted = ASKED.has("zonemap");
@@ -142,7 +147,9 @@ export class Zones {
       }
     }
     const cells = [...Array(n).keys()].filter((k) => inField[k]);
-    const N = Math.max(2, Math.min(7, Math.round(1 + map.field / 1100)));
+    const cut = cutWanted();
+    // a tutorial first zone leaves room for one more, even on a small map
+    const N = Math.max(cut === "streets" ? 2 : 3, Math.min(7, Math.round(1 + map.field / 1100)));
     const total = cells.length, roads = cells.reduce((s, k) => s + road[k], 0) || 1;
     const worth = (k: number) => 0.5 / total + (0.5 * road[k]) / roads;
     // the first zone: the first area, if it's a small part of the map, or else the cells round the start
@@ -159,7 +166,9 @@ export class Zones {
     const sorted = cells.map((k) => road[k]).filter((v) => v > 0).sort((a, b) => a - b);
     const ref = sorted[Math.floor(sorted.length * 0.8)] || 1;
     const start = cellOf(hx, hy), far = (k: number) => Math.hypot(centre(k)[0] - hx, centre(k)[1] - hy);
-    const seeds = first.length ? first : start >= 0 && inField[start] ? [start] : [[...cells].sort((a, b) => far(a) - far(b) || a - b)[0]];
+    const startCell = start >= 0 && inField[start] ? start : [...cells].sort((a, b) => far(a) - far(b) || a - b)[0];
+    if (cut !== "streets") first = [];
+    const seeds = first.length ? first : [startCell];
     const nbrs = (k: number) => {
       const i = k % nx, j = Math.floor(k / nx), out: number[] = [];
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -169,17 +178,12 @@ export class Zones {
       return out;
     };
     const busy = (a: number, b: number) => Math.min(1, (road[a] + road[b]) / (2 * ref));
-    const cut = cutWanted();
     const streetCost = (a: number, b: number) => c * (2 - busy(a, b));
-    // the other cuts want the first zone settled before they start: the streets' growth round the start
-    if (!first.length && cut !== "streets") {
-      let s = 0;
-      for (const k of this.grow(cells, seeds, nbrs, streetCost, null)) { if (s >= 1 / (N + 2)) break; first.push(k); s += worth(k); }
-    }
+    if (cut !== "streets") first = this.tutorial(mapId, cells, seeds, nbrs, streetCost, cellOf);
     const firstSet = new Set(first);
     const firstShare = first.length ? first.reduce((s, k) => s + worth(k), 0) : 1 / (N + 2);
     // the held-back heart of the town, for the cuts that keep it till last
-    const heart = (cut === "heart" || cut === "clock") && N >= 3 ? this.heart(cells, road, nbrs, worth, (1 - firstShare) / (N - 1), new Set([...seeds, ...first])) : null;
+    const heart = cut === "heart" || cut === "clock" ? this.heart(cells, road, nbrs, worth, (1 - firstShare) / (N - 1), new Set([...seeds, ...first])) : null;
     const cost = cut === "quiet" ? (a: number, b: number) => c * (1 + 8 * busy(a, b)) : streetCost;
     let order: number[];
     if (cut === "clock") {
@@ -219,7 +223,7 @@ export class Zones {
     const used = [...new Set(cells.map((k) => zone[k]))].sort((a, b) => a - b);
     for (const k of cells) zone[k] = used.indexOf(zone[k]);
     this.grid = zone;
-    this.name(mapId, used.length, cells, road, centre, [hx, hy]);
+    this.name(mapId, used.length, cells, road, centre, [hx, hy], cut !== "streets");
   }
 
   /** A plain Dijkstra over a few hundred cells from the seeds, never into the held-back ones; ties go by cell number so every machine agrees. */
@@ -240,6 +244,52 @@ export class Zones {
     return order;
   }
 
+  /** A small first zone to learn the game in: grown from the start along the streets until it has
+   *  a pub, a second place a job can go up (a race starts from one), a main road for the buses,
+   *  room round every spawn and open ground for the first structure, within a floor and a cap on
+   *  its size. Only the data every
+   *  player has from the start is used (the squares come in later, in no fixed order), so bus stops
+   *  are judged by the roads buses run on. */
+  private tutorial(mapId: string, cells: number[], seeds: number[], nbrs: (k: number) => number[], cost: (a: number, b: number) => number, cellOf: (x: number, y: number) => number) {
+    const map = this.map, area = this.c * this.c;
+    const floor = Math.max(1, Math.ceil(0.5e6 / area)), cap = Math.max(floor, Math.floor(3e6 / area));
+    const pubs = (BUILT_IN_PUBS[`../public/maps/${mapId}-pubs.json`]?.pb ?? []).map(([x, y]) => [+x, +y]);
+    const places = [...(map.d.pl ?? []), ...(map.wide?.d.pl ?? [])].filter((p) => p.n && p.r.length >= 3)
+      .map((p) => [p.r.reduce((s, q) => s + q[0], 0) / p.r.length, p.r.reduce((s, q) => s + q[1], 0) / p.r.length]);
+    const spots = [...pubs, ...places].filter(([x, y]) => map.fieldEdgeBase(x, -y) > 90);
+    const busRoad = new Set<number>();
+    for (const r of map.wide?.rd ?? map.d.rd) {
+      if (!BUS_ROADS.has(r.c)) continue;
+      for (const q of r.p) { const k = cellOf(q[0], q[1]); if (k >= 0) busRoad.add(k); }
+    }
+    const got = new Set<number>(), saved = this.grid;
+    let tried = 0;
+    const has = () => {
+      const inside = ([x, y]: number[]) => got.has(cellOf(x, y));
+      const mine = spots.filter(inside);
+      return pubs.some(inside) && mine.some((a) => mine.some((b) => Math.hypot(a[0] - b[0], a[1] - b[1]) >= 250)) && [...got].some((k) => busRoad.has(k));
+    };
+    // everyone starts well inside it, not up against the wall, and its structure has open ground
+    const sp = map.d.spawn?.length ? map.d.spawn : [];
+    const settled = (slow: boolean) => {
+      this.grid = new Int8Array(saved.length).fill(-1);
+      for (const k of cells) this.grid[k] = got.has(k) ? 0 : 1;
+      const ok = sp.every(([x, y]) => this.edgeIn(x, -y, (g) => g === 0) >= SPAWN_ROOM) && (!slow || !!openGround(this.fenced((g) => g === 0), []));
+      this.grid = saved;
+      return ok;
+    };
+    for (const k of this.grow(cells, seeds, nbrs, cost, null)) {
+      if (got.size >= cap) break;
+      got.add(k);
+      if (got.size < floor || !has() || !settled(false)) continue;
+      // looking for open ground is slow, so it's looked for again only as the zone grows by a quarter
+      if (got.size < tried * 1.25) continue;
+      tried = got.size;
+      if (settled(true)) break;
+    }
+    return [...got];
+  }
+
   /** The busiest knot of streets, about a zone's share of the town, grown out from the cell whose
    *  neighbourhood has the most street in it. None if that's where everyone starts. */
   private heart(cells: number[], road: Float64Array, nbrs: (k: number) => number[], worth: (k: number) => number, share: number, keep: Set<number>) {
@@ -249,9 +299,20 @@ export class Zones {
     if (peak < 0 || keep.has(peak)) return null;
     const got = new Set([peak]);
     let sum = worth(peak);
+    // busy cells first, but kept in a lump: a cell hemmed in by the heart counts for more and one far
+    // from its middle for less, or it runs off along the main roads in a long arm
+    const px = peak % this.nx, py = Math.floor(peak / this.nx);
+    const score = (q: number) => {
+      const touch = nbrs(q).filter((k) => got.has(k)).length, far = Math.hypot((q % this.nx) - px, Math.floor(q / this.nx) - py);
+      return (around[q] * (0.5 + 0.5 * touch)) / (1 + far / 3);
+    };
     while (sum < share) {
-      let best = -1;
-      for (const k of got) for (const q of nbrs(k)) if (!got.has(q) && !keep.has(q) && (best < 0 || around[q] > around[best] || (around[q] === around[best] && q < best))) best = q;
+      let best = -1, bs = -Infinity;
+      for (const k of got) for (const q of nbrs(k)) {
+        if (got.has(q) || keep.has(q)) continue;
+        const v = score(q);
+        if (v > bs || (v === bs && q < best)) { best = q; bs = v; }
+      }
       if (best < 0) break;
       got.add(best); sum += worth(best);
     }
@@ -283,7 +344,7 @@ export class Zones {
     }
   }
 
-  private name(mapId: string, N: number, cells: number[], road: Float64Array, centre: (k: number) => [number, number], home: [number, number]) {
+  private name(mapId: string, N: number, cells: number[], road: Float64Array, centre: (k: number) => [number, number], home: [number, number], quickFirst: boolean) {
     const map = this.map, c = this.c;
     const ds = (BUILT_IN[`../public/maps/${mapId}-districts.json`]?.ds ?? []).map(([x, y, n, kind]) => ({ x, y, n: String(n).replace(/\s*\(.*\)\s*$/, ""), r: RANK[kind] ?? 5 }));
     const taken = new Set<string>();
@@ -315,7 +376,7 @@ export class Zones {
         const p = places.find((q) => inside(q.x, q.y) && !taken.has(q.n));
         if (p) { name = p.n; taken.add(p.n); }
       }
-      this.list.push({ i, name: name || (i ? `The far side, part ${i}` : "Where it all starts"), cells: mine.length, km2: (mine.length * c * c) / 1e6, x: mx, z: -my, home: null, sockets: i < N - 1 ? sockets : 0 });
+      this.list.push({ i, name: name || (i ? `The far side, part ${i}` : "Where it all starts"), cells: mine.length, km2: (mine.length * c * c) / 1e6, x: mx, z: -my, home: null, sockets: i === N - 1 ? 0 : i === 0 && quickFirst ? 2 : sockets });
     }
     this.list.forEach((zn, i) => { this.cum[i + 1] = this.cum[i] + zn.sockets; });
     // each structure on open ground in its own zone: the first near where everyone starts, the rest near their middles
@@ -388,15 +449,19 @@ export class Zones {
   limited(k: number): GameMap {
     let m = this.only.get(k);
     if (m) return m;
-    const ok = (g: number) => g === k, base = this.map;
+    m = this.fenced((g) => g === k);
+    this.only.set(k, m);
+    return m;
+  }
+
+  private fenced(ok: (g: number) => boolean): GameMap {
+    const base = this.map;
     const edge = (x: number, z: number) => Math.min(base.fieldEdgeBase(x, z), this.edgeIn(x, z, ok));
     const inside = (x: number, z: number, r: number): [number, number] => {
       const p = base.fieldEdgeBase(x, z) < r ? base.fieldInsideBase(x, z, r) : [x, z] as [number, number];
       return this.edgeIn(p[0], p[1], ok) < r ? this.insideOf(p[0], p[1], r, ok) : p;
     };
-    m = new Proxy(base, { get: (t, p, recv) => (p === "fieldEdge" ? edge : p === "fieldInside" ? inside : Reflect.get(t, p, recv)) });
-    this.only.set(k, m);
-    return m;
+    return new Proxy(base, { get: (t, p, recv) => (p === "fieldEdge" ? edge : p === "fieldInside" ? inside : Reflect.get(t, p, recv)) });
   }
 
   // ---- opening up ------------------------------------------------------------------------------

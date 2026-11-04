@@ -66,12 +66,25 @@ for (const map of opt.maps.split(",")) for (const cut of opt.cuts.split(",")) {
     const tick = () => { window.__frames++; requestAnimationFrame(tick); };
     requestAnimationFrame(tick);
   });
-  await page.addStyleTag({ content: "#chronicle,.toast,#arrive,#touch,#debug,#mapkey,#bigmapmine,#minimap,#np{display:none!important}" });
+  await page.addStyleTag({ content: "#chronicle,.toast,#toast,#arrive,#touch,#debug,#mapkey,#bigmapmine,#minimap,#np{display:none!important}" });
   await page.waitForFunction(() => window.__frames > 10, null, { polling: "raf" });
   await page.screenshot({ path: path.join(opt.out, `${map}-${cut}.png`) });
   const zones = await page.evaluate(() => window.__game().zones.list.map((z) => ({ order: z.i + 1, name: z.name, cells: z.cells, km2: +z.km2.toFixed(2), sockets: z.sockets, structure: z.home ? [Math.round(z.home.x), Math.round(-z.home.z)] : null })));
   const travel = await page.evaluate(() => window.__game().zones.travelPlan());
-  (summary[map] ??= {})[cut] = { zones, travel };
+  // --probe "x,y;x,y": which zone each data point is in, for checking a cut by eye
+  if (opt.probe) console.log(`  probe: ${await page.evaluate((pts) => pts.split(";").map((p) => { const [x, y] = p.split(",").map(Number); return `${p} -> ${window.__game().zones.zoneAt(x, -y) + 1}`; }).join(", "), opt.probe)}`);
+  // what the first zone has in it: its pubs, its named places and where its structure stands
+  const first = await page.evaluate(async (id) => {
+    const g = window.__game(), Z = g.zones, m = g.map, inFirst = (x, y) => Z.zoneAt(x, -y) === 0;
+    const pb = await fetch(`maps/${id}-pubs.json`).then((r) => (r.ok ? r.json() : { pb: [] })).catch(() => ({ pb: [] }));
+    const pubs = (pb.pb ?? []).filter(([x, y]) => inFirst(x, y)).map((p) => p[2]);
+    const places = [...new Set([...(m.d.pl ?? []), ...(m.wide?.d.pl ?? [])].filter((p) => p.n && p.r.length >= 3 && inFirst(p.r.reduce((s, q) => s + q[0], 0) / p.r.length, p.r.reduce((s, q) => s + q[1], 0) / p.r.length)).map((p) => p.n))];
+    const mainRoads = [...new Set((m.wide?.rd ?? []).filter((r) => ["trunk", "primary", "secondary", "tertiary"].includes(r.c) && r.p.some((q) => inFirst(q[0], q[1]))).map((r) => r.n).filter(Boolean))];
+    const h = Z.list[0].home;
+    return { pubs, places, mainRoads, structure: h && { at: [Math.round(h.x), Math.round(-h.z)], on: h.n || "open ground" } };
+  }, map);
+  (summary[map] ??= {})[cut] = { zones, travel, first };
+  console.log(`  first zone: ${first.pubs.length} pubs (${first.pubs.slice(0, 4).join(", ")}), places ${first.places.slice(0, 6).join(", ")}, main roads ${first.mainRoads.slice(0, 4).join(", ")}, structure on ${first.structure?.on}`);
   console.log(`${map} ${cut}${calm ? "" : " (not calm: timed out)"}: ${zones.map((z) => `${z.order}. ${z.name} (${z.km2} km²)`).join("; ")}; travel ${travel}; ${zones.filter((z) => z.sockets && !z.structure).length} zones lacking a structure${errs.length ? `  errors: ${errs.slice(0, 3).join(" | ")}` : ""}`);
   note = await silenceNote(page);
   await page.close();

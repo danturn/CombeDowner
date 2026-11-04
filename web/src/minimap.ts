@@ -334,8 +334,13 @@ function drawEveryZone(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, 
   const size = Math.max(14, names || 18);
   g.font = `700 ${size}px "Barlow Condensed", system-ui, sans-serif`;
   g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+  const placed: number[][] = [];
   z.names.forEach((nm, i) => {
-    const [x, y] = P(nm.x, nm.z), t = `${i + 1}. ${nm.n.toUpperCase()}`;
+    const t = `${i + 1}. ${nm.n.toUpperCase()}`, w = g.measureText(t).width / 2 + 4, h = size * 0.6;
+    let [x, y] = P(nm.x, nm.z);
+    // two middles close together would print one name over the other
+    while (placed.some(([px, py, pw]) => Math.abs(px - x) < pw + w && Math.abs(py - y) < 2 * h)) y += 2 * h;
+    placed.push([x, y, w]);
     g.strokeStyle = "rgba(10,14,18,0.95)"; g.lineWidth = 5 * dpr; g.strokeText(t, x, y);
     g.fillStyle = "#ffffff"; g.fillText(t, x, y);
   });
