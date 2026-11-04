@@ -534,13 +534,13 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
                    then a bus shift, a shoot-out or the bonfire), then the Flag Lads' row (#bunting),
                    which stays up on a job; up to three in all. Who's talking sits above them.
      top middle    the compass, then one bar at a time: a pub's banner going up or a boss's health.
-     top right     the minimap, the feed under it, and score pops (notice.ts trick) beside the
-                   Flag Lads' combo.
+     top right     the minimap and the feed under it.
      bottom left   health, with the watch over it and a boost under the watch.
      bottom right  rounds, or the vehicle and its speed in their place (#drive): never both.
      bottom middle the street name, and the arrivals line over it.
      the middle    a title or stage band over the crosshair, the use prompt under it, then one
-                   row per meter in the slot under that (missionscreens.ts #maux).
+                   row per meter in the slot under that (missionscreens.ts #maux), then score pops
+                   (notice.ts trick) over the Flag Lads' combo.
    On a touch screen the top-left slot joins the left column (#lstack, below) and the bottom
    corners keep clear of the buttons. */
 #mstack { position: absolute; left: 16px; top: 64px; width: min(320px, calc(100vw - 230px)); }

@@ -7,8 +7,8 @@
 //          The same place as a call, smaller and white, so the two queue together.
 //   stage  A mission moving on: a wave, a checkpoint, a life gone, he got away, out of lives. The
 //          band over the crosshair in the mission's colour (missionscreens.ts missionCall).
-//   trick  A score popping as you play (a combo, a flag shot, a boost): at the right, by the
-//          combo meter, never held back, each one replacing the last.
+//   trick  A score popping as you play (a combo, a flag shot, a boost): low in the middle, over
+//          the Flag Lads' combo meter, never held back, each one replacing the last.
 //   award  Something kept: a trophy, a new thing in your wardrobe. Slides in at the top, one at a
 //          time; while a mission's result card is up it is written on the card instead.
 //
@@ -43,11 +43,12 @@ const AWARD_SECS = 3.6;
 addStyle("notice", `
 #toast.note{font-size:21px;font-weight:700;text-transform:none;letter-spacing:.02em;color:#fff;-webkit-text-stroke:0;width:max-content;max-width:min(640px,calc(100vw - 32px));line-height:1.2}
 #toast small{display:block;font-size:.6em;font-weight:700;letter-spacing:.04em;color:#fff;-webkit-text-stroke:0;margin-top:2px}
-#trick{position:absolute;right:18px;top:34%;text-align:right;max-width:40vw;pointer-events:none;font-weight:800;font-size:26px;letter-spacing:.04em;
+#trick{position:absolute;left:50%;top:calc(50% + 150px);transform:translateX(-50%);text-align:center;max-width:calc(100vw - 32px);pointer-events:none;font-weight:800;font-size:26px;letter-spacing:.04em;
   color:var(--accent);text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 12px rgba(0,0,0,.5);transition:opacity .3s}
 #trick.out{opacity:0}
 body:has(#bigmap:not([hidden])) #trick{visibility:hidden}
 #trick small{display:block;font-size:14px;color:#fff;letter-spacing:.06em;text-transform:uppercase}
+@media (max-height:500px){#trick{top:calc(50% + 96px);font-size:20px}}
 #award{position:absolute;left:50%;top:10px;z-index:12;transform:translate(-50%,-140%);transition:transform .45s cubic-bezier(.2,1.3,.4,1),opacity .4s;opacity:0;
   pointer-events:none;display:flex;align-items:center;gap:10px;padding:8px 16px 8px 10px;max-width:calc(100vw - 24px);box-sizing:border-box;
   background:var(--panel);border:2px solid var(--tc,var(--accent));box-shadow:0 6px 20px rgba(0,0,0,.5);color:#fff}
