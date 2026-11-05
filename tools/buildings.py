@@ -452,10 +452,8 @@ def rows(polys, adj, measured=None, shapes=None):
                 wx, wy, _ = own[k]
                 ridge[k] = (wx, wy) if turn else (-wy, wx)
             hipped[k] = sum(ends) * 2 >= len(ends) if ends else None
-        # a row was built to one pitch. An outline drawn a metre or two off its house reads its
-        # ridge well but its eaves badly (it takes in only the top of the roof, or a back yard), so
-        # each house keeps its own ridge, steps and all, and its walls stand where the row's pitch
-        # from there puts them. A level top (a box dormer, a flat roof) says nothing of the pitch
+        # a row was built to one pitch, which a house with a box dormer the width of it shares on
+        # its slope to the street. A level top (a box dormer, a flat roof) says nothing of the pitch
         rises = [measured[k]["ridge"] - max(2.2, measured[k]["eaves"]) for k in members
                  if measured and measured[k] and not measured[k]["flat"] and not measured[k].get("level")]
         if len(rises) >= 2:
@@ -1005,9 +1003,6 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                         s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
                         if s_wall < length / 4: hip0 = 0.0
                         elif s_wall > length * 3 / 4: hip1 = 0.0
-                if i in row_pitch:
-                    eaves = max(2.2, m["ridge"] - row_pitch[i])
-                    if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
                 rise = min(8.0, max(0.8, m["ridge"] - eaves))
                 # on a narrow house the survey's ridge and eaves can give a roof far too steep (a
                 # back yard or a lower roof behind drags the eaves down, or the top of a mansard is
