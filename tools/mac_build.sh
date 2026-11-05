@@ -98,7 +98,8 @@ cd "$WT"
 [ -f "$VENV/bin/activate" ] && . "$VENV/bin/activate"
 
 # ---- the map ------------------------------------------------------------------------------------
-key="$sha${only:+ only $only}"
+# (another map's build of the same commit is another build: the default map's key stays as it was)
+key="$sha${only:+ only $only}${MAP/#combe-down/}"
 done_mark=$CACHE/maps/$(echo "$key" | hash16)
 if [ -n "$do_map" ] && [ -z "$cold$verify" ] && [ -d "$done_mark" ]; then
   echo "this commit's map was built here before (${only:-every square}): reusing it"

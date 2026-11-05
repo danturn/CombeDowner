@@ -1071,7 +1071,7 @@ def row_towers(m, tag, note, polys):
             c = rows[int(k)]
             if c == a: continue
             wall = grown[a].intersection(grown[c])
-            if wall.is_empty: continue
+            if wall.is_empty or wall.area <= 0: continue
             rr = list(wall.minimum_rotated_rectangle.exterior.coords)[:4]
             if max(math.dist(rr[0], rr[1]), math.dist(rr[1], rr[2])) >= PART_WALL: nb.append(bl[c])
         if not nb: continue
