@@ -671,6 +671,9 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 #ammo.low #magfill { background: var(--danger); }
 #ridechip { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
 #ridechip b { color: var(--accent); }
+#suitbadge { position: absolute; left: 12px; top: 8px; color: var(--ink); opacity: 0.75; line-height: 0; }
+#suitbadge svg { width: 26px; height: 26px; }
+#suitbadge.open { color: var(--accent); opacity: 1; }
 #ridechip:not([hidden]) { display: flex; align-items: center; gap: 8px; }
 .carryicon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 6px; background: rgba(0, 0, 0, 0.25); }
 .carryicon svg { display: block; }

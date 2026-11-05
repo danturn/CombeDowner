@@ -4863,14 +4863,17 @@ export class Game {
     const rk = "{ride}";
     const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
     const odd = !this.held && !lad && this.alive && this.oddments.carrying(me);
-    const suit = !this.held && !lad && !logs && !odd && this.alive && this.suitWorn;
     const words = odd ? `Carrying something strange<small><b>${rk}</b> to put it down</small>`
       : lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
       : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
-      : suit ? (this.player.suitOpen ? `Flying: wingsuit<small><b>{jump}</b> to close it</small>` : `Got: wingsuit<small>Jump off something high, then <b>{jump}</b></small>`)
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
-    const chip = !words ? "" : `<span class="carryicon">${carryIcon(odd ? "odd" : lad ? "ladder" : logs ? "wood" : suit ? "suit" : this.held!)}</span><span class="carrywords">${words}</span>`;
+    const chip = !words ? "" : `<span class="carryicon">${carryIcon(odd ? "odd" : lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), ctlText(chip), !!chip);
+    // the wingsuit on your back, always, whatever else you carry: just its icon, lit while it's open
+    const badge = $("suitbadge");
+    if (!badge.firstChild) badge.innerHTML = carryIcon("suit");
+    setHidden(badge, !(this.alive && this.suitWorn));
+    badge.classList.toggle("open", this.player.suitOpen);
     const balloonOut = aloft && !!sky && this.balloons.clearance() <= 3;
     setHidden($("t-car"), !ride && !helm && !this.basket && !balloonOut && !goal && !(job || acts(odds) || tape) && !pick?.button);
     setHidden($("t-ride"), (!this.held && !lad && !odd) || !!ride || !!this.basket);
