@@ -877,6 +877,7 @@ and pour the balls in; sprint before they're in and you keep only what you had. 
 is their own colour (the balls in your hopper too) and splats where it lands.
 For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or type `claret`
 while playing. The browser remembers it, and it's only what you see.
+Type `cheats` while playing for a page listing every cheat.
 
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
 you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a

@@ -17,7 +17,7 @@ import type { Player } from "./player";
 import { guide, news } from "./notice";
 
 export const SUIT_ID = "wsuit";
-const CHEAT = "squirrel";  // typed anywhere in play
+export const CHEAT = "squirrel";  // typed anywhere in play
 const HIGH = 15;           // metres above the lowest ground round you that earns the suit
 const AROUND = 10;         // how far round you that ground is looked for
 const CLEAR = 3;           // clear below before it'll open (as player.ts has it), for the first hint
