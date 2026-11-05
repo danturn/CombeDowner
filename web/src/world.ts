@@ -597,40 +597,55 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // just beneath the face's lowest corner for the grid points round it, so no hillside shows through
   /** The height grid point (i, j) must come down to so that none of the ground's triangles with it as a
    *  corner stands over face triangle o (top: how high over the face the ground may be), or Infinity. */
+  // It runs for every grid point round every pavement face of every square, so it works in place on
+  // these few numbers rather than building lists, and skips a ground triangle that can't meet the face.
+  const RX = new Float64Array(7), RY = new Float64Array(7), RZ = new Float64Array(7), Wt = new Float64Array(3);
+  // the grid point and its six neighbours (RX[0] is the point itself), and each ground triangle round it as
+  // three of those, the corner first (each cell is drawn as (i, j), (i+1, j), (i, j+1) and (i+1, j),
+  // (i+1, j+1), (i, j+1))
+  const NEAR = [0, 0, 1, 0, 0, 1, -1, 1, -1, 0, 0, -1, 1, -1];
+  const ROUND = [0, 1, 2, 0, 3, 4, 0, 2, 3, 0, 5, 6, 0, 6, 1, 0, 4, 5];
+  /** weights of (x, y) in the triangle (a, b, c) into Wt, or false outside it */
+  const weigh = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number, x: number, y: number) => {
+    const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(d) < 1e-12) return false;
+    const wa = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d;
+    const wb = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d, wc = 1 - wa - wb;
+    if (wa < -1e-9 || wb < -1e-9 || wc < -1e-9) return false;
+    Wt[0] = wa; Wt[1] = wb; Wt[2] = wc;
+    return true;
+  };
   const clearOf = (o: number, i: number, j: number, top: number) => {
     const F = faceXYZ, n = T.nx;
-    const P = (a: number, b: number) => {
-      const k = Math.min(T.ny - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a));
-      return [T.x0 + a * T.dx, T.y0 + b * T.dy, Math.min(T.h[k] / 10, roundTo[k], underTo[k])];
-    };
-    const face = [[F[o], F[o + 1], F[o + 2]], [F[o + 3], F[o + 4], F[o + 5]], [F[o + 6], F[o + 7], F[o + 8]]];
-    /** weights of (x, y) in triangle A, or null outside it */
-    const at = (A: number[][], x: number, y: number) => {
-      const d = (A[1][1] - A[2][1]) * (A[0][0] - A[2][0]) + (A[2][0] - A[1][0]) * (A[0][1] - A[2][1]);
-      if (Math.abs(d) < 1e-12) return null;
-      const wa = ((A[1][1] - A[2][1]) * (x - A[2][0]) + (A[2][0] - A[1][0]) * (y - A[2][1])) / d;
-      const wb = ((A[2][1] - A[0][1]) * (x - A[2][0]) + (A[0][0] - A[2][0]) * (y - A[2][1])) / d, wc = 1 - wa - wb;
-      return wa < -1e-9 || wb < -1e-9 || wc < -1e-9 ? null : [wa, wb, wc];
-    };
-    // (each cell is drawn as (i, j), (i+1, j), (i, j+1) and (i+1, j), (i+1, j+1), (i, j+1)); the corner first
-    const round = [[P(i, j), P(i + 1, j), P(i, j + 1)], [P(i, j), P(i - 1, j + 1), P(i - 1, j)], [P(i, j), P(i, j + 1), P(i - 1, j + 1)],
-      [P(i, j), P(i, j - 1), P(i + 1, j - 1)], [P(i, j), P(i + 1, j - 1), P(i + 1, j)], [P(i, j), P(i - 1, j), P(i, j - 1)]];
+    for (let k = 0; k < 7; k++) {
+      const a = i + NEAR[k * 2], b = j + NEAR[k * 2 + 1];
+      const g = Math.min(T.ny - 1, Math.max(0, b)) * n + Math.min(n - 1, Math.max(0, a));
+      RX[k] = T.x0 + a * T.dx; RY[k] = T.y0 + b * T.dy; RZ[k] = Math.min(T.h[g] / 10, roundTo[g], underTo[g]);
+    }
+    const f0x = F[o], f0y = F[o + 1], f0z = F[o + 2], f1x = F[o + 3], f1y = F[o + 4], f1z = F[o + 5], f2x = F[o + 6], f2y = F[o + 7], f2z = F[o + 8];
+    const fx0 = Math.min(f0x, f1x, f2x) - 1e-3, fx1 = Math.max(f0x, f1x, f2x) + 1e-3, fy0 = Math.min(f0y, f1y, f2y) - 1e-3, fy1 = Math.max(f0y, f1y, f2y) + 1e-3;
     let to = Infinity;
-    for (const G of round) {
+    for (let r = 0; r < 18; r += 3) {
+      const g0 = ROUND[r], g1 = ROUND[r + 1], g2 = ROUND[r + 2];
+      const g0x = RX[g0], g0y = RY[g0], g1x = RX[g1], g1y = RY[g1], g2x = RX[g2], g2y = RY[g2], g1z = RZ[g1], g2z = RZ[g2];
+      if (Math.max(g0x, g1x, g2x) < fx0 || Math.min(g0x, g1x, g2x) > fx1 || Math.max(g0y, g1y, g2y) < fy0 || Math.min(g0y, g1y, g2y) > fy1) continue;
       // the ground can stand highest over the face at a corner of either, or where their edges cross
-      const pts: number[][] = [...face, ...G];
+      const tryAt = (x: number, y: number) => {
+        if (!weigh(f0x, f0y, f1x, f1y, f2x, f2y, x, y)) return;
+        const z = Wt[0] * f0z + Wt[1] * f1z + Wt[2] * f2z + top;
+        if (!weigh(g0x, g0y, g1x, g1y, g2x, g2y, x, y) || Wt[0] < 1e-3) return;
+        to = Math.min(to, (z - (Wt[1] * g1z + Wt[2] * g2z)) / Wt[0]);
+      };
+      tryAt(f0x, f0y); tryAt(f1x, f1y); tryAt(f2x, f2y);
+      tryAt(g0x, g0y); tryAt(g1x, g1y); tryAt(g2x, g2y);
       for (let e = 0; e < 3; e++) for (let f = 0; f < 3; f++) {
-        const [ax, ay] = face[e], [bx, by] = face[(e + 1) % 3], [cx, cy] = G[f], [dx, dy] = G[(f + 1) % 3];
+        const e1 = (e + 1) % 3, c = ROUND[r + f], d = ROUND[r + (f + 1) % 3];
+        const ax = F[o + e * 3], ay = F[o + e * 3 + 1], bx = F[o + e1 * 3], by = F[o + e1 * 3 + 1];
+        const cx = RX[c], cy = RY[c], dx = RX[d], dy = RY[d];
         const den = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
         if (Math.abs(den) < 1e-12) continue;
         const s = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / den, u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / den;
-        if (s >= 0 && s <= 1 && u >= 0 && u <= 1) pts.push([ax + (bx - ax) * s, ay + (by - ay) * s]);
-      }
-      for (const [x, y] of pts) {
-        const wf = at(face, x, y), wg = at(G, x, y);
-        if (!wf || !wg || wg[0] < 1e-3) continue;
-        const z = wf[0] * face[0][2] + wf[1] * face[1][2] + wf[2] * face[2][2] + top, others = wg[1] * G[1][2] + wg[2] * G[2][2];
-        to = Math.min(to, (z - others) / wg[0]);
+        if (s >= 0 && s <= 1 && u >= 0 && u <= 1) tryAt(ax + (bx - ax) * s, ay + (by - ay) * s);
       }
     }
     return to;
@@ -666,7 +681,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // it must for that triangle to clear it: on a coarse grid a corner up a bank (under a bridge's
       // abutment, say) carried the grass over the pavement
       // (never below the face's edge, as a corner the triangle only just touches would otherwise go far down)
-      if (pave) { const to = Math.max(clearOf(o, i, j, 0.14), near + 0.14); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
+      if (pave && near + 0.14 < Math.min(T.h[v] / 10, roundTo[v])) { const to = Math.max(clearOf(o, i, j, 0.14), near + 0.14); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
     }
   }
   // the grid points just inside a face's edge are let down less, as the ground's triangles from them

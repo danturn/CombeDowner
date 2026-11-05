@@ -104,7 +104,7 @@ import type { Kind } from "./pickups";
 import { compassWord, esc, far, hash, rng, type Fugitive } from "./quests";
 import { RIDES } from "./rides";
 import { note } from "./daily";
-import { show } from "./show";
+import { setHidden, show } from "./show";
 import { FlagJuice } from "./flagjuice";
 import { missionBegin, missionResult, missionStackReady } from "./missionscreens";
 import * as Paper from "./paper";
@@ -1553,7 +1553,7 @@ export class Invasion {
     // it comes up near a cluster with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab.
     // a job's panel stacks over it (missionscreens.ts), so it stays up on a job too
-    $("bunting").hidden = !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
+    setHidden($("bunting"), !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved));
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
   }
 

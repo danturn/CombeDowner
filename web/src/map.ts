@@ -25,6 +25,7 @@ export interface Building {
   r: number[][][]; h: number; g: number; c: string; n: string; dz: number;
   m?: string; rc?: string; w?: number;            // wall material, roof covering, has windows
   rr?: number[][]; rp?: number; hp?: number[];    // roof rectangle, ridge rise, hip insets at each end
+  hs?: number;                                    // 1 where the lidar is sure of the roof's hipped or gabled ends (for the clash check)
   ch?: number[][];                                // chimney stacks
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual

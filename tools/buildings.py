@@ -436,6 +436,7 @@ def rows(polys, adj, measured=None, shapes=None):
                     if end: sure_ends.append(bool(m["hipped"]))
                 else:
                     own_way.append(k)
+                    if end: guessed_ends.append(bool(m["hipped"]))
                 why[k] = "survey"
                 continue
             follow.append(k)
@@ -1011,7 +1012,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     eaves += rise - steep
                     rise = steep
                     if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
-                roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
+                roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy),
+                            sure_ends=bool(m.get("sure_hips")) and i not in row_hipped)
             elif depth > 3:
                 rise = min(depth / 2 * PITCH, 5.5 if kind == "church" else 3.0 if zone == "georgian" else 4.2)
                 if kind == "church": rise = depth / 2 * 1.2
