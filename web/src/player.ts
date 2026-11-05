@@ -166,7 +166,7 @@ const SUIT_CATCH = 0.85;  // the share of the gliding speed you have the moment 
 const SUIT_OPEN = 3;      // metres clear below before it'll open: an ordinary jump never gets there
 const SUIT_WALL = 12;     // m/s into a wall that hurts: a level glide head on (about 10) only bumps
 const SUIT_SLAM = 13;     // and down into the ground
-const SUIT_ROLL = 0.22;   // the most the view rolls with the suit, radians: a proper lean into the turn
+const SUIT_ROLL = 0.38;   // the most the view rolls with the suit, radians: a proper lean into the turn
 
 /**
  * How much of the way back round to dead ahead the view comes this frame (0: it stays put), on a ride
