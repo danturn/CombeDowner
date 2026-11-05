@@ -568,7 +568,7 @@ export class Game {
   private hitT = 0;
   private hurtT = 0;
   private homePub: Pub | null = null;             // the last pub you went to: you come back to life outside it
-  private landing: { pub?: Pub; t: number } | null = null;   // just gone to a pub (or started out in Bath): seconds left to check where you landed
+  private landing: { pub?: Pub; t: number; y?: number } | null = null;   // just gone to a pub (or started out in Bath): seconds left to check where you landed
   private upFrom: "mine" | "deli" | null = null;   // back up from the mines or the deli, before the square with its door has loaded
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
@@ -1569,7 +1569,7 @@ export class Game {
   /** Nothing may hurt you: out of a race and watching the others finish, or still arriving (arrive.ts). */
   private sheltered() { return this.quests.waiting() || this.arrival.up; }
 
-  private respawn(at?: { x: number; z: number; yaw: number }) {
+  private respawn(at?: { x: number; z: number; yaw: number; y?: number }) {
     if (this.ride) this.getOut();
     this.dismount();
     this.basket = "";
@@ -1578,8 +1578,11 @@ export class Game {
     const pub = at ? null : this.homePub;
     if (at) {
       this.player.spawn(at.x, at.z, at.yaw);
-      // (looked at once its square of Bath is in, which may be now: off a wall or out of a house)
-      this.landing = { t: 20 };
+      // (looked at once its square of Bath is in, which may be now: off a wall or out of a house);
+      // back up on a roof you were standing on, held there till the roof's square is in to stand on
+      const up = at.y !== undefined && at.y > this.player.pos.y + 1.5 ? at.y : undefined;
+      if (up !== undefined) this.player.pos.y = up;
+      this.landing = { t: 20, y: up };
     } else if (pub) {
       // back outside the last pub you went to
       const o = this.outside(pub);
@@ -1765,7 +1768,10 @@ export class Game {
     const l = this.landing, p = this.player.pos;
     if (!l) return;
     if ((l.t -= dt) < 0 || !this.alive || this.ride) { this.landing = null; return; }
-    if (!this.map.detailedAt(p.x, p.z)) return;
+    if (!this.map.detailedAt(p.x, p.z)) {
+      if (l.y !== undefined) { p.y = l.y; this.player.vel.set(0, 0, 0); }
+      return;
+    }
     this.landing = null;
     if (p.y > this.map.ground(p.x, p.z) + 1.5) return;   // up on a roof is your own doing
     if (!this.map.indoors(p.x, p.z) && !this.map.blocked(p.x, p.z, 0.35)) return;
@@ -1867,7 +1873,7 @@ export class Game {
   }
 
   // ---- rejoining where you left off ------------------------------------------------------
-  private readSpots(): Record<string, { x: number; z: number; yaw: number; t: number }> {
+  private readSpots(): Record<string, { x: number; z: number; yaw: number; t: number; y?: number }> {
     try { return JSON.parse(localStorage.getItem(SPOT_KEY) ?? "{}") ?? {}; } catch { return {}; }
   }
 
@@ -1876,8 +1882,9 @@ export class Game {
   private savedSpot() {
     const s = this.readSpots()[this.spotKey];
     if (!s || !(Date.now() - s.t < SPOT_TTL) || ![s.x, s.z, s.yaw].every(Number.isFinite)) return undefined;
-    if (this.map.fieldEdge(s.x, s.z) < 1 || this.map.blocked(s.x, s.z, 0.35)) return undefined;
-    return s;
+    const high = Number.isFinite(s.y) && s.y! > this.map.ground(s.x, s.z) + 1.5;
+    if (this.map.fieldEdge(s.x, s.z) < 1 || (!high && this.map.blocked(s.x, s.z, 0.35))) return undefined;
+    return high ? s : { ...s, y: undefined };
   }
 
   /** Remember where you are (or forget it while you're dead, so you rejoin at a normal spawn). */
@@ -1885,7 +1892,7 @@ export class Game {
     const spots = this.readSpots(), now = Date.now();
     for (const k in spots) if (!(now - spots[k]?.t < SPOT_TTL)) delete spots[k];
     const p = this.player.pos;
-    if (this.alive) spots[this.spotKey] = { x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, yaw: Math.round(this.player.yaw * 100) / 100, t: now };
+    if (this.alive) spots[this.spotKey] = { x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, y: this.player.onGround ? Math.round(p.y * 10) / 10 : undefined, yaw: Math.round(this.player.yaw * 100) / 100, t: now };
     else delete spots[this.spotKey];
     try { localStorage.setItem(SPOT_KEY, JSON.stringify(spots)); } catch { /* storage may be blocked */ }
   }

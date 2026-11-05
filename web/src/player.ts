@@ -142,7 +142,7 @@ const CEILING = 120;      // and flaps lose their lift towards this high off the
 // is half the air in your face, growing with speed, and half the cost of being held up, which shrinks
 // with speed but grows with how hard you pull: so a dive gets fast and a hard pull-up bleeds speed.
 const SUIT_G = 12;
-const SUIT_TRIM = 11;     // m/s
+const SUIT_TRIM = 12.5;   // m/s
 const SUIT_LD = 10;      // a hang glider's glide, so you can follow a hill down
 const SUIT_LIFT = SUIT_G / (SUIT_TRIM * SUIT_TRIM);
 const SUIT_FACE = SUIT_G / SUIT_LD / 2 / (SUIT_TRIM * SUIT_TRIM);
@@ -151,7 +151,7 @@ const SUIT_SPARE = 2;    // the most lift the suit has over what holds up a glid
 const SUIT_SETTLE = 0.5;  // how hard it noses up or down towards its gliding speed
 const SUIT_STALL = 0.55, SUIT_UNSTALL = 0.95;   // below this share of the gliding speed it stalls, and above that it flies again
 const SUIT_STALLED = 0.2;   // the share of its lift a stalled suit keeps
-const SUIT_MUSH = SUIT_G / (9 * 9);   // the drag of a stalled suit with S still held: it sinks at about 9 m/s
+const SUIT_MUSH = SUIT_G / (0.82 * SUIT_TRIM) ** 2;   // the drag of a stalled suit with S still held: it sinks a bit slower than it glides
 const SUIT_MUSH_FREE = 0.65;   // and its share with nothing held, so letting go comes out of it slowly and W quickly
 const SUIT_TUCK = 0.6;    // the air in your face with your arms back in a steep dive, over spread wide
 const SUIT_LOAD = 2.5;    // the hardest pull-out, in the suit's g, so a dive can't snap round
@@ -164,7 +164,7 @@ const SUIT_NOSE_KEYS: RampFeel = { rise: 0.2, fall: 0.15 };   // nose over quick
 const SUIT_NOSE_DOWN = 0.55, SUIT_NOSE_UP = 0.8;   // the path forward and back ask for, radians down and up
 const SUIT_CATCH = 0.85;  // the share of the gliding speed you have the moment it opens
 const SUIT_OPEN = 3;      // metres clear below before it'll open: an ordinary jump never gets there
-const SUIT_WALL = 12;     // m/s into a wall that hurts: a level glide head on (about 10) only bumps
+const SUIT_WALL = 14;     // m/s into a wall that hurts: a level glide head on (about 12) only bumps
 const SUIT_SLAM = 13;     // and down into the ground
 const SUIT_ROLL = 0.38;   // the most the view rolls with the suit, radians: a proper lean into the turn
 
