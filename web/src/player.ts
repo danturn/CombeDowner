@@ -151,6 +151,7 @@ const SUIT_TUCK = 0.6;    // the air in your face with your arms back in a steep
 const SUIT_LOAD = 2.5;    // the hardest pull-out, in the suit's g, so a dive can't snap round
 const SUIT_PULL = 1.3;    // the quickest your path bends, rad/s
 const SUIT_TURN = 0.6;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
+const SUIT_ZOOM = 0.7;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
 const SUIT_ROLL_RATE = 2.5; // how quickly the suit itself rolls towards the bank you're asking for
 const SUIT_KEYS: RampFeel = { rise: 0.4, fall: 0.25 };   // a key held asks for full bank or nose over this long
 const SUIT_NOSE_DOWN = 0.8, SUIT_NOSE_UP = 0.7;   // the path forward and back ask for, radians down and up
@@ -593,7 +594,7 @@ export class Player {
       const lift = Math.max(-upMost, Math.min(upMost, v * bend + SUIT_G * cg));
       this.suitPath = Math.max(-1.55, Math.min(1.3, g + ((lift - SUIT_G * cg) / v) * h));
       const all = lift * lift + sideways * sideways;
-      const drag = SUIT_FACE * tuck * v * v + (SUIT_HELD * all) / (v * v);
+      const drag = (SUIT_FACE * tuck * v * v + (SUIT_HELD * all) / (v * v)) * (g > 0 ? SUIT_ZOOM : 1);
       this.suitV = Math.max(0.5, this.suitV + (-SUIT_G * Math.sin(g) - drag) * h);
       this.suitHead += (sideways / (v * Math.max(0.05, cg))) * Math.sign(turn) * h;
     }
