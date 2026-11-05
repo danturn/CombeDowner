@@ -3952,7 +3952,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
     # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
     # street that steepens, with a gap under its edge and parked cars sunk into it)
+    # (under and beside a bridge's deck, and where streets at two levels meet, the faces keep every
+    # point: their heights there are settled after this, not by the ground or the street's level)
+    keep_all = unary_union([g for g in (deck, beside_cut) if g is not None and not g.is_empty] or [Polygon()]).buffer(PATH_STEP)
+    shapely.prepare(keep_all)
+
     def drawn_z(x, y, on_ground):
+        if shapely.contains_xy(keep_all, x, y):
+            return None
         k = None if on_ground else nearest(x, y)
         if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
             k = None
@@ -6677,11 +6684,23 @@ def rails_off_walls(rd, br):
     return rd
 
 
+def _drawn_ground(T, x, y):
+    """The ground as the game draws it from the square's grid, two triangles to a cell."""
+    nx, ny = T["nx"], T["ny"]
+    fi, fj = (x - T["x0"]) / T["dx"], (y - T["y0"]) / T["dy"]
+    i, j = min(nx - 2, max(0, int(fi))), min(ny - 2, max(0, int(fj)))
+    u, v = min(1, max(0, fi - i)), min(1, max(0, fj - j))
+    h = lambda a, b: T["h"][b * nx + a] / 10 + T["z0"]
+    if u + v <= 1:
+        return h(i, j) + (h(i + 1, j) - h(i, j)) * u + (h(i, j + 1) - h(i, j)) * v
+    return h(i + 1, j + 1) + (h(i, j + 1) - h(i + 1, j + 1)) * (1 - u) + (h(i + 1, j) - h(i + 1, j + 1)) * (1 - v)
+
+
 WALL_EASE = 3.0     # metres either way along a wall that its height at a point is evened out over
-WALL_EASE_MOST = 0.25   # metres at most that evening out moves a point off its ground
+WALL_EASE_MOST = 0.2    # metres at most that evening out moves a point off the ground as it's drawn
 
 
-def smooth_wall_tops(br):
+def smooth_wall_tops(br, T):
     """Each wall's points between its ends at the ground's height evened out along it, so its top runs
     in a smooth line: taken at each point from a ground drawn in 4 m triangles, it went up in angled
     steps where the wall crossed their folds. Its ends keep their own heights, where it meets another
@@ -6696,13 +6715,15 @@ def smooth_wall_tops(br):
         for u, v in zip(p, p[1:]):
             s.append(s[-1] + math.dist(u[:2], v[:2]))
         z = [q[2] for q in p]
+        drawn = [_drawn_ground(T, q[0], q[1]) for q in p]
         eased = [list(q) for q in p]
         for i in range(1, len(p) - 1):
             w = [(max(0.0, 1 - abs(s[j] - s[i]) / WALL_EASE), z[j]) for j in range(len(p)) if abs(s[j] - s[i]) < WALL_EASE]
             total = sum(a for a, _ in w)
             if total > 0:
                 even = sum(a * h for a, h in w) / total
-                eased[i][2] = round(min(max(even, z[i] - WALL_EASE_MOST), z[i] + WALL_EASE_MOST), 1)
+                lo, hi = min(z[i], drawn[i] - WALL_EASE_MOST), max(z[i], drawn[i] + WALL_EASE_MOST)
+                eased[i][2] = round(min(max(even, lo), hi), 1)
         out.append(dict(b, p=eased))
     return out
 
@@ -7127,7 +7148,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
-    br = smooth_wall_tops(br)
+    br = smooth_wall_tops(br, tile["t"])
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt
