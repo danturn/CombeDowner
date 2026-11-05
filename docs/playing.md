@@ -322,7 +322,7 @@ Stand anywhere at least 15 m above the ground round you (a roof, a tower, a high
 edge) and a wingsuit is yours for good, worn folded on your back. Jump off something high and press
 Space (Jump) in mid-air to open it (it catches the air at once, like a hang glider), and Space again to close it and drop; landing folds it away.
 It flies like Breath of the Wild's glider: A and D (the left stick sideways) bank it round in a wide
-turn, W (stick up) noses down into a shallow dive to pick up speed, and S (stick down) pulls up, swapping
+turn, W (stick up) noses down into a dive to pick up speed fast, and S (stick down) pulls up, swapping
 speed for height until it stalls. With nothing held it floats along level, sinking slowly, about ten
 metres along for every metre down: off a 30 m roof that's nearly 300 m, and down a hillside it holds
 you well clear of the slope, with W bringing you gently down to it. Keys
