@@ -154,6 +154,7 @@ import "./stunts";
 import "./climb";
 import { abbeyLadders } from "./abbeyclimb";
 import { Wings } from "./wings";
+import { SUIT_ID, Wingsuit } from "./wingsuit";
 import type { Route } from "./railway";
 import { Balloons } from "./balloons";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
@@ -169,7 +170,7 @@ import { freeRoam, passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
-import { count as wardCount, earn, myWear, onEarn, tally } from "./wardrobe";
+import { count as wardCount, earn, myWear, onEarn, tally, wearing } from "./wardrobe";
 import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
 import * as Yours from "./yours";
@@ -341,6 +342,7 @@ interface StateExtra {
   passive?: boolean;   // the game's in passive mode (only the host's say counts)
   host?: boolean;      // they say they're host
   wings?: boolean;     // the angel's wings on (wings.ts)
+  ws?: boolean;        // flying in an open wingsuit (wingsuit.ts)
   glow?: boolean;      // flying with them, glowing gold
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
@@ -363,7 +365,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
+      wings: e.wings === true, ws: e.ws === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -402,6 +404,8 @@ export class Game {
   readonly pickups: Pickups;
   readonly ladders: Ladders;
   readonly wings: Wings;
+  private wingsuit: Wingsuit;
+  private suitWorn = false;                       // the wingsuit on your back (looked at once a second)
   readonly balloons: Balloons;
   private balloonA = 0;                            // which way your basket faced last frame, so your view turns with it
   private perchBare = false;                       // a job has your hands busy, or shows you the view from somewhere else: no gun in front of you
@@ -651,6 +655,8 @@ export class Game {
     this.pickups = new Pickups(map, world.scene);
     this.ladders = new Ladders(map, world.scene);
     this.wings = new Wings(map, world.scene, this.weapon.scene, (t) => this.news(t));
+    this.wingsuit = new Wingsuit(this.weapon.scene);
+    this.suitWorn = wearing(SUIT_ID);
     // the solo on the heavenly guitar: each note to everyone, and theirs played where they are
     this.wings.onNote = (f, d, b) => this.net.send("gtr", [Math.round(f * 10) / 10, Math.round(d * 100) / 100, b]);
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
@@ -1540,6 +1546,8 @@ export class Game {
     this.pubAt = pub;
     if (pub && this.pubT >= 20 && this.pubT - dt < 20 && tally("pubs", `${this.mapId}:${pub}`) >= 10) earn("froth");
     if (this.inPark(p.x, -p.z) && wardCount("park", dt) >= 3600) earn("pigeon");
+    if (onFoot && !this.carrier) this.wingsuit.check(this.player, (x, z) => this.map.ground(x, z));
+    this.suitWorn = wearing(SUIT_ID);
   }
 
   /** Whether data point (x, y) is in a park, a green or a common, by the map's named places. */
@@ -1955,6 +1963,7 @@ export class Game {
     // A host on a page from before passive mode says nothing, which means off.
     if (from === this.hostId && (e?.host ?? true)) { this.setRoomPassive(!!e?.passive); this.setRoomFeatures(unpackFeatures(e?.ft) ?? myFeatures); }
     r.avatar.setWings(!!e?.wings, !!e?.glow);
+    r.avatar.setSuit(!!e?.ws);
     r.smoking = !!e?.smoke;
     r.waiting = !!e?.rw;
     r.avatar.setRage(r.smoking);
@@ -3558,6 +3567,15 @@ export class Game {
     p.applyToCamera(this.camera);
   }
 
+  /** Flown into a wall (or the ground) in the wingsuit too fast: a thump, and it hurts, more the faster. */
+  private suitCrash(speed: number) {
+    SFX.crash(Math.min(1, speed / 20), 0, 0);
+    this.news(anyOf(["Ouch!", "Straight into the wall", "Wall 1, you 0", "That'll leave a mark"]));
+    const claim = { life: this.life, dmg: Math.min(60, Math.round((speed - 9) * 4)) };
+    if (this.isHost) this.applyCrash(this.net.selfId, claim);
+    else this.net.send("ow", claim, this.hostId);
+  }
+
   /** Off your ride (player.ts tumbles you and puts you back on): only a hard crash into a wall hurts, and not much. */
   private crash(speed: number, wall: boolean) {
     const v = this.held ? rideSpecs[this.held] : null;
@@ -4215,7 +4233,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -4274,7 +4292,7 @@ export class Game {
     const aloft = this.balloons.aboard >= 0;
     const perch = !car && !ride && !helm && !this.basket && !aloft && this.alive ? this.quests.perch(dt, this.pushing()) : null;
     this.perchBare = !!perch?.eye || !!perch?.bare;
-    if (car || ride || helm || this.basket || aloft || perch) p.ladder = null;
+    if (car || ride || helm || this.basket || aloft || perch) { p.ladder = null; p.suitOpen = false; }
     if (!ride && !helm && !aloft) this.carry();
     this.flyBalloons(dt);
     // driving a bus: the 2 or the 4
@@ -4294,12 +4312,15 @@ export class Game {
       // no mouse captured (an iPad with a keyboard, a touch screen): the arrow keys look round instead of walking
       p.arrowsWalk = !this.freeMode;
       if (this.freeMode) this.arrowLook(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !this.reveal.on && !placeNow());
+      p.suit = this.suitWorn && this.alive && !this.carrier;
       p.update(dt, this.active && this.alive && !this.arrival.up && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       // shut in a building after all (shoved in by a car, a square loading in round you, down into a
       // courtyard off a roof): out on to the nearest clear ground, as the others will see you
       else if (this.alive && p.unstick()) this.sendState();
       if (p.crashed) this.crash(p.crashed, p.crashWall);
+      if (p.suitHit) this.suitCrash(p.suitHit);
+      this.wingsuit.hint(p, p.pos.y - this.map.floor(p.pos.x, p.pos.z, p.pos.y));
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
       this.camera.rotation.y += w.drift.x;
@@ -4359,6 +4380,8 @@ export class Game {
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
     this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket && !aloft);
+    if (!this.alive) p.suitOpen = false;
+    this.wingsuit.update(dt, p, this.camera);
     w.model.visible = this.alive && !this.perchBare && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
@@ -5081,6 +5104,7 @@ export class Game {
     this.arrival.dispose();
     this.unEarn();
     this.wings.dispose();
+    this.wingsuit.dispose();
     this.records.dispose();
     this.golfDriver.dispose();
     this.reveal.dispose();

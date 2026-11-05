@@ -316,6 +316,21 @@ little quicker than you go up. A press just before you land, or just after you'v
 edge, still counts. Walk head on into a fence, wall or car up to about your shoulders and you hop
 it, and bumping into things slides you along them rather than knocking you back.
 
+### The wingsuit
+
+Stand anywhere at least 25 m above the ground round you (a roof, a tower, a high wall, a cliff
+edge) and a wingsuit is yours for good, worn folded on your back. Jump off something high and press
+Space (Jump) in mid-air to open it, and Space again to close it and drop; landing folds it away.
+It flies like Breath of the Wild's glider: A and D (the left stick sideways) bank it round in a wide
+turn, W (stick up) noses down into a dive to pick up speed, and S (stick down) pulls up, swapping
+speed for a little height until it stalls. With nothing held it floats along level, sinking slowly,
+about three and a half metres along for every metre down: off a 30 m roof that's 80 to 90 m. Keys
+build up as you hold them, so a tap is a small correction. The mouse (the right stick, or dragging on
+a touch screen) looks about freely without changing course, so you can shoot as you fly. Fly into a
+wall fast, or dive into the ground, and it hurts. It won't open on a ladder, in a car, on a ride or
+in a cabin, and the angel's wings win if you have both. Everyone else sees you spread out, arms and
+legs wide with the fabric between.
+
 ### Rides
 
 Rides turn up round the streets, pink on the minimap: a racing bike, a BMX, rollerblades, a
@@ -833,7 +848,8 @@ any wood themselves.
 Daft things to wear, earned round Bath and seen by everyone: a seagull on your head, a splattered
 flat cap, a traffic cone for winning a race, a halo for
 climbing the Abbey, a deerstalker for bringing in a ringleader, a chef's hat from the deli, a cat
-on your shoulder for surviving a swarm, a baby's bonnet for ten minutes of tummy time, and more.
+on your shoulder for surviving a swarm, a baby's bonnet for ten minutes of tummy time, a wingsuit
+for standing 25 m up, and more.
 One thing on your head, one on your face and one on your back, picked in the Wardrobe in the pause
 menu. What you've earned is kept in this browser.
 

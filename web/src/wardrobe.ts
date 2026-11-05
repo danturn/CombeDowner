@@ -60,6 +60,7 @@ export const WEARABLES: Wearable[] = [
   { id: "lamp", slot: "back", name: "Miner's lamp", how: "Reach the bottom level of the mines" },
   { id: "deck", slot: "back", name: "Skateboard on your back", how: "Land a ×10 combo on a ride" },
   { id: "pigeon", slot: "back", name: "A pigeon on your shoulder", how: "Spend an hour in the parks, all told" },
+  { id: "wsuit", slot: "back", name: "A wingsuit", how: "Stand somewhere 25 m above the ground round you: a roof, a tower, a high wall" },
 ];
 const BY_ID = new Map(WEARABLES.map((w) => [w.id, w]));
 
@@ -86,6 +87,8 @@ export function onEarn(f: (w: Wearable) => void): () => void {
 
 /** Have you got it? */
 export const has = (id: string) => load().got.includes(id);
+/** Have you got it on? */
+export const wearing = (id: string) => { const s = load(); return s.got.includes(id) && Object.values(s.worn).includes(id); };
 
 /** You've earned id: put it in your wardrobe and wear it straight away. Returns true if it's new. */
 export function earn(id: string): boolean {
@@ -476,6 +479,15 @@ export function wearGeometry(id: string): { geo: THREE.BufferGeometry; on: "head
         [box(0.14, 0.03, 0.04, 0, 0.52, 0.23), "#8a9096"],
         ...[0.12, 0.52].flatMap((y): Piece[] => [-1, 1].map((s): Piece => [cyl(0.03, 0.03, 0.03, 0, 0, 0, 10).rotateZ(Math.PI / 2).translate(s * 0.085, y, 0.255), "#f2c230"])),
       ]).translate(0, -0.08, 0).rotateZ(0.2) };
+    case "wsuit":
+      // folded up on the back, in the open suit's colours (wingsuit.ts)
+      return { on: "body", geo: part([
+        [box(0.32, 0.4, 0.07, 0, 0.3, 0.17), "#e8452c"],
+        [box(0.33, 0.03, 0.075, 0, 0.42, 0.17), "#f2c230"],
+        [box(0.33, 0.025, 0.075, 0, 0.2, 0.17), "#26262c"],
+        [box(0.04, 0.5, 0.02, -0.12, 0.3, 0.135), "#26262c"],
+        [box(0.04, 0.5, 0.02, 0.12, 0.3, 0.135), "#26262c"],
+      ]) };
     case "pigeon":
       return { on: "body", geo: part([
         [ball(0.075, -0.2, 0.65, 0.01, 0.9, 0.85, 1.35), "#8a909c"],
