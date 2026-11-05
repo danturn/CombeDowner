@@ -3954,7 +3954,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # street that steepens, with a gap under its edge and parked cars sunk into it)
     # (under and beside a bridge's deck, and where streets at two levels meet, the faces keep every
     # point: their heights there are settled after this, not by the ground or the street's level)
-    keep_all = unary_union([g for g in (deck, beside_cut) if g is not None and not g.is_empty] or [Polygon()]).buffer(PATH_STEP)
+    keep_all = unary_union([g for g in (deck, beside_cut) if g is not None and not g.is_empty] or [Polygon()]).buffer(2 * STREET_STEP)
     shapely.prepare(keep_all)
 
     def drawn_z(x, y, on_ground):
@@ -6701,7 +6701,7 @@ def _drawn_ground(T, x, y):
     return h(i + 1, j + 1) + (h(i, j + 1) - h(i + 1, j + 1)) * (1 - u) + (h(i + 1, j) - h(i + 1, j + 1)) * (1 - v)
 
 
-WALL_EASE = 3.0     # metres either way along a wall that its height at a point is evened out over
+WALL_EASE = 6.0     # metres either way along a wall that its height at a point is evened out over
 WALL_EASE_MOST = 0.2    # metres at most that evening out moves a point off the ground as it's drawn
 
 
