@@ -153,8 +153,11 @@ After dark its backlight glows blue-green so you can still read it.
 
 **The menus** are pages of BathText '91, a teletext service: the main menu is page 100, filling the
 screen beside the crest of Bath, the pause menu is 101, Settings 200 (its pages 201 to 205), Link a device 300, the
-wardrobe 400 and the trophy cabinet 500, each with the time ticking over in its top corner. Green
+wardrobe 400, the trophy cabinet 500 and the cheats 777 (type CHEATS), each with the time ticking over in its top corner. Green
 buttons go on, red ones leave, and links to other pages are listed with their page numbers.
+
+**Refreshing the page** puts you straight back in the game you were playing in that tab, where you
+stood (up on a roof too), without the menu. Leave from the pause menu and the next visit starts at the menu.
 
 **Full screen** is in the pause menu (Esc opens it and Esc again closes it, or II on a touch screen). In Chrome and Edge, Esc then
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
