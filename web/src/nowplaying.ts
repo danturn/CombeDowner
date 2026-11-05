@@ -3,6 +3,7 @@
 import * as SFX from "./audio";
 import { trackTitle } from "./music";
 import { TRACKS } from "./tracks";
+import { say } from "./show";
 
 // tonic names, counted in semitones from E like the tracks' keys
 const NOTES = ["E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#"];
@@ -38,7 +39,7 @@ export function nowPlaying(root: HTMLElement) {
     if (now - last < 33 || root.hidden || !root.offsetParent) return;
     last = now;
     const s = Math.floor(SFX.trackTime());
-    time.textContent = `${String(Math.floor(s / 60) % 100).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    say(time, `${String(Math.floor(s / 60) % 100).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`);
     state.classList.toggle("stopped", SFX.musicMuted());
 
     const an = SFX.musicAnalyser();
