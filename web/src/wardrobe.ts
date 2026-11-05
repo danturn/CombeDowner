@@ -60,7 +60,7 @@ export const WEARABLES: Wearable[] = [
   { id: "lamp", slot: "back", name: "Miner's lamp", how: "Reach the bottom level of the mines" },
   { id: "deck", slot: "back", name: "Skateboard on your back", how: "Land a ×10 combo on a ride" },
   { id: "pigeon", slot: "back", name: "A pigeon on your shoulder", how: "Spend an hour in the parks, all told" },
-  { id: "wsuit", slot: "back", name: "A wingsuit", how: "Stand somewhere 25 m above the ground round you: a roof, a tower, a high wall" },
+  { id: "wsuit", slot: "back", name: "A wingsuit", how: "Stand somewhere 15 m above the ground round you: a roof, a tower, a high wall" },
 ];
 const BY_ID = new Map(WEARABLES.map((w) => [w.id, w]));
 

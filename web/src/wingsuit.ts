@@ -1,4 +1,4 @@
-// The wingsuit: earned once by standing somewhere at least 25 m above the ground round you (any roof,
+// The wingsuit: earned once by standing somewhere at least 15 m above the ground round you (any roof,
 // tower, high wall or cliff edge, measured from the map's own ground, so it's the same on every map),
 // then kept in your wardrobe as something for your back, where it's folded (wardrobe.ts draws that).
 // Jump in mid-air, well clear of what's below, and it opens (player.ts flies it): your arms and legs
@@ -16,7 +16,7 @@ import type { Player } from "./player";
 import { guide } from "./notice";
 
 export const SUIT_ID = "wsuit";
-const HIGH = 25;           // metres above the lowest ground round you that earns the suit
+const HIGH = 15;           // metres above the lowest ground round you that earns the suit
 const AROUND = 10;         // how far round you that ground is looked for
 const CLEAR = 3;           // clear below before it'll open (as player.ts has it), for the first hint
 const FABRIC = "#e8452c", EDGE = "#26262c", STRIPE = "#f2c230";

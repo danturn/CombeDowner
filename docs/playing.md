@@ -318,7 +318,7 @@ it, and bumping into things slides you along them rather than knocking you back.
 
 ### The wingsuit
 
-Stand anywhere at least 25 m above the ground round you (a roof, a tower, a high wall, a cliff
+Stand anywhere at least 15 m above the ground round you (a roof, a tower, a high wall, a cliff
 edge) and a wingsuit is yours for good, worn folded on your back. Jump off something high and press
 Space (Jump) in mid-air to open it, and Space again to close it and drop; landing folds it away.
 It flies like Breath of the Wild's glider: A and D (the left stick sideways) bank it round in a wide
@@ -849,7 +849,7 @@ Daft things to wear, earned round Bath and seen by everyone: a seagull on your h
 flat cap, a traffic cone for winning a race, a halo for
 climbing the Abbey, a deerstalker for bringing in a ringleader, a chef's hat from the deli, a cat
 on your shoulder for surviving a swarm, a baby's bonnet for ten minutes of tummy time, a wingsuit
-for standing 25 m up, and more.
+for standing 15 m up, and more.
 One thing on your head, one on your face and one on your back, picked in the Wardrobe in the pause
 menu. What you've earned is kept in this browser.
 
