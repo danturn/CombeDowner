@@ -60,6 +60,7 @@ function fly(name, h, run, keysAt, { every = 1, quiet = false, until = () => fal
 
 fly("nothing held, off a 30 m roof running (5 m/s)", 30, 5, () => [], { every: 0.5 });
 fly("nothing held, off a 30 m roof walking (2 m/s)", 30, 2, () => [], { every: 1 });
+fly("W held off a 30 m roof running", 30, 5, () => ["KeyW"]);
 fly("W held (diving), from 80 m", 80, 5, () => ["KeyW"]);
 
 const pull = { low: 1e9, lowV: 0, peak: -1, peakT: 0, topV: 0, stall: 0 };
@@ -97,6 +98,20 @@ console.log(`pull-up: bottom of the pull-out ${pull.low.toFixed(1)} m at ${pull.
     return t < 10.08 ? ["KeyA"] : [];
   }, { quiet: true, until: () => h1 !== null });
   console.log(`a 0.08 s tap of A turns the suit ${((h1 - h0) * 180 / Math.PI).toFixed(1)}° in all`);
+}
+
+// down a 15° hillside (steeper than most of Bath's), off a 10 m wall at its top: the glide should hold
+// you over the slope with nothing held, and W should bring you down to it gently
+for (const [name, keys] of [["nothing held", []], ["W held", ["KeyW"]]]) {
+  const slope = Math.tan(15 * Math.PI / 180);
+  const hill = { ground: (x, z) => Math.min(0, z) * slope, collide: () => null, lastBlock: -1 };
+  const p = new Player(hill);
+  p.pos.set(0, 10, 0); p.vel.set(0, 0, -5); p.onGround = false; p.suit = true;
+  p.update(DT, true); p.jump();
+  let t = 0, low = 1e9;
+  while (t < 60 && !p.onGround) { p.keys = new Set(keys); p.update(DT, true); t += DT; if (t > 1) low = Math.min(low, p.pos.y - hill.ground(0, p.pos.z)); }
+  const along = -p.pos.z / Math.cos(Math.atan(slope));
+  console.log(`down a 15° hill, ${name}: ${p.onGround ? `touched down after ${t.toFixed(1)} s, ${along.toFixed(0)} m down the slope at ${Math.hypot(p.vel.x, p.vel.y, p.vel.z).toFixed(1)} m/s` : `still flying after 60 s, ${along.toFixed(0)} m down, lowest ${low.toFixed(1)} m over it`}`);
 }
 // a wall 40 m ahead, flown into level and in a dive: only the fast one hurts
 for (const [name, keys] of [["level", []], ["diving", ["KeyW"]]]) {

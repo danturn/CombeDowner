@@ -320,11 +320,12 @@ it, and bumping into things slides you along them rather than knocking you back.
 
 Stand anywhere at least 15 m above the ground round you (a roof, a tower, a high wall, a cliff
 edge) and a wingsuit is yours for good, worn folded on your back. Jump off something high and press
-Space (Jump) in mid-air to open it, and Space again to close it and drop; landing folds it away.
+Space (Jump) in mid-air to open it (it catches the air at once, like a hang glider), and Space again to close it and drop; landing folds it away.
 It flies like Breath of the Wild's glider: A and D (the left stick sideways) bank it round in a wide
-turn, W (stick up) noses down into a dive to pick up speed, and S (stick down) pulls up, swapping
-speed for a little height until it stalls. With nothing held it floats along level, sinking slowly,
-about three and a half metres along for every metre down: off a 30 m roof that's 80 to 90 m. Keys
+turn, W (stick up) noses down into a shallow dive to pick up speed, and S (stick down) pulls up, swapping
+speed for height until it stalls. With nothing held it floats along level, sinking slowly, about ten
+metres along for every metre down: off a 30 m roof that's nearly 300 m, and down a hillside it holds
+you well clear of the slope, with W bringing you gently down to it. Keys
 build up as you hold them, so a tap is a small correction. The mouse (the right stick, or dragging on
 a touch screen) looks about freely without changing course, so you can shoot as you fly. Fly into a
 wall fast, or dive into the ground, and it hurts. It won't open on a ladder, in a car, on a ride or

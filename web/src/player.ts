@@ -143,7 +143,7 @@ const CEILING = 120;      // and flaps lose their lift towards this high off the
 // with speed but grows with how hard you pull: so a dive gets fast and a hard pull-up bleeds speed.
 const SUIT_G = 12;
 const SUIT_TRIM = 11;     // m/s
-const SUIT_LD = 3.6;
+const SUIT_LD = 10;      // a hang glider's glide, so you can follow a hill down
 const SUIT_LIFT = SUIT_G / (SUIT_TRIM * SUIT_TRIM);
 const SUIT_FACE = SUIT_G / SUIT_LD / 2 / (SUIT_TRIM * SUIT_TRIM);
 const SUIT_HELD = (SUIT_G / SUIT_LD / 2) * (SUIT_TRIM * SUIT_TRIM) / (SUIT_G * SUIT_G);
@@ -154,7 +154,8 @@ const SUIT_TURN = 0.6;    // the quickest you turn, banked right over at speed, 
 const SUIT_ZOOM = 0.7;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
 const SUIT_ROLL_RATE = 2.5; // how quickly the suit itself rolls towards the bank you're asking for
 const SUIT_KEYS: RampFeel = { rise: 0.4, fall: 0.25 };   // a key held asks for full bank or nose over this long
-const SUIT_NOSE_DOWN = 0.8, SUIT_NOSE_UP = 0.7;   // the path forward and back ask for, radians down and up
+const SUIT_NOSE_DOWN = 0.35, SUIT_NOSE_UP = 0.6;   // the path forward and back ask for, radians down and up
+const SUIT_CATCH = 0.85;  // the share of the gliding speed you have the moment it opens
 const SUIT_OPEN = 3;      // metres clear below before it'll open: an ordinary jump never gets there
 const SUIT_WALL = 12;     // m/s into a wall that hurts: a level glide head on (about 10) only bumps
 const SUIT_SLAM = 13;     // and down into the ground
@@ -548,8 +549,9 @@ export class Player {
   private openSuit() {
     const h = Math.hypot(this.vel.x, this.vel.z);
     this.suitOpen = true;
-    this.suitV = Math.max(1, Math.hypot(h, this.vel.y));
-    this.suitPath = Math.atan2(this.vel.y, h);
+    // it catches the air at once, as a canopy does, rather than dropping a storey before it flies
+    this.suitV = Math.max(SUIT_CATCH * SUIT_TRIM, Math.hypot(h, this.vel.y));
+    this.suitPath = Math.max(-SUIT_NOSE_DOWN, Math.atan2(this.vel.y, h));
     this.suitHead = h > 0.5 ? Math.atan2(-this.vel.x, -this.vel.z) : this.yaw;
     this.wantJump = false; this.jumpBuf = 0; this.jumpRise = false;
     this.vaulting = false;
