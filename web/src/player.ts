@@ -147,10 +147,12 @@ const SUIT_LD = 10;      // a hang glider's glide, so you can follow a hill down
 const SUIT_LIFT = SUIT_G / (SUIT_TRIM * SUIT_TRIM);
 const SUIT_FACE = SUIT_G / SUIT_LD / 2 / (SUIT_TRIM * SUIT_TRIM);
 const SUIT_HELD = (SUIT_G / SUIT_LD / 2) * (SUIT_TRIM * SUIT_TRIM) / (SUIT_G * SUIT_G);
+const SUIT_SPARE = 2;    // the most lift the suit has over what holds up a glide, so S pulls up from gliding speed too
+const SUIT_SETTLE = 0.5;  // how hard it noses up or down towards its gliding speed
 const SUIT_TUCK = 0.6;    // the air in your face with your arms back in a steep dive, over spread wide
 const SUIT_LOAD = 2.5;    // the hardest pull-out, in the suit's g, so a dive can't snap round
 const SUIT_PULL = 1.6;    // the quickest your path bends, rad/s
-const SUIT_TURN = 0.6;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
+const SUIT_TURN = 1.0;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
 const SUIT_ZOOM = 0.4;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
 const SUIT_ROLL_RATE = 2.5; // how quickly the suit itself rolls towards the bank you're asking for
 const SUIT_KEYS: RampFeel = { rise: 0.4, fall: 0.25 };   // a key held asks for full bank or nose over this long
@@ -581,15 +583,18 @@ export class Player {
     this.prone *= Math.exp(-dt * 5);
     // the bank rolls in towards what's held, and back out to level when it's let go
     this.suitBank += Math.max(-SUIT_ROLL_RATE * dt, Math.min(SUIT_ROLL_RATE * dt, this.suitSteer - this.suitBank));
-    const want = this.suitNose < 0 ? this.suitNose * SUIT_NOSE_DOWN : this.suitNose * SUIT_NOSE_UP;
+    const nose = this.suitNose < 0 ? this.suitNose * SUIT_NOSE_DOWN : this.suitNose * SUIT_NOSE_UP;
     // a dive tucks the arms back and cuts the drag; level, the suit's spread wide
-    const tuck = 1 - (1 - SUIT_TUCK) * Math.max(0, Math.min(1, (-want - 0.2) / 0.5));
+    const tuck = 1 - (1 - SUIT_TUCK) * Math.max(0, Math.min(1, (-nose - 0.2) / 0.5));
     // in short steps, so a slow frame flies the same path as a quick one
     const n = Math.min(8, Math.ceil(dt / 0.01)), h = dt / n;
     for (let i = 0; i < n; i++) {
       const v = Math.max(1, this.suitV), g = this.suitPath, cg = Math.cos(g);
+      // trimmed for its gliding speed, as a hang glider is: with nothing held it noses down when slow
+      // and up when fast, so it settles into its own glide, a metre down for every SUIT_LD along
+      const want = -Math.atan(1 / SUIT_LD) + SUIT_SETTLE * (v - SUIT_TRIM) / SUIT_TRIM * (1 - Math.abs(this.suitNose)) + nose;
       const turn = -this.suitBank * SUIT_TURN * Math.min(1, v / SUIT_TRIM);
-      const most = Math.min(SUIT_LIFT * v * v, SUIT_LOAD * SUIT_G);
+      const most = Math.min(SUIT_SPARE * SUIT_LIFT * v * v, SUIT_LOAD * SUIT_G);
       // what's left of the lift for bending the path up or down, once the turn has had its share
       const sideways = Math.min(most, v * Math.abs(turn) * cg), upMost = Math.sqrt(most * most - sideways * sideways);
       const bend = Math.max(-SUIT_PULL, Math.min(SUIT_PULL, (want - g) * 3));
