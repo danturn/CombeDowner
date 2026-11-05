@@ -187,6 +187,10 @@ kbd {
 .music { display: flex; gap: 10px; align-items: center; }
 /* the wardrobe, over the pause menu (wardrobe.ts) */
 #wardrobe { z-index: 11; }
+#cheats { z-index: 11; }
+.cheatlist { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 0; padding: 14px 18px 4px; }
+.cheatlist dt { color: #ff0; letter-spacing: 0.08em; }
+.cheatlist dd { margin: 0; }
 .wardcard { width: min(760px, 100%); }
 .wardbody { display: grid; grid-template-columns: 280px 1fr; gap: 14px; padding: 14px 18px 4px; }
 .wardview { width: 280px; height: 100%; min-height: min(62vh, 520px); background: linear-gradient(#cfd8de, #eef0ea); align-self: stretch; }

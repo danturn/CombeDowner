@@ -7,7 +7,7 @@ import * as THREE from "three";
 
 const KEY = "combedowner.gore";
 /** Typed during play, it turns blood on or off. */
-const CHEAT = "claret";
+export const CHEAT = "claret";
 
 function load(): boolean {
   const q = new URLSearchParams(location.search).get("gore");

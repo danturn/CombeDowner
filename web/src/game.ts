@@ -119,6 +119,7 @@ import { show, say, setHidden, setStyle } from "./show";
 import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
+import { IDKFA } from "./cheats";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { NightOut } from "./nightout";
@@ -389,8 +390,8 @@ let onIdkfa: (() => void) | null = null, idkfaTyped = "";
 addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) || e.key.length !== 1) return;
-  idkfaTyped = (idkfaTyped + e.key.toLowerCase()).slice(-5);
-  if (idkfaTyped === "idkfa") { idkfaTyped = ""; onIdkfa?.(); }
+  idkfaTyped = (idkfaTyped + e.key.toLowerCase()).slice(-IDKFA.length);
+  if (idkfaTyped === IDKFA) { idkfaTyped = ""; onIdkfa?.(); }
 });
 
 export class Game {
