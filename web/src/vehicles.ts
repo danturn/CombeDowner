@@ -20,9 +20,10 @@
 // a bus at any bus stop (game.ts), in Combe Down or anywhere in Bath. Space with some lock on kicks the back end
 // out for donuts: keep the throttle and the lock on and it keeps going round.
 // At speed it's the tyres that decide (tyres, below): each end grips as hard as its tyres will and
-// then slides, so the handbrake swings the back end out, lifting off or braking lightens it, the
+// then slides, so the handbrake swings the back end out, braking lightens it, the
 // throttle keeps a rear-drive car's tail out, and too much spins it, while steering into the slide
-// catches it. The big ones (a bus, a coach) sit on their tyres and just turn.
+// catches it, and letting go of the throttle lets it gather itself and grip again. The big ones (a bus,
+// a coach) sit on their tyres and just turn.
 //
 // Who decides what: whoever's driving a vehicle moves it and sends where it is about 20 times a
 // second. The host decides who sits where (the first to ask) and sends round who's in what and where
@@ -93,6 +94,8 @@ const CATCH = 3;            // how much steadier it gets steering into a slide, 
 const SLIDE_SWING = 0.9;    // and what's taken off the back end's pull on the nose then, so it goes where it points
 const SLIDE_TURN = 2.5;     // sliding, how much harder the tyres swing the way it's going round than they really would
 const SLIDE_LOSS = 0.4;     // and the share of the speed they'd scrub off that they do
+const LIFT_CALM = 3;        // off the throttle with the handbrake down, how much harder it settles out of a slide
+const LIFT_BITE = 0.75;     // and the share of the back tyres' slow bite it skips, so the car gathers itself
 
 /** How hard a tyre pushes back, as a share of its grip, slipping x times as far as its peak; past it, down to tail. */
 function tyre(x: number, tail: number): number {
@@ -1060,6 +1063,8 @@ export class Vehicle implements Mover {
     if (hand) Fr *= HAND_REAR + 0.65 * plant;
     if (thr > 0.05 && push > 0) Fr *= 1 - thr * (S.rear ? POWER_REAR : POWER_FRONT) * (1 - plant);
     const damp = DAMP + 4 * plant;
+    // let go of everything and the car gathers itself: no more swinging back and forth
+    const calm = thr < 0.05 && !hand ? 1 : 0;
     let a = this.a, spin = this.spin, rf = this.rf, out = this.out, scrub = 0, slip = 0;
     const n = Math.min(16, Math.ceil(dt / (1 / 240))), h = dt / n;
     for (let i = 0; i < n; i++) {
@@ -1078,8 +1083,8 @@ export class Vehicle implements Mover {
       const af = Math.atan2(wv, Math.abs(wu)), ar = Math.atan2(ry, Math.abs(u));
       const fw = -Ff * tyre(af / peak, FRONT_TAIL);
       // the back tyres take a moment to bite again, so the tail swings past straight and back
-      out = Math.max(out * Math.exp(-h * 1.2), rearOut);
-      rf += (-Fr * tyre(ar / peak, REAR_TAIL) - rf) * Math.min(1, (h * Math.max(2, Math.hypot(u, ry))) / (0.2 + RELAX * out));
+      out = Math.max(out * Math.exp(-h * (1.2 + 4 * calm)), rearOut);
+      rf += (-Fr * tyre(ar / peak, REAR_TAIL) - rf) * Math.min(1, (h * Math.max(2, Math.hypot(u, ry))) / (0.2 + RELAX * out * (1 - LIFT_BITE * calm)));
       const fr = rf;
       const Fx = -fw * sd, Fy = fw * cd + fr;
       // a touch of steadiness: the car settles to turning as the wheel says, unless it's well past it
@@ -1090,7 +1095,7 @@ export class Vehicle implements Mover {
       // and steer into the slide and the back end pulls the nose back less, so it goes where it points
       const sideways = Math.min(1, Math.max(0, (Math.atan2(Math.abs(vy), Math.abs(u)) - 0.12) / 0.3));
       const held = this.steer * travel > 0 ? Math.min(1, Math.abs(this.steer) * 1.5) : 0;   // steering into the slide
-      const catching = sideways * held, settle = damp + CATCH * catching;
+      const catching = sideways * held, settle = damp + CATCH * catching + LIFT_CALM * calm * sideways;
       spin += ((half * (fw * cd - fr * (1 - SLIDE_SWING * catching))) / k2 - settle * (spin - path * (1 - catching))) * h;
       const gx = Fx * c - Fy * s, gz = -Fx * s - Fy * c, vv = Math.hypot(vx, vz);
       if (vv > 0.5) {
