@@ -5233,9 +5233,10 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
             if corners:
                 j, e, c = min(corners, key=lambda t: p.distance(t[2]))
                 if facing(x, y, head, runs[j]["p"], e, c) or not clear_way(i, (x, y), (c.x, c.y)):
-                    continue
-                hit, meeting = c, (j, e)
-            else:
+                    corners = []
+                else:
+                    hit, meeting = c, (j, e)
+            if not corners:
                 meeting = None
                 ray = LineString([(x, y), (x + head[0] * MEET_REACH, y + head[1] * MEET_REACH)])
                 # (it stops at the first thing it comes within a hand's breadth of: grazing past a
@@ -5252,12 +5253,12 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                         across = g.intersection(ray)
                         grazed = [Point(c) for c in g.coords if ray.distance(Point(c)) < 0.099]
                         if across.is_empty and not grazed:
-                            hits.append(nearest_points(g, ray)[0])
+                            hits.append((nearest_points(g, ray)[0], int(k)))
                         else:
-                            hits += grazed + [Point(c) for a in getattr(across, "geoms", [across]) for c in a.coords]
+                            hits += [(h, int(k)) for h in grazed + [Point(c) for a in getattr(across, "geoms", [across]) for c in a.coords]]
                 if not hits:
                     continue
-                hit = min(hits, key=p.distance)
+                hit, hit_on = min(hits, key=lambda t: p.distance(t[0]))
                 if p.distance(hit) < 0.05 or not square.contains(hit) or not clear_way(i, (x, y), (hit.x, hit.y)):
                     continue
                 # where it lands by another run's end it meets that run there, at the corner, unless
@@ -5268,12 +5269,16 @@ def meet_short_ends(runs, houses, corridor, gaps, opened, blocked, square, groun
                         if hit.distance(now_at[(j, e)]) < CORNER and ahead(x, y, head, now_at[(j, e)])
                         and own.distance(now_at[(j, e)]) >= MET]
                 if near:
-                    j, e, c = min(near, key=lambda t: p.distance(t[2]))     # (the first it comes to)
-                    if facing(x, y, head, runs[j]["p"], e, c):
+                    # (the end of the very run it comes to, in line with it, is a gap left between them)
+                    if any(j == hit_on and facing(x, y, head, runs[j]["p"], e, c) for j, e, c in near):
                         continue
-                    if not clear_way(i, (x, y), (c.x, c.y)):
-                        continue
-                    hit, meeting = c, (j, e)
+                    # (one that can't be met, it passes for the run its line comes to, met where it comes to it)
+                    near = [(j, e, c) for j, e, c in sorted(near, key=lambda t: p.distance(t[2]))
+                            if not facing(x, y, head, runs[j]["p"], e, c)]
+                    for j, e, c in near:     # (the first it comes to)
+                        if clear_way(i, (x, y), (c.x, c.y)):
+                            hit, meeting = c, (j, e)
+                            break
             z = ground(hit.x, hit.y)
             if z is None:
                 continue
