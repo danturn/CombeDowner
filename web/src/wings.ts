@@ -57,7 +57,7 @@ function holding(sleeve: number): THREE.Group {
   return g;
 }
 
-const CHEAT = "heaven";    // typed anywhere in play: wings that never run out or fold away, till you type it again
+export const CHEAT = "heaven";    // typed anywhere in play: wings that never run out or fold away, till you type it again
 const DIVE = -3;           // falling faster than this, m/s, plays a run back down the scale
 
 export class Wings {

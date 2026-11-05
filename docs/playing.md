@@ -153,8 +153,11 @@ After dark its backlight glows blue-green so you can still read it.
 
 **The menus** are pages of BathText '91, a teletext service: the main menu is page 100, filling the
 screen beside the crest of Bath, the pause menu is 101, Settings 200 (its pages 201 to 205), Link a device 300, the
-wardrobe 400 and the trophy cabinet 500, each with the time ticking over in its top corner. Green
+wardrobe 400, the trophy cabinet 500 and the cheats 777 (type CHEATS), each with the time ticking over in its top corner. Green
 buttons go on, red ones leave, and links to other pages are listed with their page numbers.
+
+**Refreshing the page** puts you straight back in the game you were playing in that tab, where you
+stood (up on a roof too), without the menu. Leave from the pause menu and the next visit starts at the menu.
 
 **Full screen** is in the pause menu (Esc opens it and Esc again closes it, or II on a touch screen). In Chrome and Edge, Esc then
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
@@ -315,6 +318,25 @@ On foot, Space jumps. Hold it for the full height, or tap it for a smaller hop; 
 little quicker than you go up. A press just before you land, or just after you've stepped off an
 edge, still counts. Walk head on into a fence, wall or car up to about your shoulders and you hop
 it, and bumping into things slides you along them rather than knocking you back.
+
+### The wingsuit
+
+Stand anywhere at least 15 m above the ground round you (a roof, a tower, a high wall, a cliff
+edge), or type SQUIRREL, and a wingsuit is yours for good, worn folded on your back (a little icon of it sits in the corner
+over your rounds, lit while it's open). Jump off something high and press
+Space (Jump) in mid-air to open it (it catches the air at once, like a hang glider), and Space again to close it and drop; landing folds it away.
+It flies like Breath of the Wild's glider: A and D (the left stick sideways) bank it round in a wide
+turn, W (stick up) noses down into a dive to pick up speed fast, and S (stick down) pulls up, swapping
+speed for height. Pull up till you're too slow and it stalls, wobbling and sinking: push W to dive
+out of it (let go and it comes round, but slowly and a long way lower). The view turns with you as
+you bank. With nothing held it floats along level, sinking slowly, about ten
+metres along for every metre down: off a 30 m roof that's nearly 300 m, and down a hillside it holds
+you well clear of the slope, with W bringing you gently down to it. Keys
+build up as you hold them, so a tap is a small correction. The mouse (the right stick, or dragging on
+a touch screen) looks about freely without changing course, so you can shoot as you fly. Fly into a
+wall fast, or dive into the ground, and it hurts. It won't open on a ladder, in a car, on a ride or
+in a cabin, and the angel's wings win if you have both. Everyone else sees you spread out, arms and
+legs wide with the fabric between.
 
 ### Rides
 
@@ -833,7 +855,8 @@ any wood themselves.
 Daft things to wear, earned round Bath and seen by everyone: a seagull on your head, a splattered
 flat cap, a traffic cone for winning a race, a halo for
 climbing the Abbey, a deerstalker for bringing in a ringleader, a chef's hat from the deli, a cat
-on your shoulder for surviving a swarm, a baby's bonnet for ten minutes of tummy time, and more.
+on your shoulder for surviving a swarm, a baby's bonnet for ten minutes of tummy time, a wingsuit
+for standing 15 m up, and more.
 One thing on your head, one on your face and one on your back, picked in the Wardrobe in the pause
 menu. What you've earned is kept in this browser.
 
@@ -857,6 +880,7 @@ and pour the balls in; sprint before they're in and you keep only what you had. 
 is their own colour (the balls in your hopper too) and splats where it lands.
 For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or type `claret`
 while playing. The browser remembers it, and it's only what you see.
+Type `cheats` while playing for a page listing every cheat.
 
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
 you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a

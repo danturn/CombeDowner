@@ -12,6 +12,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Cinzel:wght@600;800&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=Ultra&family=VT323&display=swap">
   <link rel="stylesheet" href="./src/style.css">
+  <!-- a refresh in the middle of a game goes straight back into it (main.ts): no menu flashing up first -->
+  <script>try { if (performance.getEntriesByType("navigation")[0]?.type === "reload" && sessionStorage.getItem("cd-playing")) document.documentElement.classList.add("resuming"); } catch {}</script>
+  <style>.resuming #menu { display: none !important; } .resuming body { background: #000; }</style>
 </head>
 <body>
   <canvas id="view"></canvas>
@@ -44,6 +47,7 @@
     </div>
     <div id="ammo" class="panel">
       <div id="ridechip" hidden></div>
+      <span id="suitbadge" title="Wingsuit" hidden></span>
       <div class="label" id="ammolabel">Rounds</div>
       <div class="ammorow"><span id="ammonum">30</span><small id="ammomax">/ 120</small></div>
       <div class="bar"><div id="magfill"></div></div>
