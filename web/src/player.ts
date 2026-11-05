@@ -156,7 +156,7 @@ const SUIT_MUSH_FREE = 0.65;   // and its share with nothing held, so letting go
 const SUIT_TUCK = 0.6;    // the air in your face with your arms back in a steep dive, over spread wide
 const SUIT_LOAD = 2.5;    // the hardest pull-out, in the suit's g, so a dive can't snap round
 const SUIT_PULL = 1.6;    // the quickest your path bends, rad/s
-const SUIT_TURN = 1.0;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
+const SUIT_TURN = 0.8;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
 const SUIT_ZOOM = 0.4;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
 const SUIT_ROLL_RATE = 2.5; // how quickly the suit itself rolls towards the bank you're asking for
 const SUIT_KEYS: RampFeel = { rise: 0.4, fall: 0.25 };
@@ -166,7 +166,7 @@ const SUIT_CATCH = 0.85;  // the share of the gliding speed you have the moment 
 const SUIT_OPEN = 3;      // metres clear below before it'll open: an ordinary jump never gets there
 const SUIT_WALL = 12;     // m/s into a wall that hurts: a level glide head on (about 10) only bumps
 const SUIT_SLAM = 13;     // and down into the ground
-const SUIT_ROLL = 0.07;   // the most the view rolls with the suit, radians: enough to feel, not to spoil your aim
+const SUIT_ROLL = 0.22;   // the most the view rolls with the suit, radians: a proper lean into the turn
 
 /**
  * How much of the way back round to dead ahead the view comes this frame (0: it stays put), on a ride
@@ -1261,7 +1261,7 @@ export class Player {
     cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop - this.stepUp, this.pos.z);
     const g = this.grind, lean = g ? (g.style === 3 ? 0.05 : g.style === 4 ? -0.05 : 0) + g.bal * 0.07 : 0;
     this.grindLean += (lean - this.grindLean) * 0.15;
-    cam.rotation.set(this.pitch + nod + this.diveTilt, this.yaw, roll + this.grindLean - this.suitBank * SUIT_ROLL + (this.suitOpen && this.suitStall ? Math.sin(performance.now() / 60) * SUIT_ROLL * 0.5 : 0), "YXZ");
+    cam.rotation.set(this.pitch + nod + this.diveTilt, this.yaw, roll + this.grindLean - this.suitBank * SUIT_ROLL + (this.suitOpen && this.suitStall ? Math.sin(performance.now() / 60) * 0.035 : 0), "YXZ");
   }
 }
 
