@@ -160,7 +160,7 @@ export class FlagJuice {
     const key = `${this.count}|${this.total}|${Math.round(left * 12)}`;
     if (!force && key === this.shown) return;
     this.shown = key;
-    comboLine("flags", { score: this.total.toLocaleString("en-GB"), mult: `×${this.count}`, label: this.last, colour: "#ff4a55",
+    comboLine("flags", { score: this.total.toLocaleString("en-GB"), mult: `×${this.count}`, label: this.last,
       more: `<span class="bar"><u style="--left:${left.toFixed(2)}"></u></span>` }, force);
   }
 

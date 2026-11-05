@@ -1,7 +1,8 @@
 // The combo row: one row of the meter slot under the crosshair (missionscreens.ts) for every combo
 // you're building, so a ride's tricks and a string of the Flag Lads' flags read as the same thing.
 // Each source keeps its own count and its own scoring (ridetricks.ts, flagjuice.ts) and just hands
-// its line over to be drawn: the score, the ×count, and a label saying what it is. When two are going
+// its line over to be drawn: the score, the ×count, and a label saying what it is. Every combo builds
+// in the same gold, whoever's it is; only a bail turns red. When two are going
 // at once (shooting flags down from a moving board) both lines show in the one row, the newer on top.
 //
 // Drawn on this screen only: nothing here goes over the network.
@@ -19,14 +20,12 @@ export interface ComboLine {
   more?: string;
   /** bail, done, new: how the line ended. */
   cls?: string;
-  /** The score's colour: the HUD's yellow if not given. */
-  colour?: string;
 }
 
 addStyle("combo", `
 #combo{pointer-events:none;color:#fff;font-family:var(--f-hud);text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 10px rgba(0,0,0,.5);gap:2px}
 #combo .cb{display:flex;flex-direction:column;align-items:center;line-height:1.05}
-#combo .cb b{font-size:30px;font-weight:800;color:var(--kc,var(--accent))}
+#combo .cb b{font-size:30px;font-weight:800;color:var(--accent)}
 #combo .cb i{font-size:20px;font-weight:800;font-style:normal;margin-left:4px}
 #combo .cb small{display:block;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
 #combo .cb+.cb{opacity:.85}
@@ -58,7 +57,7 @@ export function comboLine(src: string, line: ComboLine | null, pop = false) {
   missionAuxAdopt(el);
   el.hidden = false;
   const order = [...lines.entries()].sort((a, b) => b[1].at - a[1].at);
-  const html = order.map(([k, { line: l }]) => `<div class="cb ${l.cls ?? ""}" data-src="${k}"${l.colour ? ` style="--kc:${l.colour}"` : ""}>`
+  const html = order.map(([k, { line: l }]) => `<div class="cb ${l.cls ?? ""}" data-src="${k}">`
     + `<span><b>${esc(l.score)}</b>${l.mult ? `<i>${esc(l.mult)}</i>` : ""}</span><small>${esc(l.label)}</small>${l.more ?? ""}</div>`);
   const key = html.join("");
   if (key !== shown) { el.innerHTML = key; shown = key; }
