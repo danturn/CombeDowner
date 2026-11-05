@@ -149,12 +149,12 @@ const SUIT_FACE = SUIT_G / SUIT_LD / 2 / (SUIT_TRIM * SUIT_TRIM);
 const SUIT_HELD = (SUIT_G / SUIT_LD / 2) * (SUIT_TRIM * SUIT_TRIM) / (SUIT_G * SUIT_G);
 const SUIT_TUCK = 0.6;    // the air in your face with your arms back in a steep dive, over spread wide
 const SUIT_LOAD = 2.5;    // the hardest pull-out, in the suit's g, so a dive can't snap round
-const SUIT_PULL = 1.3;    // the quickest your path bends, rad/s
+const SUIT_PULL = 1.6;    // the quickest your path bends, rad/s
 const SUIT_TURN = 0.6;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
-const SUIT_ZOOM = 0.7;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
+const SUIT_ZOOM = 0.4;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
 const SUIT_ROLL_RATE = 2.5; // how quickly the suit itself rolls towards the bank you're asking for
 const SUIT_KEYS: RampFeel = { rise: 0.4, fall: 0.25 };   // a key held asks for full bank or nose over this long
-const SUIT_NOSE_DOWN = 0.35, SUIT_NOSE_UP = 0.6;   // the path forward and back ask for, radians down and up
+const SUIT_NOSE_DOWN = 0.55, SUIT_NOSE_UP = 0.8;   // the path forward and back ask for, radians down and up
 const SUIT_CATCH = 0.85;  // the share of the gliding speed you have the moment it opens
 const SUIT_OPEN = 3;      // metres clear below before it'll open: an ordinary jump never gets there
 const SUIT_WALL = 12;     // m/s into a wall that hurts: a level glide head on (about 10) only bumps
