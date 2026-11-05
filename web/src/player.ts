@@ -13,6 +13,12 @@
 // a long grind starts to tip, which a tap of the opposite direction puts right. And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
 // And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
+// And the wingsuit (wardrobe.ts): Space in mid-air, well clear of what's below, opens it, and Space
+// again closes it. A and D bank it round in a wide turn, W noses down to dive for speed, S pulls up
+// to swap some of it for height (and stalls if you hold it), and with neither it floats down slowly;
+// the mouse looks about freely, so you can shoot as you fly. Keys build up and ease off (ramp.ts). It's speed against height with drag taking its cut, so you always
+// come down. Landing folds it away; flying into a wall fast hurts (game.ts). If the wings are on too,
+// they win.
 // Going prone mid-sprint (or crouching, down the mines) dives you forward instead, as Call of Duty's
 // dolphin dive does: a short low lunge with your sprint's speed, landing flat with a thud, and a
 // moment getting your breath before you can get up or shoot. A wall stops the dive dead.
@@ -24,6 +30,11 @@
 import * as THREE from "three";
 import type { RideSpec } from "./rides";
 import type { GrindEdge } from "./map";
+import { control } from "./controls";
+import { ramp, type RampFeel } from "./ramp";
+
+/** Whether a control's key is down, by the page's own table of controls (the mines' has no such row: fallback). */
+const held = (keys: Set<string>, id: string, fallback: string) => (control(id)?.keys ?? [fallback]).some((c) => keys.has(c));
 
 /** What the player walks on and bumps into: a map of Bath (map.ts) or a mine level (mines/level.ts). */
 export interface Ground {
@@ -125,6 +136,37 @@ const FLY = 12;           // metres a second flying, with wings on
 // a dive: up at this, your sprint's speed and a bit, about 2.5 m through the air, then this long winded
 const DIVE_UP = 3.6, DIVE_PUSH = 1.1, DIVE_REST = 0.6;
 const CEILING = 120;      // and flaps lose their lift towards this high off the ground
+// The wingsuit, as a glider: a gentler gravity than on foot so it floats, a speed at which it just
+// holds you up, and how far it goes for each metre it sinks at that speed. Lift bends your path and
+// drag takes speed off, and neither ever adds to speed plus height, so you always come down. The drag
+// is half the air in your face, growing with speed, and half the cost of being held up, which shrinks
+// with speed but grows with how hard you pull: so a dive gets fast and a hard pull-up bleeds speed.
+const SUIT_G = 12;
+const SUIT_TRIM = 12.5;   // m/s
+const SUIT_LD = 10;      // a hang glider's glide, so you can follow a hill down
+const SUIT_LIFT = SUIT_G / (SUIT_TRIM * SUIT_TRIM);
+const SUIT_FACE = SUIT_G / SUIT_LD / 2 / (SUIT_TRIM * SUIT_TRIM);
+const SUIT_HELD = (SUIT_G / SUIT_LD / 2) * (SUIT_TRIM * SUIT_TRIM) / (SUIT_G * SUIT_G);
+const SUIT_SPARE = 2;    // the most lift the suit has over what holds up a glide, so S pulls up from gliding speed too
+const SUIT_SETTLE = 0.5;  // how hard it noses up or down towards its gliding speed
+const SUIT_STALL = 0.55, SUIT_UNSTALL = 0.95;   // below this share of the gliding speed it stalls, and above that it flies again
+const SUIT_STALLED = 0.2;   // the share of its lift a stalled suit keeps
+const SUIT_MUSH = SUIT_G / (0.82 * SUIT_TRIM) ** 2;   // the drag of a stalled suit with S still held: it sinks a bit slower than it glides
+const SUIT_MUSH_FREE = 0.65;   // and its share with nothing held, so letting go comes out of it slowly and W quickly
+const SUIT_TUCK = 0.6;    // the air in your face with your arms back in a steep dive, over spread wide
+const SUIT_LOAD = 2.5;    // the hardest pull-out, in the suit's g, so a dive can't snap round
+const SUIT_PULL = 1.6;    // the quickest your path bends, rad/s
+const SUIT_TURN = 0.8;    // the quickest you turn, banked right over at speed, rad/s: a wide circle
+const SUIT_ZOOM = 0.4;     // climbing, the share of the drag you feel, so a pull-up carries you a touch higher
+const SUIT_ROLL_RATE = 2.5; // how quickly the suit itself rolls towards the bank you're asking for
+const SUIT_KEYS: RampFeel = { rise: 0.4, fall: 0.25 };
+const SUIT_NOSE_KEYS: RampFeel = { rise: 0.2, fall: 0.15 };   // nose over quicker than banking: it's the pull you feel   // a key held asks for full bank or nose over this long
+const SUIT_NOSE_DOWN = 0.55, SUIT_NOSE_UP = 0.8;   // the path forward and back ask for, radians down and up
+const SUIT_CATCH = 0.85;  // the share of the gliding speed you have the moment it opens
+const SUIT_OPEN = 3;      // metres clear below before it'll open: an ordinary jump never gets there
+const SUIT_WALL = 14;     // m/s into a wall that hurts: a level glide head on (about 12) only bumps
+const SUIT_SLAM = 13;     // and down into the ground
+const SUIT_ROLL = 0.38;   // the most the view rolls with the suit, radians: a proper lean into the turn
 
 /**
  * How much of the way back round to dead ahead the view comes this frame (0: it stays put), on a ride
@@ -253,6 +295,21 @@ export class Player {
   flapped = false;
   /** Whether flapping still lifts you (the wings' flight runs out: wings.ts); gliding goes on regardless. */
   wingLift = true;
+  /** Wearing the wingsuit where it can open (game.ts says: not in a car, a basket or a cabin). */
+  suit = false;
+  /** Flying in it. */
+  suitOpen = false;
+  /** Set for a frame when you fly into something hard enough to hurt: how fast, m/s. */
+  suitHit = 0;
+  /** How far the suit's banked into a turn, -1..1 (+ to the right). */
+  suitBank = 0;
+  /** In the suit: speed along the path, the path's angle up from level, and the way it heads (as a
+   *  yaw: its own, not where you're looking). */
+  suitV = 0; suitPath = 0; suitHead = 0; suitStall = false;
+  /** The bank and the nose you're asking for, -1..1, eased from the keys (ramp.ts). */
+  private suitSteer = 0; private suitNose = 0;
+  /** A fresh press of jump, not a held key repeating: the suit opens and closes on these alone. */
+  private jumpTap = false;
   /** Whether the arrow keys walk as W A S D do. With no mouse captured (game.ts) they look round instead. */
   arrowsWalk = true;
   private arrow(code: string) { return this.arrowsWalk && this.keys.has(code); }
@@ -262,7 +319,7 @@ export class Player {
   constructor(private map: Ground, signal?: AbortSignal) {
     addEventListener("keydown", (e) => {
       this.keys.add(e.code);
-      if (e.code === "Space") this.wantJump = true;
+      if (e.code === "Space") { this.wantJump = true; if (!e.repeat) this.jumpTap = true; }
       if (e.code === "KeyZ" && !e.repeat && this.canProne && !this.dive() && !this.diveBusy) this.proneLatch = !this.proneLatch;
       if (e.code === "KeyC" && !e.repeat && this.diveOnCrouch) this.dive();
     }, { signal });
@@ -338,7 +395,7 @@ export class Player {
   /** L3 on a controller: sprint, afresh even if aiming had broken it off. */
   padSprint() { this.sprintLatch = true; this.sprintHeldOff = false; }
 
-  jump() { this.wantJump = true; }
+  jump() { this.wantJump = true; this.jumpTap = true; }
   /** Space was for something else (a lunge on The Climb's face: theclimb.ts): no jump when you're back on your feet. */
   forgetJump() { this.wantJump = false; this.jumpBuf = 0; }
 
@@ -354,6 +411,7 @@ export class Player {
     this.diving = false; this.diveRest = 0;
     this.ladder = null;
     this.wings = false;
+    this.suitOpen = false; this.suitBank = 0;
   }
 
   update(dt: number, active: boolean) {
@@ -364,13 +422,22 @@ export class Player {
     this.crashed = 0;
     this.offLadder = "";
     this.flapped = false;
+    this.suitHit = 0;
+    const tap = this.jumpTap;
+    this.jumpTap = false;
     this.diveLanded = false;
     this.diveRest = Math.max(0, this.diveRest - dt);
     this.diveTilt += ((this.diving ? -0.3 : 0) - this.diveTilt) * Math.min(1, dt * 10);
     this.stepUp *= Math.exp(-dt * 14);
     if (this.ride || this.ladder) this.diving = false;
+    if (this.ride || this.ladder || this.wings || !this.suit) this.suitOpen = false;
+    if (!this.suitOpen) this.suitBank *= Math.exp(-dt * 6);
     if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
     if (this.ladder) { this.climb(dt, active); return; }
+    if (tap && active && this.suit && !this.wings && !this.suitOpen && !this.onGround && this.coyote <= 0 && !this.diveBusy
+      && this.pos.y - this.under(this.pos.x, this.pos.z) >= SUIT_OPEN) this.openSuit();
+    else if (tap && this.suitOpen) { this.suitOpen = false; this.wantJump = false; this.jumpBuf = 0; }
+    if (this.suitOpen) { this.glide(dt, active); return; }
     let fx = 0, fz = 0;
     if (active) {
       if (k.has("KeyW") || this.arrow("ArrowUp")) fz -= 1;
@@ -482,6 +549,104 @@ export class Player {
     else this.coyote -= dt;
     this.speed = Math.hypot(this.vel.x, this.vel.z);
     if (this.onGround) this.bob += this.speed * dt * 1.9;
+    this.landKick *= Math.max(0, 1 - dt * 8);
+  }
+
+  /** Open the wingsuit: off along the way you were already going, at the speed you were going. */
+  private openSuit() {
+    const h = Math.hypot(this.vel.x, this.vel.z);
+    this.suitOpen = true;
+    // it catches the air at once, as a canopy does, rather than dropping a storey before it flies
+    this.suitV = Math.max(SUIT_CATCH * SUIT_TRIM, Math.hypot(h, this.vel.y));
+    this.suitPath = Math.max(-SUIT_NOSE_DOWN, Math.atan2(this.vel.y, h));
+    this.suitHead = h > 0.5 ? Math.atan2(-this.vel.x, -this.vel.z) : this.yaw;
+    this.wantJump = false; this.jumpBuf = 0; this.jumpRise = false;
+    this.vaulting = false;
+    this.proneLatch = false; this.crouchLatch = false;
+    this.suitSteer = this.suitNose = this.suitBank = 0; this.suitStall = false;
+  }
+
+  /** A frame in the open wingsuit, steered as Breath of the Wild's glider is: left and right bank it
+   *  into a turn, forward noses it down and back pulls it up, and the mouse looks about without
+   *  changing course. Lift bends the path as far as your speed allows; gravity and drag change your
+   *  speed; a turn takes some of the lift that was holding you up. */
+  private glide(dt: number, active: boolean) {
+    const k = this.keys;
+    let fx = 0, fz = 0;
+    if (active) {
+      if (held(k, "forward", "KeyW") || this.arrow("ArrowUp")) fz -= 1;
+      if (held(k, "back", "KeyS") || this.arrow("ArrowDown")) fz += 1;
+      if (held(k, "strafeleft", "KeyA") || this.arrow("ArrowLeft")) fx -= 1;
+      if (held(k, "straferight", "KeyD") || this.arrow("ArrowRight")) fx += 1;
+    }
+    const stick = !fx && !fz && active && Math.hypot(this.joy.x, this.joy.y) > 0.15;
+    if (stick) { fx = this.joy.x; fz = this.joy.y; }
+    this.suitSteer = ramp(this.suitSteer, Math.max(-1, Math.min(1, fx)), dt, SUIT_KEYS, stick);
+    this.suitNose = ramp(this.suitNose, Math.max(-1, Math.min(1, fz)), dt, SUIT_NOSE_KEYS, stick);
+    this.wantJump = false; this.jumpBuf = 0;
+    this.crouch *= Math.exp(-dt * 12);
+    this.prone *= Math.exp(-dt * 5);
+    // the bank rolls in towards what's held, and back out to level when it's let go
+    this.suitBank += Math.max(-SUIT_ROLL_RATE * dt, Math.min(SUIT_ROLL_RATE * dt, this.suitSteer - this.suitBank));
+    const nose = this.suitNose < 0 ? this.suitNose * SUIT_NOSE_DOWN : this.suitNose * SUIT_NOSE_UP;
+    // a dive tucks the arms back and cuts the drag; level, the suit's spread wide
+    const tuck = 1 - (1 - SUIT_TUCK) * Math.max(0, Math.min(1, (-nose - 0.2) / 0.5));
+    // in short steps, so a slow frame flies the same path as a quick one
+    const n = Math.min(8, Math.ceil(dt / 0.01)), h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const v = Math.max(1, this.suitV), g = this.suitPath, cg = Math.cos(g);
+      // trimmed for its gliding speed, as a hang glider is: with nothing held it noses down when slow
+      // and up when fast, so it settles into its own glide, a metre down for every SUIT_LD along
+      const want = -Math.atan(1 / SUIT_LD) + SUIT_SETTLE * (v - SUIT_TRIM) / SUIT_TRIM * (1 - Math.abs(this.suitNose)) + nose;
+      const turn = -this.suitBank * SUIT_TURN * Math.min(1, v / SUIT_TRIM);
+      // too slow and it stalls: most of the lift goes, and it stays gone till a dive has the speed back
+      if (v < SUIT_STALL * SUIT_TRIM) this.suitStall = true;
+      else if (v > SUIT_UNSTALL * SUIT_TRIM) this.suitStall = false;
+      const most = Math.min(SUIT_SPARE * SUIT_LIFT * v * v * (this.suitStall ? SUIT_STALLED : 1), SUIT_LOAD * SUIT_G);
+      // what's left of the lift for bending the path up or down, once the turn has had its share
+      const sideways = Math.min(most, v * Math.abs(turn) * cg), upMost = Math.sqrt(most * most - sideways * sideways);
+      const bend = Math.max(-SUIT_PULL, Math.min(SUIT_PULL, (want - g) * 6));
+      const lift = Math.max(-upMost, Math.min(upMost, v * bend + SUIT_G * cg));
+      this.suitPath = Math.max(-1.55, Math.min(1.3, g + ((lift - SUIT_G * cg) / v) * h));
+      const all = lift * lift + sideways * sideways;
+      // stalled, the suit mushes, sinking without gathering speed, till W noses it down out of it
+      const mush = this.suitStall ? SUIT_MUSH * v * v * (this.suitNose > 0 ? 1 : SUIT_MUSH_FREE * (1 + this.suitNose)) : 0;
+      const drag = (SUIT_FACE * tuck * v * v + (SUIT_HELD * all) / (v * v)) * (g > 0 ? SUIT_ZOOM : 1) + mush;
+      this.suitV = Math.max(0.5, this.suitV + (-SUIT_G * Math.sin(g) - drag) * h);
+      const swing = (sideways / (v * Math.max(0.05, cg))) * Math.sign(turn) * h;
+      this.suitHead += swing;
+      // the view comes round with you, so a turn feels like a turn and not a slide sideways
+      this.yaw += swing;
+    }
+    const V = this.suitV, across = V * Math.cos(this.suitPath);
+    this.vel.set(-Math.sin(this.suitHead) * across, V * Math.sin(this.suitPath), -Math.cos(this.suitHead) * across);
+    const vx = this.vel.x, vz = this.vel.z;
+    const p = { x: this.pos.x + vx * dt, z: this.pos.z + vz * dt };
+    this.bump(p);
+    const hit = this.slideTo(p, dt);
+    if (hit) {
+      const into = -(vx * hit.nx + vz * hit.nz);
+      if (into > SUIT_WALL) { this.suitHit = Math.hypot(into, this.vel.y); this.suitOpen = false; this.landKick = 0.25; }
+      else {
+        // a glancing blow: on along the wall, with the speed that was into it gone
+        const left = Math.hypot(this.vel.x, this.vel.z);
+        this.suitV = Math.hypot(left, this.vel.y);
+        this.suitPath = Math.atan2(this.vel.y, left);
+        if (left > 0.5) this.suitHead = Math.atan2(-this.vel.x, -this.vel.z);
+      }
+    }
+    const y0 = this.pos.y, down = -this.vel.y;
+    this.pos.y += this.vel.y * dt;
+    this.land(y0);
+    if (this.onGround) {
+      if (this.suitOpen && down > SUIT_SLAM) this.suitHit = down;
+      this.suitOpen = false;
+    } else if (this.vel.y === 0 && this.suitOpen && this.suitPath > 0) {
+      // a roof over your head: the climb stops there
+      this.suitPath = 0;
+    }
+    this.coyote = this.onGround ? COYOTE : 0;
+    this.speed = Math.hypot(this.vel.x, this.vel.z);
     this.landKick *= Math.max(0, 1 - dt * 8);
   }
 
@@ -1096,7 +1261,7 @@ export class Player {
     cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop - this.stepUp, this.pos.z);
     const g = this.grind, lean = g ? (g.style === 3 ? 0.05 : g.style === 4 ? -0.05 : 0) + g.bal * 0.07 : 0;
     this.grindLean += (lean - this.grindLean) * 0.15;
-    cam.rotation.set(this.pitch + nod + this.diveTilt, this.yaw, roll + this.grindLean, "YXZ");
+    cam.rotation.set(this.pitch + nod + this.diveTilt, this.yaw, roll + this.grindLean - this.suitBank * SUIT_ROLL + (this.suitOpen && this.suitStall ? Math.sin(performance.now() / 60) * 0.035 : 0), "YXZ");
   }
 }
 

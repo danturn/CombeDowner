@@ -423,13 +423,13 @@ function drawRoutes(g: CanvasRenderingContext2D, routes: RouteLine[], P: (x: num
 /** "450 m", "2.1 km". */
 const metres = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
 
-/** A word or two by the rim, upright on screen whichever way the map's turned: (ox, oy) is where, in the map's turned frame. */
+/** A word or two by the rim, upright on screen whichever way the map's turned: (ox, oy) is where, in
+ *  the map's turned frame. In the font already set (the minimap's draw sets it once for all of them). */
 function rimLabel(g: CanvasRenderingContext2D, text: string, ox: number, oy: number, yaw: number, colour: string, dpr: number) {
   g.save();
   g.rotate(yaw);
   g.translate(ox, oy);
   g.rotate(-yaw);
-  g.font = `700 ${10.5 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
   g.textAlign = "center"; g.textBaseline = "middle";
   g.lineWidth = 3 * dpr; g.strokeStyle = "rgba(0,0,0,0.85)"; g.strokeText(text, 0, 0);
   g.fillStyle = colour; g.fillText(text, 0, 0);
@@ -1605,6 +1605,8 @@ export class Minimap {
       g.restore();
     }
     // the map markers: on the map in range, otherwise pinned to the rim in their direction
+    // rimLabel's font, set once here: setting a canvas's font is slow, and this is drawn most frames
+    g.font = `700 ${10.5 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
     for (const m of on("markers") ? this.markers : []) {
       let dx = (m.x - x) * scale, dz = (m.z - z) * scale;
       const d = Math.hypot(dx, dz), edge = R - 16 * dpr, off = d > edge;

@@ -1,0 +1,148 @@
+// The wingsuit's flight, flown headless over flat ground: the real Player (web/src/player.ts) off an
+// edge with the suit opened at once, then flown with the keys as a player would: nothing held (level),
+// W (a dive), W then S (a pull-up), A held (a turn), and a tap of A. Prints height, speed and distance
+// over time, and checks speed plus height never grows while the suit's open. No browser:
+// node tools/wingsuit_flight.mjs (after npm install in web/).
+import { build } from "../web/node_modules/esbuild/lib/main.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "suit-"));
+const out = join(dir, "player.mjs");
+await build({ entryPoints: [join(root, "web/src/player.ts")], bundle: true, format: "esm", platform: "node", outfile: out, logLevel: "error" });
+globalThis.addEventListener ??= () => {};
+const { Player } = await import(pathToFileURL(out).href);
+rmSync(dir, { recursive: true, force: true });
+
+const flat = { ground: () => 0, collide: () => null, lastBlock: -1 };
+const DT = 1 / 60, G = 12;   // the suit's own gravity (SUIT_G in player.ts), for its energy
+let worstGain = 0;
+
+/** Off an edge h metres up at run m/s with the suit opened, then flown with keysAt(t, p) held each frame. */
+function fly(name, h, run, keysAt, { every = 1, quiet = false, until = () => false } = {}) {
+  const p = new Player(flat);
+  p.pos.set(0, h, 0); p.vel.set(0, 0, -run); p.onGround = false; p.suit = true;
+  p.update(DT, true);
+  p.jump();
+  const rows = [];
+  let t = 0, next = 0, opened = false, e0 = null;
+  while (t < 120) {
+    p.keys = new Set(keysAt(t, p));
+    p.update(DT, true);
+    opened ||= p.suitOpen;
+    t += DT;
+    const v = Math.hypot(p.vel.x, p.vel.y, p.vel.z), e = G * p.pos.y + v * v / 2;
+    if (p.suitOpen && e0 !== null) worstGain = Math.max(worstGain, e - e0);
+    e0 = p.suitOpen ? e : null;
+    if (t >= next || p.onGround) { rows.push({ t: +t.toFixed(1), height: +p.pos.y.toFixed(1), speed: +v.toFixed(1), sink: +(-p.vel.y).toFixed(1), dist: +Math.hypot(p.pos.x, p.pos.z).toFixed(1) }); next += every; }
+    if (p.onGround || until(t, p)) break;
+  }
+  const dist = Math.hypot(p.pos.x, p.pos.z);
+  if (!quiet) {
+    console.log(`\n== ${name}: opened ${opened ? "yes" : "NO"}; ${p.onGround ? "landed" : "stopped"} after ${t.toFixed(1)} s, ${dist.toFixed(1)} m away${p.onGround ? ` (${(dist / h).toFixed(2)}:1 overall)` : ""}`);
+    console.table(rows);
+  }
+  return { p, t, dist };
+}
+
+// the steady glide with nothing held, once it's settled: across over down between 10 s and 20 s
+{
+  let a = null;
+  const { p } = fly("", 400, 5, (t, p) => { if (!a && t >= 10) a = { y: p.pos.y, d: Math.hypot(p.pos.x, p.pos.z) }; return []; }, { quiet: true, until: (t) => t >= 20 });
+  const dy = a.y - p.pos.y, dd = Math.hypot(p.pos.x, p.pos.z) - a.d;
+  console.log(`steady level glide: ${(dd / 10).toFixed(1)} m/s across, ${(dy / 10).toFixed(1)} m/s down, ${(dd / dy).toFixed(2)}:1`);
+  const d = fly("", 800, 5, () => ["KeyW"], { quiet: true, until: (t) => t >= 15 }).p;
+  console.log(`W held, settled: ${Math.hypot(d.vel.x, d.vel.y, d.vel.z).toFixed(1)} m/s, ${(-d.vel.y).toFixed(1)} m/s down`);
+}
+
+fly("nothing held, off a 30 m roof running (5 m/s)", 30, 5, () => [], { every: 0.5 });
+fly("nothing held, off a 30 m roof walking (2 m/s)", 30, 2, () => [], { every: 1 });
+fly("W held off a 30 m roof running", 30, 5, () => ["KeyW"]);
+fly("W held (diving), from 80 m", 80, 5, () => ["KeyW"]);
+
+const pull = { low: 1e9, lowV: 0, peak: -1, peakT: 0, topV: 0, stall: 0 };
+fly("W for 5 s from 150 m, then S held (pull-up)", 150, 5, (t, p) => {
+  if (t < 5) return ["KeyW"];
+  const v = Math.hypot(p.vel.x, p.vel.y, p.vel.z);
+  if (pull.peak < 0 && p.vel.y < 0) { if (p.pos.y < pull.low) { pull.low = p.pos.y; pull.lowV = v; } }
+  else if (p.pos.y > pull.peak) { pull.peak = p.pos.y; pull.peakT = t; pull.topV = v; }
+  else if (!pull.stall && p.vel.y < -1) pull.stall = t;
+  return ["KeyS"];
+}, { every: 0.5, until: (t) => t > 14 });
+console.log(`pull-up: bottom of the pull-out ${pull.low.toFixed(1)} m at ${pull.lowV.toFixed(1)} m/s; up to ${pull.peak.toFixed(1)} m at ${pull.topV.toFixed(1)} m/s by ${pull.peakT.toFixed(1)} s (${(pull.peak - pull.low).toFixed(1)} m gained); sinking again by ${pull.stall.toFixed(1)} s`);
+
+// a full about-turn with A held, after settling into the level glide
+{
+  let start = null, done = null;
+  fly("", 300, 5, (t, p) => {
+    if (t < 10) return [];
+    if (!start) start = { t, y: p.pos.y, head: p.suitHead };
+    if (!done && Math.abs(p.suitHead - start.head) >= Math.PI) done = { t, y: p.pos.y };
+    return ["KeyA"];
+  }, { quiet: true, until: () => !!done });
+  // the same ten seconds flown straight, for the height a turn costs over gliding
+  let straight = null;
+  fly("", 300, 5, (t, p) => { if (t >= done.t && !straight) straight = p.pos.y; return []; }, { quiet: true, until: () => straight !== null });
+  const lost = start.y - done.y;
+  console.log(`\n180° turn, A held from a settled glide: ${(done.t - start.t).toFixed(1)} s and ${lost.toFixed(1)} m of height; flying straight for that long loses ${(lost - (straight - done.y)).toFixed(1)} m, so the turn costs ${(straight - done.y).toFixed(1)} m extra`);
+}
+// how quickly each key answers from a settled glide: degrees the course swings in the first half second
+// held, up or down for W and S, round for A; they should feel alike
+{
+  const swing = (key, read) => {
+    let a = null, b = null;
+    fly("", 300, 5, (t, p) => { if (t >= 10 && a === null) a = read(p); if (t >= 10.5 && b === null) b = read(p); return t >= 10 ? [key] : []; }, { quiet: true, until: () => b !== null });
+    return Math.abs(b - a) * 180 / Math.PI;
+  };
+  console.log(`in the first half second held, from a glide: W swings the course ${swing("KeyW", (p) => p.suitPath).toFixed(0)}°, S ${swing("KeyS", (p) => p.suitPath).toFixed(0)}°, A ${swing("KeyA", (p) => p.suitHead).toFixed(0)}°`);
+}
+// a stall: S held from a glide till it stalls, then let go, or W: the height it takes to fly again
+for (const [name, keys] of [["let go", []], ["W", ["KeyW"]]]) {
+  let stalled = null, back = null;
+  fly("", 300, 5, (t, p) => {
+    if (t < 10) return [];
+    if (!stalled) { if (p.suitStall) stalled = { t, y: p.pos.y }; return ["KeyS"]; }
+    if (!p.suitStall && !back) back = { t, y: p.pos.y };
+    return keys;
+  }, { quiet: true, until: (t) => !!back || t > 60 });
+  console.log(`stalled after ${(stalled.t - 10).toFixed(1)} s of S; ${name}: flying again ${back ? `${(back.t - stalled.t).toFixed(1)} s and ${(stalled.y - back.y).toFixed(1)} m lower` : "never"}`);
+}
+// a tap of A: a small correction
+{
+  let h0 = null, h1 = null;
+  fly("", 300, 5, (t, p) => {
+    if (t < 10) { h0 = p.suitHead; return []; }
+    if (t > 16) { h1 = p.suitHead; }
+    return t < 10.08 ? ["KeyA"] : [];
+  }, { quiet: true, until: () => h1 !== null });
+  console.log(`a 0.08 s tap of A turns the suit ${((h1 - h0) * 180 / Math.PI).toFixed(1)}° in all`);
+}
+
+// down a 15° hillside (steeper than most of Bath's), off a 10 m wall at its top: the glide should hold
+// you over the slope with nothing held, and W should bring you down to it gently
+for (const [name, keys] of [["nothing held", []], ["W held", ["KeyW"]]]) {
+  const slope = Math.tan(15 * Math.PI / 180);
+  const hill = { ground: (x, z) => Math.min(0, z) * slope, collide: () => null, lastBlock: -1 };
+  const p = new Player(hill);
+  p.pos.set(0, 10, 0); p.vel.set(0, 0, -5); p.onGround = false; p.suit = true;
+  p.update(DT, true); p.jump();
+  let t = 0, low = 1e9;
+  while (t < 60 && !p.onGround) { p.keys = new Set(keys); p.update(DT, true); t += DT; if (t > 1) low = Math.min(low, p.pos.y - hill.ground(0, p.pos.z)); }
+  const along = -p.pos.z / Math.cos(Math.atan(slope));
+  console.log(`down a 15° hill, ${name}: ${p.onGround ? `touched down after ${t.toFixed(1)} s, ${along.toFixed(0)} m down the slope at ${Math.hypot(p.vel.x, p.vel.y, p.vel.z).toFixed(1)} m/s` : `still flying after 60 s, ${along.toFixed(0)} m down, lowest ${low.toFixed(1)} m over it`}`);
+}
+// a wall 40 m ahead, flown into level and in a dive: only the fast one hurts
+for (const [name, keys] of [["level", []], ["diving", ["KeyW"]]]) {
+  const wall = { ground: () => 0, collide: (pos) => { if (pos.z < -40) pos.z = -40; }, lastBlock: -1 };
+  const p = new Player(wall);
+  p.pos.set(0, 60, 0); p.vel.set(0, 0, -5); p.onGround = false; p.suit = true;
+  p.update(DT, true); p.jump();
+  let hit = 0, t = 0;
+  while (t < 30 && p.suitOpen !== false || t < DT * 2) { p.keys = new Set(keys); p.update(DT, true); t += DT; hit ||= p.suitHit; if (p.pos.z <= -40 + 1e-6) break; }
+  p.update(DT, true); hit ||= p.suitHit;
+  console.log(`into a wall ${name}: ${hit ? `hurts at ${hit.toFixed(1)} m/s, suit closed` : `no harm, still ${p.suitOpen ? "open, sliding along it" : "closed"}`}`);
+}
+console.log(`\nspeed plus height never grew in the suit: the most it rose in a frame was ${worstGain.toFixed(4)} (J/kg)`);
