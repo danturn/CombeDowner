@@ -2633,11 +2633,14 @@ NODE_REACH = 1.0    # metres: corners further than this outside a piece's box ar
 LEVEL_CHORD = 0.03          # metres a face's edge may stand off its ground or street between the points kept along it
 
 
-def _points_where_needed(poly, step, z_at):
+def _points_where_needed(poly, step, z_at, kept=None, also=frozenset()):
     """`poly` with points along each edge every `step`, where the ground or street under the edge bends
     away from a straight line between the points either side by more than `LEVEL_CHORD`: on a slope or
     a crest the edge follows it, and along a straight, level stretch it keeps only its corners. Each
-    edge is worked from its lower corner, so two faces sharing it get the same points along it."""
+    edge is worked from its lower corner, so two faces sharing it are offered the same points along
+    it; the points it keeps are added to `kept`, and any in `also` (kept by a neighbour) are kept too."""
+    key = lambda p: (round(p[0], 3), round(p[1], 3))
+
     def edge(a, b):
         flip = (a[0], a[1]) > (b[0], b[1])
         if flip:
@@ -2664,6 +2667,9 @@ def _points_where_needed(poly, step, z_at):
                 split(i, far)
                 split(far, j)
         split(0, n)
+        keep |= {i for i in range(1, n) if key(pts[i]) in also}
+        if kept is not None:
+            kept.update(key(pts[i]) for i in keep if 0 < i < n)
         inner = [pts[i] for i in sorted(keep) if 0 < i < n]
         return inner[::-1] if flip else inner
 
@@ -2677,7 +2683,7 @@ def _points_where_needed(poly, step, z_at):
         return out
 
     if poly.geom_type == "MultiPolygon":
-        return shapely.MultiPolygon([_points_where_needed(g, step, z_at) for g in poly.geoms])
+        return shapely.MultiPolygon([_points_where_needed(g, step, z_at, kept, also) for g in poly.geoms])
     if poly.geom_type != "Polygon" or poly.is_empty:
         return poly
     return Polygon(ring(poly.exterior), [ring(h) for h in poly.interiors])
@@ -2938,6 +2944,9 @@ def _minus(a, b):
 PAVE_TO_WALL = 1.5      # metres: a strip of ground narrower than this between a pavement and a wall or house is paved
 
 
+PAVE_POCKET = 0.4     # metres: bare ground narrower than this closed in by a pavement is paved
+
+
 def pave_to_walls(pave, br, buildings, kept):
     """`pave` run on to the walls and house fronts standing just behind it. A mapped or measured wall
     seldom lies on the pavement's fitted edge, and the strip of grass left between showed as grass
@@ -2956,7 +2965,14 @@ def pave_to_walls(pave, br, buildings, kept):
     gap = gap.difference(pave).difference(stood).difference(kept)
     fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and g.area > 0.05
             and g.distance(pave) < 0.01 and g.distance(stood) < 0.1]
-    return unary_union([pave, *fill]) if fill else pave
+    if not fill:
+        return pave
+    out = unary_union([pave, *fill])
+    # (a run that meets the pavement again round a wall's end closes in a pocket of bare ground, too
+    # narrow to be anything but a crack in the paving)
+    pockets = [Polygon(h) for g in getattr(out, "geoms", [out]) if g.geom_type == "Polygon" for h in g.interiors]
+    pockets = [h for h in pockets if h.buffer(-PAVE_POCKET / 2).is_empty and not h.intersects(stood) and not h.intersects(kept)]
+    return unary_union([out, *pockets]) if pockets else out
 
 
 SLIVER = 2.0           # metres: open ground narrower than this left between streets, paths and houses is paved
@@ -3004,6 +3020,31 @@ KERB_POINT = 0.5      # metres: a point of paving or road narrower than twice th
 KERB_POINT_AREA = 8.0  # m2: a larger piece is a strip of its own (an island between two carriageways)
 KERB_SLIT = 0.25       # metres: half the width of paving anyone could stand on
 KERB_ISLAND = 0.9      # of its edge: an island narrower than 2 * KERB_POINT with the road all round it is the road's
+
+
+FACE_CRACK = 0.4      # metres: bare ground narrower than this closed in by the street faces is a crack
+FACE_CRACK_MOST = 3.0  # m2: a larger gap was left open on purpose
+
+
+def face_cracks(layers, open_ground):
+    """`layers` (the road, pavements, paths, drives and squares' paving) with the cracks closed in by
+    them filled: a gap narrower than FACE_CRACK with faces all round it goes to the layer along most of
+    its edge. The partition's faces of two kinds seldom quite meet, and nothing later closes a gap
+    between, say, a carriageway and a drive's paving; the ground showed through in a slit. A gap kept
+    open on purpose (`open_ground`: a cut between two levels, a wall or fence, a house, a bridge's
+    deck, a flight of steps, a tunnel) stays."""
+    whole = unary_union([g for g in layers if not g.is_empty] or [Polygon()])
+    holes = [Polygon(h) for g in getattr(whole, "geoms", [whole]) if g.geom_type == "Polygon" for h in g.interiors]
+    holes = [h for h in holes if 1e-4 < h.area < FACE_CRACK_MOST and h.buffer(-FACE_CRACK / 2).is_empty
+             and not h.intersects(open_ground)]
+    if not holes:
+        return layers
+    edges = [g.buffer(0.02) for g in layers]
+    given = [[] for _ in layers]
+    for h in holes:
+        along = [0.0 if g.is_empty else h.exterior.intersection(e).length for g, e in zip(layers, edges)]
+        given[along.index(max(along))].append(h)
+    return [unary_union([g, *gs]) if gs else g for g, gs in zip(layers, given)]
 
 
 def neat_kerbs(road, others, r=KERB_POINT, most=KERB_POINT_AREA, walls=None):
@@ -3903,9 +3944,6 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         # over the bore, standing up inside the tube from its mouth
         tubes = unary_union(tubes)
         road, pave, path, plaza = (_minus(g, tubes) for g in (road, pave, path, plaza))
-    taken = taken.union(path)
-    drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
-    front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
 
     verged = [(l, r) for l, r in zip(lines, streets) if r["c"] in VERGED and not any(r.get("pv") or (1,))]
     if verged:
@@ -3929,6 +3967,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         beside = flights.buffer(1.0)
         fringe, path = thin_to(pave.intersection(beside), path)
         pave = _minus(pave, beside).union(fringe)
+    # (drives and front paths are laid against the kerbs as finally drawn: laid before the road's
+    # slivers were given away, a drive's mouth left a crack of bare ground along the kerb)
+    taken = unary_union([road, pave, plaza, path, *buildings])
+    drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
+    front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
                      if _portal_owner(planes, k, x, y) else None, surface)
@@ -3941,6 +3984,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         beside_cut = cut.buffer(LEVEL_GAP)
         shapely.prepare(beside_cut)
 
+    road, pave, path, front, drive, plaza = face_cracks(
+        [road, pave, path, front, drive, plaza],
+        unary_union([g for g in (beside_cut, deck, flights, tubes if isinstance(tubes, shapely.Geometry) else None, *buildings)
+                     if g is not None and not g.is_empty]
+                    + [LineString([q[:2] for q in b["p"]]).buffer(0.3) for b in br if len(b["p"]) > 1] or [Polygon()]))
     pieces = []
     for cls, g in (("carriageway", road), ("pavement", pave), ("path", path), ("front", front), ("drive", drive),
                    ("drive", plaza)):
@@ -3965,9 +4013,21 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             k = None
         return ground(x, y) if k is None else _level_at(heights[k], x, y, ground, square)
 
-    simple = noded([_points_where_needed(q, PATH_STEP if cls in ("path", "front", "drive") else STREET_STEP,
-                                         lambda x, y, f=cls in ("path", "front", "drive"): drawn_z(x, y, f))
-                    for (cls, _), q in zip(pieces, simple)])
+    # (every face's edges are offered points at one spacing, and a point either face along an edge
+    # keeps the other keeps too: thinned on their own, a road and the paving beside it kept different
+    # points along their shared kerb, and the slit between them showed the ground)
+    flat = [cls in ("path", "front", "drive") for cls, _ in pieces]
+    kept, zs = set(), {}
+
+    def z_once(x, y, f):
+        k = (round(x, 3), round(y, 3), f)
+        if k not in zs:
+            zs[k] = drawn_z(x, y, f)
+        return zs[k]
+    for f, q in zip(flat, simple):
+        _points_where_needed(q, PATH_STEP, lambda x, y, f=f: z_once(x, y, f), kept)
+    simple = noded([_points_where_needed(q, PATH_STEP, lambda x, y, f=f: z_once(x, y, f), also=kept)
+                    for f, q in zip(flat, simple)])
 
     v, at = [], {}
 
