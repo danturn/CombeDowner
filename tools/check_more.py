@@ -178,6 +178,10 @@ def overroad(root, map_id, only=None):
     args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
     if only: args += ["--only", " ".join(only)]
     try:
+        # (the game loads the squares' packs, not their JSON: packs left from an earlier build of the
+        # map would be looked at in place of the map being checked)
+        subprocess.run(["node", os.path.join(here, "pack_squares.mjs"), "--maps", os.path.abspath(root), "--map", map_id],
+                       capture_output=True, text=True, check=True)
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
         return []
