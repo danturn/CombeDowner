@@ -89,6 +89,16 @@ console.log(`pull-up: bottom of the pull-out ${pull.low.toFixed(1)} m at ${pull.
   const lost = start.y - done.y;
   console.log(`\n180° turn, A held from a settled glide: ${(done.t - start.t).toFixed(1)} s and ${lost.toFixed(1)} m of height; flying straight for that long loses ${(lost - (straight - done.y)).toFixed(1)} m, so the turn costs ${(straight - done.y).toFixed(1)} m extra`);
 }
+// how quickly each key answers from a settled glide: degrees the course swings in the first second
+// held, up or down for W and S, round for A; they should feel alike
+{
+  const swing = (key, read) => {
+    let a = null, b = null;
+    fly("", 300, 5, (t, p) => { if (t >= 10 && a === null) a = read(p); if (t >= 11 && b === null) b = read(p); return t >= 10 ? [key] : []; }, { quiet: true, until: () => b !== null });
+    return Math.abs(b - a) * 180 / Math.PI;
+  };
+  console.log(`in the first second held, from a glide: W swings the course ${swing("KeyW", (p) => p.suitPath).toFixed(0)}°, S ${swing("KeyS", (p) => p.suitPath).toFixed(0)}°, A ${swing("KeyA", (p) => p.suitHead).toFixed(0)}°`);
+}
 // a tap of A: a small correction
 {
   let h0 = null, h1 = null;
