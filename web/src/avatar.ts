@@ -6,7 +6,8 @@
 // propped up on their forearms with their head up, a dummy in and a rattle in hand, their legs
 // kicking away. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
 // everyone sees them dressed the same. Anything from their wardrobe (wardrobe.ts) is put on them, as
-// they say in their hello.
+// they say in their hello. In an open wingsuit (wingsuit.ts) they fly spread out face down along
+// the way they're going, head up, banking into their turns.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { look } from "./gore";
@@ -15,6 +16,7 @@ import { parseWear, wearGeometry } from "./wardrobe";
 import { type Follow, follow } from "./weapon";
 import { carriedLadder } from "./ladders";
 import { angelGlow, angelWings, heavenlyGuitar } from "./angelwings";
+import { suitGeometry } from "./wingsuit";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
 
@@ -379,6 +381,22 @@ export class Avatar {
   }
   private rage: THREE.Sprite | null = null;
   private axe: THREE.Group | null = null;
+  private suit: THREE.Mesh | null = null;
+  private suitOn = false;
+  /** How far into the open suit's pose they are, 0..1, eased; and its path, heading and bank, smoothed. */
+  private suitK = 0; private suitPath = 0; private suitHead = 0; private suitRoll = 0;
+
+  /** In an open wingsuit (wingsuit.ts), or not. */
+  setSuit(on: boolean) {
+    if (on && !this.suit) {
+      this.suit = new THREE.Mesh(suitGeometry(), MAT);
+      this.suit.castShadow = true;
+      this.suit.visible = false;
+      this.body.add(this.suit);
+    }
+    if (on && !this.suitOn) this.suitHead = Math.atan2(-this.vx, -this.vz) || this.yaw;
+    this.suitOn = on;
+  }
 
   /** Put on what their wardrobe says (wardrobe.ts): ids, comma separated, one per slot. */
   setWear(code: string) {
@@ -524,7 +542,12 @@ export class Avatar {
     // lying down for tummy time tips the whole body onto its front, hips a little behind where they are
     const pr = this.seated ? 0 : this.prone, lie = Math.PI / 2 * pr;
     this.body.position.set(Math.sin(this.yaw) * (HIP + LIE_BACK) * pr, 0.13 * pr, Math.cos(this.yaw) * (HIP + LIE_BACK) * pr);
-    if (this.alive) {
+    this.suitK += ((this.suitOn && this.alive ? 1 : 0) - this.suitK) * Math.min(1, dt * 6);
+    if (this.alive && this.suitK > 0.01) {
+      this.deadT = 0;
+      this.flyPose(lie, dt);
+      this.root.visible = true;
+    } else if (this.alive) {
       this.deadT = 0;
       this.body.rotation.x = -lie;
       this.body.rotation.z = this.lean;
@@ -545,7 +568,9 @@ export class Avatar {
     this.label.visible = this.alive && this.tagged;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
-    this.gun.visible = this.armed && pr <= 0.5 && !this.axe && !this.hold && !(this.wave & 2);
+    this.gun.visible = this.armed && pr <= 0.5 && !this.axe && !this.hold && !(this.wave & 2) && this.suitK < 0.5;
+    if (this.suit) this.suit.visible = this.suitK > 0.5;
+    for (const m of this.wear) if (m.name === "wsuit") m.visible = this.suitK <= 0.5;
     if (dt > 0) this.animate(dt);
   }
 
@@ -556,7 +581,7 @@ export class Avatar {
     this.lastX = this.ix; this.lastY = this.iy; this.lastZ = this.iz;
     const ease = Math.min(1, dt * 10);
     if (this.still) { this.vx = this.vy = this.vz = 0; }
-    else if (Math.hypot(rx, rz) < 20 && Math.abs(ry) < 30) {
+    else if (Math.hypot(rx, rz) < (this.suitOn ? 60 : 20) && Math.abs(ry) < (this.suitOn ? 60 : 30)) {
       this.vx += (rx - this.vx) * ease; this.vy += (ry - this.vy) * ease; this.vz += (rz - this.vz) * ease;
     }
     if (!this.alive) return;
@@ -648,12 +673,52 @@ export class Avatar {
       if (this.wave & 1) reach(lu, ll, UPPER_ARM, FOREARM, _t.set(-0.42 + sway, 0.4, -0.1), _a.set(-1, -0.3, 0.3));
       if (this.wave & 2) reach(ru, rl, UPPER_ARM, FOREARM, _t.set(0.42 - sway, 0.4, -0.1), _a.set(1, -0.3, 0.3));
     } else this.waveT = 0;
+    if (this.suitK > 0.5) this.spread();
     // a blink every few seconds, and a moving mouth while they talk
     this.blink -= dt;
     if (this.blink < -0.12) this.blink = 2 + Math.random() * 4;
     this.eyes.scale.y = this.blink < 0 ? 0.15 : 1;
     this.talkT += dt;
     this.mouth.scale.y = this.talking ? 1 + Math.abs(Math.sin(this.talkT * 17) * Math.sin(this.talkT * 5.3)) * 3 : 1;
+  }
+
+  /** Flying in the suit: face down along the path they're on, pivoting at the hips, turned to the way
+   *  they're going (not where they look) and banked into the turn. lie: how far down tummy time has them. */
+  private flyPose(lie: number, dt: number) {
+    const k = this.suitK, sp = Math.hypot(this.vx, this.vz);
+    if (sp > 1) {
+      const head = Math.atan2(-this.vx, -this.vz), turn = Math.atan2(Math.sin(head - this.suitHead), Math.cos(head - this.suitHead));
+      this.suitHead += turn * Math.min(1, dt * 12);
+      this.suitRoll += (Math.max(-0.8, Math.min(0.8, -turn * 12)) - this.suitRoll) * Math.min(1, dt * 6);
+    }
+    this.suitPath += (Math.atan2(this.vy, Math.max(0.5, sp)) - this.suitPath) * Math.min(1, dt * 6);
+    const tilt = -lie + (-(Math.PI / 2 - this.suitPath) + lie) * k;
+    const yaw = this.yaw + Math.atan2(Math.sin(this.suitHead - this.yaw), Math.cos(this.suitHead - this.yaw)) * k;
+    _q.setFromAxisAngle(_e.set(0, 1, 0), yaw);
+    this.body.quaternion.copy(_q).multiply(_q.setFromAxisAngle(_e.set(1, 0, 0), tilt)).multiply(_q.setFromAxisAngle(_e.set(0, 1, 0), this.suitRoll * k));
+    // keep the hips where they'd be stood up, so they swing about their middle, not their feet
+    _p.set(0, HIP, 0).applyQuaternion(this.body.quaternion);
+    this.body.position.lerp(_a.set(-_p.x, HIP - _p.y, -_p.z), k);
+  }
+
+  /** Arms out and legs apart for the suit's fabric, the head up to see where they're going. */
+  private spread() {
+    this.upper.rotation.x = 0;
+    this.upper.position.y = HIP;
+    this.aim.rotation.x = 0;
+    this.aim.position.z = 0;
+    this.head.rotation.x = 1.0;
+    this.arms.forEach(([up, low], i) => {
+      const s = i ? 1 : -1;
+      up.quaternion.setFromUnitVectors(DOWN, _e.set(s * Math.sin(1.35), -Math.cos(1.35), 0));
+      low.quaternion.identity();
+    });
+    this.legs.forEach(([up, low], i) => {
+      const s = i ? 1 : -1;
+      up.position.set(s * 0.1, HIP, 0);
+      up.quaternion.setFromUnitVectors(DOWN, _e.set(s * Math.sin(0.3), -Math.cos(0.3), 0));
+      low.quaternion.identity();
+    });
   }
 
   /**
