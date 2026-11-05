@@ -319,7 +319,8 @@ it, and bumping into things slides you along them rather than knocking you back.
 ### The wingsuit
 
 Stand anywhere at least 15 m above the ground round you (a roof, a tower, a high wall, a cliff
-edge) and a wingsuit is yours for good, worn folded on your back. Jump off something high and press
+edge) and a wingsuit is yours for good, worn folded on your back (the corner over your rounds shows it
+while you've nothing else to carry). Jump off something high and press
 Space (Jump) in mid-air to open it (it catches the air at once, like a hang glider), and Space again to close it and drop; landing folds it away.
 It flies like Breath of the Wild's glider: A and D (the left stick sideways) bank it round in a wide
 turn, W (stick up) noses down into a dive to pick up speed fast, and S (stick down) pulls up, swapping
