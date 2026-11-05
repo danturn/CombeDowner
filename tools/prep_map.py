@@ -2675,6 +2675,7 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
         out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
         out["rp"] = round(b["roof"]["rise"], 1)
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
+        if b["roof"].get("sure_ends"): out["hs"] = 1
     k = roof_faces.ring_key(out) if FACES else None
     if k in FACES:
         # into the map's frame as the eaves were: the survey's heights over its ground at the walls
@@ -4079,7 +4080,7 @@ if KEEP:
         for k in kept.query(c.buffer(1.5)):
             o = kept_bl[int(k)]; op = shapely.Polygon(o["r"][0])
             if op.centroid.distance(c) < 1.5 and abs(op.area - poly.area) < poly.area / 6:
-                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "ch", "pp", "st", "c"):
+                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "hs", "ch", "pp", "st", "c"):
                     if key_ in o: b[key_] = o[key_]
                     elif key_ in b: del b[key_]
                 # (its eaves at the height the earlier build measured, on this build's ground)
