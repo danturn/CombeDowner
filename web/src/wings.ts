@@ -22,6 +22,7 @@ import { angelGlow, angelWings, heavenlyGuitar, wing } from "./angelwings";
 import { earn } from "./wardrobe";
 import { award } from "./trophies";
 import { guide } from "./notice";
+import { setHidden } from "./show";
 
 const SHOWN = 220;         // the wings over the tower are there when you're this close to the Abbey
 const REACH = 1.4;         // and yours this close to them
@@ -188,7 +189,7 @@ export class Wings {
       this.toast("Your wings are spent: glide on down");
     }
     this.glowing = flying && p.wingLift;
-    this.halo.hidden = !this.glowing;
+    setHidden(this.halo, !this.glowing);
     if (this.glowing) this.halo.style.opacity = String(0.7 + Math.sin(performance.now() / 180) * 0.3);
     this.hud.hidden = !p.wings || !p.wingLift;
     if (!this.hud.hidden) missionAuxAdopt(this.hud);

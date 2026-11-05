@@ -21,9 +21,16 @@
 /** Show html in an element, unless it is what the element already holds. up says whether the element
  *  should be showing at all: left out, its visibility is somebody else's to decide. */
 export function show(el: HTMLElement, html: string, up?: boolean) {
-  if (el.innerHTML !== html) el.innerHTML = html;
+  // The page gives html back in its own spelling (an &#39; comes back as '), so such words never
+  // matched it: the html is checked against what was last written here, and the page against what that became.
+  const last = written.get(el), now = el.innerHTML;
+  if (now !== html && (last?.html !== html || last.out !== now)) {
+    el.innerHTML = html;
+    written.set(el, { html, out: el.innerHTML });
+  }
   if (up !== undefined && el.hidden !== !up) el.hidden = !up;
 }
+const written = new WeakMap<Element, { html: string; out: string }>();
 
 /** The same for an element whose whole content is plain text (a caption, a street sign): text, not
  *  markup, so a name with an "&" or a "<" in it can't be taken for html. Any element will do: this
