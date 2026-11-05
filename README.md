@@ -696,7 +696,7 @@ without them (a row keeps its old roofs where the new ones don't fit the survey 
 `tools/roofs/errors.py` measures how far every drawn roof is from the survey, and `?roofs=simple`
 in the address draws the old roofs everywhere, to compare. Rule 11 of `tools/check_map.py` counts
 broken roofs: openings between faces, bare footprints, walls facing indoors, roofs past their
-walls or too tall, faces lying over each other and buildings standing in each other, and, on the pitched roofs too, a roof covering only part of its building, roofs over one building that don't meet, buildings sharing a wall whose roofs differ in covering or colour, alike houses in a row with their ridges turned against each other, and a semi's halves roofed differently. Every roof is
+walls or too tall, faces lying over each other and buildings standing in each other, and, on the pitched roofs too, a roof covering only part of its building, roofs over one building that don't meet, buildings sharing a wall whose roofs differ in covering or colour, alike houses in a row with their ridges turned against each other, and a semi's halves roofed differently (listed on a line of their own where the lidar is sure of both halves' ends). Every roof is
 solid where it's drawn: you stand on the strips closing the slits between its faces, walk into its
 steps rather than through them, land on it however fast you fall, and stand on a building that
 reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run

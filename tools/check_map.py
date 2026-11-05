@@ -1040,7 +1040,11 @@ def roofs_drawn_whole(m, tag, note, polys, drawn):
             ua, uc = _ridge_dir(A["rr"]), _ridge_dir(C["rr"])
             turned = abs(ua[0] * uc[0] + ua[1] * uc[1]) < 0.7
             if A.get("c") == "semi" and C.get("c") == "semi":
-                if turned or _hipped(A) != _hipped(C):
+                if not turned and _hipped(A) != _hipped(C) and A.get("hs") and C.get("hs"):
+                    # each half's ends as the lidar is sure of them (lidar.sure_way, as the build
+                    # judged it): really roofed differently. Kept on a line of its own, so it shows
+                    note("11 semi's halves in different roof shapes, the lidar sure of both (excused)", 1, at, "one hipped, one gabled")
+                elif turned or _hipped(A) != _hipped(C):
                     note("11 semi's halves in different roof shapes", 1, at, "ridges turned" if turned else "one hipped, one gabled")
             elif turned and _alike(polys[a], polys[c]):
                 note("11 ridge turned against a same-shaped neighbour", 1, at, "")
