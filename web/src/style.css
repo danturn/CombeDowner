@@ -188,8 +188,8 @@ kbd {
 /* the wardrobe, over the pause menu (wardrobe.ts) */
 #wardrobe { z-index: 11; }
 .wardcard { width: min(760px, 100%); }
-.wardbody { display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 14px 18px 4px; }
-.wardview { width: 200px; height: 266px; background: linear-gradient(#cfd8de, #eef0ea); align-self: start; }
+.wardbody { display: grid; grid-template-columns: 280px 1fr; gap: 14px; padding: 14px 18px 4px; }
+.wardview { width: 280px; height: 100%; min-height: min(62vh, 520px); background: linear-gradient(#cfd8de, #eef0ea); align-self: stretch; }
 .wardlist { max-height: min(62vh, 520px); overflow: auto; }
 .wardlist h3 { margin: 4px 0 6px; font-size: 16px; }
 .wardrow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -200,7 +200,7 @@ kbd {
 .wardtabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .wardtab { padding: 5px 10px 4px; font-size: 15px; border: 2px solid var(--paper-line); }
 .wardtab.on { border-color: var(--paper-ink); background: var(--accent); }
-@media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 150px; height: 200px; } }
+@media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 210px; height: 300px; min-height: 0; } }
 /* the pub menu borrows the big map, over the pause menu; its hint keeps one height so the map never shifts under the pointer */
 .music .hint { flex: 1; min-width: 0; }
 .music button { padding: 6px 12px; font-size: 14px; }

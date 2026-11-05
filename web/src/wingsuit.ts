@@ -4,6 +4,7 @@
 // Jump in mid-air, well clear of what's below, and it opens (player.ts flies it): your arms and legs
 // spread with fabric between them, a strip of it at either side of your view, and the wind in your
 // ears rising with your speed. The first time you're in the air in it you're told how to open it.
+// Or type the cheat, SQUIRREL, and it's yours and on your back at once.
 //
 // Who decides what: it's your own. Earning it is your machine's say alone, as with everything in the
 // wardrobe. Whether it's open goes out with where you are (game.ts, "ws" in the state message), so the
@@ -11,15 +12,27 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { box, part, type Piece } from "./avatar";
-import { count, earn, has } from "./wardrobe";
+import { count, earn, has, wear } from "./wardrobe";
 import type { Player } from "./player";
-import { guide } from "./notice";
+import { guide, news } from "./notice";
 
 export const SUIT_ID = "wsuit";
+const CHEAT = "squirrel";  // typed anywhere in play
 const HIGH = 15;           // metres above the lowest ground round you that earns the suit
 const AROUND = 10;         // how far round you that ground is looked for
 const CLEAR = 3;           // clear below before it'll open (as player.ts has it), for the first hint
 const FABRIC = "#e8452c", EDGE = "#26262c", STRIPE = "#f2c230";
+
+// once for the page, however many games it plays (a train to another town starts a new one)
+let typed = "";
+addEventListener("keydown", (e) => {
+  if (e.repeat || e.key.length !== 1 || (e.target as HTMLElement)?.closest?.("input, textarea")) return;
+  typed = (typed + e.key.toLowerCase()).slice(-CHEAT.length);
+  if (typed !== CHEAT) return;
+  typed = "";
+  if (earn(SUIT_ID)) guide("A wingsuit! Jump off, then {jump} in mid-air to open it. {forward} dives, {back} pulls up, {strafeleft} and {straferight} bank round");
+  else if (wear(SUIT_ID)) news("Wingsuit on");
+});
 
 /** A flat sheet through these points (a fan from the first), the same colour both sides, as one shape
  *  part() can weld with the boxes. */
