@@ -2630,6 +2630,59 @@ NODE_TOL = 1e-3     # metres: a corner this close to a neighbour's edge is on it
 NODE_REACH = 1.0    # metres: corners further than this outside a piece's box are not offered to it
 
 
+LEVEL_CHORD = 0.03          # metres a face's edge may stand off its ground or street between the points kept along it
+
+
+def _points_where_needed(poly, step, z_at):
+    """`poly` with points along each edge every `step`, where the ground or street under the edge bends
+    away from a straight line between the points either side by more than `LEVEL_CHORD`: on a slope or
+    a crest the edge follows it, and along a straight, level stretch it keeps only its corners. Each
+    edge is worked from its lower corner, so two faces sharing it get the same points along it."""
+    def edge(a, b):
+        flip = (a[0], a[1]) > (b[0], b[1])
+        if flip:
+            a, b = b, a
+        n = max(1, math.ceil(math.dist(a, b) / step))
+        if n == 1:
+            return []
+        pts = [(a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n) for i in range(n + 1)]
+        zs = [z_at(x, y) for x, y in pts]
+        if any(z is None for z in zs):
+            return pts[1:-1][::-1] if flip else pts[1:-1]
+        keep = {0, n}
+
+        def split(i, j):
+            if j - i < 2:
+                return
+            far, worst = None, LEVEL_CHORD
+            for m in range(i + 1, j):
+                off = abs(zs[m] - (zs[i] + (zs[j] - zs[i]) * (m - i) / (j - i)))
+                if off > worst:
+                    far, worst = m, off
+            if far is not None:
+                keep.add(far)
+                split(i, far)
+                split(far, j)
+        split(0, n)
+        inner = [pts[i] for i in sorted(keep) if 0 < i < n]
+        return inner[::-1] if flip else inner
+
+    def ring(r):
+        c = list(r.coords)
+        out = []
+        for a, b in zip(c, c[1:]):
+            out.append(a)
+            out += edge(a, b)
+        out.append(c[-1])
+        return out
+
+    if poly.geom_type == "MultiPolygon":
+        return shapely.MultiPolygon([_points_where_needed(g, step, z_at) for g in poly.geoms])
+    if poly.geom_type != "Polygon" or poly.is_empty:
+        return poly
+    return Polygon(ring(poly.exterior), [ring(h) for h in poly.interiors])
+
+
 def noded(pieces):
     """The pieces with every corner of each one's neighbours along their shared edges, so two faces
     never meet with a corner of one partway along an edge of the other. Faces at different heights
@@ -3899,7 +3952,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
     # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
     # street that steepens, with a gap under its edge and parked cars sunk into it)
-    simple = noded([shapely.segmentize(q, PATH_STEP if cls in ("path", "front", "drive") else STREET_STEP)
+    def drawn_z(x, y, on_ground):
+        k = None if on_ground else nearest(x, y)
+        if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
+            k = None
+        return ground(x, y) if k is None else _level_at(heights[k], x, y, ground, square)
+
+    simple = noded([_points_where_needed(q, PATH_STEP if cls in ("path", "front", "drive") else STREET_STEP,
+                                         lambda x, y, f=cls in ("path", "front", "drive"): drawn_z(x, y, f))
                     for (cls, _), q in zip(pieces, simple)])
 
     v, at = [], {}
@@ -6617,6 +6677,36 @@ def rails_off_walls(rd, br):
     return rd
 
 
+WALL_EASE = 3.0     # metres either way along a wall that its height at a point is evened out over
+WALL_EASE_MOST = 0.25   # metres at most that evening out moves a point off its ground
+
+
+def smooth_wall_tops(br):
+    """Each wall's points between its ends at the ground's height evened out along it, so its top runs
+    in a smooth line: taken at each point from a ground drawn in 4 m triangles, it went up in angled
+    steps where the wall crossed their folds. Its ends keep their own heights, where it meets another
+    wall or a gate."""
+    out = []
+    for b in br:
+        p = b["p"]
+        if len(p) < 3 or any(len(q) < 3 for q in p):
+            out.append(b)
+            continue
+        s = [0.0]
+        for u, v in zip(p, p[1:]):
+            s.append(s[-1] + math.dist(u[:2], v[:2]))
+        z = [q[2] for q in p]
+        eased = [list(q) for q in p]
+        for i in range(1, len(p) - 1):
+            w = [(max(0.0, 1 - abs(s[j] - s[i]) / WALL_EASE), z[j]) for j in range(len(p)) if abs(s[j] - s[i]) < WALL_EASE]
+            total = sum(a for a, _ in w)
+            if total > 0:
+                even = sum(a * h for a, h in w) / total
+                eased[i][2] = round(min(max(even, z[i] - WALL_EASE_MOST), z[i] + WALL_EASE_MOST), 1)
+        out.append(dict(b, p=eased))
+    return out
+
+
 def path_barriers(sq, rd, br, ground, points, gt=()):
     """`pb`: gates, stiles, kissing gates, cycle barriers, lift gates, cattle grids and blocks, each
     [kind, x, y, ground, angle, width], with the boundaries they stand in opened for them; and a count
@@ -7037,6 +7127,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
+    br = smooth_wall_tops(br)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt
