@@ -937,10 +937,31 @@ void startReady().then(() => {
 // back from updating to the new version (freshReload), or a link with join=1: straight on into
 // that game, once the squares round where everyone starts are in (Play waits for them till then).
 // Last of all, so everything starting a game uses is set up by then.
-if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));
-else if (wasPlaying && !UP && (!roomParam || roomParam === wasPlaying.code)) void (async () => {
-  if (wasPlaying.code !== "SOLO") { $<HTMLInputElement>("code").value = wasPlaying.code; await startReady(); return play(wasPlaying.code); }
-  if (valid(wasPlaying.map) && !(await showMap(wasPlaying.map))) return;
-  await startReady();
-  if (!game) start("SOLO", true);
-})();
+const joining = !!roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP;
+const resuming = !joining && !!wasPlaying && !UP && (!roomParam || roomParam === wasPlaying.code);
+// index.html hid the menu on the guess that this was a refresh mid-game: show it again if not
+if (!resuming) document.documentElement.classList.remove("resuming");
+if (joining) void startReady().then(() => play(roomParam));
+else if (resuming && wasPlaying) {
+  // no menu on the way back in, just a black screen saying so; the menu comes back if the game
+  // can't be rejoined, or it wants to ask you something (they're down the mines, a new version)
+  $("menu").hidden = true;
+  $("blackouttext").textContent = "Back to your game…";
+  $("blackout").hidden = false;
+  const asking = () => !!$("menuerr").textContent || ["lookmines", "lookstay", "lookretry"].some((id) => !$(id).hidden);
+  const watch = window.setInterval(() => { if (game || asking()) done(); }, 250);
+  const done = () => {
+    clearInterval(watch);
+    $("blackout").hidden = true;
+    document.documentElement.classList.remove("resuming");
+    if (!game) $("menu").hidden = false;
+  };
+  void (async () => {
+    try {
+      if (wasPlaying.code !== "SOLO") { $<HTMLInputElement>("code").value = wasPlaying.code; await startReady(); await play(wasPlaying.code); return; }
+      if (valid(wasPlaying.map) && !(await showMap(wasPlaying.map))) return;
+      await startReady();
+      if (!game) start("SOLO", true);
+    } finally { done(); }
+  })();
+}
