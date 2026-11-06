@@ -1653,6 +1653,10 @@ if True:
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
             # the basins off it (a marina): canal.ts draws their water too, at their pound's level
             cbasins = [(shapely.Polygon(b["r"][0], b["r"][1:]).buffer(0.8), b["lv"]) for b in json.load(open(canal_file)).get("basins", []) if not b.get("own")]
+            # where the canal opens into a river (tools/canal.py "x"), the two are one water
+            cmouths = [(Point(q[0], q[1]), run["lv"]) for run in json.load(open(canal_file))["runs"] for q in run.get("x") or []]
+    rivers_near = unary_union([transform(proj, g) for g, p in L("water") if g.geom_type.endswith("Polygon") and p.get("class") != "canal"
+                               and not is_sea(p) and transform(proj, g).intersects(BM)] or [Point(1e9, 1e9)]) if canal_lv is not None else None
     whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
 
     _shore = []
@@ -1792,6 +1796,8 @@ if True:
                     bank = [(x, y) for x, y in rings[0] if not (weir_near is not None and shapely.intersects_xy(weir_near, x, y))] or rings[0]
                     wz = A.sea if at_sea else min(elev(x, y) for x, y in bank) + 0.1
                     if joins_sea: wz = max(wz, A.sea)
+                    if not (is_canal or tank or at_sea) and canal_lv is not None:
+                        wz = min([wz] + [lv for at_, lv in cmouths if poly.distance(at_) < 1])
                     entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz), **({"c": "canal"} if is_canal else {}),
                                  **({"k": "t"} if tank else {}))
                     water_all.append(entry)
@@ -1807,7 +1813,9 @@ if True:
                             for bp, blv in cbasins:
                                 inb = shapely.contains_xy(bp, GX[win][wet], GY[win][wet])
                                 bed |= inb; lv = np.where(inb, blv, lv)
-                            blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
+                            # (but where the map's canal outline runs out over a river it is the river's water, not bank)
+                            bank_up = ~shapely.contains_xy(rivers_near, GX[win][wet], GY[win][wet])
+                            blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.where(bank_up, np.maximum(blk[wet], lv + 0.3), blk[wet])); grid[win] = blk
                         elif at_sea:
                             # the harbour's quays stand straight up out of deep water, a metre and a
                             # half above it; a beach is left to run down into the sea

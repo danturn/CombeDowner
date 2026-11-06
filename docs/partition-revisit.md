@@ -1587,3 +1587,10 @@ same as main):
   wall tops were evened out and brought the hedge down to the pavement's height; Holcombe Close 3_4
   (1616,3365) has had it all along. The rule would be in the gardens step: set a guessed boundary
   back from the paving by half its width.
+- [ ] **Where the canal opens into the river, the river takes the canal's level** (rule 35). At
+  Widcombe the Avon's piece below the bottom lock reads 15.9 m from its banks and the canal's
+  bottom pound is 15.8 m; the river piece that touches the canal's mouth is set to the lower of the
+  two, so the two waters are one. The plan said the larger body's level, but the canal's levels
+  are Spencer's and set its locks, so the river gives way. Pieces of one river cut by squares
+  still each take their own bank's level, so a step of a few centimetres can stand at a square's
+  edge; the sheet's single water level per reach would remove it.

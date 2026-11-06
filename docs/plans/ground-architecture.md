@@ -639,6 +639,13 @@ if the timing suits (§9).
 - **2c. Water:** the canal's works stop at the river's outline (`tools/canal.py` clips the run;
   `works.ts` reads it, so Spencer's code is untouched beyond a clip); touching water bodies agree
   in `prep_map.py`'s water step; no OSM canal polygon raised where it overlaps a river.
+  *As built:* `canal.py` adds to a run that opens into a river a list `x` of the river's edge there
+  (a point and the way into the river); `canal.ts` and `works.ts` cut the water, banks and verges
+  off past it, and check_more's `canal_pieces` (rules 34–36) cuts its copy the same way, so the
+  check measures what is drawn. The river piece that touches a mouth takes the canal's level
+  where that is lower (one water, and no seam between two surfaces at the mouth). Pieces of one
+  river cut by squares still each take their own bank's level: making them agree needs a level
+  worked out the same way in every square's run, which is left for the sheet.
 - **2d. Blocked ground** for walls includes the towpath, the canal's verges, locks' paving, bank
   faces and every path's width (`write_tile.blocked_ground`); guessed boundaries go, measured ones
   are cut.

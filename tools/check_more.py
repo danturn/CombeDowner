@@ -1645,6 +1645,9 @@ def _band(p, lo, hi, skip=lambda a, b: False):
     return shapely.union_all(quads) if quads else Polygon()
 
 
+MOUTH_REACH = 30
+
+
 @functools.lru_cache(maxsize=4)
 def canal_pieces(root, map_id):
     """The canal as canal.ts and works.ts lay it, from its file: each run's water (with its level),
@@ -1675,13 +1678,18 @@ def canal_pieces(root, map_id):
     for run in canal["runs"]:
         p = run["p"]
         if len(p) < 2: continue
+        # where a run opens into a river, nothing of it is laid past the river's edge (canal.ts clipMouths)
+        past = shapely.union_all([Polygon([(x - ny * MOUTH_REACH, y + nx * MOUTH_REACH), (x + ny * MOUTH_REACH, y - nx * MOUTH_REACH),
+                                           (x + ny * MOUTH_REACH + nx * MOUTH_REACH, y - nx * MOUTH_REACH + ny * MOUTH_REACH),
+                                           (x - ny * MOUTH_REACH + nx * MOUTH_REACH, y + nx * MOUTH_REACH + ny * MOUTH_REACH)])
+                                  for x, y, nx, ny in run.get("x") or []] or [Polygon()])
         wet = _band(p, lambda i: -p[i][2], lambda i: p[i][2], tunnel).difference(beside)
         ends = [g for at, g in gates for e in (p[0], p[-1]) if math.dist(at, e[:2]) < 0.5]
-        water.append((shapely.union_all([wet] + ends), run["lv"]))
+        water.append((shapely.union_all([wet] + ends).difference(past), run["lv"]))
         banks.append(shapely.union_all([_band(p, lambda i: p[i][2], lambda i: p[i][2] + p[i][7], tunnel),
-                                        _band(p, lambda i: -p[i][2] - p[i][8], lambda i: -p[i][2], tunnel)]).difference(under))
+                                        _band(p, lambda i: -p[i][2] - p[i][8], lambda i: -p[i][2], tunnel)]).difference(under).difference(past))
         verges.append(shapely.union_all([_band(p, lambda i: p[i][2] + p[i][7], lambda i: p[i][2] + p[i][7] + p[i][9], tunnel),
-                                         _band(p, lambda i: -p[i][2] - p[i][8] - p[i][10], lambda i: -p[i][2] - p[i][8], tunnel)]))
+                                         _band(p, lambda i: -p[i][2] - p[i][8] - p[i][10], lambda i: -p[i][2] - p[i][8], tunnel)]).difference(past))
     locks = []
     for lk in canal.get("locks") or []:
         L, rect, wl = frame(lk)
