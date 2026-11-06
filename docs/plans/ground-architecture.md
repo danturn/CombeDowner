@@ -23,6 +23,7 @@ mechanism is inferred rather than read, it says so.
 7. [Stages](#7-stages)
 8. [Risks, open questions for Dan, and what was rejected](#8-risks-open-questions-for-dan-and-what-was-rejected)
 9. [How to resume](#9-how-to-resume)
+10. [Baselines, stage 0: walking and drawing](#10-baselines-stage-0-walking-and-drawing)
 
 ---
 
@@ -572,7 +573,7 @@ The order puts the **biggest visible wins at the lowest risk first**: runtime-on
 rebuild), then build rules in today's format (one rebuild), then the new format behind a flag.
 
 **Views file** for every stage's screenshots (`docs/plans/ground-views.json`, made in stage 0 from
-these places; bearings and tilts to be set by Shift+F3 in the game):
+these places; made in stage 0, each view checked by shooting it: see §10):
 Broad Quay (−1052,1663), Lower Bristol Road (−1138,1667), Rossiter Road (−726,1607), Wells Road
 bridge (−1243,1642), the viaduct (−994,1621) and its arches (−1019,1641), the footbridge (−710,1618),
 the river mouth (−701,1632), Bath Bottom Lock (−671,1638), Bath Deep Lock (−500,1610), Bath Top Lock
@@ -812,3 +813,151 @@ The state when this was written (6 November 2026):
   approval (memory). Run `cd web && npm run build` before any merge.
 - **Start with stage 0.** Nothing else should begin without its baselines, because every later
   gate compares against them.
+
+---
+
+## 10. Baselines, stage 0: walking and drawing
+
+Measured on 6 November 2026 on the packs in `web/public/maps` at `ad7d7c37` (the plan's commit on
+the fork's `main`), in headless Chrome on Dan's Mac (Metal). Every number below is from a run of the
+tools named, and comes back the same on the same build and maps (the walk was run twice on 1_2 and
+gave identical counts).
+
+### 10.1 What was built
+
+- **`tools/walk_probe.mjs`** (§6.2). It drives the real `player.ts` inside the page, a fixed step
+  at a time (60 a second), between frames, so nothing else in the game runs during a walk; the
+  traffic, naughty boys, cats and pickups are stopped and no vehicle is there to bump into. Each
+  way of the classes asked for (default footway, path, steps, cycleway, bridleway, pedestrian;
+  `--pavements` adds each kerbed street's pavements) whose middle is in the square is walked end to
+  end, steering 1.5 m ahead on its line, plus every way through a tunnel (the squares' `tn`, which
+  aren't in `rd`). Output per square, per class of way and per km, a JSON of every place, and the
+  worst 40 places a square as views for `tools/shoot.mjs`. `--trace k` logs one walk step by step.
+  A whole Bath square takes 3 to 10 seconds once built.
+- **Per-square counters** (§6.3): `web/src/debug.ts squareCounts` reads three.js's list of what the
+  main view drew last frame (shadows and the post passes not included) and splits it by square
+  (`tiles.ts` marks each square's group) and by class: ground (world.ts's "ground" part), faces
+  (the street, pavement and path faces), water (ponds, the river, weirs, streams), structures
+  (the rest of the roads part: bridges, kerb stone, steel; tunnels, set pieces, pitches) and other
+  (buildings, trees, furniture, and everything outside the squares). Each square also keeps its
+  build time on the main thread, split into the ground (up to world.ts's "ground" mark) and the
+  faces (from there to the "roads" mark). The debug panel (F3) shows them under Drawing,
+  `window.__squareCounts()` returns them, and `tools/shoot.mjs` now writes them into each shot's
+  entry in `shots.json`.
+- **`docs/plans/ground-views.json`**: the thirteen places of §7 as `?at=` views (east, north,
+  bearing, tilt, height), each chosen from four trial angles and shot to check it shows its
+  subject. Most look from 6 m up, 30 m off; St Mark's is the block with the "St. Mark's" sign.
+
+### 10.2 Why a probe's teleport was undone
+
+Not the arrival cover, the landing check or unstick: **the zones' wall** (`game.ts zoneUpkeep`).
+On a copy served from this computer the progression is on by default (`features.ts`: localhost
+counts as Dan's site), so the zones are on, and anyone more than 2 m outside the open zone is put
+straight back on clear ground inside it, on the next frame. A probe set down in the middle of
+Widcombe was back at (−408, 740) one frame later; with `?progression=0` it stayed put for 120
+frames. The walk probe loads with `?progression=0`, and does its walking between frames anyway.
+
+### 10.3 Walking: the twelve squares (eight of Bath, and four of the other maps)
+
+```sh
+cd web && npm run build && cd ..
+node tools/quiet.mjs -- node tools/walk_probe.mjs --tiles "1,2 0,2 1,3 1,1 0,3 -1,2 2,0 3,-2" --ways 0 --out walk-bath
+node tools/quiet.mjs -- node tools/walk_probe.mjs --map bradford-on-avon --tiles "1,1" --ways 0 --out walk-boa
+node tools/quiet.mjs -- node tools/walk_probe.mjs --map pembury --tiles "1,1" --ways 0 --out walk-hackney
+node tools/quiet.mjs -- node tools/walk_probe.mjs --map cape-town --tiles "2,2 1,3" --ways 0 --out walk-cape
+```
+
+(`tools/quiet.mjs` is a local, untracked wrapper that checks nothing took the audio device; the
+probe is muted on its own through `tools/quiet-guard.mjs` either way.)
+
+Per km walked (counts are places, except off line and off surface, which are metres):
+
+| map, square | walks | km | blocked | fell | through a wall | stuck | hopped | off line m | off surface m |
+|---|---|---|---|---|---|---|---|---|---|
+| Bath 1_2 Widcombe | 203 | 8.20 | 1.3 | 0.5 | 0 | 0.5 | 1.8 | 0.7 | 21.1 |
+| Bath 0_2 Broad Quay | 419 | 12.86 | 0.5 | 0 | 0 | 0.3 | 1.2 | 0 | 17.3 |
+| Bath 1_3 Sydney Gardens | 481 | 13.64 | 2.5 | 1.0 | 0 | 0.2 | 2.5 | 0.4 | 32.1 |
+| Bath 1_1 the village | 264 | 11.75 | 0.7 | 0.2 | 0 | 0.2 | 0.6 | 0 | 9.3 |
+| Bath 0_3 the centre | 799 | 20.65 | 2.3 | 0.2 | 0 | 0.8 | 4.2 | 0 | 19.7 |
+| Bath −1_2 densest | 212 | 7.71 | 0.5 | 0.4 | 0 | 0 | 1.9 | 0 | 18.4 |
+| Bath 2_0 Two Tunnels' south portal | 49 | 5.38 | 0 | 0 | 0 | 0 | 0.7 | 0 | 6.5 |
+| Bath 3_−2 sparse country | 3 | 0.71 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Bradford-on-Avon 1_1 | 230 | 9.74 | 0.2 | 0.1 | 0 | 0.3 | 1.1 | 0 | 14.1 |
+| Hackney (`pembury`) 1_1 | 605 | 18.29 | 0.7 | 0.2 | 0 | 0.3 | 3.5 | 0 | 6.6 |
+| Cape Town 2_2 | 534 | 20.48 | 2.9 | 0.8 | 0 | 1.9 | 1.2 | 6.0 | 33.9 |
+| Cape Town 1_3 | 357 | 12.13 | 1.3 | 0.5 | 0 | 0.2 | 2.1 | 1.1 | 15.8 |
+
+Raw totals for the Bath squares, as the gate for later stages: 1_2 blocked 11, fell 4, stuck 4,
+hopped 15, off line 6 m, off surface 173 m (146 over, 27 under); 0_2 7, 0, 4, 15, 0 m, 223 m (165,
+56); 1_3 34, 13, 3, 34, 5 m, 438 m (230, 203); 1_1 8, 2, 2, 7, 0 m, 109 m (84, 25); 0_3 48, 4, 17,
+86, 0 m, 407 m (332, 75); −1_2 4, 3, 0, 15, 0 m, 142 m (121, 21); 2_0 0, 0, 0, 4, 0 m, 35 m (33, 2).
+The Combe Down tunnel (1.2 km in 1_1, and its ends in 1_0 and 2_0) walks clean.
+
+What it says:
+- **Off surface is mostly the paths.** On every Bath square but 1_3, 58–94% of the off-surface
+  metres are the feet standing *over* the path mesh (path, grass, dirt, gravel), by 0.1 to 1.8 m:
+  §2.3's walk on a path face at `trueGround + 0.04` while the path is drawn on the drawn ground.
+  Stage 1a should take most of it away. In 1_3, 46% is the feet *under* the ground's mesh, most of
+  it round the canal, where the ground is cut away by its shader, which the probe's look down the
+  triangles can't see (so read 1_3's "under" with that in mind).
+- **Through a wall is 0 everywhere**: the collisions hold. It stays as a gate for stages that move
+  walls or change collision (the check was confirmed to see a building's wall at waist height).
+- **Blocked and stuck** cluster where a mapped footway runs into a building or a wall (a terrace,
+  a passage the buildings close): data, or a gap not cut. 0_3 and Cape Town 2_2 have the most.
+
+### 10.4 Drawing, at the views
+
+```sh
+cd web && npm run shoot -- ../docs/plans/ground-views.json --out ../shots/ground-views
+```
+
+From the menu's backdrop at 11:00, 1280 × 720, default draw distance; the main view only (all
+passes, with shadows, came to 532–824 draws and 1.85–3.06 M triangles). Draws / triangles:
+
+| view | main view in all | squares drawn | ground | faces | water | structures | other | the square it's in: all (ground, faces, water, structures) | its build ms: ground / faces / all |
+|---|---|---|---|---|---|---|---|---|---|
+| broad-quay | 634 / 2.25M | 10 | 27 / 439k | 32 / 620k | 20 / 7k | 78 / 121k | 477 / 1067k | 0_2: 130 / 393k (1/15k, 5/168k, 2/1k, 2/10k) | 260 / 207 / 740 |
+| lower-bristol-road | 506 / 2.18M | 11 | 18 / 282k | 24 / 414k | 13 / 6k | 70 / 115k | 381 / 1363k | 0_2: 202 / 708k (9/136k, 5/168k, 2/1k, 35/30k) | 260 / 207 / 740 |
+| rossiter-road | 561 / 2.41M | 11 | 28 / 437k | 34 / 651k | 14 / 6k | 58 / 89k | 427 / 1230k | 1_2: 163 / 353k (3/49k, 5/106k, 2/1k, 19/14k) | 288 / 109 / 524 |
+| wells-road-bridge | 596 / 2.54M | 10 | 29 / 465k | 30 / 659k | 19 / 8k | 123 / 147k | 395 / 1261k | 0_2: 148 / 504k (2/30k, 5/168k, 2/1k, 2/10k) | 260 / 207 / 740 |
+| viaduct | 619 / 2.48M | 10 | 27 / 439k | 32 / 634k | 19 / 9k | 136 / 160k | 405 / 1235k | 0_2: 128 / 417k (1/15k, 5/168k, 2/1k, 2/10k) | 260 / 207 / 740 |
+| viaduct-arches | 624 / 2.48M | 10 | 26 / 421k | 32 / 634k | 19 / 9k | 132 / 158k | 415 / 1255k | 0_2: 142 / 429k (1/15k, 5/168k, 2/1k, 2/10k) | 260 / 207 / 740 |
+| footbridge | 548 / 1.85M | 12 | 21 / 334k | 33 / 470k | 13 / 3k | 100 / 108k | 381 / 937k | 1_2: 187 / 565k (10/155k, 5/106k, 2/1k, 7/8k) | 288 / 109 / 524 |
+| river-mouth | 597 / 2.01M | 12 | 24 / 379k | 32 / 476k | 12 / 3k | 139 / 135k | 390 / 1013k | 1_2: 191 / 548k (9/140k, 5/106k, 2/1k, 7/8k) | 288 / 109 / 524 |
+| bath-bottom-lock | 592 / 2.46M | 10 | 28 / 435k | 32 / 638k | 14 / 6k | 72 / 91k | 446 / 1291k | 1_2: 172 / 416k (4/64k, 5/106k, 2/1k, 19/14k) | 288 / 109 / 524 |
+| bath-deep-lock | 531 / 2.01M | 11 | 36 / 577k | 34 / 395k | 17 / 3k | 26 / 52k | 418 / 982k | 1_2: 162 / 509k (7/109k, 5/106k, 2/1k, 2/5k) | 288 / 109 / 524 |
+| bath-top-lock | 679 / 2.36M | 13 | 36 / 578k | 34 / 523k | 13 / 3k | 119 / 120k | 477 / 1136k | 1_3: 171 / 536k (4/79k, 5/133k, 1/1k, 1/9k) | 203 / 144 / 495 |
+| sydney-gardens-tunnels | 690 / 2.52M | 13 | 33 / 533k | 40 / 686k | 16 / 5k | 103 / 105k | 498 / 1190k | 1_3: 223 / 700k (9/155k, 5/133k, 2/1k, 14/24k) | 203 / 144 / 495 |
+| st-marks-widcombe | 648 / 2.54M | 11 | 28 / 454k | 33 / 635k | 19 / 9k | 142 / 160k | 426 / 1279k | 1_2: 107 / 299k (2/34k, 5/106k, 2/1k, 18/12k) | 288 / 109 / 524 |
+
+What it says against §5:
+- **A square in full is 9–10 ground draws (the 9 tiles and the far mesh) and 5 face draws**, as §2.3
+  estimated; a square further off is 1 and 2. The faces are the biggest single class of triangles
+  in a full square (106–168k, as many as its ground's 136–155k). So the ground plus faces of the
+  squares in view are about 30 + 33 draws and 0.4 + 0.6 M triangles of a view's ~600 draws and
+  ~2.4 M: the stage-5 merge into one sheet mesh saves draws mostly within the square you stand in.
+- **"Other" is three quarters of the draws** (buildings, trees, furniture, the wide map and the
+  shared scenery outside the squares): the ground's work is not where the draw count is.
+- Build times are wall-clock milliseconds on the main thread on this Mac, for one load each, so
+  they vary by 10–20% run to run; compare them over a few loads.
+
+### 10.5 What turned out different from the plan
+
+- The teleport trap was the zones' wall (§10.2), not the arrival cover.
+- **Falls**: "more than 0.5 m in 0.3 s" counted walking down any path steeper than about 36% (4.6
+  m/s for 0.3 s is 1.4 m along): 26 in 150 walks of 1_2. The probe counts a fall as coming down
+  more than 0.5 m lower than where the feet left the ground instead.
+- **Tunnels aren't ways in `rd`**: a path through a tunnel is its own record in the square's `tn`,
+  so the probe walks those too. **Towpaths aren't a class at all**: the canal's towpath isn't in
+  any square's ways, so the probe can't walk it; locks and banks need §6.1's static checks.
+- **3_−2 isn't a fair "sparse country" square for walking**: 17 of its 20 ways reach past the force
+  field, where nobody can walk (the probe skips them). A square inside the field with farm tracks
+  would serve better.
+- **The Wells Road bridge** at (−1243, 1642) isn't on a bridge in the data: no deck is near it
+  (the nearest are Churchill Bridge's, at Broad Quay), and the railway viaduct runs 30 m north
+  without crossing a road there. Its view looks down on the spot from 20 m up with the viaduct
+  behind; Dan should say which bridge he meant.
+- **No queue needed**: the probe and the shots run locally in about a minute; `mac_build.sh
+  --shots` isn't needed for them.
+- **The off-surface check can't see the ground's shader cuts** (the canal's banks and locks, tunnel
+  mouths), so it overstates "under" there.

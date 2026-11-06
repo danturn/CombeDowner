@@ -2069,7 +2069,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
   }
   if (ponds.length) {
-    scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
+    const pondsMesh = new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat);
+    pondsMesh.userData.water = true;   // (for the debug panel's counts by kind: debug.ts)
+    scene.add(pondsMesh);
     if (ponds.length > 1) for (const g of ponds) g.dispose();
   }
   // a tank's, a pool's or a reservoir's concrete walls, wherever its water stands above the ground
@@ -2157,6 +2159,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       S.weirMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
       const m = new THREE.Mesh(geo, S.weirMat);
       m.receiveShadow = true;
+      m.userData.water = true;
       scene.add(m);
     }
   }

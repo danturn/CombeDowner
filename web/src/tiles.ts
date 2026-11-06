@@ -245,10 +245,19 @@ export class Tiles {
           continue;
         }
         if (!t.near) break;
-        if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
-        const s0 = performance.now(), r = t.job.next();
+        if (!t.job) {
+          t.group = new THREE.Group();
+          // (for the debug panel's counts by square: debug.ts squareCounts)
+          t.group.userData.square = [t.ti, t.tj];
+          t.group.userData.buildMs = {};
+          (globalThis as any).__wphase = "";
+          this.scene.add(t.group);
+          t.job = this.build(t.map!, t.group);
+        }
+        const part = (globalThis as any).__wphase as string, s0 = performance.now(), r = t.job.next();
         const buildMs = performance.now() - s0;
         stat(t, "build", buildMs);
+        if (t.group) t.group.userData.buildMs[part] = (t.group.userData.buildMs[part] ?? 0) + buildMs;
         // a long slice says which part of the square's scenery it was in (after world.ts's last mark)
         if (buildMs > 30) {
           const long: unknown[][] = ((globalThis as any).__longBuild ??= []);
