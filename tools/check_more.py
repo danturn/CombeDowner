@@ -991,7 +991,7 @@ def drawn_terrain(m, sheet):
     a path's. Returns the grid and the ground over it, as terrain() does."""
     T = m["t"]; nx, ny = T["nx"], T["ny"]
     H = np.array(T["h"], dtype=float).reshape(ny, nx) / 10 + T["z0"]
-    under, round_ = np.full(H.shape, np.inf), np.full(H.shape, np.inf)
+    under, round_, path_to = np.full(H.shape, np.inf), np.full(H.shape, np.inf), np.full(H.shape, np.inf)
     X, Y = np.meshgrid(T["x0"] + np.arange(nx) * T["dx"], T["y0"] + np.arange(ny) * T["dy"])
     ground = terrain(T)
     for r in m.get("rd") or []:
@@ -1035,15 +1035,16 @@ def drawn_terrain(m, sheet):
             tree = shapely.STRtree(sheet.polys[ids])
             pts = shapely.points(X.ravel(), Y.ravel())
             pi, ti = tree.query(pts, predicate="within")
-            covered = np.zeros(H.size, bool)
-            covered[pi] = True
             t = ids[ti]
             zz = sheet.z_on(t, X.ravel()[pi], Y.ravel()[pi])
             pave = sheet.K[t] == FACE_KINDS.index("pave")
             path = sheet.K[t] > FACE_KINDS.index("pave")
-            u, ro = under.ravel(), round_.ravel()
+            covered = np.zeros(H.size, bool)
+            covered[pi[~path]] = True
+            u, ro, pr = under.ravel(), round_.ravel(), path_to.ravel()
             np.minimum.at(ro, pi[pave], zz[pave] - 0.08)
             np.minimum.at(ro, pi[path], zz[path] - 0.02)
+            np.minimum.at(pr, pi[path], zz[path] - 0.02)
             np.minimum.at(u, pi[~pave & ~path], zz[~pave & ~path] - 0.3)
             reach = T["dx"] * 0.75
             free = np.nonzero(~covered)[0]
@@ -1055,13 +1056,17 @@ def drawn_terrain(m, sheet):
                 ez = sheet.z_on(ids[qt], ex, ey)
                 bump = np.where(sheet.K[ids[qt]] == FACE_KINDS.index("pave"), 0.14, np.where(sheet.K[ids[qt]] > FACE_KINDS.index("pave"), 0.02, 0.04))
                 np.minimum.at(ro, free[qi], ez + bump)
+                by_path = sheet.K[ids[qt]] > FACE_KINDS.index("pave")
+                np.minimum.at(pr, free[qi][by_path], (ez + bump)[by_path])
             cov = covered.reshape(H.shape)
             edge = cov & ~(np.pad(cov, 1, constant_values=True)[1:-1, :-2] & np.pad(cov, 1, constant_values=True)[1:-1, 2:]
                            & np.pad(cov, 1, constant_values=True)[:-2, 1:-1] & np.pad(cov, 1, constant_values=True)[2:, 1:-1])
-            under = u.reshape(H.shape); round_ = ro.reshape(H.shape)
+            under = u.reshape(H.shape); round_ = ro.reshape(H.shape); path_to = pr.reshape(H.shape)
             under[edge & np.isfinite(under)] += 0.2
     to = np.where(np.isfinite(under), under, round_)
-    sink = np.where(np.isfinite(to), np.maximum(np.where(np.isfinite(under), 0.0, -KERB_RAISE), H - to), 0.0)
+    # (world.ts PATH_FILL: beside a level path the ground is filled up to its edge where the path decides it)
+    raise_ = np.where(np.isfinite(under), 0.0, np.where(np.isfinite(path_to) & (round_ == path_to), 1.5, KERB_RAISE))
+    sink = np.where(np.isfinite(to), np.maximum(-raise_, H - to), 0.0)
     D = H - sink
     T2 = dict(T, h=((D - T["z0"]) * 10).ravel().tolist())
     return D, terrain(T2)

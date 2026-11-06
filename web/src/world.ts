@@ -533,7 +533,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // fall short in others, which showed as grass and hillside through the street
   const faced = !!D.sf && SURFACES;
   // (a square written with its paths level across draws them at their written height, not on the ground)
-  const levelPaths = faced && !!D.sf!.pl, PATH_UNDER = 0.02;
+  const levelPaths = faced && !!D.sf!.pl, PATH_UNDER = 0.02, PATH_FILL = 1.5;
   const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04];
   const nFaces = faced ? FACE_KINDS.reduce((t, kind) => t + Math.floor((D.sf![kind]?.length ?? 0) / 3), 0) : 0;
   const faceXYZ = new Float64Array(nFaces * 9), faceKind = new Uint8Array(nFaces);
@@ -567,6 +567,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const KERB_RAISE = 0.25;
   const underTo = new Float32Array(T.nx * T.ny).fill(Infinity), roundTo = new Float32Array(T.nx * T.ny).fill(Infinity);
   const covered = new Uint8Array(T.nx * T.ny);     // (a grid point under a carriageway face)
+  const pathTo = new Float32Array(T.nx * T.ny).fill(Infinity);    // (what a level path beside it asks of a grid point)
   const sinkUnder = (r: Road, reach: number, depth: number, hard: boolean) => {
     const own = reach;
     if (LEVEL) reach += T.dx * 0.75;
@@ -687,10 +688,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, v = j * T.nx + i;
       if (faceWeights(t, x, y) >= 0) {
-        if (path) roundTo[v] = Math.min(roundTo[v], faceZ(t) - PATH_UNDER);
+        if (path) { roundTo[v] = Math.min(roundTo[v], faceZ(t) - PATH_UNDER); pathTo[v] = Math.min(pathTo[v], faceZ(t) - PATH_UNDER); }
         else if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t) - 0.08);
         else underTo[v] = Math.min(underTo[v], faceZ(t) - 0.3);
-        covered[v] = 1;
+        if (!path) covered[v] = 1;
         continue;
       }
       // the face's height at its nearest edge, not its lowest corner: a long face down a hill would
@@ -705,12 +706,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       // (the grass comes up to just under the face's top, as a verge or a garden meets it, rather
       // than leaving a dark step down from a pavement's back or a lane's edge)
-      if (d2 < reach * reach) { roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : path ? 0.02 : 0.04)); continue; }
+      if (d2 < reach * reach) {
+        const to = near + (pave ? 0.14 : path ? PATH_UNDER : 0.04);
+        roundTo[v] = Math.min(roundTo[v], to);
+        if (path) pathTo[v] = Math.min(pathTo[v], to);
+        continue;
+      }
       // and further out, a corner of one of the ground's triangles over the face comes down only as far as
       // it must for that triangle to clear it: on a coarse grid a corner up a bank (under a bridge's
       // abutment, say) carried the grass over the pavement
       // (never below the face's edge, as a corner the triangle only just touches would otherwise go far down)
       if (pave && near + 0.14 < Math.min(T.h[v] / 10, roundTo[v])) { const to = Math.max(clearOf(o, i, j, 0.14), near + 0.14); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
+      if (path && near + PATH_UNDER < Math.min(T.h[v] / 10, roundTo[v])) { const to = Math.max(clearOf(o, i, j, PATH_UNDER), near + PATH_UNDER); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
     }
   }
   // the grid points just inside a face's edge are let down less, as the ground's triangles from them
@@ -725,7 +732,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // a pavement or a carriageway edge stands a kerb high above it, not a wall)
   if (LEVEL) for (let v = 0; v < sink.length; v++) {
     const to = underTo[v] < Infinity ? underTo[v] : roundTo[v];
-    if (to < Infinity) sink[v] = Math.max(faced && underTo[v] === Infinity ? -KERB_RAISE : 0, T.h[v] / 10 - to);
+    // (beside a level path the ground is filled up to its edge, as far as a bank would be, where the
+    // path is what decides the ground there: across a slope its lower edge would stand off the grass)
+    const raise = underTo[v] < Infinity ? 0 : roundTo[v] === pathTo[v] ? PATH_FILL : faced ? KERB_RAISE : 0;
+    if (to < Infinity) sink[v] = Math.max(-raise, T.h[v] / 10 - to);
   }
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
