@@ -14,6 +14,8 @@
 // of device, the model of its graphics chip as the browser names it, the frame rate and draw calls,
 // whether it was in safe graphics, and the draw distance the automatic settings chose and how far
 // they had to ease back.
+// In a multiplayer room it also says how the network treated the player (netcheck.ts): whether
+// the relays that find other players answered, who was found, and what routes a link could take.
 // Positions are only a coarse square (50 m) on the map, every half
 // minute, sent without the name. Everything extra is counted in memory and rides along with the
 // normal batches; the one-second look at what the player is doing is a timer, not part of the
@@ -251,6 +253,15 @@ export function watchRoom(look: () => { code: string; host: boolean; players: nu
       hashed(r.code).then((room) => { if (room) add("room", { room, players: r.players }); }).catch(() => {});
     } catch { /* never reaches the game */ }
   }, ROOM_POLL_MS);
+}
+
+/** Whether anything here is being sent (netcheck.ts skips its own work when not). */
+export const enabled = () => { init(); return on; };
+
+/** How the network treated this player in a room (netcheck.ts), under the room's scrambled code. */
+export function netReport(code: string, fields: Record<string, unknown>) {
+  if (!on) return;
+  hashed(code).then((room) => { if (room) add("net", { room, ...fields }); }).catch(() => {});
 }
 
 /** Something happened that is worth a tally (a shot with a weapon, a kill). Sent as totals. */

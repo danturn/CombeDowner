@@ -10,6 +10,7 @@ import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from 
 import { STREETS, controlsPage, ctl, ctlText, input, isKey, placeNow } from "./controls";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
+import { watchNet } from "./netcheck";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
@@ -356,6 +357,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   Telemetry.offerPicture(id, map.d.release, () => game?.mapPicture() ?? null);
   Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
+  watchNet(net, code);
   armTravel(game, code);
   watchRoom(code);
   playingCode = code;

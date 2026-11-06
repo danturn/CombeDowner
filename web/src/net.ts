@@ -56,6 +56,8 @@ export interface Net {
   linkStats(): Promise<LinkStats[]>;
   /** For the debug panel: how many of the relays used to find other players are connected (WebRTC rooms only). */
   relays(): { up: number; all: number } | null;
+  /** How many players this page tried and failed to link up with (telemetry, netcheck.ts). */
+  readonly joinFails: number;
   /** For the debug panel: when this page's game last changed, and when another player's did (undefined: they haven't said). */
   readonly build: number;
   buildOf(id: string): number | undefined;
@@ -110,7 +112,7 @@ export function freshReload(room?: string) {
 const TURN_URLS = (import.meta.env.VITE_TURN_URLS ?? "").split(",")
   .map((u: string) => u.trim().replace(/(:\d+)(transport=)/, "$1?$2"))
   .filter((u: string) => /^turns?:[^\s:?]+(:\d+)?(\?transport=(udp|tcp))?$/.test(u));
-const TURN = TURN_URLS.length
+export const TURN = TURN_URLS.length
   ? [{ urls: TURN_URLS, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }]
   : undefined;
 
@@ -134,6 +136,7 @@ class TrysteroNet implements Net {
   private room: Room;
   private actions = new Map<MessageType, MessageAction<any>>();
   private handlers = new Map<MessageType, Handler[]>();
+  joinFails = 0;
   private present = new Set<string>();
   private met = new Set<string>();                    // everyone who's ever been linked in this room
   private closed = false;
@@ -174,10 +177,17 @@ class TrysteroNet implements Net {
         if (d.peerId && (this.present.has(d.peerId) || this.met.has(d.peerId))) return;
         setTimeout(() => {
           if (this.closed || (d.peerId && (this.present.has(d.peerId) || this.met.has(d.peerId)))) return;
+          this.joinFails++;
           this.onError("Couldn't connect to a player. Their network may block direct connections.");
         }, 10000);
       },
     });
+    // none of the relays that find other players answering: say so, or everyone just plays alone
+    // in what looks like the same game (a work or school network that blocks them, often)
+    setTimeout(() => {
+      if (!this.closed && !this.present.size && this.relays().up === 0)
+        this.onError("Can't reach any of the servers that find other players: this network probably blocks them. Try another, such as a phone's hotspot.");
+    }, 12000);
     for (const t of MESSAGE_TYPES) {
       const a = this.room.makeAction<any>(t);
       a.onMessage = (data, ctx) => this.handlers.get(t)?.forEach((fn) => fn(data, ctx.peerId));
@@ -403,6 +413,7 @@ class LocalNet implements Net {
   addStream() {}
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
   leave() { this.post("_bye", null); this.closed = true; clearInterval(this.timer); this.ch.close(); }
+  readonly joinFails = 0;
   relays() { return null; }
   async linkStats() {
     return this.peers().map((id): LinkStats => ({ id, state: "connected", route: "tab", via: "", rtt: null, ping: null, jitter: null, held: null, packet: null, lost: null, got: null, bytesIn: 0, bytesOut: 0, micOut: null }));
