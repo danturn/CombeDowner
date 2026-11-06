@@ -53,7 +53,9 @@ case by case:
     are in different coverings or colours, or don't meet along it at the same eaves.
 12 on are in tools/check_more.py: buildings, ways joining up, square seams, water, small things,
     tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, whether
-    roofs are solid to stand on, and whether paths are whole as they're drawn.
+    roofs are solid to stand on, and whether paths are whole as they're drawn; and from 24, the
+    ground's measures (paths level across, faces meeting, bridges' ends and room under them, tunnels,
+    flights, locks' edges, land and water, fences on water and ways).
 """
 import functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
 import numpy as np

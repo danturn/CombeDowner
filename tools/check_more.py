@@ -50,6 +50,30 @@
     clashing with walls and buildings, and 13 a way inside a building (so a path
     under a roof is left to them); this counts the path itself coming apart.
 
+24-36 measure how far the ground is from one sheet (docs/plans/ground-architecture.md, section 6.1),
+from the packs alone, a few seconds a square:
+24. Paths, front paths and drives lie level across (the ground they're drawn on tilts no more than
+    2 degrees across the way's line).
+25. No tree, shrub or boulder stands in a path, drive or pavement.
+26. No face's edge stands more than 0.3 m off what is beside it (a wedge down a bank, a pavement
+    over a path).
+27. Faces meet: no strip of bare ground between a path and a street, no lump of ground between faces
+    of two kinds, no pavement that just stops with nothing across its end.
+28. A bridge's deck lands on the street at each end, not in the air or off the street's height.
+29. No parapet gap where three or more pieces of a bridge meet on its deck.
+30. No ground stands up through a deck.
+31. Room under a bridge: the ground half a metre under its underside, and headroom for a way or the
+    canal's towpath under the game's ceiling there.
+32. Tunnels as the game builds them (tools/tunnel_mesh.ts runs web/src/tunnels.ts): tubes meet where
+    pieces meet and go on over a square's edge; walls and floor are solid where they're drawn.
+33. Flights of steps land on something to walk on, and their treads are neither buried, nor standing
+    as blocks, nor out of reach of where you walk.
+34. A lock's edges: no canal water over its paving, no gap between its water and its gates, no works
+    bank over its paving.
+35. No land standing in a pond or river, no canal works in a river, no two touching waters at two levels.
+36. No wall, fence or hedge on water, the canal's banks, verges or a lock's paving, or along a path.
+`python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
+
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
 """
@@ -137,14 +161,14 @@ def trackclear(root, map_id):
 
 
 @functools.lru_cache(maxsize=4)
-def _railway_check(script, root, map_id):
+def _railway_check(script, root, map_id, canvas="({})"):
     here = os.path.dirname(os.path.abspath(__file__))
     web = os.path.join(os.path.dirname(here), "web")
     try:
         js = subprocess.run([os.path.join(web, "node_modules", ".bin", "esbuild"), "--bundle", "--platform=node", "--format=esm",
                              "--loader=ts", "--log-level=error",
                              "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"
-                             "globalThis.document={createElement:()=>({getContext:()=>new Proxy({},{get:()=>()=>({})})})};"],
+                             "globalThis.document={createElement:()=>({getContext:()=>new Proxy({},{get:()=>()=>" + canvas + "})})};"],
                             input=open(os.path.join(here, script)).read(), cwd=web, capture_output=True, text=True, check=True).stdout
         with tempfile.NamedTemporaryFile("w", suffix=".mjs") as f:
             f.write(js); f.flush()
@@ -367,6 +391,7 @@ def square(m, tag, note, f):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)
+    ground_measures(m, tag, note, f)
 
 
 def buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, ground, note, at, off_deck, pts):
@@ -830,3 +855,994 @@ def boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, a
         for k in rtree.query(hull):
             if marked[int(k)] and rlines[int(k)].intersects(hull):
                 note("18 moored boat under a bridge", 1, at(x, y), f"{roads[int(k)]['c']} {roads[int(k)]['n']!r}"); break
+
+
+# ---- 24 on: the ground's measures (docs/plans/ground-architecture.md, section 6.1) ----------------
+# Each reads the square's pack only and says how far today's ground is from one sheet. Where the game
+# changes the ground as a square loads (world.ts lets the grid down under street faces and brings the
+# grass up to meet them), drawn_terrain below follows it closely enough for these; the far pass that
+# lowers a grid corner only as far as a pavement face needs (world.ts clearOf) is left out, so a
+# few lumps beside pavements may read a little high.
+
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from partition.check_tile import interior_length    # (a line against a polygon is measured on its interior)
+from shapely.prepared import prep
+
+FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
+ON_GROUND = ("path", "front", "drive", "grass", "dirt", "gravel")    # drawn on the ground as it's drawn, not at their written height
+TILT = 2.0           # degrees across a path before it counts as tilted
+TALL_EDGE = 0.3      # metres a face's edge may stand over what is beside it
+KERB_RAISE = 0.25    # world.ts: the most the grass beside a face is brought up to meet it
+GAP = 0.02           # metres between a path and a street before it is a gap
+LUMP = 0.05          # metres the grass may be raised under a path beside a street face
+DECK_END = 0.1       # metres between a deck's end and the street it lands on
+DECK_CLEAR = 0.5     # metres under a deck with nothing passing
+DECK_DEPTH = 1.1     # map.ts: the ceiling under every deck, below its top
+HEAD = 1.9           # metres a walker needs under a ceiling (player.ts EYE 1.65, and the head over it)
+KINDS = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck depth
+FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
+GAME_KERBED = KERBED | {"living_street"}
+LANDING = (0.1, 0.05)   # metres off a walkable face, and up or down from it, that a flight's end may land
+STAIR_PITCH = 0.7       # furniture.ts: the steepest a flight's treads climb
+LOCK_HALF, COPE, APRON, TAIL = 2.15, 1.2, 4.5, 2.2   # canal.ts
+LEVELS_AGREE = 0.03     # metres two touching waters may differ
+FENCE_IN = 0.3          # metres of a wall, fence or hedge inside water or a way before it counts
+
+
+def _road_half(c, w=None):
+    return w / 2 if w else {"trunk": 9, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
+                            "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 6, "footway": 1.6, "steps": 1.8,
+                            "cycleway": 2, "path": 1.4, "track": 2.8, "bridleway": 2}.get(c, 4) / 2
+
+
+def _deck_sides(r):
+    """map.ts deckSides: how far a bridge's deck reaches left and right of its line."""
+    dk = r.get("dk")
+    if isinstance(dk, list): return (dk[0], dk[1]) if len(dk) == 2 else (max(dk), max(dk))
+    if dk: return dk, dk
+    kerbed = r["c"] in GAME_KERBED
+    pave = max([0, *(r.get("pv") or [1.7, 1.7])]) if kerbed else (0 if r.get("w") else 0.3)
+    h = max(_road_half(r["c"]) + (1.7 if kerbed else 0.3), _road_half(r["c"], r.get("w")) + pave)
+    return h, h
+
+
+class Sheet:
+    """A square's street faces as drawn: corners, triangles, each triangle's kind, and the outlines."""
+    def __init__(self, m):
+        sf = m.get("sf") or {}
+        self.ok = bool(sf.get("o"))
+        if not self.ok: return
+        cm = np.cumsum(np.asarray(sf["v"], np.int64).reshape(-1, 3), axis=0)
+        self.cm = cm
+        self.V = cm / 100 + [sf["o"][0], sf["o"][1], 0]
+        self.level = bool(sf.get("pl"))     # (paths written level, to be drawn at their written height)
+        tris, kinds = [], []
+        for n, k in enumerate(FACE_KINDS):
+            if not sf.get(k): continue
+            t = np.cumsum(np.asarray(sf[k], np.int64)).reshape(-1, 3)
+            tris.append(t); kinds.append(np.full(len(t), n))
+        self.T = np.concatenate(tris) if tris else np.zeros((0, 3), np.int64)
+        self.K = np.concatenate(kinds) if kinds else np.zeros(0, int)
+        A, B, C = self.V[self.T[:, 0]], self.V[self.T[:, 1]], self.V[self.T[:, 2]]
+        self.A, self.B, self.C = A, B, C
+        self.polys = shapely.polygons(np.stack([A[:, :2], B[:, :2], C[:, :2]], axis=1))
+        self.tree = shapely.STRtree(self.polys)
+        self.edges = [(e["c"] if e["c"] in FACE_LIFT else "road", np.cumsum(np.asarray(e["i"], np.int64))) for e in sf.get("e") or []]
+        self.left = bool(sf.get("l"))
+
+    def kind_mask(self, kinds):
+        return np.isin(self.K, [FACE_KINDS.index(k) for k in kinds])
+
+    def union(self, kinds):
+        sel = self.kind_mask(kinds)
+        p = self.polys[sel]
+        p = p[shapely.area(p) > 1e-6]
+        return shapely.union_all(shapely.make_valid(p)) if len(p) else Polygon()
+
+    def hit(self, x, y, kinds=None):
+        """For each point, the triangle under it (-1 for none) and the plane's height there."""
+        x, y = np.atleast_1d(np.asarray(x, float)), np.atleast_1d(np.asarray(y, float))
+        out, z = np.full(len(x), -1), np.full(len(x), np.nan)
+        pi, ti = self.tree.query(shapely.points(np.stack([x, y], axis=1)), predicate="intersects")
+        if kinds is not None:
+            keep = self.kind_mask(kinds)[ti]
+            pi, ti = pi[keep], ti[keep]
+        a, b, c = self.A[ti], self.B[ti], self.C[ti]
+        d = (b[:, 1] - c[:, 1]) * (a[:, 0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (a[:, 1] - c[:, 1])
+        d = np.where(np.abs(d) < 1e-9, 1e-9, d)
+        l1 = ((b[:, 1] - c[:, 1]) * (x[pi] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (y[pi] - c[:, 1])) / d
+        l2 = ((c[:, 1] - a[:, 1]) * (x[pi] - c[:, 0]) + (a[:, 0] - c[:, 0]) * (y[pi] - c[:, 1])) / d
+        out[pi] = ti
+        z[pi] = l1 * a[:, 2] + l2 * b[:, 2] + (1 - l1 - l2) * c[:, 2]
+        return out, z
+
+    def z_on(self, t, x, y):
+        """The height of triangle t's plane over each (x, y)."""
+        a, b, c = self.A[t], self.B[t], self.C[t]
+        d = (b[:, 1] - c[:, 1]) * (a[:, 0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (a[:, 1] - c[:, 1])
+        d = np.where(np.abs(d) < 1e-9, 1e-9, d)
+        l1 = ((b[:, 1] - c[:, 1]) * (x - c[:, 0]) + (c[:, 0] - b[:, 0]) * (y - c[:, 1])) / d
+        l2 = ((c[:, 1] - a[:, 1]) * (x - c[:, 0]) + (a[:, 0] - c[:, 0]) * (y - c[:, 1])) / d
+        return l1 * a[:, 2] + l2 * b[:, 2] + (1 - l1 - l2) * c[:, 2]
+
+    def top(self, x, y, drawn):
+        """The height the game draws at each point: a street face's written height and lift, a path's
+        drawn ground and lift, else the drawn ground; and the kind there (None off the faces)."""
+        ti, z = self.hit(x, y)
+        g = drawn(x, y)
+        out = np.asarray(g, float).copy()
+        kinds = np.full(len(out), None, object)
+        on = ti >= 0
+        for n, k in enumerate(FACE_KINDS):
+            s = on & (self.K[np.maximum(ti, 0)] == n)
+            if not s.any(): continue
+            kinds[s] = k
+            out[s] = (g[s] if k in ON_GROUND and not self.level else z[s]) + FACE_LIFT[k]
+        return out, kinds
+
+
+def drawn_terrain(m, sheet):
+    """The ground as world.ts draws it under and beside the street faces: let down under a carriageway
+    (0.3 m, less at its edge) and a pavement (0.08 m), brought to just under a face's edge within
+    three quarters of a cell of it (up by KERB_RAISE at most), and let down under a bridge that isn't
+    a path's. Returns the grid and the ground over it, as terrain() does."""
+    T = m["t"]; nx, ny = T["nx"], T["ny"]
+    H = np.array(T["h"], dtype=float).reshape(ny, nx) / 10 + T["z0"]
+    under, round_ = np.full(H.shape, np.inf), np.full(H.shape, np.inf)
+    X, Y = np.meshgrid(T["x0"] + np.arange(nx) * T["dx"], T["y0"] + np.arange(ny) * T["dy"])
+    ground = terrain(T)
+    for r in m.get("rd") or []:
+        p = r["p"]
+        if r["c"] in PATHS or len(p) < 2 or not any(len(q) > 3 and q[3] in (1, 2) for q in p): continue
+        reach = _road_half(r["c"], r.get("w")) + 0.5
+        ln = LineString([q[:2] for q in p])
+        x0, y0, x1, y1 = ln.bounds
+        sel = (X > x0 - reach) & (X < x1 + reach) & (Y > y0 - reach) & (Y < y1 + reach)
+        if not sel.any(): continue
+        pts = shapely.points(X[sel], Y[sel])
+        d = shapely.distance(pts, ln)
+        near = d < reach
+        if not near.any(): continue
+        foot = shapely.line_interpolate_point(ln, shapely.line_locate_point(ln, pts[near]))
+        hc = ground(shapely.get_x(foot), shapely.get_y(foot)) - 0.3
+        idx = np.argwhere(sel)[near]
+        under[idx[:, 0], idx[:, 1]] = np.minimum(under[idx[:, 0], idx[:, 1]], hc)
+    if sheet.ok:
+        streets = sheet.kind_mask(("road", "service", "pave"))
+        if streets.any():
+            ids = np.nonzero(streets)[0]
+            tree = shapely.STRtree(sheet.polys[ids])
+            pts = shapely.points(X.ravel(), Y.ravel())
+            pi, ti = tree.query(pts, predicate="within")
+            covered = np.zeros(H.size, bool)
+            covered[pi] = True
+            t = ids[ti]
+            zz = sheet.z_on(t, X.ravel()[pi], Y.ravel()[pi])
+            pave = sheet.K[t] == FACE_KINDS.index("pave")
+            u, ro = under.ravel(), round_.ravel()
+            np.minimum.at(ro, pi[pave], zz[pave] - 0.08)
+            np.minimum.at(u, pi[~pave], zz[~pave] - 0.3)
+            reach = T["dx"] * 0.75
+            free = np.nonzero(~covered)[0]
+            qi, qt = tree.query_nearest(pts[free], max_distance=reach, all_matches=False)
+            if len(qi):
+                tri = sheet.polys[ids[qt]]
+                at = shapely.shortest_line(pts[free[qi]], shapely.boundary(tri))
+                ex, ey = shapely.get_coordinates(shapely.get_point(at, 1)).T
+                ez = sheet.z_on(ids[qt], ex, ey)
+                bump = np.where(sheet.K[ids[qt]] == FACE_KINDS.index("pave"), 0.14, 0.04)
+                np.minimum.at(ro, free[qi], ez + bump)
+            cov = covered.reshape(H.shape)
+            edge = cov & ~(np.pad(cov, 1, constant_values=True)[1:-1, :-2] & np.pad(cov, 1, constant_values=True)[1:-1, 2:]
+                           & np.pad(cov, 1, constant_values=True)[:-2, 1:-1] & np.pad(cov, 1, constant_values=True)[2:, 1:-1])
+            under = u.reshape(H.shape); round_ = ro.reshape(H.shape)
+            under[edge & np.isfinite(under)] += 0.2
+    to = np.where(np.isfinite(under), under, round_)
+    sink = np.where(np.isfinite(to), np.maximum(np.where(np.isfinite(under), 0.0, -KERB_RAISE), H - to), 0.0)
+    D = H - sink
+    T2 = dict(T, h=((D - T["z0"]) * 10).ravel().tolist())
+    return D, terrain(T2)
+
+
+def _gradient(T):
+    """The slope of the game's ground triangle under each point, east and north."""
+    nx, ny = T["nx"], T["ny"]
+    H = np.array(T["h"], dtype=float).reshape(ny, nx) / 10
+
+    def grad(x, y):
+        fi, fj = (x - T["x0"]) / T["dx"], (y - T["y0"]) / T["dy"]
+        i, j = np.clip(np.floor(fi).astype(int), 0, nx - 2), np.clip(np.floor(fj).astype(int), 0, ny - 2)
+        u, v = fi - i, fj - j
+        a, b, c, d = H[j, i], H[j, i + 1], H[j + 1, i], H[j + 1, i + 1]
+        low = u + v <= 1
+        return np.where(low, b - a, d - c) / T["dx"], np.where(low, c - a, d - b) / T["dy"]
+    return grad
+
+
+def _tri_samples(A, B, C, step=0.7):
+    """Points spread evenly over each triangle, each with the area it stands for and its triangle."""
+    area = 0.5 * np.abs((B[:, 0] - A[:, 0]) * (C[:, 1] - A[:, 1]) - (C[:, 0] - A[:, 0]) * (B[:, 1] - A[:, 1]))
+    n = np.clip(np.ceil(np.sqrt(2 * area) / step), 1, 40).astype(int)
+    xs, ws, ids = [], [], []
+    for k in np.unique(n):
+        sel = np.nonzero(n == k)[0]
+        bc = [((i + 1 / 3) / k, (j + 1 / 3) / k) for i in range(k) for j in range(k - i)]
+        bc += [((i + 2 / 3) / k, (j + 2 / 3) / k) for i in range(k) for j in range(k - i - 1)]
+        bc = np.asarray(bc)
+        P = A[sel, None, :2] + bc[None, :, :1] * (B - A)[sel, None, :2] + bc[None, :, 1:] * (C - A)[sel, None, :2]
+        xs.append(P.reshape(-1, 2)); ws.append(np.repeat(area[sel] / len(bc), len(bc))); ids.append(np.repeat(sel, len(bc)))
+    if not xs: return np.zeros((0, 2)), np.zeros(0), np.zeros(0, int)
+    return np.concatenate(xs), np.concatenate(ws), np.concatenate(ids)
+
+
+def _segments(lines):
+    """Each line's pieces, with the line each came from."""
+    segs, owner = [], []
+    for k, p in enumerate(lines):
+        for a, b in zip(p, p[1:]):
+            if math.dist(a[:2], b[:2]) > 1e-3: segs.append(LineString([a[:2], b[:2]])); owner.append(k)
+    return segs, np.asarray(owner, int)
+
+
+def path_tilt(m, sheet, off_deck, note, at, inner, fig):
+    """24. Paths, front paths and drives lie level across: the ground they're drawn on, measured across
+    the way's line (the nearest way's direction), tilts by more than TILT. A way's score is the
+    length of it tilted (the tilted area over its width)."""
+    kinds = ("path", "grass", "dirt", "gravel", "front", "drive")
+    sel = sheet.kind_mask(kinds)
+    if not sel.any(): return
+    xy, w, ti = _tri_samples(sheet.A[sel], sheet.B[sel], sheet.C[sel])
+    tk = sheet.K[np.nonzero(sel)[0]][ti]
+    keep = off_deck(shapely.points(xy)) & shapely.contains_xy(inner, xy[:, 0], xy[:, 1])
+    xy, w, ti, tk = xy[keep], w[keep], ti[keep], tk[keep]
+    roads = [r for r in m.get("rd") or [] if r["c"] in PATHS and len(r["p"]) > 1]
+    groups = {"path": [r["p"] for r in roads], "front": [[q[:2], q[2:4]] for q in m.get("fp") or []],
+              "drive": [[q[:2], q[2:4]] for q in m.get("dv") or []]}
+    labels = {"path": [(r["c"], r.get("n") or "", r.get("w") or 2 * _road_half(r["c"])) for r in roads],
+              "front": [("front path", "", 1.2)] * len(groups["front"]), "drive": [("drive", "", 3.0)] * len(groups["drive"])}
+    if sheet.level:
+        a, b, c = sheet.A[sel][ti], sheet.B[sel][ti], sheet.C[sel][ti]
+        d = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (c[:, 0] - a[:, 0]) * (b[:, 1] - a[:, 1])
+        d = np.where(np.abs(d) < 1e-9, 1e-9, d)
+        gx = ((b[:, 2] - a[:, 2]) * (c[:, 1] - a[:, 1]) - (c[:, 2] - a[:, 2]) * (b[:, 1] - a[:, 1])) / d
+        gy = ((c[:, 2] - a[:, 2]) * (b[:, 0] - a[:, 0]) - (b[:, 2] - a[:, 2]) * (c[:, 0] - a[:, 0])) / d
+    else:
+        gx, gy = _gradient(m["t"])(xy[:, 0], xy[:, 1])
+    deg = np.full(len(xy), np.nan)
+    owner_of = np.full(len(xy), -1)
+    group_of = np.full(len(xy), "", object)
+    for g, mine in (("path", ("path", "grass", "dirt", "gravel")), ("front", ("front",)), ("drive", ("drive",))):
+        s = np.isin(tk, [FACE_KINDS.index(k) for k in mine])
+        lines = groups[g] or groups["path"]
+        lab = labels[g] if groups[g] else labels["path"]
+        if not s.any() or not lines: continue
+        segs, owner = _segments(lines)
+        if not segs: continue
+        tree = shapely.STRtree(segs)
+        pi, si = tree.query_nearest(shapely.points(xy[s]), all_matches=False)
+        ends = shapely.get_coordinates(np.asarray(segs, object)[si]).reshape(-1, 2, 2)
+        dv = ends[:, 1] - ends[:, 0]
+        nrm = np.stack([-dv[:, 1], dv[:, 0]], 1) / np.hypot(dv[:, 0], dv[:, 1])[:, None]
+        idx = np.nonzero(s)[0][pi]
+        deg[idx] = np.degrees(np.arctan(np.abs(gx[idx] * nrm[:, 0] + gy[idx] * nrm[:, 1])))
+        owner_of[idx] = owner[si]
+        group_of[idx] = g
+        steps = np.asarray([lab[o][0] == "steps" for o in owner[si]])
+        deg[idx[steps]] = np.nan        # (a flight's treads are level whatever the ground)
+    ok = ~np.isnan(deg)
+    fig["path m2"] = fig.get("path m2", 0) + float(w[ok].sum())
+    for t in (2, 5, 10):
+        fig[f"path tilted >{t} deg m2"] = fig.get(f"path tilted >{t} deg m2", 0) + float(w[ok & (deg > t)].sum())
+    bad = ok & (deg > TILT)
+    for g in ("path", "front", "drive"):
+        lab = labels[g] if groups[g] else labels["path"]
+        s = bad & (group_of == g)
+        if not s.any(): continue
+        for o in np.unique(owner_of[s]):
+            k = s & (owner_of == o)
+            c, n, width = lab[o]
+            length = float(w[k].sum()) / width
+            if length < 5: continue
+            j = np.nonzero(k)[0][np.argmax(deg[k])]
+            note("24 path tilted sideways", length, at(*xy[j]), f"{c} {n!r} {length:.0f} m over {TILT:g} degrees across, up to {deg[j]:.0f}")
+
+
+def things_in_paths(m, sheet, note, at, inner, fig):
+    """25. Nothing stands up through a path: no tree's trunk, shrub or boulder inside a path's, drive's
+    or pavement's face (what the game draws over a path, the ground or a deck, is rule 23's, in the
+    drawn scene)."""
+    walk = sheet.union(("path", "grass", "dirt", "gravel", "front", "drive", "pave"))
+    if walk.is_empty: return
+    walk = walk.buffer(-0.2)
+    if walk.is_empty: return
+    walk = prep(walk)
+    n = 0
+    for key, what in (("tr", "tree"), ("sb", "shrub"), ("rk", "boulder")):
+        for q in m.get(key) or []:
+            p = Point(q[0], q[1])
+            if inner.contains(p) and walk.contains(p):
+                n += 1
+                note("25 tree, shrub or boulder in a path", 1, at(q[0], q[1]), what)
+    fig["things in paths"] = fig.get("things in paths", 0) + n
+
+
+def face_edges(m, sheet, drawn, note, at, inner, fig):
+    """26. A face's edge stands no more than TALL_EDGE over what is beside it: the side face the game
+    draws down from a free edge to the drawn ground (a wedge down a bank), or up from a lower face
+    it shares the edge with (a pavement over a path). A place is one outline, its score the length
+    of edge over TALL_EDGE."""
+    if not sheet.edges: return
+    V, cm = sheet.V, sheet.cm
+    NP = len(V)
+    spot = {}
+    sp = np.empty(NP, np.int64)
+    for i, (x, y) in enumerate(map(tuple, cm[:, :2].tolist())):
+        sp[i] = spot.setdefault((x, y), i)
+    g = drawn(V[:, 0], V[:, 1])
+    tops = {k: (g if k in ON_GROUND and not sheet.level else V[:, 2]) + FACE_LIFT[k] for k in FACE_LIFT}
+    owner = {}
+    for kind, idx in sheet.edges:
+        for a, b in zip(idx[:-1], idx[1:]): owner[(sp[a], sp[b])] = (kind, a, b)
+    total = {}
+    for kind, idx in sheet.edges:
+        top = tops[kind]
+        length, worst, where = 0.0, 0.0, None
+        for a, b in zip(idx[:-1], idx[1:]):
+            l = math.dist(V[a, :2], V[b, :2])
+            if l < 1e-3: continue
+            other = owner.get((sp[b], sp[a]))
+            if other:
+                ok, oa, ob = other
+                h = max(top[a] - tops[ok][ob], top[b] - tops[ok][oa])
+                if h < 0.02: continue
+            else:
+                # (the side face runs down to the drawn ground at the corner, which is the ground
+                # beside the edge there)
+                h = max(top[a] - g[a], top[b] - g[b])
+            if h > TALL_EDGE:
+                mid = Point((V[a, 0] + V[b, 0]) / 2, (V[a, 1] + V[b, 1]) / 2)
+                if not inner.contains(mid): continue
+                length += l
+                if h > worst: worst, where = h, mid
+        if length >= 1.0:
+            total[kind] = total.get(kind, 0) + length
+            note("26 face edge standing off the ground", length, at(where.x, where.y), f"{kind} {length:.1f} m over {TALL_EDGE:g} m, up to {worst:.1f} m")
+    for k, v in total.items(): fig[f"tall edge m ({k})"] = fig.get(f"tall edge m ({k})", 0) + v
+
+
+def face_joins(m, sheet, D, drawn, note, at, inner, fig):
+    """27. Where faces meet, they meet: (a) no gap between a path and a street face that it runs up to:
+    no strip of bare ground wider than GAP within 0.3 m of both; (b) no lump: a corner of the ground as it's
+    drawn, within a metre of faces of two kinds (street, pavement, path), standing more than LUMP over
+    both; (c) a pavement doesn't just
+    stop across its width with nothing there (no face, building, wall or fence)."""
+    paths = sheet.union(("path", "grass", "dirt", "gravel", "front", "drive"))
+    streets = sheet.union(("road", "service", "pave"))
+    if not paths.is_empty and not streets.is_empty:
+        # (the uncovered ground lying within 0.3 m of both, wider than GAP: a strip of grass between them)
+        allf = sheet.union(FACE_KINDS)
+        gaps = paths.buffer(0.15).intersection(streets.buffer(0.15)).difference(allf).intersection(inner)
+        by_street, by_path = streets.buffer(0.03), paths.buffer(0.03)
+        shapely.prepare(by_street); shapely.prepare(by_path)
+        tot = 0.0
+        for gp in getattr(gaps, "geoms", [gaps]):
+            if gp.geom_type != "Polygon" or gp.buffer(-GAP / 2).is_empty: continue
+            # (its length is how far it runs along both: a strip beside one only, past a thin strip
+            # of the other, is no gap between them)
+            if not (by_street.intersects(gp) and by_path.intersects(gp)): continue
+            length = min(gp.boundary.intersection(by_street).length, gp.boundary.intersection(by_path).length, gp.length / 2)
+            if length < 0.5: continue
+            tot += length
+            c = gp.representative_point()
+            note("27 gap between a path and a street", length, at(c.x, c.y), f"{length:.1f} m long, {gp.area:.2f} m2")
+        fig["path-street gap m"] = fig.get("path-street gap m", 0) + tot
+    T = m["t"]
+    X, Y = np.meshgrid(T["x0"] + np.arange(T["nx"]) * T["dx"], T["y0"] + np.arange(T["ny"]) * T["dy"])
+    X, Y, Z = X.ravel(), Y.ravel(), D.ravel()
+    pts = shapely.points(X, Y)
+    free = np.ones(len(X), bool)
+    free[sheet.tree.query(pts, predicate="intersects")[0]] = False
+    free &= shapely.contains_xy(inner, X, Y)
+    tops = []
+    for kinds in (("road", "service"), ("pave",), ON_GROUND):
+        ids = np.nonzero(sheet.kind_mask(kinds))[0]
+        top = np.full(len(X), np.nan)
+        if len(ids):
+            qi, qt = shapely.STRtree(sheet.polys[ids]).query_nearest(pts[free], max_distance=1.0, all_matches=False)
+            k = np.nonzero(free)[0][qi]
+            ex, ey = shapely.get_coordinates(shapely.get_point(shapely.shortest_line(pts[k], sheet.polys[ids[qt]]), 1)).T
+            if kinds is ON_GROUND and not sheet.level: top[k] = drawn(ex, ey) + 0.04
+            else: top[k] = sheet.z_on(ids[qt], ex, ey) + FACE_LIFT[kinds[0]]
+        tops.append(top)
+    tops = np.stack(tops)
+    near = (~np.isnan(tops)).sum(0) >= 2
+    with np.errstate(invalid="ignore"):
+        lump = near & (Z > np.nanmax(np.where(near, tops, -np.inf), axis=0) + LUMP)
+    for k in np.nonzero(lump)[0]:
+        up = float(Z[k] - np.nanmax(tops[:, k]))
+        note("27 lump between faces", up, at(X[k], Y[k]), f"the ground {up:.2f} m over the faces either side")
+    fig["lumps between faces"] = fig.get("lumps between faces", 0) + int(lump.sum())
+    pave = sheet.union(("pave",))
+    if pave.is_empty: return
+    others = sheet.union(tuple(k for k in FACE_KINDS if k != "pave"))
+    stops = [LineString([q[:2] for q in b["p"]]) for b in m.get("br") or [] if len(b["p"]) > 1]
+    stops += [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+    # (a deck is drawn by the bridge, not as faces: a pavement running on to one has something there)
+    decks = [LineString([q[:2] for q in r["p"]]).buffer(max(_deck_sides(r)) + 1) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
+    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks)
+    kerbed = [LineString([q[:2] for q in r["p"]]) for r in m.get("rd") or [] if r["c"] in GAME_KERBED and len(r["p"]) > 1]
+    if not kerbed: return
+    ktree = shapely.STRtree(kerbed)
+    n = 0
+    for gp in getattr(pave, "geoms", [pave]):
+        if gp.geom_type != "Polygon": continue
+        q = np.asarray(gp.exterior.simplify(0.05).coords)
+        for a, b in zip(q[:-1], q[1:]):
+            l = math.dist(a, b)
+            if l < 0.8 or l > 6: continue
+            seg = LineString([a, b])
+            mid = seg.interpolate(0.5, normalized=True)
+            if not inner.contains(mid) or stopped.contains(mid): continue
+            r = kerbed[int(ktree.nearest(mid))]
+            s = r.project(mid)
+            p0, p1 = r.interpolate(max(0, s - 1)), r.interpolate(min(r.length, s + 1))
+            dx, dy = p1.x - p0.x, p1.y - p0.y
+            dl = math.hypot(dx, dy) or 1
+            across = abs((b[0] - a[0]) * dx + (b[1] - a[1]) * dy) / (l * dl)
+            if across > 0.4 or r.distance(mid) > 12: continue
+            n += 1
+            note("27 pavement just stops", l, at(mid.x, mid.y), f"{l:.1f} m wide, nothing across its end")
+    fig["pavement ends"] = fig.get("pavement ends", 0) + n
+
+
+def _flags(r):
+    return [q[3] if len(q) > 3 and q[3] in (1, 2) else 0 for q in r["p"]]
+
+
+def _spans(flags, structural=True):
+    """map.ts bridgeSpans: from the point before a bridge's run of points to the point after."""
+    n, out, i = len(flags), [], 0
+    on = [f == 1 if structural else f > 0 for f in flags]
+    while i < n:
+        if not on[i]: i += 1; continue
+        j = i
+        while j + 1 < n and on[j + 1]: j += 1
+        a, b = max(0, i - 1), min(n - 1, j + 1)
+        if b > a: out.append((a, b))
+        i = j + 1
+    return out
+
+
+def join_spans(roads):
+    """world.ts joinSpans: a bridge's pieces joined end to end where exactly two meet on the span, or
+    where a junction on the deck carries the same street on nearly straight. Returns the joined
+    lines, and for each place on a deck where three or more pieces meet, the pieces there."""
+    lst = [r for r in roads if len(r["p"]) > 1 and any(_flags(r))]
+    key = lambda q: (round(q[0] * 3), round(q[1] * 3))
+    ends = {}
+    for i, r in enumerate(lst):
+        for q in (r["p"][0], r["p"][-1]): ends.setdefault(key(q), []).append(i)
+
+    def leaving(r, q):
+        p = r["p"]
+        A, B = (p[0], p[1]) if key(p[0]) == key(q) else (p[-1], p[-2])
+        l = math.dist(A[:2], B[:2]) or 1
+        return ((B[0] - A[0]) / l, (B[1] - A[1]) / l)
+
+    def onward(i, q):
+        e = ends.get(key(q)) or []
+        if len(e) < 2 or (q[3] if len(q) > 3 else 0) != 1: return None
+        if len(e) == 2:
+            j = e[1] if e[0] == i else e[0]
+            return None if j == i else j
+        a, da, best, most = lst[i], leaving(lst[i], q), None, math.cos(math.pi / 5)
+        for j in e:
+            b = lst[j]
+            if j == i or ((a["n"] != b["n"]) if (a["n"] or b["n"]) else a["c"] != b["c"]): continue
+            db = leaving(b, q)
+            s = -(da[0] * db[0] + da[1] * db[1])
+            if s > most: most, best = s, j
+        return best
+
+    def nxt(i, q):
+        j = onward(i, q)
+        return j if j is not None and onward(j, q) == i else None
+
+    used, out = set(), []
+
+    def chain(start):
+        r0 = lst[start]
+        fwd0 = nxt(start, r0["p"][0]) is None
+        pts, i, pieces = list(r0["p"] if fwd0 else r0["p"][::-1]), start, [r0]
+        used.add(start)
+        while True:
+            j = nxt(i, pts[-1])
+            if j is None or j in used: break
+            q = lst[j]["p"]
+            pts += (q if key(q[0]) == key(pts[-1]) else q[::-1])[1:]
+            pieces.append(lst[j]); used.add(j); i = j
+        main = max(pieces, key=lambda r: LineString([q[:2] for q in r["p"]]).length)
+        out.append(dict(main, p=pts, pieces=pieces))
+
+    for i, r in enumerate(lst):
+        if i not in used and (nxt(i, r["p"][0]) is None or nxt(i, r["p"][-1]) is None): chain(i)
+    for i in range(len(lst)):
+        if i not in used: chain(i)
+    joints = [(k, [lst[i] for i in e]) for k, e in ends.items() if len(e) >= 3
+              and any((q[3] if len(q) > 3 else 0) == 1 for i in e for q in (lst[i]["p"][0], lst[i]["p"][-1]) if key(q) == k)]
+    return out, joints
+
+
+def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
+    """28-31. Bridges, joined as the game joins them (world.ts joinSpans), with each kind's deck
+    (world.ts KINDS) under its top:
+    28. a deck's end lands on the street it meets: it doesn't stop in the air (falling off its last
+        point, world.ts offTheEnd, or ending on its span with nothing going on, here or in the next
+        square), and where it lands its floor is within DECK_END of the face or ground there;
+    29. where three or more pieces meet on a deck, only the straightest two are joined, and the
+        parapets of the others stop there with a gap;
+    30. no ground stands up through a deck's floor between its abutments (ground into the deck's
+        underside, hidden in the slab, is counted in the figures only);
+    31. room under a bridge: the ground under a span's middle stays DECK_CLEAR under its underside,
+        and a way passing under has HEAD under the game's flat ceiling there (map.ts ceiling, the
+        deck's top less DECK_DEPTH), the canal's towpath included."""
+    roads = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
+    pieces = [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
+    held = lambda x, y: any(p.contains(Point(x, y)) for p in pieces)
+    chains, joints = join_spans(roads)
+    x0, y0, x1, y1 = m["b"]
+    seam = lambda q: min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) < 0.6
+    for k, rs in joints:
+        x, y = k[0] / 3, k[1] / 3
+        if held(x, y) or not sq.contains(Point(x, y)): continue
+        note("29 parapet gap where pieces meet on a deck", len(rs), at(x, y), f"{len(rs)} pieces: " + ", ".join(sorted({r.get('n') or r['c'] for r in rs})))
+        fig["parapet gaps"] = fig.get("parapet gaps", 0) + 1
+    try:
+        ti, tj = (int(n) for n in os.path.basename(f)[:-5].split("_"))
+    except ValueError:
+        ti = tj = None
+    canal = _whole(*_root_of(f))["canal"]
+    tow = []
+    if canal:
+        for run in canal["runs"]:
+            for a, b in zip(run["p"], run["p"][1:]):
+                if (a[6] | b[6]) & 1: continue
+                for side, wi in ((1, 7), (-1, 8)):
+                    if a[wi] <= 0: continue
+                    tow.append((LineString([a[:2], b[:2]]).offset_curve(side * (a[2] + a[wi] / 2)), run["lv"] + 0.4))
+    tow = [t for t in tow if not t[0].is_empty]
+    ttree = shapely.STRtree([t[0] for t in tow]) if tow else None
+    ways = [(LineString([q[:2] for q in r["p"]]), r) for r in roads]
+    wtree = shapely.STRtree([w[0] for w in ways])
+    # (under a deck over water, or over the canal's works and locks, the ground is hidden or dug: the
+    # water's surface or the canal's own bed is what's there)
+    near = box(*m["b"]).buffer(50)
+    hidden = [_poly(w["r"][0], w["r"][1:]) for w in m.get("wp") or [] if len(w["r"][0]) >= 3]
+    cp = canal_pieces(*_root_of(f))
+    if cp:
+        hidden += [g for g, _ in cp["water"]] + cp["banks"] + cp["verges"] + [lk["zone"] for lk in cp["locks"]]
+    hidden = shapely.union_all([g for g in hidden if g.intersects(near)] or [Polygon()])
+    shapely.prepare(hidden)
+    clear_low, through = 0.0, 0.0
+    for r in chains:
+        p, flags = r["p"], _flags(r)
+        if any(held(q[0], q[1]) for q in p if len(q) > 3): continue
+        kind = r.get("bt") if r.get("bt") in KINDS else ("foot" if r["c"] in FOOT else "beam" if r["c"] in ("trunk", "motorway") else "arch")
+        deck = KINDS[kind]
+        lift = 0.2 if r["c"] in GAME_KERBED else 0.1
+        hl, hr = _deck_sides(r)
+        h = lambda i: p[i][2] if flags[i] else float(ground(p[i][0], p[i][1]))
+        falls = lambda i, j: flags[j] != 1 and abs(h(i) - h(j)) > max(2, math.dist(p[i][:2], p[j][:2]))
+        name = f"{r['c']} {r.get('n') or ''!r}"
+        for a0, b0 in _spans(flags):
+            hang_a, hang_b = a0 + 1 < b0 and falls(a0 + 1, a0), b0 - 1 > a0 and falls(b0 - 1, b0)
+            a, b = (a0 + 1 if hang_a else a0), (b0 - 1 if hang_b else b0)
+            line = LineString([q[:2] for q in p[a:b + 1]])
+            if line.length < 3: continue
+            for end, hang, inward in ((a, hang_a, a + 1), (b, hang_b, b - 1)):
+                q = p[end]
+                if not sq.contains(Point(q[:2])): continue
+                floor = h(end) + 0.03
+                if hang:
+                    drop = abs(floor - float(ground(q[0], q[1])))
+                    note("28 deck stops in the air", drop, at(q[0], q[1]), f"{name} {kind}, its end {drop:.1f} m off the ground below")
+                    fig["deck ends off"] = fig.get("deck ends off", 0) + 1
+                    continue
+                if flags[end] == 1:
+                    if seam(q):
+                        e = None
+                        for di in (-1, 0, 1):
+                            for dj in (-1, 0, 1):
+                                if ti is None or not (di or dj): continue
+                                got = _edge_of(os.path.join(os.path.dirname(f), f"{ti + di}_{tj + dj}.json"))
+                                if got is None or not len(got[1]): continue
+                                d = np.hypot(got[1][:, 0] - q[0], got[1][:, 1] - q[1])
+                                e = min(e if e is not None else 9, float(d.min()))
+                        if e is not None and e < 1.0: continue
+                    if any(rr is not r and any(math.dist(qq[:2], q[:2]) < 1.0 and len(qq) > 3 and qq[3] in (1, 2) for qq in rr["p"]) for rr in chains):
+                        continue
+                    drop = floor - float(ground(q[0], q[1]))
+                    note("28 deck stops in the air", drop, at(q[0], q[1]), f"{name} {kind}, its end on the span {drop:.1f} m over the ground")
+                    fig["deck ends off"] = fig.get("deck ends off", 0) + 1
+                    continue
+                # (just off the deck's end, along the way it was going)
+                d = math.dist(q[:2], p[inward][:2]) or 1
+                ox, oy = q[0] + (q[0] - p[inward][0]) / d * 0.5, q[1] + (q[1] - p[inward][1]) / d * 0.5
+                there, k = sheet.top(np.array([ox]), np.array([oy]), drawn) if sheet.ok else (drawn(np.array([ox]), np.array([oy])), [None])
+                gap = abs(floor - (float(there[0]) - (FACE_LIFT[k[0]] if k[0] else 0)))
+                if gap > DECK_END:
+                    note("28 deck end off the street", gap, at(q[0], q[1]), f"{name} {kind}, {gap * 100:.0f} cm from the {k[0] or 'ground'} it meets")
+                    fig["deck ends off"] = fig.get("deck ends off", 0) + 1
+            # the deck's footprint between its abutments, a metre and a half in from each, every half metre
+            s = np.arange(1.5, line.length - 1.5, 0.5)
+            if not len(s): continue
+            cum = np.concatenate([[0], np.cumsum([math.dist(u[:2], v[:2]) for u, v in zip(p[a:b], p[a + 1:b + 1])])])
+            tops = np.interp(s, cum, [h(i) for i in range(a, b + 1)])
+            ctr = shapely.line_interpolate_point(line, s)
+            ahead = shapely.line_interpolate_point(line, np.minimum(s + 0.3, line.length))
+            cx, cy = shapely.get_x(ctr), shapely.get_y(ctr)
+            dx, dy = shapely.get_x(ahead) - cx, shapely.get_y(ahead) - cy
+            dl = np.hypot(dx, dy); dl[dl == 0] = 1
+            nx_, ny_ = -dy / dl, dx / dl
+            over, low, worst, wx, wy = 0.0, 0.0, 0.0, 0, 0
+            for o in np.arange(-hr, hl + 1e-6, 0.5):
+                x, y = cx + nx_ * o, cy + ny_ * o
+                g = np.where(shapely.contains_xy(hidden, x, y), -np.inf, drawn(x, y))
+                up = g - (tops + 0.03)
+                inner_ = g - (tops + lift - deck)
+                over += 0.25 * float((up > 0).sum())
+                through += 0.25 * float((inner_ > 0).sum())
+                low += 0.25 * float((inner_ > -DECK_CLEAR).sum())
+                if len(up) and up.max() > worst: k = int(np.argmax(up)); worst, wx, wy = float(up[k]), x[k], y[k]
+            clear_low += low
+            mid = line.interpolate(0.5, normalized=True)
+            if over >= 0.25 and sq.contains(mid):
+                note("30 ground up through a deck", over, at(wx, wy), f"{name} {kind}, {over:.1f} m2, up to {worst:.2f} m over its floor")
+                fig["ground through decks m2"] = fig.get("ground through decks m2", 0) + over
+            if low >= 1 and sq.contains(mid):
+                note("31 no room under a bridge", low, at(mid.x, mid.y), f"{name} {kind}, {low:.0f} m2 within {DECK_CLEAR:g} m of its underside")
+            # ways passing under, and the towpath
+            foot = line.buffer(max(hl, hr), cap_style="flat")
+            under = [(ways[int(k)][0], ways[int(k)][1]) for k in wtree.query(foot)]
+            under += [(tow[int(k)][0], {"c": "towpath", "n": "", "lv": tow[int(k)][1]}) for k in (ttree.query(foot) if ttree else [])]
+            for wl, w in under:
+                if w is r or any(w is pc for pc in r.get("pieces", [])) or not wl.crosses(line): continue
+                x = wl.intersection(line)
+                x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type != "Point": continue
+                if w["c"] == "towpath": wz = w["lv"]
+                else:
+                    wp_ = w["p"]
+                    k = min(range(len(wp_)), key=lambda i: math.dist(wp_[i][:2], (x.x, x.y)))
+                    if len(wp_[k]) > 3 and wp_[k][3]: continue
+                    if w["c"] not in PATHS and w["c"] not in GAME_KERBED: continue
+                    wz = float(drawn(np.array([x.x]), np.array([x.y]))[0])
+                top = float(np.interp(line.project(x), cum, [h(i) for i in range(a, b + 1)])) + lift
+                room = top - DECK_DEPTH - wz
+                if room < HEAD and top - wz > 1.0:
+                    note("31 no room under a bridge", HEAD - room, at(x.x, x.y), f"{w['c']} {w['n']!r} under {name}: {room:.1f} m to the ceiling")
+                    fig["ways without room"] = fig.get("ways without room", 0) + 1
+    fig["deck underside in ground m2"] = fig.get("deck underside in ground m2", 0) + through
+    fig["under decks within clear m2"] = fig.get("under decks within clear m2", 0) + clear_low
+
+
+def _root_of(f):
+    root, map_id = os.path.dirname(os.path.dirname(f)), os.path.basename(os.path.dirname(f))
+    if not os.path.exists(os.path.join(root, f"{map_id}.json")):
+        root, map_id = os.path.dirname(f), os.path.basename(f)[:-5]
+    return root, map_id
+
+
+def _stair(p, ground):
+    """furniture.ts stairLayout: a flight's length, a point along it, and its treads' height there."""
+    cum = np.concatenate([[0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:])])])
+    L = cum[-1]
+    if L < 1: return None
+    xs, ys = [q[0] for q in p], [q[1] for q in p]
+    along = lambda s: (np.interp(s, cum, xs), np.interp(s, cum, ys))
+    N = max(2, math.ceil(L / 0.25))
+    s = L * np.arange(N + 1) / N
+    x, y = along(s)
+    g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
+    hh = np.maximum(g0 + (g1 - g0) * s / L, ground(x, y))
+    most = STAIR_PITCH * L / N
+    for i in range(N - 1, -1, -1): hh[i] = max(hh[i], hh[i + 1] - most)
+    for i in range(1, N + 1): hh[i] = max(hh[i], hh[i - 1] - most)
+    return L, along, lambda q: np.interp(q, s, hh), abs(g1 - g0)
+
+
+def flights(m, sheet, walk, note, at, inner, fig):
+    """33. Flights of steps (furniture.ts stepsDetail), with the treads laid as the game lays them:
+    (a) each end lands on something to walk on: a face, or another way's line, within LANDING[0], at
+    the treads' height within LANDING[1]; (b) no tread is buried, the ground beside it higher than its
+    top; (c) none stands as a grey block, more than 0.3 m over the ground beside it with nothing
+    holding the bank (the game has no cheek walls); (d) a tread you can stand on: its top within a
+    step (0.2 m) of the ground you walk at there, as the treads aren't floors and you walk the ground
+    under them. A flight's score is the share of its treads that fail (b), (c) or (d)."""
+    roads = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
+    stepped = [r for r in roads if r["c"] == "steps" and not any(_flags(r))]
+    if not stepped: return
+    ways = [(LineString([q[:2] for q in r["p"]]), r) for r in roads]
+    wtree = shapely.STRtree([w[0] for w in ways])
+    walkable = sheet.union(FACE_KINDS) if sheet.ok else Polygon()
+    totals = dict(treads=0, buried=0, block=0, unwalkable=0, landings=0)
+    for r in stepped:
+        lay = _stair(r["p"], walk)
+        if not lay: continue
+        L, along, height, rise = lay
+        if not inner.contains(Point(r["p"][0][:2])): continue
+        treads = r.get("sc") or (round(rise / 0.16) if rise > 0.3 else 0)
+        count = min(treads, 240, int(L // 0.2))
+        w = r.get("w") or 1.8
+        bad = dict(buried=0, block=0, unwalkable=0)
+        for k in range(count):
+            s0, s1 = L * k / count, L * (k + 1) / count
+            x, y = along((s0 + s1) / 2)
+            x1, y1 = along(min(L, (s0 + s1) / 2 + 0.1))
+            dx, dy = x1 - x, y1 - y
+            dl = math.hypot(dx, dy) or 1
+            nx_, ny_ = -dy / dl * w / 2, dx / dl * w / 2
+            top = max(height(s0), height(s1))
+            side = walk(np.array([x + nx_ * 1.15, x - nx_ * 1.15]), np.array([y + ny_ * 1.15, y - ny_ * 1.15]))
+            here = float(walk(np.array([x]), np.array([y]))[0])
+            if side.max() > top + 0.05: bad["buried"] += 1
+            if top - side.min() > 0.3: bad["block"] += 1
+            if abs(top - here) > 0.2: bad["unwalkable"] += 1
+        totals["treads"] += count
+        for k, v in bad.items(): totals[k] += v
+        if count:
+            share = max(bad.values()) / count
+            if share > 0:
+                worst = max(bad, key=bad.get)
+                x, y = r["p"][len(r["p"]) // 2][:2]
+                note("33 flight's treads wrong", share, at(x, y), f"{r.get('n') or 'steps'!r}: of {count}, {bad['buried']} buried, {bad['block']} standing as a block, {bad['unwalkable']} not where you walk")
+        for e in (r["p"][0], r["p"][-1]):
+            pt = Point(e[:2])
+            off = walkable.distance(pt) if not walkable.is_empty else 99
+            for k in wtree.query(pt.buffer(3)):
+                wl, wr = ways[int(k)]
+                if wr is r: continue
+                off = min(off, max(0, wl.distance(pt) - _road_half(wr["c"], wr.get("w"))))
+            tread = float(height(0 if e is r["p"][0] else L))
+            there = float(walk(np.array([e[0]]), np.array([e[1]]))[0])
+            if off > LANDING[0] or abs(tread - there) > LANDING[1]:
+                totals["landings"] += 1
+                note("33 flight lands on nothing", off + abs(tread - there), at(e[0], e[1]), f"{r.get('n') or 'steps'!r}: {off:.1f} m from anything to walk on, {tread - there:+.2f} m from it")
+    for k, v in totals.items(): fig[f"flight {k}"] = fig.get(f"flight {k}", 0) + v
+
+
+def _band(p, lo, hi, skip=lambda a, b: False):
+    """The strip beside a line of points between offsets lo(i) and hi(i) (left of the line positive)."""
+    xy = np.asarray([q[:2] for q in p], float)
+    if len(xy) < 2: return Polygon()
+    d = np.gradient(xy, axis=0)
+    n = np.stack([-d[:, 1], d[:, 0]], 1) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+    quads = []
+    for i in range(len(xy) - 1):
+        if skip(p[i], p[i + 1]): continue
+        a0, a1 = xy[i] + n[i] * lo(i), xy[i] + n[i] * hi(i)
+        b0, b1 = xy[i + 1] + n[i + 1] * lo(i + 1), xy[i + 1] + n[i + 1] * hi(i + 1)
+        q = Polygon([a0, b0, b1, a1])
+        quads.append(q if q.is_valid else q.buffer(0))
+    return shapely.union_all(quads) if quads else Polygon()
+
+
+@functools.lru_cache(maxsize=4)
+def canal_pieces(root, map_id):
+    """The canal as canal.ts and works.ts lay it, from its file: each run's water (with its level),
+    banks (the towpath's side and the other) and verges, out of its tunnels; and each lock's chamber,
+    its walls' coping and paving, its lock water, in the lock's own frame turned to data metres."""
+    canal = _whole(root, map_id)["canal"]
+    if not canal: return None
+    tunnel = lambda a, b: bool((a[6] | b[6]) & 1)
+    water, banks, verges = [], [], []
+    for run in canal["runs"]:
+        p = run["p"]
+        if len(p) < 2: continue
+        water.append((_band(p, lambda i: -p[i][2], lambda i: p[i][2], tunnel), run["lv"]))
+        banks.append(shapely.union_all([_band(p, lambda i: p[i][2], lambda i: p[i][2] + p[i][7], tunnel),
+                                        _band(p, lambda i: -p[i][2] - p[i][8], lambda i: -p[i][2], tunnel)]))
+        verges.append(shapely.union_all([_band(p, lambda i: p[i][2] + p[i][7], lambda i: p[i][2] + p[i][7] + p[i][9], tunnel),
+                                         _band(p, lambda i: -p[i][2] - p[i][8] - p[i][10], lambda i: -p[i][2] - p[i][8], tunnel)]))
+    locks = []
+    for lk in canal.get("locks") or []:
+        (ax, ay), (bx, by) = lk["lo"], lk["hi"]
+        L = math.dist((ax, ay), (bx, by)) or 1
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        wl = lk.get("tl") or TAIL + (lk["zh"] - lk["zl"]) * 6
+        rect = lambda u0, u1, v0, v1: Polygon([(ax + ux * u - uy * v, ay + uy * u + ux * v) for u, v in ((u0, v0), (u1, v0), (u1, v1), (u0, v1))])
+        sides = lambda v0, v1: shapely.union_all([rect(-wl, L + TAIL, v0, v1), rect(-wl, L + TAIL, -v1, -v0)])
+        locks.append(dict(n=lk.get("n", ""), lo=(ax, ay), hi=(bx, by), chamber=rect(0, L, -LOCK_HALF, LOCK_HALF),
+                          walls=sides(LOCK_HALF, LOCK_HALF + COPE + APRON), paving=sides(LOCK_HALF + COPE, LOCK_HALF + COPE + APRON),
+                          water=rect(0.4, L - 0.4, -LOCK_HALF, LOCK_HALF), zone=rect(-wl - 2, L + TAIL + 2, -LOCK_HALF - COPE - APRON - 2, LOCK_HALF + COPE + APRON + 2)))
+    return dict(water=water, banks=banks, verges=verges, locks=locks, weirs=[])
+
+
+def locks(cp, note, at, sq, fig):
+    """34. A lock's edges (canal.ts, works.ts; Spencer's, measured only): (a) no pound's water lies
+    outside the lock's walls, over its coping and paving (the strips floating beside the wing walls);
+    (b) no gap is left between the lock's water and its gates, with the chamber's floor showing;
+    (c) no works bank lies over the lock's paving, two surfaces a few centimetres apart. Open edges
+    and slivers in the works' meshes, and sky seen down through a chamber (the ground is hidden there
+    in the shader), need the drawn scene and are left to a browser measure."""
+    if not cp: return
+    for lk in cp["locks"]:
+        c = lk["chamber"].centroid
+        if not sq.contains(c): continue
+        wat = shapely.union_all([w for w, _ in cp["water"] if w.intersects(lk["zone"])] or [Polygon()])
+        bank = shapely.union_all([b for b in cp["banks"] if b.intersects(lk["zone"])] or [Polygon()])
+        out = wat.intersection(lk["walls"]).area
+        gap = lk["chamber"].difference(lk["water"]).difference(wat).area
+        over = bank.intersection(lk["paving"]).area
+        for what, v, words in (("34 canal water outside a lock's walls", out, "water over its coping and paving"),
+                               ("34 gap between a lock's water and its gates", gap, "of the chamber's floor uncovered"),
+                               ("34 works bank over a lock's paving", over, "of bank lying on its paving")):
+            if v > 0.1:
+                note(what, v, at(c.x, c.y), f"{lk['n']}: {v:.1f} m2 {words}")
+                fig[what[3:] + " m2"] = fig.get(what[3:] + " m2", 0) + v
+
+
+def water(m, cp, ground, note, at, sq, inner, fig):
+    """35. Land and water: (a) no ground stands above a pond's or river's surface inside its outline
+    (the game draws it flat at its level and lets the ground hide its edge); (b) the canal's works
+    (its water, banks and verges) don't run on into a river; (c) two waters that touch lie at one
+    level (within LEVELS_AGREE), unless a weir (wf) or a lock stands between them."""
+    canal_file = cp is not None
+    bodies = [(w, _poly(w["r"][0], w["r"][1:])) for w in m.get("wp") or [] if len(w["r"][0]) >= 3]
+    rivers = [(w, g) for w, g in bodies if not (canal_file and w.get("c") == "canal")]
+    land = 0.0
+    for w, g in rivers:
+        g = g.buffer(-0.05)
+        if g.is_empty: continue
+        x0, y0, x1, y1 = g.bounds
+        X, Y = np.meshgrid(np.arange(x0 + 0.5, x1, 1.0), np.arange(y0 + 0.5, y1, 1.0))
+        X, Y = X.ravel(), Y.ravel()
+        k = shapely.contains_xy(g, X, Y) & shapely.contains_xy(inner, X, Y)
+        if not k.any(): continue
+        up = ground(X[k], Y[k]) - w["z"]
+        a = float((up > 0.02).sum())
+        if a >= 1:
+            land += a
+            j = int(np.argmax(up))
+            note("35 land standing in the water", a, at(X[k][j], Y[k][j]), f"{a:.0f} m2 above the water at {w['z']:.1f} m, up to {up[j]:.1f} m")
+    fig["land in water m2"] = fig.get("land in water m2", 0) + land
+    if cp:
+        works = [(shapely.union_all([wat, b, v]), lv) for (wat, lv), b, v in zip(cp["water"], cp["banks"], cp["verges"])]
+        for w, g in rivers:
+            if w.get("c") == "canal": continue
+            for piece, lv in works:
+                if not piece.intersects(g): continue
+                x = piece.intersection(g.buffer(-0.05)).intersection(inner)
+                if x.area > 1:
+                    c = x.representative_point()
+                    note("35 canal works in a river", x.area, at(c.x, c.y), f"{x.area:.0f} m2 of the canal (level {lv:.1f}) in water at {w['z']:.1f}")
+                    fig["canal in river m2"] = fig.get("canal in river m2", 0) + x.area
+    levels = [(g, w["z"]) for w, g in rivers]
+    if cp: levels += [(wat, lv) for wat, lv in cp["water"] if wat.intersects(box(*m["b"]))]
+    steps = [LineString([q[:2] for q in wf["p"]]).buffer(3) for wf in m.get("wf") or [] if len(wf["p"]) > 1]
+    if cp: steps += [lk["zone"] for lk in cp["locks"]]
+    for i in range(len(levels)):
+        for j in range(i + 1, len(levels)):
+            (a, za), (b, zb) = levels[i], levels[j]
+            if abs(za - zb) <= LEVELS_AGREE or a.distance(b) > 0.5: continue
+            touch = a.buffer(0.5).intersection(b.buffer(0.5))
+            if touch.is_empty or any(s.intersects(touch) for s in steps): continue
+            c = touch.representative_point()
+            if not inner.contains(c): continue
+            note("35 touching water at two levels", abs(za - zb), at(c.x, c.y), f"{za:.2f} m and {zb:.2f} m")
+            fig["water level steps"] = fig.get("water level steps", 0) + 1
+
+
+def fences_on_ways(m, sheet, cp, note, at, inner, fig):
+    """36. No wall, fence or hedge stands more than FENCE_IN inside water, the canal's banks and
+    towpath, its verges, a lock's coping and paving, or a path's face (measured on each one's
+    interior: check_tile.interior_length). A river's bank has no face of its own in the packs yet,
+    so it can't be counted."""
+    places = []
+    wat = [_poly(w["r"][0], w["r"][1:]) for w in m.get("wp") or [] if len(w["r"][0]) >= 3 and not (cp and w.get("c") == "canal")]
+    if cp: wat += [w for w, _ in cp["water"]]
+    places.append(("water", wat))
+    if cp:
+        places += [("the canal's bank", cp["banks"]), ("the canal's verge", cp["verges"]), ("a lock's paving", [lk["walls"] for lk in cp["locks"]])]
+    if sheet.ok:
+        pu = sheet.union(("path", "grass", "dirt", "gravel"))
+        places.append(("a path", [g for g in getattr(pu, "geoms", [pu]) if not g.is_empty]))
+    sq = box(*m["b"]).buffer(5)
+    places = [(name, [g for g in gs if g.intersects(sq)]) for name, gs in places]
+    places = [(name, gs, shapely.STRtree(gs)) for name, gs in places if gs]
+    tot = {}
+    for b in m.get("br") or []:
+        if len(b["p"]) < 2: continue
+        ln = LineString([q[:2] for q in b["p"]])
+        if not inner.intersects(ln): continue
+        best = max(((interior_length(ln, gs, tree), name, gs, tree) for name, gs, tree in places), default=(0, "", [], None), key=lambda b: b[0])
+        if best[0] > FENCE_IN:
+            inside = [ln.intersection(best[2][int(k)].buffer(-0.05)) for k in best[3].query(ln)]
+            c = max(inside, key=lambda g: g.length).interpolate(0.5, normalized=True)
+            tot[best[1]] = tot.get(best[1], 0) + best[0]
+            note("36 fence on water or a way", best[0], at(c.x, c.y), f"{b['c']} {best[0]:.1f} m in {best[1]}")
+    for k, v in tot.items(): fig[f"fence in {k} m"] = fig.get(f"fence in {k} m", 0) + v
+
+
+def ground_measures(m, tag, note, f, off_deck=None):
+    """Rules 24 on, for one square; returns the square's figures (areas, lengths, shares) by name."""
+    fig = {}
+    if "t" not in m: return fig
+    sq = box(*m["b"])
+    inner = sq.buffer(-EDGE)
+    at = lambda x, y: (tag, round(float(x)), round(float(y)))
+    ground = terrain(m["t"])
+    sheet = Sheet(m)
+    D, drawn = drawn_terrain(m, sheet)
+    if off_deck is None:
+        decks = [LineString([q[:2] for q in r["p"]]).buffer(9) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
+        decks += [LineString([q[:2] for q in t["p"]]).buffer(8) for t in m.get("tn") or [] if len(t["p"]) > 1]
+        dtree = shapely.STRtree(decks)
+        def off_deck(p):
+            out = np.ones(len(p), bool)
+            if len(decks): out[dtree.query(p, predicate="within")[0]] = False
+            return out
+    walk = (lambda x, y: sheet.top(x, y, drawn)[0]) if sheet.ok else drawn
+    if sheet.ok:
+        path_tilt(m, sheet, off_deck, note, at, inner, fig)
+        things_in_paths(m, sheet, note, at, inner, fig)
+        face_edges(m, sheet, drawn, note, at, inner, fig)
+        face_joins(m, sheet, D, drawn, note, at, inner, fig)
+    bridges(m, f, sheet, drawn, ground, note, at, sq, fig)
+    for w in tunnel_mesh(*_root_of(f)):
+        if sq.contains(Point(w["x"], w["y"])):
+            note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
+            fig[w["rule"][3:]] = fig.get(w["rule"][3:], 0) + 1
+    flights(m, sheet, walk, note, at, inner, fig)
+    cp = canal_pieces(*_root_of(f))
+    locks(cp, note, at, sq, fig)
+    water(m, cp, ground, note, at, sq, inner, fig)
+    fences_on_ways(m, sheet, cp, note, at, inner, fig)
+    return fig
+
+
+@functools.lru_cache(maxsize=2)
+def tunnel_mesh(root, map_id):
+    """Rule 32's findings over the whole map, from tools/tunnel_mesh.ts bundled with the game's code."""
+    # (the tunnels' textures are painted pixel by pixel, so their canvas needs pixels to paint)
+    return _railway_check("tunnel_mesh.ts", root, map_id, "({data:new Uint8ClampedArray(4)})")
+
+
+def main():
+    """python3 -I tools/check_more.py <map> [web/public/maps] [--tiles ti,tj ...]: rules 24 on alone,
+    with each square's figures, for the ground's baselines."""
+    import glob, sys, collections
+    args = sys.argv[1:]
+    map_id = args[0]
+    root = args[1] if len(args) > 1 and not args[1].startswith("--") else "web/public/maps"
+    if "--tiles" in args:
+        k = args.index("--tiles")
+        files = [os.path.join(root, map_id, f"{a.replace(',', '_')}.json") for a in args[k + 1:] if not a.startswith("--")]
+    else:
+        files = sorted(glob.glob(os.path.join(root, map_id, "*_*.json")))
+    counts, worst, figs = collections.Counter(), collections.defaultdict(list), collections.Counter()
+    for f in files:
+        found = []
+        m = json.load(open(f))
+        tag = os.path.basename(f)[:-5]
+        if m.get("centre"): _unmask(m, _set_pieces(tuple(m["centre"])))
+        fig = ground_measures(m, tag, lambda rule, score, where, what: found.append((rule, score, where, what)), f)
+        sc = collections.Counter(r for r, *_ in found)
+        print(f"{tag}: " + ", ".join(f"{r.split(' ')[0]}:{n}" for r, n in sorted(sc.items())) , flush=True)
+        print("    " + ", ".join(f"{k} {v:.1f}" if isinstance(v, float) else f"{k} {v}" for k, v in sorted(fig.items())), flush=True)
+        counts.update(sc); figs.update(fig)
+        for rule, score, where, what in found: worst[rule].append((score, where, what))
+    print("rule failures across", len(files), "map files:")
+    for rule in sorted(counts):
+        print(f"  {counts[rule]:6d}  {rule}")
+        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:int(os.environ.get("SHOW", 4))]:
+            print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
+    print("figures:")
+    for k, v in sorted(figs.items()): print(f"  {v:12.1f}  {k}")
+    if figs.get("path m2"):
+        for t in (2, 5, 10): print(f"  {100 * figs[f'path tilted >{t} deg m2'] / figs['path m2']:11.1f}%  of path area tilted over {t} degrees")
+
+
+if __name__ == "__main__":
+    main()

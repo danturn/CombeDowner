@@ -23,6 +23,7 @@ mechanism is inferred rather than read, it says so.
 7. [Stages](#7-stages)
 8. [Risks, open questions for Dan, and what was rejected](#8-risks-open-questions-for-dan-and-what-was-rejected)
 9. [How to resume](#9-how-to-resume)
+10. [Baselines, stage 0](#10-baselines-stage-0)
 
 ---
 
@@ -479,7 +480,11 @@ should then fall. The standing rules hold throughout: **existing check counts do
 nobody games a check (a change to a check is written up, as the partition plan's line-against-
 polygon rule requires).
 
-### 6.1 Static checks (`tools/check_more.py`, new rules 24–31)
+### 6.1 Static checks (`tools/check_more.py`, new rules 24–36)
+
+Built in stage 0 as rules 24–36 (M1 24, M2 25, M3 26, M4 27, M5 28, M6 29, M7 30, M8 31, M9 32,
+M10 33, M11 34, M12 35, M13 36; M14 has no rule: see §10.6). What each measures exactly, and where
+it differs from the table below, is in §10.
 
 These read the packs only, run per square with `--tiles`, and take seconds. Where a rule must see
 the scene as drawn, it goes in `tools/overroad.mjs` (which already raycasts every street and path)
@@ -580,7 +585,7 @@ the river mouth (−701,1632), Bath Bottom Lock (−671,1638), Bath Deep Lock (�
 
 ### Stage 0: measures and baseline (no change to the game or the map)
 
-- **Files:** `tools/check_more.py` (rules 24–31), `tools/overroad.mjs` (M2, M3), a new
+- **Files:** `tools/check_more.py` (rules 24–36), `tools/overroad.mjs` (M2, M3), a new
   `tools/walk_probe.mjs`, `tools/tunnel_mesh.ts` (M9a, like `watertight.ts`), `web/src/debug.ts`
   (per-square counters), `docs/plans/ground-views.json`.
 - **Does:** baselines every measure on today's packs for the twelve squares, and Bath whole for the
@@ -812,3 +817,204 @@ The state when this was written (6 November 2026):
   approval (memory). Run `cd web && npm run build` before any merge.
 - **Start with stage 0.** Nothing else should begin without its baselines, because every later
   gate compares against them.
+
+---
+
+## 10. Baselines, stage 0
+
+Measured on 6 November 2026 on the packs in the worktree `/Users/dan/src/cd-ground-measures`
+(branch `claude/ground-measures`, off the fork's `main` at `ad7d7c37`), with no map rebuilt and no
+browser run. Every number below comes from the packed squares (`web/public/maps/<map>/<ti>_<tj>.json`
+and the map's side files); none is an estimate.
+
+### 10.1 How to reproduce
+
+```sh
+# rules 24-36 alone, with each square's figures (about 6 s a square)
+python3 -I tools/check_more.py combe-down --tiles 1,2 0,2 1,3 1,1 0,3 -1,2 2,0 3,-2
+python3 -I tools/check_more.py bradford-on-avon --tiles 1,1
+python3 -I tools/check_more.py pembury --tiles 1,1          # Hackney
+python3 -I tools/check_more.py cape-town --tiles 2,2 1,3
+python3 -I tools/check_more.py combe-down                  # all of Bath (about 30 min)
+# every rule, 1-36, as the gate runs them (rules 20 and 23 only with web/dist built)
+python3 -I tools/check_map.py combe-down
+```
+
+The square with the Two Tunnels' south portal is 2_0 (the tunnel's end at 255, −714). A place's
+coordinates for each finding are printed as in `check_map.py`, so `?at=x,y,...` goes straight to it.
+
+### 10.2 What each rule measures, exactly
+
+The rules follow §6.1, with these choices (each one checked on the places in §7's views list, and
+two or more hits looked at by hand on a drawing of the square's faces, walls and buildings):
+
+| rule | measure | exactly | verified at |
+|---|---|---|---|
+| 24 | M1 | Path, grass/dirt/gravel path, front path and drive faces, sampled evenly (a point per 0.25 m² or so); at each, the slope of the game's own ground triangle there across the nearest way's line (front paths against `fp`, drives against `dv`, the rest against the path records; steps left out, decks and tunnels left out). Area-weighted share over 2°, 5°, 10°; a place per way with 5 m or more over 2°. Uses the faces' written height instead once a square carries `sf.pl` (stage 2a). | Rossiter Road (−756,1609: 51° across), footbridge (−697,1627), Deep Lock (−495,1616), Top Lock (−278,2026), Sydney Gardens (−198,2603) |
+| 25 | M2 (static part) | A tree's trunk, shrub or boulder inside a path, drive or pavement face shrunk by 0.2 m. | hand-checked: a tree in a drive at 1_2 (−338,1335) |
+| 26 | M3 | Every face outline edge (`sf.e`) as the game draws its side face: a free edge from the face's top down to the drawn ground at its corners, a shared edge from the higher face down to the lower; a place per outline with 1 m or more over 0.3 m. "Drawn ground" models world.ts's own letting-down under road and pavement faces and bringing the grass up to them (`drawn_terrain`), so an edge isn't counted for the face's own sinking. | Rossiter Road (−734,1607: pavement edge up to 1.4 m), Broad Quay (−1026,1658: 1.7 m; −1081,1672: 2.4 m), Wells Road (−1250,1641: 193 m of pavement edge, up to 1.6 m), Deep Lock (−538,1607) |
+| 27 | M4 | (a) uncovered ground wider than 2 cm lying within 0.3 m of both a path-like face and a street face, its length the stretch it runs along both; (b) a corner of the drawn ground within 1 m of faces of two kinds, standing over both by more than 5 cm; (c) a pavement edge 0.8–6 m long running across the nearest kerbed street (within 24° of square to it) with no face, wall, fence, building or bridge deck across it. | (a) hand-checked: a front path stopping 15 cm short of the pavement's back at 1_2 (−774,1445), a 2 cm crack at a drive's mouth (−729,1029); (c) Broad Quay (−1054,1664 and four more), Lower Bristol Road (−1132,1667, −1137,1657, −1144,1680), hand-checked: a pavement that starts mid-street at 0_2 (−1057,1654) |
+| 28 | M5 | Bridges joined as world.ts `joinSpans` joins them. Per structural span end: the deck falling off its last point (`offTheEnd`), or ending on its span with no other deck within 1 m (here, or in the next square across a seam) — "stops in the air"; else the deck's floor (its record's height + 0.03) against the face or ground just off its end, over 0.1 m (not 3 cm: a road face's lift of 0.07 against the deck floor's 0.03 would put every road bridge over 3 cm by design). | footbridge (−731,1620: its end on the span 0.8 m over the ground) |
+| 29 | M6 | Places on a deck where three or more bridge records meet (only two are ever joined, so the other parapets stop there). | Bath has none in the test squares; Cape Town 1_3 (Jetty 1) |
+| 30 | M7 | Over each span's footprint, 1.5 m in from each abutment, every 0.5 m along and across: the drawn ground standing over the deck's floor (a visible lump), in m². The ground standing into the deck's slab (over its underside, top − kind's depth) is a figure only. Ground under water, the canal's works or a lock is left out (it is hidden or dug there). | footbridge (−712,1625: 2.8 m², up to 0.31 m over its floor), the footbridge by the river mouth (−685,1629) |
+| 31 | M8 | (a) the same footprint's area with the ground within 0.5 m of the deck's underside; (b) every path, kerbed street or canal towpath (its bank at the water's level + 0.4 m) passing under a span, with less than 1.9 m between it and the game's flat ceiling (deck top − 1.1 m). | footbridge (−720,1624), Bath Top Lock (−270,1979: the towpath 1.3 m under the ceiling of the footbridge over the lock's tail) |
+| 32 | M9 | `tools/tunnel_mesh.ts` builds every square's `tn` tunnels with web/src/tunnels.ts: end rings that don't meet where two records meet; a tube cut at a seam with nothing going on in the next square; drawn wall feet over 0.1 m from map.ts's solid walls (`offsetLine`); solid walls open at a join; drawn floor (`floorAcross`) over 0.05 m from the walked floor (`boreAt`). | **zero everywhere** (see §10.6); checked on a copy of 1_1 with the Two Tunnels record split and bent 25°: a 1.01 m ring gap and a 1.01 m wall gap, both found |
+| 33 | M10 | Flights laid as furniture.ts `stairLayout`/`stepsDetail` lay them, over the ground you walk on: (a) each end more than 0.1 m from any face or other way's width, or more than 0.05 m from it in height; per tread: (b) buried (the ground just past its sides over its top by 0.05 m); (c) standing as a block (its top over 0.3 m above the ground beside it); (d) off the walk (its top over 0.2 m from where you walk under it). A flight's score is its worst share. | hand-checked: 1_2 (−896,773), 36 treads standing up to 0.65 m over a dipping bank; Deep Lock (−522,1610) |
+| 34 | M11 (static part) | From the canal's file and canal.ts's constants: (a) canal water lying over a lock's coping and paving; (b) chamber floor between the lock's water and its gates (the water is 0.8 m short); (c) works bank lying on a lock's paving. | Bath Bottom Lock (23.2, 3.3, 62.2 m²), Deep Lock (38.3, 3.3, 118.0 m²), Top Lock (20.0, 3.4, 61.1 m²) |
+| 35 | M12 | (a) ground over a pond's or river's level inside its outline, on a 1 m grid; (b) the canal's water, banks and verges inside a river's outline; (c) two waters (ponds, rivers, the canal's runs) within 0.5 m of each other at levels more than 3 cm apart, with no weir (`wf`) or lock between. | river mouth (−694,1642: 17 m² of canal in the river; 15.90 against 15.80 m), Rossiter Road (−742,1613: 306 m² of bank up to 3.5 m over the river), Broad Quay (−1063,1669) |
+| 36 | M13 | Each wall, fence or hedge's length inside water, the canal's banks, verges, a lock's coping and paving, or a path face, by `check_tile.interior_length` (each polygon shrunk by 5 cm); a place where any one is over 0.3 m. | Deep Lock (−509,1607: a fence 8.1 m on the paving), river mouth (−693,1628), Sydney Gardens (−207,2621: a wall 16.7 m in the canal's verge); hand-checked: a wall running 23 m along a grass path at 1_2 (−148,978) |
+
+### 10.3 The twelve test squares
+
+Counts are places (one line each in the report); m, m² and shares are the figures `check_more.py`
+prints under each square. Lumps (M4b) and tunnels (M9) are 0 on every square.
+
+| measure | Bath 1_2 | Bath 0_2 | Bath 1_3 | Bath 1_1 | Bath 0_3 | Bath -1_2 | Bath 2_0 | Bath 3_-2 | BoA 1_1 | Hackney 1_1 | CT 2_2 | CT 1_3 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| M1 rule 24 places | 226 | 461 | 258 | 197 | 196 | 311 | 40 | 32 | 231 | 187 | 26 | 84 |
+| M1 path area m2 | 16474.8 | 27163.2 | 23105.6 | 20713.3 | 54450.9 | 18375.2 | 7726.2 | 7805.3 | 19352.7 | 34573.8 | 53591.3 | 21873.3 |
+| M1 % over 2 deg | 70.1 | 68 | 52.2 | 56.5 | 33.4 | 62.8 | 80.7 | 50.3 | 68.9 | 25.8 | 7.7 | 32.4 |
+| M1 % over 5 deg | 52.7 | 37.5 | 34.8 | 34.5 | 15 | 28.3 | 62.1 | 16.3 | 44.9 | 8.3 | 5.2 | 16.5 |
+| M1 % over 10 deg | 34.5 | 17 | 20.2 | 16.3 | 6.9 | 6.2 | 36.7 | 9.3 | 26.3 | 2.7 | 3.5 | 9.9 |
+| M2 rule 25 things in paths | 10 | 10 | 24 | 10 | 54 | 8 | 0 | 0 | 6 | 79 | 105 | 221 |
+| M3 rule 26 places | 97 | 107 | 147 | 65 | 111 | 115 | 11 | 13 | 133 | 96 | 171 | 92 |
+| M3 pavement edge over 0.3 m (m) | 1533.2 | 1878 | 2564.3 | 955.9 | 3055.4 | 1125.8 | 108.2 | 169.5 | 1610.2 | 892.4 | 771.9 | 1230 |
+| M3 road edge (m) | 77.2 | 198.3 | 311.9 | 25.1 | 158.2 | 119.3 | 185.4 | 7.6 | 222 | 357 | 3314.8 | 779 |
+| M3 path/front/drive edge (m) | 21.2 | 0 | 10.9 | 0 | 13.5 | 0 | 0 | 0 | 4 | 0 | 84.1 | 1.5 |
+| M4 rule 27 places (a+b+c) | 236 | 445 | 218 | 306 | 301 | 602 | 20 | 21 | 290 | 472 | 140 | 158 |
+| M4a path-street gap (m) | 160.7 | 290.5 | 94.9 | 186.3 | 119.7 | 406.6 | 65.8 | 8.8 | 189 | 309.9 | 140.2 | 108.1 |
+| M4b lumps | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| M4c pavement ends | 75 | 128 | 117 | 130 | 200 | 144 | 11 | 12 | 101 | 188 | 88 | 87 |
+| M5 rule 28 deck ends off | 3 | 1 | 5 | 2 | 4 | 0 | 0 | 0 | 4 | 1 | 20 | 24 |
+| M6 rule 29 parapet gaps | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 5 |
+| M7 rule 30 ground through decks m2 | 6.2 | 1 | 10 | 0 | 1.5 | 0 | 0 | 0 | 0.2 | 43.2 | 6.2 | 27.5 |
+| M7 ground in deck undersides m2 | 37.2 | 31.8 | 134.8 | 40 | 41.8 | 34 | 7 | 0 | 47.5 | 110.2 | 911.8 | 313.2 |
+| M8 under decks within 0.5 m m2 | 60 | 54.2 | 243.5 | 48 | 101.5 | 57.5 | 13 | 0 | 116.8 | 206.8 | 2192.2 | 2984.2 |
+| M8 ways without headroom | 2 | 0 | 4 | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 2 | 0 |
+| M9 rule 32 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| M10 rule 33 places | 15 | 44 | 23 | 11 | 16 | 7 | 2 | 0 | 23 | 7 | 5 | 6 |
+| M10 treads | 496 | 1190 | 418 | 213 | 322 | 221 | 98 | 0 | 405 | 159 | 16 | 43 |
+| M10 treads buried | 71 | 188 | 155 | 38 | 74 | 19 | 41 | 0 | 65 | 23 | 7 | 8 |
+| M10 treads as blocks | 313 | 546 | 144 | 128 | 113 | 88 | 49 | 0 | 190 | 20 | 14 | 23 |
+| M10 treads off the walk | 219 | 386 | 51 | 81 | 48 | 67 | 8 | 0 | 151 | 13 | 9 | 20 |
+| M10 landings on nothing | 3 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 2 | 2 | 2 | 0 |
+| M11 water outside lock walls m2 | 85.9 | 0 | 63.6 | 0 | 0 | 0 | 0 | 0 | 25.3 | 0 | 0 | 0 |
+| M11 lock water-gate gap m2 | 9.9 | 0 | 10 | 0 | 0 | 0 | 0 | 0 | 3.3 | 0 | 0 | 0 |
+| M11 bank over lock paving m2 | 244.4 | 0 | 186.4 | 0 | 0 | 0 | 0 | 0 | 78.4 | 0 | 0 | 0 |
+| M12a land in water m2 | 474 | 701 | 1116 | 55 | 491 | 2 | 54 | 17 | 1400 | 0 | 2193 | 6364 |
+| M12 canal in river m2 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| M12b water level steps | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 2 | 2 |
+| M13 rule 36 places | 18 | 7 | 26 | 5 | 5 | 4 | 3 | 0 | 18 | 6 | 1 | 2 |
+| M13 fence in a path (m) | 22.9 | 4.7 | 0 | 3.1 | 37.6 | 22 | 42 | 0 | 16.2 | 62.5 | 3.2 | 1.4 |
+| M13 fence on canal bank/verge/lock (m) | 55.6 | 0 | 174.5 | 0 | 0 | 0 | 0 | 0 | 148.5 | 0 | 0 | 0 |
+| M13 fence in water (m) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+### 10.4 Bath whole
+
+All 131 of Bath's squares (`python3 -I tools/check_more.py combe-down`, 4 min 23 s on Dan's Mac):
+
+| measure | Bath whole (131 squares) |
+|---|---|
+| M1 rule 24 places | 9865 |
+| M1 path area m2 | 1212074.9 |
+| M1 % over 2 deg | 63.2 |
+| M1 % over 5 deg | 37.8 |
+| M1 % over 10 deg | 17.3 |
+| M2 rule 25 things in paths | 440 |
+| M3 rule 26 places | 3439 |
+| M3 pavement edge over 0.3 m (m) | 66677.7 |
+| M3 road edge (m) | 6531 |
+| M3 path/front/drive edge (m) | 254.3 |
+| M4 rule 27 places (a+b+c) | 10547 |
+| M4a path-street gap (m) | 7262.9 |
+| M4b lumps | 0 |
+| M4c pavement ends | 3267 |
+| M5 rule 28 deck ends off | 51 |
+| M6 rule 29 parapet gaps | 2 |
+| M7 rule 30 ground through decks m2 | 61 |
+| M7 ground in deck undersides m2 | 1403.7 |
+| M8 under decks within 0.5 m m2 | 2566.3 |
+| M8 ways without headroom | 13 |
+| M9 rule 32 | 0 |
+| M10 rule 33 places | 413 |
+| M10 treads | 10019 |
+| M10 treads buried | 2369 |
+| M10 treads as blocks | 4741 |
+| M10 treads off the walk | 2686 |
+| M10 landings on nothing | 13 |
+| M11 water outside lock walls m2 | 149.5 |
+| M11 lock water-gate gap m2 | 19.9 |
+| M11 bank over lock paving m2 | 430.8 |
+| M12a land in water m2 | 13961 |
+| M12 canal in river m2 | 319.5 |
+| M12b water level steps | 21 |
+| M13 rule 36 places | 270 |
+| M13 fence in a path (m) | 1171.4 |
+| M13 fence on canal bank/verge/lock (m) | 725.3 |
+| M13 fence in water (m) | 0 |
+
+### 10.5 The existing checks, for the gate
+
+`python3 -I tools/check_map.py combe-down` over all 131 squares (3 min 8 s; rules 24–36 come out
+the same as above). Rules 20 and 23 weren't run (no `web/dist` built, no browser). Totals by rule:
+
+| rule | 1 | 3 | 9 | 10 | 11 | 12 | 13 | 14 | 17 | 19 | 21 | 22 | others (2, 4–8, 15, 16, 18) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| failures | 7 | 9 | 1,220 | 10 | 315 | 19 | 32 | 1 | 1 | 8 | 3 | 107 | 0 |
+
+The largest within those: 9 boundary stopping short 997, 11 joined roofs in different coverings 144,
+9 crack between street faces 79, 11 semi's halves in different roof shapes 71, 22 roof you fall
+through landing fast 41. The full list is in the run's output (each line as `check_map.py` prints it).
+
+### 10.6 What couldn't be measured from the packs, and where the plan was wrong
+
+- **M14 (places of worship): no rule.** The packs keep a building's class (`bl.c`) and name, not
+  its OSM tags, so `building=church|chapel|cathedral`, `amenity=place_of_worship`, `historic=church`
+  and `disused:amenity=place_of_worship` can't be read from them. St Mark's, Widcombe, isn't named
+  in any pack either. Either the build packs a form flag on each building (one bit, `bl.pw`), or the
+  measure reads `data/<map>/osm.geojson.xz` beside the packs; that's a choice for stage 2f.
+- **M2: only the static part.** Ground, decks, walls and set pieces drawn over a path need the drawn
+  scene: it belongs in `tools/overroad.mjs` as an extension of rule 23, run with `web/dist` built and
+  a muted headless Chrome. Not done in stage 0 (no browser run). Rule 25 counts the trees, shrubs and
+  boulders standing in path faces from the packs.
+- **M4 (b), lumps: zero at the grid's corners.** Once world.ts's own raising of the grass beside a
+  face is modelled, no corner of the drawn grid stands over the faces either side: the grass is never
+  brought above a pavement's top (it stops 3 cm under it), and paths are draped on the drawn ground.
+  So the lumps Dan saw are inside a 4 m triangle spanning two faces, not at its corners, and need the
+  drawn scene (overroad's step between pieces, extended to path-to-pavement). The rule stays, as a
+  gate that a change mustn't raise.
+- **M11: sky through a chamber and open edges or slivers in the works' meshes need the drawn
+  scene.** The ground in a lock's pit is hidden by the terrain shader (`discard`), which no static
+  ray can see, so the downward ray grid over each chamber is a browser measure, for the walking
+  probe's run or an overroad-style pass. Rule 34 covers the three static parts.
+- **M6 for the railway's viaduct.** The viaduct's runs are `railbridge.ts`'s, not `rd` records: rule
+  29 doesn't see them. Rule 19 (watertight) is the existing static look at the railway's holes.
+- **M9 finds nothing in today's packs, and two of §3.3's inferences are wrong.** The solid walls and
+  the drawn tube follow the same line: tunnels.ts `resample` sets each ring's sideways direction from
+  its neighbours just as map.ts `offsetLine` does at the record's points, and between points both are
+  straight, so they agree to the millimetre on all seven tunnel records in the packs (all Bath's: the other three maps have none). No tunnel record meets
+  another inside a hill (every record ends at a portal or a seam, and every seam has its tube going on
+  in the next square), so the wedge at a join can't happen with today's data. The floor you walk on
+  and the drawn floor differ by the drawn floor's 2 cm lift only (no tunnel in the packs carries
+  pavements). And the Sydney Gardens tunnels (−200,2600) are the **canal's** (Cleveland House and
+  Sydney Gardens Tunnels), which are canal.ts's straight bores: drawn (`canalBores`), walked
+  (`works.bore`) and the water's run through them agree within 0.1 m. So what Dan saw in tunnels is
+  not in the static geometry; it needs the walking probe (portal collision, the canal bore's linings
+  that block only down in the bore, the hill drawn inside the tube).
+- **Wells Road bridge (−1243,1642) is the railway over the road**, not a road deck: no `rd` record
+  there is a span, so rules 28–31 have nothing to look at; the odd walls are railbridge.ts's or the
+  lidar's (stage 2g). Rule 26 does find 193 m of pavement edge standing up to 1.6 m off the ground
+  there.
+- **M7 as written counts every abutment.** "Ground over the deck's underside under its outline" is
+  true at both ends of every bridge, where the deck rests on the bank by design. Rule 30 counts
+  ground over the deck's floor (a lump you see), 1.5 m in from each abutment, and the underside's
+  figure is kept beside it.
+- **M5's 3 cm threshold** would fail every road bridge by design (the road face's 0.07 m lift
+  against the deck floor's 0.03 m). Rule 28 uses 0.1 m.
+- **M1's figures** are lower than §3.1 quotes, as this samples the faces' area and the game's own
+  ground triangles rather than the ground across each path's width: over 5° and 10°, 52.7% and 34.5%
+  on 1_2 (plan: 66% and 44%), 37.5% and 17.0% on 0_2 (45%, 23%), 34.5% and 16.3% on 1_1 (38%, 20%),
+  15.0% and 6.9% on 0_3 (20%, 11%). The order of the squares is the same.
+- **Rule numbers** run 24–36, not 24–31: fourteen measures need more than eight numbers.
+- **Not in the existing baseline:** rules 20 and 23 (overroad.mjs) need `web/dist` built and a
+  browser, so `check_map.py` skipped them here.
