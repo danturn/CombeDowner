@@ -1011,7 +1011,8 @@ def drawn_terrain(m, sheet):
         idx = np.argwhere(sel)[near]
         under[idx[:, 0], idx[:, 1]] = np.minimum(under[idx[:, 0], idx[:, 1]], hc)
     if sheet.ok:
-        streets = sheet.kind_mask(("road", "service", "pave"))
+        # (paths written level across carve the ground to just under them as well, world.ts PATH_UNDER)
+        streets = sheet.kind_mask(FACE_KINDS if sheet.level else ("road", "service", "pave"))
         if streets.any():
             ids = np.nonzero(streets)[0]
             tree = shapely.STRtree(sheet.polys[ids])
@@ -1022,9 +1023,11 @@ def drawn_terrain(m, sheet):
             t = ids[ti]
             zz = sheet.z_on(t, X.ravel()[pi], Y.ravel()[pi])
             pave = sheet.K[t] == FACE_KINDS.index("pave")
+            path = sheet.K[t] > FACE_KINDS.index("pave")
             u, ro = under.ravel(), round_.ravel()
             np.minimum.at(ro, pi[pave], zz[pave] - 0.08)
-            np.minimum.at(u, pi[~pave], zz[~pave] - 0.3)
+            np.minimum.at(ro, pi[path], zz[path] - 0.02)
+            np.minimum.at(u, pi[~pave & ~path], zz[~pave & ~path] - 0.3)
             reach = T["dx"] * 0.75
             free = np.nonzero(~covered)[0]
             qi, qt = tree.query_nearest(pts[free], max_distance=reach, all_matches=False)
@@ -1033,7 +1036,7 @@ def drawn_terrain(m, sheet):
                 at = shapely.shortest_line(pts[free[qi]], shapely.boundary(tri))
                 ex, ey = shapely.get_coordinates(shapely.get_point(at, 1)).T
                 ez = sheet.z_on(ids[qt], ex, ey)
-                bump = np.where(sheet.K[ids[qt]] == FACE_KINDS.index("pave"), 0.14, 0.04)
+                bump = np.where(sheet.K[ids[qt]] == FACE_KINDS.index("pave"), 0.14, np.where(sheet.K[ids[qt]] > FACE_KINDS.index("pave"), 0.02, 0.04))
                 np.minimum.at(ro, free[qi], ez + bump)
             cov = covered.reshape(H.shape)
             edge = cov & ~(np.pad(cov, 1, constant_values=True)[1:-1, :-2] & np.pad(cov, 1, constant_values=True)[1:-1, 2:]

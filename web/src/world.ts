@@ -532,6 +532,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
   // fall short in others, which showed as grass and hillside through the street
   const faced = !!D.sf && SURFACES;
+  // (a square written with its paths level across draws them at their written height, not on the ground)
+  const levelPaths = faced && !!D.sf!.pl, PATH_UNDER = 0.02;
   const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04];
   const nFaces = faced ? FACE_KINDS.reduce((t, kind) => t + Math.floor((D.sf![kind]?.length ?? 0) / 3), 0) : 0;
   const faceXYZ = new Float64Array(nFaces * 9), faceKind = new Uint8Array(nFaces);
@@ -652,14 +654,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   if (LEVEL) for (let t = 0; t < faceKind.length; t++) {
     if (t % 400 === 399) yield;
-    if (faceKind[t] > 2) continue;     // (paths and drives lie on the ground as it's drawn)
+    // (paths and drives lie on the ground as it's drawn, unless the square has them level across:
+    // then the ground is carved down to just under them, and brought up a little to meet their edges)
+    const path = faceKind[t] > 2;
+    if (path && !levelPaths) continue;
     const F = faceXYZ, o = t * 9, reach = T.dx * 0.75, pave = faceKind[t] === 2, far = T.dx * 1.5;
     const i0 = Math.max(0, Math.floor((Math.min(F[o], F[o + 3], F[o + 6]) - far - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(F[o], F[o + 3], F[o + 6]) + far - T.x0) / T.dx));
     const j0 = Math.max(0, Math.floor((Math.min(F[o + 1], F[o + 4], F[o + 7]) - far - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(F[o + 1], F[o + 4], F[o + 7]) + far - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, v = j * T.nx + i;
       if (faceWeights(t, x, y) >= 0) {
-        if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t) - 0.08);
+        if (path) roundTo[v] = Math.min(roundTo[v], faceZ(t) - PATH_UNDER);
+        else if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t) - 0.08);
         else underTo[v] = Math.min(underTo[v], faceZ(t) - 0.3);
         covered[v] = 1;
         continue;
@@ -676,7 +682,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       // (the grass comes up to just under the face's top, as a verge or a garden meets it, rather
       // than leaving a dark step down from a pavement's back or a lane's edge)
-      if (d2 < reach * reach) { roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : 0.04)); continue; }
+      if (d2 < reach * reach) { roundTo[v] = Math.min(roundTo[v], near + (pave ? 0.14 : path ? 0.02 : 0.04)); continue; }
       // and further out, a corner of one of the ground's triangles over the face comes down only as far as
       // it must for that triangle to clear it: on a coarse grid a corner up a bank (under a bridge's
       // abutment, say) carried the grass over the pavement
@@ -1895,7 +1901,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "grass" | "dirt" | "gravel", Geo>) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
     const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04 };
-    const onGround = (k: string) => LIFT[k] === 0.04;
+    const onGround = (k: string) => LIFT[k] === 0.04 && !levelPaths;
     // (a point is in several triangles and outlines: the drawn ground under it is found once)
     const groundAt = new Float64Array(V.length / 3).fill(NaN);
     const at = (i: number, kind: string) => {
@@ -2834,7 +2840,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (t !== null) return t;
     const l = lift(x, z);
     // (paths are draped on the ground as it's drawn, not the survey's, so that's where feet go on them)
-    if (l === FACE_LIFT[3]) return drawnGround(x, z) + l;
+    if (l === FACE_LIFT[3]) return (levelPaths && !isNaN(levelAt) ? levelAt : drawnGround(x, z)) + l;
     return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.trueGround(x, z)) + l : drawnGround(x, z);
   };
   map.standOnDrawn((x, z) => surface(x, z));

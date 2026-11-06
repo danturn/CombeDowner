@@ -2637,6 +2637,7 @@ HEADROOM = 2.5             # metres: a deck at least this far above a way has ro
 FRONT_PATH_HALF = 0.55      # metres: half a front path's width, as the game drew its strip
 STREET_STEP = 4.0           # metres: the longest edge of a street's or pavement's outline, the spacing of its line's points
 PATH_STEP = 3.0             # metres: the longest edge of a path's outline, so it can follow the ground (a 4 m grid)
+LEVEL_REACH = 0.6           # metres past a path's half width that its paving is still levelled by its middle line
 
 
 NODE_TOL = 1e-3     # metres: a corner this close to a neighbour's edge is on it
@@ -3759,8 +3760,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     order, with the piece on the left), for the game's kerbs and the stone faces down to lower ground. A street's point is at the
     ground height under the middle of its nearest street, as the game levels a street across, and a
     pedestrianised street is paved wall to wall. Paving that is no kerbed street's (a pedestrian
-    street, a square) is drawn as a drive is, on the ground and flush with the paths across it. A path's, a front path's or a drive's point is at the
-    ground, and its outline has a point every `PATH_STEP` so it can lie on the ground as it's drawn. A
+    street, a square) is drawn on the ground, flush with the paths across it. A path's, a front path's or a drive's point is at the
+    ground's height under its middle line, level across (`pl` 1 says so, and the game draws it at that height), and its
+    outline has a point every `PATH_STEP` so it can follow the hill along its length. A
     bridge keeps its strip, with what holds it up, so it is cut out of the faces, but only along its
     deck, the rest of its record having faces (`sp` 2 says so; 1 was a path's bridge only); a way under
     a deck keeps its faces there, a path's as a path's.
@@ -4004,7 +4006,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                     + [LineString([q[:2] for q in b["p"]]).buffer(0.3) for b in br if len(b["p"]) > 1] or [Polygon()]))
     pieces = []
     for cls, g in (("carriageway", road), ("pavement", pave), ("path", path), ("front", front), ("drive", drive),
-                   ("drive", plaza)):
+                   ("plaza", plaza)):
         pieces += [(cls, q) for q in getattr(g, "geoms", [g])
                    if q.geom_type == "Polygon" and q.area > 0.05]
     if not pieces:
@@ -4018,9 +4020,38 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     keep_all = unary_union([g for g in (deck, beside_cut) if g is not None and not g.is_empty] or [Polygon()]).buffer(2 * STREET_STEP)
     shapely.prepare(keep_all)
 
+    # A path, a front path or a drive lies level across, at the ground's height under its middle
+    # line where it passes, and follows the hill only along its length: laid on the ground as it
+    # tilts, a path across a slope leant over like a roof. (A plaza's paving, with no line to it,
+    # stays on the ground.)
+    middles = [LineString([q[:2] for q in r["p"]]) for r in rd
+               if r["c"] in GAME_PATHS and r["c"] not in ("steps", "pedestrian") and len(r["p"]) > 1
+               and not any(len(q) > 3 and q[3] for q in r["p"])]
+    reach_mid = [way_width(r) / 2 + LEVEL_REACH for r in rd
+                 if r["c"] in GAME_PATHS and r["c"] not in ("steps", "pedestrian") and len(r["p"]) > 1
+                 and not any(len(q) > 3 and q[3] for q in r["p"])]
+    for rows, half in ((fp, FRONT_PATH_HALF), (dv, DRIVE_WIDTH / 2)):
+        for row in rows:
+            middles.append(LineString([row[:2], row[2:4]]))
+            reach_mid.append(half + LEVEL_REACH)
+    mid_tree = STRtree(middles) if middles else None
+
+    def level_z(x, y):
+        if mid_tree is None:
+            return ground(x, y)
+        p = Point(x, y)
+        k = mid_tree.query_nearest(p, all_matches=False)
+        k = int(k[0]) if len(k) else None
+        if k is None or middles[k].distance(p) > reach_mid[k]:
+            return ground(x, y)
+        q = middles[k].interpolate(middles[k].project(p))
+        return ground(q.x, q.y)
+
     def drawn_z(x, y, on_ground):
         if shapely.contains_xy(keep_all, x, y):
             return None
+        if on_ground is True:
+            return level_z(x, y)
         k = None if on_ground else nearest(x, y)
         if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
             k = None
@@ -4029,7 +4060,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (every face's edges are offered points at one spacing, and a point either face along an edge
     # keeps the other keeps too: thinned on their own, a road and the paving beside it kept different
     # points along their shared kerb, and the slit between them showed the ground)
-    flat = [cls in ("path", "front", "drive") for cls, _ in pieces]
+    flat = [True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else False for cls, _ in pieces]
     kept, zs = set(), {}
 
     def z_once(x, y, f):
@@ -4060,7 +4091,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             # ground: levelled with the street it stood metres off the ground under the houses)
             if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
                 k = None
-            if k is None:
+            if on_ground is True:
+                z = level_z(x, y)
+            elif k is None:
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)
             else:
@@ -4093,11 +4126,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return best[1]
     walk, kerbside = set(), set()
     for (cls, _), poly in zip(pieces, simple):
-        flat = cls in ("path", "front", "drive")
+        flat = True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else False
+        cls = "drive" if cls == "plaza" else cls
         for poly in getattr(poly, "geoms", [poly]):
             if poly.geom_type != "Polygon" or poly.is_empty:
                 continue
-            for t in (_ground_triangles(poly, T) if cls == "drive" and T is not None else _triangles(poly)):
+            for t in (_ground_triangles(poly, T) if flat == "g" and T is not None else _triangles(poly)):
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":
                     kind = "pave"
@@ -4141,6 +4175,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             del out[k]
     # (the game draws only a bridge's deck as its strip where the faces say they cover the rest)
     out["sp"] = 2
+    # (paths are written level across, to be drawn at these heights rather than on the ground)
+    out["pl"] = 1
     return out if any(out.get(k) for k in SF_LISTS) else None
 
 
