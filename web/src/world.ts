@@ -7,7 +7,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { Need, railNeed } from "./railbridge";
 import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
-import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
+import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops, stepsDetail } from "./furniture";
 import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
 import { Culler, show, traverseAll } from "./cull";
@@ -2840,6 +2840,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.trueGround(x, z)) + l : drawnGround(x, z);
   };
   map.standOnDrawn((x, z) => surface(x, z));
+  // (flights start and end on the surface just laid)
+  yield* stepsDetail(map, scene, culler);
+  mark("furniture");
   const paved = (x: number, z: number) => lift(x, z) > 0;
   const pavement = (x: number, z: number) => lift(x, z) === FACE_LIFT[2];
 

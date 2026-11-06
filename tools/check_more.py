@@ -885,6 +885,7 @@ FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
 GAME_KERBED = KERBED | {"living_street"}
 LANDING = (0.1, 0.05)   # metres off a walkable face, and up or down from it, that a flight's end may land
 STAIR_PITCH = 0.7       # furniture.ts: the steepest a flight's treads climb
+TREAD_DEPTH = 0.15      # furniture.ts: how far a tread's block goes on down under its step
 LOCK_HALF, COPE, APRON, TAIL = 2.15, 1.2, 4.5, 2.2   # canal.ts
 LEVELS_AGREE = 0.03     # metres two touching waters may differ
 FENCE_IN = 0.3          # metres of a wall, fence or hedge inside water or a way before it counts
@@ -1557,9 +1558,11 @@ def flights(m, sheet, walk, note, at, inner, fig):
     (a) each end lands on something to walk on: a face, or another way's line, within LANDING[0], at
     the treads' height within LANDING[1]; (b) no tread is buried, the ground beside it higher than its
     top; (c) none stands as a grey block, more than 0.3 m over the ground beside it with nothing
-    holding the bank (the game has no cheek walls); (d) a tread you can stand on: its top within a
-    step (0.2 m) of the ground you walk at there, as the treads aren't floors and you walk the ground
-    under them. A flight's score is the share of its treads that fail (b), (c) or (d)."""
+    holding the bank: a side where the game builds no cheek wall (furniture.ts builds one where the
+    ground just beside the tread is more than 0.3 m under its top, or under its block's foot); (d) a
+    tread you can stand on: the treads are floors, so you stand on a tread unless the ground over it
+    is more than a step (0.2 m) higher, and you can climb to it from the one before (no more than
+    0.6 m up). A flight's score is the share of its treads that fail (b), (c) or (d)."""
     roads = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
     stepped = [r for r in roads if r["c"] == "steps" and not any(_flags(r))]
     if not stepped: return
@@ -1586,9 +1589,14 @@ def flights(m, sheet, walk, note, at, inner, fig):
             top = max(height(s0), height(s1))
             side = walk(np.array([x + nx_ * 1.15, x - nx_ * 1.15]), np.array([y + ny_ * 1.15, y - ny_ * 1.15]))
             here = float(walk(np.array([x]), np.array([y]))[0])
+            foot = min(here, height(s0), height(s1)) - TREAD_DEPTH
+            k_ = 1 + 0.1 / (w / 2)
+            beside = walk(np.array([x + nx_ * k_, x - nx_ * k_]), np.array([y + ny_ * k_, y - ny_ * k_]))
+            cheek = (top - beside > 0.3) | (beside < foot)
             if side.max() > top + 0.05: bad["buried"] += 1
-            if top - side.min() > 0.3: bad["block"] += 1
-            if abs(top - here) > 0.2: bad["unwalkable"] += 1
+            if ((top - side > 0.3) & ~cheek).any(): bad["block"] += 1
+            if here - top > 0.2 or (k and top - last > 0.6): bad["unwalkable"] += 1
+            last = top
         totals["treads"] += count
         for k, v in bad.items(): totals[k] += v
         if count:
