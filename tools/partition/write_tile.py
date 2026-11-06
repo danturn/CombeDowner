@@ -2427,7 +2427,7 @@ def deck_gaps(rd, ground, depth=0.9):
             # standing just outside one below the deck would stand inside its side)
             whole = line.buffer(hl + 0.6, single_sided=True, cap_style="flat").union(line.buffer(-(hr + 0.6), single_sided=True, cap_style="flat"))
             whole = whole.difference(Point(xy[0]).buffer(ABUTMENT)).difference(Point(xy[-1]).buffer(ABUTMENT))
-            out.append((outline, line, cum, under, whole))
+            out.append((outline, line, cum, under, whole, (hl, hr)))
     return out
 
 
@@ -2435,13 +2435,14 @@ SKIRT = 0.8       # metres outside a deck's parapets where a wall would be the b
 
 
 def deck_skirts(gaps):
-    """A strip along each side of each span, just outside its parapets, from one end to the other:
-    the lidar sees the bridge's own side there as a wall, which would stand at the foot of the bank
-    a second time under the parapet. Walls running on from the parapets past the ends are not in it."""
+    """Each span's deck out to its parapets and a little past, on each side at that side's own
+    width, from one bank to the other: the lidar sees the bridge's own side there as a wall, which
+    would stand under the parapet a second time, and an average width left a piece of it standing
+    beside the wider side. Walls running on from the parapets past the ends are not in it."""
     out = []
-    for outline, line, cum, under, _ in gaps:
-        half = max(0.5, outline.area / max(0.1, line.length - 2 * BANK) / 2)
-        out.append(line.buffer(half + SKIRT, cap_style="flat").difference(line.buffer(half - 0.05, cap_style="flat")))
+    for outline, line, cum, under, _, (hl, hr) in gaps:
+        out.append(line.buffer(hl + 0.4 + SKIRT, single_sided=True, cap_style="flat").union(
+            line.buffer(-(hr + 0.4 + SKIRT), single_sided=True, cap_style="flat")))
     return out
 
 
@@ -2449,7 +2450,7 @@ def deck_ends_reach(gaps, past=1.0):
     """The ground a bridge's abutments stand on, at each end of each gap and a metre past it: no
     boundary is drawn there, or a fence panel stands against the abutment's face."""
     out = []
-    for outline, line, cum, under, _ in gaps:
+    for outline, line, cum, under, *_ in gaps:
         # (as wide as the deck's outline, out to its parapets)
         half = max(0.5, outline.area / max(0.1, line.length - 2 * BANK) / 2)
         for a, b in ((-past, BANK), (line.length - BANK, line.length + past)):
@@ -2468,7 +2469,7 @@ def under_a_deck(gaps, x, y, foot, room=0.3, whole=False):
     """Does something whose foot is at `foot` stand in the gap under a bridge's deck at (x, y)? With
     `whole`, anywhere under the deck, beside its abutments too."""
     pt = Point(x, y)
-    for outline, line, cum, under, all_of in gaps:
+    for outline, line, cum, under, all_of, _ in gaps:
         if (all_of if whole else outline).contains(pt) and foot < float(np.interp(line.project(pt), cum, under)) - room:
             return True
     return False
