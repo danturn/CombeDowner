@@ -635,12 +635,21 @@ if the timing suits (§9).
   carves and fills the grid towards the paths' edges within the batter rules (the 4 m grid can't
   meet a 1.5 m path exactly, so the path's free edge face covers what's left, as a kerb does).
   This is the interim; the sheet makes it exact.
+  *As built:* a path's corners take the height of its own line as laid (`rd` z, so the towpath
+  sits on the canal's bank and a path dips under a bridge with its cutting), a front path's or a
+  drive's the ground under its line, and a flight's paving its flight's line; a plaza stays on the
+  ground. The writer's grid is not carved: the game does it on the drawn ground (`world.ts`, the
+  level-streets pass, now taking paths too: the ground let down to 2 cm under a path, its triangles
+  cleared of it as a pavement's are, and filled up to its lower edge by up to 1.5 m where the path
+  is what decides that grid point). check_more's drawn ground copies that, so rules 24–36 measure
+  what is drawn.
 - **2b. Dig under every span**, not only those of 4+ points (`lay_ground`), to `DECK_CLEAR`.
 - **2c. Water:** the canal's works stop at the river's outline (`tools/canal.py` clips the run;
   `works.ts` reads it, so Spencer's code is untouched beyond a clip); touching water bodies agree
   in `prep_map.py`'s water step; no OSM canal polygon raised where it overlaps a river.
   *As built:* `canal.py` adds to a run that opens into a river a list `x` of the river's edge there
-  (a point and the way into the river); `canal.ts` and `works.ts` cut the water, banks and verges
+  (a point and the way into the river, the point set back to where the river's edge comes nearest
+  the canal within its works' reach); `canal.ts` and `works.ts` cut the water, banks and verges
   off past it, and check_more's `canal_pieces` (rules 34–36) cuts its copy the same way, so the
   check measures what is drawn. The river piece that touches a mouth takes the canal's level
   where that is lower (one water, and no seam between two surfaces at the mouth). Pieces of one
@@ -651,6 +660,11 @@ if the timing suits (§9).
   are cut.
 - **2e. Flights land on faces:** `flights_to_their_ends` snaps each end to the walkable face it
   meets, at that face's height, and the steep-path rule takes the threshold Dan picks (§4.5).
+  *As built:* 1 in 4 over 3 m, and a flight made so is kept only where, once its ends are cut
+  back to what they meet, it is at least 3 m long and climbs no steeper than a stair (0.7) between
+  the ground at its ends; else it stays a path. Each flight's end is run on 0.1 m onto the street or
+  path it meets (within 2 m). The bank beside a flight is cut to the straight climb between its
+  ends in the game, only where no path or street face decides the ground.
 - **2f. Places of worship** by building form (`tools/buildings.py`, `prep_map.py`); drop the
   name-based Bath rule.
 - **2g. The lidar's view of a bridge's side** is not a wall within the deck outline + parapet

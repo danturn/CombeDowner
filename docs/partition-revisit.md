@@ -1594,3 +1594,18 @@ same as main):
   are Spencer's and set its locks, so the river gives way. Pieces of one river cut by squares
   still each take their own bank's level, so a step of a few centimetres can stand at a square's
   edge; the sheet's single water level per reach would remove it.
+- [ ] **A level path's fill side is a plain stone face, not the area's own wall** (rule 26). With
+  paths written level across (`sf.pl`), the game carves the ground down to just under them and
+  raises it by up to a kerb to meet their edges; where the ground beside still falls further, the
+  path's edge face is drawn down to it, in stone when it is over 0.45 m, as a street's is. Dan asked
+  for a low retaining wall in the area's existing wall material there; the edge face is the
+  interim, and the writer's grid is not yet carved and filled to the paths' edges within the batter
+  rules (the game's carving does it on the drawn ground). The sheet makes both exact.
+- [ ] **Steps are sunk by cutting the drawn ground to a straight climb between their ends** (rule
+  33). The ground within three quarters of a cell of a flight's sides is let down to the straight
+  line between the true ground at its two ends, so the treads' edges meet the bank. A flight that
+  is not straight in height (a landing halfway) has its bank cut to the straight line all the same.
+- [ ] **A footpath steeper than 1 in 4 over 3 m becomes steps** (Dan's threshold, was 1 in 1.5 over
+  2 m). The heights are the 4 m grid's, so a path on a bank the grid sees as steep but the survey
+  doesn't can be stepped for a few metres.
+

@@ -127,6 +127,13 @@ the game locally, without the sound" in `CLAUDE.md`.
   `london` zone in `tools/buildings.py`, `gardens.py` and `walls.py`. On `main` as a test, on its
   own page (`pembury.html`), kept out of the main menu (`hidden` in `maps.ts`).
 
+- **Ground plan stage 2 (Dan's, branch `claude/ground-stage2` on Dan's fork, not merged):** paths
+  written level across (`sf.pl`, `world.ts`), steps sunk and landing on faces, digging under short
+  spans, no walls on the towpath or paths, churches by OSM/Wikidata form (`tools/worship.py`).
+  **Spencer, the canal:** `tools/canal.py` adds an optional `x` to a run that opens into a river, and
+  `canal.ts`/`works.ts` cut the water, banks and verges off past it (`clipMouths`); nothing else of
+  the canal or the locks changes.
+
 ## Parked
 
 - **V-01 voice chat TURN relay:** planned to use Metered Open Relay; see `TODO.md`.
