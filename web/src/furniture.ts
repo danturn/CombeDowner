@@ -836,6 +836,8 @@ const DECK_TOP = 0.34, DECK_RAMP = 1.0;
 /** A Belisha beacon's globe: amber, and bright enough to read at dusk. */
 const S_BEACON = new THREE.MeshBasicMaterial({ vertexColors: true, color: "#ffb02a" });
 
+/** The grey stone of a flight's treads and the walls beside them. */
+const TREAD_STONE = "#9b968b";
 /** Steepest a flight climbs (rise per metre along it), about a stair's usual pitch. */
 const STAIR_PITCH = 0.7;
 /** How far a handrail stands above the treads. */
@@ -843,7 +845,7 @@ const RAIL_HEIGHT = 0.9;
 
 /** How far a tread's block goes on down under the lower edge of its step. */
 const TREAD_DEPTH = 0.15;
-/** A cheek wall's thickness, and how far its coping stands over the treads. */
+/** A cheek wall's thickness, and how far it stands over the treads. */
 const CHEEK = 0.2, CHEEK_UP = 0.08;
 
 /** What each map's flights give to stand on, so a map built again swaps its old treads for the new. */
@@ -856,7 +858,8 @@ const treadFloors = new WeakMap<GameMap, (x: number, z: number, y: number) => nu
  * never dips into the ground on the way and never rises steeper than a stair, so where it meets a
  * retaining wall it starts climbing early to reach the top rather than leaving its rails hanging off
  * the wall. Each tread is a block down to the ground under the flight's line; where the ground beside
- * falls away, a stone cheek wall holds the side, as on a real flight cut into a bank. You walk on the
+ * falls away anywhere along a side, a low wall of the treads' stone runs the whole of that side,
+ * stepping up with them, as on Bath's steps cut into a bank. You walk on the
  * treads as drawn (map.floors). One merged mesh for the square's steps. Built once the square's
  * surface is laid (world.ts), as the flight starts and ends on it.
  */
@@ -877,19 +880,19 @@ export function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler
     const { L, w, along, height } = lay;
     const treadCount = r.sc ?? (lay.rise > 0.3 ? Math.round(lay.rise / 0.16) : 0);
     const count = Math.min(treadCount, 240, Math.floor(L / 0.2));
-    const cheeks: ({ s0: number; s1: number; top: number; foot: number } | null)[] = [];   // each tread's right side, then its left
+    const cheeks: Cheek[] = [];   // each tread's left side, then its right
     for (let k = 0; k < count; k++) {
       const s0 = L * k / count, s1 = L * (k + 1) / count, [x, y, ux, uy] = along((s0 + s1) / 2);
       const top = Math.max(height(s0), height(s1)), nx = -uy * w / 2, ny = ux * w / 2;
       const bottom = Math.min(ground(x, y), height(s0), height(s1)) - TREAD_DEPTH;
       const turn = Math.atan2(ux, -uy), depth = s1 - s0 + 0.02;
-      parts.push([box(w * 0.95, top - bottom, depth).rotateY(turn), "#9b968b", x, (top + bottom) / 2, -y]);
+      parts.push([box(w * 0.95, top - bottom, depth).rotateY(turn), TREAD_STONE, x, (top + bottom) / 2, -y]);
       // the nosing, on the tread's leading edge whichever way the flight climbs
       const lead = height(s1) >= height(s0) ? s0 : s1, [ex, ey] = along(lead);
       parts.push([box(w * 0.95, 0.05, 0.06).rotateY(turn), "#3f3d38", ex, top, -ey]);
       for (const side of [1, -1]) {
         const beside = ground(x + nx * (1 + 0.1 / w) * side, y + ny * (1 + 0.1 / w) * side);
-        cheeks.push(top - beside > 0.3 || beside < bottom ? { s0, s1, top, foot: Math.min(beside, bottom) - TREAD_DEPTH } : null);
+        cheeks.push({ s0, s1, top, foot: Math.min(beside, bottom) - TREAD_DEPTH, beside, need: top - beside > 0.3 || beside < bottom });
       }
       const t = treads.length;
       treads.push([x, y, ux, uy, depth / 2, w * 0.95 / 2, top]);
@@ -899,7 +902,11 @@ export function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler
         if (l[l.length - 1] !== t) l.push(t);
       }
     }
-    for (const side of [1, -1]) cheekWalls(cheeks.filter((_, i) => (i % 2 === 0) === (side > 0)), along, side * w / 2, side, cheekPos);
+    // (a side has its wall the whole way or not at all, never starting or stopping partway)
+    for (const side of [1, -1]) {
+      const by = cheeks.filter((_, i) => (i % 2 === 0) === (side > 0));
+      if (by.some((c) => c.need)) cheekWall(by, along, side * w / 2, side, cheekPos);
+    }
     const sides = (r.hr ?? 0) & 7;
     for (const [bit, off] of [[1, w / 2 - 0.08], [2, -w / 2 + 0.08], [4, 0]] as const) {
       if (!(sides & bit)) continue;
@@ -939,7 +946,7 @@ export function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(cheekPos, 3));
     g.computeVertexNormals();
-    parts.push([g, "#b3a688", 0, 0, 0]);
+    parts.push([g, TREAD_STONE, 0, 0, 0]);
   }
   if (!parts.length) return;
   const m = new THREE.Mesh(model(parts), new THREE.MeshLambertMaterial({ vertexColors: true }));
@@ -948,13 +955,15 @@ export function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler
   culler.add(m, 200);
 }
 
+type Cheek = { s0: number; s1: number; top: number; foot: number; beside: number; need: boolean };
+
 /**
- * A flight's cheek walls down one side (off metres left of its line, side +1 left, -1 right), one
- * for each run of treads that has one: its coping sloping with the flight just over the treads, its
- * foot on the ground beside, as triangles in scene metres added to pos.
+ * A flight's cheek wall down one side (off metres left of its line, side +1 left, -1 right): beside
+ * each tread a block from the ground beside it to just over the tread, so its top steps up with
+ * the flight, as triangles in scene metres added to pos. (Where the bank beside stands over it, it's
+ * buried, and left out.)
  */
-function cheekWalls(by: ({ s0: number; s1: number; top: number; foot: number } | null)[], along: (s: number) => [number, number, number, number],
-  off: number, side: number, pos: number[]) {
+function cheekWall(by: Cheek[], along: (s: number) => [number, number, number, number], off: number, side: number, pos: number[]) {
   const quad = (a: number[], b: number[], c: number[], d: number[], out: number[]) => {
     // (wound to face out, so it's drawn from the side it's seen from)
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
@@ -962,30 +971,25 @@ function cheekWalls(by: ({ s0: number; s1: number; top: number; foot: number } |
     const [p, q, r, t] = flip ? [a, d, c, b] : [a, b, c, d];
     pos.push(...p, ...q, ...r, ...p, ...r, ...t);
   };
-  for (let i = 0; i < by.length; ) {
-    if (!by[i]) { i++; continue; }
-    let j = i;
-    while (j + 1 < by.length && by[j + 1]) j++;
-    const run = by.slice(i, j + 1) as { s0: number; s1: number; top: number; foot: number }[];
-    // at each joint between treads, the higher top and the lower foot of the two either side
-    const at = run.map((t) => t.s0).concat(run[run.length - 1].s1).map((s, k) => {
-      const a = run[Math.max(0, k - 1)], b = run[Math.min(run.length - 1, k)], [x, y, ux, uy] = along(s);
-      const hi = Math.max(a.top, b.top) + CHEEK_UP, lo = Math.min(a.foot, b.foot);
-      const o = [-uy * off, ux * off], n = [-uy * side * CHEEK, ux * side * CHEEK];
-      const outer = [x + o[0], y + o[1]], inner = [outer[0] - n[0], outer[1] - n[1]];
-      return { oT: [outer[0], hi, -outer[1]], oB: [outer[0], lo, -outer[1]], iT: [inner[0], hi, -inner[1]], iB: [inner[0], lo, -inner[1]],
-        out: [-uy * side, 0, -ux * side], ahead: [ux, 0, -uy] };
-    });
-    for (let k = 0; k + 1 < at.length; k++) {
-      const A = at[k], B = at[k + 1];
-      quad(A.oB, B.oB, B.oT, A.oT, A.out);
-      quad(A.iB, B.iB, B.iT, A.iT, A.out.map((c) => -c));
-      quad(A.oT, B.oT, B.iT, A.iT, [0, 1, 0]);
-    }
-    const S = at[0], E = at[at.length - 1];
-    quad(S.oB, S.iB, S.iT, S.oT, S.ahead.map((c) => -c));
-    quad(E.oB, E.iB, E.iT, E.oT, E.ahead);
-    i = j + 1;
+  // the wall's outer and inner edge at s metres along, at height h
+  const edge = (s: number) => {
+    const [x, y, ux, uy] = along(s), ox = x - uy * off, oy = y + ux * off, nx = -uy * side * CHEEK, ny = ux * side * CHEEK;
+    return { o: (h: number) => [ox, h, -oy], i: (h: number) => [ox - nx, h, -(oy - ny)], out: [-uy * side, 0, -ux * side], ahead: [ux, 0, -uy] };
+  };
+  const buried = (t: Cheek | undefined) => !t || t.beside > t.top + CHEEK_UP + 0.02;
+  for (let k = 0; k < by.length; k++) {
+    const t = by[k], A = edge(t.s0), B = edge(t.s1), hi = t.top + CHEEK_UP, lo = t.foot, inner = t.top - 0.05;
+    if (buried(t)) continue;
+    quad(A.o(lo), B.o(lo), B.o(hi), A.o(hi), A.out);
+    quad(A.i(inner), B.i(inner), B.i(hi), A.i(hi), A.out.map((c) => -c));
+    quad(A.o(hi), B.o(hi), B.i(hi), A.i(hi), [0, 1, 0]);
+    // the step up to the next tread's (or down from the last's), and the wall's two ends
+    const next = by[k + 1];
+    if (!buried(next)) {
+      const nh = next.top + CHEEK_UP;
+      if (Math.abs(nh - hi) > 1e-3) quad(B.o(Math.min(hi, nh)), B.i(Math.min(hi, nh)), B.i(Math.max(hi, nh)), B.o(Math.max(hi, nh)), nh > hi ? A.ahead.map((c) => -c) : A.ahead);
+    } else quad(B.o(lo), B.i(lo), B.i(hi), B.o(hi), B.ahead);
+    if (buried(by[k - 1])) quad(A.o(lo), A.i(lo), A.i(hi), A.o(hi), A.ahead.map((c) => -c));
   }
 }
 

@@ -1561,8 +1561,9 @@ def flights(m, sheet, walk, note, at, inner, fig):
     (a) each end lands on something to walk on: a face, or another way's line, within LANDING[0], at
     the treads' height within LANDING[1]; (b) no tread is buried, the ground beside it higher than its
     top; (c) none stands as a grey block, more than 0.3 m over the ground beside it with nothing
-    holding the bank: a side where the game builds no cheek wall (furniture.ts builds one where the
-    ground just beside the tread is more than 0.3 m under its top, or under its block's foot); (d) a
+    holding the bank: a side where the game builds no cheek wall (furniture.ts builds one the whole
+    length of a side where the ground just beside any tread is more than 0.3 m under its top, or
+    under its block's foot); (d) a
     tread you can stand on: the treads are floors, so you stand on a tread unless the ground over it
     is more than a step (0.2 m) higher, and you can climb to it from the one before (no more than
     0.6 m up). A flight's score is the share of its treads that fail (b), (c) or (d)."""
@@ -1582,6 +1583,7 @@ def flights(m, sheet, walk, note, at, inner, fig):
         count = min(treads, 240, int(L // 0.2))
         w = r.get("w") or 1.8
         bad = dict(buried=0, block=0, unwalkable=0)
+        rows = []
         for k in range(count):
             s0, s1 = L * k / count, L * (k + 1) / count
             x, y = along((s0 + s1) / 2)
@@ -1595,11 +1597,13 @@ def flights(m, sheet, walk, note, at, inner, fig):
             foot = min(here, height(s0), height(s1)) - TREAD_DEPTH
             k_ = 1 + 0.1 / (w / 2)
             beside = walk(np.array([x + nx_ * k_, x - nx_ * k_]), np.array([y + ny_ * k_, y - ny_ * k_]))
-            cheek = (top - beside > 0.3) | (beside < foot)
+            rows.append((top, side, (top - beside > 0.3) | (beside < foot)))
             if side.max() > top + 0.05: bad["buried"] += 1
-            if ((top - side > 0.3) & ~cheek).any(): bad["block"] += 1
             if here - top > 0.2 or (k and top - last > 0.6): bad["unwalkable"] += 1
             last = top
+        # (a side has its cheek wall the whole way if it needs one anywhere)
+        walled = np.any([c for _, _, c in rows], axis=0) if rows else np.zeros(2, bool)
+        bad["block"] = sum(1 for top, side, _ in rows if ((top - side > 0.3) & ~walled).any())
         totals["treads"] += count
         for k, v in bad.items(): totals[k] += v
         if count:
