@@ -655,6 +655,22 @@ export class Player {
   private bump(p: { x: number; z: number }) {
     if (this.map.sweep) this.map.sweep(this.pos, p, this.pos.y, RADIUS);
     else this.map.collide(p, this.pos.y, RADIUS);
+    this.duck(p);
+  }
+
+  /** Walking under something lower than your head (a bridge where the bank rises to meet it):
+   *  stopped there, sliding along it if you can, rather than walking on with your head through it
+   *  until the deck is low enough to step up on to. */
+  private duck(p: { x: number; z: number }) {
+    if (!this.map.ceiling) return;
+    const y = this.pos.y, top = y + this.eyeHeight + HEAD;
+    const roof = (x: number, z: number) => this.map.ceiling!(x, z, y) ?? Infinity;
+    const here = roof(this.pos.x, this.pos.z);
+    const ok = (x: number, z: number) => { const r = roof(x, z); return r >= top || r >= here; };
+    if (ok(p.x, p.z)) return;
+    if (ok(p.x, this.pos.z)) p.z = this.pos.z;
+    else if (ok(this.pos.x, p.z)) p.x = this.pos.x;
+    else { p.x = this.pos.x; p.z = this.pos.z; }
   }
 
   /** Shut inside a building after all (shoved in by a car, a square of Bath loading in round you,

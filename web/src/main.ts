@@ -10,6 +10,7 @@ import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from 
 import { STREETS, controlsPage, ctl, ctlText, input, isKey, placeNow } from "./controls";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
+import { watchNet } from "./netcheck";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
@@ -28,6 +29,7 @@ import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
 import { watchLoading } from "./loadnote";
+import { watchErrors } from "./errors";
 import { MOBILE, checkGraphics, playing, starting } from "./safegfx";
 import { quality } from "./quality";
 import { buildLabel } from "./version";
@@ -66,6 +68,7 @@ itemPicRenderer(renderer);   // wardrobe rewards draw their item with this, not 
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 const gfx = checkGraphics(renderer);   // before shadows and Post, which it may turn down
 Telemetry.graphics(gfx.crashed, gfx.plainBuffer);
+watchErrors(canvas, gfx.crashed, gfx.gpu);
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
 renderer.shadowMap.type = gfx.shadowType;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -277,14 +280,14 @@ const wasPlaying = ((): { code: string; map: string } | null => {
   } catch { return null; }
 })();
 
-/** Keep the room in the start screen's recent list while you're in it, with whoever has been there. */
+/** Keep the room in the start screen's recent list while you're in it, with whoever has been there (a solo game: when you last played it). */
 let roomTimer = 0, roomNote = () => {};
 addEventListener("pagehide", () => roomNote());
 function watchRoom(code: string) {
   clearInterval(roomTimer);
-  roomNote = () => {};
-  if (code === "SOLO") return;
-  roomNote = () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
+  roomNote = code === Saves.SOLO
+    ? () => { if (game) Saves.played(current.id, Saves.SOLO); }
+    : () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
   roomNote();
   roomTimer = window.setInterval(roomNote, 30000);
 }
@@ -356,6 +359,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   Telemetry.offerPicture(id, map.d.release, () => game?.mapPicture() ?? null);
   Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
+  watchNet(net, code);
   armTravel(game, code);
   watchRoom(code);
   playingCode = code;

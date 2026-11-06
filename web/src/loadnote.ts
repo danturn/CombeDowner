@@ -2,8 +2,10 @@
 // of memory, a bad connection) can see what it's stuck on and tell us, instead of looking at an
 // endless "Loading". It says how many squares of Bath are still to come, the last thing that went
 // wrong, if the graphics gave out, and which build the page is, as the game's own note about itself
-// (notice.ts systemNote). Nothing here goes over the network.
+// (notice.ts systemNote), and tells the play counts once (telemetry.ts). Nothing here goes over the
+// peer network.
 import { tileTrouble } from "./tiles";
+import * as Telemetry from "./telemetry";
 import { buildLabel } from "./version";
 import { systemNote } from "./notice";
 
@@ -33,6 +35,7 @@ export function watchLoading(canvas: HTMLCanvasElement) {
     const lines: string[] = [];
     if (lost) lines.push("The graphics stopped working on this device (WebGL context lost). Reloading the page may help.");
     if (waiting > STALL * 1000) {
+      Telemetry.failure("stall", menuLoading ? "map never loaded" : "squares stopped coming", tileTrouble.last.split("?")[0], { pending: p ?? null });
       lines.push(menuLoading ? `Still loading the map after ${Math.round(waiting / 1000)} s.`
         : `Still waiting for ${p} square${p === 1 ? "" : "s"} of the map (nothing new for ${Math.round(waiting / 1000)} s).`);
       if (tileTrouble.last) lines.push(`Couldn't load ${tileTrouble.failed} time${tileTrouble.failed === 1 ? "" : "s"}, last: ${tileTrouble.last}`);
