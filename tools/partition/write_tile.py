@@ -2645,7 +2645,7 @@ def _points_where_needed(poly, step, z_at, kept=None, also=frozenset()):
         flip = (a[0], a[1]) > (b[0], b[1])
         if flip:
             a, b = b, a
-        n = max(1, math.ceil(math.dist(a, b) / step))
+        n = max(1, math.ceil(math.dist(a, b) / (step(a, b) if callable(step) else step)))
         if n == 1:
             return []
         pts = [(a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n) for i in range(n + 1)]
@@ -4024,9 +4024,16 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if k not in zs:
             zs[k] = drawn_z(x, y, f)
         return zs[k]
+    # (a path's edge is offered a point every PATH_STEP, a street's every STREET_STEP, and an edge
+    # the two share a path's)
+    paths_edge = unary_union([q.boundary for f, q in zip(flat, simple) if f] or [LineString()]).buffer(0.01)
+    shapely.prepare(paths_edge)
+
+    def step_of(a, b):
+        return PATH_STEP if shapely.contains_xy(paths_edge, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2) else STREET_STEP
     for f, q in zip(flat, simple):
-        _points_where_needed(q, PATH_STEP, lambda x, y, f=f: z_once(x, y, f), kept)
-    simple = noded([_points_where_needed(q, PATH_STEP, lambda x, y, f=f: z_once(x, y, f), also=kept)
+        _points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), kept)
+    simple = noded([_points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), also=kept)
                     for f, q in zip(flat, simple)])
 
     v, at = [], {}
