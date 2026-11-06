@@ -1,0 +1,814 @@
+# The ground as one sheet: a plan for the map build and the ground's drawing
+
+Written for Dan to review, and then to be implemented from this document alone (the conversation
+that produced it will be compacted). It answers his question: should the map build be planned more
+formally (the layer order, what may move what, what is cut or removed), and is there one
+architecture that fixes many of the glitches he saw at once and draws faster?
+
+Everything here was read from the code at `f5b99c63` (the fork's `main`, which is
+`claude/map-integrate`, live), in the worktree `/Users/dan/src/cd-ground-plan`, branch
+`claude/ground-plan`. No map was built and no browser was run: map building is paused. Numbers
+marked *measured* come from small read-only scripts over the packed squares in
+`web/public/maps/combe-down/`; numbers marked *estimate* are reasoning, not measurement. Where a
+mechanism is inferred rather than read, it says so.
+
+## Contents
+
+1. [The short answer](#1-the-short-answer)
+2. [How the map is built and drawn today](#2-how-the-map-is-built-and-drawn-today)
+3. [What causes each thing Dan saw](#3-what-causes-each-thing-dan-saw)
+4. [The proposed architecture](#4-the-proposed-architecture)
+5. [Performance](#5-performance)
+6. [Measures: new checks and a walking probe](#6-measures-new-checks-and-a-walking-probe)
+7. [Stages](#7-stages)
+8. [Risks, open questions for Dan, and what was rejected](#8-risks-open-questions-for-dan-and-what-was-rejected)
+9. [How to resume](#9-how-to-resume)
+
+---
+
+## 1. The short answer
+
+**The hypothesis is half right, and the half that is wrong matters.**
+
+- *Right:* most of the glitches come from the ground being several things drawn on top of one
+  another, each with its own idea of the height, fitted to the one below and hidden where they
+  disagree. Everything Dan listed except the church and the traffic lights traces back to that.
+- *Already done:* the partition (`tools/partition/`) has already made **the plan view** one sheet
+  for streets, pavements, paths, drives and gardens. Those faces are noded to each other, share
+  every corner along their edges, and leave no gaps or overlaps (`watertight.py`: gaps and overlaps
+  0 across the city). So "neighbours share exact edges" is mostly true today, for the street faces.
+- *Not done, and the real cause:* **heights.** A point on the ground gets its height from one of at
+  least six different functions, depending on what is asking:
+  - the writer's street level, for road and pavement faces;
+  - the terrain grid as drawn, let down at load under streets, for paths, front paths and drives;
+  - the survey's grid before it was let down, for the height you *walk* at on a path;
+  - the steps' own tread layout;
+  - the bridge deck, the tunnel bore and the canal's banks, each its own function;
+  - each pond's own flat level.
+
+  On top of that, the terrain grid is drawn **everywhere**, under every face, and is hidden by
+  pushing grid points down, by `discard` in the shader and by depth offsets. Where those
+  disagree by centimetres you get exactly what Dan saw.
+- *Outside the sheet entirely:* water, the river's banks, the canal and its locks, bridges,
+  tunnels and steps. Each is built from its own outline at its own heights and laid over, or
+  punched through, the ground.
+- *Drawn is not solid:* steps are drawn but walked as a ramp; tunnel walls are solid along one
+  line and drawn along another; you walk a path at a different height from where it is drawn; a
+  bridge's ceiling assumes one deck depth for every kind.
+
+**Recommendation.** Finish what the partition started, in three moves:
+
+1. **One ground sheet per square, baked.** Every surface becomes a face of one triangulated sheet
+   with one height per corner, solved in a fixed order. The surfaces are carriageway, pavement,
+   path, step footprint, drive, water, bank, verge, garden and open land. Drop the sinking and
+   hiding. The open land away from any face stays the cheap 4 m grid (it is 80 KB of a 0.9 MB
+   square), and only the grid cells a face touches are re-cut. So it is a **hybrid sheet**, not a
+   full irregular mesh.
+2. **Structures attach to the sheet along named edges:** bridges, tunnels, steps and locks. The
+   same shape is drawn and is solid.
+3. **One walk surface:** the game stands you on exactly the triangles it draws.
+
+Ship it in stages, **with the cheap runtime fixes first** (steps you walk on, tunnel walls where
+they're drawn, paths walked where drawn, the locks' edges). Then the build rules that fix tilted
+paths, hillside through footbridges and land in the river within today's format. Then the sheet
+itself, behind a URL flag, until the measures say it is better.
+
+**Speed.** The gain is real but modest, and comes from fewer draw calls (ground meshes merged by
+class, no depth-offset materials), no ground drawn under faces (11 to 22% of a town square's area),
+and less load-time work. It does **not** come from simplifying flat ground: Bath's 4 m lidar grid
+barely simplifies at 5 cm (5 to 20% fewer triangles, *measured*). Download must be held flat. That
+is a gate, not a hope.
+
+---
+
+## 2. How the map is built and drawn today
+
+### 2.1 The pipeline
+
+```mermaid
+flowchart TD
+  subgraph data["Data (measured unless marked)"]
+    DTM["EA lidar DTM, 1 m → 4 m terrain grid"]
+    OVT["Overture buildings, roads"]
+    OSM["OSM roads + tags, water, bridges, barriers"]
+    LID["lidar walls, roofs, canopy"]
+    PAR["INSPIRE parcels (Bath)"]
+    CAN["canal.json (tools/canal.py): pounds, locks, tunnels"]
+    RAIL["rail.json (tools/railway.py)"]
+  end
+  data --> PM["prep_map.py --tile (per square, 15-cell margin)\nterrain grid; roads + bridges + tunnels (tn);\nwater beds dug, banks sloped, canal bed dug;\nbuildings; guessed gardens; trees; furniture"]
+  PM -->|"prep squares (data/raw/.../partition/prep/)"| P1
+  subgraph part["tools/partition (pipeline.py)"]
+    P1["street graph (once)"] --> P2["corridors per edge: carriageway + pavements"]
+    P2 --> P3["structures.py: bridges, road heights, grading"]
+    P2 --> P4["worked blocks → plots (parcels, lidar, rules)"]
+    P3 --> P5["assemble per square"]
+    P4 --> P5
+    P5 --> W["write_tile.build_tile:\nrd from corridors; fill_dug_ground + lay_ground edit t;\nsettle boundaries; sf street faces; br/gt/fp/dv; clearances"]
+  end
+  W --> PK["web/public/maps/<map>/<ti>_<tj>.json → pack_squares.mjs (.pack.gz)"]
+  PK --> G
+  subgraph G["game (per square as it streams in)"]
+    T1["terrain mesh from t, let down under faces (sinkUnder),\nhidden by discard: canal cut, lock pits, tunnel mouths"]
+    T2["sf faces: road/pave at written z + lift;\npaths/drives at drawn ground + 0.04, cut on grid; kerb faces"]
+    T3["bridges (world.ts KINDS), railway bridges (railbridge.ts)"]
+    T4["tunnels (tunnels.ts) and canal bores (canal.ts)"]
+    T5["canal water, locks (canal.ts), banks (works.ts)"]
+    T6["ponds flat, streams as ribbons, weirs"]
+    T7["steps' treads (furniture.ts)"]
+    WK["walk: map.ground = surface(): tunnel/deck → face → drawn ground;\nfloors: canal, railway, roofs, set pieces; walls: barriers, parapets, linings, portals, canal walls"]
+  end
+```
+
+### 2.2 The build order, and what is measured and what is guessed
+
+| order | what | measured or guessed | where | may move | may cut or remove |
+|---|---|---|---|---|---|
+| 1 | terrain grid, 262 × 262 points at 4 m per square | measured (EA DTM, resampled) | `prep_map.py` 116–199 | — | — |
+| 2 | road and path centre lines and their tags | measured (OSM, Overture) | `prep_map.py`, `partition/graph.py` | — | — |
+| 3 | road heights: profiles, smoothing, grading, bridges carried, dips under bridges | rules over measured ground | `prep_map.py` 593–1335, `tools/structures.py`, `tools/profiles.py`, `tools/grading.py` | road heights; **then digs and fills the grid to them** | — |
+| 4 | the grid flattened under roads and the railway, cut over tunnels, dug for water beds and the canal | rules | `prep_map.py` 1425–2144 | the grid | — |
+| 5 | buildings (footprints, eaves, roofs) | measured (Overture + lidar) | `prep_map.py` 2221–2703 | — | streets stop at their walls |
+| 6 | lidar walls | measured | `tools/walls.py` | — | — |
+| 7 | corridors: carriageway and pavement widths fitted between 5 and 6 | fitted to measured | `partition/corridors.py` | street lines up to 2 m off buildings | guessed boundaries |
+| 8 | plots and boundaries | parcels and lidar where they exist, else guessed | `partition/plots.py`, `settle.py` | — | an unseen parcel line is undrawn |
+| 9 | the writer: records, **the grid edited again** (`fill_dug_ground`, `lay_ground`, `_unspiked`), faces, walls and gates | rules | `partition/write_tile.py` `build_tile` 7025–7280 | the grid; path lines (`settle_on_laid_ground`) | walls off streets, rail, canal (half + 0.8 m), water (+0.8 m); trees off faces |
+| 10 | small things: trees, shrubs, street items, cars | measured canopy, OSM, rules | `prep_map.py` 3143–4062, writer `drop_clashes` | moved off faces up to 2.5 m | dropped if they can't move |
+
+Taken unchanged from `prep_map.py` by the writer: water (`wp`, `wl`), the canal and the railway
+(side files), level crossings, buildings, doors, and tunnels (`tn`), where the writer only sets
+`hw`. The writer copies the grid and edits it; it never touches the grid's outer ring or the cells
+under buildings.
+
+### 2.3 How a square is drawn and walked, layer by layer
+
+Line numbers are `web/src/world.ts` unless another file is named.
+
+| layer | how its height is chosen | how it is kept from clashing | draw calls (*estimate*) |
+|---|---|---|---|
+| **terrain** | the grid `t` (decimetres over `z0`), minus `sink` per point; split a,b,c / b,d,c (760, 817–829) | **never cut**: the full index buffer is drawn. Under road and pavement faces it is let down (road 0.3 m, pavement 0.08 m below; points near an edge put just under it; `clearOf` lowers corners till their triangles clear: 568–700). Grass beside a face is raised up to 0.25 m (`KERB_RAISE`, 697). Hidden by `discard` inside the canal works (`vCut<0`, 953), lock pits (`canal.ts lockPits`), canal bores and tunnel mouths (`tunnels.ts`, up to 40 m in). | 9 tiles of 48 cells, plus a far 12 m mesh and the works |
+| **road, service, pavement faces** (`sf`) | the writer's z: the ground under the nearest street's centre line at that station (`write_tile._level_at` 3372), plus a lift (road 0.07, pavement 0.17) | polygonOffset (road 3, pavement 2, service 2); kerb and edge faces from `sf.e` (1949–1995); a free edge runs down to the drawn ground, and over 0.45 m it is drawn as Bath stone | 4–5 |
+| **path, front path, drive, grass/dirt/gravel paths** | **each corner on its own**: drawn ground at that point + 0.04 (`surfaceFaces.at`, 1906), then cut along the grid's lines and diagonals so each piece lies on one ground triangle (`groundTris` 836–892) | polygonOffset 1; the terrain is **not** let down under paths | 1–2 (merged with a kind attribute) |
+| **bridges** | the record's span points; deck top at `top − lift + 0.03` (1497) | the terrain under a deck is only let down to the centre line's ground − 0.3 m within half + 0.5 m (592); never cut | 1–2 per square with bridges |
+| **tunnels** | tube rings resampled every 1.5 m (`tunnels.ts` 81–84, 269–338), portals, wing walls, cutting | the terrain over the mouths is discarded in boxes | ~3 per 90 m of tube, ~8 per portal |
+| **canal** (Spencer's) | each pound flat at `lv`; locks' chambers, gates, coping, paving at their own levels (`canal.ts lockWalls` 848–880); banks, towpath, verges, retaining walls from `works.ts` | terrain discarded where `sd < 0` (signed distance interpolated over 4 m triangles); an apron and skirt cover the slivers that leaves (`works.ts` 449–458) | several |
+| **ponds and the river** | flat at `w.z`: the lowest lidar on its ring + 0.1 (`prep_map.py` 1785) | **not cut** against the banks: the terrain hides the edge by depth (2037–2074) | 1 |
+| **streams** | ribbons 1.6 m wide at the true ground + 0.05, each edge on its own, so they tilt (1110–1138) | trimmed out of bores (`outsideBores`) | 1 |
+| **steps** | treads climb evenly from the ground at the record's first point to its last, never under the ground on the line, never steeper than 0.7 (`furniture.ts stairLayout` 906–942) | each tread is a solid box from the **lowest** ground across it − 0.15 m up to its top (869–872) | 1 |
+
+**Walking** (`world.ts surface` 2831–2837, passed to `map.standOnDrawn`):
+- in a tunnel or on a deck, that wins;
+- on a road or pavement face, the face's level + lift;
+- **on a path face, `trueGround + 0.04`: the survey's grid before it was let down**, not the
+  drawn ground the path was drawn on;
+- elsewhere, the drawn ground.
+
+Steps' treads are not floors (only the canal, the railway, roofs, set pieces and a few minigames
+push floors: `world.ts` 2012–2017), so you walk the ramp under them. Tunnel walls are the floor line
+offset sideways (`map.ts` 582–586); canal tunnels use `works.bore`. A bridge's ceiling is
+`overhead − DECK_DEPTH`, with `DECK_DEPTH` 1.1 m for every kind (`map.ts` 228, 1314–1319).
+
+### 2.4 What the partition already changed, and how far it got
+
+Against its own plan (`docs/partition-build-plan.md`):
+
+| stage | what it promised | state |
+|---|---|---|
+| 1–3b | plots as unions of faces of one polygonize; parcels; the whole city; each street and block built once so squares agree | **done**: loose ends inside 0, overlap 0, neighbours agree at 1 cm on all 236 shared edges |
+| 4 | the partition writes the game's squares | **done and live**: `prep_tiles.py` runs `partition/stage.py` after `prep_map.py` |
+| 5 | "one surface in the game": `sf` as a triangle mesh with classes, the game draws it instead of terrain + strips, `ground()` reads the mesh | **partly**: `sf` exists and is drawn for streets, pavements, paths, drives and front paths, but **as faces over a terrain that is still drawn everywhere**. Walking reads faces only for roads and pavements. Water, banks, bridges, tunnels and steps are not in it. `tools/partition/surface.py` (a true one-surface triangulation with heights per class) is a **check only** and never reaches the game. |
+| 6 | tuning and the switch, removing the old tools | ongoing (`docs/partition-revisit.md`) |
+
+So the hypothesis's step (1) is about two-thirds built in plan and about a third built in height.
+This plan is, in effect, **"finish stage 5 properly and bring water and structures into it"**,
+with the lessons of the revisit list.
+
+---
+
+## 3. What causes each thing Dan saw
+
+Mechanisms are read from code unless marked *(inferred)*. "Fix" points at the stage in §7.
+
+### 3.1 Footpaths
+
+| what Dan saw | mechanism | fix |
+|---|---|---|
+| **holes all over paths** | (a) A path is drawn 0.04 m over the drawn ground, and the ground is not let down under it. Where the ground rises between the path's corners, it comes through. `groundTris` cuts paths along the grid to stop this, but leaves a triangle whole when the ground is within +2/−3 cm (`FLAT_UNDER`, added 5 November). Paths have **no interior points** (`write_tile.street_surfaces`). (b) Path faces dropped or left as slivers: 1,133 m² of path undrawn across the city (`watertight.py`, revisit list); paths dropped inside a pavement band + 1 m; paths cut 5 m either side of a railway bridge. (c) Thinned street faces dip 2–12 cm in long triangles and let raised ground through (rule 20, revisit list, 6 November). (d) `level_cuts` deliberately leaves a 0.15 m slot (`LEVEL_GAP`) between two streets whose levels differ by over 1.5 m, relying on a kerb face to cover it. | stage 1 (walk), 3 (sheet: no ground under any face) |
+| **paths tilted sideways** | Every path corner takes the ground at that point, both in the writer (`street_surfaces.point`, `flat` → ground, 4041) and in the game (`surfaceFaces.at`). Nothing makes a path's two edges level. *Measured*, by sampling the ground across each path's width: on Widcombe's square (1_2), **66% of path length tilts more than 5° and 44% more than 10°**. Broad Quay's (0_2): 45% and 23%. The village (1_1): 38% and 20%. The city centre (0_3): 20% and 11%. | stage 2 (level paths in today's format), 3 |
+| **different materials joining messily** | Separate meshes with different depth offsets (path 1, pavement 2, road 3). A path's corner and a pavement's corner at the same place are **different points** (the writer's point key includes `on_ground`), so the meeting is a step face drawn down from the higher piece (1970–1975), and a gravel path, a pavement and the grass each lie at their own height there. | 3 |
+| **pavement on a road above slumping into a footpath below** (Broad Quay ~−1052,1663) | A pavement corner takes the level of the nearest street. Where two streets' levels differ by **less than 1.5 m** (`LEVEL_STEP`), nothing cuts between them, and the faces between are stretched to join them (revisit list, "Street faces"). The pavement's back edge falls up to 0.12 m towards the ground (`PAVE_FALL`). A corner beyond a street's reach falls back to the ground. So an upper pavement beside a lower path is pulled down into it along a sloping face. *(The exact corner at Broad Quay is inferred.)* | 2 (retaining edge at under 1.5 m), 3 |
+| **pavement meeting gravel with lumps; pavement just stopping** (Lower Bristol Road ~−1138,1667) | Lumps: the grass beside a face is raised by up to 0.25 m to meet it (`KERB_RAISE`), and the 4 m grid's triangle between a pavement and a gravel path can only be one plane. Stopping: a pavement exists only where the corridor fit gave that stretch a pavement (`pv`). `verge_out_of_town` removes pavements beside out-of-town trunk roads, and a stretch can end where `widen_to_paving` splits a record. *(Which of these at that spot is inferred.)* | 3; the stopping is data, but measure it (§6, M4) |
+| **pavement wedging down to a riverbank** (Rossiter Road ~−726,1607) | A face's free edge runs down to the drawn ground, and over 0.45 m it is drawn in Bath stone (1979–1986). Near a steep bank, the 4 m grid falls away from the pavement's back within one cell, so the edge face becomes a tall wedge. *(Inferred.)* | 3 (bank as a face with a retaining edge) |
+
+### 3.2 Bridges
+
+| what Dan saw | mechanism | fix |
+|---|---|---|
+| **metal footbridges missing their ends** | A deck whose last point falls steeply to the ground "ends in the air" (revisit list, 27 October). A record joining a deck at a three-way junction stays a separate bridge (`joinSpans` follows only the straightest piece: 1328–1339). At a square's edge a span has no cap, abutment or approach (1503, 1516, 1644), so it depends on the next square's piece ending at the same point. The strip's off-span end point is drawn at true ground, while the face beside it is at the writer's level *(inferred: a step or slit there)*. | 4 (attachment edges) |
+| **odd walls and gaps on road bridges** (Wells Road ~−1243,1642) | The lidar sees a bridge's own side and it was drawn as a second wall under the parapet. `deck_skirts` cuts it in a 0.8 m strip, which only shortens it (Mill Lane: 2.3 m → 1.5 m). Separate parapets on unjoined records at junctions. | 2 (skirt from the deck outline), 4 |
+| **railway viaduct: parapet crack, stretched stone under arches** (~−994,1621, ~−1019,1641) | Railway bridges are `railbridge.ts`, built per run of openings from the line's heights. Over nothing, an arch flatter than 0.3 of its width is "built as the plain wall it would look like", with its face running down to ground sampled sparsely, so the stone is stretched. The crack is *(inferred)* where two runs (or a square's edge) meet without a shared end. | 4 (same attachment rules for rail bridges) |
+| **no room for towpaths under bridges** | The ceiling under any bridge is the deck's top − 1.1 m for every kind, flat across the whole deck (`map.ts ceiling`). An arch's drawn barrel comes lower at its sides than that, and a beam's underside is lower than a stone deck's. A recent commit (`3f95fe6c`) made bridges solid underneath, so you now bump into that flat ceiling. The canal's own bridges are 2.8 m over the water, but the towpath's headroom is not separately kept. | 1 (ceiling from the kind and the arch's profile) |
+| **hillside lumps on a footbridge** (~−710,1618) | The terrain is never cut under a deck, only let down near its centre line (592). The writer digs the grid under a span **only if the span has four or more points** (`lay_ground`, `if len(st) < 4: continue`), and points are about 4 m apart, so **a footbridge under about 12 m is never dug**. A footbridge's deck is 0.45 m deep, so the 4 m grid's bank under its end comes through. | 2 (dig under every span), 3 |
+
+### 3.3 Tunnels
+
+| what Dan saw | mechanism | fix |
+|---|---|---|
+| **gappy** | Each `tn` record's end ring uses only its own last segment, so where two records meet at an angle a wedge opens on the outside (`tunnels.ts`) *(inferred)*. Every record end not on a square's edge is treated as a portal *(inferred)*. The tube's rings are resampled with no mitre widening at bends. | 1 (join records, mitre), 4 |
+| **some block walking in** | `portalFaces` collision has piers only where side-by-side openings don't overlap, while the drawn slab cuts every hole. The tunnel's floor for walking is the centre line, while the drawn pavements inside are 0.15 m higher (`floorAcross`). Rule 16 counts mouths whose floor stands over 1 m off the ground outside. | 1 |
+| **some you can walk out through the sides** | The solid walls are the floor line offset by `boreHalf` at the original points (`map.ts` 582–586, `offsetLine` with no mitre). The drawn tube follows the resampled, smoothed line. `boreAt` measures to the segment, so on the outside of a bend the floor reaches further than the wall *(inferred)*. At a join between records the two offset walls don't meet, which leaves a gap *(inferred)*. Canal tunnels are a different system again: one straight box from portal to portal (`canal.ts canalBores`), walked by `works.bore`, with linings that block only down in the bore. | 1 |
+| **glitchy; inside the tunnel broken** | The hill over the tube is the ordinary terrain, hidden in boxes up to 40 m into each mouth. Further in, where the tube runs under less than an arch of hill, the hill shows inside the tube (a documented trade-off). | 4 (the sheet keeps cover over every bore) |
+| **a path draped over a portal** | A path on the hill over a tunnel is laid on the survey's ground. The hill over a portal is "a step on the 4 m grid beyond the headwall's width" (revisit list). Paths are kept off the *canal's* tunnels (`canal_bores`) but not off road and rail portals. | 4 (the portal line is a sheet edge) |
+
+### 3.4 Locks (Spencer's work: edge fixes only)
+
+The canal, its locks and banks (`web/src/canal.ts`, `web/src/works.ts`, `tools/canal.py`) were
+built by commits authored "Claude" that reached the fork from `spencer/main`. They are Spencer's
+agents' work *(inferred from the history)*. Dan's later work added marinas and the canal bed. Keep
+all of it, and fix only its edges.
+
+| what Dan saw | mechanism | fix |
+|---|---|---|
+| **visual glitches on the edges of pieces; white slivers** | (a) The works bank beside the wing walls is set to the wing coping − 0.05 m and interpolated between 4 m stations (`works.ts` 99–100). The lock paving steps every ~1.5 m (`canal.ts` 864–874). Two surfaces 5 cm apart and not parallel give slivers and fighting. (b) The canal's cut in the terrain is a signed distance interpolated over 4 m triangles, so its edge is never the bank's true line. An apron 0.1 m under the drawn ground covers what it can. | 1 |
+| **strips floating in water** | The pound's water is forced to 2.6 m half-width at the gates and between the wing walls (`canal.py` 341–349). The lock's walls stand at 2.15 m (`LOCK_HALF`). So 0.45 m strips of water and channel side stand outside the wing walls, over the paving. | 1 |
+| **sky through the bottom of Bath Deep Lock** | **Not confirmed.** Candidates: the lock's water plane is 0.8 m shorter than the chamber, which leaves 0.4 m at each end (`canal.ts` 720). The pit's discard box keeps terrain only from `zl − 1.7` up. The partition's `fill_dug_ground` / `lay_ground` edit the grid at Pulteney Road over Deep Lock, and `structures.py` does not dig the chamber the way `prep_map.py` does (2047–2057). Deep Lock's wings run 37.6 m. Find it with the probe first (§6, M11). | 1, after diagnosis |
+
+### 3.5 Ground and water
+
+| what Dan saw | mechanism | fix |
+|---|---|---|
+| **land poking out of the canal into the river** | The pound below Bath Bottom Lock (`lv` 15.8) runs on 24 m to (−694.5, 1640.4), **inside the river's polygon** (*measured*, `combe-down-canal.json` and square 1_2). The works build its channel sides, banks, retaining walls and square-ended aprons wherever the run ends (`works.ts` 464–476), and know nothing of the river (`works.water` checks only canal pieces). `prep_map.py` also raises the non-bed part of an OSM canal polygon to `lv + 0.3` (1802), which overlaps the river. | 2 (the canal stops at the river's edge) |
+| **water at two heights with a cliff between** (~−701,1632) | Each water body has its own level. *Measured* in square 1_2: river pieces at 15.9 and 15.8, the canal piece at 16.0, the canal's tail pound at 15.8. Nothing makes touching water agree, and the canal's stone side stands between them. The level differences are small; the "cliff" is the canal's side and bank standing in the river *(inferred)*. | 2 |
+| **banks as brown cliffs** | River beds are dug 0.6 m under the water and banks sloped down within a band (`prep_map.py` 1817, 1895–1917), but on a 4 m grid a whole bank is one or two triangles. Any grid point steeper than 0.45 is blended up to 75% towards earth brown (510, 766), and the canal's verges take that colour. | 3 (banks are faces with their own material and slope) |
+| **fences standing in water and on towpaths** | Walls are cut only off the canal's water + 0.8 m and off ponds + 0.8 m (`write_tile.blocked_ground` 6608–6650; `map.ts extraCorridors`). The towpath, verges, locks' paving and the river's banks are not blocked ground. Mapped fences are kept by rule (the Bathwick Hill one is OSM's). Registered parcels often run to the middle of a river *(inferred)*. | 2 |
+| **garden walls on footpaths** | A seen wall (lidar or mapped) stays where it stands, and is only opened where a path crosses it. A wall *along* a path within its width is not removed. The path's width is the writer's, trimmed from a wider corridor room (`PATHW`). *(Which case applies at each place is inferred.)* | 2 (M13 counts it) |
+
+### 3.6 The two small ones
+
+- **St Mark's, Widcombe drawn as a plain building.** A building is a church only if its class is
+  `church` or `chapel`, or its name contains "Chapel" or is "Holy Trinity" (`tools/buildings.py`
+  792, `prep_map.py` 2387). A former church now used for something else carries its new use as its
+  class. The rule should read the building's *form*, which OSM keeps on `building=church|chapel|
+  cathedral`, or `historic=church`, `disused:amenity=place_of_worship` or `amenity=place_of_worship`.
+  (The name rules are Bath-only and should go too: data over custom.) Small; stage 2.
+- **Traffic lights often look blank.** The three lamps are plain dull colours (`#d8261d`,
+  `#8a6a1a`, `#2a6e3a`) with nothing lit, and a head faces one way only (`furniture.ts signal`
+  114). Under the retro grade and fog they read as a black box. Light one lamp (emissive, on a
+  cycle; the same for everyone from the shared clock) and put a head on both faces. Small; stage 1.
+
+### 3.7 What this says about the hypothesis
+
+| hypothesis | verdict |
+|---|---|
+| separate stacked layers, each fitted onto the one below | **yes for heights**, with the twist that the terrain is drawn under everything and hidden rather than cut |
+| cracks and lumps where they disagree by centimetres | yes: `FLAT_UNDER`, `KERB_RAISE`, `PAVE_FALL`, the 0.04 lift, depth offsets and the 4 m signed-distance cut are all tolerances for that disagreement |
+| neighbours should share exact edges | **already true in plan for the street faces**; not true for water, banks, canal, structures and steps |
+| one set of height constraints | not done; this is the main work |
+| structures with attachment edges | not done; bridges, tunnels and steps each guess where they meet the ground |
+| one shape drawn and solid | not done for steps, tunnels, path walking or bridge ceilings |
+| speed from no overdraw, simplification, fewer meshes | **partly**: fewer meshes and no ground under faces, yes; simplification gives little in Bath (§5) |
+
+---
+
+## 4. The proposed architecture
+
+### 4.1 The precedence order: who moves whom, who cuts whom, what is removed
+
+The order the build already uses is kept and written down as rules, with water and structures put
+in their proper place. **A thing may only move, cut or remove things in tiers below it.** Within a
+tier, measured beats guessed.
+
+| tier | contents | measured or guessed | may move | cuts (in plan) | removes |
+|---|---|---|---|---|---|
+| **0. Fixed** | buildings; real walls (mapped, lidar); water outlines (rivers, ponds, the canal's channel and locks from `canal.json`); the railway's bed | measured (the canal is Spencer's geometry: an input, not rebuilt) | nothing; never moved | everything below | — |
+| **1. Structures** | bridge decks and abutments; tunnel bores and portals; lock chambers; flights of steps | data placed by rules | their own ends, to their attachment edges only | the sheet at their **footprints on the ground** (abutment, portal cutting, flight), never under a deck's gap or over a bore | guessed things in their clearance |
+| **2. Corridors** | carriageway, pavement, verge | fitted to tier 0 | street lines, up to 2 m off buildings (as now) | tiers 3–5 | guessed boundaries on them |
+| **3. Ways on foot** | paths, front paths, drives, the towpath (the canal's), cycleways | data widths, fitted | sideways only to clear tier 0 (as now) | tiers 4–5 | guessed boundaries along them; trees and shrubs on them |
+| **4. Land** | banks, gardens and plots, open land | parcels and lidar, else guessed | — | — | — |
+| **5. Small things** | trees, shrubs, street items, parked cars, guessed fences and hedges | mixed | off higher tiers, up to 2.5 m (as now) | — | themselves, if they can't move |
+
+New rules this adds to today's:
+- **Water is tier 0.** A fence, wall or hedge may not stand on water, the towpath, a verge, a lock's
+  paving or a bank face (a measured one is cut there; a guessed one goes). The canal's works stop
+  at the edge of the water they open into (the river): its last pound takes the river's level if
+  within 0.3 m, or meets it at a lock or weir edge.
+- **Touching water agrees.** Two water bodies that touch take one level (the larger body's) unless
+  a step object (a lock, a weir in `wf`) stands on the line between them.
+- **A structure attaches; it doesn't drape.** It has named edges (§4.4) where it meets the sheet,
+  and the sheet's corners along those edges take the structure's heights.
+
+### 4.2 The ground sheet
+
+**One sheet per square: a planar partition with one height per corner.** Its classes:
+`carriageway`, `service`, `pavement`, `path`, `front`, `drive`, `flight` (a step footprint), `towpath`,
+`water`, `bank`, `verge`, `garden`, `open`, and `hole`. A hole is where a structure owns the
+surface: an abutment's footprint, a lock chamber, a portal's cutting floor if the tunnel owns it,
+or a building.
+
+Two kinds of edge:
+- **ordinary**: both faces share the corners, one height, so no crack can be built;
+- **step edges**: a kerb, a retaining edge, a lock wall's top, a water's edge, a portal line, the
+  edge of a flight. They carry **two heights**, one per side. The game draws a vertical face
+  between them (stone over 0.45 m, as now) and treats it as a step or wall for walking. Every
+  vertical face in the ground is one of these, named and counted; none is a side effect.
+
+**A hybrid sheet, not a full irregular mesh.** The 4 m grid is 80 KB of a 0.9 MB square
+gzipped, against 330 KB for today's street faces (*measured*), and drawing it costs one index
+buffer.
+- Grid cells **no face edge touches** stay plain grid cells, drawn and walked exactly as today's
+  triangles.
+- Cells a face edge touches are taken out of the grid (a bitmask per square, 8.5 KB raw, a few
+  hundred bytes zipped). Their area is filled by the sheet's own constrained triangulation, which
+  includes the grid's corner points on the boundary of the cut area. So the sheet meets the grid
+  with no T-junction, and no ground is drawn under any face.
+
+This keeps the download close to today's while removing every hidden layer.
+
+### 4.3 Heights: one ordered model
+
+Heights are **assigned in a fixed order, and a later step may never move a corner an earlier step
+fixed**. Deterministic, local, explainable. There is no global least-squares solve (rejected,
+§8.3).
+
+| step | what is fixed | rule | today's equivalent |
+|---|---|---|---|
+| 1 | water | flat at its level; touching bodies agree (§4.1) | `wp.z`, canal `lv` |
+| 2 | structure attachment edges | an abutment's top edge = the deck's top there; a portal's floor line = the bore's floor; a lock's coping = Spencer's coping; a flight's landings = the faces they land on (§4.4) | scattered |
+| 3 | carriageways | the existing profile along the centre line (`structures.py`, `grading.py`), **flat across** the carriageway as now | `_level_at` |
+| 4 | pavements | kerb over the carriageway's edge (as now); back edge within `PAVE_FALL` of that. Where the next face is lower or higher than that by more than `PAVE_FALL`, the edge is a **retaining step edge**, not a stretched face. This replaces the 1.5 m `LEVEL_STEP` cut for faces that meet. | `PAVE_FALL`, `level_cuts` |
+| 5 | paths, front paths, drives, flights' footprints | **level across**: both edges take the height of the centre line's station opposite (projection onto the path's line). **Along the line**: the ground under the line, smoothed (the street profile's filter), its grade capped; too steep becomes a flight (§4.5). Where a path meets a pavement or road, it takes that face's edge height over the last 1.5 m (a dropped kerb, a ramp), unless the gap is a kerb (≤ 0.17 m), which stays a step edge. | none: per corner ground |
+| 6 | banks and verges | between the water's edge (level + 0.15 m freeboard) and the top of the bank (the survey's ground at the bank face's far edge). Corners in between are interpolated by distance across, but never under the water's level + 0.1. Over 1 in 1, the face is drawn as stone revetment, not brown earth. | `prep_map.py` bank slope + earth blend |
+| 7 | gardens, open land | the survey, **carved to meet** the faces fixed above: within a batter zone beside each face (fill 1 in 2, cut 1 in 1.5, at most 3 m wide), the ground is blended from the face's edge height to the survey. Where the batter would need more than 3 m, a retaining step edge is placed at the face's edge (a low wall drawn as such). Under a deck: at most the deck's underside − clearance (§4.4). Over a bore: at least the crown + 0.6 m. | `lay_ground`, `_unspiked`, `sinkUnder` |
+
+**Thresholds** (named constants at the top of the module, as the partition's rules are):
+
+| constant | value | why |
+|---|---|---|
+| path cross-slope | 0 by construction; measured tolerance 2° | Dan's requirement |
+| `BATTER_FILL`, `BATTER_CUT`, `BATTER_MOST` | 1 in 2, 1 in 1.5, 3 m | how verges and cuttings are built; a 1.5 m path on a 1 in 3 side-slope needs a 0.5 m cut, which 1 in 1.5 takes in 0.75 m |
+| `PAVE_FALL` | 0.12 m (unchanged) | as now |
+| `RETAIN_AT` | 0.3 m | under that a batter, over it a retaining edge (the existing "pavement on a lip" check uses 0.3 m) |
+| `FREEBOARD` | 0.15 m | a bank's foot over the water, so no land stands in it |
+| `DECK_CLEAR` | 0.5 m under any deck with nothing passing; headroom as now where something passes | Dan: crawling under is fine; don't raise bridges |
+| `BORE_COVER` | 0.6 m | the sheet never shows inside a tube |
+
+### 4.4 Structures and their attachment edges
+
+| structure | its own geometry (drawn and solid) | attachment edges to the sheet | what the sheet does under or over it |
+|---|---|---|---|
+| **bridge** (road, foot, rail) | deck, parapets, abutments, piers, arches as now (`world.ts bridgeStructures`, `KINDS`; `railbridge.ts`) | **deck ends**: one edge across the deck at each abutment, at the deck's top; the street faces on the bank end on it (so no gap, no step). **Parapet ends**: the parapet starts and stops at a deck end or at another structure's edge (a joining street's deck), never at a record's end or a square's edge. | Under the span the sheet continues (so the ground, a path or the river passes under), with every corner at most `underside − DECK_CLEAR`. It is **dug** for every span, whatever its length (today only spans of 4+ points are dug). The lidar's view of the bridge's own side inside the deck's outline + its parapet thickness is not a wall. |
+| **tunnel** (`tn`, road, path, rail) | tube, floor, portals, wing walls (`tunnels.ts`) | **portal line**: the headwall's foot across the cutting. The cutting floor's faces meet the bore's floor on it. The hill's faces meet the headwall's top along the coping line. | Over the bore the sheet is ordinary ground, kept at least `BORE_COVER` over the crown. No discard boxes are needed in squares with a sheet. Records of one bore are joined in the tools (one record per bore, across squares by the build-once rule), so ends are only portals or seams. |
+| **canal bore** (Spencer's) | as now (`canal.ts`, `works.bore`) | portal line as above | as above; keep `tunnelHills` as the fallback |
+| **lock** (Spencer's) | as now (`canal.ts lockWalls`) | **coping edge**: the lock's outer paving edge is a step edge of the sheet at the paving's height, so the works' bank and the sheet stop on it instead of overlapping it by 5 cm | the chamber is a `hole` |
+| **flight of steps** | treads, nosings, cheek walls, handrails, built from the flight's own footprint | **two landings**: the top edge and the bottom edge, each lying on the walkable face it meets at that face's height (a pavement, a path, a towpath) | the footprint is a `flight` face; the ground beside it is carved to the cheek's height within the batter, else a cheek wall stands there (no grey block) |
+
+**Solid is derived from drawn, in one function each:**
+- **Steps.** The treads are floors (`map.floors`): each tread's top as a step of ≤ 0.2 m, which the
+  player's step-up already climbs. The ramp under them goes.
+- **Tunnels.** The solid walls and the floor come from the same resampled, mitred line the tube is
+  drawn from (`tunnels.ts resample`, shared with `map.ts`). Portal collision comes from the same
+  hole shapes the headwall slab is cut with.
+- **Bridges.** The ceiling under a deck is the drawn underside: the kind's own depth (`KINDS`) and
+  the arch's profile across, not 1.1 m flat.
+- **The sheet.** `map.ground(x, z)` reads the sheet's triangle under the point (an 8 m cell index,
+  as `faceCells` does now), else the grid. There is no separate `trueGround` for paths. The walk
+  surface **is** the drawn surface.
+
+### 4.5 Steps: when a path becomes a flight
+
+Dan asked for a threshold of about 1 in 8, with a reason. The data says 1 in 8 would be too many.
+*Measured* share of path length (footway, path, cycleway, bridleway, pedestrian, track; mapped steps
+not included) steeper than each grade, from the packed squares' own heights:
+
+| square | path km | > 1 in 12 | > 1 in 8 | > 1 in 6 | > 1 in 4 | > 1 in 2.5 |
+|---|---|---|---|---|---|---|
+| 1_2 Widcombe | 8.5 | 35.0% | **21.1%** | 10.3% | 2.6% | 0.4% |
+| 0_2 Broad Quay | 11.9 | 24.7% | **13.0%** | 5.4% | 1.5% | 0.5% |
+| 1_1 the village | 10.9 | 23.0% | **15.6%** | 9.1% | 2.5% | 0.1% |
+| 0_3 the centre | 20.9 | 7.7% | **3.7%** | 1.8% | 0.6% | 0.1% |
+
+At 1 in 8, a fifth of Widcombe's paths would become stairs. Steep footpaths on Bath's hills are
+mostly real slopes, not steps.
+
+**Recommendation:** three bands.
+- Mapped `highway=steps` is always a flight.
+- An unmapped path smoother than **1 in 8** is a path, level across, following the hill.
+- Between 1 in 8 and **1 in 4** it is still a path, but drawn with the "steep path" look (a ramp:
+  the path's face, its edges carved in) and walked as a slope.
+- Steeper than 1 in 4 over at least 3 m becomes a flight. That is 1.5–2.6% of path length in the
+  hilly squares, and today's rule is 1 in 1.5 (`STEEPEST_WALK` 0.67).
+
+Why 1 in 4: it is about where footpaths in the UK are built as steps rather than ramps, and where
+the game's player starts to slide on a slope. **The cut-off is Dan's call (§8.2, question 1).**
+1 in 8 is the right line for "level across, carved", which applies to every path anyway.
+
+### 4.6 The pack format (the same shape for every map)
+
+A new key `gs` in each square, written by the partition's writer for every map. Bath, Combe
+Down's squares, Bradford-on-Avon, Hackney and Cape Town all write the same classes. A class a map
+has no data for is simply empty, which follows "every map packs the same abstract layers".
+
+| field | what | packing |
+|---|---|---|
+| `gs.o` | the square's corner | as `sf.o` |
+| `gs.v` | corners as whole centimetres from the one before (x, y), and **z as centimetres from the 4 m grid's own height there** | almost every corner on open land or a path on carved ground is close to 0, and compresses to nearly nothing |
+| `gs.t[class]` | triangles per class, as steps from the number before | as `sf` |
+| `gs.k` | step edges: kind (kerb, retain, water, coping, portal, flight, deck end), the corner list, and the second side's height per corner | small |
+| `gs.cut` | the grid cells the sheet replaces, one bit a cell, run-length coded | ~300 bytes zipped (*estimate*) |
+| `gs.n` | the version of the rules that wrote it | for the runtime's choice |
+
+`sf` is kept alongside for one release, then dropped once nothing reads it. `t` stays: it is the
+open land, the far mesh, the wider map's edge, and the fallback. A square with no `gs` (an older
+pack, a map not rebuilt) draws as today. That is the runtime fallback, and it is the code that
+exists now, untouched.
+
+### 4.7 What is baked and what the game does
+
+| baked (tools) | game (runtime) |
+|---|---|
+| the sheet's faces, heights, step edges, cut mask | build one index buffer for the grid skipping cut cells; one sheet mesh |
+| flights' landings and cheek heights | treads and cheek walls from the flight record (as `stepsDetail` does now, with a level top across) |
+| bridge deck ends and parapet ends | deck model as now, from `KINDS` |
+| tunnel records joined, mitre-ready line | tube and solid walls from one resampled line |
+| water levels agreed, canal clipped at the river | water drawn flat per body as now |
+| guessed things cleared off water, towpath, banks | — |
+
+The game no longer runs `sinkUnder`, `clearOf`, `groundTris`, `KERB_RAISE` or the discard boxes
+for a square that has `gs`. That is load-time work removed from every square as it streams in.
+
+---
+
+## 5. Performance
+
+*Measured* on today's packs (Bath, 4 m grid, squares 1,043 m across):
+
+| square | gz size | `sf` gz (share) | `t` gz | terrain triangles | `sf` triangles | `sf` area (share of square) |
+|---|---|---|---|---|---|---|
+| 1_2 Widcombe | 905 KB | 332 KB (37%) | 81 KB | 136,242 | 34,464 | 124,165 m² (11.4%) |
+| 0_2 Broad Quay | 1,266 KB | 493 KB (39%) | 67 KB | 136,242 | 51,463 | 177,526 m² (16.3%) |
+| 0_3 the centre | 1,256 KB | 553 KB (44%) | 54 KB | 136,242 | 61,893 | 235,947 m² (21.7%) |
+| 3_-2 sparse | 263 KB | 83 KB (32%) | 54 KB | 136,242 | 8,260 | 42,356 m² (3.9%) |
+
+Error-bounded simplification of the open-land grid (right-triangle quadtree on a 257 × 257 crop,
+the game's own diagonal), *measured*, as the share of triangles left:
+
+| square | 2 cm | 5 cm | 10 cm | 20 cm |
+|---|---|---|---|---|
+| 1_2 | 0.98 | 0.95 | 0.84 | 0.63 |
+| 0_3 | 0.96 | 0.90 | 0.70 | 0.48 |
+| 1_1 | 0.98 | 0.94 | 0.66 | 0.41 |
+| 3_-2 | 0.95 | 0.80 | 0.42 | 0.21 |
+
+**Expected effect** (all *estimates*, to be checked by stage 0's counters):
+
+| | effect | reasoning |
+|---|---|---|
+| **triangles** | about level; the gate is "not more" | Removing the grid under faces takes out 4–22% of a square's terrain triangles. The cut cells' ring adds a constrained fill. The paths' load-time cutting (`groundTris`, "a third more" path triangles) goes. Simplifying open land at 5 cm buys 5–20%, mostly in the country. **Don't simplify by default.** Allow 5 cm only on open land over 30 m from any face, as an optional stage-5 item, gated on screenshots. The far 12 m mesh already handles distance. |
+| **draw calls** | about 6–8 fewer per full-detail square (*estimate*) | Today a square has 9 terrain tiles plus 4–5 street-face meshes (each its own depth offset), a path mesh, a front mesh, stone, steel, streams, ponds and weirs. With no overlap, no depth offsets are needed, so the sheet's classes go in one mesh with a class attribute (the `kindsLook` shader already does this for paths), plus one for stone step edges and one for water. With 12–20 squares near enough to draw, that is ~70–150 fewer draws: a real gain on iPads and phones. |
+| **overdraw** | 4–22% of each square's ground area no longer drawn twice | a small fill-rate gain on phones; it matters most in town, where the triangle count is highest |
+| **download** | **held flat (the gate: no square more than 5% bigger gzipped)** | `gs` replaces `sf` (32–44% of a square). It adds water, bank, verge and cut-cell fill. It saves on duplicated corners (today a path's corner and a pavement's at the same place are two points) and on z, stored as a delta from the grid. If the gate fails, store open-land fill corners without z (they *are* the grid's height) and thin the bank faces. |
+| **load-time CPU** | lower | `sinkUnder`, `clearOf`, `groundTris` and the per-vertex drawn-ground sampling run per square at load today; they go |
+| **build time** | about level | The height solve is linear in corners. A constrained triangulation of the cut cells is a few seconds a square. Finishing `neat_kerbs`'s local version (`docs/one-pass-build.md` F2: 36 → 4 s on −1_2; ~400 CPU-s over Bath; not yet byte-identical) pays for it, and shortens the tail that decides the write stage's wall time. Target: the full build no slower than today's ~9–12 minutes. |
+
+---
+
+## 6. Measures: new checks and a walking probe
+
+All of these are added **before** any map change (stage 0). Each is baselined on today's packs and
+should then fall. The standing rules hold throughout: **existing check counts don't go up**, and
+nobody games a check (a change to a check is written up, as the partition plan's line-against-
+polygon rule requires).
+
+### 6.1 Static checks (`tools/check_more.py`, new rules 24–31)
+
+These read the packs only, run per square with `--tiles`, and take seconds. Where a rule must see
+the scene as drawn, it goes in `tools/overroad.mjs` (which already raycasts every street and path)
+instead.
+
+| id | rule | what exactly | threshold | problem it tracks |
+|---|---|---|---|---|
+| M1 | path cross-slope | per path, front-path or drive triangle: the slope perpendicular to the path's line; length-weighted share over the threshold | > 2° | tilted paths |
+| M2 | things through paths | extend rule 23's "ground drawn over a path" to any mesh (deck, wall, tree trunk, set piece) whose first hit from above is not the path | any, in m² | holes, hillside on decks |
+| M3 | path edge off the ground | along every path edge with no step edge: the height difference to the face or ground beside it | > 0.3 m | path edges in the air, wedges |
+| M4 | joins between faces | (a) plan gaps between a path and a pavement or road where they meet without shared corners, > 2 cm; (b) lumps: a ground corner within 1 m of two faces standing over both by > 5 cm; (c) a pavement ending with no face, wall or kerb across its end | count, m | messy material joins, lumps, pavement stopping |
+| M5 | deck end gaps | per span end: the 3D distance from the deck's end edge to the face it meets | > 3 cm; report cm | footbridges missing ends |
+| M6 | parapet gaps | along a joined span, gaps between parapet runs with no street or deck joining there | > 0.2 m | odd gaps on road bridges, the viaduct's crack |
+| M7 | ground through decks | sheet or grid height under a deck's outline over its underside | any, m² | hillside on a footbridge |
+| M8 | room under bridges | clear height under a deck with nothing passing, and where a way passes | < 0.5 m (nothing), < headroom (a way) | towpath with no room |
+| M9 | tunnel edges | (a) open edges of the tube mesh not on a portal or a square's seam (a node script like `tools/watertight.ts`); (b) the solid wall more than 0.1 m from the drawn wall, sampled every metre; (c) floor for walking vs the drawn floor, > 0.05 m | count, m | gappy, walking out, blocked |
+| M10 | flights | (a) each landing's distance (plan) and height difference to a walkable face, > 0.1 m / > 0.05 m; (b) buried share: tread top area under the ground beside it; (c) floating: cheek height > 0.3 m with no cheek wall; (d) drawn treads not walkable | count, share | half buried, starting in odd places, grey blocks |
+| M11 | lock edges | open edges and slivers of the works and lock meshes (pieces under 0.1 m wide); water area outside a lock's walls; gaps between lock water and gates; a downward ray grid over each chamber reporting "sky" (no hit) | count, m² | lock glitches, floating strips, sky through Deep Lock |
+| M12 | land through water, water heights | (a) ground or sheet corners inside a water outline above its level; (b) two touching water bodies whose levels differ by > 3 cm with no lock or weir on the line | m², cm | land in the river, two waters |
+| M13 | fences on water and ways | barrier length inside water, a bank face, the towpath, a verge, a lock's paving, a path's width | > 0.3 m | fences in water, walls on footpaths |
+| M14 | places of worship | buildings with OSM `building=church|chapel|cathedral`, `amenity=place_of_worship`, `historic=church` or `disused:amenity=place_of_worship` not drawn as a church | count | St Mark's |
+
+Existing checks still gate everything: `check_map.py` rules 1–11, `check_more.py` 12–23,
+`partition/watertight.py`, and `partition/compare.py` for the partition's own figures.
+
+### 6.2 The walking probe (`tools/walk_probe.mjs`)
+
+Nothing walks a player along the paths today. `ground_probe.mjs` drops one along a straight line;
+`fpsprobe.mjs --route` flies a camera. The new probe:
+
+- **Set-up.** Serves `web/dist` with the maps from `web/public/maps`, as `overroad.mjs` does. It is
+  muted through `tools/quiet-guard.mjs` (`silence(page)`, `MUTED_ARGS`): the project rule. It
+  starts a solo game, clicking Solo in a loop until `__game` exists (the button is live before
+  it's hooked up).
+- **Route.** For every way in the chosen squares that you walk (footway, path, steps, cycleway,
+  bridleway, pedestrian, towpath; pavements optionally), it puts the player at one end and walks
+  to the other with the real movement code (`player.ts`), steering to the way's line at walking
+  pace. Deterministic: fixed timestep, no traffic, no naughty boys, cats or pickups.
+- **Logged per metre:**
+  - **blocked**: no progress for 2 s;
+  - **fell**: dropped more than 0.5 m in 0.3 s, not on a flight;
+  - **through a wall**: the player's step crossed a solid segment or a drawn tube wall (intersect
+    against `map` segments and the tube's line);
+  - **stuck**: an `unstick` fired;
+  - **off line**: more than 1 m off the way;
+  - **off surface**: the feet more than 0.1 m from the drawn surface under them (a ray at the
+    scene's meshes, as `overroad.mjs` casts).
+- **Output.** Per square and per km walked: blocked, falls, wall passes, stuck, off-surface metres,
+  and a JSON list of places (`{x, y, what}`) that `tools/shoot.mjs` can take as views.
+
+**Test squares (twelve):**
+
+| map | square | why |
+|---|---|---|
+| Bath | 1_2 | Widcombe: locks, the river mouth, Rossiter Road, footbridges |
+| Bath | 0_2 | Broad Quay, Lower Bristol Road, Wells Road bridge, the viaduct |
+| Bath | 1_3 | Sydney Gardens: canal tunnels, railway, bridges |
+| Bath | 1_1 | the village: steps, steep paths |
+| Bath | 0_3 | the centre: pedestrian streets, plazas |
+| Bath | −1_2 | the densest square (the build's tail) |
+| Bath | the square with the Two Tunnels' south portal (look it up with `tools/square_at.py`) | a long path tunnel |
+| Bath | 3_−2 | sparse country |
+| Bradford-on-Avon | 1_1 | a second town, the canal, no parcels used |
+| Hackney | 1_1 | flat, dense, no canal |
+| Cape Town | 2_2 | the heaviest square, coarse survey |
+| Cape Town | 1_3 | steep: elevated freeways, steps |
+
+The runs go through Dan's Mac's queue (`tools/mac_build.sh ... --shots`), since a cloud container has
+no graphics card. Results are kept with the build report.
+
+### 6.3 Runtime counters (`web/src/debug.ts`)
+
+Per square: draw calls and triangles by class (ground, faces, water, structures), and load-time ms
+in the ground's build. The existing `render.calls` is global only. With these, "no more triangles,
+fewer draws" is a number on each stage, not a guess. Frame time comes from `tools/fpsprobe.mjs`
+route 1, judged on the slowest machine available, not the M4 Max (memory: perf target is a normal
+laptop and phones).
+
+---
+
+## 7. Stages
+
+Every stage ships on its own, keeps the game working, and can be reverted alone. Each is gated by:
+- its measures falling;
+- no existing check count rising;
+- triangles not up and frame time not worse (§6.3);
+- screenshots for Dan of the places he named (a views file kept with the plan, below).
+
+The order puts the **biggest visible wins at the lowest risk first**: runtime-only fixes (no map
+rebuild), then build rules in today's format (one rebuild), then the new format behind a flag.
+
+**Views file** for every stage's screenshots (`docs/plans/ground-views.json`, made in stage 0 from
+these places; bearings and tilts to be set by Shift+F3 in the game):
+Broad Quay (−1052,1663), Lower Bristol Road (−1138,1667), Rossiter Road (−726,1607), Wells Road
+bridge (−1243,1642), the viaduct (−994,1621) and its arches (−1019,1641), the footbridge (−710,1618),
+the river mouth (−701,1632), Bath Bottom Lock (−671,1638), Bath Deep Lock (−500,1610), Bath Top Lock
+(−267,2000), Sydney Gardens tunnels (−200,2600), St Mark's Widcombe.
+
+### Stage 0: measures and baseline (no change to the game or the map)
+
+- **Files:** `tools/check_more.py` (rules 24–31), `tools/overroad.mjs` (M2, M3), a new
+  `tools/walk_probe.mjs`, `tools/tunnel_mesh.ts` (M9a, like `watertight.ts`), `web/src/debug.ts`
+  (per-square counters), `docs/plans/ground-views.json`.
+- **Does:** baselines every measure on today's packs for the twelve squares, and Bath whole for the
+  static ones; records frame time and draws.
+- **Risks:** a check that measures the wrong thing (the partition's history has two). Use
+  `check_tile.interior_length` for any line-against-polygon measure.
+- **Verify:** each rule run on a hand-picked place Dan named gives a non-zero count there.
+- **Size:** 2–3 days.
+
+### Stage 1: runtime fixes, no rebuild (the biggest wins for the least risk)
+
+Each is its own commit.
+- **1a. Walk paths where they're drawn.** `world.ts surface`: on a path face, the drawn ground +
+  lift, not `trueGround` (one line, but it moves the walk height: check with the walk probe).
+- **1b. Steps you walk on.** In `furniture.ts stairLayout` / `stepsDetail`: treads level across,
+  at the line's height; a cheek wall where the ground falls away, instead of each box running down
+  to the lowest ground − 0.15 m. Read `up`. Treads pushed as `map.floors`. Ends: keep the record's
+  ends, but start the climb at the higher face's height (from `map.ground` at the end, which is now
+  the drawn surface).
+- **1c. Tunnels solid where drawn.** One resampled, mitred line in `tunnels.ts`, used by both the
+  tube and `map.ts` (`LINING`, `boreAt`); records meeting end to end inside a hill joined at load
+  (until the tools write them joined); floor for walking at the drawn floor, kerbs included;
+  `portalFaces` cut by the same holes as the slab.
+- **1d. Bridge ceilings from the deck as drawn.** `map.ts ceiling`: the deck kind's own depth, and
+  the arch's profile across the span.
+- **1e. Locks' edges (Spencer's files: small, additive, his solutions kept).** The pound's water
+  clipped to the lock's walls between the wing walls; lock water to the gates (no 0.4 m gaps);
+  the works' bank over the wing walls set to `wingTop` at the same points the paving steps at, or
+  left out where the paving covers it. The sky through Deep Lock is fixed only once M11 finds it.
+  **Tell Spencer** in `NOTES-FOR-AGENTS.md` and in the PR.
+- **1f. Traffic lights lit**, both faces.
+- **Files:** `world.ts`, `furniture.ts`, `tunnels.ts`, `map.ts`, `canal.ts`, `works.ts`.
+- **Risks:** walking changes. 1a and 1b move where feet are; ball games, cats, cars and naughty
+  boys use `map.ground` too. The walk probe and `ride_probe.mjs` must be no worse.
+- **Verify:** M9, M10, M11 down; walk probe falls, stuck and wall passes down; climb probe 11/11;
+  screenshots.
+- **Size:** 4–6 days.
+
+### Stage 2: build rules in today's format (one rebuild)
+
+**This needs map building unpaused (Dan's call).** Combine it with the waiting roof-towers rebuild
+if the timing suits (§9).
+- **2a. Paths level across**, in `write_tile.street_surfaces` (`point` for flat classes: the
+  station's centre-line height, not the ground). With a flag in the square (`sf.pl = 1`), the game
+  draws path corners at the written z (`surfaceFaces.at`), not the drawn ground. `lay_ground`
+  carves and fills the grid towards the paths' edges within the batter rules (the 4 m grid can't
+  meet a 1.5 m path exactly, so the path's free edge face covers what's left, as a kerb does).
+  This is the interim; the sheet makes it exact.
+- **2b. Dig under every span**, not only those of 4+ points (`lay_ground`), to `DECK_CLEAR`.
+- **2c. Water:** the canal's works stop at the river's outline (`tools/canal.py` clips the run;
+  `works.ts` reads it, so Spencer's code is untouched beyond a clip); touching water bodies agree
+  in `prep_map.py`'s water step; no OSM canal polygon raised where it overlaps a river.
+- **2d. Blocked ground** for walls includes the towpath, the canal's verges, locks' paving, bank
+  faces and every path's width (`write_tile.blocked_ground`); guessed boundaries go, measured ones
+  are cut.
+- **2e. Flights land on faces:** `flights_to_their_ends` snaps each end to the walkable face it
+  meets, at that face's height, and the steep-path rule takes the threshold Dan picks (§4.5).
+- **2f. Places of worship** by building form (`tools/buildings.py`, `prep_map.py`); drop the
+  name-based Bath rule.
+- **2g. The lidar's view of a bridge's side** is not a wall within the deck outline + parapet
+  thickness (`deck_skirts` from the outline, not a 0.8 m strip).
+- **2h. `neat_kerbs`' local version**, made byte-identical (one-pass F2), so this stage's extra
+  writer work doesn't lengthen the build.
+- **Files:** `tools/partition/write_tile.py`, `tools/canal.py`, `tools/prep_map.py`,
+  `tools/structures.py` (and `prep_map.py`'s copies of the same rules: the revisit list says to
+  change both), `tools/buildings.py`, `web/src/world.ts` (the `sf.pl` read).
+- **Risks:** a rebuild changes many things at once. `check_map.py` and `compare.py` before and
+  after, per sub-commit on the test squares, before the whole map. Levelling paths moves trees,
+  doors and gates by the ground's change (`follow_laid_ground` already does this). The canal clip
+  is in Spencer's area: keep his data shape, and add, don't rewrite.
+- **Verify:** M1 down by most (target: 90% of path length under 2°); M7, M12, M13, M14 to near 0;
+  existing counts no higher; download within 2%.
+- **Size:** 1.5–2 weeks, plus a rebuild.
+
+### Stage 3: the ground sheet, behind a flag
+
+- **Files:** a new `tools/partition/sheet.py` (the classes, the cut cells, the ordered heights, step
+  edges, packing); `write_tile.build_tile` calls it after `street_surfaces`;
+  `tools/pack_squares.mjs` and `web/src/pack.ts` / `sfpack.ts` for `gs`; `web/src/world.ts` (draw
+  `gs` and the masked grid); `web/src/map.ts` (ground from the sheet).
+- **Does:** writes `gs` alongside `sf` for the twelve test squares first, then all.
+  `?ground=sheet` draws and walks it; the default stays today's until the measures say otherwise.
+  Then the default flips, and after a release `sf` is dropped from packs.
+- **Risks:** the largest. Every system that reads the ground moves at once (players, cars, traffic,
+  balls, cats, naughty boys, pickups, parked cars, furniture placement). The flag, the fallback and
+  the walk probe are the safety net. Download growth is the other risk; the gate is 5%.
+- **Verify:** M1–M4, M7, M12 at or near 0 on the sheet; no check count up; draws per square down;
+  triangles not up; walk probe no worse anywhere and better on paths; Dan walks Widcombe on the flag.
+- **Size:** 2–3 weeks.
+
+### Stage 4: structures attach to the sheet
+
+- **Files:** `sheet.py` (deck ends, portal lines, lock coping edges, flight landings as step edges),
+  `world.ts bridgeStructures` (parapets from attachment edges, not record ends), `railbridge.ts`
+  (the same for the railway), `tunnels.ts` (portal from the sheet's portal line; no discard boxes
+  when `gs`), `canal.ts` (lock pits not needed under `gs`; keep for the fallback).
+- **Does:** removes the remaining hidden layers; parapets and ends meet; tunnels sealed under the
+  sheet.
+- **Risks:** bridges have had four passes of rules (revisit list). Port, don't replace: keep every
+  existing rule, and add the attachment edge as the place they meet. Set pieces
+  (`landmarks/setpieces.ts`, Spencer's) keep hiding what's in their outlines; a `held` bridge stays
+  the set piece's.
+- **Verify:** M5, M6, M8, M9 to near 0; screenshots of every bridge in the views file.
+- **Size:** 1.5–2 weeks.
+
+### Stage 5: drawing speed
+
+- Ground classes in one mesh with a class attribute; no depth offsets in `gs` squares; the grid's
+  index buffer built from the cut mask; optionally, open land simplified at 5 cm beyond 30 m of
+  any face.
+- **Verify:** draws and triangles per square (§6.3) on the slowest machine to hand; frame time no
+  worse anywhere and better in town.
+- **Size:** 1 week.
+
+### Stage 6: tidy
+
+- Remove, for `gs` squares only, `sinkUnder`, `clearOf`, `groundTris`, `KERB_RAISE`, `FLAT_UNDER`
+  and the discard boxes (the fallback keeps them for packs without `gs`).
+- Rewrite `CLAUDE.md`'s "Everything on the ground is laid out in one order" with §4.1's table, and
+  update `README.md` (rebuild a map), `docs/new-area.md` and `NOTES-FOR-AGENTS.md`.
+- **Size:** 2–3 days.
+
+### Summary
+
+| stage | rebuild? | visible win | risk | size |
+|---|---|---|---|---|
+| 0 | no | none (numbers) | low | 2–3 d |
+| 1 | no | steps, tunnels, walking on paths, bridge ceilings, locks' edges, lights | low–medium | 4–6 d |
+| 2 | yes | level paths, no hillside on bridges, no land in the river, no fences in water, churches | medium | 1.5–2 w |
+| 3 | yes | no holes or lumps anywhere; one walk surface | high | 2–3 w |
+| 4 | yes | bridge ends and parapets, sealed tunnels | medium | 1.5–2 w |
+| 5 | no (or with 3) | frame rate | low | 1 w |
+| 6 | no | none | low | 2–3 d |
+
+---
+
+## 8. Risks, open questions for Dan, and what was rejected
+
+### 8.1 Top risks
+
+1. **Moving the walk surface (stages 1a, 3).** Everything that stands on the ground reads
+   `map.ground`, and today's code has tuned tolerances for the old mismatches. A change that is
+   right for the drawing can strand a car on a kerb or a ball in a dip. Mitigation: the flag, the
+   untouched fallback, the walk probe and `ride_probe.mjs` on every stage, and one system at a time.
+2. **Download and triangle growth on phones.** The sheet adds classes and a fill. If the 5% gate
+   fails, the fallback is to store open-land fill corners without z and thin banks. Don't ship over
+   the gate.
+3. **Other people's work and the long rebuild loop.** The canal, locks and set pieces are Spencer's;
+   bridges and roads have four passes of rules in two copies (`structures.py` and `prep_map.py`);
+   the one-pass build work wants byte-identical output, which stage 2 breaks on purpose. Map
+   building is paused, so stages 2–4 queue behind Dan's go-ahead. Mitigation: additive changes in
+   Spencer's files with a note to him; port rules, never replace them; do stage 2's rebuild together
+   with the roof-towers rebuild if Dan agrees.
+
+Others:
+- Stage 2a's interim levelling on a 4 m grid will still leave edge faces where a path crosses a
+  steep slope; it's better, not perfect, until stage 3.
+- `house_divisions` and the polygonize are sensitive to centimetre shifts (the plan's stage 6
+  note), so moving faces in plan must not feed back into plots. The sheet only *reads* the
+  partition's faces; it never re-cuts plots.
+- The barrier half of a write is not fully deterministic (revisit list, 24 October): baselines
+  will show noise of a few thousandths there.
+
+### 8.2 Open questions for Dan (his decisions only)
+
+1. **The steps threshold.** The data says 1 in 8 would turn 13–21% of the hilly squares' paths into
+   stairs. The proposal is: mapped steps always; an unmapped path becomes a flight only over 1 in 4
+   (about 2% of path length); everything level across. Do you want 1 in 4, 1 in 6, or 1 in 8?
+2. **Download budget.** Is "no square more than 5% bigger gzipped" the right gate, or does it have
+   to be 0%?
+3. **When to unpause map building** for stage 2, and whether to fold it into the waiting
+   roof-towers combined rebuild.
+4. **Spencer.** Stage 1e touches his canal and lock files (small and additive). Do you want it to
+   go to him as its own PR, or with the stage?
+5. **Retaining edges' look.** Where the carving would need more than 3 m of batter, the plan puts a
+   low wall at the face's edge. Stone everywhere, or by zone (stone in Bath, block in Hackney,
+   painted in Cape Town)?
+6. **Roads cambered?** Your hypothesis listed it. The plan keeps carriageways flat across, as now:
+   a camber needs corners across every road, so more triangles, for little seen. Leave it out?
+
+### 8.3 What was considered and rejected
+
+| idea | why not |
+|---|---|
+| **A full irregular mesh for the whole square** (no grid) | The grid is 80 KB of a 0.9 MB square and draws as one index buffer. A full mesh of 4 m lidar ground barely simplifies (§5), so it would cost download for nothing seen. The hybrid keeps the grid where nothing touches it. |
+| **A global least-squares height solve** over the sheet | Not deterministic enough to keep neighbouring squares agreeing (the build-once rule), slow on dense squares, and hard to explain when it picks a strange compromise. Ordered pinning gives the same result where the constraints don't conflict, and a named step edge where they do. |
+| **Cutting the ground at load** (CSG in the browser) | Costs CPU on phones every time a square streams in. Against "bake at build time". |
+| **Raising bridges to clear the ground** | Dan: low bridges are fine. The ground is dug instead. |
+| **Rebuilding the canal and locks into the sheet** | Spencer's work, and it works; only its edges are broken. The sheet stops at its outline. |
+| **Per-place fixes** (a list of bad bridges, Bath-only tables) | Data over custom. Every rule here is a general one with a named constant, tried on four maps. |
+| **Simplifying flat ground hard** for speed | Measured to buy little in Bath; it risks lumps on paths. Optional and gated only. |
+| **Steps at 1 in 8** as asked | See 8.2 question 1: kept as a question with the numbers, not decided here. |
+| **Keeping the depth offsets** and tuning them | They are the symptom. With no overlap, none are needed, and removing them is what lets the meshes merge. |
+
+---
+
+## 9. How to resume
+
+The state when this was written (6 November 2026):
+
+- **This plan:** worktree `/Users/dan/src/cd-ground-plan`, branch `claude/ground-plan`, from the
+  fork's `main` at `f5b99c63`. Not pushed.
+- **The fork's `main`** (`danturn/CombeDowner`, remote `origin`) is `f5b99c63`, which **is
+  `claude/map-integrate`, merged and live** (all four maps rebuilt). Spencer's `main` (remote
+  `spencer`) is `2a706a01`, "All four maps rebuilt: lighter streets, closed cracks, boundaries
+  that meet (#90)". Bring both in before starting, and again before merging.
+- **Paused:** map building (Dan's say). Nothing in stages 2–4 runs until he unpauses it.
+- **Waiting:** `claude/roof-towers` at `1cdc3e84` (a merge of `claude/map-integrate` into it),
+  waiting to finish a combined rebuild. Coordinate stage 2's rebuild with it.
+- **Don't touch** `/Users/dan/src/CombeDowner`'s working files. It is on
+  `claude/partition-stage-3` with uncommitted work that belongs to someone else. Make a fresh
+  worktree for each stage: `../cd-ground-<stage>`, branch `claude/ground-<stage>` off the fork's
+  `main` (memory: always a separate worktree).
+- **Reading list, in order:**
+  - `CLAUDE.md` and `NOTES-FOR-AGENTS.md`; add the stage to "In flight";
+  - this plan;
+  - `docs/partition-revisit.md`, the "Street faces" section onwards (every trade-off made on the
+    ground so far);
+  - `docs/one-pass-build.md`, A9 and F2 (`neat_kerbs`);
+  - `tools/partition/write_tile.py` `build_tile` (7025) and `street_surfaces` (3737);
+  - `web/src/world.ts` 568–1003 (terrain and sinking), 1898–1996 (faces), 2800–2837 (the walk
+    surface);
+  - `web/src/map.ts` 470–600 (solid things), 880–1330 (floor, deck, ground, tunnels).
+- **Builds and shots** go through `tools/mac_build.sh <commit> --map [--only ...] [--check]
+  [--shots views.json]` on Dan's Mac. Single squares: `tools/square_at.py` gives the rebuild
+  command for a view. Every browser run is muted (`tools/quiet-guard.mjs`). Use a cheaper model for
+  mechanical work (packing, counting) and keep judgement work on the top model (memory).
+- **Merging:** big work goes to Spencer's `main` as one squashed commit through a PR, with Dan's
+  approval (memory). Run `cd web && npm run build` before any merge.
+- **Start with stage 0.** Nothing else should begin without its baselines, because every later
+  gate compares against them.
