@@ -3618,9 +3618,38 @@ def steep_paths_as_steps(rd):
             if steep[k]:
                 piece["c"] = "steps"
                 piece["w"] = max(r.get("w", 1.5), 1.8)
+                piece["_was"] = r
             out.append(piece)
             k = e + 1
     return out
+
+
+STAIR_PITCH = 0.7       # the steepest a flight's treads climb (furniture.ts)
+
+
+def steep_flights_that_fit(rd, ground):
+    """A flight made from a steep stretch of path (`steep_paths_as_steps`) is kept only where a flight
+    can be built: once its ends are cut back to the street or path each meets, at least STEP_RUN long
+    and climbing no steeper than a stair between the ground at its ends. A short sharp rise where a
+    path crosses a kerb or the foot of a wall, which the 4 m grid makes look steep, stays a path, as
+    its flight would start or end in mid-air. Returns how many went back."""
+    back = 0
+    for r in rd:
+        was = r.pop("_was", None)
+        if was is None:
+            continue
+        p = r["p"]
+        L = sum(math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:]))
+        a, b = ground(*p[0][:2]), ground(*p[-1][:2])
+        if L >= STEP_RUN and a is not None and b is not None and abs(b - a) <= STAIR_PITCH * L:
+            continue
+        r["c"] = was["c"]
+        if "w" in was:
+            r["w"] = was["w"]
+        else:
+            r.pop("w", None)
+        back += 1
+    return back
 
 
 def end_at_portals(rd, tunnels):
@@ -7324,6 +7353,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = steep_paths_as_steps(rd)
     # (the flights made just now from steep stretches, and the ways they meet as they are by now)
     flights_to_their_ends(rd, fitted[1] if fitted else None)
+    steep_flights_that_fit(rd, ground)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
