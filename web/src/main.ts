@@ -809,7 +809,7 @@ $("copy").onclick = async () => {
 };
 
 // F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
-const debug = new DebugPanel(renderer, camera, () => game);
+const debug = new DebugPanel(renderer, camera, () => game, () => current.world.scene);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
 const pictureHooks = settingsPage({
