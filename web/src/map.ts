@@ -1301,10 +1301,13 @@ export class GameMap {
     return b && (y < b[0] + b[1] - 0.4 || y < this.ground(x, z) - UNDERGROUND) ? b[0] : this.canalBore(x, z, y);
   }
 
-  /** The tunnel's lining over feet at scene (x, y, z) if they're in one (scene Y), or null. */
+  /** What's over feet at scene (x, y, z) to bump your head on (scene Y), or null: a tunnel's lining
+   *  if they're in one, or the underside of a bridge too high to step up on to. */
   ceiling(x: number, z: number, y: number): number | null {
     const b = this.boreAt(x, z);
-    return b && this.inTunnel(x, z, y) === b[0] ? b[0] + b[2] : null;
+    if (b && this.inTunnel(x, z, y) === b[0]) return b[0] + b[2];
+    const over = this.overhead(x, z, y + 0.6);
+    return over === null ? null : over - DECK_DEPTH;
   }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its

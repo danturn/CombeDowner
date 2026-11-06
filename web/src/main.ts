@@ -280,14 +280,14 @@ const wasPlaying = ((): { code: string; map: string } | null => {
   } catch { return null; }
 })();
 
-/** Keep the room in the start screen's recent list while you're in it, with whoever has been there. */
+/** Keep the room in the start screen's recent list while you're in it, with whoever has been there (a solo game: when you last played it). */
 let roomTimer = 0, roomNote = () => {};
 addEventListener("pagehide", () => roomNote());
 function watchRoom(code: string) {
   clearInterval(roomTimer);
-  roomNote = () => {};
-  if (code === "SOLO") return;
-  roomNote = () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
+  roomNote = code === Saves.SOLO
+    ? () => { if (game) Saves.played(current.id, Saves.SOLO); }
+    : () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
   roomNote();
   roomTimer = window.setInterval(roomNote, 30000);
 }

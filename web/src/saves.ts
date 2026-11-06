@@ -58,6 +58,13 @@ export function progressText(p: Progress | null, on: Shown = { zones: true, obje
   return bits.length ? bits.join(", ") : "Nothing done yet";
 }
 
+/** You're playing this room now: its save says so, as the menu lists rooms by when they were last
+ *  played and a save is otherwise only stamped when something is found. */
+export function played(map: string, room: string) {
+  const d = json(get(oddKey(map, room)));
+  if (d && typeof d === "object") put(oddKey(map, room), JSON.stringify({ ...d, at: Date.now() }));
+}
+
 /** Every map's solo save. */
 export function soloSaves(): Progress[] {
   const out: Progress[] = [];
