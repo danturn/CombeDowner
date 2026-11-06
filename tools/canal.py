@@ -224,7 +224,12 @@ def river_mouth(pts, end, rivers):
         nx, ny = -(by - ay) / dl, (bx - ax) / dl
         if nx * tx + ny * ty < 0: nx, ny = -nx, -ny
         on = piece.interpolate(piece.project(Point(e[:2])))
-        return [r1(on.x), r1(on.y), round(nx, 3), round(ny, 3)]
+        # (set back to where the river's edge comes furthest towards the canal within reach, so a
+        # bank that curves in beside the mouth lies beyond the line too)
+        near = r.intersection(Point(e[:2]).buffer(reach))
+        back = min([0.0] + [(x - on.x) * nx + (y - on.y) * ny for g in getattr(near, "geoms", [near])
+                            if g.geom_type == "Polygon" for x, y in g.exterior.coords])
+        return [r1(on.x + nx * back), r1(on.y + ny * back), round(nx, 3), round(ny, 3)]
     return None
 
 
