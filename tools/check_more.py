@@ -1651,24 +1651,40 @@ def canal_pieces(root, map_id):
     canal = _whole(root, map_id)["canal"]
     if not canal: return None
     tunnel = lambda a, b: bool((a[6] | b[6]) & 1)
+
+    def frame(lk):
+        (ax, ay), (bx, by) = lk["lo"], lk["hi"]
+        L = math.dist((ax, ay), (bx, by)) or 1
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        rect = lambda u0, u1, v0, v1: Polygon([(ax + ux * u - uy * v, ay + uy * u + ux * v) for u, v in ((u0, v0), (u1, v0), (u1, v1), (u0, v1))])
+        return L, rect, lk.get("tl") or TAIL + (lk["zh"] - lk["zl"]) * 6
+    # beside a lock, the pound's water stops at its walls, and runs on from each pair of gates to the
+    # chamber's own water; the works leave out their banks under its coping and paving, but for an
+    # edge tucked 5 cm under them (canal.ts outsideLocks, works.ts)
+    beside, under, gates = [], [], []
+    for lk in canal.get("locks") or []:
+        L, rect, wl = frame(lk)
+        beside += [rect(-wl, L + TAIL, LOCK_HALF, 50), rect(-wl, L + TAIL, -50, -LOCK_HALF)]
+        under.append(rect(-wl + 0.05, L + TAIL - 0.05, -(LOCK_HALF + COPE + APRON - 0.05), LOCK_HALF + COPE + APRON - 0.05))
+        gates.append((lk["lo"], rect(0, 0.5, -LOCK_HALF, LOCK_HALF)))
+        gates.append((lk["hi"], rect(L - 0.5, L, -LOCK_HALF, LOCK_HALF)))
+    beside, under = shapely.union_all(beside or [Polygon()]), shapely.union_all(under or [Polygon()])
     water, banks, verges = [], [], []
     for run in canal["runs"]:
         p = run["p"]
         if len(p) < 2: continue
-        water.append((_band(p, lambda i: -p[i][2], lambda i: p[i][2], tunnel), run["lv"]))
+        wet = _band(p, lambda i: -p[i][2], lambda i: p[i][2], tunnel).difference(beside)
+        ends = [g for at, g in gates for e in (p[0], p[-1]) if math.dist(at, e[:2]) < 0.5]
+        water.append((shapely.union_all([wet] + ends), run["lv"]))
         banks.append(shapely.union_all([_band(p, lambda i: p[i][2], lambda i: p[i][2] + p[i][7], tunnel),
-                                        _band(p, lambda i: -p[i][2] - p[i][8], lambda i: -p[i][2], tunnel)]))
+                                        _band(p, lambda i: -p[i][2] - p[i][8], lambda i: -p[i][2], tunnel)]).difference(under))
         verges.append(shapely.union_all([_band(p, lambda i: p[i][2] + p[i][7], lambda i: p[i][2] + p[i][7] + p[i][9], tunnel),
                                          _band(p, lambda i: -p[i][2] - p[i][8] - p[i][10], lambda i: -p[i][2] - p[i][8], tunnel)]))
     locks = []
     for lk in canal.get("locks") or []:
-        (ax, ay), (bx, by) = lk["lo"], lk["hi"]
-        L = math.dist((ax, ay), (bx, by)) or 1
-        ux, uy = (bx - ax) / L, (by - ay) / L
-        wl = lk.get("tl") or TAIL + (lk["zh"] - lk["zl"]) * 6
-        rect = lambda u0, u1, v0, v1: Polygon([(ax + ux * u - uy * v, ay + uy * u + ux * v) for u, v in ((u0, v0), (u1, v0), (u1, v1), (u0, v1))])
+        L, rect, wl = frame(lk)
         sides = lambda v0, v1: shapely.union_all([rect(-wl, L + TAIL, v0, v1), rect(-wl, L + TAIL, -v1, -v0)])
-        locks.append(dict(n=lk.get("n", ""), lo=(ax, ay), hi=(bx, by), chamber=rect(0, L, -LOCK_HALF, LOCK_HALF),
+        locks.append(dict(n=lk.get("n", ""), lo=tuple(lk["lo"]), hi=tuple(lk["hi"]), chamber=rect(0, L, -LOCK_HALF, LOCK_HALF),
                           walls=sides(LOCK_HALF, LOCK_HALF + COPE + APRON), paving=sides(LOCK_HALF + COPE, LOCK_HALF + COPE + APRON),
                           water=rect(0.4, L - 0.4, -LOCK_HALF, LOCK_HALF), zone=rect(-wl - 2, L + TAIL + 2, -LOCK_HALF - COPE - APRON - 2, LOCK_HALF + COPE + APRON + 2)))
     return dict(water=water, banks=banks, verges=verges, locks=locks, weirs=[])
