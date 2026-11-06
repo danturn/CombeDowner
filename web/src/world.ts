@@ -590,29 +590,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
   };
-  // a flight of steps is sunk into the hill: the ground beside it is cut down to the straight climb
-  // between its ends, so the bank meets its treads' edges rather than burying them
-  if (LEVEL && levelPaths) for (const r of D.rd) {
-    if (r.c !== "steps" || r.p.length < 2 || r.bridge || r.p.some((q) => q.length > 3 && q[3])) continue;
-    const len = [0];
-    for (let k = 1; k < r.p.length; k++) len.push(len[k - 1] + Math.hypot(r.p[k][0] - r.p[k - 1][0], r.p[k][1] - r.p[k - 1][1]));
-    const L = len[len.length - 1];
-    if (L < 1) continue;
-    const g0 = map.trueGround(r.p[0][0], -r.p[0][1]), g1 = map.trueGround(r.p[r.p.length - 1][0], -r.p[r.p.length - 1][1]);
-    const reach = width(r) / 2 + T.dx * 0.75;
-    for (let k = 0; k < r.p.length - 1; k++) {
-      const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
-      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
-      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(ay, by) + reach - T.y0) / T.dy));
-      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-        const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy;
-        const t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
-        if (Math.hypot(x - ax - vx * t, y - ay - vy * t) >= reach) continue;
-        const s = len[k] + Math.sqrt(l2) * t, v = j * T.nx + i;
-        roundTo[v] = Math.min(roundTo[v], g0 + (g1 - g0) * s / L - PATH_UNDER);
-      }
-    }
-  }
   for (const r of D.rd) {
     if (PATHS.has(r.c)) continue;      // (paths lie on the ground as it's drawn: see the strips below)
     if (faced && !r.bridge && !r.piece) continue;
@@ -718,6 +695,30 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // (never below the face's edge, as a corner the triangle only just touches would otherwise go far down)
       if (pave && near + 0.14 < Math.min(T.h[v] / 10, roundTo[v])) { const to = Math.max(clearOf(o, i, j, 0.14), near + 0.14); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
       if (path && near + PATH_UNDER < Math.min(T.h[v] / 10, roundTo[v])) { const to = Math.max(clearOf(o, i, j, PATH_UNDER), near + PATH_UNDER); if (to < T.h[v] / 10) roundTo[v] = Math.min(roundTo[v], to); }
+    }
+  }
+  // a flight of steps is sunk into the hill: the ground beside it is cut down to the straight climb
+  // between its ends, so the bank meets its treads' edges rather than burying them (but not where a
+  // path or a street beside it decides the ground, which would leave that standing over the cut)
+  if (LEVEL && levelPaths) for (const r of D.rd) {
+    if (r.c !== "steps" || r.p.length < 2 || r.bridge || r.p.some((q) => q.length > 3 && q[3])) continue;
+    const len = [0];
+    for (let k = 1; k < r.p.length; k++) len.push(len[k - 1] + Math.hypot(r.p[k][0] - r.p[k - 1][0], r.p[k][1] - r.p[k - 1][1]));
+    const L = len[len.length - 1];
+    if (L < 1) continue;
+    const g0 = map.trueGround(r.p[0][0], -r.p[0][1]), g1 = map.trueGround(r.p[r.p.length - 1][0], -r.p[r.p.length - 1][1]);
+    const reach = width(r) / 2 + T.dx * 0.75;
+    for (let k = 0; k < r.p.length - 1; k++) {
+      const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
+      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(ay, by) + reach - T.y0) / T.dy));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy;
+        const t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
+        if (Math.hypot(x - ax - vx * t, y - ay - vy * t) >= reach) continue;
+        const s = len[k] + Math.sqrt(l2) * t, v = j * T.nx + i;
+        if (pathTo[v] === Infinity && !covered[v]) roundTo[v] = Math.min(roundTo[v], g0 + (g1 - g0) * s / L - PATH_UNDER);
+      }
     }
   }
   // the grid points just inside a face's edge are let down less, as the ground's triangles from them

@@ -992,6 +992,7 @@ def drawn_terrain(m, sheet):
     T = m["t"]; nx, ny = T["nx"], T["ny"]
     H = np.array(T["h"], dtype=float).reshape(ny, nx) / 10 + T["z0"]
     under, round_, path_to = np.full(H.shape, np.inf), np.full(H.shape, np.inf), np.full(H.shape, np.inf)
+    cov = np.zeros(H.shape, bool)
     X, Y = np.meshgrid(T["x0"] + np.arange(nx) * T["dx"], T["y0"] + np.arange(ny) * T["dy"])
     ground = terrain(T)
     for r in m.get("rd") or []:
@@ -1010,23 +1011,6 @@ def drawn_terrain(m, sheet):
         hc = ground(shapely.get_x(foot), shapely.get_y(foot)) - 0.3
         idx = np.argwhere(sel)[near]
         under[idx[:, 0], idx[:, 1]] = np.minimum(under[idx[:, 0], idx[:, 1]], hc)
-    # (world.ts: a flight is sunk into the hill, the ground beside it cut to the straight climb between its ends)
-    for r in (m.get("rd") or []) if sheet.ok and sheet.level else []:
-        p = r["p"]
-        if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 and q[3] for q in p): continue
-        ln = LineString([q[:2] for q in p])
-        if ln.length < 1: continue
-        reach = _road_half(r["c"], r.get("w")) + T["dx"] * 0.75
-        x0, y0, x1, y1 = ln.bounds
-        sel = (X > x0 - reach) & (X < x1 + reach) & (Y > y0 - reach) & (Y < y1 + reach)
-        if not sel.any(): continue
-        pts = shapely.points(X[sel], Y[sel])
-        near = shapely.distance(pts, ln) < reach
-        if not near.any(): continue
-        g0, g1 = float(ground(np.array([p[0][0]]), np.array([p[0][1]]))[0]), float(ground(np.array([p[-1][0]]), np.array([p[-1][1]]))[0])
-        s_ = shapely.line_locate_point(ln, pts[near])
-        idx = np.argwhere(sel)[near]
-        round_[idx[:, 0], idx[:, 1]] = np.minimum(round_[idx[:, 0], idx[:, 1]], g0 + (g1 - g0) * s_ / ln.length - 0.02)
     if sheet.ok:
         # (paths written level across carve the ground to just under them as well, world.ts PATH_UNDER)
         streets = sheet.kind_mask(FACE_KINDS if sheet.level else ("road", "service", "pave"))
@@ -1063,6 +1047,26 @@ def drawn_terrain(m, sheet):
                            & np.pad(cov, 1, constant_values=True)[:-2, 1:-1] & np.pad(cov, 1, constant_values=True)[2:, 1:-1])
             under = u.reshape(H.shape); round_ = ro.reshape(H.shape); path_to = pr.reshape(H.shape)
             under[edge & np.isfinite(under)] += 0.2
+    # (world.ts: a flight is sunk into the hill, the ground beside it cut to the straight climb between its
+    # ends, where no path or street face decides it)
+    for r in (m.get("rd") or []) if sheet.ok and sheet.level else []:
+        p = r["p"]
+        if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 and q[3] for q in p): continue
+        ln = LineString([q[:2] for q in p])
+        if ln.length < 1: continue
+        reach = _road_half(r["c"], r.get("w")) + T["dx"] * 0.75
+        x0, y0, x1, y1 = ln.bounds
+        sel = (X > x0 - reach) & (X < x1 + reach) & (Y > y0 - reach) & (Y < y1 + reach)
+        if not sel.any(): continue
+        pts = shapely.points(X[sel], Y[sel])
+        near = shapely.distance(pts, ln) < reach
+        if not near.any(): continue
+        g0, g1 = float(ground(np.array([p[0][0]]), np.array([p[0][1]]))[0]), float(ground(np.array([p[-1][0]]), np.array([p[-1][1]]))[0])
+        s_ = shapely.line_locate_point(ln, pts[near])
+        idx = np.argwhere(sel)[near]
+        free_ = ~np.isfinite(path_to[idx[:, 0], idx[:, 1]]) & ~cov[idx[:, 0], idx[:, 1]]
+        idx, s_ = idx[free_], s_[free_]
+        round_[idx[:, 0], idx[:, 1]] = np.minimum(round_[idx[:, 0], idx[:, 1]], g0 + (g1 - g0) * s_ / ln.length - 0.02)
     to = np.where(np.isfinite(under), under, round_)
     # (world.ts PATH_FILL: beside a level path the ground is filled up to its edge where the path decides it)
     raise_ = np.where(np.isfinite(under), 0.0, np.where(np.isfinite(path_to) & (round_ == path_to), 1.5, KERB_RAISE))
