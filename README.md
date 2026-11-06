@@ -658,7 +658,11 @@ squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style s
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip` (Bath's
 only, so far).
 The churches' towers and spires are measured from the lidar by `tools/towers.py` and kept in
-`data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh.
+`data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh. A
+building is drawn as a church when it was built as one, whatever it's used for now: OpenStreetMap's
+`building=church`, `chapel` or `cathedral`, a Christian place of worship, or a building Wikidata
+calls a church (St Mark's in Widcombe is a community centre). `python3 -I tools/worship.py $MAP`
+looks those up afresh into `data/$MAP/worship.json`.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks

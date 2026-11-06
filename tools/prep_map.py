@@ -2334,7 +2334,10 @@ def clear_of_line(poly):
     return parts[0].simplify(0.25)
 
 
+from buildings import built_as_church
+_church = built_as_church(L("osm") if os.path.exists(f"{src_dir}/osm.geojson") else [], args[0])
 for fi, (g, p) in enumerate(L("building")):
+    if _church(g, p): p = dict(p, _church=True)
     for k, poly in enumerate(polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
             p = dict(p, _own=keeper(poly) == (ti, tj))      # whole, in the tile holding its middle
@@ -2384,7 +2387,7 @@ else:
                        [poly for poly, p in cand])
     if STORE is not None: roof_levels = STORE.put_roofs([poly for poly, p in cand], roof_levels)
 for (poly, p), lv in zip(cand, roof_levels):
-    church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
+    church = p.get("_church")
     parts = [poly]
     if lv is not None:
         parts = lv

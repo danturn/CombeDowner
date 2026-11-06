@@ -131,6 +131,30 @@ CORE_TALL = 8.0         # metres to the eaves: a town house of three storeys or 
 PAINTS = ("#f7f5ef", "#f7f5ef", "#f1e7cc", "#e8eedf", "#f3e1da", "#e0e8f0", "#f2ecc8")
 CORE_SHADES = {"stone": ("#f2dfb2", "#e4d2a8", "#d8cdb6"), "buff": ("#f2efe8", "#cfcac0", "#a9a294"),
                "brick": ("#c0644a", "#a85a46", "#c98062"), "render": PAINTS}
+CHURCH_CLASSES = ("church", "chapel", "cathedral")   # Overture's classes for a building built as a church
+
+
+def built_as_church(osm, map_id):
+    """A test of whether a building (a lon/lat outline and its Overture properties) was built as a
+    church: Overture's class says so, or an OpenStreetMap building covering it and covered by it
+    says so (tools/worship.py: its tags, or what Wikidata says of it). Not its name: a terrace called
+    Chapel Row is houses."""
+    from worship import churches, built_as_church as tagged
+    known = churches(map_id)
+    outlines = [g.buffer(0) for g, q in osm if g.geom_type in ("Polygon", "MultiPolygon") and tagged(q, known)]
+    tree = STRtree(outlines)
+
+    def test(g, p):
+        if (p.get("class") or "") in CHURCH_CLASSES:
+            return True
+        if not outlines or g.geom_type not in ("Polygon", "MultiPolygon"):
+            return False
+        g = g.buffer(0)
+        return any((a := outlines[int(k)].intersection(g).area) > 0.5 * g.area and a > 0.5 * outlines[int(k)].area
+                   for k in tree.query(g))
+    return test
+
+
 HOME = {"", "residential", "apartments", "house", "detached", "semidetached_house", "terrace", "bungalow"}
 HOUSE = {"house", "detached", "semidetached_house", "terrace", "bungalow"}
 
@@ -232,8 +256,7 @@ def priors(polys, props, certs, keys, zones, default_zone, census, cores):
     fixed = {}
     for i, (poly, p) in enumerate(zip(polys, props)):
         cls = p.get("class") or p.get("subtype") or ""
-        name = (p.get("names") or {}).get("primary") or ""
-        if oa_of[i] < 0 or cls not in HOME or poly.area < 28 or "Chapel" in name: continue
+        if oa_of[i] < 0 or cls not in HOME or poly.area < 28 or p.get("_church"): continue
         floors, c = p.get("num_floors") or 0, certs[i]
         est[i] = max(1.0, poly.area * (floors or 3) / FLAT_M2, (c["n"] - c["houses"]) if c else 0)
         if (poly.area > 320 or (poly.area > 150 and floors >= 4)) and (cls == "apartments" or (floors >= 4 and zone[i] not in BATH)):
@@ -770,7 +793,6 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             group_key[mat[i]] = min(group_key.get(mat[i], keys[i]), keys[i])
     for i, (poly, p) in enumerate(zip(polys, props)):
         cls = p.get("class") or p.get("subtype") or ""
-        name = (p.get("names") or {}).get("primary") or ""
         ml = p.get("height")
         cx, cy = poly.centroid.coords[0]
         zone = zone_at(zones, cx, cy, default_zone)
@@ -789,7 +811,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         core = bool(prior.get("core"))
 
         # ---- what kind of building ----
-        if cls in ("church", "chapel") or "Chapel" in name or name == "Holy Trinity":
+        if p.get("_church") or cls in CHURCH_CLASSES:
             kind = "church"
         elif cls in ("school", "kindergarten", "hospital", "university") or (area > 700 and not flats):
             kind = "institution"

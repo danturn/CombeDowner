@@ -72,6 +72,8 @@ from the packs alone, a few seconds a square:
     bank over its paving.
 35. No land standing in a pond or river, no canal works in a river, no two touching waters at two levels.
 36. No wall, fence or hedge on water, the canal's banks, verges or a lock's paving, or along a path.
+37. A building OpenStreetMap or Wikidata says was built as a church is drawn as one (the same test as
+    the build's, tools/worship.py, read from data/<map>/ beside the packs).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -1830,7 +1832,45 @@ def ground_measures(m, tag, note, f, off_deck=None):
     locks(cp, note, at, sq, fig)
     water(m, cp, ground, note, at, sq, inner, fig)
     fences_on_ways(m, sheet, cp, note, at, inner, fig)
+    churches_drawn(m, *_root_of(f), note, at, fig)
     return fig
+
+
+@functools.lru_cache(maxsize=2)
+def church_outlines(map_id):
+    """The outlines (model metres) of the map's buildings OpenStreetMap or Wikidata says were built as
+    churches, as the build reads them (tools/worship.py)."""
+    import lzma
+    from area import area
+    from worship import churches, built_as_church
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", map_id, "osm.geojson.xz")
+    if not os.path.exists(src): return []
+    known = churches(map_id)
+    lon0, lat0 = area(map_id).centre
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
+    out = []
+    for f in json.load(lzma.open(src))["features"]:
+        if f["geometry"]["type"] != "Polygon" or not built_as_church(f["properties"], known): continue
+        g = Polygon([((x - lon0) * kx, (y - lat0) * ky) for x, y in f["geometry"]["coordinates"][0]]).buffer(0)
+        if not g.is_empty: out.append(g)
+    return out
+
+
+def churches_drawn(m, root, map_id, note, at, fig):
+    """37. Each church outline whose middle is in the square is drawn as a church by some building
+    covering half of it (a set piece's buildings are left out: the game draws its own)."""
+    sq = box(*m["b"])
+    blds = [(_poly(b["r"][0]), b.get("c")) for b in m.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
+    tree = shapely.STRtree([g for g, _ in blds]) if blds else None
+    n = 0
+    for g in church_outlines(map_id):
+        c = g.representative_point()
+        if not sq.contains(c) or tree is None: continue
+        over = [blds[int(k)] for k in tree.query(g) if blds[int(k)][0].intersection(g).area > 0.5 * min(blds[int(k)][0].area, g.area)]
+        if not over or any(k == "church" for _, k in over): continue
+        n += 1
+        note("37 church not drawn as one", g.area, at(c.x, c.y), f"drawn as {over[0][1]}, {g.area:.0f} m2")
+    if n: fig["churches not drawn as one"] = fig.get("churches not drawn as one", 0) + n
 
 
 @functools.lru_cache(maxsize=2)
