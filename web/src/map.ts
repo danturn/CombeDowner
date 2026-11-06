@@ -224,8 +224,19 @@ export function footballPosts(p: Oblong): number[][] {
 }
 
 const CELL = 8;
-/** The deepest a bridge's deck is drawn, top to underside (world.ts KINDS). */
+/** How deep each kind of bridge's deck is drawn, from the road on it to its underside (world.ts builds them). */
+export const BRIDGE_DECK: Record<string, number> = { arch: 0.9, beam: 1.1, truss: 0.9, foot: 0.45, suspension: 0.45 };
+/** Under a bridge with nothing of it drawn just there, its ceiling is this far under its road. */
 const DECK_DEPTH = 1.1;
+const FOOT_CLASSES = new Set(["footway", "path", "cycleway", "steps", "bridleway"]);
+/** What kind of bridge a road's is: the map's `bt`, or for a map built without it, a footbridge
+ *  for a path, beams for a trunk road and stone arches for the rest. */
+export function bridgeKind(r: { bt?: string; c: string }): string {
+  if (r.bt && BRIDGE_DECK[r.bt] !== undefined) return r.bt;
+  return FOOT_CLASSES.has(r.c) ? "foot" : r.c === "trunk" || r.c === "motorway" ? "beam" : "arch";
+}
+/** How far a bridge's road is drawn over the height the map gives it: a kerbed street's, more. */
+export function deckLift(c: string): number { return KERBED.has(c) ? 0.2 : 0.1; }
 /** Feet so far down that blocked() finds every trunk and post, wherever it stands. */
 export const ANY_HEIGHT = -1e9;
 /** How far under the ground something stands on (a house, a garden wall, a strange structure) you
@@ -312,8 +323,13 @@ export class GameMap {
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
-  private decks: { p: number[][]; half: number; left: number; right: number }[] = [];
+  // and how far under its road its flat underside is drawn
+  private decks: { p: number[][]; half: number; left: number; right: number; drop: number }[] = [];
   private deckCells = new Map<number, number[]>();
+  // the arches drawn under bridges (world.ts), each stretch of barrel in scene coords: [ax, az, bx, bz,
+  // half its width, the road's height over it at a and b, the barrel's at a and b], by cell
+  private arches: number[][] = [];
+  private archCells = new Map<number, number[]>();
   // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
   private tA: number[][] = []; private tB: number[][] = [];
   private tunnelCells = new Map<number, number[]>();
@@ -491,7 +507,7 @@ export class GameMap {
         for (const side of [1, -1]) {
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
           // (down only to the deck's underside, so a road or path passing under has no wall across it)
-          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, Math.min(tops[i], tops[i + 1]) - DECK_DEPTH, tops[i + 1] + 1.25);
+          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, Math.min(tops[i], tops[i + 1]) - deckDrop(r), tops[i + 1] + 1.25);
         }
       }
     }
@@ -504,7 +520,7 @@ export class GameMap {
       // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
       // (out to its parapets, each side its own: a side with no pavement stops at its kerb)
       const k = this.decks.length, half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), seen = new Set<number>(), flags = spanFlags(r, g, this.z0);
-      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2 });
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -1314,9 +1330,50 @@ export class GameMap {
   ceiling(x: number, z: number, y: number): number | null {
     const b = this.boreAt(x, z);
     if (b && this.inTunnel(x, z, y) === b[0]) return b[0] + b[2];
-    const over = this.overhead(x, z, y + 0.6);
-    return over === null ? null : over - DECK_DEPTH;
+    return this.underside(x, z, y + 0.6);
   }
+
+  /** The underside of the lowest bridge over scene (x, z) whose road is above y, as it's drawn, or
+   *  null: its arch's barrel where one is drawn over here, else the flat underside of its kind of deck. */
+  private underside(x: number, z: number, y: number): number | null {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.underside(x, z, y);
+    let low: number | null = null, drop = DECK_DEPTH;
+    for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const { p, half } = this.decks[k];
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        const h = a[2] + (b[2] - a[2]) * t;
+        if (h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
+      }
+    }
+    if (low === null) return null;
+    // (an arch belongs to the deck whose road it's under: within a hand of the same height)
+    let arch: number | null = null, near = 0.3;
+    for (const k of this.archCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const [ax, az, bx, bz, half, ta, tb, ua, ub] = this.arches[k], vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1;
+      const t = Math.min(1, Math.max(0, ((x - ax) * vx + (z - az) * vz) / l2));
+      if (Math.hypot(x - ax - vx * t, z - az - vz * t) >= half) continue;
+      const off = Math.abs(ta + (tb - ta) * t - low);
+      if (off < near) { near = off; arch = ua + (ub - ua) * t; }
+    }
+    return arch ?? low - drop;
+  }
+
+  /** A stretch of an arch's barrel drawn under a bridge (world.ts), for its ceiling: from data (ax, ay)
+   *  to (bx, by), half wide, under the bridge's road at heights ta and tb, the barrel at ua and ub (scene). */
+  addArch(ax: number, ay: number, bx: number, by: number, half: number, ta: number, tb: number, ua: number, ub: number) {
+    const k = this.arches.length, seen = new Set<number>();
+    this.arches.push([ax, -ay, bx, -by, half, ta, tb, ua, ub]);
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / (CELL / 2)));
+    for (let s = 0; s <= n; s++)
+      for (const c of this.cellsAround(ax + (bx - ax) * s / n, -(ay + (by - ay) * s / n), half))
+        if (!seen.has(c)) { seen.add(c); push(this.archCells, c, k); }
+  }
+  /** Forget the arches, before the scene is built again. */
+  clearArches() { this.arches = []; this.archCells.clear(); }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
    *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of
@@ -2051,6 +2108,8 @@ export function roadHalf(c: string, w?: number): number {
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   return (RW[c] ?? 4) / 2;
 }
+/** How far under a bridge's road (the map's height for it) its deck's flat underside is drawn. */
+function deckDrop(r: { bt?: string; c: string }): number { return BRIDGE_DECK[bridgeKind(r)] - deckLift(r.c); }
 /** Streets with kerbs and a pavement each side, and how wide the pavement is. */
 export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 export const PAVE = 1.7;

@@ -878,7 +878,6 @@ GAP = 0.02           # metres between a path and a street before it is a gap
 LUMP = 0.05          # metres the grass may be raised under a path beside a street face
 DECK_END = 0.1       # metres between a deck's end and the street it lands on
 DECK_CLEAR = 0.5     # metres under a deck with nothing passing
-DECK_DEPTH = 1.1     # map.ts: the ceiling under every deck, below its top
 HEAD = 1.9           # metres a walker needs under a ceiling (player.ts EYE 1.65, and the head over it)
 KINDS = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck depth
 FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
@@ -1386,8 +1385,12 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     30. no ground stands up through a deck's floor between its abutments (ground into the deck's
         underside, hidden in the slab, is counted in the figures only);
     31. room under a bridge: the ground under a span's middle stays DECK_CLEAR under its underside,
-        and a way passing under has HEAD under the game's flat ceiling there (map.ts ceiling, the
-        deck's top less DECK_DEPTH), the canal's towpath included."""
+        and a way passing under has HEAD under the game's ceiling there, the canal's towpath included:
+        the flat underside of the deck's kind (map.ts ceiling). Where world.ts draws an arch under a
+        stone bridge, the game's ceiling is the arch's barrel, lower towards its sides; that isn't
+        modelled here (which arches are built hangs on the piers, the canal's banks and every way
+        passing under, flattened to keep 2.4 m over them), so over the canal's towpath this can
+        overstate the room."""
     roads = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
     pieces = [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
     held = lambda x, y: any(p.contains(Point(x, y)) for p in pieces)
@@ -1520,7 +1523,7 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
                     if w["c"] not in PATHS and w["c"] not in GAME_KERBED: continue
                     wz = float(drawn(np.array([x.x]), np.array([x.y]))[0])
                 top = float(np.interp(line.project(x), cum, [h(i) for i in range(a, b + 1)])) + lift
-                room = top - DECK_DEPTH - wz
+                room = top - deck - wz
                 if room < HEAD and top - wz > 1.0:
                     note("31 no room under a bridge", HEAD - room, at(x.x, x.y), f"{w['c']} {w['n']!r} under {name}: {room:.1f} m to the ceiling")
                     fig["ways without room"] = fig.get("ways without room", 0) + 1

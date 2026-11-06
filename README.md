@@ -29,7 +29,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
-  saw it. Every deck is solid from parapet to parapet, however narrow the path along it, and the
+  saw it. Underneath, your head meets the bridge where it's drawn: a footbridge's thin deck, a
+  concrete beam's deeper one, or a stone arch's barrel, which over the canal's towpath can be low
+  enough to make you crouch. Every deck is solid from parapet to parapet, however narrow the path along it, and the
   parapets run unbroken round its bends and where its pieces join, stopping only where another
   deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
   pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the

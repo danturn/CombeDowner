@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
-import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
+import { type BarMat, BRIDGE_DECK, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeKind, bridgeSpans, deckLift, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops, stepsDetail } from "./furniture";
 import { setLatitude, sky as skyNow } from "./daylight";
@@ -1277,10 +1277,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
   const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.3, 0.37, 0.38];
   const PARAPET = 1.05;       // above the pavement
-  const FOOT_CLASSES = new Set(["footway", "path", "cycleway", "steps", "bridleway"]);
+  // (how deep each kind's deck is, the ceiling under it shares: map.ts BRIDGE_DECK)
   const KINDS: Record<string, { deck: number; gap: number }> = {
-    arch: { deck: 0.9, gap: 16 }, beam: { deck: 1.1, gap: 26 }, truss: { deck: 0.9, gap: 45 }, foot: { deck: 0.45, gap: 18 },
-    suspension: { deck: 0.45, gap: Infinity },
+    arch: { deck: BRIDGE_DECK.arch, gap: 16 }, beam: { deck: BRIDGE_DECK.beam, gap: 26 }, truss: { deck: BRIDGE_DECK.truss, gap: 45 },
+    foot: { deck: BRIDGE_DECK.foot, gap: 18 }, suspension: { deck: BRIDGE_DECK.suspension, gap: Infinity },
   };
   /** An upright block on corners [x, y] (data) from low to high. */
   function prism(g: Geo, c: number[][], low: number, high: number, col: number[]) {
@@ -1386,10 +1386,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     list.forEach((_, i) => { if (!used.has(i)) chain(i); });
     return out;
   }
-  // a map built without the partition gives no bridge its kind
-  function plainKind(c: string) {
-    return FOOT_CLASSES.has(c) ? "foot" : c === "trunk" || c === "motorway" ? "beam" : "arch";
-  }
   /** The stretches of a bridge's span, in metres along its samples, over a road or path passing
    *  under it at grade: its carriageway and pavements, as far along the span as they reach across
    *  it at the angle they cross. */
@@ -1435,8 +1431,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const w of ways) for (const q of w.p) if (q[3] === 1) { const k = spot(q), l = decked.get(k); if (l) l.push(w); else decked.set(k, [w]); }
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
-      const kind = r.bt && KINDS[r.bt] ? r.bt : plainKind(r.c), DECK = KINDS[kind].deck, stone = kind === "arch";
-      const [hl, hr] = deckSides(r), half = Math.max(hl, hr), ds = (r as Joined).ds, lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
+      const kind = bridgeKind(r), DECK = KINDS[kind].deck, stone = kind === "arch";
+      const [hl, hr] = deckSides(r), half = Math.max(hl, hr), ds = (r as Joined).ds, lift = deckLift(r.c), flags = spanFlags(r, ground, Z0);
       const along0: number[] = [0];
       for (let i = 1; i < r.p.length; i++) along0.push(along0[i - 1] + Math.hypot(r.p[i][0] - r.p[i - 1][0], r.p[i][1] - r.p[i - 1][1]));
       // how much wider than the bridge's own reach its deck is at a point (a joined piece's own)
@@ -1633,6 +1629,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           }
           // the underside: the arch's barrel, or the flat soffit of the deck
           const arA = archAt(A.s), arB = archAt(B.s);
+          if (arA !== null && arB !== null) map.addArch(A.x, A.y, B.x, B.y, W, A.top - lift, B.top - lift, arA, arB);
           if (arA !== null && arB !== null)
             facing(g, at(A, -Ws(-1), arA), at(B, -Ws(-1), arB), at(B, Ws(1), arB), at(A, Ws(1), arA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
           else if (A.top - A.g > 0.6 || B.top - B.g > 0.6)
@@ -2021,6 +2018,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false));
   S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
+  map.clearArches();
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(m);
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   // (a faced square written before the front paths and drives had faces of their own still has the strips)
