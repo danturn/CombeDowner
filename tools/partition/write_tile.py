@@ -1877,9 +1877,9 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
         p = r["p"]
         span = {i for i, q in enumerate(p) if flagged(q, 1)}
         for st in stretches(span):
-            if len(st) < 4:
+            inner = [p[i] for i in st[1:-1]] if len(st) >= 4 else _span_middle([p[i] for i in st])
+            if len(inner) < 2:
                 continue
-            inner = [p[i] for i in st[1:-1]]
             line = LineString([q[:2] for q in inner])
             got = _grid_points(T, inner, r.get("w", 4) / 2 + kerb(r) + 1.0)
             if got is None:
@@ -2067,6 +2067,18 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
 
 
 SPIKE = 2.0   # metres a grid point may stand over all eight of its neighbours
+SPAN_REST = 1.5   # metres at each end of a span that rest on the bank
+
+
+def _span_middle(run):
+    """A short span's deck between its abutments, as points with the deck's height: the points of a
+    span under four long are all on its banks or next to them, and the ground under a footbridge
+    of two or three points was never dug, so the bank came up through its deck."""
+    cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
+    if len(run) < 2 or cum[-1] <= 2 * SPAN_REST + 0.5:
+        return []
+    at = np.linspace(SPAN_REST, cum[-1] - SPAN_REST, max(2, int((cum[-1] - 2 * SPAN_REST) / 2.0) + 1))
+    return [[float(np.interp(s, cum, [q[k] for q in run])) for k in range(3)] for s in at]
 
 
 def _unspiked(grid, under=None, rounds=2):
