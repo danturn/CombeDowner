@@ -1877,7 +1877,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
         p = r["p"]
         span = {i for i, q in enumerate(p) if flagged(q, 1)}
         for st in stretches(span):
-            inner = [p[i] for i in st[1:-1]] if len(st) >= 4 else _span_middle([p[i] for i in st])
+            inner = _span_middle([p[i] for i in st]) or [p[i] for i in st[1:-1]]
             if len(inner) < 2:
                 continue
             line = LineString([q[:2] for q in inner])
@@ -2071,9 +2071,10 @@ SPAN_REST = 1.5   # metres at each end of a span that rest on the bank
 
 
 def _span_middle(run):
-    """A short span's deck between its abutments, as points with the deck's height: the points of a
-    span under four long are all on its banks or next to them, and the ground under a footbridge
-    of two or three points was never dug, so the bank came up through its deck."""
+    """A span's deck between its abutments, as points every 2 m with the deck's height, to within
+    SPAN_REST of each end: taken from its points one in from each end, the ground under a footbridge
+    of two or three points was never dug, and the last few metres of a longer one's were left, so the
+    bank came up through its deck."""
     cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
     if len(run) < 2 or cum[-1] <= 2 * SPAN_REST + 0.5:
         return []

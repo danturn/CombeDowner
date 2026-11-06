@@ -1389,18 +1389,14 @@ for r in pending:
     if not r["span"]: continue
     half = RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.0
     for st in stretches(r["span"]):
-        if len(st) >= 4:
-            inner = st[1:-1]
-            line = shapely.LineString([r["run"][i][:2] for i in inner])
-            zs = [r["z"][i] for i in inner]
-        else:
-            # (a short span's deck between its abutments, the last 1.5 m at each end on the bank)
-            cum = np.concatenate([[0.0], np.cumsum([math.dist(r["run"][a][:2], r["run"][b][:2]) for a, b in zip(st, st[1:])])])
-            if len(st) < 2 or cum[-1] <= 3.5: continue
-            at = np.linspace(1.5, cum[-1] - 1.5, max(2, int((cum[-1] - 3.0) / 2.0) + 1))
-            line = shapely.LineString([(float(np.interp(s_, cum, [r["run"][i][0] for i in st])),
-                                        float(np.interp(s_, cum, [r["run"][i][1] for i in st]))) for s_ in at])
-            zs = [float(np.interp(s_, cum, [r["z"][i] for i in st])) for s_ in at]
+        # (the deck between its abutments, to within 1.5 m of each end, every 2 m: the points one in
+        # from each end left a short footbridge undug, and the last metres of a longer one)
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(r["run"][a][:2], r["run"][b][:2]) for a, b in zip(st, st[1:])])])
+        if len(st) < 2 or cum[-1] <= 3.5: continue
+        at = np.linspace(1.5, cum[-1] - 1.5, max(2, int((cum[-1] - 3.0) / 2.0) + 1))
+        line = shapely.LineString([(float(np.interp(s_, cum, [r["run"][i][0] for i in st])),
+                                    float(np.interp(s_, cum, [r["run"][i][1] for i in st]))) for s_ in at])
+        zs = [float(np.interp(s_, cum, [r["z"][i] for i in st])) for s_ in at]
         poly = line.buffer(half, cap_style=2)
         win, inn = cover_xy(poly)
         PROTECT[win][inn] = True
