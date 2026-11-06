@@ -34,7 +34,8 @@ case by case:
     a gate; no tree, shrub, boulder or street item stands on a wall or inside a building; no building
     stands on a pavement; a mapped footpath doesn't run along a drawn pavement (it is that
     pavement); where the road and the paving meet, neither pokes a point or a sliver into the
-    other (check_more.slivers); no flight of steps runs on over a pavement, into the road or into
+    other (check_more.slivers), and no crack of bare ground is left between two street faces
+    (check_more.cracks); no flight of steps runs on over a pavement, into the road or into
     another path; and no boundary stops just short of another, a building, a street or a path.
 10. Under a bridge: there is an open gap, and no wall, building, tree or street item stands in it;
     no street's carriageway or pavement is drawn on a path passing under it, and no face under the

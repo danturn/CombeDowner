@@ -1064,10 +1064,18 @@ export class GameMap {
       const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
       const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy) || 1;
       const mx = (q[0][0] + q[2][0]) / 2, my = (q[0][1] + q[2][1]) / 2;
-      const su = ((x - mx) * ux + (y - my) * uy) / L, sv = ((x - mx) * vx + (y - my) * vy) / Wd;
+      let su = ((x - mx) * ux + (y - my) * uy) / L;
+      const sv = ((x - mx) * vx + (y - my) * vy) / Wd;
       const [hip0, hip1] = roof.hp;
-      // past a gable end, or out to the side, you're on the flat cap over a wing, at the eaves
-      if ((!hip0 && su < -L / 2) || (!hip1 && su > L / 2)) continue;
+      // past a gable end, or out to the side, you're on the flat cap over a wing, at the eaves; but
+      // a gable standing on the house's own end wall (a party wall in a row) runs on to that wall,
+      // or you'd slip down between the gable and the house next door
+      const out = su < 0 ? -1 : 1;
+      if ((!hip0 && su < -L / 2) || (!hip1 && su > L / 2)) {
+        const past = Math.abs(su) - L / 2;
+        if (past > GABLE_TO_WALL || inRing(b.r[0], x + (out * ux / L) * GABLE_TO_WALL, y + (out * uy / L) * GABLE_TO_WALL)) continue;
+        su = (out * L) / 2;
+      }
       const slope = roof.rp / (Wd / 2), ridge = eave + roof.rp;
       let h = ridge - Math.abs(sv) * slope;
       // hipped ends slope down the same way
@@ -1675,6 +1683,8 @@ export interface Roof { q: number[][]; rp: number; hp: number[]; ch: number[][];
 const fits = new WeakMap<Building, Roof[]>();
 /** The steepest a roof is drawn, as tools/buildings.py measures them. */
 const STEEPEST = Math.tan((50 * Math.PI) / 180);
+/** How far past a gable end, in metres, a house's own end wall can still stand under it. */
+const GABLE_TO_WALL = 0.3;
 /** The narrowest wing that carries a pitched roof of its own. */
 const WING_SIDE = 2.5;
 /** How well building b's roof rectangle stands on its walls: how many of 81 points over it, a little

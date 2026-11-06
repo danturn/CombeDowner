@@ -519,6 +519,21 @@ def _axes(poly):
     return ux, uy, -uy, ux
 
 
+ROW_TO_SIDE = math.radians(25)   # a row's ridge this near one of a house's own sides runs along that side
+
+
+def own_side(poly, ux, uy):
+    """The side of the house's own rectangle that a row's ridge direction (ux, uy) is nearest, so a
+    house whose party wall is a little off square to it is still roofed over its own walls; the
+    row's way itself if neither side is near it."""
+    ax, ay, bx, by = _axes(poly)
+    best = max(((ax, ay), (bx, by)), key=lambda a: abs(a[0] * ux + a[1] * uy))
+    dot = best[0] * ux + best[1] * uy
+    if abs(dot) < math.cos(ROW_TO_SIDE):
+        return ux, uy
+    return (best[0], best[1]) if dot > 0 else (-best[0], -best[1])
+
+
 def _scraps_to(parts, poly):
     """Give each bit of poly that no part covers to the part it shares most wall with."""
     rest = poly.difference(shapely.unary_union(parts))
@@ -934,7 +949,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             # (the survey's hips stand where houses taken as sharing a wall really stand apart)
             touching = [w for j, w in adj[i].items() if (min(i, j), max(i, j)) not in apart]
             if i in row_ridge:
-                ux, uy = row_ridge[i]
+                ux, uy = own_side(poly, *row_ridge[i])
             elif m:
                 ux, uy = m["u"]                         # the ridge as surveyed
             elif walls:

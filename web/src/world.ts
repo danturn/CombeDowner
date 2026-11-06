@@ -833,6 +833,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  the ground's triangles. With only their corners on the ground, the ground folding between them
    *  came up through the middle of a path in ragged patches along a crest or an embankment's top.
    *  Two triangles sharing an edge are cut at the same points along it, so they meet without a step. */
+  /** How far, in metres, the ground may rise into a path's triangle, and fall away under it, before the
+   *  triangle is cut to lie on it (a path lies 0.04 m over the ground, so half that still clears it). */
+  const FLAT_UNDER = [0.02, 0.03];
   const groundTris = () => {
     const tris: [Geo, number[], number[], number[], number[], number[], number[], number][] = [];
     const ground = (x: number, z: number) => { const h = drawnGround(x, z); return Number.isFinite(h) ? h : NaN; };
@@ -871,8 +874,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const lay = (g: Geo, a: number[], b: number[], c: number[], ua: number[], ub: number[], uc: number[], lift: number) => {
       const out: number[][][] = [];
       pieces([[a[0], a[2], ua[0], ua[1], a[1]], [b[0], b[2], ub[0], ub[1], b[1]], [c[0], c[2], uc[0], uc[1], c[1]]], 0, out);
-      for (const poly of out) {
-        const P = poly.map((p) => { const h = ground(p[0], p[1]); return [p[0], h === h ? h + lift : p[4], p[1]]; });
+      const laidOn = out.map((poly) => poly.map((p) => { const h = ground(p[0], p[1]); return [p[0], h === h ? h + lift : p[4], p[1]]; }));
+      // (where the ground under it is flat to within a hair, the triangle lies on it whole: cut on a
+      // straight, level stretch it only multiplied the path's triangles, a third more of them in all)
+      if (out.every((poly, k) => poly.every((p, i) => laidOn[k][i][1] - p[4] < FLAT_UNDER[0] && p[4] - laidOn[k][i][1] < FLAT_UNDER[1]))) {
+        facingTri(g, a, b, c, [0, 1, 0], ua, ub, uc, [1, 1, 1]);
+        return;
+      }
+      for (const [k, poly] of out.entries()) {
+        const P = laidOn[k];
         for (let i = 1; i + 1 < poly.length; i++) {
           const ux = poly[i][0] - poly[0][0], uz = poly[i][1] - poly[0][1], wx = poly[i + 1][0] - poly[0][0], wz = poly[i + 1][1] - poly[0][1];
           if (Math.abs(ux * wz - uz * wx) < 1e-8) continue;

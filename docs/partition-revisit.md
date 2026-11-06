@@ -1573,3 +1573,17 @@ same as main):
   rule 9's path strips from 207 to 155 and its road-paving slivers from 159 to 91 in Cape Town, and
   in Hackney from 39 to 32 and 83 to 50. Two of the stubs are held only by a run 0.36 m away, inside
   the writer's own hold distance but outside the check's 0.3 m.
+- [ ] **Thinned street faces sit a few centimetres off their level inside long triangles** (rule 20).
+  Thinning keeps a point along a street's or pavement's edge only where the level bends more than
+  3 cm, so a straight run is drawn as a few long triangles. Inside them the face is the straight
+  mean of corners metres apart, 2 to 12 cm under where the denser faces lay. In Bath that lets the
+  ground, raised to meet a pavement's back, or a culverted stream, show through in about a dozen
+  1 m2 patches (Wellsway 0_1 at -1609,163; Lyncombe Vale 1_2 at -356,1075; Brassmill Lane, Lower
+  Hedgemead Road and others), most of them only a centimetre or two. A rule to add a point inside a
+  triangle that strays more than 3 cm from the level would remove them, at the cost of triangles.
+- [ ] **A front hedge stands half on the pavement where it runs along the pavement's back edge**
+  (rule 20). The barrier is drawn centred on its line, and a garden boundary laid along the
+  pavement's edge puts half its width over the paving. Entry Hill 0_1 (-1392,77) showed it once the
+  wall tops were evened out and brought the hedge down to the pavement's height; Holcombe Close 3_4
+  (1616,3365) has had it all along. The rule would be in the gardens step: set a guessed boundary
+  back from the paving by half its width.

@@ -178,6 +178,10 @@ def overroad(root, map_id, only=None):
     args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
     if only: args += ["--only", " ".join(only)]
     try:
+        # (the game loads the squares' packs, not their JSON: packs left from an earlier build of the
+        # map would be looked at in place of the map being checked)
+        subprocess.run(["node", os.path.join(here, "pack_squares.mjs"), "--maps", os.path.abspath(root), "--map", map_id],
+                       capture_output=True, text=True, check=True)
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
         return []
@@ -666,6 +670,7 @@ def street_faces(m, roads, rlines, marked, note, at, sq):
                 c = g.representative_point()
                 note("9 pavement over the road", g.area, at(c.x, c.y), f"{g.area:.1f} m2")
     slivers(F, roads, rlines, note, at, inner)
+    cracks(m, F, roads, rlines, note, at, inner)
     if "path" in F and "pave" in F:
         edge = F["pave"].boundary
         # (a footway up a bank beside the street, a step off the pavement's level, is a path of its own)
@@ -740,6 +745,28 @@ def slivers(F, roads, rlines, note, at, inner):
                     if not all(edge.contains(sd) for sd in sides): continue
                     name = roads[int(rt.nearest(p))].get("n") or "" if rt is not None else ""
                     note("9 sliver or spike where road and paving meet", 1, at(p.x, p.y), f"{kind} point {ang[i]:.0f} degrees {name!r}")
+
+
+CRACK = 0.4     # metres: a gap narrower than this between two faces is a crack, not a place left open
+
+
+def cracks(m, F, roads, rlines, note, at, inner):
+    """Where two street faces meet, they meet: no crack of bare ground between a road, its paving, a
+    drive or a path, narrower than CRACK and closed in by faces all round. One along a wall, fence
+    or hedge, or a building's wall, is where the faces stop for it."""
+    allf = shapely.union_all(list(F.values()))
+    holes = [Polygon(h) for g in getattr(allf, "geoms", [allf]) if g.geom_type == "Polygon" for h in g.interiors]
+    holes = [h for h in holes if h.area >= 0.05 and inner.contains(h) and h.buffer(-CRACK / 2).is_empty]
+    if not holes: return
+    stops = [LineString([q[:2] for q in b["p"]]) for b in m.get("br") or [] if len(b["p"]) > 1]
+    stops += [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+    near = shapely.union_all([g.buffer(0.5) for g in stops] or [Polygon()])
+    rt = shapely.STRtree(rlines) if rlines else None
+    for h in holes:
+        if h.intersection(near).area > 0.5 * h.area: continue
+        c = h.representative_point()
+        name = (roads[int(rt.nearest(c))].get("n") or "") if rt is not None else ""
+        note("9 crack between street faces", h.area, at(c.x, c.y), f"{name!r} {h.area:.2f} m2, {h.length / 2:.1f} m long")
 
 
 def gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits):
