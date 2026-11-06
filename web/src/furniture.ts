@@ -888,8 +888,8 @@ const RAIL_HEIGHT = 0.9;
 
 /** How far a tread's block goes on down under the lower edge of its step. */
 const TREAD_DEPTH = 0.15;
-/** A cheek wall's thickness, and how far it stands over the treads. */
-const CHEEK = 0.2, CHEEK_UP = 0.08;
+/** A cheek wall's thickness. */
+const CHEEK = 0.2;
 
 /** What each map's flights give to stand on, so a map built again swaps its old treads for the new. */
 const treadFloors = new WeakMap<GameMap, (x: number, z: number, y: number) => number | null>();
@@ -901,8 +901,8 @@ const treadFloors = new WeakMap<GameMap, (x: number, z: number, y: number) => nu
  * never dips into the ground on the way and never rises steeper than a stair, so where it meets a
  * retaining wall it starts climbing early to reach the top rather than leaving its rails hanging off
  * the wall. Each tread is a block down to the ground under the flight's line; where the ground beside
- * falls away anywhere along a side, a low wall of the treads' stone runs the whole of that side,
- * stepping up with them, as on Bath's steps cut into a bank. You walk on the
+ * falls away anywhere along a side, a wall of the treads' stone runs the whole of that side, its
+ * top level with each tread, as the cut edge of Bath's steps sunk into a bank. You walk on the
  * treads as drawn (map.floors). One merged mesh for the square's steps. Built once the square's
  * surface is laid (world.ts), as the flight starts and ends on it.
  */
@@ -1002,8 +1002,8 @@ type Cheek = { s0: number; s1: number; top: number; foot: number; beside: number
 
 /**
  * A flight's cheek wall down one side (off metres left of its line, side +1 left, -1 right): beside
- * each tread a block from the ground beside it to just over the tread, so its top steps up with
- * the flight, as triangles in scene metres added to pos. (Where the bank beside stands over it, it's
+ * each tread a block from the ground beside it up to the tread's own level, so its top steps with
+ * the flight like the cut edge of steps sunk into a bank, as triangles in scene metres added to pos. (Where the bank beside stands over it, it's
  * buried, and left out.)
  */
 function cheekWall(by: Cheek[], along: (s: number) => [number, number, number, number], off: number, side: number, pos: number[]) {
@@ -1019,17 +1019,16 @@ function cheekWall(by: Cheek[], along: (s: number) => [number, number, number, n
     const [x, y, ux, uy] = along(s), ox = x - uy * off, oy = y + ux * off, nx = -uy * side * CHEEK, ny = ux * side * CHEEK;
     return { o: (h: number) => [ox, h, -oy], i: (h: number) => [ox - nx, h, -(oy - ny)], out: [-uy * side, 0, -ux * side], ahead: [ux, 0, -uy] };
   };
-  const buried = (t: Cheek | undefined) => !t || t.beside > t.top + CHEEK_UP + 0.02;
+  const buried = (t: Cheek | undefined) => !t || t.beside > t.top + 0.02;
   for (let k = 0; k < by.length; k++) {
-    const t = by[k], A = edge(t.s0), B = edge(t.s1), hi = t.top + CHEEK_UP, lo = t.foot, inner = t.top - 0.05;
+    const t = by[k], A = edge(t.s0), B = edge(t.s1), hi = t.top - 0.002, lo = t.foot;   // (a hair under the tread, so the two tops don't flicker)
     if (buried(t)) continue;
     quad(A.o(lo), B.o(lo), B.o(hi), A.o(hi), A.out);
-    quad(A.i(inner), B.i(inner), B.i(hi), A.i(hi), A.out.map((c) => -c));
     quad(A.o(hi), B.o(hi), B.i(hi), A.i(hi), [0, 1, 0]);
     // the step up to the next tread's (or down from the last's), and the wall's two ends
     const next = by[k + 1];
     if (!buried(next)) {
-      const nh = next.top + CHEEK_UP;
+      const nh = next.top - 0.002;
       if (Math.abs(nh - hi) > 1e-3) quad(B.o(Math.min(hi, nh)), B.i(Math.min(hi, nh)), B.i(Math.max(hi, nh)), B.o(Math.max(hi, nh)), nh > hi ? A.ahead.map((c) => -c) : A.ahead);
     } else quad(B.o(lo), B.i(lo), B.i(hi), B.o(hi), B.ahead);
     if (buried(by[k - 1])) quad(A.o(lo), A.i(lo), A.i(hi), A.o(hi), A.ahead.map((c) => -c));
