@@ -4049,15 +4049,16 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     keep_all = unary_union([g for g in (deck, beside_cut) if g is not None and not g.is_empty] or [Polygon()]).buffer(2 * STREET_STEP)
     shapely.prepare(keep_all)
 
-    # A path, a front path or a drive lies level across, at the ground's height under its middle
-    # line where it passes, and follows the hill only along its length: laid on the ground as it
-    # tilts, a path across a slope leant over like a roof. (A plaza's paving, with no line to it,
-    # stays on the ground.)
+    # A path, a front path or a drive lies level across, at the height of its middle line where it
+    # passes (a path's own line, as laid: on the towpath's bank, dipped under a bridge, ramped up to
+    # a deck; a front path's or a drive's, the ground under it), and follows the hill only along its
+    # length: laid on the ground as it tilts, a path across a slope leant over like a roof. (A
+    # plaza's paving, with no line to it, stays on the ground.)
     # (a flight's line counts too: the paving left either side of its treads lies at the ground under
     # them, not on the bank, which buried the treads' ends)
     levelled = [r for r in rd if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1
                 and not any(len(q) > 3 and q[3] for q in r["p"])]
-    middles = [LineString([q[:2] for q in r["p"]]) for r in levelled]
+    middles = [LineString([q[:3] for q in r["p"]]) for r in levelled]
     reach_mid = [way_width(r) / 2 + LEVEL_REACH for r in levelled]
     for rows, half in ((fp, FRONT_PATH_HALF), (dv, DRIVE_WIDTH / 2)):
         for row in rows:
@@ -4073,8 +4074,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         k = int(k[0]) if len(k) else None
         if k is None or middles[k].distance(p) > reach_mid[k]:
             return ground(x, y)
-        q = middles[k].interpolate(middles[k].project(p))
-        return ground(q.x, q.y)
+        line = middles[k]
+        q = line.interpolate(line.project(p))
+        return q.z if line.has_z else ground(q.x, q.y)
 
     def drawn_z(x, y, on_ground):
         if shapely.contains_xy(keep_all, x, y):
