@@ -517,8 +517,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const pv = (r: { pv?: number[] }) => Math.max(...pvs(r));
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
   // them: well down under the carriageway, and only a little under the pavements, so a pavement's
-  // outer edge stands a kerb's height above the grass beside it, not a slab's. The player still
-  // walks on the true ground height.
+  // outer edge stands a kerb's height above the grass beside it, not a slab's. You walk on what's
+  // drawn (surface, below).
   const sink = new Float32Array(T.nx * T.ny);
   // Streets are drawn level across at their middle's height, the drawn ground is pulled down under
   // them (and one triangle round) so it never shows through, and each edge has a face down or up
@@ -2835,6 +2835,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const t = y === undefined ? null : map.inTunnel(x, z, y) ?? map.deck(x, z, y);
     if (t !== null) return t;
     const l = lift(x, z);
+    // (paths are draped on the ground as it's drawn, not the survey's, so that's where feet go on them)
+    if (l === FACE_LIFT[3]) return drawnGround(x, z) + l;
     return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.trueGround(x, z)) + l : drawnGround(x, z);
   };
   map.standOnDrawn((x, z) => surface(x, z));
