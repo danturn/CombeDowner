@@ -255,6 +255,25 @@ export function watchRoom(look: () => { code: string; host: boolean; players: nu
   }, ROOM_POLL_MS);
 }
 
+const FAIL_MAX = 25;   // failures sent in one visit, at most
+const failed = new Set<string>();
+let failFlush = 0;
+
+/** Something went wrong in the browser (errors.ts): sent once per kind, message and place a visit,
+ *  and soon, in case the page is about to die. */
+export function failure(kind: string, what: string, where = "", extra: Record<string, unknown> = {}) {
+  init();
+  if (!on) return;
+  const key = `${kind}|${what}|${where}`;
+  if (failed.has(key) || failed.size >= FAIL_MAX) return;
+  failed.add(key);
+  try {
+    add("err", { kind, what: what.slice(0, 300), where: where.slice(0, 200), map, ...(room ? { room } : {}), ...extra });
+    clearTimeout(failFlush);
+    failFlush = window.setTimeout(() => flush(), 3000);
+  } catch { /* never reaches the game */ }
+}
+
 /** Whether anything here is being sent (netcheck.ts skips its own work when not). */
 export const enabled = () => { init(); return on; };
 

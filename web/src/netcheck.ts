@@ -14,8 +14,13 @@ const LOOK_MS = 6000;
 
 /** The kinds of route this network offers a link: host, srflx (plain UDP out), relay-udp, relay-tcp, relay-tls. */
 async function routes(): Promise<string[]> {
+  // and why a server wouldn't give one (a TURN relay refusing to hand out an address, say)
   const pc = new RTCPeerConnection({ iceServers: [{ urls: STUN }, ...(TURN ?? [])] });
   const seen = new Set<string>();
+  pc.onicecandidateerror = (e) => {
+    const err = e as RTCPeerConnectionIceErrorEvent;
+    seen.add(`error-${err.errorCode}@${(err.url ?? "").replace(/^(turns?|stun):/, "$1-").split(":")[0]}`);
+  };
   pc.onicecandidate = (e) => {
     const c = e.candidate as (RTCIceCandidate & { relayProtocol?: string }) | null;
     if (c?.type) seen.add(c.type === "relay" ? `relay-${c.relayProtocol ?? c.protocol ?? "?"}` : c.type);
