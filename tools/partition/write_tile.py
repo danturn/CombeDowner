@@ -4053,12 +4053,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # line where it passes, and follows the hill only along its length: laid on the ground as it
     # tilts, a path across a slope leant over like a roof. (A plaza's paving, with no line to it,
     # stays on the ground.)
-    middles = [LineString([q[:2] for q in r["p"]]) for r in rd
-               if r["c"] in GAME_PATHS and r["c"] not in ("steps", "pedestrian") and len(r["p"]) > 1
-               and not any(len(q) > 3 and q[3] for q in r["p"])]
-    reach_mid = [way_width(r) / 2 + LEVEL_REACH for r in rd
-                 if r["c"] in GAME_PATHS and r["c"] not in ("steps", "pedestrian") and len(r["p"]) > 1
-                 and not any(len(q) > 3 and q[3] for q in r["p"])]
+    # (a flight's line counts too: the paving left either side of its treads lies at the ground under
+    # them, not on the bank, which buried the treads' ends)
+    levelled = [r for r in rd if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1
+                and not any(len(q) > 3 and q[3] for q in r["p"])]
+    middles = [LineString([q[:2] for q in r["p"]]) for r in levelled]
+    reach_mid = [way_width(r) / 2 + LEVEL_REACH for r in levelled]
     for rows, half in ((fp, FRONT_PATH_HALF), (dv, DRIVE_WIDTH / 2)):
         for row in rows:
             middles.append(LineString([row[:2], row[2:4]]))
