@@ -6653,6 +6653,48 @@ def blocked_ground(rd, tile, rail_tracks, canal, sq):
     return blocked
 
 
+WAY_KEEP = 0.1    # metres in from a path's or the canal's edge that a wall along the edge may stand
+LOCK_HALF, LOCK_COPE, LOCK_APRON, LOCK_TAIL = 2.15, 1.2, 4.5, 2.2   # canal.ts: a lock's chamber, coping, paving and tail
+
+
+def _band(p, lo, hi):
+    """The strip beside a line of points between offsets lo(i) and hi(i), left of the line positive."""
+    xy = np.asarray([q[:2] for q in p], float)
+    d = np.gradient(xy, axis=0)
+    n = np.stack([-d[:, 1], d[:, 0]], 1) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+    quads = []
+    for i in range(len(xy) - 1):
+        q = Polygon([xy[i] + n[i] * lo(i), xy[i + 1] + n[i + 1] * lo(i + 1), xy[i + 1] + n[i + 1] * hi(i + 1), xy[i] + n[i] * hi(i)])
+        quads.append(q if q.is_valid else q.buffer(0))
+    return unary_union(quads) if quads else Polygon()
+
+
+def ways_and_banks(part, canal, sq):
+    """Ground no wall, fence or hedge stands on, beyond what nothing may stand on (blocked_ground): a
+    path's face, the canal's banks and towpath, its verges and a lock's coping and paving, each but
+    for a strip along its edge where a boundary beside it stands. One mapped or seen there is cut;
+    a guessed one goes with it."""
+    x0, y0, x1, y1 = sq
+    near = box(x0 - 20, y0 - 20, x1 + 20, y1 + 20)
+    parts = [face_shape(f).buffer(0).buffer(-WAY_KEEP) for f in part["faces"]
+             if f["cls"] == "path" and len(f["xy"]) > 2 and face_shape(f).intersects(near)]
+    for run in (canal or {}).get("runs", []):
+        p = run["p"]
+        for st in stretches({i for i in range(len(p) - 1) if not (p[i][6] | p[i + 1][6]) & 1}):
+            q = p[st[0]:st[-1] + 2]
+            if len(q) > 1 and LineString([a[:2] for a in q]).intersects(near):
+                parts.append(_band(q, lambda i: -q[i][2] - q[i][8] - q[i][10] + WAY_KEEP, lambda i: q[i][2] + q[i][7] + q[i][9] - WAY_KEEP))
+    for lk in (canal or {}).get("locks", []):
+        (ax, ay), (bx, by) = lk["lo"], lk["hi"]
+        L = math.dist((ax, ay), (bx, by)) or 1
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        tail = lk.get("tl") or LOCK_TAIL + (lk["zh"] - lk["zl"]) * 6
+        w = LOCK_HALF + LOCK_COPE + LOCK_APRON - WAY_KEEP
+        parts.append(Polygon([(ax + ux * u - uy * v, ay + uy * u + ux * v) for u, v in ((-tail, -w), (L + LOCK_TAIL, -w), (L + LOCK_TAIL, w), (-tail, w))]))
+    parts = [g for g in parts if not g.is_empty]
+    return unary_union(parts) if parts else None
+
+
 # ---- crossings, traffic lights and what stands across a path ----------------------------------
 
 def mapped_points(sq, pad=5.0):
@@ -7171,9 +7213,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # no wall, fence or hedge stands in the gap under a bridge
     gaps = deck_gaps(rd, road_ground)
     # a wall the lidar sees running on from a parapet stands; a guessed one stays off the abutment
-    wall_blocked, abutments = blocked, None
+    walked = ways_and_banks(part, canal, sq)
+    wall_blocked = unary_union([g for g in (blocked, walked) if g is not None]) if walked is not None else blocked
+    if wall_blocked is not None:
+        shapely.prepare(wall_blocked)
+    abutments = None
     if gaps:
-        wall_blocked = unary_union([g[0] for g in gaps] + deck_skirts(gaps) + ([blocked] if blocked is not None else []))
+        wall_blocked = unary_union([g[0] for g in gaps] + deck_skirts(gaps) + ([wall_blocked] if wall_blocked is not None else []))
         abutments = unary_union(deck_ends_reach(gaps))
         shapely.prepare(wall_blocked)
         shapely.prepare(abutments)
