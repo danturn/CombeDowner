@@ -1069,7 +1069,22 @@ def drawn_terrain(m, sheet):
         round_[idx[:, 0], idx[:, 1]] = np.minimum(round_[idx[:, 0], idx[:, 1]], g0 + (g1 - g0) * s_ / ln.length - 0.02)
     to = np.where(np.isfinite(under), under, round_)
     # (world.ts PATH_FILL: beside a level path the ground is filled up to its edge where the path decides it)
-    raise_ = np.where(np.isfinite(under), 0.0, np.where(np.isfinite(path_to) & (round_ == path_to), 1.5, KERB_RAISE))
+    # (never under or beside a bridge's deck)
+    no_fill = np.zeros(H.shape, bool)
+    for r in (m.get("rd") or []) if sheet.ok and sheet.level else []:
+        flags = _flags(r)
+        for a0, b0 in _spans(flags):
+            run = [q[:2] for q in r["p"][a0:b0 + 1]]
+            if len(run) < 2: continue
+            ln = LineString(run)
+            reach = _road_half(r["c"], r.get("w")) + T["dx"] * 0.75
+            x0, y0, x1, y1 = ln.bounds
+            sel = (X > x0 - reach) & (X < x1 + reach) & (Y > y0 - reach) & (Y < y1 + reach)
+            if not sel.any(): continue
+            hit = shapely.distance(shapely.points(X[sel], Y[sel]), ln) < reach
+            idx = np.argwhere(sel)[hit]
+            no_fill[idx[:, 0], idx[:, 1]] = True
+    raise_ = np.where(np.isfinite(under), 0.0, np.where(np.isfinite(path_to) & (round_ == path_to) & ~no_fill, 1.5, KERB_RAISE))
     sink = np.where(np.isfinite(to), np.maximum(-raise_, H - to), 0.0)
     D = H - sink
     T2 = dict(T, h=((D - T["z0"]) * 10).ravel().tolist())

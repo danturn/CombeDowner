@@ -731,11 +731,26 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   // (the grass beside a face is brought up a little to meet it, if the true ground falls away there, so
   // a pavement or a carriageway edge stands a kerb high above it, not a wall)
+  // (never under or beside a bridge's deck, where the ground is dug for the room under it)
+  const noFill = new Uint8Array(levelPaths ? T.nx * T.ny : 0);
+  if (levelPaths) for (const r of D.rd) {
+    if (!r.bridge || r.p.length < 2) continue;
+    const reach = width(r) / 2 + T.dx * 0.75;
+    for (let k = 0; k < r.p.length - 1; k++) {
+      const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
+      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(ay, by) + reach - T.y0) / T.dy));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
+        if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < reach) noFill[j * T.nx + i] = 1;
+      }
+    }
+  }
   if (LEVEL) for (let v = 0; v < sink.length; v++) {
     const to = underTo[v] < Infinity ? underTo[v] : roundTo[v];
     // (beside a level path the ground is filled up to its edge, as far as a bank would be, where the
     // path is what decides the ground there: across a slope its lower edge would stand off the grass)
-    const raise = underTo[v] < Infinity ? 0 : roundTo[v] === pathTo[v] ? PATH_FILL : faced ? KERB_RAISE : 0;
+    const raise = underTo[v] < Infinity ? 0 : roundTo[v] === pathTo[v] && !noFill[v] ? PATH_FILL : faced ? KERB_RAISE : 0;
     if (to < Infinity) sink[v] = Math.max(-raise, T.h[v] / 10 - to);
   }
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
