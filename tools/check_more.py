@@ -1010,6 +1010,23 @@ def drawn_terrain(m, sheet):
         hc = ground(shapely.get_x(foot), shapely.get_y(foot)) - 0.3
         idx = np.argwhere(sel)[near]
         under[idx[:, 0], idx[:, 1]] = np.minimum(under[idx[:, 0], idx[:, 1]], hc)
+    # (world.ts: a flight is sunk into the hill, the ground beside it cut to the straight climb between its ends)
+    for r in (m.get("rd") or []) if sheet.ok and sheet.level else []:
+        p = r["p"]
+        if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 and q[3] for q in p): continue
+        ln = LineString([q[:2] for q in p])
+        if ln.length < 1: continue
+        reach = _road_half(r["c"], r.get("w")) + T["dx"] * 0.75
+        x0, y0, x1, y1 = ln.bounds
+        sel = (X > x0 - reach) & (X < x1 + reach) & (Y > y0 - reach) & (Y < y1 + reach)
+        if not sel.any(): continue
+        pts = shapely.points(X[sel], Y[sel])
+        near = shapely.distance(pts, ln) < reach
+        if not near.any(): continue
+        g0, g1 = float(ground(np.array([p[0][0]]), np.array([p[0][1]]))[0]), float(ground(np.array([p[-1][0]]), np.array([p[-1][1]]))[0])
+        s_ = shapely.line_locate_point(ln, pts[near])
+        idx = np.argwhere(sel)[near]
+        round_[idx[:, 0], idx[:, 1]] = np.minimum(round_[idx[:, 0], idx[:, 1]], g0 + (g1 - g0) * s_ / ln.length - 0.02)
     if sheet.ok:
         # (paths written level across carve the ground to just under them as well, world.ts PATH_UNDER)
         streets = sheet.kind_mask(FACE_KINDS if sheet.level else ("road", "service", "pave"))

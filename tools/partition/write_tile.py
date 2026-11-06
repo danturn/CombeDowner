@@ -3584,8 +3584,8 @@ def bore_widths(tunnels, rd, rows):
         TN.widen(t, [e or (known[0] if known else (TN.HALF, 0.0)) for e in ends])
 
 
-STEEPEST_WALK = 0.67    # the steepest a path is walked up as a slope (1 in 1.5); steeper, it is a flight of steps
-STEP_RUN = 2.0          # metres: a rise over less than this is a kerb or a bump, not a flight
+STEEPEST_WALK = 0.25    # the steepest a path is walked up as a slope (1 in 4); steeper, it is a flight of steps
+STEP_RUN = 3.0          # metres: a rise over less than this is a kerb or a bump, not a flight
 
 
 def steep_paths_as_steps(rd):
@@ -4282,8 +4282,8 @@ def flights_to_their_ends(rd, streets):
     climbs to. The map joins steps to the middle of the street or path they meet, so the treads ran
     on across the pavement into the carriageway, and up into the path at the top. Each end lying on
     a street (`streets`, its carriageway and pavements) or on another path is cut back to where the
-    flight leaves it; only its ends, and only where enough of the flight is left. Returns how many
-    flights were cut."""
+    flight leaves it; only its ends, and only where enough of the flight is left. Then each end is
+    run on a hand's breadth onto what it meets (`_flight_to_landings`). Returns how many flights moved."""
     ways = [LineString([q[:2] for q in r["p"]]).buffer(way_width(r) / 2) for r in rd
             if r["c"] in GAME_PATHS and r["c"] not in ("steps", "pedestrian") and len(r["p"]) > 1]
     under = unary_union(([streets] if streets is not None else []) + ways)
@@ -4312,7 +4312,36 @@ def flights_to_their_ends(rd, streets):
         line = LineString([q[:3] for q in p])
         r["p"] = [[round(x, 1), round(y, 1), round(z, 1)] for x, y, z in substring(line, s0, s1).coords]
         cut += 1
+    for r in rd:
+        if r["c"] == "steps" and len(r["p"]) >= 2 and not any(len(q) > 3 for q in r["p"]):
+            cut += _flight_to_landings(r, under)
     return cut
+
+
+LANDING_REACH = 2.0     # metres: a flight ending this near a street or a path is run on to meet it
+LANDING_INTO = 0.1      # and this far onto it
+
+
+def _flight_to_landings(r, under):
+    """A flight ending just short of the street or path it climbs to (the map's line stops at a
+    wall's foot, or the path was drawn a little off) is run on to meet it, so its end lands on
+    something to walk on rather than on the bank. Returns 1 if it moved."""
+    moved = 0
+    for end in (0, -1):
+        e = r["p"][end]
+        pe = Point(e[:2])
+        if under.contains(pe) or under.distance(pe) > LANDING_REACH:
+            continue
+        edge = nearest_points(under.boundary, pe)[0]
+        dx, dy = edge.x - e[0], edge.y - e[1]
+        d = math.hypot(dx, dy) or 1.0
+        to = [round(edge.x + dx / d * LANDING_INTO, 1), round(edge.y + dy / d * LANDING_INTO, 1), e[2]]
+        if end == 0:
+            r["p"].insert(0, to)
+        else:
+            r["p"].append(to)
+        moved = 1
+    return moved
 
 
 def _flight_off_the_street(r, rd, streets):
