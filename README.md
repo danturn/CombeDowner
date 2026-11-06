@@ -591,7 +591,9 @@ much it drew each frame). Every half minute it notes which 50 m square of the ma
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
 many are in it. In a game with friends it also says, twice, how your network treated it: whether it
 reached the servers that find other players, how many it found, and what kinds of link your network
-allows (nothing about who they are). Once per version of each map, a computer also sends the game's own picture of the whole map
+allows (nothing about who they are). If something goes wrong in the game (an error, the graphics giving
+out, a part of the map that won't load) it sends what went wrong and where in the game's code, once
+each. Once per version of each map, a computer also sends the game's own picture of the whole map
 (nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
 never sends chat, voice or your address. Add `?telemetry=0` to the address to
 turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send

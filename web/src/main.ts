@@ -29,6 +29,7 @@ import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
 import { watchLoading } from "./loadnote";
+import { watchErrors } from "./errors";
 import { MOBILE, checkGraphics, playing, starting } from "./safegfx";
 import { quality } from "./quality";
 import { buildLabel } from "./version";
@@ -67,6 +68,7 @@ itemPicRenderer(renderer);   // wardrobe rewards draw their item with this, not 
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 const gfx = checkGraphics(renderer);   // before shadows and Post, which it may turn down
 Telemetry.graphics(gfx.crashed, gfx.plainBuffer);
+watchErrors(canvas, gfx.crashed, gfx.gpu);
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
 renderer.shadowMap.type = gfx.shadowType;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
