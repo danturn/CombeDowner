@@ -37,7 +37,7 @@ jobs:
           VITE_TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
           VITE_TURN_CREDENTIAL: ${{ secrets.TURN_CREDENTIAL }}
           # Optional anonymous play counts (web/src/telemetry.ts): the repo variable TELEMETRY_URL overrides where they go.
-          VITE_TELEMETRY_URL: ${{ vars.TELEMETRY_URL || 'https://telemetry-production-93ea.up.railway.app/e' }}
+          VITE_TELEMETRY_URL: ${{ vars.TELEMETRY_URL || 'https://telemetry.combedowner.com/e' }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
