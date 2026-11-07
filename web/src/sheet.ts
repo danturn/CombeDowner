@@ -117,10 +117,12 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
     for (const q of tris) out.push(point(q));
     cellTris.set(c, out);
   }
-  // A cell drawn whole beside a cut one (faces overlapping in it, or a cut that didn't close up) is
-  // drawn through the points where the faces' edges cross the side they share, or the cut cell's
-  // ground there, meeting a face's edge, stood off the whole cell's straight side and left a crack
-  // through which the sky showed.
+  // A cell drawn whole beside a cut one (faces overlapping in it, or a cut that didn't close up) meets
+  // it along a straight side, where the cut cell's ground comes up to a face's edge part way along:
+  // the gap between, a crack the sky showed through, is closed with a strip of ground standing in
+  // the side, from the whole cell's edge up to the cut cell's (drawn from both faces, as either may
+  // be the one in view). Drawing the whole cell through the cut cell's points instead stood its
+  // ground up over the faces in it.
   const sides = new Map<number, Pt[]>();
   for (const [c, pieces] of byCell) {
     if (!cellTris.has(c)) continue;
@@ -133,21 +135,38 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
       (sides.get(n) ?? sides.set(n, []).get(n)!).push({ x, y, h, k: -1 });
     }
   }
+  const foot = new Map<string, number>();
+  const footPoint = (x: number, y: number, h: number) => {
+    const key = `${x},${y}`;
+    let k = foot.get(key);
+    if (k === undefined) { foot.set(key, (k = px.length)); px.push(x); py.push(y); ph.push(h); }
+    return NG + k;
+  };
   for (const [c, extra] of sides) {
     const i = c % cw, j = (c - i) / cw;
-    const xa = lineX(i), xb = lineX(i + 1), ya = lineY(j), yb = lineY(j + 1), W = xb - xa, Hh = yb - ya;
-    const round = (q: Pt) => q.x === xa ? (q.y - ya) / Hh : q.y === yb ? 1 + (q.x - xa) / W : q.x === xb ? 2 + (yb - q.y) / Hh : 3 + (xb - q.x) / W;
-    const corners: Pt[] = [
-      { x: xa, y: ya, h: corner(j * nx + i), k: j * nx + i }, { x: xa, y: yb, h: corner((j + 1) * nx + i), k: (j + 1) * nx + i },
-      { x: xb, y: yb, h: corner((j + 1) * nx + i + 1), k: (j + 1) * nx + i + 1 }, { x: xb, y: ya, h: corner(j * nx + i + 1), k: j * nx + i + 1 },
-    ];
-    const ring = tidy([...corners, ...extra].sort((p, q) => round(p) - round(q)));
-    const out: number[] = [];
-    for (const f of ShapeUtils.triangulateShape(ring.map((q) => new Vector2(q.x - xa, q.y - ya)), [])) {
-      const [a, b, d] = f.map((k) => ring[k]);
-      // (anticlockwise seen from above, as the grid's own triangles are)
-      const tri = (b.x - a.x) * (d.y - a.y) - (d.x - a.x) * (b.y - a.y) > 0 ? [a, b, d] : [a, d, b];
-      for (const q of tri) out.push(point(q));
+    const xa = lineX(i), xb = lineX(i + 1), ya = lineY(j), yb = lineY(j + 1);
+    const ka = j * nx + i, kb = j * nx + i + 1, kc = (j + 1) * nx + i, kd = (j + 1) * nx + i + 1;
+    const out = [ka, kb, kc, kb, kd, kc];
+    // each side as its two grid points and the straight line between them
+    const sideOf = (q: Pt): [number, number, number] => q.x === xa ? [ka, kc, (q.y - ya) / (yb - ya)] : q.x === xb ? [kb, kd, (q.y - ya) / (yb - ya)] : q.y === ya ? [ka, kb, (q.x - xa) / (xb - xa)] : [kc, kd, (q.x - xa) / (xb - xa)];
+    const bySide = new Map<string, { a: number; b: number; pts: [number, Pt][] }>();
+    for (const q of extra) {
+      const [a, b, t] = sideOf(q), key = `${a},${b}`;
+      (bySide.get(key) ?? bySide.set(key, { a, b, pts: [] }).get(key)!).pts.push([t, q]);
+    }
+    for (const { a, b, pts } of bySide.values()) {
+      pts.sort((p, q) => p[0] - q[0]);
+      const ha = corner(a), hb = corner(b);
+      // along the side: its top (the cut cell's points between the grid points) over its foot (the line)
+      const top = [a, ...pts.map(([, q]) => point(q)), b];
+      const bot = [a, ...pts.map(([t, q]) => footPoint(q.x, q.y, ha + (hb - ha) * t)), b];
+      for (let m = 0; m + 1 < top.length; m++) {
+        const quad = [[top[m], bot[m], bot[m + 1]], [top[m], bot[m + 1], top[m + 1]]];
+        for (const [p, q, r] of quad) {
+          if (p === q || q === r || p === r) continue;
+          out.push(p, q, r, p, r, q);
+        }
+      }
     }
     state[c] = 2;
     cellTris.set(c, out);
@@ -414,17 +433,17 @@ export function nearFaces(E: FreeEdges, G: SheetGrid, reach: number): Float32Arr
 export function openSeams(S: Sheet, G: SheetGrid): number {
   const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1, NG = nx * ny;
   // a cell's crossing points along its east (0), north (1), west (2) or south (3) side
-  const along = (c: number, side: number): Set<number> => {
+  const along = (c: number, side: number): Set<string> => {
     const i = c % cw, j = (c - i) / cw, xa = x0 + i * dx, xb = x0 + (i + 1) * dx, ya = y0 + j * dy, yb = y0 + (j + 1) * dy;
-    const ks = new Set<number>();
+    const ks = new Set<string>();
     if (S.state[c] !== 2) return ks;
     for (let t = 3 * S.start[c]; t < 3 * S.start[c + 1]; t++) {
       const k = S.tri[t] - NG;
-      if (k >= 0 && (side === 0 ? S.px[k] === xb : side === 1 ? S.py[k] === yb : side === 2 ? S.px[k] === xa : S.py[k] === ya)) ks.add(k);
+      if (k >= 0 && (side === 0 ? S.px[k] === xb : side === 1 ? S.py[k] === yb : side === 2 ? S.px[k] === xa : S.py[k] === ya)) ks.add(`${S.px[k]},${S.py[k]}`);
     }
     return ks;
   };
-  const lacks = (a: Set<number>, b: Set<number>) => { let n = 0; for (const k of a) if (!b.has(k)) n++; return n; };
+  const lacks = (a: Set<string>, b: Set<string>) => { let n = 0; for (const k of a) if (!b.has(k)) n++; return n; };
   let open = 0;
   for (let c = 0; c < S.state.length; c++) {
     if (S.state[c] === 1) continue;
