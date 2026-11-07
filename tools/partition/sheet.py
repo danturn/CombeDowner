@@ -170,6 +170,29 @@ def wall_kind(br):
     return max(length, key=length.get) if length else "retaining_wall"
 
 
+def overlaps(F, A, B, segs, GX, GY):
+    """The cells where faces overlap, so a free edge has another face, not open ground, on its right:
+    cutting along the edges there would fill the wrong side. Each one's number, whether it is mostly
+    under faces, and the lowest top of the faces in it."""
+    d = B - A
+    across = np.stack([d[:, 1], -d[:, 0]], 1) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+    right = (A + B) / 2 + across * 0.02
+    ftree = shapely.STRtree(F.polys)
+    bad = np.unique(ftree.query(shapely.points(right), predicate="within")[0])
+    if not len(bad):
+        return np.zeros(0, np.int64), np.zeros(0, bool), np.zeros(0)
+    boxes = shapely.box(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel(), GX[1:, 1:].ravel(), GY[1:, 1:].ravel())
+    odd = np.unique(shapely.STRtree(segs[bad]).query(boxes, predicate="intersects")[0])
+    under, top = np.zeros(len(odd), bool), np.zeros(len(odd))
+    lift = np.asarray([LIFT[k] for k in FACE_KINDS])[F.K]
+    for n, k in enumerate(odd.tolist()):
+        ids = ftree.query(boxes[k], predicate="intersects")
+        land = boxes[k].difference(shapely.union_all(shapely.make_valid(F.polys[ids]))).area
+        under[n] = land < 0.5 * boxes[k].area
+        top[n] = float((F.V[F.T[ids], 2].min(axis=1) + lift[ids]).min())
+    return odd, under, top
+
+
 def decks(rd, margin):
     """Each bridge's deck, out to `margin` past its sides: the stretches of a way between points on a span."""
     out = []
@@ -270,6 +293,15 @@ def ground_sheet(tile):
         near = np.zeros(n, bool)
         near[shapely.STRtree(keep_down).query(pts, predicate="intersects")[0]] = True
         low[near] = -np.inf
+    # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
+    # the faces in it, or as nothing where it is mostly under them)
+    odd, odd_under, odd_top = overlaps(F, A, B, segs, GX, GY)
+    for k, u, z in zip(odd.tolist(), odd_under.tolist(), odd_top.tolist()):
+        if u: continue
+        j, i = divmod(k, nx - 1)
+        for v in (j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1):
+            high[v] = min(high[v], z - 0.05)
+            low[v] = min(low[v], high[v])
     H0 = H.ravel()
     H1 = np.clip(H0, low, high)
     dz = np.round((H1 - T["z0"]) * 10).astype(np.int64) - np.asarray(T["h"], np.int64)
@@ -279,7 +311,6 @@ def ground_sheet(tile):
     # those whose south-west corner is under a face (so the game knows a cell the edges cross only in
     # closed loops is a face with ground or other faces inside it, not open ground)
     cells = np.zeros((ny - 1, nx - 1), bool)
-    odd = np.zeros(0, np.int64)
     if len(F.polys):
         cx, cy = np.meshgrid(X[:-1] + T["dx"] / 2, Y[:-1] + T["dy"] / 2)
         mid = shapely.points(cx.ravel(), cy.ravel())
@@ -290,21 +321,7 @@ def ground_sheet(tile):
         corner = np.zeros(cx.size, bool)
         corner[shapely.STRtree(F.polys).query(shapely.points(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel()), predicate="intersects")[0]] = True
         under[crossed] = corner[crossed]
-
-        # 4. the cells where faces overlap, so a free edge has another face, not open ground, on its
-        # right: cutting along the edges would fill the wrong side, so such a cell is drawn whole, as
-        # the grid where it is mostly open ground and as nothing where it is mostly under faces
-        d = B - A
-        across = np.stack([d[:, 1], -d[:, 0]], 1) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
-        right = (A + B) / 2 + across * 0.02
-        bad = np.unique(shapely.STRtree(F.polys).query(shapely.points(right), predicate="within")[0])
-        if len(bad):
-            odd = np.unique(shapely.STRtree(segs[bad]).query(boxes, predicate="intersects")[0])
-            ftree = shapely.STRtree(F.polys)
-            for k in odd.tolist():
-                over = F.polys[ftree.query(boxes[k], predicate="intersects")]
-                land = boxes[k].difference(shapely.union_all(shapely.make_valid(over))).area
-                under[k] = land < 0.5 * boxes[k].area
+        under[odd] = odd_under
         cells = under.reshape(ny - 1, nx - 1)
 
     s = spots[held != 0]
