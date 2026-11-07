@@ -25,6 +25,7 @@ mechanism is inferred rather than read, it says so.
 9. [How to resume](#9-how-to-resume)
 10. [Baselines, stage 0](#10-baselines-stage-0)
 11. [Baselines, stage 0: walking and drawing](#11-baselines-stage-0-walking-and-drawing)
+12. [Stage 3 as built: the ground sheet](#12-stage-3-as-built-the-ground-sheet)
 
 ---
 
@@ -1186,3 +1187,87 @@ What it says against §5:
   --shots` isn't needed for them.
 - **The off-surface check can't see the ground's shader cuts** (the canal's banks and locks, tunnel
   mouths), so it overstates "under" there.
+
+## 12. Stage 3 as built: the ground sheet
+
+Built on 7 November 2026 on branch `claude/ground-sheet` (off the fork's `main` at `4e55596f`, with
+stages 0 to 2 in), behind `?ground=sheet`, and written into the twelve test squares only. The
+default drawing is unchanged, and so is any square without `gs`.
+
+### 12.1 What was built, and where it differs from §4
+
+- **`gs` is small and says only what can't be worked out at load** (`tools/partition/sheet.py`,
+  called by `write_tile.build_tile` as the last thing before a square is written, so the stage
+  cache re-keys on it): which cells are under faces (run lengths), the grid points carved down or
+  built up to meet the faces (§4.3 step 7: cut 1 in 1.5, fill 1 in 2, within 3 m), the face corners
+  where a retaining wall holds the ground off a face's top and by how much, the square's wall kind
+  for those walls, and the cells where faces overlap (`x`). `sf` and `t` are untouched, so the
+  default drawing and every check that reads them are as before.
+- **The cut cells are cut by the game, not baked (differs from §4.6's `gs.v`/`gs.t`).** Writing the
+  triangles of the cells a face's edge crosses was measured at about 12% more download a square,
+  over the 5% gate. So `web/src/sheet.ts` cuts each such cell along the faces' free edges as the
+  square loads (about 0.1 s a square under Node, and the square's whole ground build got faster,
+  since the face-driven sinking, raising and steps' cut no longer run) and fills what lies outside
+  the faces between the cell's corners and the edges, at the height the ground meets each face
+  there. `sheet.py`'s `Land` cuts them the same way (with shapely) for the checks. `gs` costs
+  2.4–7.9 KB gzipped a square, 0.9–1.6%.
+- **Where the ground meets a face**: at the face's top, the lowest face's where two meet at one
+  corner. Where meeting it would take more than a 3 m bank (over 2 m of cut or 1.5 m of fill), a
+  retaining wall takes the rest, drawn with the walls in the square's commonest kind of wall
+  (Dan's decision), facing the face where it holds the ground up and facing out where the face
+  stands on it. A step under 0.45 m is a kerb in the face's own material.
+- **Paths stay level across, following the hill**, as stage 2 wrote them; steps keep their treads.
+  The ground beside a flight is now the batter (not stage 2's cut to a straight climb).
+- **Roads and service roads are one mesh** with the sheet (they no longer overlap, so they needn't
+  be drawn at different depths): one draw fewer a square.
+- **Two things the data does that the sheet had to allow for**: a face outline that runs out and
+  straight back on itself (a spike of no width) is taken as the edge left over; and where two
+  faces overlap (stage 2 writes some), a free edge can have another face, not open ground, on its
+  open side, so cutting there would grass over a pavement. Those cells (about 1% of the cut cells)
+  are drawn whole, as the grid let down under the faces in them, or as nothing where they're mostly
+  under faces.
+- **Kept for stage 4**: the bridges' own letting-down of the ground and the tunnel cuttings run as
+  before. The sheet keeps the ground 0.5 m under a deck's road, and never builds it up within a
+  cell and a half of a deck or the water, but it doesn't attach to deck ends, abutments, portals or
+  flights' landings (§4.4).
+- **The checks read the sheet with `CD_GROUND=sheet`** (`tools/check_more.py`: the drawn ground is
+  `Land`'s; rule 26 measures a free edge against where the sheet meets it, and counts a retaining
+  wall's length as a figure, "retaining wall m", not a fault, since Dan asked for those walls;
+  shared edges are measured as before). `tools/overroad.mjs`, `tools/walk_probe.mjs` take `--query
+  ground=sheet`, `tools/ride_probe.mjs` `QUERY=ground=sheet`.
+
+### 12.2 The static measures (rules 24–37), without and with the sheet
+
+```sh
+python3 -I tools/partition/sheet.py web/public/maps/<map>/<ti>_<tj>.json ...   # writes gs into built squares
+CD_GROUND=sheet python3 -I tools/check_more.py combe-down --tiles 1,2 0,2 1,3 1,1 0,3 -1,2 2,0 3,-2
+```
+
+| square | 26 places | tall edges, m | retaining wall, m | 27 lumps | 28 | 30 | 31 | 33 buried treads | 35 land in water, m² |
+|---|---|---|---|---|---|---|---|---|---|
+| Bath 1_2 | 183 → 50 | 3079 → 349 | 22 | 0 → 0 | 4 → 4 | 3 → 2 | 7 → 7 | 55 → 32 | 474 → 465 |
+| Bath 0_2 | 202 → 54 | 3684 → 373 | 31 | 0 → 1 | 3 → 3 | 2 → 0 | 5 → 5 | 158 → 138 | 682 → 681 |
+| Bath 1_3 | 244 → 78 | 4986 → 756 | 166 | 0 → 0 | 7 → 6 | 6 → 5 | 13 → 13 | 145 → 144 | 1116 → 1116 |
+| Bath 1_1 | 96 → 19 | 1563 → 150 | 0 | 0 → 1 | 3 → 3 | 0 → 0 | 2 → 1 | 31 → 11 | 55 → 55 |
+| Bath 0_3 | 193 → 59 | 4522 → 581 | 20 | 0 → 1 | 6 → 6 | 1 → 1 | 7 → 7 | 47 → 61 | 462 → 461 |
+| Bath -1_2 | 170 → 40 | 1832 → 235 | 0 | 0 → 0 | 3 → 4 | 0 → 1 | 5 → 5 | 10 → 6 | 2 → 2 |
+| Bath 2_0 | 23 → 6 | 708 → 41 | 0 | 0 → 0 | 1 → 1 | 0 → 0 | 1 → 1 | 25 → 0 | 54 → 54 |
+| Bath 3_-2 | 15 → 4 | 319 → 28 | 0 | 0 → 0 | 0 → 0 | 0 → 0 | 0 → 0 | 4 → 0 | 17 → 17 |
+| Bradford-on-Avon 1_1 | 199 → 51 | 3178 → 332 | 25 | 0 → 0 | 5 → 6 | 2 → 1 | 6 → 6 | 67 → 39 | 1384 → 1376 |
+| Cape Town 2_2 | 191 → 69 | 5359 → 868 | 290 | 0 → 2 | 22 → 23 | 3 → 4 | 17 → 20 | 11 → 10 | 2177 → 2170 |
+| Cape Town 1_3 | 131 → 29 | 3178 → 280 | 66 | 0 → 0 | 21 → 20 | 7 → 7 | 17 → 17 | 9 → 8 | 6348 → 6343 |
+| Hackney 1_1 | 119 → 15 | 1559 → 92 | 120 | 0 → 0 | 3 → 3 | 3 → 3 | 4 → 4 | 9 → 7 | 0 → 0 |
+
+Places by rule, all twelve squares: 24 188 → 188, 25 526 → 526, 26 1766 → 474, 27 3209 → 3214, 28 78 → 79, 29 6 → 6, 30 27 → 24, 31 84 → 86, 33 172 → 141, 34 7 → 7, 35 50 → 50, 36 33 → 33
+
+- **Rule 26 (M3) falls by three quarters**, and its metres of tall edge by nine tenths. What is
+  left is the faces' own heights from stage 2: a pavement and a path side by side a metre apart in
+  height (shared edges), and the corners where two faces of different heights meet the ground at
+  one spot. The sheet can't make those meet; the faces' heights would have to change.
+- **Rules 24, 25 and 27's gaps and pavement ends are the faces' own shapes**, which the sheet
+  doesn't change (M1, M2, M4 a and c).
+- **Rises**: 27's lumps (0 → 5): ground held up by a retaining wall beside a face standing over
+  a face across a narrow gap. 28 (+1), 31 (+2, Cape Town 2_2): the sheet meets a face where it ends
+  at a deck, so a little more ground stands near some decks' ends: stage 4's attachment edges.
+  30 (M7) falls 27 → 24, 33 141 places from 172, and 35 (M12) holds.
+

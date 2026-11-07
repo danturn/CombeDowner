@@ -16,7 +16,9 @@ What the sheet is made of:
   - beside each face the ground is carved down or built up to meet it, no steeper than 1 in 1.5 cut
     or 1 in 2 filled, within BATTER_MOST of its edge; where meeting the face would take a wider bank
     than that, a low retaining wall stands at the face's edge for what is left over, in the
-    square's own wall material.
+    square's own wall material. A grid point is never built up more than FILL_MOST over the survey,
+    nor at all within a cell and a half of the water or a bridge's deck, and is kept DECK_UNDER under
+    a deck's road.
 
 What is baked here (`gs`), all as whole numbers so it packs small:
   n   the version of these rules;
@@ -56,6 +58,7 @@ LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04
 OUTLINE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "plaza": 0.04}
 BATTER_FILL = 2.0     # ground below a face's edge is built up to it no steeper than 1 in 2
 BATTER_CUT = 1.5      # ground above it is cut down to it no steeper than 1 in 1.5
+FILL_MOST = 1.0       # metres a grid point is ever built up over the survey: more would fill in a cutting
 DECK_UNDER = 0.5      # metres the ground is kept under a deck's road, so none stands up through it
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
 WALLS = ("wall", "retaining_wall", "stone_wall", "garden_wall", "brick_wall", "brick_wall_low", "dry_stone",
@@ -337,6 +340,9 @@ def ground_sheet(tile):
             high[v] = min(high[v], z - 0.05)
             low[v] = min(low[v], high[v])
     H0 = H.ravel()
+    # (beside a face, a bank steeper than the batter is left rather than filling in what the survey
+    # shows beside it, a cutting or a railway's bed)
+    low = np.minimum(low, H0 + FILL_MOST)
     H1 = np.clip(H0, low, high)
     dz = np.round((H1 - T["z0"]) * 10).astype(np.int64) - np.asarray(T["h"], np.int64)
     moved = np.nonzero(dz)[0]
