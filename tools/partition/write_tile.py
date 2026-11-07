@@ -2158,11 +2158,12 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
             if (p[i][0], p[i][1]) in ends and low(p[i], 0.1):
                 p[i] = p[i][:3] + [2]
                 grown += 1
-                # (and on, as a span runs on, while the ground under it is still dug away)
+                # (and on, as a span runs on, while the ground is still well under it)
                 step = 1 if i == 0 else -1
                 for k in range(1, reach + 1):
                     j = i + step * k
-                    if not 0 < j < len(p) - 1 or not low(p[j], 0.1):
+                    g = ground(p[j][0], p[j][1]) if 0 < j < len(p) - 1 and len(p[j]) < 4 else None
+                    if g is None or p[j][2] - g <= 0.3:
                         break
                     p[j] = p[j][:3] + [2]
                     grown += 1
@@ -3621,12 +3622,31 @@ def steep_paths_as_steps(rd):
         if not any(steep):
             out.append(r)
             continue
+        # (a flight steeper than a stair takes in the path either side till it is no steeper: its
+        # treads, laid no steeper, stood off the path at its foot)
+        seg = [math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:])]
+        i = 0
+        while i < len(steep):
+            if not steep[i]:
+                i += 1
+                continue
+            k = e = i
+            while e + 1 < len(steep) and steep[e + 1]:
+                e += 1
+            while abs(p[e + 1][2] - p[k][2]) > STAIR_PITCH * sum(seg[k:e + 1]) and (k > 0 or e + 1 < len(steep)):
+                if k > 0 and (e + 1 >= len(steep) or seg[k - 1] >= seg[e + 1]):
+                    k -= 1
+                else:
+                    e += 1
+            for j in range(k, e + 1):
+                steep[j] = True
+            i = e + 1
         k = 0
         while k < len(steep):
             e = k
             while e + 1 < len(steep) and steep[e + 1] == steep[k]:
                 e += 1
-            piece = dict(r, p=[list(q) for q in p[k:e + 2]])
+            piece = dict(r, p=[list(q) for q in p[k:e + 2]], _of=id(r))
             if steep[k]:
                 piece["c"] = "steps"
                 piece["w"] = max(r.get("w", 1.5), 1.8)
@@ -3662,6 +3682,9 @@ def ways_meet_level(rd, sq, ground):
     reach = [h + max(r.get("pv") or (0, 0)) for h, r in zip(half, streets)]
     walks = [r for r in rd if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1
              and not any(len(q) > 3 and q[3] for q in r["p"])]
+    # (a point a path shares with a bridge's way is the bridge's record too, which is left as it is)
+    for r in walks:
+        r["p"] = [list(q) for q in r["p"]]
 
     def street_top(x, y):
         """The drawn top of the street a point lies on, as a path's point's height, or None."""
@@ -3738,6 +3761,7 @@ def ways_meet_level(rd, sq, ground):
         for end in (0, -1):
             # (where paths meet each other they keep the height they share)
             if on_edge(p[end]) or meet[(round(p[end][0], 1), round(p[end][1], 1))] > (r["c"] != "steps"):
+                held.add(id(p[end]))
                 continue
             z = abutment_ground(*p[end][:2])
             if z is None:
@@ -3771,7 +3795,7 @@ def ways_meet_level(rd, sq, ground):
         for k in [k for k, q in enumerate(p) if id(q) in changed]:
             for order in (p[k:], p[k::-1]):
                 for a, b in zip(order, order[1:]):
-                    if on_edge(b):
+                    if on_edge(b) or id(b) in held or meet[(round(b[0], 1), round(b[1], 1))] > 1:
                         break
                     d = math.dist(a[:2], b[:2])
                     z = round(min(max(b[2], a[2] - STEEPEST_WALK * d), a[2] + STEEPEST_WALK * d), 2)
@@ -3791,11 +3815,12 @@ def steep_flights_that_fit(rd, ground):
     or on a street running beside it (a footway mapped alongside a pedestrian street). Returns how many
     went back."""
     back = 0
-    plain = [r for r in rd if "_was" not in r and len(r["p"]) > 1 and not any(len(q) > 3 and q[3] for q in r["p"])
-             and r["c"] != "steps"]
-    beside = [LineString([q[:2] for q in r["p"]]).buffer(
+    plain = [r for r in rd if "_was" not in r and len(r["p"]) > 1 and r["c"] != "steps"]
+    # (on the ground: a bridge's deck passing over a flight is not on it)
+    beside = [LineString([a[:2], b[:2]]).buffer(
         (way_width(r) / 2 if r["c"] in GAME_PATHS and r["c"] != "pedestrian" else r.get("w", 4) / 2 + max(r.get("pv") or (0, 0))) - 0.1,
-        cap_style="flat") for r in plain]
+        cap_style="flat") for r in plain for a, b in zip(r["p"], r["p"][1:])
+        if not (len(a) > 3 and a[3]) and not (len(b) > 3 and b[3]) and math.dist(a[:2], b[:2]) > 0.01]
     near = STRtree(beside) if beside else None
     for r in rd:
         was, whole = r.pop("_was", None), r.pop("_p", None)
@@ -3820,6 +3845,17 @@ def steep_flights_that_fit(rd, ground):
         else:
             r.pop("w", None)
         back += 1
+    # (and a path cut for a flight that went back is one path again)
+    out = []
+    for r in rd:
+        of = r.pop("_of", None)
+        last = out[-1] if out else None
+        if (of is not None and last is not None and last[1] == of and r["c"] != "steps" and last[0]["c"] == r["c"]
+                and last[0]["p"][-1][:2] == r["p"][0][:2]):
+            last[0]["p"] = last[0]["p"] + [list(q) for q in r["p"][1:]]
+            continue
+        out.append((r, of if r["c"] != "steps" else None))
+    rd[:] = [r for r, _ in out]
     return back
 
 

@@ -431,6 +431,19 @@ def ground_sheet(tile):
         high[v] = min(high[v], z)
         low[v] = min(low[v], high[v])
     H0 = H.ravel()
+    # (a bridge's deck comes down to the ground at its abutment, the point either side of its span,
+    # and the game reads that ground from the grid: the corners round an abutment stay as surveyed,
+    # so the deck lands where the faces leaving it were laid)
+    for r in tile.get("rd") or []:
+        q = r["p"]
+        f = [len(v) > 3 and bool(v[3]) for v in q]
+        for k in range(len(q)):
+            if f[k] or not ((k and f[k - 1]) or (k + 1 < len(q) and f[k + 1])):
+                continue
+            i = int(np.clip(np.floor((q[k][0] - T["x0"]) / T["dx"]), 0, nx - 2))
+            j = int(np.clip(np.floor((q[k][1] - T["y0"]) / T["dy"]), 0, ny - 2))
+            for v in (j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1):
+                low[v] = high[v] = H0[v]
     # (beside a face, a bank steeper than the batter is left rather than filling in what the survey
     # shows beside it, a cutting or a railway's bed)
     low = np.minimum(low, H0 + FILL_MOST)
