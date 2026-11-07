@@ -3628,6 +3628,85 @@ def steep_paths_as_steps(rd):
 
 STAIR_PITCH = 0.7       # the steepest a flight's treads climb (furniture.ts)
 
+SURFACE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04}   # how far the game lifts each face over its point (world.ts)
+JOIN_REACH = 0.3        # metres past a street's pavement that a path's end still meets it
+
+
+def ways_meet_level(rd, sq, ground):
+    """Where a path meets a street, or another path, the two are at one height: a path's end on a
+    pavement is laid level with the pavement's top and on a carriageway with the road's, and paths
+    sharing a point share its height, the path's own climb eased in to it no steeper than a walk; a
+    flight of steps climbs straight between its ends. The map's heights are each way's ground along
+    its own line, so a path met a pavement a kerb or more off its top, and a flight started half a
+    metre over the pavement it left. Returns how many ends moved."""
+    square = box(*sq)
+    streets = [r for r in rd if (r["c"] not in GAME_PATHS or r["c"] == "pedestrian") and len(r["p"]) > 1
+               and not any(len(q) > 3 and q[3] for q in r["p"])]
+    lines = [LineString([q[:2] for q in r["p"]]) for r in streets]
+    heights = [LineString([q[:3] for q in r["p"]]) for r in streets]
+    tree = STRtree(lines) if lines else None
+    half = [r.get("w", 4) / 2 for r in streets]
+    reach = [h + max(r.get("pv") or (0, 0)) for h, r in zip(half, streets)]
+    walks = [r for r in rd if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1
+             and not any(len(q) > 3 and q[3] for q in r["p"])]
+
+    def street_top(x, y):
+        """The drawn top of the street a point lies on, as a path's point's height, or None."""
+        if tree is None:
+            return None
+        p = Point(x, y)
+        best = None
+        for k in tree.query(p, predicate="dwithin", distance=max(reach) + JOIN_REACH):
+            k = int(k)
+            d = lines[k].distance(p)
+            if d > reach[k] + JOIN_REACH or (best is not None and d >= best[0]):
+                continue
+            z = _level_at(heights[k], x, y, ground, square)
+            if z is not None:
+                kind = "road" if d <= half[k] else "pave"
+                best = (d, z + SURFACE_LIFT[kind] - SURFACE_LIFT["path"])
+        return None if best is None else best[1]
+
+    moved = 0
+    changed = set()
+    # paths sharing a point share its height (a flight lands on the path it meets, so a path's wins)
+    at = {}
+    for r in sorted(walks, key=lambda r: r["c"] == "steps"):
+        for q in r["p"]:
+            key = (round(q[0], 1), round(q[1], 1))
+            if key in at and abs(at[key] - q[2]) > 0.01:
+                q[2] = at[key]
+                changed.add(id(q))
+                moved += 1
+            at.setdefault(key, q[2])
+    for r in walks:
+        p = r["p"]
+        for end in (0, -1):
+            z = street_top(*p[end][:2])
+            if z is not None and abs(z - p[end][2]) > 0.01:
+                p[end][2] = round(z, 2)
+                changed.add(id(p[end]))
+                moved += 1
+        if r["c"] == "steps":
+            cum = [0.0]
+            for a, b in zip(p, p[1:]):
+                cum.append(cum[-1] + math.dist(a[:2], b[:2]))
+            if cum[-1] > 0:
+                for q, s in zip(p[1:-1], cum[1:-1]):
+                    q[2] = round(p[0][2] + (p[-1][2] - p[0][2]) * s / cum[-1], 2)
+            continue
+        # (the path's own climb eased in from each point moved, only as far as it has to be)
+        for k in [k for k, q in enumerate(p) if id(q) in changed]:
+            for order in (p[k:], p[k::-1]):
+                for a, b in zip(order, order[1:]):
+                    d = math.dist(a[:2], b[:2])
+                    z = round(min(max(b[2], a[2] - STEEPEST_WALK * d), a[2] + STEEPEST_WALK * d), 2)
+                    if abs(z - b[2]) < 0.005:
+                        break
+                    b[2] = z
+    return moved
+
+
 
 def steep_flights_that_fit(rd, ground):
     """A flight made from a steep stretch of path (`steep_paths_as_steps`) is kept only where a flight
@@ -3643,7 +3722,7 @@ def steep_flights_that_fit(rd, ground):
         p = r["p"]
         L = sum(math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:]))
         a, b = ground(*p[0][:2]), ground(*p[-1][:2])
-        if L >= STEP_RUN and a is not None and b is not None and abs(b - a) <= STAIR_PITCH * L:
+        if L >= STEP_RUN and a is not None and b is not None and max(abs(b - a), abs(p[-1][2] - p[0][2])) <= STAIR_PITCH * L:
             continue
         r["c"] = was["c"]
         if "w" in was:
@@ -7357,6 +7436,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = steep_paths_as_steps(rd)
     # (the flights made just now from steep stretches, and the ways they meet as they are by now)
     flights_to_their_ends(rd, fitted[1] if fitted else None)
+    ways_meet_level(rd, sq, ground)
     steep_flights_that_fit(rd, ground)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
