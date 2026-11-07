@@ -3760,11 +3760,12 @@ def ways_meet_level(rd, sq, ground):
     for r in walks:
         p = r["p"]
         for end in (0, -1):
-            # (where paths meet each other they keep the height they share)
-            if on_edge(p[end]) or meet[(round(p[end][0], 1), round(p[end][1], 1))] > (r["c"] != "steps"):
+            # (where paths meet each other they keep the height they share, but at an abutment every
+            # one of them meets the deck on the ground there)
+            z = None if on_edge(p[end]) else abutment_ground(*p[end][:2])
+            if z is None and (on_edge(p[end]) or meet[(round(p[end][0], 1), round(p[end][1], 1))] > (r["c"] != "steps")):
                 held.add(id(p[end]))
                 continue
-            z = abutment_ground(*p[end][:2])
             if z is None:
                 z = street_top(*p[end][:2])
             if z is None:
