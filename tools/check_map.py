@@ -587,6 +587,7 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
             tris = v[np.concatenate(ids)]
             ttree = shapely.STRtree(shapely.polygons(tris[:, :, :2]))
     sq = box(*m["b"])
+    laid = check_more.set_piece_streets(tuple(m["centre"])) if m.get("centre") else []
     for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
         if what == "railway" or len(xy) < 2: continue
         span = LineString(xy)
@@ -605,6 +606,8 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
         for k in ttree.query(outline.buffer(-0.3), predicate="intersects"):
             t = tris[int(k)]
             cx, cy = t[:, 0].mean(), t[:, 1].mean()
+            # (a face in a set piece's street isn't drawn: the game cuts it out and lays the street)
+            if any(st.contains(Point(cx, cy)) for st in laid): continue
             u = under_at(cx, cy)
             if t[:, 2].max() > u - 1.0 and t[:, 2].min() < u - 2.5:
                 note("10 face rising into a bridge", t[:, 2].max() - t[:, 2].min(), (tag, round(cx), round(cy)), f"{t[:, 2].min():.1f} to {t[:, 2].max():.1f} m under {what}")

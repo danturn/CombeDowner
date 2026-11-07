@@ -66,8 +66,8 @@ from the packs alone, a few seconds a square:
     canal's towpath under the game's ceiling there.
 32. Tunnels as the game builds them (tools/tunnel_mesh.ts runs web/src/tunnels.ts): tubes meet where
     pieces meet and go on over a square's edge; walls and floor are solid where they're drawn.
-33. Flights of steps land on something to walk on, and their treads are neither buried, nor standing
-    as blocks, nor out of reach of where you walk.
+33. Flights of steps land on something to walk on, and their treads are neither buried (unless a
+    retaining wall holds the bank), nor standing as blocks, nor out of reach of where you walk.
 34. A lock's edges: no canal water over its paving, no gap between its water and its gates, no works
     bank over its paving.
 35. No land standing in a pond or river, no canal works in a river, no two touching waters at two levels.
@@ -130,7 +130,7 @@ def _set_pieces(centre):
     own table with its bundler; none if that can't be run."""
     web = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
     src = (f'import {{ SET_PIECES }} from "{web}/src/landmarks/setpieces";'
-           'console.log(JSON.stringify(SET_PIECES.map((s: any) => [s.at, s.bearing, [s.outline, ...(s.more ?? [])]])));')
+           'console.log(JSON.stringify(SET_PIECES.map((s: any) => [s.at, s.bearing, [s.outline, ...(s.more ?? [])], s.street ?? null])));')
     try:
         js = subprocess.run([os.path.join(web, "node_modules", ".bin", "esbuild"), "--bundle", "--platform=node", "--format=esm",
                              "--loader=ts", "--log-level=error", "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"],
@@ -140,14 +140,30 @@ def _set_pieces(centre):
         return []
     lon0, lat0 = centre
     kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
-    out = []
-    for (lon, lat), bearing, rings in pieces:
+    out, streets = [], []
+    for (lon, lat), bearing, rings, street in pieces:
         ox, oy = (lon - lon0) * kx, (lat - lat0) * ky
         a = math.radians(90 - bearing)
         ux, uy = math.cos(a), math.sin(a)
+        at = lambda lx, lz: (ox + ux * lx + uy * lz, oy + uy * lx - ux * lz)
         for r in rings:
-            if len(r) >= 3: out.append(_poly([(ox + ux * lx + uy * lz, oy + uy * lx - ux * lz) for lx, lz in r]))
+            if len(r) >= 3: out.append(_poly([at(lx, lz) for lx, lz in r]))
+        # (the street it lays end to end, whose faces the game cuts out of the square's: setpieces.ts cutFaces)
+        if street:
+            x0, x1, z = street["x0"], street["x1"], street["zMax"]
+            streets.append(_poly([at(x0, -z), at(x1, -z), at(x1, z), at(x0, z)]))
+    _SET_PIECE_STREETS[centre] = streets
     return out
+
+
+_SET_PIECE_STREETS = {}
+
+
+def set_piece_streets(centre):
+    """The streets set pieces lay themselves (landmarks/setpieces.ts `street`), in data metres: the
+    game cuts the map's own faces out of them and draws the street as laid."""
+    _set_pieces(centre)
+    return _SET_PIECE_STREETS.get(centre, [])
 
 
 @functools.lru_cache(maxsize=2)
@@ -891,6 +907,7 @@ HEAD = 1.9           # metres a walker needs under a ceiling (player.ts EYE 1.65
 KINDS = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck depth
 FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
 GAME_KERBED = KERBED | {"living_street"}
+WALL_BESIDE = 0.4     # metres from a retaining wall that a tread's side counts as held by it
 LANDING = (0.1, 0.05)   # metres off a walkable face, and up or down from it, that a flight's end may land
 STAIR_PITCH = 0.7       # furniture.ts: the steepest a flight's treads climb
 TREAD_DEPTH = 0.15      # furniture.ts: how far a tread's block goes on down under its step
@@ -1627,8 +1644,9 @@ def flights(m, sheet, walk, note, at, inner, fig):
     """33. Flights of steps (furniture.ts stepsDetail), with the treads laid as the game lays them:
     (a) each end lands on something to walk on: a face, or another way's line, within LANDING[0], at
     the treads' height within LANDING[1]; (b) no tread is buried, the ground beside it higher than its
-    top; (c) none stands as a grey block, more than 0.3 m over the ground beside it with nothing
-    holding the bank: a side where the game builds no cheek wall (furniture.ts builds one the whole
+    top with no retaining wall holding it there (with the sheet a flight is sunk into the hill, its
+    bank held by one: gs `s`); (c) none stands as a grey block, more than 0.3 m over the ground
+    beside it with nothing holding the bank: a side where the game builds no cheek wall (furniture.ts builds one the whole
     length of a side where the ground just beside any tread is more than 0.3 m under its top, or
     under its block's foot); (d) a
     tread you can stand on: the treads are floors, so you stand on a tread unless the ground over it
@@ -1640,6 +1658,16 @@ def flights(m, sheet, walk, note, at, inner, fig):
     ways = [(LineString([q[:2] for q in r["p"]]), r) for r in roads]
     wtree = shapely.STRtree([w[0] for w in ways])
     walkable = sheet.union(FACE_KINDS) if sheet.ok else Polygon()
+    # (with the sheet, where the ground beside a face is held above it by a retaining wall: a flight
+    # sunk into the hill has its bank held so, and a tread with that wall beside it isn't buried)
+    walls = None
+    if GROUND_SHEET and m.get("gs") and m.get("sf"):
+        held = gsheet.read(m["gs"], m["t"])[2]
+        F = gsheet.Faces(m["sf"], m["b"])
+        up = [(a, b) for a, b in F.free.tolist() if max(held.get(int(F.spot[a]), 0), held.get(int(F.spot[b]), 0)) > 0.05]
+        if up:
+            walls = shapely.STRtree([LineString([F.V[a, :2], F.V[b, :2]]) for a, b in up])
+    walled_at = lambda x, y: walls is not None and len(walls.query(Point(x, y), predicate="dwithin", distance=WALL_BESIDE)) > 0
     totals = dict(treads=0, buried=0, block=0, unwalkable=0, landings=0)
     for r in stepped:
         lay = _stair(r["p"], walk)
@@ -1665,7 +1693,8 @@ def flights(m, sheet, walk, note, at, inner, fig):
             k_ = 1 + 0.1 / (w / 2)
             beside = walk(np.array([x + nx_ * k_, x - nx_ * k_]), np.array([y + ny_ * k_, y - ny_ * k_]))
             rows.append((top, side, (top - beside > 0.3) | (beside < foot)))
-            if side.max() > top + 0.05: bad["buried"] += 1
+            if any(z > top + 0.05 and not walled_at(x + sx * nx_ * 1.15, y + sx * ny_ * 1.15) for z, sx in zip(side, (1, -1))):
+                bad["buried"] += 1
             if here - top > 0.2 or (k and top - last > 0.6): bad["unwalkable"] += 1
             last = top
         # (a side has its cheek wall the whole way if it needs one anywhere)
@@ -1920,7 +1949,9 @@ def ground_measures(m, tag, note, f, off_deck=None):
         face_edges(m, sheet, drawn, note, at, inner, fig, land)
         if land is not None: sheet_holes(m, land, note, at, inner, fig)
         face_joins(m, sheet, D, drawn, note, at, inner, fig)
-    bridges(m, f, sheet, drawn, ground, note, at, sq, fig)
+    # (a deck's end comes down to the survey's grid as the game reads it, map.ts trueGround: the
+    # sheet's carving is drawing only)
+    bridges(m, f, sheet, drawn, terrain(m["t"]), note, at, sq, fig)
     for w in tunnel_mesh(*_root_of(f)):
         if sq.contains(Point(w["x"], w["y"])):
             note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])

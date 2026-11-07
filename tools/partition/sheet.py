@@ -16,9 +16,11 @@ What the sheet is made of:
   - beside each face the ground is carved down or built up to meet it, no steeper than 1 in 1.5 cut
     or 1 in 2 filled, within BATTER_MOST of its edge; where meeting the face would take a wider bank
     than that, a low retaining wall stands at the face's edge for what is left over, in the
-    square's own wall material (at a cliff's top, down to the cliff's foot). A grid point is never built up more than FILL_MOST over the survey,
-    nor at all within a cell and a half of the water or a bridge's deck, and is kept DECK_UNDER under
-    a deck's underside.
+    square's own wall material (at a cliff's top, down to the cliff's foot). A flight of steps is
+    sunk into the hill: the hill beside it is held up to SUNK_MOST over it by such a wall. A grid
+    point is never built up more than FILL_MOST over the survey, nor at all within a cell and a half
+    of the water or a bridge's deck, and is kept DECK_UNDER under a deck's underside, out to its
+    abutments, where a face ending under the deck's end is held by a wall as an abutment.
 
 What is baked here (`gs`), all as whole numbers so it packs small:
   n   the version of these rules;
@@ -63,6 +65,7 @@ DECK_UNDER = 0.5      # metres the ground is kept under a deck's underside, so t
 DECK_DEPTH = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck
 FOOT_WAYS = {"footway", "path", "cycleway", "steps", "bridleway"}
 FOOT_DEPTH = 0.4      # metres under a building's ground height the ground beside it may be cut to (its walls go 0.6 down)
+SUNK_MOST = 1.2       # metres of hill a flight's retaining wall holds beside it
 BETWEEN = 1.0         # metres: ground this near faces of two kinds is between them
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
 WALLS = ("wall", "retaining_wall", "stone_wall", "garden_wall", "brick_wall", "brick_wall_low", "dry_stone",
@@ -255,9 +258,9 @@ def odd_corners(F, odd, H, T, under=0.05, step=0.25):
     return out
 
 
-def deck_lines(rd):
-    """Each stretch of a way on a bridge's deck: its ends, its underside's height at each, and how far
-    either side of its line the ground is kept under it."""
+def deck_lines(rd, ground):
+    """Each stretch of a way on a bridge's deck: its ends, its underside's height at each, how far
+    either side of its line the ground is kept under it, and whether each end is an abutment."""
     out = []
     for r in rd or []:
         p = r["p"]
@@ -271,9 +274,13 @@ def deck_lines(rd):
             "foot" if r["c"] in FOOT_WAYS else "beam" if r["c"] in ("trunk", "motorway") else "arch")
         # (its underside: the road's top, lifted as drawn, less the deck's depth)
         under = (0.07 if r["c"] not in FOOT_WAYS else 0.04) - DECK_DEPTH[kind]
+        # (and from its last point on the span to its abutment, where the game brings the deck down
+        # to the survey's ground: the bank is dug from under it there too, as an abutment stands)
         for a in range(len(p) - 1):
-            if on[a] and on[a + 1]:
-                out.append((p[a][:2], p[a + 1][:2], p[a][2] + under, p[a + 1][2] + under, half))
+            if on[a] or on[a + 1]:
+                za = p[a][2] if on[a] else ground(*p[a][:2])
+                zb = p[a + 1][2] if on[a + 1] else ground(*p[a + 1][:2])
+                out.append((p[a][:2], p[a + 1][:2], za + under, zb + under, half, (not on[a], not on[a + 1])))
     return out
 
 
@@ -331,6 +338,30 @@ def ground_sheet(tile):
     fj = np.clip(np.floor((F.V[spots, 1] - T["y0"]) / T["dy"]).astype(int), 0, T["ny"] - 2)
     foot = np.minimum.reduce([H[fj, fi], H[fj, fi + 1], H[fj + 1, fi], H[fj + 1, fi + 1]])
     meet = np.where(g - top > up, g - up, np.where(top - g > down, np.where(cliff & (g - foot > down), foot, g + down), top))
+    # A flight of steps is sunk into the hill: the hill beside it stays as it is, up to SUNK_MOST over
+    # the flight's edge, held by a retaining wall, rather than cut down to meet the treads.
+    flights = [shapely.LineString([q[:2] for q in r["p"]]).buffer((r.get("w") or 1.8) / 2 + 0.3, cap_style="flat")
+               for r in tile.get("rd") or [] if r.get("c") == "steps" and len(r["p"]) > 1
+               and not any(len(q) > 3 and q[3] for q in r["p"])]
+    if flights:
+        on = np.zeros(len(spots), bool)
+        on[shapely.STRtree(flights).query(shapely.points(F.V[spots, :2]), predicate="intersects")[0]] = True
+        sunk = on & (g > top)
+        meet[sunk] = np.maximum(np.minimum(g[sunk], top[sunk] + SUNK_MOST), meet[sunk])
+    # A bridge's abutment: where a face ends under a deck's end, the ground beside it is dug to the
+    # room under the deck and a wall holds the face's edge, as an abutment stands at a bridge's end.
+    for (ax_, ay_), (bx_, by_), za, zb, half, _ in deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y))):
+        vx_, vy_ = bx_ - ax_, by_ - ay_
+        l2 = vx_ * vx_ + vy_ * vy_
+        if l2 < 1e-6:
+            continue
+        qx, qy = F.V[spots, 0], F.V[spots, 1]
+        u = ((qx - ax_) * vx_ + (qy - ay_) * vy_) / l2
+        d = np.abs((qx - ax_) * vy_ - (qy - ay_) * vx_) / math.sqrt(l2)
+        tol = 0.3 / math.sqrt(l2)
+        k = np.nonzero((u >= -tol) & (u <= 1 + tol) & (d <= half))[0]
+        bound = za + (zb - za) * np.clip(u[k], 0, 1) - DECK_UNDER
+        meet[k] = np.minimum(meet[k], bound)
     meet = np.round(meet, 2)
     held = np.round((meet - top) * 100).astype(np.int64)
     hf = dict(zip(spots.tolist(), (top + held / 100).tolist()))
@@ -398,23 +429,31 @@ def ground_sheet(tile):
         near = np.zeros(n, bool)
         near[shapely.STRtree(keep_down).query(pts, predicate="intersects")[0]] = True
         low[near] = -np.inf
-    # (under a bridge's deck, and half a metre either side, the ground is kept DECK_UNDER under its underside)
-    for (ax_, ay_), (bx_, by_), za, zb, half in deck_lines(tile.get("rd")):
+    # (under a bridge's deck, half a metre either side and a cell beyond that, or the slope up from a
+    # corner further out rises into it, the ground is kept DECK_UNDER under its underside; but not
+    # within half a cell of an abutment, where the deck lands on the survey's ground)
+    under_deck = np.full(n, np.inf)
+    lines = deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y)))
+    abutments = [e for a, b, _, _, _, lands in lines for e, free in zip((a, b), lands) if free]
+    for (ax_, ay_), (bx_, by_), za, zb, half, lands in lines:
         vx_, vy_ = bx_ - ax_, by_ - ay_
         l2 = vx_ * vx_ + vy_ * vy_
         if l2 < 1e-6:
             continue
-        sel = np.nonzero((GX.ravel() > min(ax_, bx_) - half) & (GX.ravel() < max(ax_, bx_) + half)
-                         & (GY.ravel() > min(ay_, by_) - half) & (GY.ravel() < max(ay_, by_) + half))[0]
+        edge = half + T["dx"]
+        sel = np.nonzero((GX.ravel() > min(ax_, bx_) - edge) & (GX.ravel() < max(ax_, bx_) + edge)
+                         & (GY.ravel() > min(ay_, by_) - edge) & (GY.ravel() < max(ay_, by_) + edge))[0]
         if not len(sel):
             continue
         qx, qy = GX.ravel()[sel], GY.ravel()[sel]
         u = ((qx - ax_) * vx_ + (qy - ay_) * vy_) / l2
         d = np.abs((qx - ax_) * vy_ - (qy - ay_) * vx_) / math.sqrt(l2)
-        on = (u >= 0) & (u <= 1) & (d <= half)
+        landing = np.zeros(len(qx), bool)
+        for x, y in abutments:
+            landing |= np.hypot(qx - x, qy - y) < T["dx"] / 2
+        on = (u >= 0) & (u <= 1) & (d <= half + T["dx"]) & ~landing
         k = sel[on]
-        high[k] = np.minimum(high[k], za + (zb - za) * u[on] - DECK_UNDER)
-        low[k] = np.minimum(low[k], high[k])
+        under_deck[k] = np.minimum(under_deck[k], za + (zb - za) * u[on] - DECK_UNDER)
     # (beside a building the ground isn't cut below its walls' foot: the house stood on air over the
     # bank cut down to a path beside it)
     feet = [(Polygon(b["r"][0], b["r"][1:]).buffer(0), b["g"] - FOOT_DEPTH) for b in tile.get("bl") or []
@@ -432,6 +471,10 @@ def ground_sheet(tile):
             near_b = np.isfinite(foot)
             high[near_b] = np.maximum(high[near_b], np.minimum(H.ravel()[near_b], foot[near_b]))
             low = np.minimum(low, high)
+    # (the room under a deck comes before a house's or a bin's foot beside it: the abutment stands
+    # there, and the house beside it on its own wall)
+    high = np.minimum(high, under_deck)
+    low = np.minimum(low, high)
     # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
     # the faces in it)
     odd, _ = overlaps(F, A, B, segs, GX, GY)
@@ -439,19 +482,6 @@ def ground_sheet(tile):
         high[v] = min(high[v], z)
         low[v] = min(low[v], high[v])
     H0 = H.ravel()
-    # (a bridge's deck comes down to the ground at its abutment, the point either side of its span,
-    # and the game reads that ground from the grid: the corners round an abutment stay as surveyed,
-    # so the deck lands where the faces leaving it were laid)
-    for r in tile.get("rd") or []:
-        q = r["p"]
-        f = [len(v) > 3 and bool(v[3]) for v in q]
-        for k in range(len(q)):
-            if f[k] or not ((k and f[k - 1]) or (k + 1 < len(q) and f[k + 1])):
-                continue
-            i = int(np.clip(np.floor((q[k][0] - T["x0"]) / T["dx"]), 0, nx - 2))
-            j = int(np.clip(np.floor((q[k][1] - T["y0"]) / T["dy"]), 0, ny - 2))
-            for v in (j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1):
-                low[v] = high[v] = H0[v]
     # (beside a face, a bank steeper than the batter is left rather than filling in what the survey
     # shows beside it, a cutting or a railway's bed)
     low = np.minimum(low, H0 + FILL_MOST)
