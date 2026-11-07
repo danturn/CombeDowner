@@ -1869,6 +1869,22 @@ def fences_on_ways(m, sheet, cp, note, at, inner, fig):
     for k, v in tot.items(): fig[f"fence in {k} m"] = fig.get(f"fence in {k} m", 0) + v
 
 
+def sheet_holes(m, land, note, at, inner, fig):
+    """With the sheet, a cell drawn as no ground at all must be wholly under faces: the part of it no
+    face covers is a hole through the ground, which shows the sky's colour."""
+    T = m["t"]
+    js, is_ = np.nonzero(land.covered & ~land.mixed)
+    if not len(js): return
+    x0, y0 = T["x0"] + is_ * T["dx"], T["y0"] + js * T["dy"]
+    cells = shapely.box(x0, y0, x0 + T["dx"], y0 + T["dy"])
+    gap = shapely.area(shapely.difference(cells, land.faces))
+    for k in np.nonzero(gap > 0.05)[0].tolist():
+        c = cells[k].centroid
+        if not inner.contains(c): continue
+        fig["sheet holes m2"] = fig.get("sheet holes m2", 0) + float(gap[k])
+        note("26 hole in the ground beside a face", float(gap[k]), at(c.x, c.y), f"{gap[k]:.1f} m2 of a cell left undrawn")
+
+
 def ground_measures(m, tag, note, f, off_deck=None):
     """Rules 24 on, for one square; returns the square's figures (areas, lengths, shares) by name."""
     fig = {}
@@ -1900,6 +1916,7 @@ def ground_measures(m, tag, note, f, off_deck=None):
         path_tilt(m, sheet, off_deck, note, at, inner, fig)
         things_in_paths(m, sheet, note, at, inner, fig)
         face_edges(m, sheet, drawn, note, at, inner, fig, land)
+        if land is not None: sheet_holes(m, land, note, at, inner, fig)
         face_joins(m, sheet, D, drawn, note, at, inner, fig)
     bridges(m, f, sheet, drawn, ground, note, at, sq, fig)
     for w in tunnel_mesh(*_root_of(f)):

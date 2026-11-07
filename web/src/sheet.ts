@@ -89,8 +89,9 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
 
   const state = new Uint8Array(cw * ch);
   for (let c = 0; c < state.length; c++) if (covered[c] && !byCell.has(c)) state[c] = 1;
-  // (where faces overlap, the cell is drawn whole, gs says how: cut, it would fill the wrong side of an edge)
-  for (let k = 0; k < odd.length; k++) { byCell.delete(odd[k]); state[odd[k]] = covered[odd[k]] ? 1 : 0; }
+  // (where faces overlap, the cell is drawn whole, as the grid let down under them: cut, it would fill
+  // the wrong side of an edge, and left out, the part no face covers was a hole)
+  for (let k = 0; k < odd.length; k++) { byCell.delete(odd[k]); state[odd[k]] = 0; }
   const px: number[] = [], py: number[] = [], ph: number[] = [], tri: number[] = [];
   const own = new Map<string, number>();
   const NG = nx * ny;
@@ -114,6 +115,41 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
     state[c] = 2;
     const out: number[] = [];
     for (const q of tris) out.push(point(q));
+    cellTris.set(c, out);
+  }
+  // A cell drawn whole beside a cut one (faces overlapping in it, or a cut that didn't close up) is
+  // drawn through the points where the faces' edges cross the side they share, or the cut cell's
+  // ground there, meeting a face's edge, stood off the whole cell's straight side and left a crack
+  // through which the sky showed.
+  const sides = new Map<number, Pt[]>();
+  for (const [c, pieces] of byCell) {
+    if (!cellTris.has(c)) continue;
+    const i = c % cw, j = (c - i) / cw;
+    const xa = lineX(i), xb = lineX(i + 1), ya = lineY(j), yb = lineY(j + 1);
+    for (const p of pieces) for (const [x, y, h] of [[p.sx, p.sy, p.sh], [p.ex, p.ey, p.eh]]) {
+      if ((x === xa || x === xb) && (y === ya || y === yb)) continue;
+      const n = x === xa && i > 0 ? c - 1 : x === xb && i < cw - 1 ? c + 1 : y === ya && j > 0 ? c - cw : y === yb && j < ch - 1 ? c + cw : -1;
+      if (n < 0 || cellTris.has(n) || state[n] === 1) continue;
+      (sides.get(n) ?? sides.set(n, []).get(n)!).push({ x, y, h, k: -1 });
+    }
+  }
+  for (const [c, extra] of sides) {
+    const i = c % cw, j = (c - i) / cw;
+    const xa = lineX(i), xb = lineX(i + 1), ya = lineY(j), yb = lineY(j + 1), W = xb - xa, Hh = yb - ya;
+    const round = (q: Pt) => q.x === xa ? (q.y - ya) / Hh : q.y === yb ? 1 + (q.x - xa) / W : q.x === xb ? 2 + (yb - q.y) / Hh : 3 + (xb - q.x) / W;
+    const corners: Pt[] = [
+      { x: xa, y: ya, h: corner(j * nx + i), k: j * nx + i }, { x: xa, y: yb, h: corner((j + 1) * nx + i), k: (j + 1) * nx + i },
+      { x: xb, y: yb, h: corner((j + 1) * nx + i + 1), k: (j + 1) * nx + i + 1 }, { x: xb, y: ya, h: corner(j * nx + i + 1), k: j * nx + i + 1 },
+    ];
+    const ring = tidy([...corners, ...extra].sort((p, q) => round(p) - round(q)));
+    const out: number[] = [];
+    for (const f of ShapeUtils.triangulateShape(ring.map((q) => new Vector2(q.x - xa, q.y - ya)), [])) {
+      const [a, b, d] = f.map((k) => ring[k]);
+      // (anticlockwise seen from above, as the grid's own triangles are)
+      const tri = (b.x - a.x) * (d.y - a.y) - (d.x - a.x) * (b.y - a.y) > 0 ? [a, b, d] : [a, d, b];
+      for (const q of tri) out.push(point(q));
+    }
+    state[c] = 2;
     cellTris.set(c, out);
   }
   const start = new Int32Array(state.length + 1);
@@ -369,4 +405,35 @@ export function nearFaces(E: FreeEdges, G: SheetGrid, reach: number): Float32Arr
     }
   }
   return out;
+}
+
+/** How many points where a face's edge crosses the side of a cut cell are missing from the drawn
+ *  cell across that side: each is a crack in the ground the sky shows through (world.ts warns of any,
+ *  so a shot's page complaints show them). Corners aren't counted: one a cut cell leaves out is under
+ *  a face. */
+export function openSeams(S: Sheet, G: SheetGrid): number {
+  const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1, NG = nx * ny;
+  // a cell's crossing points along its east (0), north (1), west (2) or south (3) side
+  const along = (c: number, side: number): Set<number> => {
+    const i = c % cw, j = (c - i) / cw, xa = x0 + i * dx, xb = x0 + (i + 1) * dx, ya = y0 + j * dy, yb = y0 + (j + 1) * dy;
+    const ks = new Set<number>();
+    if (S.state[c] !== 2) return ks;
+    for (let t = 3 * S.start[c]; t < 3 * S.start[c + 1]; t++) {
+      const k = S.tri[t] - NG;
+      if (k >= 0 && (side === 0 ? S.px[k] === xb : side === 1 ? S.py[k] === yb : side === 2 ? S.px[k] === xa : S.py[k] === ya)) ks.add(k);
+    }
+    return ks;
+  };
+  const lacks = (a: Set<number>, b: Set<number>) => { let n = 0; for (const k of a) if (!b.has(k)) n++; return n; };
+  let open = 0;
+  for (let c = 0; c < S.state.length; c++) {
+    if (S.state[c] === 1) continue;
+    const i = c % cw, j = (c - i) / cw;
+    for (const [n, mine, theirs] of [[i < cw - 1 ? c + 1 : -1, 0, 2], [j < ch - 1 ? c + cw : -1, 1, 3]]) {
+      if (n < 0 || S.state[n] === 1 || (S.state[c] !== 2 && S.state[n] !== 2)) continue;
+      const a = along(c, mine), b = along(n, theirs);
+      open += lacks(a, b) + lacks(b, a);
+    }
+  }
+  return open;
 }

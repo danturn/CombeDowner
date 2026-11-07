@@ -33,8 +33,8 @@ What is baked here (`gs`), all as whole numbers so it packs small:
       face's top, in centimetres;
   w   the wall the square's retaining walls are built as (its most common kind of wall);
   x   the cells where faces overlap (a free edge with another face on its open-ground side), as
-      steps from the cell before: each is drawn whole, as the grid if `c` doesn't mark it and as
-      nothing if it does, rather than cut.
+      steps from the cell before: each is drawn whole as the grid, its corners let down under the
+      faces in it, rather than cut (drawn as nothing, the part of it no face covers was a hole).
 
 What is not baked, because shipping it would cost more than the 5% of a square's download the sheet
 may add (measured: the ground's own triangles in the cells faces cross came to about 12%): which
@@ -176,25 +176,23 @@ def wall_kind(br):
 
 def overlaps(F, A, B, segs, GX, GY):
     """The cells where faces overlap, so a free edge has another face, not open ground, on its right:
-    cutting along the edges there would fill the wrong side. Each one's number, whether it is mostly
-    under faces, and the lowest top of the faces in it."""
+    cutting along the edges there would fill the wrong side. Each one's number and the lowest top of
+    the faces in it."""
     d = B - A
     across = np.stack([d[:, 1], -d[:, 0]], 1) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
     right = (A + B) / 2 + across * 0.02
     ftree = shapely.STRtree(F.polys)
     bad = np.unique(ftree.query(shapely.points(right), predicate="within")[0])
     if not len(bad):
-        return np.zeros(0, np.int64), np.zeros(0, bool), np.zeros(0)
+        return np.zeros(0, np.int64), np.zeros(0)
     boxes = shapely.box(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel(), GX[1:, 1:].ravel(), GY[1:, 1:].ravel())
     odd = np.unique(shapely.STRtree(segs[bad]).query(boxes, predicate="intersects")[0])
-    under, top = np.zeros(len(odd), bool), np.zeros(len(odd))
+    top = np.zeros(len(odd))
     lift = np.asarray([LIFT[k] for k in FACE_KINDS])[F.K]
     for n, k in enumerate(odd.tolist()):
         ids = ftree.query(boxes[k], predicate="intersects")
-        land = boxes[k].difference(shapely.union_all(shapely.make_valid(F.polys[ids]))).area
-        under[n] = land < 0.5 * boxes[k].area
         top[n] = float((F.V[F.T[ids], 2].min(axis=1) + lift[ids]).min())
-    return odd, under, top
+    return odd, top
 
 
 def deck_lines(rd):
@@ -341,10 +339,9 @@ def ground_sheet(tile):
         high[k] = np.minimum(high[k], za + (zb - za) * u[on] - DECK_UNDER)
         low[k] = np.minimum(low[k], high[k])
     # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
-    # the faces in it, or as nothing where it is mostly under them)
-    odd, odd_under, odd_top = overlaps(F, A, B, segs, GX, GY)
-    for k, u, z in zip(odd.tolist(), odd_under.tolist(), odd_top.tolist()):
-        if u: continue
+    # the faces in it)
+    odd, odd_top = overlaps(F, A, B, segs, GX, GY)
+    for k, z in zip(odd.tolist(), odd_top.tolist()):
         j, i = divmod(k, nx - 1)
         for v in (j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1):
             high[v] = min(high[v], z - 0.05)
@@ -371,7 +368,7 @@ def ground_sheet(tile):
         corner = np.zeros(cx.size, bool)
         corner[shapely.STRtree(F.polys).query(shapely.points(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel()), predicate="intersects")[0]] = True
         under[crossed] = corner[crossed]
-        under[odd] = odd_under
+        under[odd] = False
         cells = under.reshape(ny - 1, nx - 1)
 
     s = spots[held != 0]

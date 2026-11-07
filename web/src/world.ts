@@ -29,7 +29,7 @@ import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
 import { shadowSize } from "./safegfx";
-import { buildSheet, carved, coveredCells, fillAt, nearFaces, sheetFaces, type Sheet } from "./sheet";
+import { buildSheet, carved, coveredCells, fillAt, nearFaces, openSeams, sheetFaces, type Sheet } from "./sheet";
 
 const CHUNK = 320;
 
@@ -849,6 +849,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // faces is drawn there, meeting their edges (sheet.ts); a cell wholly under faces draws none.
   const sheetGrid = { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny };
   const sheet: Sheet | null = meet ? buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x) : null;
+  if (sheet) { const open = openSeams(sheet, sheetGrid); if (open) console.warn(`ground sheet: ${open} cracks between cells in the square at ${T.x0.toFixed(0)},${T.y0.toFixed(0)}`); }
   const gridH = (k: number) => tPos[3 * k + 1];
   yield;
   // the height the terrain is drawn at (a little below the true ground under streets)
