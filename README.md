@@ -661,7 +661,7 @@ The churches' towers and spires are measured from the lidar by `tools/towers.py`
 `data/$MAP/measured/towers.json`; run it again (with the raw lidar) to measure them afresh. A
 building is drawn as a church when it was built as one, whatever it's used for now: OpenStreetMap's
 `building=church`, `chapel` or `cathedral`, a Christian place of worship, or a building Wikidata
-calls a church (St Mark's in Widcombe is a community centre). `python3 -I tools/worship.py $MAP`
+calls a church (St Mark's in Widcombe is a community centre), or whose name says so (a chapel, church, abbey or kerk, but not Chapel Row or a church hall). `python3 -I tools/worship.py $MAP`
 looks those up afresh into `data/$MAP/worship.json`.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes

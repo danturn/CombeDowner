@@ -72,7 +72,7 @@ from the packs alone, a few seconds a square:
     bank over its paving.
 35. No land standing in a pond or river, no canal works in a river, no two touching waters at two levels.
 36. No wall, fence or hedge on water, the canal's banks, verges or a lock's paving, or along a path.
-37. A building OpenStreetMap or Wikidata says was built as a church is drawn as one (the same test as
+37. A building OpenStreetMap or Wikidata says was built as a church, or whose name says so, is drawn as one (the same test as
     the build's, tools/worship.py, read from data/<map>/ beside the packs).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
@@ -1894,7 +1894,7 @@ def church_outlines(map_id):
     churches, as the build reads them (tools/worship.py)."""
     import lzma
     from area import area
-    from worship import churches, built_as_church
+    from worship import churches, built_as_church, name_says_church
     src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", map_id, "osm.geojson.xz")
     if not os.path.exists(src): return []
     known = churches(map_id)
@@ -1903,6 +1903,12 @@ def church_outlines(map_id):
     out = []
     for f in json.load(lzma.open(src))["features"]:
         if f["geometry"]["type"] != "Polygon" or not built_as_church(f["properties"], known): continue
+        g = Polygon([((x - lon0) * kx, (y - lat0) * ky) for x, y in f["geometry"]["coordinates"][0]]).buffer(0)
+        if not g.is_empty: out.append(g)
+    ov = os.path.join(os.path.dirname(src), "building.geojson.xz")
+    for f in json.load(lzma.open(ov))["features"] if os.path.exists(ov) else []:
+        q = f["properties"]
+        if f["geometry"]["type"] != "Polygon" or not (q.get("class") in ("church", "chapel", "cathedral") or name_says_church((q.get("names") or {}).get("primary"))): continue
         g = Polygon([((x - lon0) * kx, (y - lat0) * ky) for x, y in f["geometry"]["coordinates"][0]]).buffer(0)
         if not g.is_empty: out.append(g)
     return out

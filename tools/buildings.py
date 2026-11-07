@@ -137,15 +137,15 @@ CHURCH_CLASSES = ("church", "chapel", "cathedral")   # Overture's classes for a 
 def built_as_church(osm, map_id):
     """A test of whether a building (a lon/lat outline and its Overture properties) was built as a
     church: Overture's class says so, or an OpenStreetMap building covering it and covered by it
-    says so (tools/worship.py: its tags, or what Wikidata says of it). Not its name: a terrace called
-    Chapel Row is houses."""
-    from worship import churches, built_as_church as tagged
+    says so (tools/worship.py: its tags, or what Wikidata says of it), or its name does (but a terrace
+    called Chapel Row is houses)."""
+    from worship import churches, built_as_church as tagged, name_says_church
     known = churches(map_id)
     outlines = [g.buffer(0) for g, q in osm if g.geom_type in ("Polygon", "MultiPolygon") and tagged(q, known)]
     tree = STRtree(outlines)
 
     def test(g, p):
-        if (p.get("class") or "") in CHURCH_CLASSES:
+        if (p.get("class") or "") in CHURCH_CLASSES or name_says_church((p.get("names") or {}).get("primary")):
             return True
         if not outlines or g.geom_type not in ("Polygon", "MultiPolygon"):
             return False
