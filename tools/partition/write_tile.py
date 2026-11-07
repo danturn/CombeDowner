@@ -3698,16 +3698,44 @@ def ways_meet_level(rd, sq, ground):
                 best = (d, q.z)
         return None if best is None else best[1]
 
+    # (a bridge's deck comes down to the ground at its abutment, the point either side of its span,
+    # whatever height the way's own point there says: a path leaving it starts on that ground)
+    abutments = []
+    for r in rd:
+        f = [len(q) > 3 and bool(q[3]) for q in r["p"]]
+        if any(f):
+            abutments += [r["p"][i][:2] for i in range(len(f)) if not f[i] and ((i and f[i - 1]) or (i + 1 < len(f) and f[i + 1]))]
+
+    def abutment_ground(x, y):
+        for a in abutments:
+            if math.dist(a, (x, y)) <= 0.5:
+                return ground(*a)
+        return None
+
+    held = set()
     for r in walks:
         p = r["p"]
         for end in (0, -1):
-            z = street_top(*p[end][:2])
+            z = abutment_ground(*p[end][:2])
+            if z is None:
+                z = street_top(*p[end][:2])
             if z is None:
                 z = path_top(r, *p[end][:2])
-            if z is not None and abs(z - p[end][2]) > 0.01:
+            if z is None:
+                continue
+            held.add(id(p[end]))
+            if abs(z - p[end][2]) > 0.01:
                 p[end][2] = round(z, 2)
                 changed.add(id(p[end]))
                 moved += 1
+    # (two flights mapped end to end with a short gap between, and nothing else there, meet halfway)
+    loose = [r["p"][e] for r in walks if r["c"] == "steps" for e in (0, -1) if id(r["p"][e]) not in held]
+    for a, b in itertools.combinations(loose, 2):
+        if a is not b and math.dist(a[:2], b[:2]) <= 1.0 and abs(a[2] - b[2]) > 0.01:
+            a[2] = b[2] = round((a[2] + b[2]) / 2, 2)
+            moved += 1
+    for r in walks:
+        p = r["p"]
         if r["c"] == "steps":
             cum = [0.0]
             for a, b in zip(p, p[1:]):
@@ -4214,17 +4242,23 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                     for f, q in zip(flat, simple)])
 
     v, at = [], {}
+    # (a plaza's paving lies on the ground, but along the edge it shares with a path, a front path or
+    # a drive it is at that one's level: on the ground there it stood a step up or down from it)
+    level_edge = unary_union([q.boundary for f, q in zip(flat, simple) if f is True] or [LineString()]).buffer(0.01)
+    shapely.prepare(level_edge)
 
     def point(x, y, on_ground):
         # (a path and the pavement it meets share the corner but not its height: the kerb is a step)
         key = (round(x, 2), round(y, 2), on_ground)
+        if on_ground == "g" and (key[0], key[1], True) in at:
+            return at[(key[0], key[1], True)]
         if key not in at:
             k = None if on_ground else nearest(x, y)
             # (paving no street reaches, a sliver paved between houses well back from it, lies on the
             # ground: levelled with the street it stood metres off the ground under the houses)
             if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
                 k = None
-            if on_ground is True:
+            if on_ground is True or (on_ground == "g" and shapely.contains_xy(level_edge, x, y)):
                 z = level_z(x, y)
             elif k is None:
                 # (a street whose line lies in the next square has no line here to level it by)

@@ -195,6 +195,60 @@ def overlaps(F, A, B, segs, GX, GY):
     return odd, top
 
 
+def odd_corners(F, odd, H, T, under=0.05, step=0.25):
+    """How low each corner of the cells where faces overlap must be let down, so the cell drawn whole
+    as the grid stays under every face in it: each corner only as far as the faces near it need, so a
+    corner the low face doesn't reach (where a bridge's deck comes down to its abutment beside the
+    path passing under it) keeps its height. As (grid point, height) pairs."""
+    nx, dx, dy = T["nx"], T["dx"], T["dy"]
+    lift = np.asarray([LIFT[k] for k in FACE_KINDS])[F.K]
+    ftree = shapely.STRtree(F.polys)
+    n = int(round(dx / step))
+    su, sv = np.meshgrid(np.linspace(0, 1, n + 1), np.linspace(0, 1, n + 1))
+    su, sv = su.ravel(), sv.ravel()
+    lo_tri = su + sv <= 1
+    w = np.where(lo_tri[:, None], np.stack([1 - su - sv, su, sv, 0 * su], 1),
+                 np.stack([0 * su, 1 - sv, 1 - su, su + sv - 1], 1))
+    out = []
+    for k in odd.tolist():
+        j, i = divmod(k, nx - 1)
+        x0, y0 = T["x0"] + i * dx, T["y0"] + j * dy
+        px, py = x0 + su * dx, y0 + sv * dy
+        top = np.full(len(su), np.inf)
+        for t in ftree.query(shapely.box(x0, y0, x0 + dx, y0 + dy), predicate="intersects").tolist():
+            a, b, c = F.V[F.T[t]]
+            det = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+            if abs(det) < 1e-12:
+                continue
+            la = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / det
+            lb = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / det
+            lc = 1 - la - lb
+            inside = (la >= -1e-6) & (lb >= -1e-6) & (lc >= -1e-6)
+            top = np.where(inside, np.minimum(top, la * a[2] + lb * b[2] + lc * c[2] + lift[t] - under), top)
+        hit = np.isfinite(top)
+        if not hit.any():
+            continue
+        z = np.array([H[j, i], H[j, i + 1], H[j + 1, i], H[j + 1, i + 1]], float)
+        ws, ts = w[hit], top[hit]
+        norm = (ws * ws).sum(1)
+        # (no corner lower than under the lowest face in the cell, which keeps every face clear)
+        floor = np.minimum(z, ts.min())
+        # (each sample over its face lets the corners under it down, the nearest most, till none is)
+        for _ in range(60):
+            over = ws @ z - ts
+            if over.max() <= 1e-3:
+                break
+            for q in np.nonzero(over > 0)[0].tolist():
+                e = ws[q] @ z - ts[q]
+                if e > 0:
+                    z = np.maximum(z - e * ws[q] / norm[q], floor)
+        if (ws @ z - ts).max() > 1e-3:
+            z = floor
+        for v, h in zip((j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1), z.tolist()):
+            out.append((v, h - 1e-3))
+    return out
+
+
 def deck_lines(rd):
     """Each stretch of a way on a bridge's deck: its ends, its road's height at each, and how far
     either side of its line the ground is kept under it."""
@@ -340,18 +394,22 @@ def ground_sheet(tile):
         low[k] = np.minimum(low[k], high[k])
     # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
     # the faces in it)
-    odd, odd_top = overlaps(F, A, B, segs, GX, GY)
-    for k, z in zip(odd.tolist(), odd_top.tolist()):
-        j, i = divmod(k, nx - 1)
-        for v in (j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1):
-            high[v] = min(high[v], z - 0.05)
-            low[v] = min(low[v], high[v])
+    odd, _ = overlaps(F, A, B, segs, GX, GY)
+    for v, z in odd_corners(F, odd, H, T):
+        high[v] = min(high[v], z)
+        low[v] = min(low[v], high[v])
     H0 = H.ravel()
     # (beside a face, a bank steeper than the batter is left rather than filling in what the survey
     # shows beside it, a cutting or a railway's bed)
     low = np.minimum(low, H0 + FILL_MOST)
     H1 = np.clip(H0, low, high)
-    dz = np.round((H1 - T["z0"]) * 10).astype(np.int64) - np.asarray(T["h"], np.int64)
+    # (rounded to the grid's decimetres away from the face, so a point let down under a face isn't
+    # rounded back up over it)
+    tenths = (H1 - T["z0"]) * 10
+    tenths = np.where(H1 < H0, np.floor(tenths + 1e-6), np.where(H1 > H0, np.ceil(tenths - 1e-6), np.round(tenths)))
+    cap = np.floor((high - T["z0"]) * 10 + 1e-6)
+    tenths = np.where(np.isfinite(cap), np.minimum(tenths, cap), tenths)
+    dz = tenths.astype(np.int64) - np.asarray(T["h"], np.int64)
     moved = np.nonzero(dz)[0]
 
     # 3. the cells wholly under faces, where no ground is drawn, and of the cells a free edge crosses,
