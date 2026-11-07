@@ -4273,6 +4273,25 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 and not any(len(q) > 3 and q[3] for q in r["p"])]
     middles = [LineString([q[:3] for q in r["p"]]) for r in levelled]
     reach_mid = [way_width(r) / 2 + LEVEL_REACH for r in levelled]
+    # (and a path's approach to a bridge, off the span, level across too, its abutment at the ground
+    # the game lands the deck on: on the hill's own slope its face met the deck's end tilted)
+    for r in rd:
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2:
+            continue
+        f = [len(q) > 3 and bool(q[3]) for q in r["p"]]
+        if not any(f):
+            continue
+        run = []
+        for i, q in enumerate(r["p"] + [None]):
+            if q is not None and not f[i]:
+                lands = (i and f[i - 1]) or (i + 1 < len(f) and f[i + 1])
+                z = ground(q[0], q[1]) if lands else q[2]
+                run.append((q[0], q[1], q[2] if z is None else z))
+                continue
+            if len(run) > 1:
+                middles.append(LineString(run))
+                reach_mid.append(way_width(r) / 2 + LEVEL_REACH)
+            run = []
     for rows, half in ((fp, FRONT_PATH_HALF), (dv, DRIVE_WIDTH / 2)):
         for row in rows:
             middles.append(LineString([row[:2], row[2:4]]))
