@@ -839,7 +839,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // faces is drawn there, meeting their edges (sheet.ts); a cell wholly under faces draws none.
   const sheetGrid = { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny };
   const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT) : null;
-  const sheet: Sheet | null = meet ? buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges) : null;
+  const sheet: Sheet | null = meet ? buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x) : null;
   const gridH = (k: number) => tPos[3 * k + 1];
   yield;
   // the height the terrain is drawn at (a little below the true ground under streets)
@@ -2102,7 +2102,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity);
         };
         if (meet && !other && !meet.onSeam(e.i[k], e.i[k + 1])) {
-          sheetEdge(a, b, meet.meets(e.i[k]), meet.meets(e.i[k + 1]), l, along, geo[kind === "service" ? "road" : kind as keyof typeof geo]);
+          // (a corner the sheet doesn't meet is the tip of a spike of no width in the outline: nothing to draw)
+          const ma = meet.meets(e.i[k]), mb = meet.meets(e.i[k + 1]);
+          if (ma < Infinity && mb < Infinity) sheetEdge(a, b, ma, mb, l, along, geo[kind === "service" ? "road" : kind as keyof typeof geo]);
           along += l;
           continue;
         }

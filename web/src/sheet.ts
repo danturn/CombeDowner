@@ -23,7 +23,8 @@ export interface Sheet {
   start: Int32Array;
 }
 
-/** The cells wholly under faces, from `gs.c`'s run lengths. */
+/** The cells gs marks as under faces (wholly, or at their south-west corner where a free edge
+ *  crosses them), from `gs.c`'s run lengths. */
 export function coveredCells(runs: ArrayLike<number>, cells: number): Uint8Array {
   const out = new Uint8Array(cells);
   let at = 0, on = false;
@@ -35,8 +36,8 @@ interface Piece { sx: number; sy: number; sh: number; ex: number; ey: number; eh
 interface Pt { x: number; y: number; h: number; k: number }   // k: a grid point's number, or -1
 
 /** Cut every cell the free edges cross, and fill what lies outside the faces. `corner` is each grid
- *  point's scene height, `covered` the cells gs says are wholly under faces. */
-export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges): Sheet {
+ *  point's scene height, `covered` the cells gs marks as under faces. */
+export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, odd: ArrayLike<number> = []): Sheet {
   const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1;
   const lineX = (i: number) => x0 + i * dx, lineY = (j: number) => y0 + j * dy;
   const X1 = lineX(cw), Y1 = lineY(ch);
@@ -88,6 +89,8 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
 
   const state = new Uint8Array(cw * ch);
   for (let c = 0; c < state.length; c++) if (covered[c] && !byCell.has(c)) state[c] = 1;
+  // (where faces overlap, the cell is drawn whole, gs says how: cut, it would fill the wrong side of an edge)
+  for (let k = 0; k < odd.length; k++) { byCell.delete(odd[k]); state[odd[k]] = covered[odd[k]] ? 1 : 0; }
   const px: number[] = [], py: number[] = [], ph: number[] = [], tri: number[] = [];
   const own = new Map<string, number>();
   const NG = nx * ny;
@@ -106,7 +109,7 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
       { x: xa, y: ya, h: corner(j * nx + i), k: j * nx + i }, { x: xa, y: yb, h: corner((j + 1) * nx + i), k: (j + 1) * nx + i },
       { x: xb, y: yb, h: corner((j + 1) * nx + i + 1), k: (j + 1) * nx + i + 1 }, { x: xb, y: ya, h: corner(j * nx + i + 1), k: j * nx + i + 1 },
     ];
-    const tris = fillCell(pieces, xa, xb, ya, yb, corners);
+    const tris = fillCell(pieces, xa, xb, ya, yb, corners, !!covered[c]);
     if (!tris) continue;          // (cut it couldn't be: the grid's two triangles are drawn)
     state[c] = 2;
     const out: number[] = [];
@@ -126,7 +129,7 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
 /** One cell's fill as triangles (three points each), or null if its edges don't close up. The cell's
  *  edge is walked clockwise (south-west, north-west, north-east, south-east) with the open ground on
  *  the right, as the faces' free edges have it. */
-function fillCell(pieces: Piece[], xa: number, xb: number, ya: number, yb: number, corners: Pt[]): Pt[] | null {
+function fillCell(pieces: Piece[], xa: number, xb: number, ya: number, yb: number, corners: Pt[], under: boolean): Pt[] | null {
   const W = xb - xa, Hh = yb - ya;
   const onEdge = (x: number, y: number) => x === xa || x === xb || y === ya || y === yb;
   // how far round the cell's edge, clockwise from the south-west corner: 0 to 4, a side each
@@ -215,7 +218,9 @@ function fillCell(pieces: Piece[], xa: number, xb: number, ya: number, yb: numbe
     (area(ring) < 0 ? loops : holes).push(ring);
   }
   for (const l of loops) outers.push(l);
-  if (!entries.length && holes.some((h) => !outers.some((o) => inside(middle(h), o)))) outers.push(corners.slice());
+  // (with no way in from the cell's edge, the cell round the loops is open ground unless its corner is
+  // under a face: then a loop with a face inside is one face overlapping another, not a hole in ground)
+  if (!entries.length && !under && holes.some((h) => !outers.some((o) => inside(middle(h), o)))) outers.push(corners.slice());
   const out: Pt[] = [];
   for (const o of outers) {
     if (o.length < 3) continue;
@@ -302,14 +307,29 @@ export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: N
   const onSeam = (a: number, b: number) => along(V[3 * a], V[3 * b], x0) || along(V[3 * a], V[3 * b], x1) || along(V[3 * a + 1], V[3 * b + 1], y0) || along(V[3 * a + 1], V[3 * b + 1], y1);
   const fa: number[] = [], fb: number[] = [], ta: number[] = [], tb: number[] = [];
   const top = new Float64Array(NP).fill(Infinity);
-  for (const e of sf.e) for (let k = 0; k + 1 < e.i.length; k++) {
-    const a = e.i[k], b = e.i[k + 1];
-    if (spot[a] === spot[b] || owner.has(spot[b] * NP + spot[a]) || onSeam(a, b)) continue;
-    const n = kindOf.get(Math.min(a, b) * NP + Math.max(a, b));
-    const l = n !== undefined ? lift[n] : OUTLINE_LIFT[e.c] ?? 0.07;
-    const za = V[3 * a + 2] - Z0 + l, zb = V[3 * b + 2] - Z0 + l;
-    fa.push(a); fb.push(b); ta.push(za); tb.push(zb);
-    top[spot[a]] = Math.min(top[spot[a]], za); top[spot[b]] = Math.min(top[spot[b]], zb);
+  const spike = (a: number, b: number, c: number) => {
+    const ux = V[3 * b] - V[3 * a], uy = V[3 * b + 1] - V[3 * a + 1], vx = V[3 * c] - V[3 * b], vy = V[3 * c + 1] - V[3 * b + 1];
+    return ux * vx + uy * vy < 0 && Math.abs(ux * vy - uy * vx) <= 1e-3 * Math.hypot(ux, uy) * Math.hypot(vx, vy);
+  };
+  for (const e of sf.e) {
+    const run: [number, number, number][] = [];
+    for (let k = 0; k + 1 < e.i.length; k++) {
+      const a = e.i[k], b = e.i[k + 1];
+      if (spot[a] === spot[b] || owner.has(spot[b] * NP + spot[a]) || onSeam(a, b)) continue;
+      const n = kindOf.get(Math.min(a, b) * NP + Math.max(a, b));
+      run.push([a, b, n !== undefined ? lift[n] : OUTLINE_LIFT[e.c] ?? 0.07]);
+      // (an outline running out and straight back along itself, a spike of no width, is the one edge left over)
+      while (run.length > 1 && run[run.length - 2][1] === run[run.length - 1][0] && spike(run[run.length - 2][0], run[run.length - 1][0], run[run.length - 1][1])) {
+        const [a0, , l0] = run[run.length - 2], [, b1] = run[run.length - 1];
+        run.length -= 2;
+        if (spot[a0] !== spot[b1]) run.push([a0, b1, l0]);
+      }
+    }
+    for (const [a, b, l] of run) {
+      const za = V[3 * a + 2] - Z0 + l, zb = V[3 * b + 2] - Z0 + l;
+      fa.push(a); fb.push(b); ta.push(za); tb.push(zb);
+      top[spot[a]] = Math.min(top[spot[a]], za); top[spot[b]] = Math.min(top[spot[b]], zb);
+    }
   }
   for (let k = 0; k < gs.s.length; k++) if (top[gs.s[k]] < Infinity) top[gs.s[k]] += gs.sz[k] / 100;
   const n = fa.length;

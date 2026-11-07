@@ -33,17 +33,17 @@ export function unpackSurfaces(d: any) {
   delete sf.o;
 }
 
-/** Unpack a square's `gs` in place: `c` stays run lengths, `h` and `s` become grid point and corner
- *  numbers, each list a typed array. */
+/** Unpack a square's `gs` in place: `c` stays run lengths, `h`, `s` and `x` become grid point, corner
+ *  and cell numbers, each list a typed array. */
 function unpackSheet(d: any) {
   const gs = d?.gs;
   if (!gs || gs.h instanceof Int32Array) return;
-  gs.c = Int32Array.from(gs.c); gs.h = unstep(gs.h); gs.hz = Int32Array.from(gs.hz); gs.s = unstep(gs.s); gs.sz = Int32Array.from(gs.sz);
+  gs.c = Int32Array.from(gs.c); gs.h = unstep(gs.h); gs.hz = Int32Array.from(gs.hz); gs.s = unstep(gs.s); gs.sz = Int32Array.from(gs.sz); gs.x = unstep(gs.x ?? []);
 }
 
 /** The buffers of an unpacked `sf`, to hand over rather than copy when it's posted from a worker. */
 export function surfaceBuffers(d: any): ArrayBuffer[] {
-  const gs = d?.gs, sheet: ArrayBuffer[] = gs?.h instanceof Int32Array ? [gs.c.buffer, gs.h.buffer, gs.hz.buffer, gs.s.buffer, gs.sz.buffer] : [];
+  const gs = d?.gs, sheet: ArrayBuffer[] = gs?.h instanceof Int32Array ? [gs.c.buffer, gs.h.buffer, gs.hz.buffer, gs.s.buffer, gs.sz.buffer, gs.x.buffer] : [];
   const sf = d?.sf;
   if (!sf || !(sf.v instanceof Float64Array)) return sheet;
   const out: ArrayBuffer[] = [...sheet, sf.v.buffer];

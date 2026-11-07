@@ -20,19 +20,24 @@ What the sheet is made of:
 
 What is baked here (`gs`), all as whole numbers so it packs small:
   n   the version of these rules;
-  c   the grid cells wholly under faces, where no ground is drawn: run lengths over the cells in
-      rows (south to north, west to east), starting with a run of cells that are not;
+  c   the grid cells under faces: run lengths over the cells in rows (south to north, west to
+      east), starting with a run of cells that are not. A cell no free edge crosses is wholly under
+      faces and draws no ground; of the cells one crosses, it marks those whose south-west corner
+      is under a face;
   h   the grid points carved or built up, as steps from the point before, and hz how far each moves,
       in decimetres (the grid's own unit);
   s   the face corners where the ground meets a face's edge lower or higher than its top (a
       retaining wall), as steps from the corner before, and sz the ground's height there from the
       face's top, in centimetres;
-  w   the wall the square's retaining walls are built as (its most common kind of wall).
+  w   the wall the square's retaining walls are built as (its most common kind of wall);
+  x   the cells where faces overlap (a free edge with another face on its open-ground side), as
+      steps from the cell before: each is drawn whole, as the grid if `c` doesn't mark it and as
+      nothing if it does, rather than cut.
 
 What is not baked, because shipping it would cost more than the 5% of a square's download the sheet
 may add (measured: the ground's own triangles in the cells faces cross came to about 12%): which
 triangles join those points. The game cuts each such cell along the faces' free edges and fills what
-is left (world.ts `sheetCells`), and `Land` below does the same for the checks. Both read only what
+is left (web/src/sheet.ts `buildSheet`), and `Land` below does the same for the checks. Both read only what
 is here and in `sf`, so they agree with each other and with every load.
 
 Nothing here is decided over the network: it is all build-time.
@@ -119,11 +124,21 @@ class Faces:
                                 or (abs(p[1] - y0) < SEAM and abs(q[1] - y0) < SEAM) or (abs(p[1] - y1) < SEAM and abs(q[1] - y1) < SEAM))
         free, tops = [], []
         for c, idx in self.E:
+            run = []
             for a, b in zip(idx[:-1].tolist(), idx[1:].tolist()):
                 if sp[a] == sp[b] or (sp[b], sp[a]) in owner or on_seam(V[a], V[b]):
                     continue
                 k = kind_of.get((min(a, b), max(a, b)))
                 lift = LIFT[FACE_KINDS[k]] if k is not None else OUTLINE_LIFT.get(c, 0.07)
+                run.append((a, b, lift))
+                # (an outline that runs out and straight back along itself, a spike of no width, is
+                # taken as the one edge left over: the ground has nothing to fill inside it)
+                while len(run) > 1 and run[-2][1] == run[-1][0] and spike(V[run[-2][0]], V[run[-1][0]], V[run[-1][1]]):
+                    (a0, _, l0), (_, b1, l1) = run[-2], run[-1]
+                    del run[-2:]
+                    if sp[a0] != sp[b1]:
+                        run.append((a0, b1, l0))
+            for a, b, lift in run:
                 free.append((a, b)); tops.append((V[a, 2] + lift, V[b, 2] + lift))
         self.free = np.asarray(free, np.int64).reshape(-1, 2)
         self.tops = np.asarray(tops, float).reshape(-1, 2)
@@ -137,6 +152,12 @@ class Faces:
     def segments(self):
         a, b = self.free[:, 0], self.free[:, 1]
         return self.V[a, :2], self.V[b, :2]
+
+
+def spike(a, b, c):
+    """a to b then b to c runs straight back the way it came."""
+    ux, uy, vx, vy = b[0] - a[0], b[1] - a[1], c[0] - b[0], c[1] - b[1]
+    return ux * vx + uy * vy < 0 and abs(ux * vy - uy * vx) <= 1e-3 * math.hypot(ux, uy) * math.hypot(vx, vy)
 
 
 def wall_kind(br):
@@ -254,8 +275,11 @@ def ground_sheet(tile):
     dz = np.round((H1 - T["z0"]) * 10).astype(np.int64) - np.asarray(T["h"], np.int64)
     moved = np.nonzero(dz)[0]
 
-    # 3. the cells wholly under faces, where no ground is drawn
+    # 3. the cells wholly under faces, where no ground is drawn, and of the cells a free edge crosses,
+    # those whose south-west corner is under a face (so the game knows a cell the edges cross only in
+    # closed loops is a face with ground or other faces inside it, not open ground)
     cells = np.zeros((ny - 1, nx - 1), bool)
+    odd = np.zeros(0, np.int64)
     if len(F.polys):
         cx, cy = np.meshgrid(X[:-1] + T["dx"] / 2, Y[:-1] + T["dy"] / 2)
         mid = shapely.points(cx.ravel(), cy.ravel())
@@ -263,13 +287,30 @@ def ground_sheet(tile):
         under = np.zeros(cx.size, bool); under[ci] = True
         boxes = shapely.box(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel(), GX[1:, 1:].ravel(), GY[1:, 1:].ravel())
         crossed, _ = tree.query(boxes, predicate="intersects")
-        under[crossed] = False
+        corner = np.zeros(cx.size, bool)
+        corner[shapely.STRtree(F.polys).query(shapely.points(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel()), predicate="intersects")[0]] = True
+        under[crossed] = corner[crossed]
+
+        # 4. the cells where faces overlap, so a free edge has another face, not open ground, on its
+        # right: cutting along the edges would fill the wrong side, so such a cell is drawn whole, as
+        # the grid where it is mostly open ground and as nothing where it is mostly under faces
+        d = B - A
+        across = np.stack([d[:, 1], -d[:, 0]], 1) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+        right = (A + B) / 2 + across * 0.02
+        bad = np.unique(shapely.STRtree(F.polys).query(shapely.points(right), predicate="within")[0])
+        if len(bad):
+            odd = np.unique(shapely.STRtree(segs[bad]).query(boxes, predicate="intersects")[0])
+            ftree = shapely.STRtree(F.polys)
+            for k in odd.tolist():
+                over = F.polys[ftree.query(boxes[k], predicate="intersects")]
+                land = boxes[k].difference(shapely.union_all(shapely.make_valid(over))).area
+                under[k] = land < 0.5 * boxes[k].area
         cells = under.reshape(ny - 1, nx - 1)
 
     s = spots[held != 0]
     return dict(n=VERSION, c=runs(cells.ravel().astype(np.int8)),
                 h=np.diff(moved, prepend=0).tolist(), hz=dz[moved].tolist(),
-                s=np.diff(s, prepend=0).tolist(), sz=held[held != 0].tolist(),
+                s=np.diff(s, prepend=0).tolist(), sz=held[held != 0].tolist(), x=np.diff(odd, prepend=0).tolist(),
                 w=wall_kind(tile.get("br")))
 
 
@@ -286,7 +327,8 @@ def read(gs, T):
     h[idx] += np.asarray(gs["hz"], np.int64)
     H = h.reshape(ny, nx) / 10 + T["z0"]
     held = dict(zip(np.cumsum(np.asarray(gs["s"], np.int64)).tolist(), (np.asarray(gs["sz"], float) / 100).tolist()))
-    return mask.reshape(ny - 1, nx - 1), H, held
+    odd = np.cumsum(np.asarray(gs.get("x") or [], np.int64))
+    return mask.reshape(ny - 1, nx - 1), H, held, odd
 
 
 class Land:
@@ -299,7 +341,7 @@ class Land:
         T = tile["t"]
         self.T = T
         self.F = F = Faces(tile["sf"], tile["b"])
-        self.covered, H, held = read(tile["gs"], T)
+        self.covered, H, held, odd = read(tile["gs"], T)
         if sink is not None:
             H = H - sink
         self.H = H
@@ -319,6 +361,7 @@ class Land:
         boxes = shapely.box(GX[:-1, :-1].ravel(), GY[:-1, :-1].ravel(), GX[1:, 1:].ravel(), GY[1:, 1:].ravel())
         crossed = np.zeros(boxes.size, bool)
         crossed[self.seg_tree.query(boxes, predicate="intersects")[0]] = True
+        crossed[odd] = False
         self.mixed = crossed.reshape(ny - 1, nx - 1)
         faces = shapely.union_all(shapely.make_valid(F.polys[shapely.area(F.polys) > 1e-9])) if len(F.polys) else Polygon()
         self.faces = faces
