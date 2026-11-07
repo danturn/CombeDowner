@@ -203,6 +203,7 @@ def overroad(root, map_id, only=None):
         return []
     args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
     if only: args += ["--only", " ".join(only)]
+    if GROUND_SHEET: args += ["--query", "ground=sheet"]
     try:
         # (the game loads the squares' packs, not their JSON: packs left from an earlier build of the
         # map would be looked at in place of the map being checked)
@@ -870,6 +871,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from partition.check_tile import interior_length    # (a line against a polygon is measured on its interior)
 from shapely.prepared import prep
+import importlib.util
+_spec = importlib.util.spec_from_file_location("ground_sheet", os.path.join(os.path.dirname(os.path.abspath(__file__)), "partition", "sheet.py"))
+gsheet = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gsheet)
+# CD_GROUND=sheet measures the ground as the game draws it with ?ground=sheet: a square that has the
+# baked sheet (gs) is drawn from it, the rest as before
+GROUND_SHEET = os.environ.get("CD_GROUND") == "sheet"
 
 FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
 ON_GROUND = ("path", "front", "drive", "grass", "dirt", "gravel")    # drawn on the ground as it's drawn, not at their written height
@@ -984,13 +991,14 @@ class Sheet:
         return out, kinds
 
 
-def drawn_terrain(m, sheet):
+def drawn_terrain(m, sheet, faces=True):
     """The ground as world.ts draws it under and beside the street faces: let down under a carriageway
     (0.3 m, less at its edge) and a pavement (0.08 m), brought to just under a face's edge within
     three quarters of a cell of it (up by KERB_RAISE at most), and let down under a bridge that isn't
-    a path's. Returns the grid and the ground over it, as terrain() does."""
+    a path's. Returns the grid and the ground over it, as terrain() does. With the sheet (faces False),
+    only the bridges' letting down, over the sheet's carved grid."""
     T = m["t"]; nx, ny = T["nx"], T["ny"]
-    H = np.array(T["h"], dtype=float).reshape(ny, nx) / 10 + T["z0"]
+    H = gsheet.read(m["gs"], T)[1] if not faces else np.array(T["h"], dtype=float).reshape(ny, nx) / 10 + T["z0"]
     under, round_, path_to = np.full(H.shape, np.inf), np.full(H.shape, np.inf), np.full(H.shape, np.inf)
     cov = np.zeros(H.shape, bool)
     X, Y = np.meshgrid(T["x0"] + np.arange(nx) * T["dx"], T["y0"] + np.arange(ny) * T["dy"])
@@ -1011,7 +1019,7 @@ def drawn_terrain(m, sheet):
         hc = ground(shapely.get_x(foot), shapely.get_y(foot)) - 0.3
         idx = np.argwhere(sel)[near]
         under[idx[:, 0], idx[:, 1]] = np.minimum(under[idx[:, 0], idx[:, 1]], hc)
-    if sheet.ok:
+    if sheet.ok and faces:
         # (paths written level across carve the ground to just under them as well, world.ts PATH_UNDER)
         streets = sheet.kind_mask(FACE_KINDS if sheet.level else ("road", "service", "pave"))
         if streets.any():
@@ -1049,7 +1057,7 @@ def drawn_terrain(m, sheet):
             under[edge & np.isfinite(under)] += 0.2
     # (world.ts: a flight is sunk into the hill, the ground beside it cut to the straight climb between its
     # ends, where no path or street face decides it)
-    for r in (m.get("rd") or []) if sheet.ok and sheet.level else []:
+    for r in (m.get("rd") or []) if sheet.ok and sheet.level and faces else []:
         p = r["p"]
         if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 and q[3] for q in p): continue
         ln = LineString([q[:2] for q in p])
@@ -1084,7 +1092,7 @@ def drawn_terrain(m, sheet):
             hit = shapely.distance(shapely.points(X[sel], Y[sel]), ln) < reach
             idx = np.argwhere(sel)[hit]
             no_fill[idx[:, 0], idx[:, 1]] = True
-    raise_ = np.where(np.isfinite(under), 0.0, np.where(np.isfinite(path_to) & (round_ == path_to) & ~no_fill, 1.5, KERB_RAISE))
+    raise_ = np.zeros(H.shape) if not faces else np.where(np.isfinite(under), 0.0, np.where(np.isfinite(path_to) & (round_ == path_to) & ~no_fill, 1.5, KERB_RAISE))
     sink = np.where(np.isfinite(to), np.maximum(-raise_, H - to), 0.0)
     D = H - sink
     T2 = dict(T, h=((D - T["z0"]) * 10).ravel().tolist())
@@ -1213,11 +1221,13 @@ def things_in_paths(m, sheet, note, at, inner, fig):
     fig["things in paths"] = fig.get("things in paths", 0) + n
 
 
-def face_edges(m, sheet, drawn, note, at, inner, fig):
+def face_edges(m, sheet, drawn, note, at, inner, fig, land=None):
     """26. A face's edge stands no more than TALL_EDGE over what is beside it: the side face the game
     draws down from a free edge to the drawn ground (a wedge down a bank), or up from a lower face
     it shares the edge with (a pavement over a path). A place is one outline, its score the length
-    of edge over TALL_EDGE."""
+    of edge over TALL_EDGE. With the sheet (land), a free edge's side face runs to where the sheet meets
+    it; where the sheet holds the ground off it with a retaining wall, the wall's length is a figure
+    of its own, not a fault."""
     if not sheet.edges: return
     V, cm = sheet.V, sheet.cm
     NP = len(V)
@@ -1242,6 +1252,15 @@ def face_edges(m, sheet, drawn, note, at, inner, fig):
                 ok, oa, ob = other
                 h = max(top[a] - tops[ok][ob], top[b] - tops[ok][oa])
                 if h < 0.02: continue
+            elif land is not None:
+                fs = land.F.spot
+                if (fs[a], fs[b]) not in land.free: continue    # (along the square's edge: the next square's ground meets it)
+                ma, mb = land.meets[fs[a]], land.meets[fs[b]]
+                h = max(abs(top[a] - ma), abs(top[b] - mb))
+                if h > TALL_EDGE and (fs[a] in land.held or fs[b] in land.held):
+                    mid = Point((V[a, 0] + V[b, 0]) / 2, (V[a, 1] + V[b, 1]) / 2)
+                    if inner.contains(mid): fig["retaining wall m"] = fig.get("retaining wall m", 0) + l
+                    continue
             else:
                 # (the side face runs down to the drawn ground at the corner, which is the ground
                 # beside the edge there)
@@ -1859,7 +1878,15 @@ def ground_measures(m, tag, note, f, off_deck=None):
     at = lambda x, y: (tag, round(float(x)), round(float(y)))
     ground = terrain(m["t"])
     sheet = Sheet(m)
-    D, drawn = drawn_terrain(m, sheet)
+    land = None
+    if GROUND_SHEET and sheet.ok and m.get("gs"):
+        D, _ = drawn_terrain(m, sheet, faces=False)
+        land = gsheet.Land(m, sink=gsheet.read(m["gs"], m["t"])[1] - D)
+        drawn = land.ground
+        # (the land as drawn, carved to meet the faces, for the water's rules)
+        ground = terrain(dict(m["t"], h=np.round((gsheet.read(m["gs"], m["t"])[1] - m["t"]["z0"]) * 10).ravel().tolist()))
+    else:
+        D, drawn = drawn_terrain(m, sheet)
     if off_deck is None:
         decks = [LineString([q[:2] for q in r["p"]]).buffer(9) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
         decks += [LineString([q[:2] for q in t["p"]]).buffer(8) for t in m.get("tn") or [] if len(t["p"]) > 1]
@@ -1872,7 +1899,7 @@ def ground_measures(m, tag, note, f, off_deck=None):
     if sheet.ok:
         path_tilt(m, sheet, off_deck, note, at, inner, fig)
         things_in_paths(m, sheet, note, at, inner, fig)
-        face_edges(m, sheet, drawn, note, at, inner, fig)
+        face_edges(m, sheet, drawn, note, at, inner, fig, land)
         face_joins(m, sheet, D, drawn, note, at, inner, fig)
     bridges(m, f, sheet, drawn, ground, note, at, sq, fig)
     for w in tunnel_mesh(*_root_of(f)):

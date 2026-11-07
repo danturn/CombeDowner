@@ -36,6 +36,7 @@
 //   0 for all), --classes footway,path,steps,cycleway,bridleway,pedestrian, --pavements (each
 //   kerbed street's pavements too), --hz 60 (steps a second), --view 700 (draw distance: the squares
 //   within it are built round the one being walked), --places 40 (places a square kept for views),
+//   --query "ground=sheet" (more of the address, to try one of the game's own options),
 //   --dist web/dist, --timeout 180 (seconds a square may take to build), --trace k (walk only the
 //   square's k-th way, and keep where the player was every tenth of a second in walk.json).
 //   PW= and CHROME= as for tools/shoot.mjs.
@@ -97,7 +98,7 @@ page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
 await page.addInitScript(() => { globalThis.__keepArrays = true; });
 
 const t0 = Date.now();
-const q = new URLSearchParams({ map: opt.map, time: "11:00", progression: "0", view: opt.view });
+const q = new URLSearchParams({ map: opt.map, time: "11:00", progression: "0", view: opt.view, ...Object.fromEntries(new URLSearchParams(opt.query ?? "")) });
 await page.goto(`http://127.0.0.1:${server.address().port}/?${q}`);
 await page.evaluate(() => { window.__budget = 40; });
 // Solo is enabled before main.ts has hooked it up, so it's clicked until there's a game
