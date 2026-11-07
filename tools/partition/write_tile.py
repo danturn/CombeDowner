@@ -62,6 +62,7 @@ from partition.openings import EDGE_STUB
 from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
+from partition.sheet import ground_sheet
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts, unregistered
 from partition.standing import Standing
 from partition.straighten import straighten
@@ -7404,6 +7405,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                       None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + [c[:3] + [round(street_ground(c[1], c[2]) + 0.07, 2)] + c[4:] for c in drive_cars]
     tile["cx"], cx_count = crossings(sq, rd, street_ground, points)
+    gs = ground_sheet(tile)
+    if gs is not None:
+        tile["gs"] = gs
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     open(out, "w").write(json.dumps(tile, separators=(",", ":")))
