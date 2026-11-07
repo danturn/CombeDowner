@@ -16,7 +16,7 @@ What the sheet is made of:
   - beside each face the ground is carved down or built up to meet it, no steeper than 1 in 1.5 cut
     or 1 in 2 filled, within BATTER_MOST of its edge; where meeting the face would take a wider bank
     than that, a low retaining wall stands at the face's edge for what is left over, in the
-    square's own wall material. A grid point is never built up more than FILL_MOST over the survey,
+    square's own wall material (at a cliff's top, down to the cliff's foot). A grid point is never built up more than FILL_MOST over the survey,
     nor at all within a cell and a half of the water or a bridge's deck, and is kept DECK_UNDER under
     a deck's road.
 
@@ -256,7 +256,17 @@ def ground_sheet(tile):
     top = np.asarray([F.top[s] for s in spots.tolist()])
     g = on_grid(H, T, F.V[spots, 0], F.V[spots, 1])
     up, down = BATTER_MOST / BATTER_CUT, BATTER_MOST / BATTER_FILL
-    meet = np.where(g - top > up, g - up, np.where(top - g > down, g + down, top))
+    # At a cliff's top the 4 m grid puts a face halfway down the cliff, and ground built up to meet it
+    # there would bury what stands at the foot (a railway, a road), so there the wall goes to the foot;
+    # but not at a bridge's end, whose ground is the approach the bridge stands on.
+    cliff = np.ones(len(spots), bool)
+    ends = [d.buffer(T["dx"]) for d in decks(tile.get("rd"), T["dx"] * 0.5)]
+    if ends:
+        cliff[shapely.STRtree(ends).query(shapely.points(F.V[spots, :2]), predicate="intersects")[0]] = False
+    fi = np.clip(np.floor((F.V[spots, 0] - T["x0"]) / T["dx"]).astype(int), 0, T["nx"] - 2)
+    fj = np.clip(np.floor((F.V[spots, 1] - T["y0"]) / T["dy"]).astype(int), 0, T["ny"] - 2)
+    foot = np.minimum.reduce([H[fj, fi], H[fj, fi + 1], H[fj + 1, fi], H[fj + 1, fi + 1]])
+    meet = np.where(g - top > up, g - up, np.where(top - g > down, np.where(cliff & (g - foot > down), foot, g + down), top))
     meet = np.round(meet, 2)
     held = np.round((meet - top) * 100).astype(np.int64)
     hf = dict(zip(spots.tolist(), (top + held / 100).tolist()))

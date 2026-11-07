@@ -29,7 +29,7 @@ import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
 import { shadowSize } from "./safegfx";
-import { buildSheet, carved, coveredCells, fillAt, sheetFaces, type Sheet } from "./sheet";
+import { buildSheet, carved, coveredCells, fillAt, nearFaces, sheetFaces, type Sheet } from "./sheet";
 
 const CHUNK = 320;
 
@@ -764,6 +764,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
   const cuts = cuttings(map);
+  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT) : null;
+  // (with the sheet the faces leave roundTo alone, so where one beside a cutting decides the ground is
+  // found from their edges here, or the bank behind a wing wall was made up over a track beside it)
+  const faceTo = meet ? nearFaces(meet.edges, T, T.dx * 0.75) : roundTo;
+  const faceOver = meet ? new Uint8Array(T.nx * T.ny) : covered;
+  if (meet) coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)).forEach((on, c) => {
+    if (!on) return;
+    const v = c + Math.floor(c / (T.nx - 1));
+    faceOver[v] = faceOver[v + 1] = faceOver[v + T.nx] = faceOver[v + T.nx + 1] = 1;
+  });
   // Behind the headwall the hill is made up to just under its top for a grid square or so, where it
   // stands lower and no street lies on it: the grid's triangles from the dug floor in front dipped
   // behind the wall and left the top of the tube standing out of the ground.
@@ -777,16 +787,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const j0 = Math.max(0, Math.floor((cy - r - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((cy + r - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx - cx, y = T.y0 + j * T.dy - cy, out = -(x * dx + y * dy), s = x * nx + y * ny, v = j * T.nx + i;
-      if (out < 0 && out > -back && s > left && s < right && !covered[v]) {
+      if (out < 0 && out > -back && s > left && s < right && !faceOver[v]) {
         // (never above a street beside it, but the tunnel's own road, ending at the portal, doesn't count)
-        const by = roundTo[v] < to + crown ? Infinity : roundTo[v];
+        const by = faceTo[v] < to + crown ? Infinity : faceTo[v];
         sink[v] = Math.min(sink[v], Th[v] / 10 - Math.min(fill, by));
         continue;
       }
       if (out < 0 || out > reach || s < left - pad || s > right + pad) continue;
       const side = s < left ? 0 : 1, held = (s < left || s > right) && steep[side] ? wingTop(wings[side], out) : -Infinity;
       if (held > -Infinity) {
-        if (!covered[v] && roundTo[v] === Infinity) sink[v] = Math.min(sink[v], Th[v] / 10 - (held - Z0 - 0.3));
+        if (!faceOver[v] && faceTo[v] === Infinity) sink[v] = Math.min(sink[v], Th[v] / 10 - (held - Z0 - 0.3));
         continue;
       }
       sink[v] = Math.max(sink[v], Th[v] / 10 - to);
@@ -838,7 +848,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // The sheet: each cell a face's free edge crosses is cut along it, and only the ground outside the
   // faces is drawn there, meeting their edges (sheet.ts); a cell wholly under faces draws none.
   const sheetGrid = { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny };
-  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT) : null;
   const sheet: Sheet | null = meet ? buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x) : null;
   const gridH = (k: number) => tPos[3 * k + 1];
   yield;

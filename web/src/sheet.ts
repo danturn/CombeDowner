@@ -351,3 +351,22 @@ export function carved(h: ArrayLike<number>, gs: NonNullable<import("./map").Map
   for (let k = 0; k < gs.h.length; k++) out[gs.h[k]] += gs.hz[k];
   return out;
 }
+
+/** For each grid point within `reach` of a free edge, the height of that edge's nearest point (scene
+ *  height; the lowest, where there are several), and Infinity elsewhere: what the faces ask of the
+ *  ground beside them, for the rules that leave it alone there. */
+export function nearFaces(E: FreeEdges, G: SheetGrid, reach: number): Float32Array {
+  const out = new Float32Array(G.nx * G.ny).fill(Infinity);
+  for (let e = 0; e < E.n; e++) {
+    const ax = E.ax[e], ay = E.ay[e], bx = E.bx[e], by = E.by[e], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - G.x0) / G.dx)), i1 = Math.min(G.nx - 1, Math.ceil((Math.max(ax, bx) + reach - G.x0) / G.dx));
+    const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - G.y0) / G.dy)), j1 = Math.min(G.ny - 1, Math.ceil((Math.max(ay, by) + reach - G.y0) / G.dy));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = G.x0 + i * G.dx, y = G.y0 + j * G.dy, u = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
+      if (Math.hypot(x - ax - vx * u, y - ay - vy * u) >= reach) continue;
+      const v = j * G.nx + i, h = E.ah[e] + (E.bh[e] - E.ah[e]) * u;
+      if (h < out[v]) out[v] = h;
+    }
+  }
+  return out;
+}
