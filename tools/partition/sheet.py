@@ -56,6 +56,7 @@ LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04
 OUTLINE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "plaza": 0.04}
 BATTER_FILL = 2.0     # ground below a face's edge is built up to it no steeper than 1 in 2
 BATTER_CUT = 1.5      # ground above it is cut down to it no steeper than 1 in 1.5
+DECK_UNDER = 0.5      # metres the ground is kept under a deck's road, so none stands up through it
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
 WALLS = ("wall", "retaining_wall", "stone_wall", "garden_wall", "brick_wall", "brick_wall_low", "dry_stone",
          "security_wall", "boundary_wall")
@@ -193,6 +194,22 @@ def overlaps(F, A, B, segs, GX, GY):
     return odd, under, top
 
 
+def deck_lines(rd):
+    """Each stretch of a way on a bridge's deck: its ends, its road's height at each, and how far
+    either side of its line the ground is kept under it."""
+    out = []
+    for r in rd or []:
+        p = r["p"]
+        if len(p) < 2 or len(p[0]) < 3:
+            continue
+        on = [len(q) > 3 and q[3] in (1, 2) for q in p]
+        half = (r.get("w") or 8) / 2 + 0.5
+        for a in range(len(p) - 1):
+            if on[a] and on[a + 1]:
+                out.append((p[a][:2], p[a + 1][:2], p[a][2], p[a + 1][2], half))
+    return out
+
+
 def decks(rd, margin):
     """Each bridge's deck, out to `margin` past its sides: the stretches of a way between points on a span."""
     out = []
@@ -293,6 +310,23 @@ def ground_sheet(tile):
         near = np.zeros(n, bool)
         near[shapely.STRtree(keep_down).query(pts, predicate="intersects")[0]] = True
         low[near] = -np.inf
+    # (under a bridge's deck, and half a metre either side, the ground is kept DECK_UNDER under its road)
+    for (ax_, ay_), (bx_, by_), za, zb, half in deck_lines(tile.get("rd")):
+        vx_, vy_ = bx_ - ax_, by_ - ay_
+        l2 = vx_ * vx_ + vy_ * vy_
+        if l2 < 1e-6:
+            continue
+        sel = np.nonzero((GX.ravel() > min(ax_, bx_) - half) & (GX.ravel() < max(ax_, bx_) + half)
+                         & (GY.ravel() > min(ay_, by_) - half) & (GY.ravel() < max(ay_, by_) + half))[0]
+        if not len(sel):
+            continue
+        qx, qy = GX.ravel()[sel], GY.ravel()[sel]
+        u = ((qx - ax_) * vx_ + (qy - ay_) * vy_) / l2
+        d = np.abs((qx - ax_) * vy_ - (qy - ay_) * vx_) / math.sqrt(l2)
+        on = (u >= 0) & (u <= 1) & (d <= half)
+        k = sel[on]
+        high[k] = np.minimum(high[k], za + (zb - za) * u[on] - DECK_UNDER)
+        low[k] = np.minimum(low[k], high[k])
     # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
     # the faces in it, or as nothing where it is mostly under them)
     odd, odd_under, odd_top = overlaps(F, A, B, segs, GX, GY)
