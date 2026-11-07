@@ -3633,7 +3633,8 @@ def steep_paths_as_steps(rd):
             k = e = i
             while e + 1 < len(steep) and steep[e + 1]:
                 e += 1
-            while abs(p[e + 1][2] - p[k][2]) > STAIR_PITCH * sum(seg[k:e + 1]) and (k > 0 or e + 1 < len(steep)):
+            # (allowing for its ends cut back off the paths it meets, a path's width at each)
+            while abs(p[e + 1][2] - p[k][2]) > STAIR_PITCH * (sum(seg[k:e + 1]) - 1.5) and (k > 0 or e + 1 < len(steep)):
                 if k > 0 and (e + 1 >= len(steep) or seg[k - 1] >= seg[e + 1]):
                     k -= 1
                 else:
@@ -3754,7 +3755,7 @@ def ways_meet_level(rd, sq, ground):
     # (a point on the square's edge is the next square's too, which levels its own half the same way
     # only if neither moves it)
     x0, y0, x1, y1 = sq
-    on_edge = lambda q: min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1
+    on_edge = lambda q: min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1   # (or past it)
     held = {id(q) for r in walks for q in r["p"] if on_edge(q)}
     for r in walks:
         p = r["p"]
@@ -3787,9 +3788,14 @@ def ways_meet_level(rd, sq, ground):
             cum = [0.0]
             for a, b in zip(p, p[1:]):
                 cum.append(cum[-1] + math.dist(a[:2], b[:2]))
-            if cum[-1] > 0:
-                for q, s in zip(p[1:-1], cum[1:-1]):
-                    q[2] = round(p[0][2] + (p[-1][2] - p[0][2]) * s / cum[-1], 2)
+            # (straight between its ends, and any point on or past the square's edge, which the next
+            # square's half of it shares)
+            fixed = [k for k, q in enumerate(p) if k in (0, len(p) - 1) or on_edge(q)]
+            for k0, k1 in zip(fixed, fixed[1:]):
+                span = cum[k1] - cum[k0]
+                for k in range(k0 + 1, k1):
+                    if span > 0:
+                        p[k][2] = round(p[k0][2] + (p[k1][2] - p[k0][2]) * (cum[k] - cum[k0]) / span, 2)
             continue
         # (the path's own climb eased in from each point moved, only as far as it has to be)
         for k in [k for k, q in enumerate(p) if id(q) in changed]:

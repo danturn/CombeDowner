@@ -18,7 +18,7 @@ What the sheet is made of:
     than that, a low retaining wall stands at the face's edge for what is left over, in the
     square's own wall material (at a cliff's top, down to the cliff's foot). A grid point is never built up more than FILL_MOST over the survey,
     nor at all within a cell and a half of the water or a bridge's deck, and is kept DECK_UNDER under
-    a deck's road.
+    a deck's underside.
 
 What is baked here (`gs`), all as whole numbers so it packs small:
   n   the version of these rules;
@@ -59,7 +59,9 @@ OUTLINE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive"
 BATTER_FILL = 2.0     # ground below a face's edge is built up to it no steeper than 1 in 2
 BATTER_CUT = 1.5      # ground above it is cut down to it no steeper than 1 in 1.5
 FILL_MOST = 1.0       # metres a grid point is ever built up over the survey: more would fill in a cutting
-DECK_UNDER = 0.5      # metres the ground is kept under a deck's road, so none stands up through it
+DECK_UNDER = 0.5      # metres the ground is kept under a deck's underside, so there is room under it
+DECK_DEPTH = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck
+FOOT_WAYS = {"footway", "path", "cycleway", "steps", "bridleway"}
 FOOT_DEPTH = 0.4      # metres under a building's ground height the ground beside it may be cut to (its walls go 0.6 down)
 BETWEEN = 1.0         # metres: ground this near faces of two kinds is between them
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
@@ -254,7 +256,7 @@ def odd_corners(F, odd, H, T, under=0.05, step=0.25):
 
 
 def deck_lines(rd):
-    """Each stretch of a way on a bridge's deck: its ends, its road's height at each, and how far
+    """Each stretch of a way on a bridge's deck: its ends, its underside's height at each, and how far
     either side of its line the ground is kept under it."""
     out = []
     for r in rd or []:
@@ -262,10 +264,16 @@ def deck_lines(rd):
         if len(p) < 2 or len(p[0]) < 3:
             continue
         on = [len(q) > 3 and q[3] in (1, 2) for q in p]
-        half = (r.get("w") or 8) / 2 + 0.5
+        dk = r.get("dk")
+        side = max(dk) if isinstance(dk, list) and dk else dk if isinstance(dk, (int, float)) else 0
+        half = max((r.get("w") or 8) / 2, side) + 0.5
+        kind = r.get("bt") if r.get("bt") in DECK_DEPTH else (
+            "foot" if r["c"] in FOOT_WAYS else "beam" if r["c"] in ("trunk", "motorway") else "arch")
+        # (its underside: the road's top, lifted as drawn, less the deck's depth)
+        under = (0.07 if r["c"] not in FOOT_WAYS else 0.04) - DECK_DEPTH[kind]
         for a in range(len(p) - 1):
             if on[a] and on[a + 1]:
-                out.append((p[a][:2], p[a + 1][:2], p[a][2], p[a + 1][2], half))
+                out.append((p[a][:2], p[a + 1][:2], p[a][2] + under, p[a + 1][2] + under, half))
     return out
 
 
@@ -390,7 +398,7 @@ def ground_sheet(tile):
         near = np.zeros(n, bool)
         near[shapely.STRtree(keep_down).query(pts, predicate="intersects")[0]] = True
         low[near] = -np.inf
-    # (under a bridge's deck, and half a metre either side, the ground is kept DECK_UNDER under its road)
+    # (under a bridge's deck, and half a metre either side, the ground is kept DECK_UNDER under its underside)
     for (ax_, ay_), (bx_, by_), za, zb, half in deck_lines(tile.get("rd")):
         vx_, vy_ = bx_ - ax_, by_ - ay_
         l2 = vx_ * vx_ + vy_ * vy_
