@@ -2138,11 +2138,13 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
             if len(p[i]) < 4:
                 p[i] = p[i][:3] + [1]
                 grown += 1
-        # (an approach the ground could not be laid to, beside another street's carriageway,
-        # comes back to the ground as it was held before)
+    # (an approach the ground could not be laid to, beside another street's carriageway, comes back
+    # to the ground as it was held before, but not where it meets a bridge's span: that's the deck's)
+    on_span = {tuple(q[:2]) for r in rd for q in r["p"] if len(q) > 3 and q[3] == 1}
+    for r in rd:
         lay = r.pop("_lay", None) or set()
-        for q in p:
-            g = ground(q[0], q[1]) if len(q) < 4 and tuple(q[:2]) in lay else None
+        for q in r["p"]:
+            g = ground(q[0], q[1]) if len(q) < 4 and tuple(q[:2]) in lay and tuple(q[:2]) not in on_span else None
             if g is not None and abs(q[2] - g) > 0.4:
                 q[2] = round(min(max(q[2], g - 0.4), g + 0.4), 1)
     # a street that ends where another's span begins shares that point with the bridge: where the
@@ -2156,6 +2158,14 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
             if (p[i][0], p[i][1]) in ends and low(p[i], 0.1):
                 p[i] = p[i][:3] + [2]
                 grown += 1
+                # (and on, as a span runs on, while the ground under it is still dug away)
+                step = 1 if i == 0 else -1
+                for k in range(1, reach + 1):
+                    j = i + step * k
+                    if not 0 < j < len(p) - 1 or not low(p[j], 0.1):
+                        break
+                    p[j] = p[j][:3] + [2]
+                    grown += 1
     return grown
 
 
@@ -3621,12 +3631,15 @@ def steep_paths_as_steps(rd):
                 piece["c"] = "steps"
                 piece["w"] = max(r.get("w", 1.5), 1.8)
                 piece["_was"] = r
+                piece["_p"] = [list(q) for q in p[k:e + 2]]
             out.append(piece)
             k = e + 1
     return out
 
 
 STAIR_PITCH = 0.7       # the steepest a flight's treads climb (furniture.ts)
+CLIMB_MOST = 1 / 1.5    # the steepest slope anyone walks up without steps
+FLIGHT_OVER = 0.5       # metres of a flight's line on another path or a street before it isn't built
 
 SURFACE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04}   # how far the game lifts each face over its point (world.ts)
 JOIN_REACH = 0.3        # metres past a street's pavement that a path's end still meets it
@@ -3670,11 +3683,14 @@ def ways_meet_level(rd, sq, ground):
     moved = 0
     changed = set()
     # paths sharing a point share its height (a flight lands on the path it meets, so a path's wins)
-    at = {}
+    at, meet = {}, collections.Counter()
     for r in sorted(walks, key=lambda r: r["c"] == "steps"):
+        if r["c"] != "steps":
+            for key in {(round(q[0], 1), round(q[1], 1)) for q in r["p"]}:
+                meet[key] += 1
         for q in r["p"]:
             key = (round(q[0], 1), round(q[1], 1))
-            if key in at and abs(at[key] - q[2]) > 0.01:
+            if key in at and abs(at[key] - q[2]) > 0.01 and min(q[0] - sq[0], sq[2] - q[0], q[1] - sq[1], sq[3] - q[1]) >= 0.1:
                 q[2] = at[key]
                 changed.add(id(q))
                 moved += 1
@@ -3712,10 +3728,17 @@ def ways_meet_level(rd, sq, ground):
                 return ground(*a)
         return None
 
-    held = set()
+    # (a point on the square's edge is the next square's too, which levels its own half the same way
+    # only if neither moves it)
+    x0, y0, x1, y1 = sq
+    on_edge = lambda q: min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1
+    held = {id(q) for r in walks for q in r["p"] if on_edge(q)}
     for r in walks:
         p = r["p"]
         for end in (0, -1):
+            # (where paths meet each other they keep the height they share)
+            if on_edge(p[end]) or meet[(round(p[end][0], 1), round(p[end][1], 1))] > (r["c"] != "steps"):
+                continue
             z = abutment_ground(*p[end][:2])
             if z is None:
                 z = street_top(*p[end][:2])
@@ -3748,6 +3771,8 @@ def ways_meet_level(rd, sq, ground):
         for k in [k for k, q in enumerate(p) if id(q) in changed]:
             for order in (p[k:], p[k::-1]):
                 for a, b in zip(order, order[1:]):
+                    if on_edge(b):
+                        break
                     d = math.dist(a[:2], b[:2])
                     z = round(min(max(b[2], a[2] - STEEPEST_WALK * d), a[2] + STEEPEST_WALK * d), 2)
                     if abs(z - b[2]) < 0.005:
@@ -3762,18 +3787,34 @@ def steep_flights_that_fit(rd, ground):
     can be built: once its ends are cut back to the street or path each meets, at least STEP_RUN long
     and climbing no steeper than a stair between the ground at its ends. A short sharp rise where a
     path crosses a kerb or the foot of a wall, which the 4 m grid makes look steep, stays a path, as
-    its flight would start or end in mid-air. Returns how many went back."""
+    its flight would start or end in mid-air. Nor is one kept whose treads would stand on another path
+    or on a street running beside it (a footway mapped alongside a pedestrian street). Returns how many
+    went back."""
     back = 0
+    plain = [r for r in rd if "_was" not in r and len(r["p"]) > 1 and not any(len(q) > 3 and q[3] for q in r["p"])
+             and r["c"] != "steps"]
+    beside = [LineString([q[:2] for q in r["p"]]).buffer(
+        (way_width(r) / 2 if r["c"] in GAME_PATHS and r["c"] != "pedestrian" else r.get("w", 4) / 2 + max(r.get("pv") or (0, 0))) - 0.1,
+        cap_style="flat") for r in plain]
+    near = STRtree(beside) if beside else None
     for r in rd:
-        was = r.pop("_was", None)
+        was, whole = r.pop("_was", None), r.pop("_p", None)
         if was is None:
             continue
         p = r["p"]
         L = sum(math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:]))
         a, b = ground(*p[0][:2]), ground(*p[-1][:2])
-        if L >= STEP_RUN and a is not None and b is not None and max(abs(b - a), abs(p[-1][2] - p[0][2])) <= STAIR_PITCH * L:
+        line = LineString([q[:2] for q in p])
+        on = max([beside[int(k)].intersection(line).length for k in near.query(line)] or [0.0]) if near is not None else 0.0
+        fits = L >= STEP_RUN and a is not None and b is not None and max(abs(b - a), abs(p[-1][2] - p[0][2])) <= STAIR_PITCH * L
+        if fits and on <= FLIGHT_OVER:
             continue
-        r["c"] = was["c"]
+        # (but a stretch no one could walk up as a slope stays a flight, however short)
+        if any(math.dist(u[:2], v[:2]) > 2 and abs(v[2] - u[2]) > CLIMB_MOST * math.dist(u[:2], v[:2])
+               for u, v in zip(whole, whole[1:])):
+            continue
+        # (as it was mapped, its ends back where the path either side of it ends)
+        r["c"], r["p"] = was["c"], whole
         if "w" in was:
             r["w"] = was["w"]
         else:
@@ -4205,8 +4246,17 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if k is None or middles[k].distance(p) > reach_mid[k]:
             return ground(x, y)
         line = middles[k]
-        q = line.interpolate(line.project(p))
-        return q.z if line.has_z else ground(q.x, q.y)
+        along = line.project(p)
+        q = line.interpolate(along)
+        if not line.has_z:
+            return ground(q.x, q.y)
+        # (past the end of a way standing well off the ground, at a bridge's level say, a point is
+        # not on it: levelled with it, a face below rose up the bank to the bridge)
+        if (along <= 0 or along >= line.length) and middles[k].distance(p) > reach_mid[k] - LEVEL_REACH:
+            g = ground(x, y)
+            if g is not None and abs(q.z - g) > 1.0:
+                return g
+        return q.z
 
     def drawn_z(x, y, on_ground):
         if shapely.contains_xy(keep_all, x, y):
@@ -7491,8 +7541,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = steep_paths_as_steps(rd)
     # (the flights made just now from steep stretches, and the ways they meet as they are by now)
     flights_to_their_ends(rd, fitted[1] if fitted else None)
-    ways_meet_level(rd, sq, ground)
     steep_flights_that_fit(rd, ground)
+    ways_meet_level(rd, sq, ground)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):

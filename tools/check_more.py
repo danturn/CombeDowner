@@ -1507,6 +1507,8 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
         for a0, b0 in _spans(flags):
             hang_a, hang_b = a0 + 1 < b0 and falls(a0 + 1, a0), b0 - 1 > a0 and falls(b0 - 1, b0)
             a, b = (a0 + 1 if hang_a else a0), (b0 - 1 if hang_b else b0)
+            # (a short span hanging off both ends leaves no deck between them)
+            if b <= a: continue
             line = LineString([q[:2] for q in p[a:b + 1]])
             if line.length < 3: continue
             for end, hang, inward in ((a, hang_a, a + 1), (b, hang_b, b - 1)):

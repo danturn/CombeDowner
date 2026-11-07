@@ -60,6 +60,8 @@ BATTER_FILL = 2.0     # ground below a face's edge is built up to it no steeper 
 BATTER_CUT = 1.5      # ground above it is cut down to it no steeper than 1 in 1.5
 FILL_MOST = 1.0       # metres a grid point is ever built up over the survey: more would fill in a cutting
 DECK_UNDER = 0.5      # metres the ground is kept under a deck's road, so none stands up through it
+FOOT_DEPTH = 0.4      # metres under a building's ground height the ground beside it may be cut to (its walls go 0.6 down)
+BETWEEN = 1.0         # metres: ground this near faces of two kinds is between them
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
 WALLS = ("wall", "retaining_wall", "stone_wall", "garden_wall", "brick_wall", "brick_wall_low", "dry_stone",
          "security_wall", "boundary_wall")
@@ -126,7 +128,7 @@ class Faces:
         x0, y0, x1, y1 = bounds
         on_seam = lambda p, q: ((abs(p[0] - x0) < SEAM and abs(q[0] - x0) < SEAM) or (abs(p[0] - x1) < SEAM and abs(q[0] - x1) < SEAM)
                                 or (abs(p[1] - y0) < SEAM and abs(q[1] - y0) < SEAM) or (abs(p[1] - y1) < SEAM and abs(q[1] - y1) < SEAM))
-        free, tops = [], []
+        free, tops, lifts = [], [], []
         for c, idx in self.E:
             run = []
             for a, b in zip(idx[:-1].tolist(), idx[1:].tolist()):
@@ -143,8 +145,10 @@ class Faces:
                     if sp[a0] != sp[b1]:
                         run.append((a0, b1, l0))
             for a, b, lift in run:
-                free.append((a, b)); tops.append((V[a, 2] + lift, V[b, 2] + lift))
+                free.append((a, b)); tops.append((V[a, 2] + lift, V[b, 2] + lift)); lifts.append(lift)
         self.free = np.asarray(free, np.int64).reshape(-1, 2)
+        # (a street, a pavement and a path are each lifted their own way, which tells them apart)
+        self.lift = np.asarray(lifts, float)
         self.tops = np.asarray(tops, float).reshape(-1, 2)
         # each spot on a free edge, and its face's top there: the lowest of the faces meeting there
         self.top = {}
@@ -368,6 +372,17 @@ def ground_sheet(tile):
     own_lo[pi[nearest]] = lo[nearest]; own_hi[pi[nearest]] = hi[nearest]
     clash = low > high
     low[clash], high[clash] = own_lo[clash], own_hi[clash]
+    # (between faces of two kinds, a street and a path say, within a metre of both, the ground is no
+    # higher than the higher of them: a bank cut down to each stood up as a lump between them)
+    close = d <= BETWEEN
+    if close.any():
+        kind = np.round(F.lift[si[close]] * 100).astype(np.int64)
+        first = np.full(n, -1); np.maximum.at(first, pi[close], kind)
+        other = np.zeros(n, bool); np.logical_or.at(other, pi[close], kind != first[pi[close]])
+        cap = np.full(n, -np.inf); np.maximum.at(cap, pi[close], at[close])
+        between = other & np.isfinite(cap)
+        high[between] = np.minimum(high[between], cap[between] + 0.03)
+        low = np.minimum(low, high)
     # (a point a cell from the water, or under or beside a bridge's deck, is never built up: the slope
     # up to it would stand out of the water or up through the deck)
     keep_down = [w.buffer(T["dx"] * 1.5) for w in wet] + decks(tile.get("rd"), T["dx"] * 1.5)
@@ -392,6 +407,23 @@ def ground_sheet(tile):
         k = sel[on]
         high[k] = np.minimum(high[k], za + (zb - za) * u[on] - DECK_UNDER)
         low[k] = np.minimum(low[k], high[k])
+    # (beside a building the ground isn't cut below its walls' foot: the house stood on air over the
+    # bank cut down to a path beside it)
+    feet = [(Polygon(b["r"][0], b["r"][1:]).buffer(0), b["g"] - FOOT_DEPTH) for b in tile.get("bl") or []
+            if len((b.get("r") or [[]])[0]) >= 3 and isinstance(b.get("g"), (int, float))]
+    # (nor under a tree, a shrub or a street item, which stand where they were put)
+    feet += [(shapely.Point(q[0], q[1]), q[2] - FOOT_DEPTH) for key, k in (("tr", 0), ("sb", 0), ("rk", 0), ("fx", 1))
+             for row in tile.get(key) or [] for q in [row[k:k + 3]]
+             if len(q) == 3 and all(isinstance(v, (int, float)) for v in q)]
+    if feet:
+        rings = [g.buffer(T["dx"]) for g, _ in feet]
+        gi, bi = shapely.STRtree(rings).query(pts, predicate="intersects")
+        if len(gi):
+            foot = np.full(n, -np.inf)
+            np.maximum.at(foot, gi, np.asarray([feet[k][1] for k in bi.tolist()]))
+            near_b = np.isfinite(foot)
+            high[near_b] = np.maximum(high[near_b], np.minimum(H.ravel()[near_b], foot[near_b]))
+            low = np.minimum(low, high)
     # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
     # the faces in it)
     odd, _ = overlaps(F, A, B, segs, GX, GY)
