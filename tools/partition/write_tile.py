@@ -3679,10 +3679,31 @@ def ways_meet_level(rd, sq, ground):
                 changed.add(id(q))
                 moved += 1
             at.setdefault(key, q[2])
+    flat = [r for r in walks if r["c"] != "steps"]
+    flat_lines = [LineString([q[:3] for q in r["p"]]) for r in flat]
+    flat_tree = STRtree([LineString([q[:2] for q in r["p"]]) for r in flat]) if flat else None
+
+    def path_top(r, x, y):
+        """The height of the path (not a flight) a point of another way lies on, or None."""
+        if flat_tree is None:
+            return None
+        pt, best = Point(x, y), None
+        for k in flat_tree.query(pt, predicate="dwithin", distance=2.0):
+            k = int(k)
+            if flat[k] is r:
+                continue
+            d = flat_lines[k].distance(pt)
+            if d <= way_width(flat[k]) / 2 + JOIN_REACH and (best is None or d < best[0]):
+                q = flat_lines[k].interpolate(flat_lines[k].project(pt))
+                best = (d, q.z)
+        return None if best is None else best[1]
+
     for r in walks:
         p = r["p"]
         for end in (0, -1):
             z = street_top(*p[end][:2])
+            if z is None:
+                z = path_top(r, *p[end][:2])
             if z is not None and abs(z - p[end][2]) > 0.01:
                 p[end][2] = round(z, 2)
                 changed.add(id(p[end]))
