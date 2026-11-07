@@ -3666,6 +3666,26 @@ SURFACE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04}   # how far the game l
 JOIN_REACH = 0.3        # metres past a street's pavement that a path's end still meets it
 
 
+def abutments_on_the_ground(rd, sq, ground):
+    """A bridge's abutment, the point either side of its span, at the ground there: the game lands the
+    deck on the grid's ground at it whatever the way's own point says, and the faces leaving it are
+    laid from that point."""
+    x0, y0, x1, y1 = sq
+    for r in rd:
+        p = r["p"]
+        f = [len(q) > 3 and bool(q[3]) for q in p]
+        if not any(f):
+            continue
+        for i, q in enumerate(p):
+            if f[i] or not ((i and f[i - 1]) or (i + 1 < len(p) and f[i + 1])):
+                continue
+            if min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1:
+                continue
+            z = ground(q[0], q[1])
+            if z is not None:
+                p[i] = [q[0], q[1], round(z, 2)] + list(q[3:])
+
+
 def ways_meet_level(rd, sq, ground):
     """Where a path meets a street, or another path, the two are at one height: a path's end on a
     pavement is laid level with the pavement's top and on a carriageway with the road's, and paths
@@ -7605,6 +7625,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     flights_to_their_ends(rd, fitted[1] if fitted else None)
     steep_flights_that_fit(rd, ground)
     ways_meet_level(rd, sq, ground)
+    abutments_on_the_ground(rd, sq, ground)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
