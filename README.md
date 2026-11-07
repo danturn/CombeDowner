@@ -652,7 +652,12 @@ map was built before, to compare the two. Each garden has one style of front and
 of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
 Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
 railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
-streets as they're drawn. `prep_map.py`'s squares are kept apart, in
+streets as they're drawn. Each square also carries its ground as one sheet with its streets and
+paths (`tools/partition/sheet.py`): the grass is cut down or built up to meet every street's,
+pavement's and path's edge, banked no steeper than 1 in 1.5 above it and 1 in 2 below, and where a
+bank 3 m wide can't make up the difference a low retaining wall in the square's own kind of wall
+takes the rest. `?ground=sheet` in the address draws and walks the ground that way, to compare
+with the ground as it's drawn now. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip` (Bath's
