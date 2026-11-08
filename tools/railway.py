@@ -234,9 +234,8 @@ def share_beds(tracks):
     are at one height, and further apart the bed between them falls no steeper than CROSSFALL. Each
     track's own profile is evened out on its own, so two tracks a few metres apart came out up to
     35 cm different, and their ballast stood as a step. Only tracks alike (both on the ground, both
-    on a bridge, both in a tunnel) are matched."""
-    segs = [(ti, k, t["p"][k], t["p"][k + 1]) for ti, t in enumerate(tracks) for k in range(len(t["p"]) - 1)
-            if t["p"][k][3] == t["p"][k + 1][3]]
+    on a bridge, both in a tunnel, or one at the other's end of a bridge or a tunnel) are matched."""
+    segs = [(ti, k, t["p"][k], t["p"][k + 1]) for ti, t in enumerate(tracks) for k in range(len(t["p"]) - 1)]
     if not segs: return 0.0
     tree = shapely.STRtree([LineString([a[:2], b[:2]]) for _, _, a, b in segs])
     pairs = []
@@ -245,7 +244,7 @@ def share_beds(tracks):
             best = {}
             for j in tree.query(Point(q[:2]).buffer(BED_APART)):
                 tj, kj, a, b = segs[int(j)]
-                if tj == ti or a[3] != q[3]: continue
+                if tj == ti or q[3] not in (a[3], b[3]): continue
                 vx, vy = b[0] - a[0], b[1] - a[1]
                 f = min(1, max(0, ((q[0] - a[0]) * vx + (q[1] - a[1]) * vy) / ((vx * vx + vy * vy) or 1)))
                 dist = math.hypot(a[0] + vx * f - q[0], a[1] + vy * f - q[1])
