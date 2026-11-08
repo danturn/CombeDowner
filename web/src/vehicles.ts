@@ -651,6 +651,8 @@ function figure(colour: string): THREE.Group {
   return g;
 }
 
+const HELD = new THREE.Euler();   // (scratch, for the driver's steadied view)
+
 // ---- one vehicle ----------------------------------------------------------------------------
 interface Snap { t: number; x: number; z: number; a: number; vx: number; vz: number; steer: number; tip: number; flags: number }
 
@@ -841,14 +843,22 @@ export class Vehicle implements Mover {
     }
   }
 
-  /** From inside: where the driver's eyes are in the world (into out), and how far the body's pitched (nose up +) and rolled. Keeps the wheel and dials going. */
-  eyes(out: THREE.Vector3): { pitch: number; roll: number } {
+  /** How far the body's pitched (nose up +) and rolled, from the ground under its wheels. */
+  get tilt(): { pitch: number; roll: number } { return { pitch: this.body.rotation.z, roll: this.body.rotation.x }; }
+
+  /**
+   * From inside: where the driver's eyes are in the world (into out). Keeps the wheel and dials going. held: the
+   * driver's head steadied against the bumps (game.ts), a pitch and roll that follow the body's gently, and how far
+   * it's lifted; without it the eyes go exactly with the body.
+   */
+  eyes(out: THREE.Vector3, held?: { pitch: number; roll: number; lift: number }) {
     this.cockpit?.update(this.steer, this.speed, this.rpm, this.signal);
     this.root.updateMatrixWorld(true);
     for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
     out.copy(this.view === "bonnet" && this.bonnet ? this.bonnet : this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
-    this.body.localToWorld(out);
-    return { pitch: this.body.rotation.z, roll: this.body.rotation.x };
+    if (!held) { this.body.localToWorld(out); return; }
+    out.multiply(this.body.scale).applyEuler(HELD.set(held.roll, this.a, held.pitch, "YZX")).add(this.body.position).applyMatrix4(this.root.matrixWorld);
+    out.y += held.lift;
   }
 
   /** How far down (a pitch) the driver's view from inside settles to. */

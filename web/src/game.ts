@@ -463,6 +463,7 @@ export class Game {
   private bellWas = false;                       // at a tiller: the bell key last frame, so holding it rings once
   private steerer: Avatar | null = null;         // you, stood at the tiller, for the chase camera to see
   private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
+  private head = { pitch: 0, roll: 0, lift: 0, y: 0 };   // the driver's head, steadied against the bumps (driverView)
   private slideCam = 0;                          // how far the chase camera has swung out for a slide, 0 to 1
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
@@ -3001,7 +3002,7 @@ export class Game {
       if (from) p.pitch = v.restPitch;
     }
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
-    if (from) { this.driverView(v, s.yaw, settle); return; }
+    if (from) { this.driverView(v, s.yaw, settle, dt); return; }
     this.insideYaw = null;
     // the chase camera: the mouse only looks about, and it swings back behind as you drive on. In a
     // slide it hangs back towards the way the car's really going, lagging and pulling out wider, so
@@ -3030,10 +3031,22 @@ export class Game {
   /**
    * The driver's own view, from their seat over the dash or from the bonnet (cockpit.ts). It turns with the vehicle; look
    * about with the mouse, and it eases back to straight ahead as the chase camera does. It pitches with the
-   * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
+   * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about. Your head rides
+   * the bumps as a driver's does: it follows the body's pitch, roll and rise a moment behind, so a rough road jostles
+   * the dash in front of you a little rather than shaking the whole view, and a hill still tips you as it comes.
    */
-  private driverView(v: Vehicle, ahead: number, settle: number) {
-    const p = this.player;
+  private driverView(v: Vehicle, ahead: number, settle: number, dt: number) {
+    const p = this.player, h = this.head, tilt = v.tilt, y = v.root.position.y;
+    if (this.insideYaw === null) Object.assign(h, { pitch: tilt.pitch, roll: tilt.roll, lift: 0, y });   // just sat in: no lag to catch up
+    else {
+      // a bump comes and goes in a fraction of a second and the head barely notices; a slope stays and the head comes round to it
+      const ease = (rate: number) => 1 - Math.exp(-dt * rate), near = (x: number, to: number, most: number) => Math.max(to - most, Math.min(to + most, x));
+      h.pitch = near(h.pitch + (tilt.pitch - h.pitch) * ease(4), tilt.pitch, 0.12);
+      h.roll = near(h.roll + (tilt.roll - h.roll) * ease(3), tilt.roll, 0.12);
+      // and it rises and falls more softly than the wheels, never far off the seat (so never up through the roof)
+      h.y = near(h.y + (y - h.y) * ease(7), y, 0.1);
+      h.lift = h.y - y;
+    }
     if (this.insideYaw !== null) p.yaw += Math.atan2(Math.sin(ahead - this.insideYaw), Math.cos(ahead - this.insideYaw));
     this.insideYaw = ahead;
     let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
@@ -3044,8 +3057,8 @@ export class Game {
     off = Math.max(-2.4, Math.min(2.4, off));
     p.yaw = ahead + off;
     p.pitch = Math.max(-0.8, Math.min(0.5, p.pitch));
-    const tilt = v.eyes(this.camera.position);
-    this.camera.rotation.set(p.pitch + tilt.pitch * Math.cos(off), p.yaw, -tilt.roll * 0.3, "YXZ");
+    v.eyes(this.camera.position, h);
+    this.camera.rotation.set(p.pitch + h.pitch * Math.cos(off), p.yaw, -h.roll * 0.3, "YXZ");
   }
 
   /** A passenger: sat in your seat as it goes along, looking about through your own eyes (and free to shoot). */

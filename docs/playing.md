@@ -426,7 +426,8 @@ the chase camera, the driver's seat and the bonnet camera. From the driver's sea
 a low dash: the speedo shows your speed, the wheel turns as you steer, and the buses have a cab of
 their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
 racing game, sits just above the bonnet at the foot of the windscreen (on a bus or a coach, at the
-front of the cab) with nothing of the inside in the way. It remembers which you like. Each engine has a voice of its own:
+front of the cab) with nothing of the inside in the way. It remembers which you like. From either, your head rides the bumps as a driver's does:
+a rough road jostles the car round you, but the view tips with a hill only gently, a moment behind. Each engine has a voice of its own:
 it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
 the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
 The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit
