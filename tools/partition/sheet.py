@@ -90,10 +90,55 @@ def unpack(sf):
     return V, cm, T, K, E
 
 
-def grid(T):
+def tunnel_hills(canal, T):
+    """The grid's heights (decimetres over z0) with the land over the canal's tunnels raised as the
+    game raises it when it loads a square (web/src/canal.ts tunnelHills, the same sums), so the sheet
+    meets the faces at the ground that is drawn there."""
+    h = np.asarray(T["h"], np.int64).copy()
+    if not canal:
+        return h
+    nx, ny, dx, dy = T["nx"], T["ny"], T["dx"], T["dy"]
+    x1, y1 = T["x0"] + (nx - 1) * dx, T["y0"] + (ny - 1) * dy
+    for t in canal.get("tunnels") or []:
+        (ax, ay), (bx, by) = t["a"], t["b"]
+        if max(ax, bx) < T["x0"] - 60 or min(ax, bx) > x1 + 60 or max(ay, by) < T["y0"] - 60 or min(ay, by) > y1 + 60:
+            continue
+        lv, d, best = 0.0, 1, math.inf
+        for r in canal["runs"]:
+            for k in range(len(r["p"]) - 1):
+                q, n = r["p"][k], r["p"][k + 1]
+                dd = math.hypot(q[0] - (ax + bx) / 2, q[1] - (ay + by) / 2)
+                if dd < best:
+                    best, lv = dd, r["lv"]
+                    d = 1 if (n[0] - q[0]) * (bx - ax) + (n[1] - q[1]) * (by - ay) >= 0 else -1
+        L = math.hypot(bx - ax, by - ay) or 1
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        side = t.get("tw") or 0
+        lo = -(2.6 + 1.3) if side < 0 else -2.6 - 0.1
+        hi = 2.6 + 1.3 if side > 0 else 2.6 + 0.1
+        mid, half, wall = (lo + hi) / 2, (hi - lo) / 2, lv + 1.0
+        off = mid * d
+        top = wall + 2.5 + 1.5 - 0.2
+        face = max(7, half + 3.5)
+        reach = face + (top - lv) * 2 + 4
+        i0 = max(0, math.floor((min(ax, bx) - reach - T["x0"]) / dx)); i1 = min(nx - 1, math.ceil((max(ax, bx) + reach - T["x0"]) / dx))
+        j0 = max(0, math.floor((min(ay, by) - reach - T["y0"]) / dy)); j1 = min(ny - 1, math.ceil((max(ay, by) + reach - T["y0"]) / dy))
+        if i0 > i1 or j0 > j1:
+            continue
+        I, J = np.meshgrid(np.arange(i0, i1 + 1), np.arange(j0, j1 + 1))
+        x = T["x0"] + I * dx - (ax - uy * off)
+        y = T["y0"] + J * dy - (ay + ux * off)
+        sa, v = x * ux + y * uy, np.abs(-x * uy + y * ux)
+        want = top - 0.5 * (np.maximum(0, v - face) + np.maximum(0, np.maximum(-sa, sa - L)))
+        k = (J * nx + I).ravel()
+        h[k] = np.maximum(h[k], np.round((want.ravel() - T["z0"]) * 10).astype(np.int64))
+    return h
+
+
+def grid(T, h=None):
     """The grid's heights (metres) in rows south to north, and its points' x and y."""
     nx, ny = T["nx"], T["ny"]
-    H = np.asarray(T["h"], float).reshape(ny, nx) / 10 + T["z0"]
+    H = np.asarray(T["h"] if h is None else h, float).reshape(ny, nx) / 10 + T["z0"]
     X = T["x0"] + np.arange(nx) * T["dx"]
     Y = T["y0"] + np.arange(ny) * T["dy"]
     return H, X, Y
@@ -309,8 +354,10 @@ def runs(mask):
     return out
 
 
-def ground_sheet(tile):
-    """`gs` for a square as written (its `sf`, `t`, `bl`, `wp` and `br`), or None if it has no faces."""
+def ground_sheet(tile, canal=None):
+    """`gs` for a square as written (its `sf`, `t`, `bl`, `wp` and `br`), or None if it has no faces.
+    canal: the map's canal, whose tunnels' hills the game raises over the grid before the sheet's
+    moves are added to it."""
     sf, T = tile.get("sf"), tile["t"]
     if not sf or not sf.get("o") or not sf.get("l") or T.get("dx", 0) <= 3:
         return None
@@ -318,7 +365,8 @@ def ground_sheet(tile):
     F = Faces(sf, bounds)
     if not len(F.free):
         return None
-    H, X, Y = grid(T)
+    h0 = tunnel_hills(canal, T)
+    H, X, Y = grid(T, h0)
     nx, ny = T["nx"], T["ny"]
     sp = F.spot
 
@@ -508,7 +556,7 @@ def ground_sheet(tile):
     tenths = np.where(H1 < H0, np.floor(tenths + 1e-6), np.where(H1 > H0, np.ceil(tenths - 1e-6), np.round(tenths)))
     cap = np.floor((high - T["z0"]) * 10 + 1e-6)
     tenths = np.where(np.isfinite(cap), np.minimum(tenths, cap), tenths)
-    dz = tenths.astype(np.int64) - np.asarray(T["h"], np.int64)
+    dz = tenths.astype(np.int64) - h0
     moved = np.nonzero(dz)[0]
 
     # 3. the cells wholly under faces, where no ground is drawn, and of the cells a free edge crosses,

@@ -7760,7 +7760,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                       None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + [c[:3] + [round(street_ground(c[1], c[2]) + 0.07, 2)] + c[4:] for c in drive_cars]
     tile["cx"], cx_count = crossings(sq, rd, street_ground, points)
-    gs = ground_sheet(tile)
+    gs = ground_sheet(tile, canal)
     if gs is not None:
         tile["gs"] = gs
     d = os.path.dirname(os.path.abspath(out))
