@@ -473,6 +473,18 @@ leave them standing. Get out and the shift's paused: back in the same bus within
 carries on. The passengers are yours alone: anyone riding along sees the bus stop and go, but not who
 gets on.
 
+**A timetabled run.** Take the wheel at the bus station and it's a timetabled run instead: out to
+the end of the route and back, calling at every stop, to the timetable. The panel shows whether
+you're on time, early or late (in real minutes and seconds: the timetable allows a steady pace
+between stops and a little time at each), and you leave the station 20 seconds after you take the
+wheel. Get to a stop early and you wait there: the panel counts down to when you're due away, and a
+ding says it's time to go. You start with 100 points. Leaving a stop early costs points, so does
+getting to one more than 15 seconds late (the later, the more), missing a stop altogether, and
+getting back to the station late. Back at the station, what's left decides the prizes: 50 points
+gets you a conductor's cash bag, 75 an inspector's whistle as well, and 90 an inspector's
+gold-braided cap too (with the bus driver's cap if you left nobody at a stop). Once you've finished,
+get out before starting another.
+
 On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down, with a recovery
 truck in front and its owner pacing the pavement, telling anyone who'll listen. He can't be hurt:
 shoot him and he complains about that too.

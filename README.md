@@ -233,7 +233,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   with sees what you've got on. They come from all over: a seagull for three stars on a Seagull
   Attack, a chef's hat from the Darling Deli, a crown for being there when the whole map opens, a
   party hat for setting the last strange object in a structure (and a strange object of your own on
-  your shoulder after five), a bus driver's cap for a clean shift on the buses, a clippie's ticket
+  your shoulder after five), a bus driver's cap for a clean shift on the buses (and a conductor's cash bag, an inspector's whistle and his gold-braided cap for keeping to the timetable), a clippie's ticket
   machine hat for fifty tickets sold in Push the Bus (a pensioner's rain hood for gold with them all
   happy, a walking stick for being hit by one, a thermos in a string bag for being hit by the lot),
   earmuffs for a clean touch on the bells, a beret when the critics call your show a triumph, a
