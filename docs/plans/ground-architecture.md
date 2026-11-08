@@ -1246,10 +1246,11 @@ default drawing is unchanged, and so is any square without `gs`.
   `CD_GROUND=sheet` counts rule 26's "hole in the ground beside a face" (and the figure "sheet
   holes m2"), and the game warns of any crack left as a square loads (`openSeams` in sheet.ts; a
   shot's page complaints in `shots.json` show it). Both read 0 on the twelve squares.
-- **Kept for stage 4**: the bridges' own letting-down of the ground and the tunnel cuttings run as
-  before. The sheet keeps the ground 0.5 m under a deck's underside, keeps the corners round an
-  abutment as surveyed (§12.5), and never builds it up within a cell and a half of a deck or the
-  water, but it doesn't attach to deck ends, portals or flights' landings as edges (§4.4).
+- **Deck ends (stage 4's, begun here)**: the bridges' own letting-down of the ground and the tunnel
+  cuttings run as before. The sheet keeps the ground 0.5 m under a deck's underside out to its
+  abutments, and a face ending under a deck's end is held there by a retaining wall, the abutment
+  (§12.5). It never builds the ground up within a cell and a half of a deck or the water. Portals
+  and the parapets' ends aren't yet drawn from the sheet's edges (§4.4).
 - **The checks read the sheet with `CD_GROUND=sheet`** (`tools/check_more.py`: the drawn ground is
   `Land`'s; rule 26 measures a free edge against where the sheet meets it, and counts a retaining
   wall's length as a figure, "retaining wall m", not a fault, since Dan asked for those walls;
@@ -1352,7 +1353,7 @@ roofs rule 22 first counted as new in C (all in 0_3) fails the same way in A whe
 | 1 road too steep | 8 | 8 | 8 |
 | 2 bridge without headroom | 2 | 2 | 2 |
 | 3 bridge over nothing | 4 | 3 | 3 |
-| 3 deck end off the road | 3 | **5** | **5** |
+| 3 deck end off the road | 3 | 2 | 2 |
 | 3 span ends where its record does | 13 | 12 | 12 |
 | 3 span sunk in the ground | 6 | 6 | 6 |
 | 6 track off its ground | 2 | 2 | 2 |
@@ -1362,14 +1363,14 @@ roofs rule 22 first counted as new in C (all in 0_3) fails the same way in A whe
 | 9 building on a pavement | 4 | 4 | 4 |
 | 9 crack between street faces | 56 | 55 | 55 |
 | 9 footpath along a pavement | 3 | 3 | 3 |
-| 9 path strip along a pavement | 17 | 13 | 13 |
+| 9 path strip along a pavement | 17 | 12 | 12 |
 | 9 sliver or spike where road and paving meet | 45 | **46** | **46** |
 | 9 steps on a path | 6 | **7** | **7** |
 | 9 wall poking past another | 4 | 4 | 4 |
 | 9 wall stub on its own | 2 | 2 | 2 |
 | 9 walls a metre apart | 1 | 1 | 1 |
 | 10 building under a bridge | 3 | 3 | 3 |
-| 10 face rising into a bridge | 11 | **13** | **13** |
+| 10 face rising into a bridge | 6 | 6 | 6 |
 | 10 ground in the gap under a bridge | 5 | 5 | 5 |
 | 10 no open gap under a bridge | 7 | 7 | 7 |
 | 10 street drawn on a path under a bridge | 12 | 12 | 12 |
@@ -1384,7 +1385,7 @@ roofs rule 22 first counted as new in C (all in 0_3) fails the same way in A whe
 | 13 way ends inside a building | 1 | 1 | 1 |
 | 13 way steps at a square's edge | 0 | **1** | **1** |
 | 13 way stops at a square's edge | 18 | 18 | 18 |
-| 13 ways meet at different heights | 4 | **5** | **5** |
+| 13 ways meet at different heights | 4 | 1 | 1 |
 | 14 water above its banks | 2 | 2 | 2 |
 | 15 street item floating | 0 | **1** | **1** |
 | 17 pub far from a street | 1 | 1 | 1 |
@@ -1396,31 +1397,31 @@ roofs rule 22 first counted as new in C (all in 0_3) fails the same way in A whe
 | 22 roof you sink into walking over it | 134 | 134 | 134 |
 | 24 path tilted sideways | 2249 | 195 | 195 |
 | 25 tree, shrub or boulder in a path | 527 | 526 | 526 |
-| 26 face edge standing off the ground | 1158 | **1751** | 401 |
+| 26 face edge standing off the ground | 1158 | **1754** | 397 |
 | 27 gap between a path and a street | 1928 | **1929** | **1929** |
 | 27 lump between faces | 0 | 0 | **3** |
 | 27 pavement just stops | 1281 | 1276 | 1276 |
-| 28 deck end off the street | 44 | **49** | 44 |
+| 28 deck end off the street | 44 | 34 | 36 |
 | 28 deck stops in the air | 20 | 18 | 18 |
 | 29 parapet gap where pieces meet on a deck | 6 | 6 | 6 |
-| 30 ground up through a deck | 28 | 25 | 24 |
-| 31 no room under a bridge | 79 | **84** | **86** |
-| 33 flight lands on nothing | 11 | **13** | **12** |
-| 33 flight's treads wrong | 102 | **147** | **112** |
+| 30 ground up through a deck | 28 | 23 | 3 |
+| 31 no room under a bridge | 79 | **84** | 62 |
+| 33 flight lands on nothing | 11 | **13** | **13** |
+| 33 flight's treads wrong | 102 | **147** | 77 |
 | 34 works bank over a lock's paving | 7 | 7 | 7 |
 | 35 canal works in a river | 1 | 0 | 0 |
 | 35 land standing in the water | 43 | 43 | 43 |
 | 35 touching water at two levels | 8 | 7 | 7 |
 | 36 fence on water or a way | 95 | 34 | 34 |
 | 37 church not drawn as one | 12 | 0 | 0 |
-| 20 no road drawn (overroad; not Cape Town) | 132 | 130 | 121 |
-| 20 pavement on a lip (overroad; not Cape Town) | 2011 | **2524** | 350 |
+| 20 no road drawn (overroad; not Cape Town) | 132 | 130 | 126 |
+| 20 pavement on a lip (overroad; not Cape Town) | 2011 | **2524** | 360 |
 | 20 road drawn wider than its record (overroad; not Cape Town) | 515 | **517** | **519** |
-| 20 something on the pavement (overroad; not Cape Town) | 380 | 380 | 338 |
+| 20 something on the pavement (overroad; not Cape Town) | 380 | 380 | 340 |
 | 20 something over the road (overroad; not Cape Town) | 76 | 76 | 41 |
-| 23 ground drawn over a path (overroad; not Cape Town) | 127 | **693** | 122 |
-| 23 path not drawn (broken, or a gap where ways meet) (overroad; not Cape Town) | 228 | 222 | 222 |
-| 23 step between two pieces of path (overroad; not Cape Town) | 5 | **15** | **18** |
+| 23 ground drawn over a path (overroad; not Cape Town) | 127 | **681** | 103 |
+| 23 path not drawn (broken, or a gap where ways meet) (overroad; not Cape Town) | 228 | 212 | 205 |
+| 23 step between two pieces of path (overroad; not Cape Town) | 5 | **12** | **17** |
 
 ### 12.5 Bringing C to A
 
@@ -1449,41 +1450,68 @@ What changed, all at build time and for every map alike:
 - **A street riding on a bridge's deck** (flag 2) rides on along the points where the ground stays
   well under it, and an approach brought back to the ground is not brought back where it meets a
   span (`settle_on_laid_ground`).
+- **A bridge's abutment is at the ground the deck lands on** (`abutments_on_the_ground`): the point
+  either side of a span is written at the grid's ground there, as the game lands the deck on it
+  whatever the point said. Every path meeting at an abutment starts on that ground, even where
+  several share the point, and a path's approach to a bridge, off the span, is laid level across
+  from its own line (`street_surfaces`): on the hill's own slope its face met the deck's end
+  tilted, one side 10–30 cm off.
 - **The sheet** (`sheet.py`): the cells where faces overlap are let down only as far as the faces in
   them need, corner by corner, rather than every corner to under the lowest face (which dug a pit at
-  Midland Bridge Road's abutment, 1.8 m under the road the deck lands on); the corners round a
-  bridge's abutment stay as surveyed; the ground under a deck is kept DECK_UNDER under its
-  underside (its depth by kind, as `world.ts` builds it) across its whole width; between faces of
-  two kinds within a metre of both the ground is no higher than the higher; the ground is not cut
-  below a building's foot or from under a tree, shrub or street item; grid heights round away from
-  the face rather than to the nearest decimetre.
+  Midland Bridge Road's abutment, 1.8 m under the road the deck lands on); the ground under a deck
+  is kept DECK_UNDER under its underside (its depth by kind, as `world.ts` builds it) across its
+  whole width and a grid cell beyond, so the slope up from a corner further out doesn't rise into
+  it; between faces of two kinds within a metre of both the ground is no higher than the higher;
+  the ground is not cut below a building's foot or from under a tree, shrub or street item; grid
+  heights round away from the face rather than to the nearest decimetre.
+- **Deck ends** (stage 4, §4.4, begun here): from a deck's last point on its span to its abutment
+  (the point the game brings the deck down to the survey's ground at) the ground is dug from under
+  it too. Where a face ends under a deck's end, the ground beside its edge is dug to the room under
+  the deck and the face is held by a retaining wall (gs `s`, drawn as the sheet's other walls): the
+  abutment. Within half a cell of an abutment the ground stays as surveyed, so the deck lands on
+  the ground the game reads there. The room under a deck comes before a house's or a bin's foot
+  beside it (at Bradford-on-Avon's Town Bridge a restaurant and a wheelie bin stood the bank up
+  under the deck). This replaced an earlier pin of the corners round an abutment as surveyed, which
+  only satisfied rule 28's reading of the carved grid (below).
+- **Flights are sunk into the hill** (Dan's decision): beside a flight not on a bridge, the ground
+  stays as surveyed up to 1.2 m over the flight's edge (`SUNK_MOST`), held by a retaining wall,
+  rather than being cut down to the treads.
 
-Changes to the checks, both written up here: `check_more.bridges` no longer fails on a span that
+Changes to the checks, all written up here: `check_more.bridges` no longer fails on a span that
 hangs off both its ends with nothing between (it raised an exception on Cape Town 1_3, so no rule
-was counted for it); rule 22 as above.
+was counted for it); rule 22 as above; and three that make a rule measure what the game draws
+rather than hide a fault. Each was run on A and C, the same maps before and after:
 
-**Where C is still over A**, and why:
+| check | what changed | A before → after | C before → after |
+|---|---|---|---|
+| 33 flight's treads wrong | A tread isn't counted as buried where a retaining wall (gs `s`, a free edge whose ground is held over the face) stands within 0.4 m of the side measured: Dan's design is a flight sunk into the hill with its bank held by a wall. Only with the sheet, which is the only thing that writes those walls. | 102 → 102 | 187 → 78 |
+| 10 face rising into a bridge | A face inside a set piece's street is skipped: the game cuts those faces out and lays the street itself (`setpieces.ts` `cutFaces`). The strip is read from `SET_PIECES` itself (bundled with esbuild, as rule 37 already does for the outlines), so there's no list of places in the check. | 11 → 6 | 13 → 6 |
+| 28 deck end off the street | The deck's end is measured against the grid's own (uncarved) ground at its abutment, which is what the game lands it on (`map.trueGround`, `T.h`), not the carved ground. The earlier pin of the sheet's corners round an abutment only satisfied the old reading, and went. | 44 → 44 | 44 → 51, then 36 with the abutments and approaches laid to the ground the deck lands on |
+
+The rule 33 figures for C are with the flights sunk into the hill: without the walls' excuse the
+sunk flights read as buried, which is why the two went in together. The rule 10 places dropped on
+both sides are all under Argyle Street at Pulteney Bridge.
+
+**Where C is still over A**, and why. Every one but the lumps is the same in B, so it comes from
+stage 2's maps rather than the sheet:
 
 | rule | A | C | where, and why |
 |---|---|---|---|
-| 3 deck end off the road | 3 | 5 | Grand Parade at Pulteney Bridge (its end rides Argyle Street's deck, flag 2, and its next point stands 1.2 m over the grid there), and Cape Town's Jetty 1 (the same points as in A, over a grid stage 2 laid differently; not looked into further). |
 | 9 sliver or spike | 45 | 46 | Cape Town 2_2 (1077, 705), one road point: stage 2's carriageway outline, not the ground. |
-| 9 steps on a path | 6 | 7 | Cape Town 1_3 (397, 1574), 1.4 m of a mapped flight over a footway. |
-| 10 face rising into a bridge | 11 | 13 | Both new ones are under Argyle Street, inside the Pulteney Bridge set piece's street, whose faces the game cuts out and redraws (`setpieces.ts` `cutFaces`); the check doesn't know the set piece. |
-| 12 building floating | 3 | 4 | Bradford-on-Avon (121, 151): a wall foot 0.6 m over the ground beside it. |
-| 13 way steps at a square's edge | 0 | 1 | 0_2 (-932, 1467), a flight at the square's edge, 0.6 m. |
-| 13 ways meet at different heights | 4 | 5 | Cape Town 1_3 (382, 1643), a footway meeting another 2.1 m off. |
-| 15 street item floating | 0 | 1 | 0_2 (-1246, 1650), a wheelie bin at the top of a 3 m drop in one grid cell. |
+| 9 steps on a path | 6 | 7 | Cape Town 1_3 (397, 1574): 1.4 m of a mapped flight over a footway. |
+| 12 building floating | 3 | 4 | Bradford-on-Avon (121, 151): a detached building whose written ground height stands 0.6 m over the grid at its foot (the rule reads the grid, not the sheet). |
+| 13 way steps at a square's edge | 0 | 1 | 0_2/1_2 (-932, 1467): a flight whose half in 1_2 runs to the edge and folds back on itself, 0.6 m off the other half. |
+| 15 street item floating | 0 | 1 | 0_2 (-1246, 1650): a wheelie bin at a path's height just off its edge, where the ground meets the path 0.4 m lower. |
 | 27 gap between a path and a street | 1928 | 1929 | Hackney (-290, -226), 0.7 m. |
-| 27 lump between faces | 0 | 3 | 0_2 (-1403, 1501) 0.07 m, Cape Town 2_2 (1121, 690) 0.08 m and (1013, 1261) 1.87 m: grid points the sheet leaves as surveyed, which the cap between two kinds of face doesn't reach. |
-| 31 no room under a bridge | 79 | 86 | At decks' ends: within 1.5–3 m of an abutment the bank stands within 0.5 m of the deck's underside (Silver Street and St Margaret's Street in Bradford-on-Avon, footbridges in Cape Town; at Silver Street 67 such points against A's 2, A's drawn ground being lower there). The sheet keeps the corners round an abutment as surveyed, so the deck lands where the faces leaving it are. This is stage 4's (the deck's end as an attachment edge). |
-| 33 flight lands on nothing | 11 | 12 | Flights mapped crossing each other or alongside a path (1_3 (-852, 2146)), and two mapped well off anything to walk on. |
-| 33 flight's treads wrong | 102 | 112 | All "buried": treads under the ground or path beside them. Dan's decision was that steps are sunk into the hill with a low retaining wall; the check counts a tread with the ground beside it higher as buried whether or not a wall holds it. |
+| 27 lump between faces | 0 | 3 | Cape Town 2_2 (1013, 1261), 1.87 m: under the Nelson Mandela Boulevard flyover the survey stands up as an embankment, and the sheet holds it with retaining walls on both sides, between two roads (the walls are the design, a bank no face meets; the rule doesn't know them). Two more of 7–8 cm (0_2 (-1403, 1501), Cape Town 2_2 (1121, 690)). |
+| 33 flight lands on nothing | 11 | 13 | Four ends 6–13 cm off the face they land on (the flight's end is laid to the path's line, the face drawn round it a few cm off), Widcombe's 160 m hill path drawn as one flight (1_2 (-751, 1436), 0.4 m), and flights mapped crossing one another (1_3 (-852, 2146)). |
 | 20 road drawn wider | 515 | 519 | 1–2 m² each, where the sheet draws the carriageway's own edge. |
-| 23 step between two pieces of path | 5 | 18 | Down from 86. What is left is mostly 0.05–0.13 m between pieces of a dirt, gravel or grass path, or two drives, and the 2.95 m one at (-973, 2383) that A has too. |
+| 23 step between two pieces of path | 5 | 17 | 9 of the 17 lie on the seams between squares (0.05–0.32 m), where each square levels its half of a path from its own stretch of it; laying the seam to the height the nearest way crosses it at was tried and made it 24, so it was taken out. The rest are 5–33 cm between pieces of a path, two drives, and the 2.95 m one at (-973, 2383) that A has too. |
 
-**Shots**: the daylight views of §12.3 again, A (its own build of `ecdffd38`) against C, in
-`shots/ground-sheet-final/` (not in the repository): all 58 differ, as the maps do. None shows a hole
-or white through the ground; the new near-white in C is sky past changed roofs (rule 37's churches,
-St Mark's at Widcombe), paler paving and kerbs. The game's own seam check (`openSeams`) reports
-none at any view, and the pinhole at 0_2's edge2 view is gone.
+**Shots**: the daylight views of §12.3 again, A (its own build of `ecdffd38`) against C at this
+commit, in `shots/ground-sheet-final/` (not in the repository). All 58 differ, as the maps do. None shows a hole
+or white through the ground: the new near-white in C is sky and cloud past changed roofs and
+trees (St Mark's at Widcombe, the viaduct's arches), paler paving and kerbs, and Cape Town 2_2's
+new retaining wall under the flyover. The game's own seam check (`openSeams`) reports none at any
+view. Cape Town's page now also logs the "radius is NaN" warning that Bradford-on-Avon and Hackney
+log in A as well; it hasn't been traced.
