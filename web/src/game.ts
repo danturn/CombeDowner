@@ -89,6 +89,8 @@ import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
+import { Menders } from "./menders";
+import { addGap } from "./gaps";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { RecordPlayer } from "./recordplayer";
@@ -484,6 +486,7 @@ export class Game {
   private mineTour: MineTour;
   private deliDoor: DeliDoor;
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
+  private menders: Menders;                    // the old couple who mend the hedges and fences you drive through (gaps.ts)
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private records: RecordPlayer;               // the record player on Solsbury Hill
@@ -707,6 +710,7 @@ export class Game {
     this.mineTour = new MineTour(map, world.scene);
     this.deliDoor = new DeliDoor(map, world.scene);
     this.breakdown = new Breakdown(map, world.scene);
+    this.menders = new Menders(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
     this.dayBendy = new DayBendy(map, world.scene);
     this.records = new RecordPlayer(map, world.scene);
@@ -929,6 +933,8 @@ export class Game {
     this.listen("tfw", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.applyWrecks(d); }));
     this.listen("tfx", here((d, from) => { if (this.isHost && Array.isArray(d)) this.traffic.shove(d[0], d[1], d[2], d[3], from); }));
     this.listen("tfp", here((d, from) => { if (this.isHost && Array.isArray(d)) this.knockParked(d[0], d[1], d[2], d[3], from); }));
+    // someone's driven through a hedge or a fence
+    this.listen("hgb", here((d) => { if (Array.isArray(d)) this.smashed(d[0], d[1], d[2], d[3], d[4] === 1, false); }));
     this.listen("vk", here((d, from) => {
       const v = Array.isArray(d) ? this.vehicles.list.find((o) => o.i === d[0]) : undefined;
       if (this.isHost && v) this.knockVehicle(v, d[1], d[2], d[3], from);
@@ -2984,7 +2990,8 @@ export class Game {
     const blink = performance.now() % 760 < 380;
     if (v.signal && blink !== this.blinkWas) SFX.relay(blink);
     this.blinkWas = blink;
-    v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z), this.shoving(v, this.net.selfId));
+    v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z), this.shoving(v, this.net.selfId),
+      (x, z, ux, uz, leafy) => this.smashed(x, z, ux, uz, leafy, true));
     v.pose(dt, performance.now());
     if (v.impact > 3) SFX.crash(Math.min(1, (v.impact - 3) / 12));
     if (v.spec.milk && v.impact > 3.5) this.smashMilk(v);
@@ -3088,6 +3095,18 @@ export class Game {
         else this.shoveCar(o.n, dvx, dvz, spin, by);
       },
     };
+  }
+
+  /** A hedge or a fence smashed through at scene (x, z), running (ux, uz) (gaps.ts): the hole, leaves or splinters flying, and the noise. mine: you did it, so tell everyone. */
+  private smashed(x: number, z: number, ux: number, uz: number, leafy: boolean, mine: boolean) {
+    if (![x, z, ux, uz].every(Number.isFinite) || !addGap(x, z, ux, uz, performance.now() / 1000, leafy)) return;
+    const y = this.map.ground(x, z) + 0.7, at = new THREE.Vector3(x, y, z);
+    for (const s of [-1, 1]) this.effects.impact(at, new THREE.Vector3(-uz * s, 0.6, ux * s).normalize(), leafy ? "#4f7a35" : "#7a5b3c", 10);
+    SFX.smashThrough(leafy, ...this.hear(x, y, z));
+    if (mine) {
+      const q = (v: number) => Math.round(v * 100) / 100;
+      this.net.send("hgb", [q(x), q(z), q(ux), q(uz), leafy ? 1 : 0]);
+    }
   }
 
   /** A car in the traffic's been driven into: knock it (the host runs it; anyone else sees it go straight away and tells the host). */
@@ -4190,11 +4209,14 @@ export class Game {
     // the BMW's owner: rounds stop at him, but he can't be hurt
     const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
     if (bloke !== null) { maxD = bloke; victim = null; naughtyBoy = null; cat = null; }
+    // and the old couple mending a hedge (menders.ts)
+    const mender = !boss ? this.menders.hit(origin, dir, maxD) : null;
+    if (mender) { maxD = mender.dist; victim = null; naughtyBoy = null; cat = null; }
     // and Jamie the same (jamie.ts)
-    const jamie = !boss && bloke === null ? this.jamie.hit(origin, dir, maxD) : null;
+    const jamie = !boss && bloke === null && !mender ? this.jamie.hit(origin, dir, maxD) : null;
     if (jamie !== null) { maxD = jamie; victim = null; naughtyBoy = null; cat = null; }
     // and Bendy by day (daybendy.ts)
-    const teacher = !boss && bloke === null && jamie === null ? this.dayBendy.hit(origin, dir, maxD) : null;
+    const teacher = !boss && bloke === null && !mender && jamie === null ? this.dayBendy.hit(origin, dir, maxD) : null;
     if (teacher !== null) { maxD = teacher; victim = null; naughtyBoy = null; cat = null; }
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
@@ -4251,6 +4273,11 @@ export class Game {
       const claim = { c: naughtyBoy.i, g: naughtyBoy.gen, head, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isHost) this.applyNaughtyBoyHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
+    } else if (mender) {
+      mark = 1;
+      if (melee) SFX.punch();
+      else if (!paint) this.effects.impact(end, dir.clone().negate(), mender.her ? "#c9b48e" : "#6d5a3e", 4);
+      this.menders.ouch(mender, maxD);
     } else if (bloke !== null) {
       mark = 1;
       if (melee) SFX.punch();
@@ -4331,6 +4358,7 @@ export class Game {
       if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
     }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
+    this.menders.update(dt, now / 1000, p.pos.x, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);

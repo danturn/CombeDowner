@@ -14,7 +14,8 @@
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Drive into the traffic, a parked car or a vehicle nobody's in and it gives way: you
 // plough on, a bit slower, and what you hit is knocked off its line (the traffic and the parked
-// cars become wrecks in traffic.ts; a vehicle slides off with its handbrake on). Take a Robin round a corner too fast and it goes over;
+// cars become wrecks in traffic.ts; a vehicle slides off with its handbrake on). Go through a hedge or a
+// garden fence fast enough and it goes down (gaps.ts); slower, you bounce off it like a wall. Take a Robin round a corner too fast and it goes over;
 // drive a milk float into something and the bottles go. Every other parked car in the place, in Combe Down or out in Bath,
 // stays street furniture until someone gets in it, and then it's a car like the rest. You can call
 // a bus at any bus stop (game.ts), in Combe Down or anywhere in Bath. Space with some lock on kicks the back end
@@ -651,6 +652,8 @@ function figure(colour: string): THREE.Group {
   return g;
 }
 
+/** How fast a car has to be going (m/s, about 18 mph) to smash through a hedge or a fence rather than bounce off it. */
+export const SMASH_SPEED = 8;
 const HELD = new THREE.Euler();   // (scratch, for the driver's steadied view)
 
 // ---- one vehicle ----------------------------------------------------------------------------
@@ -920,7 +923,7 @@ export class Vehicle implements Mover {
   right() { if (this.tip) { this.tip = 0; this.tipT = 0; this.moved = true; } }
 
   // ---- driving it yourself --------------------------------------------------------------------
-  drive(dt: number, inp: Controls, paved: (x: number, z: number) => boolean, traffic?: Shove) {
+  drive(dt: number, inp: Controls, paved: (x: number, z: number) => boolean, traffic?: Shove, smash?: (x: number, z: number, ux: number, uz: number, leafy: boolean) => void) {
     if (this.assist) inp = this.assist(inp);
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
@@ -1029,6 +1032,11 @@ export class Vehicle implements Mover {
       this.x += this.vx * dt / strides; this.z += this.vz * dt / strides;
       if (st === 0 && traffic && soft) this.plough(traffic, soft);
       const c2 = Math.cos(this.a), s2 = Math.sin(this.a);
+      // fast enough, and a hedge or a fence goes down in front of it (gaps.ts), costing it hardly any speed
+      if (smash && Math.hypot(this.vx, this.vz) > SMASH_SPEED) for (const o of this.circles) {
+        const hit = map.smashable(this.x + o * c2, this.z - o * s2, this.y, this.hw);
+        if (hit) { smash(hit.x, hit.z, hit.ux, hit.uz, hit.leafy); this.vx *= 0.94; this.vz *= 0.94; }
+      }
       for (let it = 0; it < 3; it++) {
         let bx = 0, bz = 0, best = 0;
         for (const o of this.circles) {

@@ -1336,6 +1336,28 @@ export function boom(distance = 0, pan = 0) {
   for (let k = 0; k < 9; k++) clink(d, t + 0.45 + Math.random() * 1.2, 0.04 + Math.random() * 0.06, 1400 + Math.random() * 3000);
 }
 
+/** A car going through a hedge (leafy: a rush of leaves and twigs snapping) or a fence (boards cracking and clattering): gaps.ts. */
+export function smashThrough(leafy: boolean, distance = 0, pan = 0) {
+  if (!ctx || distance > 80) return;
+  const t = now(), j = vary(), d = out(1.2 * fall(distance, 8), pan, distance, 0.15);
+  if (leafy) {
+    burst(d, t, 0.45, 0.9, 2600 * j, { type: "bandpass", q: 0.6, to: 900, attack: 0.02 });
+    for (let k = 0; k < 7; k++) clack(d, t + Math.random() * 0.3, 0.12 + Math.random() * 0.12, 1800 + Math.random() * 1600);
+  } else {
+    tone(d, t, 0.12, 0.5, 160 * j, 70);
+    burst(d, t, 0.04, 0.9, 1700 * j, { q: 1.2 });
+    for (let k = 0; k < 6; k++) clack(d, t + 0.03 + Math.random() * 0.35, 0.3 - k * 0.03, 600 + Math.random() * 700);
+  }
+}
+
+/** A hammer knocking a fence post back in (menders.ts). */
+export function mendTap(distance = 0, pan = 0) {
+  if (!ctx || distance > 40) return;
+  const t = now(), d = out(0.5 * fall(distance, 6), pan, distance, 0.15);
+  clack(d, t, 0.5, 1100 * vary());
+  tone(d, t, 0.06, 0.25, 220, 150, "triangle");
+}
+
 /** A bundle of firewood thrown on the bonfire (bonfire.ts): a hollow wooden clatter. */
 export function woodStack(distance = 0, pan = 0) {
   if (!ctx || distance > 60) return;

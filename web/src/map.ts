@@ -15,6 +15,7 @@ import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
+import { breakable, inGap, leafy } from "./gaps";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
 import { alignPortals, boreHeight, portalFaces } from "./tunnels";
@@ -326,6 +327,7 @@ export class GameMap {
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
   private sFoot: number[] = [];   // a wall's foot: you walk under one whose foot is over your head (a set piece's terrace, a lintel)
   private sGround: number[] = []; // the ground a house or garden wall stands on: deep under it you're in a tunnel, clear of it
+  private sBreak: number[] = [];  // a fence (1) or hedge (2) a car can smash through (gaps.ts): not solid where it's been
   // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
   private blocks: { x: number; z: number; a: number; hl: number; hw: number; top: number }[] = [];
   private blockCells = new Map<number, number[]>();
@@ -648,6 +650,7 @@ export class GameMap {
         this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0), barrierLook(l.c).t / 2);   // (2: a hedge, which can't be ground along)
         // a retaining wall's ground may be the top of the bank it holds up
         this.sGround[this.sAx.length - 1] = Math.min(p[i][2], p[i + 1][2]) - this.z0 - barrierHeight(l);
+        if (breakable(l.c)) this.sBreak[this.sAx.length - 1] = leafy(l.c) ? 2 : 1;
       }
     }
     // a tank's walls, where they stand above the ground (world.ts builds them)
@@ -1124,7 +1127,7 @@ export class GameMap {
 
   private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity, topB = top, half = 0) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot); this.sGround.push(-Infinity); this.sHalf.push(half);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot); this.sGround.push(-Infinity); this.sHalf.push(half); this.sBreak.push(0);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
@@ -1398,6 +1401,7 @@ export class GameMap {
           const top = this.topAt(i, s);
           if (top < y + 0.45) continue;
           const cx = ax + vx * s, cz = az + vz * s;
+          if (this.sBreak[i] && inGap(cx, cz)) continue;   // smashed through
           let ex = pos.x - cx, ez = pos.z - cz;
           const d = Math.hypot(ex, ez), reach = r + this.sHalf[i];
           if (d >= reach) continue;
@@ -1419,6 +1423,31 @@ export class GameMap {
       }
     }
     return block;
+  }
+
+  /**
+   * A hedge or fence a circle at scene (x, z), feet at y, r across, is running into, here or in the
+   * squares round it: the nearest point of it, which way it runs (a unit ux, uz), and whether it's a hedge. Null if there's none (or only
+   * where it's already been smashed through: gaps.ts).
+   */
+  smashable(x: number, z: number, y: number, r: number): { x: number; z: number; ux: number; uz: number; leafy: boolean } | null {
+    let best: { x: number; z: number; ux: number; uz: number; leafy: boolean } | null = null, bestD = Infinity;
+    for (const m of [this, ...this.tilesNear(x, z, r + 1)]) {
+      const t = ++m.tick;
+      for (const k of m.cellsAround(x, z, r + 0.5)) for (const i of m.segCells.get(k) ?? []) {
+        if (m.stamp[i] === t) continue;
+        m.stamp[i] = t;
+        if (!m.sBreak[i] || m.sGround[i] > y + UNDERGROUND) continue;
+        const ax = m.sAx[i], az = m.sAz[i], vx = m.sBx[i] - ax, vz = m.sBz[i] - az, l2 = vx * vx + vz * vz || 1;
+        const s = Math.min(1, Math.max(0, ((x - ax) * vx + (z - az) * vz) / l2));
+        if (m.topAt(i, s) < y + 0.45) continue;
+        const cx = ax + vx * s, cz = az + vz * s, d = Math.hypot(x - cx, z - cz);
+        if (d >= r + m.sHalf[i] + 0.15 || d >= bestD || inGap(cx, cz)) continue;
+        const l = Math.sqrt(l2);
+        bestD = d; best = { x: cx, z: cz, ux: vx / l, uz: vz / l, leafy: m.sBreak[i] === 2 };
+      }
+    }
+    return best;
   }
 
   /**
@@ -1618,6 +1647,7 @@ export class GameMap {
             const vx = this.sBx[i] - this.sAx[i], vz = this.sBz[i] - this.sAz[i], vl = Math.hypot(vx, vz) || 1;
             const along = Math.min(1, Math.max(0, ((ox + dx * hit - this.sAx[i]) * vx + (oz + dz * hit - this.sAz[i]) * vz) / (vl * vl)));
             if (y > this.topAt(i, along) || y < this.sFoot[i] || y < this.sGround[i] - UNDERGROUND) continue;
+            if (this.sBreak[i] && inGap(ox + dx * hit, oz + dz * hit)) continue;
             let nx = -vz / vl, nz = vx / vl;
             if (nx * dx + nz * dz > 0) { nx = -nx; nz = -nz; }
             best = { dist: hit, kind: this.sKind[i] === 0 || this.sKind[i] === LINING ? "building" : "barrier", nx, ny: 0, nz };

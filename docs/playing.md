@@ -436,6 +436,14 @@ hard and it rolls, and one left on its roof catches fire and goes up, hurting an
 never players or cats. The fireball flashes orange over the street round it, which you see best at
 night.
 
+Hedges and fences give way too: hit one at more than about 18 mph and you smash straight through,
+leaves or splinters flying, and hardly slow down, so you can cut across gardens and fields. Slower
+than that and they stop you like a wall. Walls, railings and gates never give. Five minutes later the
+hole's been mended: an old couple, Derek and Maureen, come walking up a little before, him with a
+hammer and her with the twine, and grumble while they work about drivers today, nobody having any
+respect, and it all being those video games. You can't hurt them (shoot them and they'll tell you
+about that too), and when it's whole again they walk off the way they came and fade away.
+
 #### Driving the bus
 
 Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station, Widcombe, Prior

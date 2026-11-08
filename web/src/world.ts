@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
+import { breakable, holed } from "./gaps";
 import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeSpans, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
@@ -2473,8 +2474,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
   const barGeos = new Map<string, Geo>();
-  const barGeo = (x: number, y: number, mat: BarMat) => {
-    const k = `${mat}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
+  // (hedges and fences a car can smash through go in meshes of their own, which leave the gaps out: gaps.ts)
+  const barGeo = (x: number, y: number, mat: BarMat, smash = false) => {
+    const k = `${mat}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}${smash ? ":smash" : ""}`;
     let g = barGeos.get(k);
     if (!g) barGeos.set(k, (g = new Geo()));
     return g;
@@ -2511,7 +2513,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (p.length < 2) return;
     const l = { ...run, p };
     const spec = barrierLook(l.c), hh = barrierHeight(l), t = spec.t / 2;
-    const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
+    const g = barGeo(l.p[0][0], l.p[0][1], spec.mat, breakable(l.c));
     if (spec.mat === "steel") { crashBarrier(l, g, spec.col); return; }
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);
@@ -2589,7 +2591,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const [k, geo] of barGeos) {
     const g = geo.build();
     if (!g) continue;
-    const m = new THREE.Mesh(g, barMats[k.split(":")[0] as BarMat]);
+    const mat = barMats[k.split(":")[0] as BarMat], smash = k.endsWith(":smash") ? holed(mat) : null;
+    const m = new THREE.Mesh(g, smash ? smash.m : mat);
+    if (smash) m.customDepthMaterial = smash.depth;
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
     culler.add(m, 230);
