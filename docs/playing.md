@@ -994,7 +994,7 @@ pitch or cricket field (and another when a friend joins you there), then another
 five minutes while anyone's still on it. They're bigger and quicker than naughty boys, and they
 come looking for anyone near their pitch.
 
-On Friday and Saturday nights (by your watch, from eight in the evening till three in the morning)
+On Thursday (student night), Friday and Saturday nights (by your watch, from eight in the evening till three in the morning, so 1:30 on a Saturday morning is still Friday night)
 there's a night out at the top of Milsom Street, where it meets George Street: a crowd of naughty
 boys and Naughty Girls (short skirts, going-out tops, heels and a handbag) stood about in twos and
 threes. Every so often two of them kick off with each other, sometimes with a mate piling in, till

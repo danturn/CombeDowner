@@ -28,7 +28,7 @@
 // rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
 // run is drawn on a mobility scooter or in his van, which also rides on his look.
 //
-// On Friday and Saturday nights (daylight.ts, nightOut) there's a night out at the top of Milsom
+// On Thursday, Friday and Saturday nights (daylight.ts, nightOut) there's a night out at the top of Milsom
 // Street, where it meets George Street: a crowd of naughty boys and naughty girls (in short skirts
 // and going-out tops, heels and a handbag, who slap rather than punch and say what they think of
 // you) stood about in twos and threes. Every so often two of them kick off with each other, a mate
@@ -50,7 +50,7 @@ import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
 
 /** The kinds of gang: three that hang about, the Flag Lads' three (invasion.ts), who only come when it
- *  brings them, and the naughty girls, who only come out on a Friday or Saturday night. */
+ *  brings them, and the naughty girls, who only come out on a night out (Thursday to Saturday). */
 export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5, GIRL = 6;
 /** Added to a look's kit: the gang's ringleader, a size bigger. */
 export const BOSS = 8;
@@ -948,7 +948,7 @@ export class NaughtyBoys {
   private spots: { x: number; z: number }[] = [];
 
   /**
-   * Once a second: on a Friday or Saturday night, with anyone near the top of Milsom Street, keep a
+   * Once a second: on a night out (Thursday, Friday or Saturday), with anyone near the top of Milsom Street, keep a
    * crowd of naughty boys and naughty girls there (all at once if nobody's close enough to see them
    * turn up, otherwise walking in one at a time up the streets round about), and every so often
    * have two of them kick off with each other. At the end of the night they go off home; with
