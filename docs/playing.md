@@ -1000,8 +1000,11 @@ boys and Naughty Girls (short skirts, going-out tops, heels and a handbag) stood
 threes. Every so often two of them kick off with each other, sometimes with a mate piling in, till
 one has had enough and legs it. They leave you alone unless you get right in among them or shoot
 one, and then only the few nearest join in. The girls slap rather than punch, and tell you what
-they think of you. More of them wander in up George Street and Milsom Street to keep the numbers
-up, and at three they all drift off home. (`?nightout=1` in the address makes every night a
+they think of you. They come out of the pubs and restaurants round about (the restaurants till
+eleven, the pubs all night) to keep the numbers up, and turn up already stood about if you arrive in
+the middle of the night (by train, or straight into a pub). After midnight half of them drift down to
+Mr D's chip van at the top of Old Bond Street and hang about there, and at three they all head back
+to the pubs and off home. (`?nightout=1` in the address makes every night a
 night out, to try it.)
 
 ### Safe zones

@@ -43,7 +43,7 @@ import { driverDressing, driverSpot, PETROL_BLUE } from "./golfdriver";
 import { GLASS, glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
-import { CHIP, CHIP_LAMPS, chipDecals, chipParts } from "./chipvan";
+import { CHIP, CHIP_LAMPS, chipDecals, chipParts, MR_DS } from "./chipvan";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
 /** The two ways of driving from inside rather than with the chase camera. */
@@ -1333,8 +1333,7 @@ function seeded(seed: number) {
   };
 }
 
-/** Where Mr D's chip van parks (data metres, and the way it faces): at the top of Old Bond Street, facing south down it. */
-const MR_DS = { x: -1120.3, y: 2305.2, a: -1.312, map: "combe-down" };
+// Where Mr D's chip van parks: MR_DS, chipvan.ts
 
 /** Where Arleen's coaches park up for the tourists: a street by each of the sights. */
 const SIGHTS = ["Royal Crescent", "The Circus", "Orange Grove", "Terrace Walk", "Charlotte Street"];
