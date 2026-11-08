@@ -1508,6 +1508,50 @@ stage 2's maps rather than the sheet:
 | 20 road drawn wider | 515 | 519 | 1–2 m² each, where the sheet draws the carriageway's own edge. |
 | 23 step between two pieces of path | 5 | 17 | 9 of the 17 lie on the seams between squares (0.05–0.32 m), where each square levels its half of a path from its own stretch of it; laying the seam to the height the nearest way crosses it at was tried and made it 24, so it was taken out. The rest are 5–33 cm between pieces of a path, two drives, and the 2.95 m one at (-973, 2383) that A has too. |
 
+**The railway, and Dan's notes on the shots** (round 13; the table in §12.4 stands except as
+below). Dan saw the railway standing on the sheet as slabs: beds raised over the grass, two tracks
+at different heights with grass between, dark wedges where a bed met its cutting's wall, and grass
+pyramids beside Bradford-on-Avon's station building. What changed, for every map alike:
+
+- **The railway's bed is a face** (`write_tile.rail_beds`, kind `bed`): RAIL_BED (2.3 m) either side
+  of each track where it runs on the ground or onto a bridge, up to its tunnels' mouths (cut square
+  at the portal), beds nearer than BED_JOIN run together, minus any street, path or building
+  crossing it. It lies BED_TOP (0.23 m) over the rails' foot, just under the ballast's top, and with
+  the sheet the game draws it as ballast (`world.ts`, one mesh a square), so the line's own
+  shoulders and banks (`railway.ts`) lie under it and the ground. Its height is shared between
+  tracks within BED_SHARE (5 m), weighted to the nearest, and the bed is cut along each track's
+  middle, so each track sits at its own height and the bed slopes evenly between two that differ
+  (35 cm in the Combe Down cutting), with no sleepers buried. The ground meets it as any face, cut
+  or filled with the batter, and where it can't, held by the sheet's retaining wall. Without the
+  sheet the bed isn't drawn, used or counted, so A and B are as they were.
+- **A house above a face's edge keeps its ground** (`sheet.py`): the edge's ground is at least the
+  bank down from the house's walls' foot (1 in 1.5), and a wall takes the rest, rather than the
+  ground beside the face being cut down to it with the grid's points along the house left standing.
+  It didn't change the pyramids at Bradford-on-Avon, which are the survey's own ground there: they
+  stand the same in A.
+- **The sheet meets the hill over the canal's tunnels** (`sheet.tunnel_hills`, the same sums as
+  `canal.ts` `tunnelHills`, which the game raises over the grid when a square loads, before the
+  sheet's moves are added): the sheet was measuring from the grid without it, and the ground beside
+  the towpath at Cleveland House's portal hung down in triangles.
+- **Rule 9's boundaries stopping short** no longer count the bed as something a boundary should run
+  on to (a lineside fence doesn't meet the ballast): with the bed counted, C went from 307 to 345.
+
+Rows that moved from round 12: 9 sliver 46 → 45 (now equal to A); rule 26 397 → 422 (still under
+A's 1158: the new ones are the bed's edges on banks and at bridges' ends where the sheet holds the
+ground with a wall, and five pavement or road edges); rule 33 treads 77 → 78; overroad's steps
+between pieces of path 24 → 17 (round 12's figure was with the seam change that was taken out); the
+rest within one. Still over A, as before: 9 steps on a path, 12 building floating, 13 way steps at
+a square's edge, 15 street item floating, 27 gap and lumps, 33 flight lands on nothing, overroad's
+road drawn wider and steps between pieces of path.
+
+Two things Dan pointed at are not the sheet's, and stand the same in A: the wedge under Rossiter
+Road's deck over the canal (1_2) is a stone face slanting from the deck's underside down into the
+water beside the abutment; neither the bridge's side walls nor the canal's bank walls turned out to
+draw it (each was changed to stand square there, and the wedge stayed, so both changes were taken
+out), so it is still to be found. The white slit beside the arch in the Sydney Gardens view is
+Cleveland House tunnel's north portal: past the east end of the portal's face there is no ground
+(sky shows through in A, B and C alike), where the canal's works stop square at the portal.
+
 **Shots**: the daylight views of §12.3 again, A (its own build of `ecdffd38`) against C at this
 commit, in `shots/ground-sheet-final/` (not in the repository). All 58 differ, as the maps do. None shows a hole
 or white through the ground: the new near-white in C is sky and cloud past changed roofs and

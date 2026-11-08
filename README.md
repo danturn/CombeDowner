@@ -656,7 +656,8 @@ streets as they're drawn. Each square also carries its ground as one sheet with 
 paths (`tools/partition/sheet.py`): the grass is cut down or built up to meet every street's,
 pavement's and path's edge, banked no steeper than 1 in 1.5 above it and 1 in 2 below, and where a
 bank 3 m wide can't make up the difference a low retaining wall in the square's own kind of wall
-takes the rest. `?ground=sheet` in the address draws and walks the ground that way, to compare
+takes the rest. The railway lies on a bed of ballast in the sheet too, level across and flush with
+the grass either side, two tracks side by side on one bed, each at its own height. `?ground=sheet` in the address draws and walks the ground that way, to compare
 with the ground as it's drawn now. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.

@@ -743,7 +743,8 @@ def fit_together(m, tag, note, f=None):
     # along its own line, with no gateway, drive or front path in between. One ending in the open,
     # with nothing ahead of it in reach, is a real loose end (a park wall, a ruin), not a fault.
     F = check_more.faces_of(m)
-    ground_faces = shapely.union_all([F[k] for k in F] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
+    # (not the railway's bed, which the sheet makes a face: a lineside fence doesn't run to the ballast)
+    ground_faces = shapely.union_all([F[k] for k in F if k != "bed"] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
     meets = shapely.union_all([ground_faces] + homes).buffer(MEETS)
     shapely.prepare(meets)
     ahead = [h.exterior for h in homes if h.geom_type == "Polygon"] + [g for g in getattr(ground_faces.boundary, "geoms", [ground_faces.boundary])]

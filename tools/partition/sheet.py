@@ -9,13 +9,17 @@ differently from it, and why, is written up there under stage 3.
 What the sheet is made of:
   - the faces (`sf`), drawn at their written heights: streets level across, pavements a kerb up,
     paths level across and following the hill along their length;
-  - the ground grid (`t`), drawn as it is, in every cell no face touches;
+  - the railway's bed (`sf` "bed"), drawn as ballast just under the ballast's top, where the line
+    runs on the ground, up to its tunnels' mouths: the ground meets it like any other face;
+  - the ground grid (`t`), drawn as it is, in every cell no face touches (with the hill the game
+    raises over the canal's tunnels, `tunnel_hills`, which the sheet's moves are measured from);
   - in a cell a face's edge passes through, the ground is only what lies outside the faces, and it
     meets each face's edge at the face's own drawn height, so nothing of the ground is drawn under a
     face and no edge stands off the ground;
   - beside each face the ground is carved down or built up to meet it, no steeper than 1 in 1.5 cut
     or 1 in 2 filled, within BATTER_MOST of its edge; where meeting the face would take a wider bank
-    than that, a low retaining wall stands at the face's edge for what is left over, in the
+    than that (or than the bank down from a house standing above it), a low retaining wall stands
+    at the face's edge for what is left over, in the
     square's own wall material (at a cliff's top, down to the cliff's foot). A flight of steps is
     sunk into the hill: the hill beside it is held up to SUNK_MOST over it by such a wall. A grid
     point is never built up more than FILL_MOST over the survey, nor at all within a cell and a half
@@ -55,7 +59,7 @@ from shapely.geometry import Polygon, box
 VERSION = 1
 FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed")
 # how far over its written height the game draws each kind of face (web/src/world.ts FACE_LIFT); the
-# railway's bed is not drawn (its ballast is), only met
+# railway's bed is written at the height it is drawn
 LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04,
         "grass": 0.04, "dirt": 0.04, "gravel": 0.04, "bed": 0.0}
 OUTLINE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "plaza": 0.04, "bed": 0.0}
