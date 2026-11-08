@@ -3667,11 +3667,14 @@ JOIN_REACH = 0.3        # metres past a street's pavement that a path's end stil
 
 
 def abutments_on_the_ground(rd, sq, ground):
-    """A bridge's abutment, the point either side of its span, at the ground there: the game lands the
-    deck on the grid's ground at it whatever the way's own point says, and the faces leaving it are
-    laid from that point."""
+    """A path's bridge's abutment, the point either side of its span, at the ground there: the game
+    lands the deck on the grid's ground at it whatever the way's own point says, and the faces
+    leaving it are laid from that point. (A road's approach climbs on its own embankment, which the
+    grid's ground at the abutment would put a kink in.)"""
     x0, y0, x1, y1 = sq
     for r in rd:
+        if r["c"] not in GAME_PATHS:
+            continue
         p = r["p"]
         f = [len(q) > 3 and bool(q[3]) for q in p]
         if not any(f):
