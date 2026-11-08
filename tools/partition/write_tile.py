@@ -149,9 +149,12 @@ RAIL_HALF = 4.5
 RAIL_BED = 2.3
 # Metres a deck stands over the track to be a bridge over the railway rather than a way beside it.
 RAIL_OVER = 3.0
-# Metres under a rail's foot that its ballast's shoulders reach the ground, at RAIL_BED out
-# (web/src/railway.ts): the bed's face, which the ground meets, lies at that height.
-BED_DROP = 0.3
+# Metres either side of the track that the ground meets its ballast, at the rails' foot: the
+# ballast's shoulders run from 1.6 m out at 0.25 m over it down through it there (web/src/railway.ts),
+# so the line sits in the ground with its ballast standing a little proud, not on a heap of it.
+BED_HALF = 1.9
+# Metres: two tracks' beds nearer than this run together, the ground not drawn between their ballast.
+BED_JOIN = 1.2
 CANAL_MARGIN = 0.8
 WATER_MARGIN = 0.8
 
@@ -2745,8 +2748,8 @@ SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt"
 
 def rail_beds(rail, square):
     """The railway's bed in a square, where the track runs on the ground (not on its bridges, nor in
-    its tunnels, up to whose mouths it runs): the strip its ballast covers, RAIL_BED either side,
-    and the height of the bed's face at a point, BED_DROP under the nearest rail's foot. The game
+    its tunnels, up to whose mouths it runs): BED_HALF either side, and the height of the bed's face
+    at a point, the nearest rail's foot. The game
     draws the ballast and the track on it (railway.ts); the bed is a face only for the ground to meet,
     so the line sits level across in its cutting or on its bank, flush with the ground beside it."""
     if not rail:
@@ -2775,7 +2778,8 @@ def rail_beds(rail, square):
     if not segs:
         return None, None
     lines = [LineString([a[:2], b[:2]]) for a, b in segs]
-    bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines]).intersection(square)
+    bed = unary_union([l.buffer(BED_HALF, cap_style="flat") for l in lines])
+    bed = bed.buffer(BED_JOIN / 2, join_style="mitre").buffer(-BED_JOIN / 2, join_style="mitre").intersection(square)
     tree = STRtree(lines)
 
     def z_at(x, y):
@@ -2783,7 +2787,7 @@ def rail_beds(rail, square):
         k = int(tree.query_nearest(pt, all_matches=False)[0])
         (a, b), l = segs[k], lines[k]
         f = l.project(pt) / (l.length or 1)
-        return a[2] + (b[2] - a[2]) * f - BED_DROP
+        return a[2] + (b[2] - a[2]) * f
     return bed, z_at
 
 
