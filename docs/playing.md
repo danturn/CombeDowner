@@ -455,7 +455,11 @@ Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station
 Park Road and Ralph Allen Drive, up to Combe Down) or the old 4 (the bus station, through town and up
 Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. At the wheel of a
 bus or a coach, as at a narrowboat's tiller, the naughty boys leave you be (your passengers they
-don't). The route is a
+don't). Inside, a Badgerline bus or minibus is fitted out as the real ones were: rows of green
+moquette seats either side of the gangway, cream panels and pillars round the windows, lights along
+the ceiling, yellow poles and rails with red bell pushes, and on the double-decker the stairs up
+behind the cab. Everyone you pick up takes a seat of their own (a window seat on an empty one first)
+and stays in it till their stop; look round from the driver's seat to see who's on. The route is a
 green line on the minimap and the big map, with its stops along it and the next one ringed in
 yellow; every bus stop round about is on the minimap anyway, as a little white disc. A card over the
 speedo says where you're heading, the next stop and how far, and who's on.

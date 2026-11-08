@@ -28,6 +28,7 @@ import { speak } from "./posh";
 import { esc } from "./hudkit";
 import { missionBegin, missionClear, missionProgress, missionResult } from "./missionscreens";
 import { earn } from "./wardrobe";
+import { seatedGeometry } from "./businside";
 import type { Traffic } from "./traffic";
 import type { Stop, Vehicle } from "./vehicles";
 
@@ -106,6 +107,14 @@ function lookGeo(k: number): THREE.BufferGeometry {
   });
   return looks[k % looks.length];
 }
+/** The same people, sat down on the bus (businside.ts). */
+const sat = new Map<number, THREE.BufferGeometry>();
+function seatedLook(seed: number): THREE.BufferGeometry {
+  const k = seed % LOOKS.length;
+  let g = sat.get(k);
+  if (!g) sat.set(k, (g = seatedGeometry(...LOOKS[k])));
+  return g;
+}
 function person(scene: THREE.Scene, seed: number): THREE.Group {
   skinMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
   const g = new THREE.Group(), m = new THREE.Mesh(lookGeo(seed), skinMat);
@@ -139,6 +148,7 @@ export class BusDriver {
   private onLine = false;
   private next: RStop | null = null;
   private riders: Rider[] = [];
+  private seated = "";   // who's sat inside the bus as drawn, by their seeds
   private boarding: Person[] = [];    // walking to the door
   private walking: Person[] = [];     // got off, walking away
   private serving: RStop | null = null;
@@ -166,7 +176,16 @@ export class BusDriver {
     this.atStops(dt, line, bus);
     this.people(dt, line, bus);
     this.saidT -= dt;
+    this.seatRiders(bus);
     this.hud(line);
+  }
+
+  /** Sit everyone on board in a seat of their own, inside the bus (when they get on or off). */
+  private seatRiders(bus: Vehicle) {
+    const key = this.riders.map((r) => r.seed).join(",");
+    if (key === this.seated) return;
+    this.seated = key;
+    bus.carry(this.riders.map((r) => ({ seed: r.seed, geo: seatedLook(r.seed) })));
   }
 
   /** The route you're driving, for the maps: null when you're not. */
@@ -279,6 +298,8 @@ export class BusDriver {
     for (const p of this.boarding) gone(p);
     this.boarding = [];
     this.riders = [];
+    this.bus?.carry([]);
+    this.seated = "";
     this.serving = null;
     this.bus = this.line = this.next = null;
     this.paused = 0;

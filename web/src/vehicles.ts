@@ -38,6 +38,7 @@ import { CAR_PAINT, carSteerable, glass, GOLF_DRIVER_SHAPE, model, paintFor, Par
 import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 export { MAKES };
 import { bonnetEye, Cockpit, CockpitOf } from "./cockpit";
+import { insideGeometry, insideMaterial, places, plan, upperFloor } from "./businside";
 import { driverDressing, driverSpot, PETROL_BLUE } from "./golfdriver";
 import { GLASS, glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
@@ -112,22 +113,23 @@ export const SPECS: Record<VKind, Spec> = {
   bus: {
     name: "Badgerline bus", L: 9.6, W: 2.5, H: 4.3, waist: 1.35, wb: 5.4, top: 20, accel: 2.3, brake: 7, rev: 4,
     steer: 0.62, grip: 5, donut: 0.8, lean: 0.006, cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", paint: ["#fff"],
-    // the driver, the top deck's front seats (the best view) and a few downstairs
-    seats: [[3.95, 0.85, 0.62], [3.9, 2.6, -0.62], [3.9, 2.6, 0.62], [2.9, 2.6, -0.62], [2.9, 2.6, 0.62], [1.9, 2.6, -0.62], [1.9, 2.6, 0.62],
-      [-0.5, 2.6, -0.62], [-0.5, 2.6, 0.62], [2.4, 0.5, -0.62], [1.4, 0.5, 0.62], [-1.5, 0.5, -0.62], [-2.5, 0.5, 0.62]],
+    // the driver, the top deck's front seats (the best view) and a few downstairs, each on one of the
+    // benches inside (businside.ts; upstairs on the offside, the stairs come up behind the front seat)
+    seats: [[3.95, 0.85, 0.62], [3.9, 2.6, -0.62], [3.9, 2.6, 0.62], [3.1, 2.6, -0.62], [1.0, 2.6, 0.62], [2.3, 2.6, -0.62], [0.2, 2.6, 0.62],
+      [-0.9, 2.6, -0.62], [-0.6, 2.6, 0.62], [2.3, 0.5, -0.62], [1.0, 0.5, 0.62], [-1.7, 0.5, -0.62], [-2.2, 0.5, 0.62]],
   },
   minibus: {
     name: "Badgerline minibus", L: 7.0, W: 2.25, H: 2.85, waist: 1.2, wb: 3.9, top: 26, accel: 3.2, brake: 8, rev: 4.5,
     steer: 0.6, grip: 6, donut: 1.2, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
-    seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
-      [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
+    seats: [[2.75, 0.5, 0.55], [1.7, 0.5, -0.55], [1.7, 0.5, 0.55], [0.9, 0.5, -0.55], [0.9, 0.5, 0.55], [0.1, 0.5, -0.55], [0.1, 0.5, 0.55],
+      [-0.7, 0.5, -0.55], [-0.7, 0.5, 0.55]],
   },
   // the same size of minibus, on a school trip (daybendy.ts)
   school: {
     name: "Kingswood School minibus", L: 7.0, W: 2.25, H: 2.85, waist: 1.2, wb: 3.9, top: 26, accel: 3.2, brake: 8, rev: 4.5,
     steer: 0.6, grip: 6, donut: 1.2, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
-    seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
-      [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
+    seats: [[2.75, 0.5, 0.55], [1.7, 0.5, -0.55], [1.7, 0.5, 0.55], [0.9, 0.5, -0.55], [0.9, 0.5, 0.55], [0.1, 0.5, -0.55], [0.1, 0.5, 0.55],
+      [-0.7, 0.5, -0.55], [-0.7, 0.5, 0.55]],
   },
   xr3i: {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
@@ -565,12 +567,14 @@ function busOwn(kind: BusKind) {
   let p = busParts.get(kind);
   if (!p) {
     const S = SPECS[kind], base = LIVERY[kind].base, floors: THREE.BufferGeometry[] = [];
-    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
+    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05] : [base + 0.1]) {
       const g = new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1);
       g.rotateX(-Math.PI / 2);
       g.translate(0, y, 0);
       floors.push(g);
     }
+    // the top deck's, with the stairwell open (businside.ts)
+    if (LIVERY[kind].decks === 2) floors.push(...upperFloor(S.L, S.W, 2.55));
     busParts.set(kind, (p = { body: new THREE.BoxGeometry(S.L, S.H - base, S.W), floors: mergeGeometries(floors)!, floorMat: new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide }) }));
   }
   return p;
@@ -640,14 +644,19 @@ function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; 
   return { body: g, wheels };
 }
 
-/** Someone sat down: shoulders and a head, where their hitboxes are. */
+/** Someone sat down, facing forward: shoulders and a head where their hitboxes are, and their legs out in front on the seat. */
 function figure(colour: string): THREE.Group {
-  const torso = new THREE.Mesh(box(0.42, 0.5, 0.32), new THREE.MeshLambertMaterial({ color: colour }));
+  const torso = new THREE.Mesh(box(0.32, 0.5, 0.42), new THREE.MeshLambertMaterial({ color: colour }));
   torso.position.y = 0.7;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), new THREE.MeshLambertMaterial({ color: "#c79a7a" }));
   head.position.y = 1.07;
+  const legs = new THREE.Mesh(model([
+    [box(0.42, 0.14, 0.15), "#2c2f36", 0.15, 0.5, -0.1], [box(0.42, 0.14, 0.15), "#2c2f36", 0.15, 0.5, 0.1],
+    [box(0.14, 0.44, 0.14), "#2c2f36", 0.35, 0.22, -0.1], [box(0.14, 0.44, 0.14), "#2c2f36", 0.35, 0.22, 0.1],
+    [box(0.24, 0.07, 0.15), "#1b1c1e", 0.4, 0.035, -0.1], [box(0.24, 0.07, 0.15), "#1b1c1e", 0.4, 0.035, 0.1],
+  ]), new THREE.MeshLambertMaterial({ vertexColors: true }));
   const g = new THREE.Group();
-  g.add(torso, head);
+  g.add(torso, head, legs);
   g.traverse((o) => { o.castShadow = true; });
   return g;
 }
@@ -713,6 +722,8 @@ export class Vehicle implements Mover {
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
   private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
+  // a bus's inside (businside.ts), built when someone first gets in, and the passengers sat in it by their seats there
+  private inner: { g: THREE.Group; spots: { x: number; y: number; z: number; bench: string }[]; riders: Map<number, { m: THREE.Mesh; spot: number }> } | null = null;
   private cockpit: Cockpit | null = null;
   /** How its driver is looking out from inside, on this screen: from the seat or from the bonnet (null: from outside, or nobody). */
   view: InsideView | null = null;
@@ -870,6 +881,46 @@ export class Vehicle implements Mover {
   /** The first free seat (the driver's if it is), or -1. gone: whether someone in a seat has left the game. */
   freeSeat(gone: (id: string) => boolean = () => false): number {
     return this.seats.findIndex((id, k) => !this.kept.has(k) && (!id || gone(id)));
+  }
+
+  /** Draw a bus's inside, or stop: it's drawn only while you're in it (businside.ts). */
+  showInside(on: boolean) {
+    if (!isBus(this.kind)) return;
+    if (on && !this.inner) this.buildInside();
+    if (this.inner) this.inner.g.visible = on;
+  }
+
+  private buildInside() {
+    const S = this.spec, p = plan(this.kind as BusKind, S.L, S.W, S.H), g = new THREE.Group();
+    g.add(new THREE.Mesh(insideGeometry(p), insideMaterial()));
+    g.visible = false;
+    this.body.add(g);
+    // where passengers sit: spread about the bus (a window seat on an empty bench first, as people do), the same every time
+    const benches = p.benches.map((b, i) => ({ b, r: Math.sin(i * 12.9898 + 4.1) * 43758.5453 % 1 })).sort((a, c) => a.r - c.r).map((o) => o.b);
+    const spots: { x: number; y: number; z: number; bench: string }[] = [];
+    for (const which of [1, 0]) for (const b of benches) spots.push({ x: b.x, y: b.floor, z: places(p, b)[which], bench: `${b.x},${b.floor},${b.side}` });
+    this.inner = { g, spots, riders: new Map() };
+  }
+
+  /** The passengers on a bus you're driving (busdriver.ts): each by who they are and how they look sat down. Each keeps the seat they took. */
+  carry(riders: { seed: number; geo: THREE.BufferGeometry }[]) {
+    if (!isBus(this.kind)) return;
+    if (!this.inner) this.buildInside();
+    const inn = this.inner!, keep = new Set(riders.map((r) => r.seed));
+    for (const [seed, r] of inn.riders) if (!keep.has(seed)) { inn.g.remove(r.m); inn.riders.delete(seed); }
+    // not on a bench someone's sat on in one of the passenger seats
+    const taken = new Set([...inn.riders.values()].map((r) => r.spot));
+    const held = new Set(this.seats.flatMap((id, k) => id && k > 0 ? [`${this.spec.seats[k][0]},${this.spec.seats[k][1] < 1.5 ? 0.5 : 2.55},${Math.sign(this.spec.seats[k][2])}`] : []));
+    for (const r of riders) {
+      if (inn.riders.has(r.seed)) continue;
+      const spot = inn.spots.findIndex((s, i) => !taken.has(i) && !held.has(s.bench));
+      if (spot < 0) break;
+      taken.add(spot);
+      const s = inn.spots[spot], m = new THREE.Mesh(r.geo, insideMaterial());
+      m.position.set(s.x - 0.05, s.y, s.z);
+      inn.g.add(m);
+      inn.riders.set(r.seed, { m, spot });
+    }
   }
 
   /** How far (x, z) is from its sides: 0 inside it. */

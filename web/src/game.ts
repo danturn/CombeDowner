@@ -4392,6 +4392,8 @@ export class Game {
     const driving = car && (car.kind === "bus" || car.kind === "minibus") ? car : null;
     if (driving && !this.zones.can("busroute") && this.routeShut !== driving.i && busRouteSpots(this.mapId).length) { this.routeShut = driving.i; this.news(this.zones.shut("busroute")); }
     this.busDriver.update(dt, driving && this.zones.can("busroute") ? driving : null, () => this.vehicles.allStops());
+    // a bus's inside is drawn only while you're in it, sat down or stood up in it (businside.ts)
+    for (const v of this.vehicles.list) v.showInside(v.seats.includes(this.net.selfId) || (v.distance(p.pos.x, p.pos.z) === 0 && p.pos.y > v.y - 0.5 && p.pos.y < v.y + v.spec.H));
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
