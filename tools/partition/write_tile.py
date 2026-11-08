@@ -167,6 +167,7 @@ BED_CLEAR = 0.5
 # that the bed runs on across to meet it: a cutting's wall stands at the bed's edge, not up a strip of grass.
 BED_FILL = 2.0
 BED_OVER = 1.0
+BED_FILL_GAP = 0.15
 # Metres: two tracks' beds nearer than this run together, the ground not drawn between their ballast.
 BED_JOIN = 1.2
 CANAL_MARGIN = 0.8
@@ -4397,7 +4398,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             if h is not None and h > bed_z(c.x, c.y) - BED_TOP + BED_OVER:
                 fill.append(q.buffer(BED_FILL + BED_CLEAR).intersection(whole.buffer(BED_FILL)))
         if fill:
-            bed = unary_union([bed, _minus(unary_union(fill), others)]).intersection(square)
+            # (a hair short of it: the sheet stands the street's wall in that gap, on the bed's level)
+            bed = unary_union([bed, _minus(unary_union(fill), others.buffer(BED_FILL_GAP))]).intersection(square)
         bed = along_tracks(bed)
     else:
         bed = Polygon()
@@ -4456,7 +4458,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # same point in both squares, or the ground there: levelled from whatever ways each square holds
     # near it, the faces either side met a step apart.
     seam_ends = [(e.x, e.y, e.z, r) for line, r in zip(middles, reach_mid) if line.has_z
-                 for e in (Point(line.coords[0]), Point(line.coords[-1])) if square.exterior.distance(e) < 0.05]
+                 for e in (Point(line.coords[0]), Point(line.coords[-1])) if square.exterior.distance(e) < 0.2]
 
     def seam_z(x, y):
         best = None
