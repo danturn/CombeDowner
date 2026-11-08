@@ -94,6 +94,12 @@ export function insideGeometry(p: Plan): THREE.BufferGeometry {
     // the ceiling (downstairs on the double-decker, it's the top deck's floor) and its lights
     const x1 = d === 0 ? p.cab : front;
     if (!two || d === 1) parts.push([box(x1 - back, 0.02, p.W - 0.1), CEILING, (x1 + back) / 2, c, 0]);
+    // (downstairs on the double-decker, a cream lining under the top deck's floor, round the stairwell)
+    if (two && d === 0) {
+      const { x0: sx0, x1: sx1, z0: sz0 } = STAIRS, l = -p.L / 2 + 0.06, r = p.L / 2 - 0.06, n = -p.W / 2 + 0.06, f2 = p.W / 2 - 0.06, y = c - 0.03;
+      const slab = (a: number, b: number, e: number, g: number) => parts.push([box(b - a, 0.02, g - e), CEILING, (a + b) / 2, y, (e + g) / 2]);
+      slab(l, sx0, n, f2); slab(sx1, r, n, f2); slab(sx0, sx1, n, sz0);
+    }
     for (const s of [-1, 1]) parts.push([box(x1 - back - 0.4, 0.03, 0.14), LIGHT, (x1 + back) / 2, c - 0.02, s * (hw - 0.45)]);
     // the grab rails along the gangway, and poles down to the seats every other row, some with a bell push
     for (const s of [-1, 1]) {

@@ -301,7 +301,7 @@ const CAR_LINE: Record<string, string> = {
 /** A vehicle the host is driving: naughty boys on their way somewhere, or a bus someone's called (by them, to pull in at). */
 /** Something E could do where you stand: what the prompt says, the touch button's word (none when
  *  E only says why not), what to call it, where it is to be looked at and how far off it is. */
-type UseKind = "tour" | "deli" | "board" | "again" | "car" | "stop" | "balloon" | "trolley" | "tiller" | "moored" | "lock" | "odd" | "wood" | "swap" | "ladder" | "train";
+type UseKind = "busjob" | "tour" | "deli" | "board" | "again" | "car" | "stop" | "balloon" | "trolley" | "tiller" | "moored" | "lock" | "odd" | "wood" | "swap" | "ladder" | "train";
 interface UseChoice { k: UseKind; text: string; button?: string; what: string; x: number; y: number; z: number; r: number; d: number; aimed: boolean; off: number }
 
 interface Delivery {
@@ -2540,7 +2540,8 @@ export class Game {
   /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
   private gameSpots() {
     const named = (s: { x: number; z: number } | undefined, name?: string) => s && { x: s.x, z: s.z, name };
-    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood")].filter((s) => !!s);
+    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood"),
+      named(this.busDriver.spot(), "Bus driver")].filter((s) => !!s);
   }
 
   private targets(): Target[] {
@@ -2773,6 +2774,8 @@ export class Game {
     const chest = p.y + 1.2;
     const tour = this.mineTour.near(p.x, p.z, p.y) ? this.mineTour.spot() : undefined;
     if (tour) add("tour", "<b>{use}</b> Go in for a mine tour", "the door", tour.x, chest, tour.z, 0.6, far(tour.x, tour.z), "Go in");
+    const depot = this.busDriver.jobAt(p.x, p.z, p.y) ? this.busDriver.spot() : undefined;
+    if (depot) add("busjob", "<b>{use}</b> Take a job as a driver", "the depot", depot.x, chest, depot.z, 0.8, far(depot.x, depot.z), "Take the job");
     const deli = this.deliDoor.near(p.x, p.z, p.y) ? this.deliDoor.spot() : undefined;
     if (deli) add("deli", "<b>{use}</b> Work a shift in the deli kitchen", "the door", deli.x, chest, deli.z, 0.6, far(deli.x, deli.z), "Go in");
     const board = this.quests.board();
@@ -2860,6 +2863,7 @@ export class Game {
   /** E on what useChoice picked. */
   private useOn(c: UseChoice) {
     switch (c.k) {
+      case "busjob": this.takeBusJob(); break;
       case "tour": this.goDownMine(); break;
       case "deli": this.goInDeli(); break;
       case "board": this.quests.takeBoard(); break;
@@ -2897,6 +2901,28 @@ export class Game {
     this.askedAt = performance.now();
     this.nicking = v.t !== undefined;
     const claim = { v: v.i, life: this.life, t: v.t };
+    if (this.isHost) this.applyEnter(this.net.selfId, claim);
+    else this.net.send("vin", claim, this.hostId);
+  }
+
+  /** A job as a driver at the bus station's depot: into the driver's seat of a Badgerline bus on the stands,
+   *  and off on a timetabled run (busdriver.ts puts it at the start of the route, facing the way it goes). */
+  private takeBusJob() {
+    if (!this.zones.can("busroute")) { this.news(this.zones.shut("busroute")); return; }
+    const d = this.busDriver.spot();
+    if (!d) return;
+    let best: Vehicle | null = null, bd = 120;
+    for (const v of this.vehicles.list) {
+      if ((v.kind !== "bus" && v.kind !== "minibus") || v.driver || v.seats.some((id) => id)) continue;
+      const far = Math.hypot(v.x - d.x, v.z - d.z);
+      if (far < bd) { bd = far; best = v; }
+    }
+    if (!best) { this.news("No bus on the stands just now: try again in a minute"); return; }
+    this.busDriver.takeJob();
+    this.askedCar = best.i;
+    this.askedAt = performance.now();
+    this.nicking = false;
+    const claim = { v: best.i, life: this.life, k: 0 };
     if (this.isHost) this.applyEnter(this.net.selfId, claim);
     else this.net.send("vin", claim, this.hostId);
   }
@@ -4392,6 +4418,7 @@ export class Game {
     const driving = car && (car.kind === "bus" || car.kind === "minibus") ? car : null;
     if (driving && !this.zones.can("busroute") && this.routeShut !== driving.i && busRouteSpots(this.mapId).length) { this.routeShut = driving.i; this.news(this.zones.shut("busroute")); }
     this.busDriver.update(dt, driving && this.zones.can("busroute") ? driving : null, () => this.vehicles.allStops());
+    if (this.busDriver.spotChanged()) this.minimap.spots = this.gameSpots();
     // a bus's inside is drawn only while you're in it, sat down or stood up in it (businside.ts)
     for (const v of this.vehicles.list) v.showInside(v.seats.includes(this.net.selfId) || (v.distance(p.pos.x, p.pos.z) === 0 && p.pos.y > v.y - 0.5 && p.pos.y < v.y + v.spec.H));
     if (car) this.driveCar(dt, car);

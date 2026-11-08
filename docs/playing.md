@@ -473,11 +473,14 @@ leave them standing. Get out and the shift's paused: back in the same bus within
 carries on. The passengers are yours alone: anyone riding along sees the bus stop and go, but not who
 gets on.
 
-**A timetabled run.** Take the wheel at the bus station and it's a timetabled run instead: out to
-the end of the route and back, calling at every stop, to the timetable. The panel shows whether
+**A timetabled run.** At the bus station, a beacon on the pavement by the stands (Bus driver on the
+maps) is where you take a job as a driver: press {use} there and you're at the wheel of a Badgerline bus
+on the stand at the start of the route, facing the way it goes, sometimes with people already
+waiting to get on. It's a timetabled run: out to the end of the route and back, calling at every
+stop, to the timetable. (Get in a bus anywhere else, the station included, and it's the ordinary route.) The panel shows whether
 you're on time, early or late (in real minutes and seconds: the timetable allows a steady pace
-between stops and a little time at each), and you leave the station 20 seconds after you take the
-wheel. Get to a stop early and you wait there: the panel counts down to when you're due away, and a
+between stops and a little time at each), and you leave the station half a minute after you take the
+job. Get to a stop early and you wait there: the panel counts down to when you're due away, and a
 ding says it's time to go. You start with 100 points. Leaving a stop early costs points, so does
 getting to one more than 15 seconds late (the later, the more), missing a stop altogether, and
 getting back to the station late. Back at the station, what's left decides the prizes: 50 points

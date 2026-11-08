@@ -19,7 +19,10 @@
 // The shift wears the shared mission screens (missionscreens.ts): a title card as it starts, the
 // route's status panel while you drive, and a short result card when it's over.
 //
-// Take the wheel at the bus station and it's a timetabled run instead: out to the end of the route and
+// The timetabled run is a job, taken at the bus station: a beacon on the pavement by the stands, marked on
+// the maps, where E takes a job as a driver. You're put at the wheel of a bus at the start of the
+// route, facing the way it goes, at the station's stand (sometimes with people waiting to get on), and
+// it's a timetabled run: out to the end of the route and
 // back, calling at every stop, with the timetable to keep to. It's in real minutes and seconds (a game
 // minute is only a real second, so a run would take hours of game time) and allows a steady pace
 // between stops and a little time at each. Get to a stop early and you wait there till it's time to go,
@@ -37,6 +40,7 @@ import { esc } from "./hudkit";
 import { missionBegin, missionClear, missionProgress, missionResult } from "./missionscreens";
 import { earn } from "./wardrobe";
 import { seatedGeometry } from "./businside";
+import { beacon } from "./beacon";
 import type { Traffic } from "./traffic";
 import type { Stop, Vehicle } from "./vehicles";
 
@@ -171,6 +175,11 @@ export class BusDriver {
    *  far, and while you're at a stop, when you're due away from it. */
   private timed: { t0: number; lost: number; late: number; early: number; missed: number; calls: number; away: number; rung: boolean } | null = null;
   private finished: Vehicle | null = null;   // the bus you finished a timetabled run in: no new shift till you get out
+  private job = false;                       // you've taken a job at the depot: the next bus you're put in is a timetabled run
+  /** The depot: where you take a job as a driver, on the pavement by the bus station's stands (scene), and its beacon. */
+  private depot: { x: number; y: number; z: number; beacon: ReturnType<typeof beacon> } | null = null;
+  private depotNew = false;
+  private depotT = 0;
   private seated = "";   // who's sat inside the bus as drawn, by their seeds
   private boarding: Person[] = [];    // walking to the door
   private walking: Person[] = [];     // got off, walking away
@@ -184,11 +193,43 @@ export class BusDriver {
   constructor(private map: GameMap, private scene: THREE.Scene, private traffic: Traffic, private ground: (x: number, z: number) => number,
     private toast: (text: string) => void) {}
 
+  // ---- the depot ---------------------------------------------------------------------------------------
+
+  /** Where you take a job as a driver, once the bus station's square has loaded. */
+  spot(): { x: number; z: number } | undefined { return this.depot ?? undefined; }
+  /** True once, when the depot's first found (for the maps). */
+  spotChanged() { const n = this.depotNew; this.depotNew = false; return n; }
+  /** Are you stood at the depot's beacon? */
+  jobAt(x: number, z: number, y: number) { const d = this.depot; return !!d && Math.hypot(x - d.x, z - d.z) < 1.6 && Math.abs(y - d.y) < 2; }
+  /** You've taken the job: the bus you're put in next is a timetabled run (game.ts puts you in one). */
+  takeJob() { this.job = true; }
+
+  /** The depot, on the pavement behind the bus station's stand nearest where the routes start. */
+  private findDepot(stops: Stop[]) {
+    if (this.depot || this.map.d.id !== MAP) return;
+    let best: Stop | null = null, bd = 120;
+    for (const st of stops) {
+      if (!/bus station/i.test(st.n ?? "")) continue;
+      const d = Math.hypot(st.x - STATION.x, st.z - STATION.z);
+      if (d < bd) { bd = d; best = st; }
+    }
+    if (!best) return;
+    // a bus at the stand faces (cos a, -sin a); its door, and the pavement, are on its left
+    const lx = -Math.sin(best.a), lz = -Math.cos(best.a), x = best.x + lx * 3, z = best.z + lz * 3, y = this.ground(x, z);
+    const b = beacon();
+    b.group.position.set(x, y, z);
+    this.scene.add(b.group);
+    this.depot = { x, y, z, beacon: b };
+    this.depotNew = true;
+  }
+
   /** Every frame: v is the bus you're driving, if you're driving one. stops: every bus stop loaded just now. */
   update(dt: number, v: Vehicle | null, stops: () => Stop[]) {
     const now = performance.now();
+    if ((this.depotT -= dt) <= 0 && !this.depot) { this.depotT = 2; this.findDepot(stops()); }
+    this.depot?.beacon.update(now / 1000);
     if (!v) this.finished = null;
-    if (v && v !== this.bus && v !== this.finished) this.start(v);
+    if (v && v !== this.bus && v !== this.finished) this.start(v, stops);
     else if (v && this.paused) { this.paused = 0; this.toast(`Back at the wheel of the ${this.line!.n}`); }
     else if (!v && this.bus && !this.paused) this.paused = now;
     if (this.paused && now - this.paused > KEEP) this.end();
@@ -295,7 +336,7 @@ export class BusDriver {
 
   // ---- the shift --------------------------------------------------------------------------------------
 
-  private start(v: Vehicle) {
+  private start(v: Vehicle, stops: () => Stop[]) {
     this.end();
     const lines = this.routes().filter((l): l is Line => !!l);
     if (!lines.length) return;
@@ -309,9 +350,9 @@ export class BusDriver {
     this.locate(line, v, true);
     this.fares = this.cheers = this.moans = this.stranded = 0;
     this.scanT = 0;
-    // at the bus station, it's a timetabled run
-    this.timed = Math.hypot(v.x - STATION.x, v.z - STATION.z) < STATION.r
-      ? { t0: performance.now() / 1000, lost: 0, late: 0, early: 0, missed: 0, calls: 0, away: 0, rung: false } : null;
+    // a job taken at the depot: a timetabled run, from the stand at the start of the route
+    this.timed = this.job ? { t0: performance.now() / 1000, lost: 0, late: 0, early: 0, missed: 0, calls: 0, away: 0, rung: false } : null;
+    if (this.job) { this.job = false; this.find(line, stops()); this.toStand(line, v); }
     if (this.timed) missionBegin({ label: `Badgerline · Route ${line.n} · Timetabled`, colour: GREEN, title: `The ${line.n} to ${line.end}`,
       goal: `Out to ${line.end} and back to ${HOME}, calling at every stop. Keep to the timetable: get there early and wait till it's time to go, and don't run late`,
       detail: `You leave the station in ${LEAD} seconds. 100 points to start: ${TIERS.map((t) => `${t.at}+ for ${t.medal.toLowerCase()}`).join(", ")}` });
@@ -336,6 +377,28 @@ export class BusDriver {
     this.bus = this.line = this.next = null;
     this.paused = 0;
     missionClear("bus");
+  }
+
+  /** Put the bus on the stand at the start of the route, in its lane facing the way it goes, with the
+   *  station's stop at its door (and sometimes people there waiting to get on). */
+  private toStand(line: Line, v: Vehicle) {
+    const at = 30, i = Math.max(0, line.s.findIndex((s) => s >= at) - 1), p = line.pts[i], q = line.pts[(i + 1) % line.pts.length];
+    const len = Math.hypot(q.x - p.x, q.z - p.z) || 1, hx = (q.x - p.x) / len, hz = (q.z - p.z) / len, lx = hz, lz = -hx;
+    const f = (at - line.s[i]) / len, cx = p.x + (q.x - p.x) * f + lx * 1.7, cz = p.z + (q.z - p.z) * f + lz * 1.7;
+    v.place(cx, cz, Math.atan2(-hz, hx));
+    v.vx = v.vz = 0;
+    // the stand: the station's own stop if the route has one there, else one where the door is
+    const door = this.door(v);
+    let st = line.stops.find((o) => o.s < at + 60 && Math.hypot(o.x - door.x, o.z - door.z) < 25);
+    if (!st) {
+      st = { x: door.x, z: door.z, s: at + v.hl - 1.1, name: "Bath Bus Station", rx: -lx, rz: -lz, hx, hz, served: -Infinity, crowd: null };
+      line.stops.push(st);
+      line.stops.sort((a, b) => a.s - b.s);
+    } else { st.x = door.x; st.z = door.z; }
+    this.clear(st);
+    if (Math.random() < 0.35) st.crowd = [];   // (nobody waiting this time)
+    this.S = 0;
+    this.locate(line, v, true);
   }
 
   /** Where the bus is on the line. everywhere: look all round the loop (when it's lost its place). */
