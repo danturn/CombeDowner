@@ -1514,14 +1514,18 @@ at different heights with grass between, dark wedges where a bed met its cutting
 pyramids beside Bradford-on-Avon's station building. What changed, for every map alike:
 
 - **The railway's bed is a face** (`write_tile.rail_beds`, kind `bed`): RAIL_BED (2.3 m) either side
-  of each track where it runs on the ground or onto a bridge, up to its tunnels' mouths (cut square
-  at the portal), beds nearer than BED_JOIN run together, minus any street, path or building
-  crossing it. It lies BED_TOP (0.23 m) over the rails' foot, just under the ballast's top, and with
+  of each track where it runs on the ground (not on a bridge: a bed's edge over the bridge's ends
+  stood off the ground), up to its tunnels' mouths (cut square at the portal), beds nearer than
+  BED_JOIN run together, minus any street, path or building crossing it and BED_CLEAR (0.5 m)
+  round them, so a lower road beside the bed meets the ground at its own height, not the bed's. It lies BED_TOP (0.23 m) over the rails' foot, just under the ballast's top, and with
   the sheet the game draws it as ballast (`world.ts`, one mesh a square), so the line's own
-  shoulders and banks (`railway.ts`) lie under it and the ground. Its height is shared between
-  tracks within BED_SHARE (5 m), weighted to the nearest, and the bed is cut along each track's
-  middle, so each track sits at its own height and the bed slopes evenly between two that differ
-  (35 cm in the Combe Down cutting), with no sleepers buried. The ground meets it as any face, cut
+  shoulders and banks (`railway.ts`) lie under it and the ground. Under each track's ballast top
+  (BALLAST_TOP, 1.6 m either side) it is level at that track's height, and the bed is cut along
+  those edges; between and beyond them its height is shared between tracks within BED_SHARE (5 m),
+  weighted to the nearest. Two tracks closer than 3.2 m whose rails differ in height (3.1 m apart
+  and 36 cm different in the Combe Down cutting) still show a step between their ballast tops,
+  which `railway.ts` draws the same in A: levelling them is a change to the rail data, not the
+  sheet (left for Dan to decide). The ground meets it as any face, cut
   or filled with the batter, and where it can't, held by the sheet's retaining wall. Without the
   sheet the bed isn't drawn, used or counted, so A and B are as they were.
 - **A house above a face's edge keeps its ground** (`sheet.py`): the edge's ground is at least the
