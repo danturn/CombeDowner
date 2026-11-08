@@ -28,6 +28,7 @@ import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
+import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
 
 const CHUNK = 320;
@@ -3092,6 +3093,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
       if (W) W.lamps += performance.now() - b4;
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
+      SIGNAL_TIME.value = signalClock();   // the traffic lights' lamps (signals.ts)
       LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
       b4 = performance.now();
       vegetation.update(px, pz, dt);

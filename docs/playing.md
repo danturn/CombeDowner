@@ -417,6 +417,14 @@ Blue, Sand, Poppy Red and the rest), and you'll see the odd one in town and in t
 Rover pulls away smartly and keeps up with anything on the road, fields, verges and tracks are the
 same to it as the road, and it takes the hills better than anything else.
 
+The traffic keeps to the roads people really drive on: how busy each road is comes from the
+Department for Transport's traffic counts, so it's thick on the main roads, the A4 through town and out along the London Road, and
+thin up the side streets, where a car only turns off now and then. Traffic lights work,
+the British way (red, red and amber, green, amber), the same for everyone, and the cars stop at red
+and queue behind each other; at a crossing with lights it's red for the traffic now and then for
+anyone crossing. A car that has to turn round (at a dead end, or stuck behind something that isn't
+moving) does a turn in the road, backing up with its reversing lights on.
+
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer (the mouse just looks about, and
 the camera swings back behind half a second after you leave it, or as soon as you put your foot

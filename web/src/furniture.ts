@@ -10,6 +10,7 @@ import { CAR_SHAPES, carShape, GOLF, GOLF_PAINT, isCoachMake, LAND_ROVER, LR_PAI
 import { GameMap } from "./map";
 import { Culler } from "./cull";
 import { LAMPS_FAR } from "./view";
+import { LIGHT_GLSL, SIGNAL_TIME, signalsOf } from "./signals";
 
 export type Part = [THREE.BufferGeometry, string, number, number, number, number?];   // geometry, colour, x, y, z, rotate about x
 
@@ -115,8 +116,9 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
   signal: () => model([
     [cyl(0.065, 3.1), "#4e5357", 0, 1.55, 0], [box(0.32, 0.95, 0.24), "#151515", 0, 2.75, 0],
     [box(0.46, 1.15, 0.02), "#151515", 0, 2.75, -0.13], [box(0.48, 1.17, 0.015), "#f2f2ee", 0, 2.75, -0.145],
-    [cyl(0.09, 0.03, 12), "#d8261d", 0, 3.05, 0.125, Math.PI / 2], [cyl(0.09, 0.03, 12), "#8a6a1a", 0, 2.75, 0.125, Math.PI / 2],
-    [cyl(0.09, 0.03, 12), "#2a6e3a", 0, 2.45, 0.125, Math.PI / 2], [box(0.14, 0.22, 0.12), "#d9d4c4", 0, 1.1, 0.1],
+    // the lenses, unlit (the lamps that light them go over them, by the lights' sequence: signals.ts)
+    [cyl(0.09, 0.03, 12), "#3a1714", 0, 3.05, 0.125, Math.PI / 2], [cyl(0.09, 0.03, 12), "#3a2c12", 0, 2.75, 0.125, Math.PI / 2],
+    [cyl(0.09, 0.03, 12), "#12301a", 0, 2.45, 0.125, Math.PI / 2], [box(0.14, 0.22, 0.12), "#d9d4c4", 0, 1.1, 0.1],
   ]),
   // a level crossing's lights on their post, facing whoever comes up to the line (+z): two red
   // lamps on a black board, and the white sign under them telling you to stop when they show
@@ -743,8 +745,9 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     const A = P(s0, t0), B = P(s1, t0), C = P(s1, t1), Dd = P(s0, t1);
     pos.push(...A, ...C, ...B, ...A, ...Dd, ...C);
   };
-  const beacons: (string | number)[][] = [], lights: (string | number)[][] = [];
-  for (const c of D.cx ?? []) {
+  const beacons: (string | number)[][] = [], lights: (string | number)[][] = [], sigLamps: { f: (string | number)[]; sig: number[] }[] = [];
+  const sigs = new Map(signalsOf(map).map((g) => [g.i, g]));
+  (D.cx ?? []).forEach((c, ci) => {
     const [x, y, z, a, kind, w] = c as [number, number, number, number, string, number];
     const h = w / 2, g = z - Z0 + 0.085, off = h + 0.5, nx = -Math.sin(a), ny = Math.cos(a);
     if (kind === "z") for (let t = -h + 0.25; t + 0.5 <= h - 0.15; t += 1.0) quad(x, y, g, a, -1.3, 1.3, t, t + 0.5);
@@ -755,10 +758,12 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     if (kind === "z") for (const k of [1, -1]) beacons.push(["beacon", x + nx * off * k, y + ny * off * k, pole, 0]);
     else {
       // the left kerb's lights face back down the street at the traffic coming along it, the right's the other way
-      lights.push(["signal", x + nx * off, y + ny * off, pole, a - Math.PI / 2]);
-      lights.push(["signal", x - nx * off, y - ny * off, pole, a + Math.PI / 2]);
+      const L = ["signal", x + nx * off, y + ny * off, pole, a - Math.PI / 2], R = ["signal", x - nx * off, y - ny * off, pole, a + Math.PI / 2];
+      lights.push(L, R);
+      const set = sigs.get(ci);
+      if (set) for (const f of [L, R]) for (let k = 0; k < 3; k++) sigLamps.push({ f, sig: [set.off, set.group, set.crossing ? 1 : 0, k] });
     }
-  }
+  });
   // level crossings (lx): the deck across the line, flush with the rails' feet and sloping down to
   // the way either side, and the lights on each side of the line beside the way
   const deck: number[] = [], xlights: (string | number)[][] = [], xcross: (string | number)[][] = [];
@@ -789,6 +794,22 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   yield* instanced(MODELS.beacon(), beacons);
   yield* instanced(MODELS.beaconGlobe(), beacons, S_BEACON);
   yield* instanced(MODELS.signal(), lights);
+  // the lit lamps over the lenses: red, amber, green, each shown only while the lights' sequence has it on (signals.ts)
+  if (sigLamps.length) {
+    const m = new THREE.InstancedMesh(LAMP_DISC, SIGNAL_LAMP, sigLamps.length), off = new THREE.Matrix4(), col = new THREE.Color(), sig = new Float32Array(sigLamps.length * 4);
+    sigLamps.forEach((l, k) => {
+      const which = l.sig[3];
+      m.setMatrixAt(k, off.makeTranslation(0, [3.05, 2.75, 2.45][which], 0.142).premultiply(place(l.f)));
+      m.setColorAt(k, col.set(["#ff3b24", "#ffb21c", "#33e06a"][which]));
+      sig.set(l.sig, k * 4);
+    });
+    m.geometry = LAMP_DISC.clone();
+    m.geometry.setAttribute("sig", new THREE.InstancedBufferAttribute(sig, 4));
+    m.computeBoundingSphere();
+    scene.add(m);
+    culler.add(m, 200);
+    yield;
+  }
   // gates, stiles and the rest across paths and roads (pb), each stretched to the gap or the way it stands in
   const across = new Map<string, (string | number)[][]>();
   for (const f of D.pb ?? []) (across.get(f[0] as string) ?? across.set(f[0] as string, []).get(f[0] as string)!).push(f);
@@ -836,6 +857,16 @@ const DECK_TOP = 0.34, DECK_RAMP = 1.0;
 
 /** A Belisha beacon's globe: amber, and bright enough to read at dusk. */
 const S_BEACON = new THREE.MeshBasicMaterial({ vertexColors: true, color: "#ffb02a" });
+/** A traffic light's lamp, facing the traffic (+z), lit by the sequence in the shader: SIGNAL_TIME and each lamp's sig (signals.ts). */
+const LAMP_DISC = new THREE.CylinderGeometry(0.085, 0.085, 0.01, 14).rotateX(Math.PI / 2);
+const SIGNAL_LAMP = new THREE.MeshBasicMaterial({ toneMapped: false });
+SIGNAL_LAMP.onBeforeCompile = (shader) => {
+  shader.uniforms.uSigT = SIGNAL_TIME;
+  shader.vertexShader = shader.vertexShader
+    .replace("#include <common>", `#include <common>\nattribute vec4 sig;\nuniform float uSigT;\n${LIGHT_GLSL}`)
+    .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed *= signalLit(sig, uSigT);");
+};
+SIGNAL_LAMP.customProgramCacheKey = () => "signal-lamp";
 
 /** Steepest a flight climbs (rise per metre along it), about a stair's usual pitch. */
 const STAIR_PITCH = 0.7;

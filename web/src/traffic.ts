@@ -10,6 +10,15 @@
 // goes up a moment later, a fireball that hurts naughty boys, the posh teams and Bendy round it (not
 // players, and not the cats) and knocks the rest of the traffic about, which can set more off.
 //
+// They keep to the roads people really drive on: each road's share of the traffic comes from the
+// Department for Transport's counts (tools/traffic_counts.py; side streets nobody's counted go by the
+// kind of road they are), so new cars turn up mostly on the busy roads and keep to them at junctions,
+// only now and then turning off into a side street. They stop at red traffic lights (signals.ts), and
+// at amber if they can stop in time, and wait through red and amber. A car can only turn so tightly:
+// where its way on is sharper than that (a hairpin, a dead end, turning round in a street that's
+// blocked) it doesn't go round and round trying, it does a turn in the road, back on the opposite lock
+// and forward again, a few metres at a time, till it's facing its way, reversing lights on as it backs.
+//
 // Who decides what: the host drives them all, spawning them on roads a little way off from the
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
 // second. Everyone else draws them a moment behind, smoothed between updates, as for the naughty boys.
@@ -25,11 +34,15 @@ import { charred, glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { CAR_LAMPS, contact, twist } from "./vehicles";
+import { AMBER, GREEN, type Signal, lightAt, signalClock, signalsOf } from "./signals";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
 /** A parked car knocked out of the street furniture is car PARKED + its vehicle number in the traffic. */
 export const PARKED = 2 ** 45;
+/** A road's traffic, vehicles a day, where the DfT haven't counted it: by the kind of road it is. */
+const FLOW: Record<string, number> = { trunk: 20000, primary: 14000, secondary: 8000, tertiary: 4000, unclassified: 700, residential: 400, living_street: 150 };
+const COUNTED = 35;                  // a count point this near a road (m) is that road's
 const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
 const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
 const COUNT = 12;                    // cars about round each player (fewer each when there are lots of players)
@@ -39,6 +52,9 @@ const NEAR = 70, FAR = 220, GONE = 320;   // spawn between NEAR and FAR from the
 const HL = 2.08, HW = 0.88, CAR_H = 1.44;   // a car's half length, half width and height (a coach's are its own: coaches.ts)
 const WB = 2.6;                      // wheelbase: the front wheels turn, and the back ones follow them round
 const LOCK = 0.6;                    // full lock, radians
+const TURN_R = WB / Math.tan(LOCK);  // the tightest circle it can turn (m, about the back axle)
+const SHUNT = 2.5;                   // m each way, back and forth, in a turn in the road
+const SHUNT_V = 1.6;                 // m/s, doing it
 const ACCEL = 2.5, BRAKE = 7;
 const DELAY = 110;                   // ms behind the host, as for other players
 const STRIDE = 6;                    // numbers per car in a snapshot
@@ -58,7 +74,9 @@ const COACH_DOWN = ([a, u, c, w, h]: LampPair): LampPair => [a, u - COACH.H[0] /
 const COACH_LIT: Lamps = { front: COACH_DOWN(COACH_LAMPS.front), back: COACH_DOWN(COACH_LAMPS.back!) };
 const GUESS_HOLD = 300, GUESS_END = 800;   // ms: how long to trust our own idea of where we knocked one, then hand back to the host's
 
-interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge }
+interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge;
+  /** The road it's part of (Traffic.roads), and how many vehicles a day it carries. */
+  road: number; flow: number }
 interface Node { x: number; z: number; out: Edge[] }
 interface Snap { t: number; x: number; z: number; a: number; v: number }
 /** Something sliding about off its wheels' line: a wreck, or our guess at where we've just knocked one. */
@@ -141,6 +159,11 @@ class Car implements Mover {
   smokeT = 0;
   blockT = 0;
   stuckT = 0;                        // how long it's been stood still
+  leg = 0;                           // in a turn in the road: 1 going forward, -1 backing up, 0 not
+  legLeft = 0;                       // and how far yet on this leg
+  legSide = 1;                       // and which way it's turning round: 1 left, -1 right (kept to, so it doesn't dither when its way on is right behind it)
+  lost = false;                      // its way on is somewhere it can't drive straight to: slowing for a turn in the road
+  sigs: Signal[] = [];               // the traffic lights round about (looked for with the parked cars)
   dodge = 0;                         // how far out from its lane it's pulled, to get past something parked
   parked: Obstacle[] = []; parkedT = 0;   // the cars parked near it, and when to look again
   hits = new Map<string, number>();
@@ -196,6 +219,8 @@ export class Traffic {
   private edges: Edge[] = [];
   private cars = new Map<number, Car>();
   private cells = new Map<number, Edge[]>();
+  /** Every road the traffic uses (as the map has it), its kind and name, and the traffic it carries once the counts are in. */
+  private roads: { c: string; n: string; p: number[][]; flow: number }[] = [];
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;   // a new host's numbers don't clash with the last one's
 
   constructor(private map: GameMap, private scene: THREE.Scene, private ground: (x: number, z: number, y?: number) => number) {
@@ -212,6 +237,8 @@ export class Traffic {
     for (const r of [...map.d.rd, ...map.wide?.rd ?? []]) {
       const v = SPEED[r.c];
       if (!v || r.p.length < 2) continue;
+      const road = this.roads.length, flow = FLOW[r.c] ?? 400;
+      this.roads.push({ c: r.c, n: r.n ?? "", p: r.p, flow });
       const lane = Math.min(2, Math.max(1.2, (WIDTH[r.c] ?? 6) / 4));
       // how far it can pull out from its lane: up to the far kerb, and a wheel on the pavement
       const room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
@@ -222,8 +249,8 @@ export class Traffic {
         const a = node(r.p[k]), b = node(r.p[k + 1]);
         if (a === b || this.nodes[a].out.some((e) => e.b === b)) continue;
         const A = this.nodes[a], B = this.nodes[b], len = Math.hypot(B.x - A.x, B.z - A.z);
-        const there: Edge = { a, b, len, v, lane, room, kerb, dx: (B.x - A.x) / len, dz: (B.z - A.z) / len };
-        const back: Edge = { a: b, b: a, len, v, lane, room, kerb, dx: -there.dx, dz: -there.dz, back: there };
+        const there: Edge = { a, b, len, v, lane, room, kerb, dx: (B.x - A.x) / len, dz: (B.z - A.z) / len, road, flow };
+        const back: Edge = { a: b, b: a, len, v, lane, room, kerb, dx: -there.dx, dz: -there.dz, back: there, road, flow };
         if (r.ow === 1) { A.out.push(there); this.edges.push(there); }
         else if (r.ow === -1) { back.back = undefined; B.out.push(back); this.edges.push(back); }
         else { there.back = back; A.out.push(there); B.out.push(back); this.edges.push(there, back); }
@@ -244,7 +271,7 @@ export class Traffic {
         }
       if (best < 0) continue;
       const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
-      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz };
+      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
       const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
       there.back = back;
       A.out.push(there); B.out.push(back);
@@ -265,7 +292,7 @@ export class Traffic {
         }
       if (best < 0) continue;
       const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
-      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz };
+      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
       const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
       there.back = back;
       A.out.push(there); B.out.push(back);
@@ -276,6 +303,38 @@ export class Traffic {
       const A = this.nodes[e.a], k = this.cell(A.x + e.dx * e.len / 2, A.z + e.dz * e.len / 2);
       (this.cells.get(k) ?? this.cells.set(k, []).get(k)!).push(e);
     }
+    if (map.d.id) void this.loadFlows(map.d.id);
+  }
+
+  /** How busy each road really is: the DfT's counts (tools/traffic_counts.py), each given to the road it's
+   *  on, and to the rest of that road by name; the roads nobody's counted keep their kind's (FLOW). */
+  private async loadFlows(id: string) {
+    let pts: [number, number, number, string][];
+    try { pts = (await (await fetch(`${import.meta.env.BASE_URL}maps/${id}-traffic.json`)).json()).points; } catch { return; }
+    if (!Array.isArray(pts) || !pts.length) return;
+    const counted = new Map<number, number[]>(), named = new Map<string, number[]>();
+    for (const [x, y, flow] of pts) {
+      let best = -1, bd = COUNTED;
+      this.roads.forEach((r, i) => {
+        for (let k = 0; k + 1 < r.p.length; k++) {
+          const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1];
+          if (Math.min(ax, bx) - x > bd || x - Math.max(ax, bx) > bd || Math.min(ay, by) - y > bd || y - Math.max(ay, by) > bd) continue;
+          const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1, f = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / l2));
+          const d = Math.hypot(x - ax - vx * f, y - ay - vy * f);
+          if (d < bd) { bd = d; best = i; }
+        }
+      });
+      if (best < 0) continue;
+      (counted.get(best) ?? counted.set(best, []).get(best)!).push(flow);
+      const n = this.roads[best].n;
+      if (n) (named.get(n) ?? named.set(n, []).get(n)!).push(flow);
+    }
+    const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+    this.roads.forEach((r, i) => {
+      const own = counted.get(i), byName = r.n ? named.get(r.n) : undefined;
+      if (own) r.flow = mean(own); else if (byName) r.flow = mean(byName);
+    });
+    for (const e of this.edges) e.flow = this.roads[e.road].flow;
   }
 
   private cell(x: number, z: number) { return (Math.floor(x / CELL) + 4096) * 8192 + Math.floor(z / CELL) + 4096; }
@@ -284,7 +343,7 @@ export class Traffic {
 
   /** The cars driving along with their lights on (not the wrecks), for headlights.ts. */
   lit(out: Lit[]) {
-    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: c.coach ? COACH_LIT : LAMPS, brake: c.brakeT > 0 });
+    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: c.coach ? COACH_LIT : LAMPS, brake: c.brakeT > 0, reverse: c.v < -0.2 });
   }
 
   /** Everyone: a car's gone up at (x, y, z); one's landed (or hit another) with a crunch, force 0..1; smoke coming off one that's alight (or burnt out). */
@@ -327,7 +386,7 @@ export class Traffic {
       const corner = turn < 0.35 ? e.v : Math.max(2.5, Math.min(e.v, 11 * (1 - turn / Math.PI)));
       let want = Math.min(e.v, Math.sqrt(corner * corner + 2 * 3.5 * Math.max(0, e.len - c.s)));
       // and stopping for anything in its lane ahead
-      let blocked = false, dodge = 0, committed = 0, squeeze = false;
+      let blocked = false, dodge = 0, committed = 0, squeeze = false, queued = false;   // (queued: held up behind a car going its way)
       const obstacles: Obstacle[] = things.filter((o) => Math.abs(o.x - c.x) < 60 && Math.abs(o.z - c.z) < 60);   // (only what's near enough to matter)
       // (a wreck in the road is pulled round, like something parked)
       for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: o.hl, a: o.a, parked: o.wreck, passing: !o.wreck && o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
@@ -335,6 +394,7 @@ export class Traffic {
       if ((c.parkedT -= dt) <= 0) {
         c.parkedT = 0.4;
         c.parked = this.map.parkedNear(c.x, c.z, 48).map((p) => ({ x: p.x, z: p.z, r: 2.05, parked: true, a: p.a }));
+        c.sigs = [this.map, ...this.map.tilesNear(c.x, c.z, 80)].flatMap((m) => signalsOf(m)).filter((g) => Math.abs(g.x - c.x) < 70 && Math.abs(g.z - c.z) < 70);
       }
       obstacles.push(...c.parked);
       const path = this.lanePath(c);
@@ -363,27 +423,49 @@ export class Traffic {
         if (c.stuckT > 6 && o.a !== undefined && !o.parked && !o.id && Math.cos(o.a - c.a) < -0.5) continue;
         const gap = u - c.hl - o.r - 1.5;
         const ok = Math.sqrt(Math.max(0, 2 * 5 * gap));
-        if (ok < want) { want = ok; if (ok < 1 && o.id) blocked = true; }
+        if (ok < want) { want = ok; if (ok < 1 && o.id) blocked = true; queued = !o.parked && o.a !== undefined && Math.cos(o.a - c.a) > 0.5; }
       }
+      // the traffic lights ahead on its way: stop at the line at red, or red and amber, and at amber if it can stop in time
+      let held = false;
+      if (c.sigs.length) {
+        const t = signalClock(), hx = Math.cos(c.a), hz = -Math.sin(c.a);
+        for (const g of c.sigs) {
+          const along = hx * g.ux + hz * g.uz;
+          if (Math.abs(along) < 0.7) continue;   // a street across its way: not its lights
+          // the stop line, before the lights on its side of the street (as furniture.ts paints it)
+          const line = (g.crossing ? 3 : 2) * (along > 0 ? 1 : -1), [u, w] = project(path, g.x - g.ux * line, g.z - g.uz * line);
+          if (u < c.hl || u > 60 || Math.abs(w) > g.half + 2) continue;   // already over it, too far off, or not on its street
+          const light = lightAt(g, t);
+          if (light === GREEN) continue;
+          const gap = u - c.hl - 0.6;
+          if (light === AMBER && (c.v * c.v) / (2 * 6) > gap) continue;   // too close to stop: on through
+          const ok = Math.sqrt(2 * 5 * Math.max(0, gap));
+          if (ok < want) { want = ok; held = true; }
+        }
+      }
+      // its way on is somewhere it can't drive straight to: slow right down for a turn in the road
+      if (c.lost && !c.leg) want = Math.min(want, 2);
       dodge = Math.max(0, committed, Math.min(dodge, room));
       if (squeeze && !dodge) dodge = -e.kerb;
       c.dodge += Math.max(-1.5 * dt, Math.min(1.5 * dt, dodge - c.dodge));
       c.blockT = blocked ? c.blockT + dt : 0;
-      c.stuckT = c.v < 0.3 ? c.stuckT + dt : 0;
-      // stuck a good while behind something that isn't going to move: turn round and go back
+      // (not while it waits at the lights, or in the queue behind a car going its way, or turns in the road)
+      c.stuckT = Math.abs(c.v) < 0.3 && !held && !(queued && want < 1) && !c.leg ? c.stuckT + dt : 0;
+      // stuck a good while behind something that isn't going to move: turn round in the road and go back
       if (c.stuckT > 8 && !blocked && c.e.back) {
         const lane = c.e.lane, d = c.dodge;
         c.e = c.e.back; c.s = c.e.len - c.s; c.prev = null; c.route = [];
         this.plan(c);
-        c.dodge = 2 * lane - d;   // from where it was, over to its new lane
+        c.dodge = 2 * lane - d;   // from where it was, over to its new lane (behind it now: steerAlong turns it round)
         c.stuckT = 0;
-        this.place(c);            // (turned round on the spot: there's no room for a three-point turn with the road blocked)
-        c.steer = 0;
       }
       c.horn = c.blockT > 1.2 && c.blockT % 2.5 < 0.7;
+      // in a turn in the road it creeps back and forth; otherwise only ever forwards
+      if (c.leg) want = c.leg * SHUNT_V;
       const dv = want - c.v;
-      c.v = Math.max(0, c.v + Math.max(-BRAKE * dt, Math.min(ACCEL * dt, dv)));
-      c.gas = dv > 0.2 ? 1 : 0;
+      c.v += Math.max(-BRAKE * dt, Math.min(ACCEL * dt, dv));
+      if (!c.leg) c.v = Math.max(0, c.v);
+      c.gas = Math.abs(want) > Math.abs(c.v) + 0.2 ? 1 : 0;
       // along the road, onto the next one at the end
       this.steerAlong(c, dt);
       while (c.s >= c.e.len) {
@@ -550,8 +632,11 @@ export class Traffic {
     const near: Edge[] = [];
     for (let i = Math.floor((p.x - FAR) / CELL); i <= Math.floor((p.x + FAR) / CELL); i++)
       for (let j = Math.floor((p.z - FAR) / CELL); j <= Math.floor((p.z + FAR) / CELL); j++) near.push(...this.cells.get(this.cell(i * CELL, j * CELL)) ?? []);
+    // most of them on the busy roads: picked in proportion to (the root of) the traffic each carries
+    const weight = near.map((e) => Math.sqrt(e.flow)), total = weight.reduce((s, w) => s + w, 0);
+    const pickOne = () => { let r = Math.random() * total; for (let k = 0; k < near.length; k++) if ((r -= weight[k]) <= 0) return near[k]; return near[near.length - 1]; };
     for (let tries = 0; tries < 30 && near.length; tries++) {
-      const e = near[Math.floor(Math.random() * near.length)];
+      const e = pickOne();
       const A = this.nodes[e.a], x = A.x + e.dx * e.len / 2, z = A.z + e.dz * e.len / 2, d = nearest(x, z);
       if (d < NEAR || d > FAR) continue;
       if ([...this.cars.values()].some((o) => Math.hypot(o.x - x, o.z - z) < 20) || this.map.parkedNear(x, z, 7).length) continue;
@@ -592,8 +677,8 @@ export class Traffic {
   private choose(e: Edge): Edge {
     const outs = this.nodes[e.b].out.filter((o) => o.b !== e.a);
     if (!outs.length) return e.back ?? e;
-    // mostly straight on, sometimes a turning
-    const w = outs.map((o) => 0.4 + Math.max(0, e.dx * o.dx + e.dz * o.dz));
+    // mostly straight on, sometimes a turning, and keeping to the busy roads: a side street off a main road is seldom taken
+    const w = outs.map((o) => (0.4 + Math.max(0, e.dx * o.dx + e.dz * o.dz)) * Math.min(3, Math.max(0.08, Math.sqrt(o.flow / Math.max(1, e.flow)))));
     let r = Math.random() * w.reduce((s, x) => s + x, 0);
     for (let k = 0; k < outs.length; k++) if ((r -= w[k]) <= 0) return outs[k];
     return outs[outs.length - 1];
@@ -616,11 +701,29 @@ export class Traffic {
    * read back from where it's got to.
    */
   private steerAlong(c: Car, dt: number) {
-    const look = Math.min(16, 5 + c.v * 0.7), t = this.laneAhead(c, look);
+    // (never nearer than 8 m: at full lock it turns a circle about 7.7 m across, so a point that far ahead and
+    // anywhere within a right angle of straight on is always one it can steer round to, at any corner)
+    const look = Math.min(16, 8 + Math.max(0, c.v) * 0.6), t = this.laneAhead(c, look);
     const hx = Math.cos(c.a), hz = -Math.sin(c.a);
     const want = Math.atan2(-(t.z - c.z), t.x - c.x);
-    let steer = Math.atan2(Math.sin(want - c.a), Math.cos(want - c.a));
-    steer = Math.max(-LOCK, Math.min(LOCK, steer));
+    const bear = Math.atan2(Math.sin(want - c.a), Math.cos(want - c.a));
+    // can it drive to its way on from here? Not if it's behind it, or inside either of the tightest
+    // circles it can turn (about its back axle, one each side): then it would only go round and round
+    const ax = c.x - hx * WB / 2, az = c.z - hz * WB / 2, lx = hz, lz = -hx;
+    const inside = (k: number) => Math.hypot(t.x - (ax + lx * TURN_R * k), t.z - (az + lz * TURN_R * k)) < TURN_R * 0.95;
+    const reach = Math.abs(bear) < 1.75 && !inside(1) && !inside(-1);
+    c.lost = !reach;
+    let steer: number;
+    if (!c.leg && !reach && Math.abs(c.v) < 2.5) { c.leg = -1; c.legLeft = SHUNT; c.legSide = bear < 0 ? -1 : 1; }   // slowed right down: a turn in the road, backing up first
+    if (c.leg) {
+      // back on the opposite lock, forward on full lock its way, a few metres each, till it can drive to it
+      steer = (c.leg < 0 ? -1 : 1) * c.legSide * LOCK;
+      c.legLeft -= Math.abs(c.v) * dt;
+      if (c.legLeft <= 0) {
+        if (reach && Math.abs(bear) < 1.2) c.leg = 0;
+        else { c.leg = -c.leg; c.legLeft = SHUNT; }
+      }
+    } else steer = Math.max(-LOCK, Math.min(LOCK, bear));
     c.steer += (steer - c.steer) * Math.min(1, dt * 8);
     // the back axle rolls straight on, the car turning about it at the rate the front wheels ask for
     const half = WB / 2;
@@ -632,6 +735,14 @@ export class Traffic {
     // where that leaves it along its road
     const e = c.e, A = this.nodes[e.a];
     c.s = Math.max(c.s, (c.x - A.x) * e.dx + (c.z - A.z) * e.dz);
+    // and once it's round the corner at the end (over the line halfway between the two roads), it's on the next
+    // one, as far along it as it's got: cutting the corner, it never gets to the very end of this one, and
+    // would otherwise go on steering for the corner behind it, round and round
+    const next = c.route[0];
+    if (next && c.s < e.len) {
+      const B = this.nodes[e.b], bx = e.dx + next.dx, bz = e.dz + next.dz;
+      if ((c.x - B.x) * bx + (c.z - B.z) * bz > 0) c.s = e.len + Math.max(0, (c.x - B.x) * next.dx + (c.z - B.z) * next.dz);
+    }
     // (astray from its lane, say after turning round, it finds the lane again rather than wandering)
     const off = Math.hypot(c.x - t.x, c.z - t.z);
     if (off > 40) this.place(c);
