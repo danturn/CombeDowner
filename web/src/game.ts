@@ -56,7 +56,8 @@
 // - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
 // - Rides (rides.ts): you ride yourself, like walking, and say what you're on in your position updates. A hard
 //   crash into a wall you tell the host about, as with a train, and it takes it as damage. Tricks and their
-//   score (ridetricks.ts) are yours alone.
+//   score (ridetricks.ts) are yours alone. Other riders are solid (ridebump.ts): each screen holds its own
+//   rider clear of the others, and whoever sees a bump first sends the other their half of it ("rb").
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 //   Someone over a race's line or out of it, waiting for the others (race.ts), says so in their position
@@ -76,7 +77,8 @@
 //   filling a socket are asks ("odq"). A milestone's fly-over (reveal.ts) plays on every screen.
 // - The zones (zones.ts): how many are open follows from the sockets full, so the wall stands in the
 //   same place on every screen with nothing more sent; the host's word on the sockets also says
-//   whether the room is in free play.
+//   whether the room is in free play. A game picked from the games list (gameslist.ts) takes the wall
+//   down on every screen till it's over, and the pub takeover from there goes round as "gl".
 // - Which of the zones, the strange objects and the team challenges are on (features.ts) is the
 //   host's say, sent with its state ("st"); everyone else plays by the host's switches.
 import * as THREE from "three";
@@ -122,6 +124,7 @@ import { carryIcon } from "./carryicons";
 import { IDKFA } from "./cheats";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
+import { gamesFollow, gamesHeard } from "./gameslist";
 import { NightOut } from "./nightout";
 import { missionActive, missionProgress, missionClear, missionResultUp, missionReward } from "./missionscreens";
 import { guide, news, noticeHold, noticeUp, people, reward, named } from "./notice";
@@ -159,6 +162,7 @@ import { SUIT_ID, Wingsuit } from "./wingsuit";
 import type { Route } from "./railway";
 import { Balloons } from "./balloons";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
+import { RideBumps, type Rider } from "./ridebump";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import * as Telemetry from "./telemetry";
@@ -398,6 +402,7 @@ export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
   readonly effects: Effects;
+  private rideBumps: RideBumps;
   private skids: Skids;                             // skid marks and tyre smoke
   readonly naughtyBoys: NaughtyBoys;
   readonly bendy: Bendy;
@@ -639,6 +644,7 @@ export class Game {
     this.player.canProne = true;
     this.player.noDive = () => !!this.car || !!this.ride || this.riding || this.oddments.carrying(this.net.selfId) || this.map.inWater(this.player.pos.x, this.player.pos.z);
     this.effects = new Effects(world.scene);
+    this.rideBumps = new RideBumps((to, d) => this.net.send("rb", d, to), this.effects);
     this.blood = new Blood(world.scene, world.surface);
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
@@ -934,7 +940,9 @@ export class Game {
     this.listen("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
     this.listen("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
     this.listen("mk", here((d, from) => this.onMarker(d, from)));
-    this.listen("qe", here((d, from) => this.quests.onMessage(d, from)));
+    this.listen("qe", here((d, from) => { this.quests.onMessage(d, from); if (d?.k === "start") gamesFollow(this, d); }));
+    this.listen("gl", here((d) => gamesHeard(this, d)));
+    this.listen("rb", here((d, from) => { if (this.onRide()) this.rideBumps.heard(this.player, this.otherRiders().find((o) => o.id === from), d); }));
     this.listen("bv", here((d, from) => this.invasion.onMessage(d, from)));
     this.listen("no", here((d, from) => this.night.onMessage(d, from)));
     this.listen("scr", here((d, from) => this.scars.onMessage(d, from)));
@@ -1425,6 +1433,8 @@ export class Game {
   mapPicture() { return this.minimap.picture(); }
 
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
+  /** The zones' wall down on this screen, or back up (gameslist.ts). */
+  liftZones(on: boolean) { this.zones.lift(on); }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
   get knownIds(): string[] { return [...this.known]; }
@@ -3597,6 +3607,27 @@ export class Game {
     else this.net.send("ow", claim, this.hostId);
   }
 
+  /** On your own ride, free to be bumped: not held on a start line or waiting out a race. */
+  private onRide() { return this.riding && this.alive && !!this.held && !this.car && !this.ride && !this.basket && !this.quests.held() && !this.sheltered(); }
+
+  /** The other players out on rides, where we draw them, that can be bumped into. */
+  private otherRiders(): Rider[] {
+    const out: Rider[] = [];
+    for (const r of this.remotes.values()) {
+      const kind = rideOf(r.rideCode);
+      if (kind && r.avatar.alive && !r.inCar && !r.waiting && !r.cab && !r.bal) out.push({ id: r.id, kind, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw });
+    }
+    return out;
+  }
+
+  /** Riders are solid to each other (ridebump.ts): yours is held clear of the rest and knocks are traded. */
+  private bumpRiders(dt: number, held: boolean) {
+    const others = this.otherRiders();
+    this.rideBumps.watch(others, dt);
+    if (held || !this.onRide()) return;
+    for (const b of this.rideBumps.update(this.player, this.held!, others)) this.quests.bumped(b.id, b.closing, b.mine, b.theirs);
+  }
+
   /** Everyone's rides, under them: yours, and the other players' from their position updates. */
   private drawRides(dt: number) {
     const p = this.player;
@@ -4326,6 +4357,7 @@ export class Game {
       // shut in a building after all (shoved in by a car, a square loading in round you, down into a
       // courtyard off a roof): out on to the nearest clear ground, as the others will see you
       else if (this.alive && p.unstick()) this.sendState();
+      this.bumpRiders(dt, !!held);
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       if (p.suitHit) this.suitCrash(p.suitHit);
       this.wingsuit.hint(p, p.pos.y - this.map.floor(p.pos.x, p.pos.z, p.pos.y));
@@ -4653,6 +4685,7 @@ export class Game {
       for (const c of this.naughtyBoys.living()) {
         const at = this.naughtyBoys.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
+        if (at.kind === CHAIR && !this.invasion.inFight(c.i, at.gen, at.x, at.z)) continue;
         bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
         bossOff = false;

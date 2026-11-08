@@ -129,7 +129,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs, and ten to fifteen flags go up
   on its street and the streets running into it; shoot a lad off a ladder and it drops back. You
   can't pick a pub that's being taken over on the big map and go straight there: get there yourself. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
-  400 m for a bonus, or he's tomorrow's Wanted poster.
+  400 m for a bonus, or he's tomorrow's Wanted poster. Win the pub back and any lads still standing,
+  his right-hand man too, leg it.
 - **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
   of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
   you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the
@@ -142,7 +143,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   screen) brings his brief back with his round of stops on it, and it ends on the result card in the
   poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
-  hunt Wanted ringleaders, race across town and fight off Seagull Attack.
+  hunt Wanted ringleaders, race across town and fight off Seagull Attack. Win one and it's done for
+  the day; lose and you can have another go straight away, team challenges too.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
   says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
   away the street the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
@@ -171,15 +173,20 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
  Every ride is faster in a race, boost pads lie along the route (two or three between checkpoints), and riding close behind
   someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
   over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
-  still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
-  enough and they come off. The shopping trolley and the skateboard are only raced downhill.
+  still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Racers are solid, so you can
+  lean on and shove each other for a line; barge into another racer hard enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Seagull Attack sets a ring of benches out on the nearest open ground (a green, a square, a wide
   pavement; if it's tight by the board, the board says where) and puts everyone who joined in the middle of it.
   Each tourist has a pin over them that shows through anything, green to red as their sandwich goes
   and flashing while a gull's after it, and the ring is on the maps. The tourists point out gulls coming
   in, wave their arms at one after their lunch, duck, cheer a good shot and storm off in a huff,
-  saying so. Each kind of gull has its own look, every wave comes in from one side under a banner
-  saying what's in it and from where, and before every wave each player gets an ammo pack.
+  saying so. A hoverer hanging over a bench has a ring of segments round it that fills like a clock while
+  your crosshair's on it; a gull making off with a bite has it in its beak and flashing red brackets
+  round it; a gull you've beaten bursts into feathers, squawks, tumbles and goes a see-through grey as it
+  shoots off over the roofs, three times as fast as a thief. Each kind of gull has its own look, every
+  wave comes in from one side under a banner
+  saying what's in it and from where, and one of the three crates between waves is always a box of
+  rounds: the team picks ammo or an upgrade.
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
   and it drops. A race
@@ -199,7 +206,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and holding it builds to full lock; a stick pushed forward with a little lean goes straight, and
   steers once it's clearly over. In the air only a hard turn spins you, and you snap on to a grind by
   yourself only off a jump of your own lined up with the edge (Shift catches one at more of an angle). Grinds, jumps and
-  air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
+  air tricks chain into one combo with a multiplier, best kept for each ride. Other riders are solid:
+  lean on someone riding alongside and you're both shoved apart and off line, and running into the back
+  of someone pushes them on and holds you up, with a thud, a jolt and a puff of dust or sparks), ladders up
   any wall, cars to drive (a red-ringed sign by the speedo shows the street's speed limit, the real
   one from OpenStreetMap: most of Bath is 20 mph, the main roads out 30 to 60; C goes round the chase camera, the driver's seat and a racing game's bonnet camera; at speed the tyres grip and let go like a driving game's: Space at speed with some lock on swings the back end out into a slide, the throttle holds it in a rear-drive car, hold it too long and it spins, and steering the other way catches it, with a wag of the tail as it grips again; a bus or a coach just leans on its tyres and turns, and at a crawl Space and the lock still do donuts), buses to call, narrowboats and working locks on the canal (and marinas full of moored boats, where the survey saw them), a cable car (in through a passage in the engine house at the back of each station, up steps where the platform stands above the ground),
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (whose force field takes in
@@ -387,9 +396,19 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the next hold that way, Space lunges for one further off and C lets go. The holds are laid out
   as routes, a reach apart, with a hard bit of longer reaches on each stretch. Your grip drains as
   you hang and climb (more on a long reach) and comes back on a ledge, or hanging off one of the
-  big white jugs partway up the long stretches. The big orange holds are out of reach from their
-  ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
-  mate below, and the first one up drops a rope for the rest. A short fall hurts your grip till
+  big white jugs partway up the long stretches. The big orange holds start a blank stretch, out of
+  reach from their ledge: a mate crouches and you stand on their shoulders. There's one with two or
+  three of you, up to three with six or more, and with four or more one of them, a bigger red
+  hold, needs two stacked: one crouches, the next stands on their shoulders and crouches too, and
+  you climb up on top. On a ledge, E reaches down to haul up a
+  mate below, and the first one up drops a rope for the rest. With a team a rope only holds while
+  someone up on its ledge holds it (E at its top): holding it you can't climb, your grip drains for
+  every mate hanging on it (a strain meter shows how many), and if you let go it goes slack and
+  whoever's on it slides down to the ledge below, so someone always stays behind each rope. Alone
+  a rope is tied off. With a team the traverse has a gap no lunge will cross: one climber, on the
+  hold before it, stretches across as a bridge (E), their grip draining fast, and the rest climb
+  over them; once a mate's across, the bridge reaches their way and is pulled over. Alone the
+  traverse has no gap. A short fall hurts your grip till
   you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
   (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
   a rope from the next ledge. The team shares its lives, hearts on the card (three, and one more
@@ -399,14 +418,22 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
-  it, and at GO everyone who joined climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
-  bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
-  of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
-  screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
-  it, as the blue line and the sally gauge on the right show. Early or late clashes, and a late rope
-  hauls you off your feet. Two bad rows running and it collapses into a jangle; too many over the
-  touch and the conductor calls Stand. With fewer than three of you, steady old ringers make up three
-  bells, and anyone who climbs up late stands by the wall and watches.
+  it, and at GO everyone who joined (up to eight) is straight up in the ringing chamber, with no
+  countdown. It starts in rounds, then the method moves the bells about every row: Plain Hunt on an
+  easy day, Plain Bob or Grandsire on a hard one. Alone you ring four or five bells, up to four of you
+  two or three each, and five to eight of you one or two each, on a ring of up to twelve. You play
+  your part on a note highway in the middle of the screen, Guitar Hero style: four lanes, A W S D
+  left to right (□ △ ✕ ○ on a pad, a pad under each lane on a touch screen), and a note for every
+  time one of your bells rings, stepping a lane right as the bell moves up a place and left as it
+  moves down, so the method runs across the lanes. Some notes are chords, two lanes joined by a bar,
+  struck together: more of them the fewer notes you have, and on a harder day. The rest of the
+  band's notes come down faintly, so you can see yours fall among theirs. Strike on the line for
+  Perfect or Good, a streak and up to four times the score; the fewer notes you have, the tighter
+  the timing. Early or late, or half a chord, and the bell clashes (a late rope hauls you off your
+  feet). Every miss or clash, anyone's, costs the band's striking (the bar over the highway; a slip
+  costs a big band less), and clean rows win a little back; let it run out and it all collapses into
+  a jangle. Up there the lane keys only ring. Anyone who climbs up late, or past eight, stands by
+  the wall and watches.
 - **The Driving Test** (a team challenge, on any map with a car park on a decent road): a learner
   car with L plates and a roof sign waits outside the test centre (on London Road East in Bath), the
   examiner stood by it with his clipboard. E by them starts it; whoever gets in the driver's seat
@@ -444,10 +471,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
   easel. The paintings go up in gilt frames with a card each, under wraps until the doors open, when
   each one plays back how it was painted, a time-lapse of about eight seconds on its own canvas, before
-  it settles. In come the critics and a crowd of
-  the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
-  Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
-  with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
+  it settles. First comes the judging: you're all stood together in front of each painting in turn
+  (look about as you like) while the critics step up to it one at a time, each one's remark typed out
+  on a card in the middle of the screen and their mark stamped on it, then a board of all their
+  marks. (At a show of four or more, with three critics, one of them keeps quiet at each painting in
+  turn, but still marks it.) Then the doors open to the public (a nan, a builder, an art student, a
+  seven-year-old, a Flag Lad, someone from the Council, a Roman re-enactor, a seagull...), who walk
+  round and say what they make of the paintings, with a mark out of ten, in speech bubbles and out
+  loud. Each remark is a few sentences: what struck them first, something else they spotted, and
+  what they think of it overall. They notice how much of the canvas you
   covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
   subject at all and how much effort went in. They also recognise what you drew: a sun, a bus,
   a cat, a face, gulls, houses, trees, a stick figure, writing (draw the subject's own thing and it
@@ -467,8 +499,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   careful painting of the subject that fills the canvas, ground first, with the time taken, gets 8s
   and 9s and a 10 from someone, a half-done or wrongly coloured one about 6, and a blob or a scribble
   2 to 4. They watch the time-lapse too, and a painting that started as a cat and ended as a bus, or
-  had something rude painted out, gets talked about. The critics' marks count double. Walk round while
-  they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
+  had something rude painted out, gets talked about. The critics' marks count double. Once the doors are
+  open, walk round while the public talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
   Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive
   (with a couple more for anything cheeky, none of them for restraint), and
   if the show averages enough it's a success and one of the strange objects turns up at the door. The

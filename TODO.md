@@ -51,6 +51,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] Day and night cycle: at night the lamps go out and the cats get braver (a day every 24 minutes, the same for everyone; street lamps and windows light up and the cats get braver after dark)
 - [ ] BMX track at Odd Down like Motocross Maniacs (side-on, jumps and loops, tilt to land), raced live together as see-through riders, with best-run ghosts
 - [x] Cable car from Fox Hill to the town centre: Curo's 2017 Mulberry Park to Bath Spa line, with two cabins you can ride
+- [x] The Climb is too easy: make the team needed, scaling with how many climb (alone keeps its easier holds and none of this): (1) a dropped rope only holds while a mate on its ledge holds it (E at its top; your grip drains for each mate on it, shown on a strain meter), and if they let go it goes slack and whoever's on it slides down to the ledge below; (2) a few blank stretches only a mate's shoulders reach, one with two or three climbing up to three with six or more, and with four or more one needs two stacked; (3) the traverse's gap crossed as a human chain, one climber stretched across as a bridge while the rest climb over, then pulled across by a mate
 
 ## Under Combe Down (the mines)
 

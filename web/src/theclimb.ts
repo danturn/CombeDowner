@@ -14,6 +14,13 @@
 // - Some holds are too high to reach from a ledge alone: a mate crouches and you stand on their
 //   shoulders. A mate on a ledge can reach down and haul you up onto it. The first one up onto a
 //   ledge can drop a rope from it for the rest.
+// - With a team, a dropped rope only holds while a mate on its ledge holds it (E at its top), so
+//   someone always stays behind: holding it you can't climb, and your grip drains for every mate
+//   hanging on it, shown as a strain meter. Let go (or run out of grip) and it goes slack: anyone on
+//   it slides down to the ledge below, jarred but not fallen. Alone a rope is tied off and holds.
+// - With a team the traverse has a gap no lunge crosses: from the hold before it one climber
+//   stretches across (E) as a bridge, their grip draining fast, and the rest climb over them as a
+//   hold; once a mate is over, the bridge reaches their way and is pulled across. Alone it has none.
 // - A short fall hurts and leaves your grip short until you've rested on a ledge. A big one knocks
 //   you out where you land: a mate has to come down, pick you up and carry you back up to the
 //   ledge the team has reached, in time, or you're out, a ghost watching until a rope dropped from
@@ -23,14 +30,17 @@
 //   for everyone. Run out, or all be down at once, and a fail card goes up and it's back to the
 //   bottom with the lives filled again.
 // - Alone it can be done (there are more holds, and none needs a boost); with more of you there
-//   are fewer holds and more of them need a boost.
+//   are fewer holds, and a few stretches start blank: one with two or three, up to three with six
+//   or more, and with four or more one needs two stacked (a mate crouched on a crouching mate).
 // Where it waits comes from the map; the crag is the same on every map, and its holds come from
 // the job's seed and how many entered, so everyone climbs the same face. The crag's ledges,
 // the grass at its foot and its top are things to stand on (map.floors), and its rock is solid
 // (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
 //
 // Who decides what: each climber moves themselves (holds, ropes, being hauled up, up to the crag
-// and back down) and says what they're doing ("qe" cs, a few times a second), and says when
+// and back down) and says what they're doing ("qe" cs, a few times a second: which rope they're
+// holding or hanging on and which hold they hang on too, from which every screen works out which
+// ropes hold, whether there's a bridge across the gap and whether a mate is over it), and says when
 // they've fallen. The host decides how many the face is set for, who's climbing (everyone who
 // entered, lineup.ts, all taken up together at GO, and anyone up at the crag or on a hold after; the rest, and anyone who's
 // gone back down, are bystanders and don't hold up the win), who's knocked out, carried, back on
@@ -40,7 +50,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { challengesOn, registerChallenge } from "./challenges";
-import { BACK, BOOST_HOLD, buildCrag, FRONT, H, HALF, rockMost, rockOut, ropeOut, roomOver, routeFor, STILE, STILE_OUT, type Room, type Route } from "./crag";
+import { BACK, buildCrag, FRONT, H, HALF, rockMost, rockOut, ropeOut, roomOver, routeFor, STACK_HOLD, STILE, STILE_OUT, type Room, type Route } from "./crag";
 import { strip } from "./controls";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
@@ -69,6 +79,10 @@ const HANG_DRAIN = 0.03, MOVE_COST = 0.028, JUG_REST = 0.08, LUNGE_COST = 0.16, 
 const REST = 0.4, HEAL = 0.06, HURT = 0.25, CARRY_MUL = 1.8;
 const MOVE_T = 0.3, LUNGE_T = 0.22, MANTLE_T = 0.5, PULL_T = 0.8;
 const ROPE_V = 2.2;
+const ANCHOR_DRAIN = 0.1;  // the anchor's grip, a second, for each mate hanging on the rope
+const SLIDE_V = 7;         // down a rope that's gone slack
+const BRIDGE_DRAIN = 0.065; // hanging stretched across the traverse's gap
+const BRIDGE = -2;         // a Point's i for the body of a mate stretched across the gap
 const SHORT_FALL = 2.5, LIFE_FALL = 4.5, BIG_FALL = 7.5;
 /** The team's lives: three, and one more for every two climbers past the first. */
 const livesFor = (n: number) => 3 + Math.floor((Math.max(1, n) - 1) / 2);
@@ -296,9 +310,10 @@ function dressing(f: Face, map: GameMap) {
 
 const FALLS = ["came off the wall", "peeled off", "did a starfish all the way down", "let go to wave", "found the quick way down", "bounced"];
 
-const enum M { Free, Hang, Rope, Tween, Out, Carried, Ghost }
+const enum M { Free, Hang, Rope, Tween, Out, Carried, Ghost, Anchor, Bridge }
 type Status = { st: "ko" | "ghost"; left: number; by: string };
-type Report = { m: number; g: number; c: number; L: number; on: number; cy: string; f: number; i: number; t: number };
+/** a: the ledge whose rope they're holding, r: the ledge whose rope they're on, h: the hold they hang on (-1: none). */
+type Report = { m: number; g: number; c: number; L: number; on: number; cy: string; f: number; i: number; a: number; r: number; h: number; t: number };
 
 registerChallenge({
   id: "climb", name: "The Climb", blurb: "Up the tallest crag around, together: boost, haul and rope each other to the top",
@@ -367,6 +382,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   let from = { s: 0, y: 0, out: 0 }, to = { s: 0, y: 0, out: 0 }, tT = 0, tLen = 0;   // a move between holds, a mantle or a haul
   let tweenThen: (() => void) | null = null;
   let rope = -1;                                     // the ledge whose rope you're on
+  let anchor = -1;                                   // the ledge whose rope you're holding for the others
+  let slackSaid = 0;
   let L = 0;                                         // the highest ledge you've climbed to
   let peak = -Infinity, air = false, flail = 0, yelled = false;
   let cool = 0, wantGrab = false, prevJump = false, prevCrouch = false, prevLatch = false;
@@ -385,6 +402,37 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   let climbers = new Set<string>(), enrolled = false;
   const reports = new Map<string, Report>();
   const posed = new Map<string, "flail" | "push">();
+  const fresh = (r: Report | undefined, now = performance.now()): r is Report => !!r && now - r.t < 1500;
+  /** With a team a dropped rope only takes weight while a mate on its ledge holds it; alone it's tied off. */
+  const team = () => route.n >= 2;
+  function anchored(k: number): boolean {
+    if (!team() || anchor === k) return true;
+    for (const [id, r] of reports) if (id !== w.selfId && r.m === M.Anchor && r.a === k && fresh(r) && !status.has(id)) return true;
+    return false;
+  }
+  /** Who's hanging on ledge k's rope, besides me. */
+  const onRope = (k: number) => [...reports].filter(([id, r]) => id !== w.selfId && r.m === M.Rope && r.r === k && fresh(r)).map(([id]) => id);
+  const heldRopes = () => new Set([...ropes].filter(anchored));
+  /** The traverse's gap, either side and the middle, where a body stretched across it gives a hold. */
+  const gapAt = () => {
+    if (!route.gap) return null;
+    const [a, b] = route.gap.map((i) => route.holds[i]);
+    return { a, b, mid: { s: (a.s + b.s) / 2, y: (a.y + b.y) / 2, i: BRIDGE, lip: -1 } as Point, way: Math.sign(b.s - a.s) || 1 };
+  };
+  /** A mate stretched across the gap right now, for the rest to climb over. */
+  const bridged = () => [...reports].some(([id, r]) => id !== w.selfId && r.m === M.Bridge && fresh(r) && !status.has(id));
+  /** A mate hanging past the gap, close enough to the far hold to take the bridge's hand. */
+  function mateAcross(): boolean {
+    const g = gapAt();
+    if (!g) return false;
+    for (const [id, r] of reports) {
+      const h = route.holds[r.h];
+      if (id === w.selfId || !h || !fresh(r) || r.m !== M.Hang || status.has(id)) continue;
+      if ((h.s - g.mid.s) * g.way > 0.5 && Math.hypot(h.s - g.b.s, h.y - g.b.y) < 2.5) return true;
+    }
+    return false;
+  }
+  let heldKey = "";
 
   // ---- drawn ----
   const group = new THREE.Group();
@@ -404,7 +452,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     crag.setHolds(route);
     drawRopes();
   }
-  const drawRopes = () => crag.setRopes(route, ropes);
+  const drawRopes = () => { const h = heldRopes(); heldKey = [...h].join(); crag.setRopes(route, ropes, h); };
   build();
 
   // ---- standing on it ----
@@ -488,6 +536,45 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     mode = M.Free; pt = null; rope = -1;
     reached(k);
   }
+  /** The rope's gone slack under you: down it to the ledge it hangs to, a jolt but not a fall. */
+  function slip() {
+    const pl = body(), l = route.ledges[rope], j = route.ledges.findIndex((x) => x.y === l.foot);
+    const ro = ropeOut(l) + 0.35, out = j > 0 ? Math.min(ro, standOut(j, l.rope)) : ro;
+    mode = M.Tween; pt = null; rope = -1;
+    tween({ s: l.rope, y: pl.pos.y, out: ro }, { s: l.rope, y: l.foot, out }, Math.max(0.25, (pl.pos.y - l.foot) / SLIDE_V), () => {
+      body().onGround = true;
+      cap = Math.max(0.3, cap - HURT / 2); grip = Math.min(grip, cap);
+      SFX.thump();
+    });
+    w.toast("The rope's gone slack: nobody up there is holding it");
+    SFX.shout(0, 0, seed + 3);
+  }
+  /** Stretch across the traverse's gap from the near hold, for the others to climb over. */
+  function startBridge() {
+    const g = gapAt(), pl = body();
+    if (!g) return;
+    const [s, out] = local(pl.pos.x, pl.pos.z);
+    mode = M.Bridge; pt = null;
+    tween({ s, y: pl.pos.y, out }, bodyAt(g.mid), 0.4, null);
+    SFX.effort(0, 0, seed + 5);
+  }
+  function offBridge(h: { s: number; y: number }, i: number) {
+    const pl = body(), [s, out] = local(pl.pos.x, pl.pos.z);
+    pt = { s: h.s, y: h.y, i, lip: -1 }; mode = M.Hang;
+    tween({ s, y: pl.pos.y, out }, bodyAt(pt), 0.35, null);
+    SFX.rung();
+  }
+  function startAnchor(k: number) {
+    mode = M.Anchor; anchor = k; pt = null; rope = -1;
+    SFX.effort(0, 0, seed + 4);
+    drawRopes();
+  }
+  function stopAnchor(why = "") {
+    if (mode === M.Anchor) { mode = M.Free; body().onGround = true; }
+    anchor = -1;
+    if (why) w.toast(why);
+    drawRopes();
+  }
   function reached(k: number) {
     if (k < S()) { if (k > L) L = k; }
     else if (L >= S() - 1) L = S();
@@ -506,6 +593,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       if (sc2 < score) { score = sc2; best = c; }
     };
     route.holds.forEach((h, i) => { if (i !== p.i) consider({ s: h.s, y: h.y, i, lip: -1 }); });
+    const g = gapAt();
+    if (g && p.i !== BRIDGE && bridged()) consider(g.mid);
     route.ledges.forEach((le, k) => {
       if (k === 0 || k === p.lip) return;
       consider({ s: Math.max(le.s0 + 0.3, Math.min(le.s1 - 0.3, p.s)), y: le.y, i: -1, lip: k });
@@ -580,6 +669,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       } else place(pl, to.s, to.y, to.out);
       if (grip <= 0) { grip = 0; w.toast("Your grip's gone"); letGo(); return true; }
       if (crouched) { letGo(); return true; }
+      if (pt?.i === BRIDGE && !bridged()) { w.toast("The bridge let go"); letGo(); return true; }
       if (moving) return true;
       const [ix, iy] = [mx, my];
       const p = pt!;
@@ -621,6 +711,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     }
     if (mode === M.Rope) {
       const l = route.ledges[rope], below = l.foot, ro = ropeOut(l) + 0.35;
+      if (!anchored(rope)) { slip(); return true; }
       grip -= ROPE_DRAIN * dt;
       const iy = my;
       let y = pl.pos.y + iy * ROPE_V * (carrying ? 0.65 : 1) * dt;
@@ -637,6 +728,38 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       y = Math.max(under, y);
       place(pl, l.rope, y, ro);
       if (iy) pl.bob += Math.abs(iy) * dt * 10;
+      return true;
+    }
+    if (mode === M.Bridge) {
+      if (pl.crouchLatch) pl.crouchLatch = false;
+      prevLatch = false;
+      const g = gapAt();
+      if (!g) { letGo(); return true; }
+      grip -= BRIDGE_DRAIN * dt;
+      tT += dt;
+      const t = Math.min(1, tT / tLen), e = t * t * (3 - 2 * t);
+      place(pl, from.s + (to.s - from.s) * e, from.y + (to.y - from.y) * e, from.out + (to.out - from.out) * e);
+      if (grip <= 0) { grip = 0; w.toast("Your grip's gone"); letGo(); return true; }
+      if (crouched) { letGo(); return true; }
+      if (t < 1) return true;
+      const ix = mx * g.way;
+      if (ix < -0.5) offBridge(g.a, route.gap![0]);
+      else if (ix > 0.5) {
+        if (mateAcross()) { offBridge(g.b, route.gap![1]); w.toast("A hand from across, and you're over"); }
+        else if (performance.now() - slackSaid > 3000) { slackSaid = performance.now(); w.toast("Nobody across yet to take your hand"); }
+      }
+      return true;
+    }
+    if (mode === M.Anchor) {
+      if (pl.crouchLatch) pl.crouchLatch = false;
+      prevLatch = false;
+      const l = route.ledges[anchor];
+      place(pl, l.rope, l.y, standOut(anchor, l.rope));
+      pl.onGround = true;
+      const load = onRope(anchor).length;
+      if (load) grip -= ANCHOR_DRAIN * load * dt; else grip = Math.min(cap, grip + REST * dt);
+      if (grip <= 0) { grip = 0; stopAnchor("The rope's torn out of your hands"); }
+      else if (crouched) stopAnchor();
       return true;
     }
     if (mode === M.Out) {
@@ -724,6 +847,10 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     for (const k of ropes) {
       const l = route.ledges[k], ro = ropeOut(l);
       if (Math.abs(s - l.rope) < 0.9 && out > ro - 1.4 && out < ro + 0.9 && pl.pos.y > l.foot - 0.6 && pl.pos.y < l.y - 1.2) {
+        if (!anchored(k)) {
+          if (performance.now() - slackSaid > 4000) { slackSaid = performance.now(); guide("That rope's slack: a mate up on its ledge has to hold it ({use} at its top)"); }
+          continue;
+        }
         mode = M.Rope; rope = k;
         place(pl, l.rope, Math.max(l.foot, pl.pos.y), ro + 0.35);
         SFX.rung();
@@ -774,7 +901,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   }
 
   function reset() {
-    ropes.clear(); status.clear(); cp = 0; L = 0; held = 0;
+    ropes.clear(); status.clear(); cp = 0; L = 0; held = 0; anchor = -1;
     carrying = ""; carriedBy = "";
     const pl = body();
     pl.prone = 0;
@@ -786,7 +913,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   /** Up to the crag, onto the grass at its foot, facing the face. */
   function toFoot() {
     const pl = body();
-    mode = M.Free; pt = null; rope = -1;
+    mode = M.Free; pt = null; rope = -1; anchor = -1;
     const [x, z] = P(((hash(w.selfId) % 100) / 100 - 0.5) * HALF, 4 + (hash(w.selfId, "out") % 30) / 10);
     w.moveTo(x, z, Math.atan2(room.nx, room.nz));
     pl.pos.y = room.y0;
@@ -798,7 +925,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   function toStreet() {
     const pl = body();
     if (!pl) return;
-    mode = M.Free; pt = null; rope = -1;
+    mode = M.Free; pt = null; rope = -1; anchor = -1;
     pl.prone = 0;
     const [x, z] = onFace(f, ((hash(w.selfId) % 100) / 100 - 0.5) * WIDTH * 0.6, DEPTH + 4);
     w.moveTo(x, z, Math.atan2(f.nx, f.nz));
@@ -845,7 +972,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       // the others' arms: on the wall, or flailing all the way down
       for (const p of w.players()) {
         if (p.id === w.selfId) continue;
-        const r = reports.get(p.id), arms = !r || now - r.t > 1500 ? "" : r.f ? "flail" : r.m === M.Hang || r.m === M.Rope ? "push" : "";
+        const r = reports.get(p.id), arms = !r || now - r.t > 1500 ? "" : r.f ? "flail" : r.m === M.Hang || r.m === M.Rope || r.m === M.Anchor || r.m === M.Bridge ? "push" : "";
         if ((posed.get(p.id) ?? "") !== arms) { w.pose?.(p.id, 0, arms); if (arms) posed.set(p.id, arms); else posed.delete(p.id); }
       }
       dress.banner.rotation.y = crag.banner.rotation.y = Math.sin(now / 300) * 0.3;
@@ -855,16 +982,19 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       if (see !== shown) { shown = see; if (see) group.add(crag.group); else group.remove(crag.group); }
       const inside = inRoom(pl.pos.x, pl.pos.y, pl.pos.z);
       if (inside === marked) { marked = !inside; w.mark("@challenge", marked ? { x: f.ox + f.nx * 3, z: f.oz + f.nz * 3, y: f.y0 } : null, offer.title, COLOUR); }
+      if ([...heldRopes()].join() !== heldKey) drawRopes();
       // grip on screen
       gripBar(pl);
+      strainBar();
       // say what I'm doing
       if ((sendT -= dt) <= 0) {
         sendT = SEND;
         if (inside || Math.hypot(pl.pos.x - room.ox, pl.pos.z - room.oz) < 200) {
-          const on = mode === M.Free || mode === M.Out ? ledgeAt(pl.pos.x, pl.pos.y, pl.pos.z, pl.onGround) : -1;
-          const d = { k: "cs", s: seed, m: mode, g: Math.round(grip * 100) / 100, c: mode === M.Free && pl.crouch > 0.6 && pl.onGround ? 1 : 0, L, on, cy: carrying, f: flail > 0 ? 1 : 0, i: inside ? 1 : 0 };
+          const on = mode === M.Free || mode === M.Out ? ledgeAt(pl.pos.x, pl.pos.y, pl.pos.z, pl.onGround) : mode === M.Anchor ? anchor : -1;
+          const a = mode === M.Anchor ? anchor : -1, r = mode === M.Rope ? rope : -1, h = mode === M.Hang && pt ? pt.i : -1;
+          const d = { k: "cs", s: seed, m: mode, g: Math.round(grip * 100) / 100, c: mode === M.Free && pl.crouch > 0.6 && pl.onGround ? 1 : 0, L, on, cy: carrying, f: flail > 0 ? 1 : 0, i: inside ? 1 : 0, a, r, h };
           w.send("qe", d);
-          reports.set(w.selfId, { m: d.m, g: d.g, c: d.c, L, on, cy: carrying, f: d.f, i: d.i, t: now });
+          reports.set(w.selfId, { m: d.m, g: d.g, c: d.c, L, on, cy: carrying, f: d.f, i: d.i, a, r, h, t: now });
         }
       }
     },
@@ -892,7 +1022,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       // everyone down: back to the bottom
       // gone back down to the street: not climbing any more, till they take a hold again
       const joined = [...climbers].filter((id) => ids.has(id) && (reports.get(id)?.i ?? 1) === 1);
-      for (const [id, r] of reports) if (ids.has(id) && !climbers.has(id) && (r.i === 1 || r.m === M.Hang || r.m === M.Rope)) joined.push(id);
+      for (const [id, r] of reports) if (ids.has(id) && !climbers.has(id) && (r.i === 1 || r.m === M.Hang || r.m === M.Rope || r.m === M.Bridge)) joined.push(id);
       if (joined.length !== climbers.size || joined.some((id) => !climbers.has(id))) hostSay({ k: "cl", ids: joined });
       const down = climbers.size > 0 && [...climbers].every((id) => status.has(id));
       failT = down ? failT + dt : 0;
@@ -907,7 +1037,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       const pl = body();
       switch (d.k) {
         case "cs": {
-          reports.set(from, { m: +d.m || 0, g: +d.g || 0, c: d.c ? 1 : 0, L: +d.L || 0, on: Number.isFinite(+d.on) ? +d.on : -1, cy: String(d.cy ?? ""), f: d.f ? 1 : 0, i: d.i === 0 ? 0 : 1, t: performance.now() });
+          reports.set(from, { m: +d.m || 0, g: +d.g || 0, c: d.c ? 1 : 0, L: +d.L || 0, on: Number.isFinite(+d.on) ? +d.on : -1, cy: String(d.cy ?? ""), f: d.f ? 1 : 0, i: d.i === 0 ? 0 : 1, a: Number.isFinite(+d.a) ? +d.a : -1, r: Number.isFinite(+d.r) ? +d.r : -1, h: Number.isFinite(+d.h) ? +d.h : -1, t: performance.now() });
           return;
         }
         case "n": {
@@ -917,7 +1047,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           if (n !== route.n) {
             route = routeFor(room, seed, n);
             build();
-            if (mode === M.Hang || mode === M.Rope) letGo();
+            if (mode === M.Hang || mode === M.Rope || mode === M.Bridge) letGo();
           }
           return;
         }
@@ -951,7 +1081,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
           const id = String(d.id);
           status.set(id, { st: "ko", left: +d.t || DOWN_SECS, by: "" });
           if (id === w.selfId) {
-            if (mode !== M.Out) { mode = M.Out; koVy = 0; pt = null; }
+            if (mode !== M.Out) { mode = M.Out; koVy = 0; pt = null; anchor = -1; }
             if (carrying) { carrying = ""; }
             w.toast(`Out cold. A mate has to carry you up to the ledge the team's on within ${Math.round(+d.t || DOWN_SECS)}s`);
           }
@@ -1134,6 +1264,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       w.mark("@challenge", null);
       for (const id of posed.keys()) w.pose?.(id, 0, "");
       missionAux("grip", null);
+      missionAux("strain", null);
     },
   };
 
@@ -1141,7 +1272,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   function release() {
     const pl = body();
     if (pl && mode !== M.Free) { pl.prone = 0; pl.onGround = false; }
-    mode = M.Free; pt = null; carrying = ""; carriedBy = "";
+    mode = M.Free; pt = null; carrying = ""; carriedBy = ""; anchor = -1;
   }
 
   /** What use does here, and what to say about it. */
@@ -1150,6 +1281,17 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     if (!pl || job.done) return null;
     if (mode === M.Out || mode === M.Carried || mode === M.Ghost || mode === M.Tween) return null;
     const me = w.me(), E = "<b>{use}</b>";
+    if (mode === M.Bridge) {
+      const g = gapAt();
+      return { say: `${E} Come back off the gap · ${mateAcross() ? "a mate's across: reach their way to follow" : "hold on while the others climb over you"}`, go: () => { if (g) offBridge(g.a, route.gap![0]); } };
+    }
+    if (mode === M.Hang && route.gap && pt?.i === route.gap[0] && team() && !bridged()) {
+      return { say: `${E} Stretch across the gap, a bridge for the others to climb over`, go: startBridge };
+    }
+    if (mode === M.Anchor) {
+      const on = onRope(anchor).map((id) => esc(w.nameOf(id)));
+      return { say: `${E} Let go of the rope · ${on.length ? `holding ${on.join(" and ")}: don't let go yet` : "nobody on it yet"}`, go: () => stopAnchor() };
+    }
     if (carrying) return { say: `${E} Put ${esc(w.nameOf(carrying))} down`, go: () => { w.send("qe", { k: "put", s: seed, id: carrying }); if (w.isHost) job.event!({ k: "put", id: carrying }, w.selfId); } };
     if (!inRoom(me.x, me.y, me.z)) {
       if (!me.alive || footDist(f, me.x, me.z) > UP) return null;
@@ -1182,9 +1324,12 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
       }
       // the rope coiled on this ledge
       const ghosts = [...status.values()].some((x) => x.st === "ghost");
+      const drop = () => { const d = { k: "rope", s: seed, i: on }; w.send("qe", d); job.event!(d, w.selfId); };
       if (Math.abs(s - l.rope) < 1.6 && (!ropes.has(on) || (ghosts && on >= cp))) {
-        return { say: ropes.has(on) ? `${E} Drop the rope again, for the ghosts` : `${E} Drop a rope for the others`, go: () => { const d = { k: "rope", s: seed, i: on }; w.send("qe", d); job.event!(d, w.selfId); } };
+        if (!ropes.has(on) && team()) return { say: `${E} Drop a rope and hold it for the others`, go: () => { drop(); startAnchor(on); } };
+        return { say: ropes.has(on) ? `${E} Drop the rope again, for the ghosts` : `${E} Drop a rope for the others`, go: drop };
       }
+      if (Math.abs(s - l.rope) < 1.6 && ropes.has(on) && !anchored(on)) return { say: `${E} Hold the rope, so the others can climb it`, go: () => startAnchor(on) };
     }
     if (mode === M.Free && grip >= 0.08) {
       const [s, out] = local(me.x, me.z);
@@ -1199,19 +1344,31 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
     if (!pl) return "";
     if (mode === M.Hang) return `${pt && pt.i >= 0 && route.holds[pt.i]?.rest ? "A jug: hang here to get your grip back · " : ""}${strip("climb", ["climb.reach", "climb.lunge", "climb.letgo"])}`;
     if (mode === M.Rope) return strip("climb", ["climb.rope", "climb.letgo"]);
+    if (mode === M.Anchor) return strip("climb", ["climb.letgo"]);
     if (mode === M.Ghost) return "You're a ghost: fly about and watch";
     if (mode !== M.Free || !pl.onGround) return "";
     const me = w.me(), k = ledgeAt(me.x, me.y, me.z, true);
     if (k < 0 || k >= S()) return "";
-    const [s] = local(me.x, me.z), next = route.holds.find((h) => h.boost && h.y > route.ledges[k].y && h.y < route.ledges[k].y + BOOST_HOLD + 0.1);
-    if (next && Math.abs(next.s - s) < 2.5 && !ropes.has(k + 1)) return "Out of reach: a mate crouches ({crouch}) and you stand on their shoulders";
+    const [s] = local(me.x, me.z), next = route.holds.find((h) => h.boost && h.y > route.ledges[k].y && h.y < route.ledges[k].y + STACK_HOLD + 0.1);
+    if (next && Math.abs(next.s - s) < 2.5 && !ropes.has(k + 1)) {
+      return next.two ? "Out of reach even off one mate: one crouches ({crouch}), the next stands on their shoulders and crouches too, and you climb up on top"
+        : "Out of reach: a mate crouches ({crouch}) and you stand on their shoulders";
+    }
     return "";
+  }
+
+  // ---- the strain on the rope you're holding: one bar a climber ----
+  function strainBar() {
+    const load = mode === M.Anchor ? onRope(anchor).length : -1;
+    if (load < 0) { missionAux("strain", null); return; }
+    const pips = Array.from({ length: Math.max(3, load) }, (_v, i) => `<i style="display:inline-block;width:18px;height:8px;margin:0 2px;border:1px solid rgba(255,255,255,.6);background:${i < load ? (load > 1 ? "#ff6a4a" : "#ffb347") : "transparent"}"></i>`).join("");
+    missionAux("strain", `<div style="font-size:12px;text-align:center">Rope ${pips}</div>`);
   }
 
   // ---- the grip meter ----
   // a thin bar in the shared slot under the crosshair (missionscreens.ts): written once, then only its fills move
   function gripBar(pl: Player | undefined) {
-    const show = !!pl && (mode === M.Hang || mode === M.Rope || grip < cap - 0.02 || cap < 0.99) && inRoom(pl.pos.x, pl.pos.y, pl.pos.z);
+    const show = !!pl && (mode === M.Hang || mode === M.Rope || mode === M.Anchor || mode === M.Bridge || grip < cap - 0.02 || cap < 0.99) && inRoom(pl.pos.x, pl.pos.y, pl.pos.z);
     let row = missionAuxRow("grip");
     if (!show) { if (row && !row.hidden) row.hidden = true; return; }
     if (!row) {
@@ -1229,8 +1386,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face, cast: string[]): Job
   // everyone who entered goes up together
   hook();
   if (w.me().alive && cast.includes(w.selfId)) toFoot();
-  // for tools/climb_team_probe.mjs
-  Object.assign(job, { probe: { face: { ...room, base: room.y0, crag: true }, entry: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], lives: () => lives, spare: () => { lives = most = 99; }, ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local, rock } });
+  // for tools/climb_team_probe.mjs and tools/climb_gates_probe.mjs
+  Object.assign(job, { probe: { face: { ...room, base: room.y0, crag: true }, entry: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], lives: () => lives, spare: () => { lives = most = 99; }, ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, hang: (i: number) => { const h = route.holds[i]; grabbed({ s: h.s, y: h.y, i, lip: -1 }, 0); }, pt: () => pt, anchor: () => anchor, across: () => mateAcross(), held: () => [...heldRopes()], P, local, rock } });
   return job;
 }
 

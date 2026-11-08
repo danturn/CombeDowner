@@ -17,10 +17,12 @@
 //
 // - Herring gulls, white with grey wings, circle, pick a sandwich and swoop: their shadow grows on
 //   the ground as they come down. Shoot them on the way in.
-// - Hoverers, with slate wings held up in a fluttering V and an amber ring round them, drop in from
-//   high overhead, hang over a bench, head cocked, then drop straight down. Stare one out (keep your
-//   crosshair on it for a second and a half; the ring goes green as you do) and it gives up: eye
-//   contact puts gulls off, as the University of Exeter found in 2019.
+// - Hoverers, with slate wings held up in a fluttering V, drop in from high overhead, hang over a
+//   bench, head cocked, then drop straight down. While one hangs there a ring of dark segments
+//   stands round it, and they light up one by one, like a clock, while your crosshair's on it: fill
+//   the ring (a second and a half) and it gives up, as eye contact puts gulls off (the University
+//   of Exeter found so in 2019). The ring is only there while staring works, and the first one says
+//   so.
 // - A gang of black-headed gulls, small and dark-hooded, comes in low and fast, five at once in a
 //   tight flock, too many to shoot: shout at them (E) and everything near you scatters.
 // - Walkers, brown youngsters, land out of sight and stroll up behind the benches, with no shadow
@@ -34,14 +36,19 @@
 //   the way in to make him pull out, and calls in a gang when he's half beaten. His beak is the
 //   weak spot.
 //
-// A gull that grabs a bite flies off with it to a rooftop: shoot it before it gets there and the
-// bite's saved. A tourist whose sandwich is all gone storms off. Before every wave each player is
-// handed an ammo pack (PACK: enough for a decent shot, not for holding the trigger down), straight
-// into their pocket so nobody misses it grabbing a crate. And between waves three crates are put
-// out by the benches, each with an upgrade: a bucket of chips to throw down (gulls go for the chips
-// instead), a plastic owl to stand by a tourist (gulls keep away until a walker knocks it over), a
-// brolly that blocks one swoop, a megaphone for a bigger shout, or second helpings for everyone.
-// Whoever gets to one first takes it for the team.
+// A gull that grabs a bite flies off with it to a rooftop, slowly, the bite in its beak and red
+// brackets round it that show through anything: shoot it before it gets there and the bite's saved.
+// A gull that's beaten (shot, stared out, shouted off) is plainly out of it: a burst of feathers and
+// a squawk, it tumbles, goes a see-through grey, and beats off up over the roofs three times as fast
+// as a thief, with nothing round it any more; it can't be shot again. The shooter's own screen shows
+// it beaten straight away, without waiting to hear from the host. A tourist whose sandwich is all
+// gone storms off. Between waves three crates are put
+// out by the benches, and whoever gets to one first takes it for the team. One is always a box of
+// rounds, enough for every player for the next two waves (PACK), so ammo is something the team
+// chooses over an upgrade, not something handed out. The other two are upgrades: a bucket of chips
+// to throw down (gulls go for the chips instead), a plastic owl to stand by a tourist (gulls keep
+// away until a walker knocks it over), a brolly that blocks one swoop, a megaphone for a bigger
+// shout, or second helpings for everyone.
 //
 // Stars at the end for how much sandwich is left, and a score: gulls seen off, thieves shot in
 // flight, gulls stared out, and a bonus for a wave without a bite lost. Each day has its own twist
@@ -52,12 +59,14 @@
 //
 // Who decides what: the host sets the benches out where the poster puts them, runs the gulls, the
 // tourists, the waves and Big Lad, and sends their state round about 10 times a second as "qe"
-// (with what just happened, for the sounds and feathers); everyone else draws that, smoothed. Shots
+// (with what just happened, for the sounds and feathers); everyone else draws that, smoothed. How a
+// gull looks (beaten, thieving, being stared at) comes from what it's doing in that state, so
+// nothing new goes round for it. Shots
 // at gulls, shouts, stares, chips and crates go to the host as "qe" from whoever did them. Where
 // seagull muck lands goes round, and each player sees for themselves whether it got them. Where the
 // benches go comes from the poster alone, so lineup.ts puts everyone who entered in the middle of
-// them before the host has set them out. Each player tops up their own gun when the ammo pack comes
-// round (an effect older pages don't know, so they just don't). What's in a wave and where it's
+// them before the host has set them out. Each player tops up their own gun when the box of rounds
+// is taken (an effect older pages don't know, so they just don't). What's in a wave and where it's
 // from go round with the state, for the banner. The tourists' moods and lines are each screen's
 // own, from the state. A go of your own (Backspace afterwards) runs it all on your machine and
 // sends nothing.
@@ -97,7 +106,7 @@ const ARRIVE = 0, CIRCLE = 1, SWOOP = 2, CARRY = 3, FLEE = 4, HOLD = 5, WALK = 6
 const COST = [1, 2, 4, 2, 2];
 const POINTS = [10, 15, 5, 15, 15];
 /** How each kind looks, tints on the gull's own colours and the body's stretch (wide, deep, long):
- *  herring gulls as they are; hoverers with slate wings and a ring round them; walkers the brown
+ *  herring gulls as they are; hoverers with slate wings; walkers the brown
  *  of a youngster; poopers fat, and sickly yellow underneath. (The gang has its own dark-headed body.) */
 const LOOK = [
   { body: new THREE.Color("#ffffff"), wing: new THREE.Color("#ffffff"), belly: [1, 1, 1] },
@@ -106,7 +115,11 @@ const LOOK = [
   { body: new THREE.Color("#b58c5e"), wing: new THREE.Color("#9a7550"), belly: [1, 1, 1] },
   { body: new THREE.Color("#ece08a"), wing: new THREE.Color("#c8c89a"), belly: [1.3, 1.45, 1.15] },
 ];
-const RING_ON = new THREE.Color("#ffb020"), RING_DONE = new THREE.Color("#58e06a");
+const METER_OFF = new THREE.Color("#2a2e36"), METER_ON = new THREE.Color("#ffd23a"), METER_DONE = new THREE.Color("#58e06a");
+const SEGS = 12;
+const GHOST = new THREE.Color("#a4a8b0");
+const BEATEN_SHOWN = 0.7;          // seconds a gull you shot or stared out shows beaten before the host says so
+const FLEE_SPEED = 24, CARRY_SPEED = 7, TUMBLE = 0.5;
 /** Which kinds turn up in each wave (1 to 5). */
 const KINDS_IN: number[][] = [[], [HERRING], [HERRING, HOVER], [HERRING, HOVER, GANG, WALKER], [HERRING, HOVER, GANG, WALKER, POOPER], [HERRING, HOVER, WALKER, POOPER]];
 const BUDGET = [0, 6, 9, 13, 17, 8];
@@ -119,14 +132,15 @@ const KIND_SAY: [string, string][] = [["herring gull", "herring gulls"], ["hover
 const B_ARRIVE = 0, B_PERCH = 1, B_RUN = 2, B_PASS = 3, B_BACK = 4, B_DIVE = 5, B_DEAD = 6;
 
 // the upgrades in the crates
-const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4;
-const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings"];
-const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here"];
-/** Spare rounds each player is handed before every wave, by the wave (1 to 5), on a two-star
+const CHIPS_UP = 0, OWL_UP = 1, BROLLY_UP = 2, LOUD_UP = 3, HELPING_UP = 4, AMMO_UP = 5;
+const UP_NAME = ["Bucket of chips", "Plastic owl", "Brolly", "Megaphone", "Second helpings", "Box of rounds"];
+const UP_SAY = ["throw it down ({use}) and the gulls go for the chips", "stood by the tourist with most left", "up over the tourist with most left: it stops one swoop", "your shouts reach further, and come round faster", "a bite back for every tourist still here", "rounds for everyone, enough for two waves"];
+/** Spare rounds a player needs for each wave, by the wave (1 to 5), on a two-star
  *  poster. A bot with a fair aim fired 14, 13, 35, 36 and 53 rounds in the five waves, and one
  *  holding the trigger down 140 to 160 a wave; a decent player (one hit in four or so) needs about
  *  25, 30, 40, 50 and 180. So with what you come with (150, as you spawn) a decent shot ends each
- *  wave with some left, and spraying runs dry by the second. */
+ *  wave with some left, and spraying runs dry by the second. The box of rounds holds the next two
+ *  waves' worth, so a team that takes it every other lull keeps up. */
 const PACK = [0, 30, 30, 45, 60, 90];
 
 // each day's twist
@@ -185,6 +199,9 @@ registerJob({
       title: MODS[mod] ? `Seagull Attack: ${MODS[mod]}` : "Seagull Attack",
       blurb: `Tourists on the benches with their sandwiches, and the gulls of Bath want them. Five waves, then Big Lad himself. `
         + `Shoot them, stare them out, shout ({use}) at a gang, and save a stolen bite by shooting the thief before it reaches the roofs. `
+        + `The pin over each tourist goes green to red as their sandwich goes, and flashes while a gull's after it. `
+        + `A hoverer hanging over a bench has a ring round it: keep your crosshair on it till the ring fills. `
+        + `Red brackets mean a thief with a bite: shoot it. A grey gull flying off is beaten. `
         + (MOD_SAY[mod] ? `Today: ${MOD_SAY[mod]} ` : ""),
       reward: `${stars} prize${stars > 1 ? "s" : ""}, and a seagull for your head for three stars`,
     };
@@ -492,6 +509,24 @@ function badgeTex() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+/** Brackets round a thief, as round a target, drawn white so they can flash. */
+function bracketTex() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const x = c.getContext("2d")!;
+  x.lineCap = "square";
+  for (const [w, col] of [[9, "#14161c"], [5, "#ffffff"]] as const) {
+    x.lineWidth = w; x.strokeStyle = col;
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      x.beginPath();
+      x.moveTo(32 + sx * 26, 32 + sy * 12); x.lineTo(32 + sx * 26, 32 + sy * 26); x.lineTo(32 + sx * 12, 32 + sy * 26);
+      x.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 function label(text: string) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(text), depthTest: false, transparent: true }));
   s.scale.set(2.2, 0.55, 1);
@@ -512,7 +547,11 @@ function labelTex(text: string) {
 
 // ---- what everyone draws ------------------------------------------------------------------------
 
-interface GullView { gen: number; k: number; ph: number; x: number; y: number; z: number; yaw: number; tx: number; ty: number; tz: number; tyaw: number; flap: number; stare: number; stared: boolean }
+interface GullView {
+  gen: number; k: number; ph: number; x: number; y: number; z: number; yaw: number; tx: number; ty: number; tz: number; tyaw: number; flap: number; stare: number; stared: boolean;
+  fleeT: number;      // how long it's been seen off, for its tumble
+  out: number;        // when this player shot or stared it out (0: not), to show it beaten before the host says so
+}
 interface TouristView { g: THREE.Group; person: THREE.Group; sandwich: THREE.Mesh; brolly: THREE.Mesh; owl: THREE.Mesh; leave: number }
 
 const _m = new THREE.Matrix4(), _w = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _b = new THREE.Matrix4(), _k = new THREE.Matrix4();
@@ -533,7 +572,6 @@ class Seagulls implements Job {
   private players = 1;
   private mod: number;
   private stats = { pooed: false, bossPoo: false };
-  private firstPack = false;
   // what everyone draws
   private root = new THREE.Group();
   private view = new Map<number, GullView>();
@@ -543,7 +581,14 @@ class Seagulls implements Job {
   private wingsL: THREE.InstancedMesh;
   private wingsR: THREE.InstancedMesh;
   private shadows: THREE.InstancedMesh;
-  private rings: THREE.InstancedMesh;
+  private meter: THREE.InstancedMesh;     // the stare ring round a hoverer, in segments that light up
+  private ghostBodies: THREE.InstancedMesh;
+  private ghostWingsL: THREE.InstancedMesh;
+  private ghostWingsR: THREE.InstancedMesh;
+  private beaks: THREE.InstancedMesh;      // a stolen bite, in a thief's beak
+  private thieves: THREE.Points;          // red brackets round each thief, seen through anything
+  private firstHover = false;
+  private firstThief = false;
   private folk: Sitters;
   private cheerT: number[] = [];
   private dripT = 0;
@@ -567,7 +612,7 @@ class Seagulls implements Job {
     this.mod = offer.mode ?? 0;
     this.S = { w: 0, ph: 0, t: FIRST, sc: 0, cx: offer.x, cz: offer.z, tr: [], up: [], ch: 0, chip: null, loud: false, clean: true, bc: true, won: false, wa: 0, wn: [] };
     // the gulls: bodies (white-headed and black-headed), wings and shadows, one draw each
-    const inst = (g: THREE.BufferGeometry, m: THREE.Material = MAT) => { const im = new THREE.InstancedMesh(g, m, MAX_GULLS); im.count = 0; im.frustumCulled = false; this.root.add(im); return im; };
+    const inst = (g: THREE.BufferGeometry, m: THREE.Material = MAT, n = MAX_GULLS) => { const im = new THREE.InstancedMesh(g, m, n); im.count = 0; im.frustumCulled = false; this.root.add(im); return im; };
     this.bodies = inst(gullBody("#f4f4f2").scale(1.6, 1.6, 1.6));
     this.darkBodies = inst(gullBody("#3a3030").scale(1.25, 1.25, 1.25));
     this.wingsL = inst(gullWing(-1).scale(1.6, 1.6, 1.6));
@@ -575,9 +620,16 @@ class Seagulls implements Job {
     this.shadows = inst(new THREE.CircleGeometry(0.6, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.35, depthWrite: false }));
     this.folk = new Sitters(this.root, MAT);
     this.folk.hearFrom = (x, z) => { const me = w.me(); return Math.hypot(x - me.x, z - me.z); };
-    this.rings = inst(new THREE.RingGeometry(0.75, 1.0, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false, fog: false }));
+    const seg = (Math.PI * 2) / SEGS;
+    this.meter = inst(new THREE.RingGeometry(1.25, 1.55, 3, 1, -seg / 2 + 0.06, seg - 0.12), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false, fog: false }), SEGS * 10);
+    // beaten gulls share one see-through material, so going grey costs three draws, not one per gull
+    const ghost = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
+    this.ghostBodies = inst(gullBody("#f4f4f2").scale(1.6, 1.6, 1.6), ghost);
+    this.ghostWingsL = inst(gullWing(-1).scale(1.6, 1.6, 1.6), ghost);
+    this.ghostWingsR = inst(gullWing(1).scale(1.6, 1.6, 1.6), ghost);
+    this.beaks = inst(sandwichGeo().scale(1.8, 1.8, 1.8));
     // the colours have to be there before the first draw, or the shader is built without them
-    for (const im of [this.bodies, this.darkBodies, this.wingsL, this.wingsR, this.rings]) for (let i = 0; i < MAX_GULLS; i++) im.setColorAt(i, _c.set("#ffffff"));
+    for (const im of [this.bodies, this.darkBodies, this.wingsL, this.wingsR, this.meter, this.ghostBodies, this.ghostWingsL, this.ghostWingsR]) for (let i = 0; i < im.instanceMatrix.count; i++) im.setColorAt(i, _c.set("#ffffff"));
     this.chipsView = new THREE.Mesh(chipsGeo(), MAT);
     this.chipsView.visible = false;
     this.root.add(this.chipsView);
@@ -605,6 +657,14 @@ class Seagulls implements Job {
     this.badges.frustumCulled = false;
     this.badges.renderOrder = 11;
     this.root.add(this.badges);
+    const tg = new THREE.BufferGeometry();
+    tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(MAX_GULLS * 3), 3));
+    tg.setAttribute("color", new THREE.BufferAttribute(new Float32Array(MAX_GULLS * 3), 3));
+    tg.setDrawRange(0, 0);
+    this.thieves = new THREE.Points(tg, new THREE.PointsMaterial({ map: bracketTex(), size: 64, sizeAttenuation: false, vertexColors: true, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+    this.thieves.frustumCulled = false;
+    this.thieves.renderOrder = 11;
+    this.root.add(this.thieves);
     w.scene.add(this.root);
     w.mark("@gulls", { x: offer.x, z: offer.z }, "Seagull Attack", COLOUR);
     if (this.owner) this.setUp();
@@ -719,8 +779,8 @@ class Seagulls implements Job {
 
   private flee(g: Gull) {
     const S = this.S, a = Math.atan2(g.z - S.cz, g.x - S.cx) + (this.r() - 0.5);
-    g.ph = FLEE; g.t = 4;
-    g.ex = S.cx + Math.cos(a) * 60; g.ez = S.cz + Math.sin(a) * 60; g.ey = this.w.map.ground(S.cx, S.cz) + 30;
+    g.ph = FLEE; g.t = 5;
+    g.ex = S.cx + Math.cos(a) * 70; g.ez = S.cz + Math.sin(a) * 70; g.ey = this.w.map.ground(S.cx, S.cz) + 45;
   }
   private escape(g: Gull) {
     // off with it to a rooftop
@@ -768,7 +828,6 @@ class Seagulls implements Job {
   private hostUpdate(dt: number) {
     const S = this.S;
     if (!this.ready) return;
-    if (S.ph === 0 && S.w === 0 && !this.firstPack) { this.firstPack = true; this.emit([FX_PACK, this.pack(1)]); }
     if (S.ph === 0) {
       S.t -= dt;
       if (S.t <= 0) this.startWave();
@@ -781,8 +840,11 @@ class Seagulls implements Job {
     if (S.ph !== 2 && S.tr.length && S.tr.every((t) => t.gone)) this.over(false);
   }
 
-  /** The ammo pack before wave w: more gulls on a harder poster, so more rounds. */
-  private pack(w: number) { return Math.round((PACK[w] * [0, 0.8, 1, 1.25][this.offer.stars]) / 5) * 5; }
+  /** The box of rounds taken before wave w: the next two waves' worth, more on a harder poster. */
+  private pack(w: number) {
+    const need = PACK[Math.min(w, WAVES)] + PACK[Math.min(w + 1, WAVES)];
+    return Math.round((need * [0, 0.8, 1, 1.25][this.offer.stars]) / 5) * 5;
+  }
 
   private startWave() {
     const S = this.S, r = this.r;
@@ -828,9 +890,8 @@ class Seagulls implements Job {
       if (S.clean) { S.sc += 50; this.emit([FX_CLEAN, S.w]); }
       if (S.w >= WAVES) { this.over(true); return; }
       S.ph = 0; S.t = LULL;
-      this.emit([FX_PACK, this.pack(S.w + 1)]);
-      // three crates to pick from
-      const r = this.r, all = this.mod === 2 ? [CHIPS_UP] : [];
+      // three crates to pick from, one always rounds
+      const r = this.r, all = this.mod === 2 ? [AMMO_UP, CHIPS_UP] : [AMMO_UP];
       const rest = [CHIPS_UP, OWL_UP, BROLLY_UP, LOUD_UP, HELPING_UP].filter((u) => !all.includes(u) && !(u === LOUD_UP && S.loud));
       while (all.length < 3 && rest.length) all.push(rest.splice(Math.floor(r() * rest.length), 1)[0]);
       S.up = all;
@@ -914,10 +975,12 @@ class Seagulls implements Job {
           break;
         }
         case CARRY:
-          if (Seagulls.step(g, g.ex, g.ey, g.ez, 7, dt)) { g.ph = GONE; g.carry = -1; }
+          if (Seagulls.step(g, g.ex, g.ey, g.ez, CARRY_SPEED, dt)) { g.ph = GONE; g.carry = -1; }
           break;
         case FLEE:
-          if (Seagulls.step(g, g.ex, g.ey, g.ez, 11, dt) || (g.t -= dt) <= 0) { g.ph = GONE; g.carry = -1; }
+          // knocked down a little first, so a hit reads as a hit, then off far faster than any thief
+          if (g.t > 5 - TUMBLE) { g.t -= dt; g.y = Math.max(this.w.map.ground(g.x, g.z) + 0.3, g.y - 4 * dt); break; }
+          if (Seagulls.step(g, g.ex, g.ey, g.ez, FLEE_SPEED, dt) || (g.t -= dt) <= 0) { g.ph = GONE; g.carry = -1; }
           break;
       }
       if (g.y < gy - 50) g.ph = GONE;
@@ -1064,6 +1127,7 @@ class Seagulls implements Job {
       else if (u === LOUD_UP) S.loud = true;
       else if (u === HELPING_UP) for (const t of S.tr) if (!t.gone) t.bites = Math.min(t.max, t.bites + 1);
       this.emit([FX_PICK, u, 0, 0, 0, from === this.w.selfId ? 1 : 0]);
+      if (u === AMMO_UP) this.emit([FX_PACK, this.pack(S.w + 1)]);
       S.t = Math.min(S.t, 6);
     } else if (d.k === "chips") {
       if (S.ch <= 0 || S.ph !== 1) return;
@@ -1121,7 +1185,7 @@ class Seagulls implements Job {
       seen.add(i);
       let v = this.view.get(i);
       if (!v || v.gen !== a[1]) {
-        v = { gen: a[1], k: a[2], ph: a[3], x: a[4], y: a[5], z: a[6], yaw: a[7], tx: a[4], ty: a[5], tz: a[6], tyaw: a[7], flap: Math.random() * 6, stare: 0, stared: false };
+        v = { gen: a[1], k: a[2], ph: a[3], x: a[4], y: a[5], z: a[6], yaw: a[7], tx: a[4], ty: a[5], tz: a[6], tyaw: a[7], flap: Math.random() * 6, stare: 0, stared: false, fleeT: 0, out: 0 };
         this.view.set(i, v);
       }
       v.k = a[2]; v.ph = a[3]; v.tx = a[4]; v.ty = a[5]; v.tz = a[6]; v.tyaw = a[7];
@@ -1158,10 +1222,12 @@ class Seagulls implements Job {
       case FX_PUFF:
         // the nearest tourist to a gull seen off cheers
         this.S.tr.forEach((t, k) => { if (!t.gone && Math.hypot(t.x - x, t.z - z) < 7) this.cheerT[k] = Math.max(this.cheerT[k] ?? 0, 1.8); });
-        this.puff(x, y, z, 16); SFX.flap(...hear(x, y, z)); if (Math.random() < 0.4) SFX.gullCry(...hear(x, y, z)); break;
+        // a big burst and a squawk, so a gull seen off is plainly done (a gang's five squawk less)
+        this.puff(x, y, z, 26, 1.5); SFX.flap(...hear(x, y, z)); if (a !== GANG || Math.random() < 0.3) SFX.gullCry(...hear(x, y, z)); break;
       case FX_CRY: SFX.gullCry(...hear(x, y, z), a === 1); if (a === 1) SFX.flap(...hear(x, y, z), true); break;
       case FX_STEAL:
         SFX.gullCry(...hear(x, y, z));
+        if (near && !this.firstThief) { this.firstThief = true; this.w.toast("A gull's got a bite! Shoot the one in the red brackets before it reaches the roofs"); }
         this.folk.say(a, "stolen");
         break;
       case FX_SAVE: if (near) this.w.toast("Bite saved!"); SFX.jobStep(); this.cheerT[a] = 2.5; this.folk.say(a, "saved"); break;
@@ -1187,7 +1253,7 @@ class Seagulls implements Job {
       case FX_PICK: if (near) this.w.toast(`${UP_NAME[x]}: ${UP_SAY[x]}`); SFX.pickup("ammo"); break;
       case FX_PACK:
         // everyone's gun is their own, so each tops up their own
-        if (me.alive && x > 0) { this.w.ammo?.(x); this.w.toast(`Ammo pack: +${x} rounds`); SFX.pickup("ammo"); }
+        if (me.alive && x > 0) { this.w.ammo?.(x); this.w.toast(`Box of rounds: +${x} each`); SFX.pickup("ammo"); }
         break;
     }
   }
@@ -1299,7 +1365,7 @@ class Seagulls implements Job {
       let threat = !!bv && bv.ph === B_DIVE && Math.hypot(bv.x - tr.x, bv.z - tr.z) < 25;
       for (const v of this.view.values()) {
         if (threat) break;
-        threat = (v.ph === SWOOP || v.ph === HOLD || v.ph === WALK) && Math.hypot(v.x - tr.x, v.z - tr.z) < 8;
+        threat = (v.ph === SWOOP || v.ph === HOLD || v.ph === WALK) && !this.beaten(v, t) && Math.hypot(v.x - tr.x, v.z - tr.z) < 8;
       }
       const f = tr.bites / tr.max;
       _c.set(threat && flash ? "#ffffff" : threat ? "#ff5a4e" : f > 0.6 ? "#58e06a" : f > 0.3 ? "#ffc23a" : "#ff5a4e");
@@ -1309,6 +1375,11 @@ class Seagulls implements Job {
     }
     geo.setDrawRange(0, n);
     pos.needsUpdate = col.needsUpdate = true;
+  }
+
+  /** Out of it: seen off by the host, or just shot or stared out on this screen. */
+  private beaten(v: GullView, t: number) {
+    return v.ph === FLEE || (v.out > 0 && t - v.out < BEATEN_SHOWN);
   }
 
   private draw(dt: number, t: number) {
@@ -1354,59 +1425,94 @@ class Seagulls implements Job {
     if (S.chip) this.chipsView.position.set(S.chip.x, this.w.map.ground(S.chip.x, S.chip.z), S.chip.z);
     // the gulls, each kind its own look (LOOK), so a wave can be read from the ground
     const smooth = this.owner ? 1 : Math.min(1, dt * 10);
-    let nb = 0, nd = 0, ns = 0, nr = 0;
+    let nb = 0, nd = 0, ns = 0, nm = 0, ng = 0, nh = 0, nt = 0;
     this.dripT -= dt;
     const drip = this.dripT <= 0;
     if (drip) this.dripT = 0.12;
+    const eye = this.w.look(), flash = Math.sin(t * 12) > 0;
+    const tPos = this.thieves.geometry.attributes.position as THREE.BufferAttribute, tCol = this.thieves.geometry.attributes.color as THREE.BufferAttribute;
     for (const [, v] of this.view) {
       v.x += (v.tx - v.x) * smooth; v.y += (v.ty - v.y) * smooth; v.z += (v.tz - v.z) * smooth;
       let dy = v.tyaw - v.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); v.yaw += dy * smooth;
-      const ground = this.w.map.ground(v.x, v.z), onGround = v.y - ground < 0.4, look = LOOK[v.k] ?? LOOK[HERRING];
-      v.flap += dt * (onGround ? 0 : v.k === HOVER ? 22 : v.ph === SWOOP ? 4 : v.k === GANG ? 14 : 10);
-      // a hoverer holds its wings up in a V and flutters them; the rest beat them
-      const wingA = onGround ? 1.25 : v.ph === SWOOP ? 0.35 : v.k === HOVER ? 0.85 + Math.sin(v.flap) * 0.22 : Math.sin(v.flap) * 0.7;
+      const beaten = this.beaten(v, t);
+      v.fleeT = beaten ? v.fleeT + dt : 0;
+      const ground = this.w.map.ground(v.x, v.z), onGround = !beaten && v.y - ground < 0.4, look = LOOK[v.k] ?? LOOK[HERRING];
+      v.flap += dt * (onGround ? 0 : beaten ? 26 : v.k === HOVER ? 22 : v.ph === SWOOP ? 4 : v.k === GANG ? 14 : v.ph === CARRY ? 7 : 10);
+      // a hoverer holds its wings up in a V and flutters them; the rest beat them, a beaten one frantically
+      const wingA = onGround ? 1.25 : beaten ? Math.sin(v.flap) * 0.95 : v.ph === SWOOP ? 0.35 : v.k === HOVER ? 0.85 + Math.sin(v.flap) * 0.22 : Math.sin(v.flap) * 0.7;
       const dark = v.k === GANG;
-      // a walker waddles; a swooping gull tips its nose down
-      const pitch = v.ph === SWOOP ? -0.5 : 0, roll = onGround && v.ph === WALK ? Math.sin(t * 9 + v.gen) * 0.12 : 0;
+      // a walker waddles, a swooping gull tips its nose down, a beaten one tumbles over and then climbs
+      const tumble = beaten && v.fleeT < TUMBLE + 0.15;
+      const pitch = beaten ? (tumble ? -0.3 : 0.55) : v.ph === SWOOP ? -0.5 : 0;
+      const roll = tumble ? v.fleeT * 15 : onGround && v.ph === WALK ? Math.sin(t * 9 + v.gen) * 0.12 : 0;
       _e.set(pitch, v.yaw + Math.PI, roll, "YXZ");
       _q.setFromEuler(_e);
       // stood up on its legs, not sat in the grass
       _m.compose(_p.set(v.x, v.y + (onGround ? 0.3 : 0), v.z), _q, _s.set(1, 1, 1));
-      const body = dark ? this.darkBodies : this.bodies, bi = dark ? nd++ : nb++, idx = nb + nd - 1;
-      _b.compose(_p, _q, _s.set(look.belly[0], look.belly[1], look.belly[2]));
-      body.setMatrixAt(bi, _b);
-      body.setColorAt(bi, look.body);
       const k = dark ? 0.78 : 1;
-      for (const [im, side] of [[this.wingsL, -1], [this.wingsR, 1]] as const) {
+      let wi: number, wl: THREE.InstancedMesh, wr: THREE.InstancedMesh, wc: THREE.Color;
+      if (beaten) {
+        // one see-through grey for every kind, gang included, so out of it reads the same for all
+        _b.compose(_p, _q, _s.set(look.belly[0] * k, look.belly[1] * k, look.belly[2] * k));
+        this.ghostBodies.setMatrixAt(ng, _b);
+        this.ghostBodies.setColorAt(ng, GHOST);
+        wi = ng++; wl = this.ghostWingsL; wr = this.ghostWingsR; wc = GHOST;
+      } else {
+        const body = dark ? this.darkBodies : this.bodies, bi = dark ? nd++ : nb++;
+        _b.compose(_p, _q, _s.set(look.belly[0], look.belly[1], look.belly[2]));
+        body.setMatrixAt(bi, _b);
+        body.setColorAt(bi, look.body);
+        wi = nb + nd - 1; wl = this.wingsL; wr = this.wingsR; wc = look.wing;
+      }
+      for (const [im, side] of [[wl, -1], [wr, 1]] as const) {
         _w.makeRotationZ(-side * wingA).setPosition(side * 0.06 * k, 0.06 * k, 0);
         if (onGround) _w.scale(_s.set(0.3, 1, 1));
         if (dark) _w.premultiply(_k.makeScale(k, k, k));
-        im.setMatrixAt(idx, _w.premultiply(_m));
-        im.setColorAt(idx, look.wing);
+        im.setMatrixAt(wi, _w.premultiply(_m));
+        im.setColorAt(wi, wc);
       }
+      if (beaten) continue;
       if (!onGround && (v.ph === SWOOP || v.ph === HOLD || v.ph === CARRY)) {
         const alt = v.y - ground, sh = 0.4 + (1 - Math.min(1, alt / 14)) * 0.9;
-        _m.compose(_p.set(v.x, ground + 0.06, v.z), _q.identity(), _s.set(sh, 1, sh));
-        this.shadows.setMatrixAt(ns++, _m);
+        _w.compose(_p.set(v.x, ground + 0.06, v.z), _q.identity(), _s.set(sh, 1, sh));
+        this.shadows.setMatrixAt(ns++, _w);
       }
-      // a hoverer's ring: amber, then green as it's stared out
-      if (v.k === HOVER && v.ph !== FLEE) {
-        const f = v.stared ? 1 : Math.min(1, v.stare / STARE), beat = v.ph === HOLD ? 1 + 0.12 * Math.sin(t * 10) : 1;
-        _m.compose(_p.set(v.x, v.y - 0.15, v.z), _q.identity(), _s.set(beat, 1, beat));
-        this.rings.setMatrixAt(nr, _m);
-        this.rings.setColorAt(nr, _c.copy(RING_ON).lerp(RING_DONE, f));
-        nr++;
+      // a thief: the bite in its beak, and brackets round it
+      if (v.ph === CARRY) {
+        _w.makeTranslation(0, 0.06 * k, -0.68 * k).scale(_s.set(k, k, k));
+        this.beaks.setMatrixAt(nh++, _w.premultiply(_m));
+        tPos.setXYZ(nt, v.x, v.y, v.z);
+        _c.set(flash ? "#ff3b30" : "#ffffff");
+        tCol.setXYZ(nt, _c.r, _c.g, _c.b);
+        nt++;
+      }
+      // a hoverer's stare ring, only while staring works: it faces you, and fills like a clock
+      if (v.k === HOVER && v.ph === HOLD && nm + SEGS <= this.meter.instanceMatrix.count) {
+        const f = v.stared ? 1 : Math.min(1, v.stare / STARE), lit = Math.round(f * SEGS);
+        const beat = f === 0 ? 1 + 0.08 * Math.sin(t * 8) : 1;
+        _q.setFromUnitVectors(_p.set(0, 0, 1), _s.set(eye.x - v.x, eye.y - v.y, eye.z - v.z).normalize());
+        for (let n = 0; n < SEGS; n++) {
+          _w.makeRotationZ(Math.PI / 2 - (n + 0.5) * ((Math.PI * 2) / SEGS));
+          _k.compose(_p.set(v.x, v.y, v.z), _q, _s.set(beat, beat, beat));
+          this.meter.setMatrixAt(nm, _w.premultiply(_k));
+          this.meter.setColorAt(nm, v.stared ? METER_DONE : n < lit ? METER_ON : METER_OFF);
+          nm++;
+        }
       }
       // a pooper leaves a trail of drips behind it
       if (v.k === POOPER && drip && !onGround) this.puff(v.x, v.y - 0.35, v.z, 1, 0.15);
     }
-    for (const im of [this.bodies, this.darkBodies, this.wingsL, this.wingsR, this.rings]) {
+    for (const im of [this.bodies, this.darkBodies, this.wingsL, this.wingsR, this.meter, this.ghostBodies, this.ghostWingsL, this.ghostWingsR, this.beaks]) {
       im.instanceMatrix.needsUpdate = true;
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }
     this.bodies.count = nb; this.darkBodies.count = nd;
     this.wingsL.count = this.wingsR.count = nb + nd;
-    this.rings.count = nr;
+    this.ghostBodies.count = this.ghostWingsL.count = this.ghostWingsR.count = ng;
+    this.beaks.count = nh;
+    this.meter.count = nm;
+    this.thieves.geometry.setDrawRange(0, nt);
+    if (nt) tPos.needsUpdate = tCol.needsUpdate = true;
     this.shadows.count = ns; this.shadows.instanceMatrix.needsUpdate = true;
     // Big Lad
     const bv = this.bossView;
@@ -1466,11 +1572,16 @@ class Seagulls implements Job {
       const l = this.w.look();
       for (const [i, v] of this.view) {
         if (v.k !== HOVER || v.ph !== HOLD || v.stared) { v.stare = 0; continue; }
+        if (!this.firstHover && Math.hypot(S.cx - me.x, S.cz - me.z) < NEAR) {
+          this.firstHover = true;
+          this.w.toast("A hoverer! Keep your crosshair on it till the ring round it fills");
+        }
         const dx = v.x - l.x, dy = v.y - l.y, dz = v.z - l.z, d = Math.hypot(dx, dy, dz);
         const on = d < STARE_RANGE && (dx * l.dx + dy * l.dy + dz * l.dz) / d > STARE_COS;
         v.stare = on ? v.stare + dt : Math.max(0, v.stare - dt * 2);
         if (v.stare >= STARE) {
           v.stared = true;
+          v.out = t;
           this.w.toast("Stared it out!");
           this.send({ k: "stare", i, g: v.gen });
         }
@@ -1552,7 +1663,8 @@ class Seagulls implements Job {
       line = `Wave ${S.w} of ${WAVES}${S.w === WAVES && this.bossView?.g.visible && this.bossView.ph !== B_DEAD ? ": <b>Big Lad</b>" : ""} · ${n} gull${n === 1 ? "" : "s"} about`;
     } else line = S.won ? "Seen off!" : "Every sandwich gone";
     const staring = [...this.view.values()].some((v) => v.stare > 0.2 && !v.stared);
-    const sub = `${left} of ${total} bites left · score ${S.sc}${S.ch ? ` · chips ×${S.ch}` : ""}${staring ? " · <b>staring it out...</b>" : ""}${far}`;
+    const thief = S.ph === 1 && [...this.view.values()].some((v) => v.ph === CARRY);
+    const sub = `${left} of ${total} bites left · score ${S.sc}${S.ch ? ` · chips ×${S.ch}` : ""}${staring ? " · <b>staring it out...</b>" : thief ? " · <b>a thief's got a bite: shoot it</b>" : ""}${far}`;
     const wave = Math.min(WAVES, S.ph === 0 ? S.w + 1 : Math.max(1, S.w));
     const stage = S.ph === 1 && S.w > 0
       ? { key: `w${S.w}`, title: `Wave ${S.w} of ${WAVES}: ${WAVE_NAME[S.w]}${S.w === WAVES ? "!" : ""}`, sub: this.waveSay(), colour: S.w === WAVES ? "#ff5a4e" : COLOUR, life: S.w === WAVES ? 4.5 : 3.5 }
@@ -1621,8 +1733,9 @@ class Seagulls implements Job {
       const dd = ox * ox + oy * oy + oz * oz - t * t;
       return dd < r * r ? t - Math.sqrt(r * r - dd) : null;
     };
+    const now = performance.now() / 1000;
     for (const [i, v] of this.view) {
-      if (v.ph === FLEE) continue;
+      if (this.beaten(v, now)) continue;
       const h = ray(v.x, v.y, v.z, v.k === GANG ? 0.45 : 0.55);
       if (h !== null && h < max && (!best || h < best.dist)) best = { dist: h, head: false, ref: i, follow: Seagulls.follow(v, o, d, h) };
     }
@@ -1663,6 +1776,7 @@ class Seagulls implements Job {
     }
     const v = this.view.get(q.ref);
     if (!v) return;
+    v.out = performance.now() / 1000;
     this.puff(v.x, v.y, v.z, 6);
     this.send({ k: "hit", i: q.ref, g: v.gen, p: power });
   }

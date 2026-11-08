@@ -274,7 +274,10 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
-A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. At a
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Up in the bell
+chamber the four lanes of the note highway are the face buttons as they sit, Square, Triangle,
+Cross and Circle left to right (A, W, S and D on the keys), two at once for a chord; while you ring
+they do nothing else. At a
 narrowboat's helm the pad works as at a car's wheel: the triggers are the throttle, R1 rings the bell
 and Triangle lets go. Down the mines,
 R2 swings or shoots, L2 is the healing light, Square uses (hold it to pump, wind or pick a friend
@@ -359,6 +362,12 @@ you're alongside, or holds a manual on the flat. Airs, spins, tricks, grinds and
 a combo, banked when you roll on the ground for a moment, and your bests on each ride are kept.
 Come down sideways or mid-trick and you bail, back on in under two seconds. Someone pushing a
 trolley can give a mate a lift: they walk up to the basket and press E to climb in.
+
+Other riders are solid: you can't ride through them. Lean on someone riding alongside and you're
+both shoved apart sideways, each turned a little off your line and a little slower; run into the
+back of someone and they're pushed on a touch while you're held up. Each bump thuds, jolts the view
+a little, kicks up dust (sparks, if it's hard) and rumbles a controller. Bumps are only between
+riders: on foot, and in cars, nothing changes.
 
 Speed traps (yellow boxes on poles, on the maps as yellow cameras) at the foot of Bath's steepest
 streets clock you as you go past, however you're moving (on foot, on a ride, in a car or
@@ -667,7 +676,9 @@ checkpoint, and what's left over carries on to the one after; it's set from bron
 spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
 getting short. Run out and you're out of the placings and the medals, but you can ride on to the
 line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Boost pads lie
-along the road between checkpoints, two or three on most legs. Killed on the way, you're out of the
+along the road between checkpoints, two or three on most legs. Racers are solid to each other, as
+all riders are, so you can lean on someone for the line; ride hard into another racer, going faster
+than them, and they come off. Killed on the way, you're out of the
 race: no time and no medal.
 
 At the end comes a results card: your place in big podium colours, your time, your medal with a
@@ -699,11 +710,18 @@ tourist shows through walls and hedges, green to red as their sandwich goes, fla
 after it; the ring is on the minimap. The tourists point out gulls on the way, wave their arms and
 shoo, duck, shout for help if you're far off, cheer a good shot and storm off when their sandwich is
 gone. Each wave comes in from one side, with a banner naming what's in it, and every kind looks
-different: white herring gulls, slate-winged hoverers in an amber ring (it goes green as you stare),
-a small dark gang coming in low and tight, brown walkers on foot, fat yellowish poopers trailing
-drips. Before every wave each player gets an ammo pack (about 30 to 90 rounds, more on the later
-waves and for a harder poster): enough if you aim, not if you hold the trigger down. Between waves,
-pick an upgrade crate (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings). Stars for how much sandwich is left, a daily twist (bank holiday, Chip
+different: white herring gulls, slate-winged hoverers, a small dark gang coming in low and tight,
+brown walkers on foot, fat yellowish poopers trailing drips. A hoverer hanging over a bench has a
+ring of dark segments round it, and they light up one by one while your crosshair's on it: fill the
+ring and it gives up (the ring is only there while staring works). A gull flying off with a bite
+carries it in its beak, slowly, with flashing red brackets round it that show through roofs: shoot
+it before it gets away and the bite's saved. A gull that's beaten (shot, stared out or shouted off)
+bursts into feathers, squawks, tumbles and turns a see-through grey as it beats off over the roofs,
+three times as fast as any thief; it can't be shot again, and nothing's left round it. Between
+waves three crates go out and the team takes one. One is always a box of rounds,
+enough for everyone for the next two waves (more for a harder poster), so you choose ammo or an
+upgrade (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings): aim well and you
+can skip the rounds. Stars for how much sandwich is left, a daily twist (bank holiday, Chip
 Tuesday, a hen do, bin day), and Backspace for another go. Losing leaves no scar.
 
 ### The night out
@@ -849,6 +867,31 @@ you leave and come back another time.
 While there's wood to fetch, a pair of prefects in suits turns up behind anyone who comes near the
 court and follows them about, telling them to hurry up, do more, and stop dawdling. They don't carry
 any wood themselves.
+
+### The Climb
+
+A team challenge up a crag of its own, high over the cloud, which only counts when the whole team
+stands on top together. Walk into the face (or E) to grab a hold; the keys or the stick reach for
+the next, Space lunges and C lets go. Your grip drains as you hang and comes back on a ledge or a
+big white jug. With a team a few stretches start blank, their first hold (big and orange) out
+of reach from the ledge under it: a mate crouches (C) and you stand on their shoulders and jump for
+it. There's one such stretch with two or three of you, two with four or five and three with six or
+more, and with four or more one of them (a bigger red hold) needs two stacked: one crouches, the
+next stands on their shoulders and crouches too, and the third climbs up on top. Alone there are
+none. On a ledge, E by the lip hauls up a mate just below.
+
+Ropes: the first one onto a ledge can drop its rope (E by the coil). With a team the rope only
+holds while someone on the ledge holds it: E at its top takes the strain, and you stay put while
+you do. A strain meter under the crosshair shows how many are hanging on it, and your grip drains
+faster the more there are, so send them up one at a time. E (or C) lets go, and the rope goes slack:
+anyone on it slides down to the ledge below and the rope lies in a heap there until someone up top
+holds it again. Alone the rope is tied off and holds on its own.
+
+The traverse: with a team there's a gap in its holds too wide for anyone to lunge across. Whoever
+gets to the hold before it can stretch across (E) as a bridge: the others reach for the bridge
+like a hold and climb over to the far side. The bridge's grip drains fast, so be quick. Once a
+mate is hanging on the far side, the bridge reaches their way (D or the stick) and is pulled
+across; E brings the bridge back to the near hold instead. Alone the traverse has no gap.
 
 ### The wardrobe
 

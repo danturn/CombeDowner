@@ -13,11 +13,15 @@
 // revenge", "Last orders at" the nearest pub...) and so is who's judging tonight, two critics with
 // tastes of their own (three for a big show), which is worth reading before you start. Each painter
 // gets the easel (easel.ts), a paint program of the old sort, for a minute and a half or so. Then
-// the paintings are hung, each with its card, and the doors open: the critics and a crowd of the
-// public (a nan, a builder, an art student, a child, a Flag Lad, someone from the Council, a Roman,
-// a seagull...) walk round, stop at each painting and say what they make of it, with a mark out of
-// ten (critics.ts), each remark coming up as a note (notice.ts). While they're at it you can walk round too, and E by a painting votes for it
-// (not your own): the room's favourite gets half a mark. Average enough across the show and it's
+// the paintings are hung, each with its card, and the judging begins: everyone in the gallery is
+// stood together in front of each painting in turn (free to look about, not to walk off), and the
+// critics step up to it one at a time, each remark typed out on a card in the middle of the screen
+// with their mark stamped on it (missionscreens.ts's missionPaper), then a board of all their marks.
+// Then the doors open to the public (a nan, a builder, an art student, a child, a Flag Lad, someone
+// from the Council, a Roman, a seagull...), who walk round, stop at paintings and say what they make
+// of them in speech bubbles, with a mark out of ten (critics.ts), each remark coming up as a note
+// (notice.ts). While they're at it you can walk round too, and E by a painting votes for it (not
+// your own): the room's favourite gets half a mark. Average enough across the show and it's
 // a success, and one of the strange objects turns up at the gallery door; the more of you there
 // are, the more paintings there are and the higher the bar. The critics confer for a moment, then
 // the verdict comes up as the shared result card (missionscreens.ts), the paintings on it with their
@@ -32,8 +36,11 @@
 // with its time-lapse just before it (a "ch" of its own, which an older page passes over), and each
 // screen plays every painting's time-lapse on its canvas as the doors open.
 // The host looks at the paintings, stages the show and sends it round (who comes, what they say and
-// when, as text), counts the room's votes and sends the verdict; every screen walks the crowd round
-// from the same script. The gallery itself is built from a fixed design on every screen.
+// when, as text, with when the judging ends and the critics' marks for its board), counts the
+// room's votes and sends the verdict; every screen walks the crowd round, puts up each critic's
+// card and moves its own player along from the same script, so all of them show the same card at
+// the same moment with nothing more sent. An older page passes over the judging's part of the
+// script and just sees the critics walk round first. The gallery itself is built from a fixed design on every screen.
 //
 // For testing, ?paint=20 makes the painting last 20 seconds; window.__gallery (with ?objects) lets
 // a probe paint and peek.
@@ -43,12 +50,12 @@ import * as SFX from "./audio";
 import { Avatar } from "./avatar";
 import { registerChallenge, type ChallengeSpot } from "./challenges";
 import { ctlText } from "./controls";
-import { CRITICS, THEMES, TRIUMPH, criticsFor, earlyFrom, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
+import { BOARD, CRITICS, STEP, THEMES, TRIUMPH, cardSecs, criticTitle, criticsFor, earlyFrom, speakFor, stageShow, verdict, visitor, type Painting, type Remark, type Verdict } from "./critics";
 import { eyeState, judge as eyeJudge, wake as wakeEye, type Eye } from "./eye";
 import { Easel, H, W, decode, decodeReplay, encode, howText, readHow, toImage, type How } from "./easel";
 import { gullFigure } from "./gulls";
 import type { GameMap } from "./map";
-import { missionResult, type ResultHandle } from "./missionscreens";
+import { missionPaper, missionResult, stampHtml, type ResultHandle } from "./missionscreens";
 import { news } from "./notice";
 import { SET_PIECES } from "./landmarks/setpieces";
 import { speak } from "./posh";
@@ -62,7 +69,6 @@ const MAX_PAINTERS = 8;
 const HX = 11, HZ = 6.5, RH = 5.2;   // the room's half length and half width, and its height
 const GO_IN = 6;                     // how close to the curator to go in
 const CHUNK = 9000;
-const SPEAK = 4.6;
 const BEAT_MS = 3200;                // the critics confer before the verdict's read out
 const CLOSE_MS = 90000;
 const EYE_WAIT_MS = 20000;           // how long the show waits for the critics' eye before going on without it              // and the gallery closes this long after it
@@ -571,16 +577,23 @@ function setUV(g: THREE.BufferGeometry, u0: number, v0: number, u1: number, v1: 
 interface Goer {
   v: number; body: Avatar | null; gull: ReturnType<typeof gullFigure> | null;
   bubble: THREE.Sprite; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture;
-  stops: { p: number; at: number; text: string; mark: number }[];
+  stops: { p: number; at: number; secs: number; text: string; mark: number }[];
   said: number; k: number;
 }
 
+/** A speech bubble, drawn at the foot of its canvas so its tail stays put however many lines it has.
+ *  A remark too long for it at full size steps the type down rather than run off the bubble. */
 function bubbleDraw(c: HTMLCanvasElement, who: string, text: string, mark: number) {
   const x = c.getContext("2d")!;
   x.clearRect(0, 0, c.width, c.height);
-  x.font = "600 25px Georgia, serif";
-  const lines = wrapText(x, text, 440).slice(0, 5);
-  const h = 54 + lines.length * 29;
+  let size = 25, gap = 29, lines: string[] = [];
+  for (; size >= 19; size -= 2, gap -= 2) {
+    x.font = `600 ${size}px Georgia, serif`;
+    lines = wrapText(x, text, 440);
+    if (lines.length * gap <= c.height - 90) break;
+  }
+  lines = lines.slice(0, Math.floor((c.height - 90) / gap));
+  const h = 60 + lines.length * gap;
   const top = c.height - h - 26;
   x.fillStyle = "rgba(255,253,246,.96)"; x.strokeStyle = "#222"; x.lineWidth = 3;
   x.beginPath(); x.roundRect(6, top, 500, h, 18); x.fill(); x.stroke();
@@ -588,13 +601,18 @@ function bubbleDraw(c: HTMLCanvasElement, who: string, text: string, mark: numbe
   x.beginPath(); x.moveTo(230, top + h); x.lineTo(256, c.height - 4); x.lineTo(270, top + h); x.stroke();
   x.fillStyle = "#8a1c3a"; x.font = "italic 700 19px Georgia, serif"; x.textAlign = "left";
   x.fillText(who, 22, top + 28);
-  x.fillStyle = "#111"; x.font = "600 25px Georgia, serif";
-  lines.forEach((l, k) => x.fillText(l, 22, top + 58 + k * 29));
-  x.fillStyle = mark >= 7 ? "#1f6a33" : mark >= 4.5 ? "#8a6a10" : "#a3201c";
+  x.fillStyle = "#111"; x.font = `600 ${size}px Georgia, serif`;
+  lines.forEach((l, k) => x.fillText(l, 22, top + 64 + k * gap));
+  x.fillStyle = markColour(mark);
   x.beginPath(); x.arc(470, top + 24, 22, 0, 7); x.fill();
   x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 18px Georgia, serif";
-  x.fillText(Number.isInteger(mark) ? String(mark) : mark.toFixed(1), 470, top + 30);
+  x.fillText(markText(mark), 470, top + 30);
 }
+/** A mark's colour, the same on a speech bubble and a critic's card: good, middling, bad. */
+const markColour = (mark: number) => mark >= 7 ? "#1f6a33" : mark >= 4.5 ? "#8a6a10" : "#a3201c";
+const markText = (mark: number) => Number.isInteger(mark) ? String(mark) : mark.toFixed(1);
+/** "Jeremy" for Sir Jeremy Plinth, for the board's columns. */
+const shortName = (name: string) => name.replace(/^(Sir|Dr|Lady) /, "").split(" ")[0];
 
 // ---- the challenge ------------------------------------------------------------------------------
 
@@ -657,7 +675,14 @@ registerChallenge({
     // each painting's time-lapse, as sent (to pass on to anyone who missed it) and unpacked
     const tapes = new Map<string, { text: string; frames: Uint8Array[] }>();
     let replayT0 = 0, replayDrawn = 0, replayOver = false;
-    let show: { cast: number[]; remarks: Remark[]; dur: number } | null = null;
+    type Script = { cast: number[]; remarks: Remark[]; dur: number; j: number; board: number[][] };
+    let show: Script | null = null;
+    // the judging round, worked out from the script: each critic's card, and each painting everyone
+    // stands at, from when they're there to when its last card's done
+    let turns: { r: Remark; end: number }[] = [];
+    let visits: { p: number; from: number; to: number }[] = [];
+    let paperOn = -1, doorsOpen = false, faced = -1;
+    let paper: { remove(): void } | null = null;
     let full: ReturnType<typeof stageShow> | null = null;
     const eyes = new Map<string, Eye>();
     let staging = false;
@@ -798,7 +823,7 @@ registerChallenge({
       lookAtThem().finally(() => {
         if (phase === "out" || job.done || show || full) return;
         full = staged();
-        const s = { cast: full.cast, remarks: full.remarks, dur: full.dur };
+        const s = { cast: full.cast, remarks: full.remarks, dur: full.dur, j: full.j, board: full.board };
         setTimeout(() => {
           if (phase === "out" || job.done) return;
           sendBig("show", JSON.stringify({ ...s, el: 0 }));
@@ -847,9 +872,20 @@ registerChallenge({
       }));
     }
 
-    function startShow(s: { cast: number[]; remarks: Remark[]; dur: number }, elapsed: number) {
+    function startShow(s: Script, elapsed: number) {
       if (show) return;
-      show = { cast: s.cast.filter((v) => Number.isFinite(v) && visitor(v)), remarks: s.remarks.filter((r) => r && Number.isFinite(r.at) && visitor(r.v) && typeof r.text === "string"), dur: Math.min(400, s.dur) };
+      const j = Number.isFinite(s.j) && s.j > 0 ? Math.min(600, s.j) : 0;
+      show = {
+        cast: s.cast.filter((v) => Number.isFinite(v) && visitor(v)), remarks: s.remarks.filter((r) => r && Number.isFinite(r.at) && visitor(r.v) && typeof r.text === "string"),
+        dur: Math.min(900, s.dur), j, board: Array.isArray(s.board) ? s.board.map((row) => Array.isArray(row) ? row.map(Number) : []) : [],
+      };
+      turns = show.remarks.filter((r) => r.at < j && visitor(r.v).critic).sort((a, b) => a.at - b.at).map((r) => ({ r, end: r.at + cardSecs(r.text) }));
+      visits = [];
+      for (const { r, end } of turns) {
+        const last = visits[visits.length - 1];
+        if (last?.p === r.p) last.to = end; else visits.push({ p: r.p, from: r.at - STEP, to: end });
+      }
+      paperOn = -1; doorsOpen = !j; faced = -1;
       showT0 = performance.now() - elapsed * 1000;
       replayT0 = showT0;
       phase = "show";
@@ -857,7 +893,8 @@ registerChallenge({
       if (!room.hung) { room.hang(painters.length); drawAll(); }
       room.setEasels(0);
       buildCrowd();
-      stage = { key: "show", title: "The private view", sub: `${show.cast.length} visitors, ${show.remarks.length} opinions`, colour: COLOUR };
+      stage = j ? { key: "judge", title: "The judging", sub: "The critics step up, one at a time", colour: COLOUR }
+        : { key: "show", title: "The private view", sub: `${show.cast.length} visitors, ${show.remarks.length} opinions`, colour: COLOUR };
       if (aboard || camInside()) SFX.door(0, 0);
     }
 
@@ -892,15 +929,16 @@ registerChallenge({
           room.root.add(body.root);
         }
         const canvas = document.createElement("canvas");
-        canvas.width = 512; canvas.height = 256;
+        canvas.width = 512; canvas.height = 336;
         const tex = new THREE.CanvasTexture(canvas);
         tex.colorSpace = THREE.SRGBColorSpace;
         const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false }));
-        bubble.scale.set(3.2, 1.6, 1);
+        bubble.scale.set(3.2, 2.1, 1);
+        bubble.center.set(0.5, 0);
         bubble.renderOrder = 20;
         bubble.visible = false;
         room.root.add(bubble);
-        const stops = show!.remarks.filter((r) => r.v === v).map((r) => ({ p: r.p, at: r.at, text: r.text, mark: r.mark }));
+        const stops = show!.remarks.filter((r) => r.v === v).map((r) => ({ p: r.p, at: r.at, secs: speakFor(r.text), text: r.text, mark: r.mark }));
         return { v, body, gull, bubble, canvas, tex, stops, said: -1, k };
       });
     }
@@ -914,29 +952,83 @@ registerChallenge({
       goers = [];
     }
 
+    /** Where the judging's got to at t: the painting everyone's at (p), or moving to from the last (q), u of the way. */
+    function judgingAt(t: number) {
+      let i = 0;
+      while (i < visits.length - 1 && t >= visits[i].to) i++;
+      const prev = i ? visits[i - 1] : null, at = visits[i];
+      const u = prev ? Math.max(0, Math.min(1, (t - prev.to) / Math.max(0.1, at.from - prev.to))) : 1;
+      return { i, p: at.p, q: prev?.p ?? at.p, u: u * u * (3 - 2 * u) };
+    }
+    const judging = (t: number) => !!show && show.j > 0 && t < show.j && visits.length > 0;
+    const showTime = () => (performance.now() - showT0) / 1000;
+    /** A spot by painting p, in the room's frame: lat to the right as you face it, back out from the wall, and the way that faces it. */
+    function by(p: number, lat: number, back: number): [number, number, number] {
+      const S = slots(painters.length), s = S[p] ?? S[0];
+      return [s.x + lat * s.nz, s.z + s.nz * back, Math.atan2(0, s.nz)];
+    }
+    const toward = (a: [number, number, number], b: [number, number, number], u: number): [number, number] => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+    /** Where you stand to watch the judging, among the others in the gallery. */
+    function watchAt(t: number): { x: number; z: number; yaw: number; moving: boolean; p: number } {
+      const J = judgingAt(t), k = Math.max(0, list.indexOf(w.selfId)), row = Math.min(4, Math.max(1, list.length));
+      const spot = (p: number) => by(p, ((k % 4) - (row - 1) / 2) * 0.9, 4.6 + Math.floor(k / 4) * 0.9);
+      const [x, z] = toward(spot(J.q), spot(J.p), J.u), [px, pz] = by(J.p, 0, 0);
+      return { x, z, yaw: Math.atan2(-(px - x), -(pz - z)), moving: J.u < 1, p: J.p };
+    }
+    /** A critic at the judging: waiting their turn to the left of the painting, then stepping up to
+     *  its right to give their remark, facing the room. */
+    function criticAt(g: Goer, t: number) {
+      const J = judgingAt(t), wait = (p: number) => by(p, -(2.2 + g.k * 0.8), 0.9);
+      let [x, z] = toward(wait(J.q), wait(J.p), J.u), yaw = wait(J.p)[2], talking = -1;
+      if (J.u >= 1) g.stops.forEach((st, i) => {
+        if (st.p !== J.p) return;
+        const end = st.at + cardSecs(st.text);
+        const up = Math.max(0, Math.min(1, (t - st.at + STEP) / STEP)) - Math.max(0, Math.min(1, t - end));
+        if (up <= 0) return;
+        const [sx, sz, sy] = by(J.p, 2.0, 0.9);
+        x += (sx - x) * up; z += (sz - z) * up;
+        if (up > 0.5) yaw = sy + Math.PI;
+        if (t >= st.at && t < end) talking = i;
+      });
+      return { x, z, yaw, talking, card: true };
+    }
+
     /** Where a visitor is at t seconds into the show, in the room's frame, and which way they face. */
-    function goerAt(g: Goer, t: number): { x: number; z: number; yaw: number; talking: number } {
+    function goerAt(g: Goer, t: number): { x: number; z: number; yaw: number; talking: number; card?: boolean; hidden?: boolean } {
+      const j = show!.j, critic = visitor(g.v).critic;
+      if (j && critic && judging(t)) return criticAt(g, t);
+      // the public wait outside till the judging's done
+      if (j && !critic && t < j) return { x: 0, z: 0, yaw: 0, talking: -1, hidden: true };
       const S = slots(painters.length);
       const doorP: [number, number] = [HX - 1.0, (g.k % 3 - 1) * 0.8];
       const stand = (p: number): [number, number, number] => {
         const s = S[p] ?? S[0], lat = ((g.k % 5) - 2) * 0.85, back = 2.3 + (Math.floor(g.k / 5) % 2) * 0.9 + (g.k % 2) * 0.25;
         return [s.x + lat, s.z + s.nz * back, Math.atan2(0, s.nz)];
       };
-      let fx = doorP[0], fz = doorP[1], ft = 1.5 + g.k * 1.1, yaw = Math.PI / 2;
-      for (let i = 0; i < g.stops.length; i++) {
-        const st = g.stops[i], [sx, sz, sy] = stand(st.p);
+      let fx = doorP[0], fz = doorP[1], ft = j + 1.5 + g.k * 1.1, yaw = Math.PI / 2;
+      // the critics have had their say, and stand back from the last painting
+      const after = !!j && critic;
+      if (after) {
+        const last = visits[visits.length - 1]?.p ?? 0;
+        [fx, fz, yaw] = by(last, -(2.2 + g.k * 0.8), 0.9);
+        ft = j;
+      }
+      const stops = after ? [] : g.stops;
+      for (let i = 0; i < stops.length; i++) {
+        const st = stops[i], [sx, sz, sy] = stand(st.p);
         const arrive = Math.min(st.at - 0.6, ft + Math.hypot(sx - fx, sz - fz) / 1.5);
         if (t < ft) return { x: fx, z: fz, yaw, talking: -1 };
         if (t < arrive) {
           const u = (t - ft) / Math.max(0.01, arrive - ft);
           return { x: fx + (sx - fx) * u, z: fz + (sz - fz) * u, yaw: Math.atan2(-(sx - fx), -(sz - fz)), talking: -1 };
         }
-        if (t < st.at + SPEAK) return { x: sx, z: sz, yaw: sy, talking: t >= st.at ? i : -1 };
-        fx = sx; fz = sz; ft = st.at + SPEAK; yaw = sy;
+        const end = st.at + st.secs;
+        if (t < end) return { x: sx, z: sz, yaw: sy, talking: t >= st.at ? i : -1 };
+        fx = sx; fz = sz; ft = end; yaw = sy;
       }
       // done: wander back towards the middle and look about
       const [mx, mz] = [(g.k % 4 - 1.5) * 2.2, ((g.k >> 2) % 2 - 0.5) * 2];
-      const u = Math.min(1, (t - ft) / 4);
+      const u = Math.max(0, Math.min(1, (t - ft) / 4));
       return { x: fx + (mx - fx) * u, z: fz + (mz - fz) * u, yaw: u < 1 ? Math.atan2(-(mx - fx), -(mz - fz)) : yaw + Math.sin(t * 0.3 + g.k) * 0.8, talking: -1 };
     }
 
@@ -946,6 +1038,8 @@ registerChallenge({
       const c = cam();
       for (const g of goers) {
         const at = goerAt(g, t), y = 0;
+        if (g.body) g.body.root.visible = !at.hidden;
+        if (g.gull) g.gull.g.visible = !at.hidden;
         if (g.body) {
           g.body.holdAt(at.x, y, at.z, at.yaw, 0, 0);
           g.body.update(now, dt);
@@ -956,22 +1050,59 @@ registerChallenge({
           g.gull.wl.rotation.z = flap; g.gull.wr.rotation.z = -flap;
         }
         const tall = visitor(g.v).dress.small ? 2.1 : g.gull ? 1.7 : 2.8;
-        g.bubble.position.set(at.x, tall, at.z);
+        g.bubble.position.set(at.x, tall - 0.8, at.z);
         if (at.talking >= 0 && at.talking !== g.said) {
           g.said = at.talking;
           const st = g.stops[at.talking], vis = visitor(g.v);
-          bubbleDraw(g.canvas, vis.name, st.text, st.mark);
-          g.tex.needsUpdate = true;
+          if (!at.card) { bubbleDraw(g.canvas, vis.name, st.text, st.mark); g.tex.needsUpdate = true; }
           const [wx, wz] = L(at.x, at.z), dist = Math.hypot(c.x - wx, c.z - wz);
           if (camInside() && dist < 14) speak(st.text.replace(/\([^)]*\)/g, "").trim() || "Hmm.", g.v + 1, dist, { voice: g.v, pitch: vis.dress.pitch ?? 1, rate: 1.05 }, !!vis.dress.woman);
         }
-        g.bubble.visible = at.talking >= 0;
+        g.bubble.visible = at.talking >= 0 && !at.card;
       }
-      // the ticker: every remark as it's made
+      judgingTick(t);
+      // the ticker: every remark from the public as it's made (the critics' are on their cards)
       while (saidUpTo < show.remarks.length && show.remarks[saidUpTo].at <= t) {
         const r = show.remarks[saidUpTo++];
-        if (aboard || camInside()) tick(r);
+        if ((aboard || camInside()) && r.at >= show.j) tick(r);
       }
+    }
+
+    /** The judging's cards, each put up on every screen at the moment the script says, then the
+     *  board of the critics' marks, then the doors open. */
+    function judgingTick(t: number) {
+      if (!show || doorsOpen) return;
+      if (t >= show.j) {
+        doorsOpen = true;
+        stage = { key: "doors", title: "The doors open", sub: painters.length > 1 ? "Walk round, and {use} by a painting to vote for it" : "The public come in", colour: COLOUR };
+        if (aboard || camInside()) SFX.door(0, 0);
+        return;
+      }
+      if (!(aboard || camInside())) return;
+      const k = turns.findIndex((c) => t >= c.r.at && t < c.end), board = show.j - BOARD;
+      if (k >= 0 && k !== paperOn) {
+        paperOn = k;
+        const { r } = turns[k], read = speakFor(r.text);
+        paper = missionPaper({
+          flag: "Arts: the judging", label: criticTitle(visitor(r.v)), title: `“${themeText}” by ${w.nameOf(painters[r.p] ?? "")}`, colour: COLOUR,
+          text: r.text, typing: Math.min(read * 0.6, r.text.length / 26), stamp: { text: `${markText(r.mark)} / 10`, colour: markColour(r.mark), at: read },
+          secs: cardSecs(r.text) - (t - r.at), since: t - r.at,
+        });
+      } else if (k < 0 && t >= board && paperOn !== -2) {
+        paperOn = -2;
+        paper = missionPaper({ flag: "Arts: the judging", label: `“${themeText}”`, title: "The critics' marks", body: marksTable(), colour: COLOUR, secs: show.j - t });
+      }
+    }
+    /** Every painting, with each critic's mark for it and the critics' average. */
+    function marksTable() {
+      const crit = show!.cast.filter((v) => visitor(v).critic);
+      const mark = (p: number, c: number) => show!.board[p]?.[c] ?? show!.remarks.find((r) => r.p === p && r.v === crit[c])?.mark;
+      const rows = painters.map((id, p) => {
+        const ms = crit.map((_, c) => mark(p, c)), got = ms.filter((m): m is number => Number.isFinite(m));
+        const mean = got.length ? got.reduce((a, b) => a + b, 0) / got.length : 0;
+        return `<tr><td>${esc(w.nameOf(id))}</td>${ms.map((m) => `<td class="t">${m === undefined ? "–" : markText(m)}</td>`).join("")}<td class="t"><b>${mean.toFixed(1)}</b></td></tr>`;
+      }).join("");
+      return `<table><tr><td></td>${crit.map((v) => `<td class="t">${esc(shortName(visitor(v).name))}</td>`).join("")}<td class="t">Average</td></tr>${rows}</table>`;
     }
 
     /** A remark as a note (notice.ts), queued so none is lost. */
@@ -1017,7 +1148,7 @@ registerChallenge({
         body: `<div style="display:flex;flex-wrap:wrap;justify-content:center;margin:8px 0">${thumbs}</div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--ink);padding-top:6px">
             <div>The show averaged <b>${v.score.toFixed(1)}</b>; it needed <b>${v.bar.toFixed(1)}</b>.</div>
-            <div style="font-weight:900;font-size:22px;color:${colour};border:3px solid ${colour};padding:2px 10px;transform:rotate(-6deg)">${v.won ? "A SUCCESS" : "PANNED"}</div></div>
+            ${stampHtml(v.won ? "A SUCCESS" : "PANNED", colour)}</div>
           <div style="text-align:center;margin-top:8px;font-style:italic;font-size:13px;color:var(--muted)">${ctlText("Then look round the show: the marks are on the cards")}</div>`,
       });
     }
@@ -1033,6 +1164,7 @@ registerChallenge({
     function finish() {
       if (job.done || !result) return;
       dismissCard();
+      paper?.remove();
       phase = "out";
       goDown();
       job.done = {
@@ -1211,7 +1343,7 @@ registerChallenge({
         if (atDoor(lx, lz) && phase !== "paint") { goDown(); return true; }
         if (phase === "gather") { if (w.isHost) startAsked = true; else send({ k: "start" }); return true; }
         if (phase === "paint" && myPainter() >= 0 && !hung) { openEasel(); return true; }
-        if (phase === "show" && painters.length > 1) {
+        if (phase === "show" && painters.length > 1 && !judging(showTime())) {
           const p = facing();
           if (p >= 0 && painters[p] !== w.selfId) {
             myVote = p;
@@ -1236,13 +1368,20 @@ registerChallenge({
         if (atDoor(lx, lz) && phase !== "paint") return "<b>{use}</b> Leave the gallery";
         if (phase === "gather") return "<b>{use}</b> Start the painting";
         if (phase === "paint" && myPainter() >= 0 && !hung && !easel.open) return "<b>{use}</b> Back to your easel";
-        if (phase === "show" && painters.length > 1) {
+        if (phase === "show" && painters.length > 1 && !judging(showTime())) {
           const p = facing();
           if (p >= 0 && painters[p] !== w.selfId) return myVote === p ? "Your vote's on this one" : `<b>{use}</b> Vote for ${esc(w.nameOf(painters[p]))}'s painting`;
         }
         return "";
       },
       perch() {
+        // through the judging everyone stands together in front of each painting in turn, free to
+        // look about, turned to face each one as they get to it
+        if (aboard && phase === "show" && judging(showTime())) {
+          const at = watchAt(showTime()), [x, z] = L(at.x, at.z), turn = at.moving || faced !== at.p;
+          if (!at.moving) faced = at.p;
+          return { x, y: top, z, bare: true, face: turn ? at.yaw : undefined, around: { yaw: at.yaw, max: 1.2 }, pitch: -0.06 };
+        }
         if (!aboard || phase !== "paint") return null;
         const k = myPainter();
         if (k < 0) return null;
@@ -1263,9 +1402,13 @@ registerChallenge({
           return { line: "The artists are painting", sub: `“${themeText}”${glasses()}`, timer, stage };
         }
         if (phase === "hang") return { line: staging && eyeState().state === "loading" ? "The critics are still arriving" : "Hanging the show", sub: glasses().slice(3) || undefined, stage };
+        if (phase === "show" && show && judging(showTime())) {
+          const J = judgingAt(showTime());
+          return { line: "The judging", sub: `${w.nameOf(painters[J.p] ?? "")}'s painting`, progress: `${J.i + 1} / ${visits.length}`, bar: (J.i + 1) / visits.length, stage };
+        }
         if (phase === "show" && show) {
-          const t = (performance.now() - showT0) / 1000, said = show.remarks.filter((r) => r.at <= t).length;
-          return { line: "The private view", sub: painters.length > 1 ? "Walk round. {use} by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${show.remarks.length}`, bar: said / Math.max(1, show.remarks.length), stage };
+          const t = (performance.now() - showT0) / 1000, said = show.remarks.filter((r) => r.at <= t && r.at >= show!.j).length, all = show.remarks.filter((r) => r.at >= show!.j).length;
+          return { line: "The private view", sub: painters.length > 1 ? "Walk round. {use} by a painting to vote for it" : "Listen to what they make of it", progress: `${said} / ${all}`, bar: said / Math.max(1, all), stage };
         }
         if (result) {
           const head = result.won ? "A success!" : "Panned", marks = `${result.score.toFixed(1)} against ${result.bar.toFixed(1)}`;
@@ -1278,11 +1421,12 @@ registerChallenge({
         return { line: "The Art Gallery", stage };
       },
       scarAt: () => ({ x: door.x, z: door.z }),
-      quiet: () => cardOn(),
+      quiet: () => cardOn() || phase === "show" && judging(showTime()) && (aboard || camInside()),
       aloft: () => aboard,
       indoors: () => aboard || camInside(),
       end() {
         dismissCard();
+        paper?.remove();
         easel.hide();
         for (const id of posed) w.pose?.(id, 0, "");
         if (aboard) goDown();
@@ -1313,7 +1457,7 @@ registerChallenge({
       easel, eyes: () => [...eyes.values()], phase: () => phase, painters: () => painters, theme: () => themeText, show: () => show, result: () => result,
       works: () => works.size, tapes: () => [...tapes].map(([id, t]) => ({ id, frames: t.frames.length, bytes: t.text.length })),
       replay: () => (replayT0 ? (performance.now() - replayT0) / REPLAY_MS : -1), aboard: () => aboard, top, C: { x: Cx, z: Cz }, door, hang: () => hangMine(), start: () => job.use!(),
-      hint: () => job.hint!(), card: () => job.card(), pettigrew: PETTIGREW, closeIn: (ms?: number) => { if (ms !== undefined) closeAt = performance.now() + ms; return closeAt - performance.now(); },
+      hint: () => job.hint!(), card: () => job.card(), judging: () => ({ t: show ? showTime() : -1, j: show?.j ?? 0, paper: paperOn, cards: turns.length, doors: doorsOpen }), pettigrew: PETTIGREW, closeIn: (ms?: number) => { if (ms !== undefined) closeAt = performance.now() + ms; return closeAt - performance.now(); },
     };
     return job;
   },
