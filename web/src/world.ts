@@ -1309,7 +1309,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (!flat || (level && p[i][3])) return { x, y, top, foot: top - lift - 0.35 };   // (a bridge's span has its own sides)
           const dg = drawnGround(x, -y);
           let foot = Math.min(top - lift - 0.1, dg - 0.03);
-          if (top - foot > 0.45) foot = wallFoot(x, y, foot, top - lift - 0.1);
+          // (a street running on off its span over the canal is the deck's: its edge goes no lower than a span's side)
+          if (top - foot > 0.45 && wallFoot(x, y, foot, top - lift - 0.1) > foot) foot = top - lift - 0.35;
           return { x, y, top: Math.max(top, Math.min(dg, top + 0.02)), foot, up: dg, off: Math.abs(map.trueGround(x, -y) - (top - lift)) };
         };
         for (let i = 0; i < p.length - 1; i++) {
@@ -2031,6 +2032,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // wall holding the ground up above the face faces the face; one the face stands on faces out.
   const retaining: number[][][] = [];
   const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo) => {
+    // (a face over the water, or over the canal's bank higher than a walker's headroom, is a
+    // street running on off its bridge's span: no wall stands under it, in the water or across the towpath)
+    const overWater = (q: number[], m: number) => {
+      if (m >= q[1]) return m;
+      const h = map.works?.across(q[0], -q[2]) ?? lockAt(canalD, q[0], -q[2]);
+      if (h !== null) return q[1] - (h - Z0) > 2.4 ? q[1] : Math.max(m, Math.min(q[1], h - Z0));
+      return map.inWater(q[0], q[2]) ? q[1] : m;
+    };
+    ma = overWater(a, ma); mb = overWater(b, mb);
     const da = a[1] - ma, db = b[1] - mb;
     if (Math.max(Math.abs(da), Math.abs(db)) < 0.02) return;
     const side = da + db > 0 ? 1 : -1, out = [(b[2] - a[2]) / l * -side, 0, -(b[0] - a[0]) / l * -side];
