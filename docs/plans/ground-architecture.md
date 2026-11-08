@@ -1508,6 +1508,21 @@ stage 2's maps rather than the sheet:
 | 20 road drawn wider | 515 | 519 | 1–2 m² each, where the sheet draws the carriageway's own edge. |
 | 23 step between two pieces of path | 5 | 17 | 9 of the 17 lie on the seams between squares (0.05–0.32 m), where each square levels its half of a path from its own stretch of it; laying the seam to the height the nearest way crosses it at was tried and made it 24, so it was taken out. The rest are 5–33 cm between pieces of a path, two drives, and the 2.95 m one at (-973, 2383) that A has too. |
 
+**The Rossiter Road wedge** was the street's own edge, not the abutment: a skew bridge's way runs on
+off its span over the canal, and there it is drawn on the ground, its kerb face standing down to the
+drawn ground, which is the canal's bed. A street's tall edge, an abutment's foot and a bridge's side
+wall now stop at the canal's bank top (`works.across`, or a lock) and over a river or a pond at their
+own top (`wallFoot` in `world.ts`), the same for every bridge. It is the same in A, and the counts
+didn't move.
+
+**The seam steps** (9 of overroad's 17 steps between pieces of path) are faces either side of a seam
+cut at different points and given heights from different ways: each square levels its faces from the
+ways it holds, and near a seam the two squares hold different ones (a footway that turns back just
+inside one of them pulls its side down 18 cm). The ways themselves agree at the seam. Making the two
+sides agree needs the two squares to share their seam (the same points, from the same ways), which
+is a cross-square step in a build where each square is built on its own: left for Dan (see the
+round's report for the options).
+
 **The railway, and Dan's notes on the shots** (round 13; the table in §12.4 stands except as
 below). Dan saw the railway standing on the sheet as slabs: beds raised over the grass, two tracks
 at different heights with grass between, dark wedges where a bed met its cutting's wall, and grass
@@ -1522,10 +1537,14 @@ pyramids beside Bradford-on-Avon's station building. What changed, for every map
   shoulders and banks (`railway.ts`) lie under it and the ground. Under each track's ballast top
   (BALLAST_TOP, 1.6 m either side) it is level at that track's height, and the bed is cut along
   those edges; between and beyond them its height is shared between tracks within BED_SHARE (5 m),
-  weighted to the nearest. Two tracks closer than 3.2 m whose rails differ in height (3.1 m apart
-  and 36 cm different in the Combe Down cutting) still show a step between their ballast tops,
-  which `railway.ts` draws the same in A: levelling them is a change to the rail data, not the
-  sheet (left for Dan to decide). The ground meets it as any face, cut
+  weighted to the nearest. Tracks side by side agree in height in the rail data itself
+  (`tools/railway.py` `share_beds`, Dan's choice): where their ballast tops meet or overlap they
+  are at one height, and further apart, up to where their beds part (5.8 m), the bed between their
+  ballast falls no steeper than 1 in 20 (CROSSFALL: a formation's drainage fall, gentle enough to
+  read as level, so no step or crest shows). Tracks that differ by over 0.5 m are matched less, and
+  not at all past 1 m, so a line climbing away to a flyover keeps its own height without a jump.
+  Rails, ballast and bed all read the one height. The side-by-side difference within 3.2 m went
+  from 0.18 m (90th percentile) to under 1 cm in Bath; the rail files changed by a few bytes. The ground meets it as any face, cut
   or filled with the batter, and where it can't, held by the sheet's retaining wall. Without the
   sheet the bed isn't drawn, used or counted, so A and B are as they were.
 - **A house above a face's edge keeps its ground** (`sheet.py`): the edge's ground is at least the
