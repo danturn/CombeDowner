@@ -149,9 +149,10 @@ RAIL_HALF = 4.5
 RAIL_BED = 2.3
 # Metres a deck stands over the track to be a bridge over the railway rather than a way beside it.
 RAIL_OVER = 3.0
-# Metres over a rail's foot that the bed's face lies: just under the ballast's top (web/src/railway.ts),
-# which it carries on out flat to RAIL_BED either side, so the ground meets the line flush.
-BED_TOP = 0.23
+# Metres over a rail's foot that the bed's face lies: just over the ballast's top and under the sleepers
+# (web/src/railway.ts), carried on out flat to RAIL_BED either side, so the ground meets the line flush
+# and the line's own ballast, a shade apart, doesn't show along it as a second, raised strip.
+BED_TOP = 0.27
 # Metres round a point that tracks share its bed's height, so two lines side by side lie on one bed.
 BED_SHARE = 5.0
 # Metres either side of a track that its ballast's top reaches (web/src/railway.ts): the bed is level
@@ -162,6 +163,10 @@ BALLAST_TOP = 1.6
 # meets the ground at its own height (with a retaining wall where they differ) rather than standing
 # a step over the other along an edge the two share.
 BED_CLEAR = 0.5
+# Metres of ground between the bed and a street, path or building standing well over it (BED_OVER),
+# that the bed runs on across to meet it: a cutting's wall stands at the bed's edge, not up a strip of grass.
+BED_FILL = 2.0
+BED_OVER = 1.0
 # Metres: two tracks' beds nearer than this run together, the ground not drawn between their ballast.
 BED_JOIN = 1.2
 CANAL_MARGIN = 0.8
@@ -2675,7 +2680,28 @@ NODE_REACH = 1.0    # metres: corners further than this outside a piece's box ar
 LEVEL_CHORD = 0.03          # metres a face's edge may stand off its ground or street between the points kept along it
 
 
-def _points_where_needed(poly, step, z_at, kept=None, also=frozenset()):
+SEAM_STEP = 1.0   # metres between the points every face is given along a square's edge, at whole multiples in map metres
+
+
+def _seam_points(a, b, sq):
+    """If edge a-b lies along an edge of square `sq` (x0, y0, x1, y1), the points along it at whole
+    multiples of SEAM_STEP in map metres, in order from a: the next square, building its own side
+    on its own, puts its points at the same spots, so the two meet point for point. Else None."""
+    if sq is None:
+        return None
+    for k, edge in ((1, sq[1]), (1, sq[3]), (0, sq[0]), (0, sq[2])):
+        if abs(a[k] - edge) < 0.01 and abs(b[k] - edge) < 0.01:
+            u0, u1 = a[1 - k], b[1 - k]
+            lo, hi = min(u0, u1), max(u0, u1)
+            us = [m * SEAM_STEP for m in range(math.floor(lo / SEAM_STEP) + 1, math.ceil(hi / SEAM_STEP))
+                  if lo + 0.05 < m * SEAM_STEP < hi - 0.05]
+            if u0 > u1:
+                us = us[::-1]
+            return [(u, edge) if k == 1 else (edge, u) for u in us]
+    return None
+
+
+def _points_where_needed(poly, step, z_at, kept=None, also=frozenset(), sq=None):
     """`poly` with points along each edge every `step`, where the ground or street under the edge bends
     away from a straight line between the points either side by more than `LEVEL_CHORD`: on a slope or
     a crest the edge follows it, and along a straight, level stretch it keeps only its corners. Each
@@ -2684,6 +2710,9 @@ def _points_where_needed(poly, step, z_at, kept=None, also=frozenset()):
     key = lambda p: (round(p[0], 3), round(p[1], 3))
 
     def edge(a, b):
+        seam = _seam_points(a, b, sq)
+        if seam is not None:
+            return seam
         flip = (a[0], a[1]) > (b[0], b[1])
         if flip:
             a, b = b, a
@@ -2725,7 +2754,7 @@ def _points_where_needed(poly, step, z_at, kept=None, also=frozenset()):
         return out
 
     if poly.geom_type == "MultiPolygon":
-        return shapely.MultiPolygon([_points_where_needed(g, step, z_at, kept, also) for g in poly.geoms])
+        return shapely.MultiPolygon([_points_where_needed(g, step, z_at, kept, also, sq) for g in poly.geoms])
     if poly.geom_type != "Polygon" or poly.is_empty:
         return poly
     return Polygon(ring(poly.exterior), [ring(h) for h in poly.interiors])
@@ -4354,8 +4383,22 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (the railway's bed, where nothing else is laid: a road or path crossing the line keeps its face)
     bed, bed_z, along_tracks = rail_beds(rail, square)
     if bed is not None:
-        bed = along_tracks(_minus(bed, unary_union([road, pave, path, front, drive, plaza, *buildings]
-                                                   + ([tubes] if isinstance(tubes, shapely.Geometry) else [])).buffer(BED_CLEAR)))
+        others = unary_union([road, pave, path, front, drive, plaza, *buildings]
+                             + ([tubes] if isinstance(tubes, shapely.Geometry) else []))
+        whole = bed
+        bed = _minus(bed, others.buffer(BED_CLEAR))
+        reach = whole.buffer(BED_FILL + BED_CLEAR)
+        fill = []
+        for q in shapely.get_parts(others.intersection(reach)):
+            if q.is_empty or q.area < 0.05:
+                continue
+            c = q.representative_point()
+            h = ground(c.x, c.y)
+            if h is not None and h > bed_z(c.x, c.y) - BED_TOP + BED_OVER:
+                fill.append(q.buffer(BED_FILL + BED_CLEAR).intersection(whole.buffer(BED_FILL)))
+        if fill:
+            bed = unary_union([bed, _minus(unary_union(fill), others)]).intersection(square)
+        bed = along_tracks(bed)
     else:
         bed = Polygon()
     pieces = []
@@ -4409,8 +4452,23 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             middles.append(LineString([row[:2], row[2:4]]))
             reach_mid.append(half + LEVEL_REACH)
     mid_tree = STRtree(middles) if middles else None
+    # On the square's edge a path's face takes the height of the path where it crosses the edge, the
+    # same point in both squares, or the ground there: levelled from whatever ways each square holds
+    # near it, the faces either side met a step apart.
+    seam_ends = [(e.x, e.y, e.z, r) for line, r in zip(middles, reach_mid) if line.has_z
+                 for e in (Point(line.coords[0]), Point(line.coords[-1])) if square.exterior.distance(e) < 0.05]
+
+    def seam_z(x, y):
+        best = None
+        for ex, ey, ez, r in seam_ends:
+            d = math.hypot(ex - x, ey - y)
+            if d <= r and (best is None or d < best[0]):
+                best = (d, ez)
+        return ground(x, y) if best is None else best[1]
 
     def level_z(x, y):
+        if square.exterior.distance(Point(x, y)) < 0.01:
+            return seam_z(x, y)
         if mid_tree is None:
             return ground(x, y)
         p = Point(x, y)
@@ -4463,8 +4521,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     def step_of(a, b):
         return PATH_STEP if shapely.contains_xy(paths_edge, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2) else STREET_STEP
     for f, q in zip(flat, simple):
-        _points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), kept)
-    simple = noded([_points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), also=kept)
+        _points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), kept, sq=sq)
+    simple = noded([_points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), also=kept, sq=sq)
                     for f, q in zip(flat, simple)])
 
     v, at = [], {}
