@@ -299,8 +299,10 @@ and round again), and L steps the draw distance through 600 to 6000 m.
 
 ## Finding your way
 
-**The minimap and the big map** (M, or tap the minimap) show the ground at the same detail all
-over Bath. The big map zooms with the wheel, + and −, or a pinch, and drags about. Its key says
+**The minimap and the big map** (M, or tap the minimap) show Bath plainly, the same all over: grey
+land, green parks and woods, blue water, bright streets with the main roads brightest, faint
+footpaths and dark blocks for the buildings. The faster you go, the further out the minimap zooms,
+so you can see where you're heading. The big map zooms with the wheel, + and −, or a pinch, and drags about. Its key says
 what everything is; click a row to hide that kind of thing on all the maps, and again to bring it
 back. The squares you've cleared of the Flag Lads' flags are washed faintly green, with a pint on
 each pub you've won back, and a line in the map's corner says how much of Bath is yours; point at or tap
