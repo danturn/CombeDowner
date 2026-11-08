@@ -339,6 +339,21 @@ def ground_sheet(tile):
     fj = np.clip(np.floor((F.V[spots, 1] - T["y0"]) / T["dy"]).astype(int), 0, T["ny"] - 2)
     foot = np.minimum.reduce([H[fj, fi], H[fj, fi + 1], H[fj + 1, fi], H[fj + 1, fi + 1]])
     meet = np.where(g - top > up, g - up, np.where(top - g > down, np.where(cliff & (g - foot > down), foot, g + down), top))
+    # A house standing above a face's edge keeps its ground: the bank down from its walls' foot reaches
+    # the edge no steeper than the batter, and a retaining wall takes what is left, rather than the
+    # ground beside it being cut down to the face and the grid's points along its walls left standing
+    # as peaks over the cut.
+    houses = [(Polygon(b["r"][0], b["r"][1:]).buffer(0), b["g"] - FOOT_DEPTH) for b in tile.get("bl") or []
+              if len((b.get("r") or [[]])[0]) >= 3 and isinstance(b.get("g"), (int, float))]
+    if houses:
+        reach = BATTER_MOST + T["dx"]
+        si_, hi_ = shapely.STRtree([h for h, _ in houses]).query(shapely.points(F.V[spots, :2]), predicate="dwithin", distance=reach)
+        if len(si_):
+            d = shapely.distance(shapely.points(F.V[spots[si_], :2]), np.asarray([houses[k][0] for k in hi_.tolist()], object))
+            want = np.asarray([houses[k][1] for k in hi_.tolist()]) - d / BATTER_CUT
+            need = np.full(len(spots), -np.inf)
+            np.maximum.at(need, si_, want)
+            meet = np.maximum(meet, np.where(need > top, need, -np.inf))
     # A flight of steps is sunk into the hill: the hill beside it stays as it is, up to SUNK_MOST over
     # the flight's edge, held by a retaining wall, rather than cut down to meet the treads.
     flights = [shapely.LineString([q[:2] for q in r["p"]]).buffer((r.get("w") or 1.8) / 2 + 0.3, cap_style="flat")

@@ -1717,6 +1717,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const solid = (sp: number) => stone && !opened(sp) && !under(sp) && supports.some((u) => Math.abs(u - sp) < 1.6);
         // a stretch cut where it leaves the wall beside an abutment, each part with whether it's beside one
         const besideAbutments = (A: Pt, B: Pt): [Pt, Pt, boolean][] => {
+          // (an arch springing between the two: the side drops plumb to it there, not slanting down to it)
+          for (const O of arches) for (const e of [O.a, O.b]) if (e > A.s + 0.02 && e < B.s - 0.02) {
+            const out = e === O.a ? e - 0.01 : e + 0.01, C = { ...lerpAt(Math.min(e, out)), nx: A.nx, ny: A.ny, k: A.k }, D = { ...lerpAt(Math.max(e, out)), nx: B.nx, ny: B.ny, k: B.k };
+            return [...besideAbutments(A, C), ...besideAbutments(C, D), ...besideAbutments(D, B)];
+          }
           const sa = solid(A.s);
           if (sa === solid(B.s)) return [[A, B, sa]];
           let lo = A.s, hi = B.s;

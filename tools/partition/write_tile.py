@@ -2754,7 +2754,7 @@ def rail_beds(rail, square):
     draws it as ballast, the sleepers and rails on it (railway.ts), and the ground meets its edge, so
     the line lies level across in its cutting or on its bank, flush with the ground beside it."""
     if not rail:
-        return None, None
+        return None, None, None
     portals = [q[:2] for q in rail.get("portals") or []]
     near = square.buffer(RAIL_BED + 10)
     segs = []
@@ -2777,7 +2777,7 @@ def rail_beds(rail, square):
             if math.dist(seg[0][:2], seg[1][:2]) > 0.05 and near.intersects(LineString([seg[0][:2], seg[1][:2]])):
                 segs.append(seg)
     if not segs:
-        return None, None
+        return None, None, None
     lines = [LineString([a[:2], b[:2]]) for a, b in segs]
     bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines])
     bed = bed.buffer(BED_JOIN / 2, join_style="mitre").buffer(-BED_JOIN / 2, join_style="mitre").intersection(square)
@@ -2793,7 +2793,17 @@ def rail_beds(rail, square):
             zs.append(a[2] + (b[2] - a[2]) * f)
             ws.append(1 / (l.distance(pt) ** 2 + 0.01))
         return float(np.dot(zs, ws) / sum(ws)) + BED_TOP
-    return bed, z_at
+
+    def along_tracks(g):
+        """g cut along each track's middle, so its faces have corners there at the track's own height:
+        between two tracks at different heights the bed slopes from one to the other, rather than
+        burying the lower one's sleepers."""
+        if g.is_empty:
+            return g
+        cut = unary_union([g.boundary, unary_union(lines).intersection(g)])
+        return shapely.GeometryCollection([q for q in shapely.get_parts(shapely.polygonize(shapely.get_parts(cut)))
+                                           if g.contains(q.representative_point())])
+    return bed, z_at, along_tracks
 
 
 def pack_surfaces(sf, x0, y0):
@@ -4327,10 +4337,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                      if g is not None and not g.is_empty]
                     + [LineString([q[:2] for q in b["p"]]).buffer(0.3) for b in br if len(b["p"]) > 1] or [Polygon()]))
     # (the railway's bed, where nothing else is laid: a road or path crossing the line keeps its face)
-    bed, bed_z = rail_beds(rail, square)
+    bed, bed_z, along_tracks = rail_beds(rail, square)
     if bed is not None:
-        bed = _minus(bed, unary_union([road, pave, path, front, drive, plaza, *buildings]
-                                      + ([tubes] if isinstance(tubes, shapely.Geometry) else [])))
+        bed = along_tracks(_minus(bed, unary_union([road, pave, path, front, drive, plaza, *buildings]
+                                                   + ([tubes] if isinstance(tubes, shapely.Geometry) else []))))
     else:
         bed = Polygon()
     pieces = []
