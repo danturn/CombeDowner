@@ -109,7 +109,7 @@ const GONE = 0, ALIVE = 1, DEAD = 2;
  *  someone arriving, and when the next one turns out anyway. */
 interface Ground { kind: number; spots: { x: number; z: number }[]; on: (x: number, z: number) => boolean; met: Map<string, number>; owed: boolean; next: number }
 /** A player the naughty boys might go for. */
-/** passive: they've passive mode on (settings.ts), or they're at a narrowboat's tiller, so nobody here goes for them. */
+/** passive: they've passive mode on (settings.ts), or they're at a narrowboat's tiller or driving a bus or coach, so nobody here goes for them. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
 export interface NaughtyBoyState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */

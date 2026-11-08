@@ -169,7 +169,7 @@ import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import * as Telemetry from "./telemetry";
 import { Sports } from "./sport";
-import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
+import { isBus, isCoach, isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { BusDriver, busRouteSpots } from "./busdriver";
 import { view } from "./view";
@@ -2545,8 +2545,9 @@ export class Game {
 
   private targets(): Target[] {
     const p = this.player.pos;
-    // nobody goes for you while you're at a narrowboat's tiller: you're above all that
-    const helm = (id: string) => !!this.world.canal?.helmOf(id);
+    // nobody goes for you while you're at a narrowboat's tiller, or at the wheel of a bus or a coach: you're above all that
+    // (the passengers on a bus are fair game, as they always were)
+    const helm = (id: string) => !!this.world.canal?.helmOf(id) || this.vehicles.list.some((v) => v.driver === id && (isBus(v.kind) || isCoach(v.kind)));
     const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive || helm(this.net.selfId) }];
     for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive || helm(r.id) });
     return out;

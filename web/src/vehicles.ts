@@ -415,7 +415,7 @@ const PARTS: Record<VKind, () => Part[]> = {
 // ---- the buses: painted boxes in Badgerline's green and yellow ------------------------------
 // (and the school's minibus, white with a navy skirt and the school's name down the side)
 type BusKind = "bus" | "minibus" | "school";
-const isBus = (kind: VKind): kind is BusKind => kind === "bus" || kind === "minibus" || kind === "school";
+export const isBus = (kind: VKind): kind is BusKind => kind === "bus" || kind === "minibus" || kind === "school";
 interface Livery {
   decks: 1 | 2; base: number; axles: number[]; r: number; dest: string; fleet: string;
   body: string; skirt: string; roof: string; name: string; badger: boolean;

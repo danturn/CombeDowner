@@ -453,7 +453,9 @@ about that too), and when it's whole again they walk off the way they came and f
 
 Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station, Widcombe, Prior
 Park Road and Ralph Allen Drive, up to Combe Down) or the old 4 (the bus station, through town and up
-Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. The route is a
+Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. At the wheel of a
+bus or a coach, as at a narrowboat's tiller, the naughty boys leave you be (your passengers they
+don't). The route is a
 green line on the minimap and the big map, with its stops along it and the next one ringed in
 yellow; every bus stop round about is on the minimap anyway, as a little white disc. A card over the
 speedo says where you're heading, the next stop and how far, and who's on.
