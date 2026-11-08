@@ -2800,7 +2800,10 @@ def rail_beds(rail, square):
         burying the lower one's sleepers."""
         if g.is_empty:
             return g
-        cut = unary_union([g.boundary, unary_union(lines).intersection(g)])
+        # (each stretch a little longer, so where the bed stops square across it the cut runs right through)
+        longer = [shapely.affinity.scale(l, (l.length + 1) / (l.length or 1), (l.length + 1) / (l.length or 1)) for l in lines]
+        inner = unary_union(longer).intersection(g)
+        cut = unary_union([shapely.snap(g.boundary, inner, 0.01), inner])
         return shapely.GeometryCollection([q for q in shapely.get_parts(shapely.polygonize(shapely.get_parts(cut)))
                                            if g.contains(q.representative_point())])
     return bed, z_at, along_tracks

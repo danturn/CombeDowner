@@ -1722,6 +1722,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const out = e === O.a ? e - 0.01 : e + 0.01, C = { ...lerpAt(Math.min(e, out)), nx: A.nx, ny: A.ny, k: A.k }, D = { ...lerpAt(Math.max(e, out)), nx: B.nx, ny: B.ny, k: B.k };
             return [...besideAbutments(A, C), ...besideAbutments(C, D), ...besideAbutments(D, B)];
           }
+          // (and follows the arch down to its springing in short steps, not a chord cutting under it)
+          const fa = archAt(A.s), fb = archAt(B.s);
+          if (fa !== null && fb !== null && Math.abs(fb - fa) > 0.4 && B.s - A.s > 0.3) {
+            const C = { ...lerpAt((A.s + B.s) / 2), nx: A.nx, ny: A.ny, k: A.k };
+            return [...besideAbutments(A, C), ...besideAbutments(C, B)];
+          }
           const sa = solid(A.s);
           if (sa === solid(B.s)) return [[A, B, sa]];
           let lo = A.s, hi = B.s;
@@ -1756,7 +1762,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const arA = archAt(A.s), arB = archAt(B.s);
           if (arA !== null && arB !== null) map.addArch(A.x, A.y, B.x, B.y, W, A.top - lift, B.top - lift, arA, arB);
           if (arA !== null && arB !== null)
-            facing(g, at(A, -Ws(-1), arA), at(B, -Ws(-1), arB), at(B, Ws(1), arB), at(A, Ws(1), arA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
+            for (const [Q, R] of besideAbutments(A, B)) {
+              const aQ = archAt(Q.s) ?? arA, aR = archAt(R.s) ?? arB, uQ = along(Q), uR = along(R);
+              facing(g, at(Q, -Ws(-1), aQ), at(R, -Ws(-1), aR), at(R, Ws(1), aR), at(Q, Ws(1), aQ), [0, -1, 0], [uQ, 0], [uR, 0], [uR, W / 1.25], [uQ, W / 1.25], SOFFIT);
+            }
           else if (A.top - A.g > 0.6 || B.top - B.g > 0.6)
             facing(g, at(A, -Ws(-1), underA), at(B, -Ws(-1), underB), at(B, Ws(1), underB), at(A, Ws(1), underA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], stone ? SOFFIT : UNDERSIDE);
         }
