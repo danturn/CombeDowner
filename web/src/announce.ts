@@ -23,7 +23,8 @@ import type { Departure, Railway } from "./railway";
 
 const synth = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;
 
-const RANGE = 80;          // metres from a platform you can hear the station's speakers
+const RANGE = 35;          // metres from a platform (its edge, not the middle) you can hear the station's speakers
+const FULL = 6;            // and within this of one they're as loud as they get
 const NEXT = 80;           // seconds before a train pulls in that it's announced
 const APPROACH = 18;       // and that it's said to be approaching
 const LATE = 8;            // an announcement more than this late is dropped rather than said
@@ -64,9 +65,11 @@ function callingAt(calls: string[]): string[] {
 
 const FEMALE = /female|serena|kate|stephanie|martha|hazel|libby|sonia|maisie|susan|amy|emma|bella|abbi|hollie|olivia/i;
 let voice: SpeechSynthesisVoice | null = null;
-/** The station voice: a British woman's if there is one, else any British voice, else any English one. */
+/** The station voice: a British woman's if there is one, else any British voice, else any English one.
+ *  The computer's own voices first: some browsers' voices from the internet ignore how loud they're asked
+ *  to be, so they'd sound as loud from the car park as on the platform. */
 function load() {
-  const all = synth?.getVoices() ?? [];
+  const all = (synth?.getVoices() ?? []).slice().sort((a, b) => +b.localService - +a.localService);
   const lang = (v: SpeechSynthesisVoice) => v.lang.replace("_", "-").toLowerCase();
   const gb = all.filter((v) => lang(v) === "en-gb");
   voice = gb.find((v) => FEMALE.test(v.name) && !/\bmale/i.test(v.name.replace(/female/i, "")))
@@ -89,15 +92,16 @@ export class Announcer {
   private saying = 0;
 
   /** Each frame: if you're near a station, announce what's due there. */
-  update(dt: number, rail: Railway | null | undefined, x: number, z: number, mapId = "", now = Date.now() / 1000) {
+  update(dt: number, rail: Railway | null | undefined, x: number, y: number, z: number, mapId = "", now = Date.now() / 1000) {
     this.t -= dt;
     if (this.t > 0 || !rail || !synth) return;
     this.t = 0.5;
-    const near = rail.stationNear(x, z, RANGE);
+    const near = rail.stationNear(x, z, RANGE, y);
     // out of earshot: what's left of an announcement goes unsaid
     if (!near) { this.fillerAt = 0; this.queue.length = 0; this.loud = 0; return; }
-    // full on and round the platforms, falling away to nothing at the edge of earshot
-    const loud = this.loud = Math.min(1, 1.6 * (1 - near.far / RANGE)) * SFX.effectsVolume();
+    // full on and round the platforms, falling away quickly to nothing at the edge of earshot
+    const off = Math.max(0, Math.min(1, (near.far - FULL) / (RANGE - FULL)));
+    const loud = this.loud = (1 - off) * (1 - off) * SFX.effectsVolume();
     // the browser can fail to say a phrase has ended; give up waiting on one after a while
     if (this.saying && performance.now() - this.saying > 12000) this.saying = 0;
     if (!this.saying) this.next();

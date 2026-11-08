@@ -3714,7 +3714,7 @@ export class Game {
     if (rail) {
       const onTrain = !!this.carrier && rail.near.includes(this.carrier.m as never);
       const hit = rail.update(dt, p.x, p.y, p.z, this.alive && !this.ride && !onTrain);
-      this.announcer.update(dt, rail, p.x, p.z, this.map.d.id);
+      this.announcer.update(dt, rail, p.x, p.y, p.z, this.map.d.id);
       if (hit) {
         SFX.crash(1);
         const claim = { life: this.life, s: Math.round(hit.speed) };
