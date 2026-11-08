@@ -141,9 +141,12 @@ Standing on a roof is fine.
 
 Day turns to night and back every 24 minutes, the same for everyone since it comes from the clock.
 At night the stars and moon come out, street lamps light the pavements, windows light up across
-Bath, and traffic puts its headlights on (they come on in tunnels too). On a computer you can see
+Bath, and traffic puts its headlights on (they come on in tunnels too), each headlamp throwing a beam
+of its own. On a computer you can see
 about 900 m by day and the lamps' glow from right across town at night; phones and iPads see a
-little over half as far, to keep them smooth.
+little over half as far, to keep them smooth. The street lamps round you light the street: four of
+them on a phone or iPad, and more on a computer the further its draw distance (it takes effect from
+the next game), and when you're on the move, the lamps ahead of you light up first.
 
 The watch on your wrist, bottom left above your health, tells the game's time: a black G-Shock
 with the hours and minutes, the day of the week and the date (a new game day every 24 minutes).

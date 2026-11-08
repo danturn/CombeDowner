@@ -37,6 +37,9 @@ export const FOV_MIN = 60, FOV_MAX = 100, FOV_DEFAULT = 72;
 /** How far you see on this device unless you choose otherwise. */
 export const VIEW_DEFAULT = touch ? 520 : 900;
 export const NIGHT_FAR = 0.7;
+/** How many of the street lamps round you light the street after dark (world.ts), for seeing far metres:
+ *  four on a phone or iPad, more on a desktop the further it sees. Fixed when a map's built. */
+export const lampLightsFor = (far: number) => touch ? 4 : far >= 2000 ? 12 : far >= 1200 ? 10 : far >= 800 ? 8 : 6;
 /** Street lamps' posts and glass are drawn to here; further off, after dark, only their glow (furniture.ts). */
 export const LAMPS_FAR = touch ? 200 : 260;
 /** The most squares of Bath built in full round you at once (tiles.ts), the nearest first; past
