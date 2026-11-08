@@ -149,6 +149,9 @@ RAIL_HALF = 4.5
 RAIL_BED = 2.3
 # Metres a deck stands over the track to be a bridge over the railway rather than a way beside it.
 RAIL_OVER = 3.0
+# Metres under a rail's foot that its ballast's shoulders reach the ground, at RAIL_BED out
+# (web/src/railway.ts): the bed's face, which the ground meets, lies at that height.
+BED_DROP = 0.3
 CANAL_MARGIN = 0.8
 WATER_MARGIN = 0.8
 
@@ -2737,7 +2740,51 @@ def noded(pieces):
     return out
 
 
-SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
+SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed")
+
+
+def rail_beds(rail, square):
+    """The railway's bed in a square, where the track runs on the ground (not on its bridges, nor in
+    its tunnels, up to whose mouths it runs): the strip its ballast covers, RAIL_BED either side,
+    and the height of the bed's face at a point, BED_DROP under the nearest rail's foot. The game
+    draws the ballast and the track on it (railway.ts); the bed is a face only for the ground to meet,
+    so the line sits level across in its cutting or on its bank, flush with the ground beside it."""
+    if not rail:
+        return None, None
+    portals = [q[:2] for q in rail.get("portals") or []]
+    near = square.buffer(RAIL_BED + 10)
+    segs = []
+    for t in rail.get("tracks") or []:
+        p = t["p"]
+        for a, b in zip(p, p[1:]):
+            fa, fb = (a[3] if len(a) > 3 else 0), (b[3] if len(b) > 3 else 0)
+            if (fa, fb) == (0, 0) or {fa, fb} == {0, 1}:
+                seg = (a[:3], b[:3])
+            elif {fa, fb} == {0, 2} and portals:
+                # (up to the tunnel's mouth, between the two)
+                out, inn = (a, b) if fa == 0 else (b, a)
+                line = LineString([out[:2], inn[:2]])
+                m = min(portals, key=lambda q: line.distance(Point(q)))
+                f = min(max(line.project(Point(m)) / (line.length or 1), 0.0), 1.0)
+                mouth = [out[k] + (inn[k] - out[k]) * f for k in range(3)]
+                seg = (out[:3], mouth)
+            else:
+                continue
+            if math.dist(seg[0][:2], seg[1][:2]) > 0.05 and near.intersects(LineString([seg[0][:2], seg[1][:2]])):
+                segs.append(seg)
+    if not segs:
+        return None, None
+    lines = [LineString([a[:2], b[:2]]) for a, b in segs]
+    bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines]).intersection(square)
+    tree = STRtree(lines)
+
+    def z_at(x, y):
+        pt = Point(x, y)
+        k = int(tree.query_nearest(pt, all_matches=False)[0])
+        (a, b), l = segs[k], lines[k]
+        f = l.project(pt) / (l.length or 1)
+        return a[2] + (b[2] - a[2]) * f - BED_DROP
+    return bed, z_at
 
 
 def pack_surfaces(sf, x0, y0):
@@ -4015,7 +4062,7 @@ PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its s
 
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
-                    standing=None, filled=None, tunnels=()):
+                    standing=None, filled=None, tunnels=(), rail=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -4270,9 +4317,16 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         unary_union([g for g in (beside_cut, deck, flights, tubes if isinstance(tubes, shapely.Geometry) else None, *buildings)
                      if g is not None and not g.is_empty]
                     + [LineString([q[:2] for q in b["p"]]).buffer(0.3) for b in br if len(b["p"]) > 1] or [Polygon()]))
+    # (the railway's bed, where nothing else is laid: a road or path crossing the line keeps its face)
+    bed, bed_z = rail_beds(rail, square)
+    if bed is not None:
+        bed = _minus(bed, unary_union([road, pave, path, front, drive, plaza, *buildings]
+                                      + ([tubes] if isinstance(tubes, shapely.Geometry) else [])))
+    else:
+        bed = Polygon()
     pieces = []
     for cls, g in (("carriageway", road), ("pavement", pave), ("path", path), ("front", front), ("drive", drive),
-                   ("plaza", plaza)):
+                   ("plaza", plaza), ("bed", bed)):
         pieces += [(cls, q) for q in getattr(g, "geoms", [g])
                    if q.geom_type == "Polygon" and q.area > 0.05]
     if not pieces:
@@ -4344,6 +4398,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return q.z
 
     def drawn_z(x, y, on_ground):
+        if on_ground == "r":
+            return bed_z(x, y)
         if shapely.contains_xy(keep_all, x, y):
             return None
         if on_ground is True:
@@ -4356,7 +4412,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (every face's edges are offered points at one spacing, and a point either face along an edge
     # keeps the other keeps too: thinned on their own, a road and the paving beside it kept different
     # points along their shared kerb, and the slit between them showed the ground)
-    flat = [True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else False for cls, _ in pieces]
+    flat = [True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else "r" if cls == "bed" else False
+            for cls, _ in pieces]
     kept, zs = set(), {}
 
     def z_once(x, y, f):
@@ -4393,7 +4450,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             # ground: levelled with the street it stood metres off the ground under the houses)
             if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
                 k = None
-            if on_ground is True or (on_ground == "g" and shapely.contains_xy(level_edge, x, y)):
+            if on_ground == "r":
+                z = bed_z(x, y)
+            elif on_ground is True or (on_ground == "g" and shapely.contains_xy(level_edge, x, y)):
                 z = level_z(x, y)
             elif k is None:
                 # (a street whose line lies in the next square has no line here to level it by)
@@ -4406,7 +4465,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             v.extend([key[0], key[1], round(z, 2)])
         return at[key]
 
-    out = dict(v=v, road=[], service=[], pave=[], path=[], front=[], drive=[], grass=[], dirt=[], gravel=[], e=[])
+    out = dict(v=v, road=[], service=[], pave=[], path=[], front=[], drive=[], grass=[], dirt=[], gravel=[], bed=[], e=[])
     # a path is drawn as what the map says it is made of (`su`): worn grass, bare earth or gravel
     rough = [(LineString([q[:2] for q in r["p"]]), PATH_FACE[r["su"]]) for r in rd
              if r.get("su") in PATH_FACE and r["c"] in GAME_PATHS and len(r["p"]) > 1]
@@ -4428,7 +4487,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return best[1]
     walk, kerbside = set(), set()
     for (cls, _), poly in zip(pieces, simple):
-        flat = True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else False
+        flat = True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else "r" if cls == "bed" else False
         cls = "drive" if cls == "plaza" else cls
         for poly in getattr(poly, "geoms", [poly]):
             if poly.geom_type != "Polygon" or poly.is_empty:
@@ -4437,6 +4496,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":
                     kind = "pave"
+                elif cls == "bed":
+                    kind = "bed"
                 elif cls == "path":
                     kind = path_kind(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
                 elif flat:
@@ -4472,7 +4533,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 v[3 * k + 2] = round(g, 2)
             else:
                 v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
-    for k in PATH_FACE.values():
+    for k in (*PATH_FACE.values(), "bed"):
         if not out[k]:
             del out[k]
     # (the game draws only a bridge's deck as its strip where the faces say they cover the rest)
@@ -7638,7 +7699,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     filled = []
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
-                                               canal_bores(canal), standing, filled, tile.get("tn")),
+                                               canal_bores(canal), standing, filled, tile.get("tn"),
+                                               json.load(open(rail)) if os.path.exists(rail) else None),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None

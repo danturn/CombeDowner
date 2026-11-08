@@ -654,7 +654,8 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
 
 
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}   # (a living street is paved flush)
-FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
+# (the railway's bed is a face only to the sheet: the game leaves it out without it)
+FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel") + (("bed",) if os.environ.get("CD_GROUND") == "sheet" else ())
 
 
 def longest_run(lines):
@@ -894,7 +895,7 @@ gsheet = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gsheet
 # baked sheet (gs) is drawn from it, the rest as before
 GROUND_SHEET = os.environ.get("CD_GROUND") == "sheet"
 
-FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
+FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "grass": 0.04, "dirt": 0.04, "gravel": 0.04, "bed": 0.0}
 ON_GROUND = ("path", "front", "drive", "grass", "dirt", "gravel")    # drawn on the ground as it's drawn, not at their written height
 TILT = 2.0           # degrees across a path before it counts as tilted
 TALL_EDGE = 0.3      # metres a face's edge may stand over what is beside it

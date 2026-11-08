@@ -53,11 +53,12 @@ import shapely
 from shapely.geometry import Polygon, box
 
 VERSION = 1
-FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
-# how far over its written height the game draws each kind of face (web/src/world.ts FACE_LIFT)
+FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed")
+# how far over its written height the game draws each kind of face (web/src/world.ts FACE_LIFT); the
+# railway's bed is not drawn (its ballast is), only met
 LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04,
-        "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
-OUTLINE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "plaza": 0.04}
+        "grass": 0.04, "dirt": 0.04, "gravel": 0.04, "bed": 0.0}
+OUTLINE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "plaza": 0.04, "bed": 0.0}
 BATTER_FILL = 2.0     # ground below a face's edge is built up to it no steeper than 1 in 2
 BATTER_CUT = 1.5      # ground above it is cut down to it no steeper than 1 in 1.5
 FILL_MOST = 1.0       # metres a grid point is ever built up over the survey: more would fill in a cutting

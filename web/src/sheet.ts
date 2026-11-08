@@ -335,8 +335,8 @@ export function fillAt(S: Sheet, G: SheetGrid, grid: (k: number) => number, c: n
   return NaN;
 }
 
-const KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
-const OUTLINE_LIFT: Record<string, number> = { road: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, plaza: 0.04 };
+const KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
+const OUTLINE_LIFT: Record<string, number> = { road: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, plaza: 0.04, bed: 0 };
 const SEAM = 0.006;   // metres: a face's edge this near the square's edge runs along it, to the next square
 
 /** The faces as the sheet meets them (tools/partition/sheet.py Faces): each corner's spot (corners at

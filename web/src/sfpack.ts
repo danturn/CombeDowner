@@ -10,7 +10,7 @@
 
 import { gunzip, unpack } from "./pack";
 
-const LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
+const LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
 
 const unstep = (a: number[]) => {
   const out = new Int32Array(a.length);

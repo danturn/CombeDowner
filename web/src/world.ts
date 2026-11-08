@@ -542,13 +542,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const sheetOn = SHEET && levelPaths && !!D.sf!.l && !!D.gs && !map.fine;
   // (the grid's heights, in decimetres, with the sheet's carving)
   const Th: ArrayLike<number> = sheetOn ? carved(T.h, D.gs!) : T.h;
-  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04];
-  const nFaces = faced ? FACE_KINDS.reduce((t, kind) => t + Math.floor((D.sf![kind]?.length ?? 0) / 3), 0) : 0;
+  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0];
+  // (the railway's bed is a face only to the sheet: without it, the ground under the track is as it was)
+  const faceList = (kind: string) => (kind === "bed" && !sheetOn ? undefined : D.sf![kind as typeof FACE_KINDS[number]]);
+  const nFaces = faced ? FACE_KINDS.reduce((t, kind) => t + Math.floor((faceList(kind)?.length ?? 0) / 3), 0) : 0;
   const faceXYZ = new Float64Array(nFaces * 9), faceKind = new Uint8Array(nFaces);
   if (faced) {
     let t = 0;
     FACE_KINDS.forEach((kind, n) => {
-      const V = D.sf!.v, I = D.sf![kind] ?? [];
+      const V = D.sf!.v, I = faceList(kind) ?? [];
       for (let k = 0; k + 2 < I.length; k += 3, t++) {
         for (let c = 0; c < 3; c++) { const i = I[k + c], o = t * 9 + c * 3; faceXYZ[o] = V[3 * i]; faceXYZ[o + 1] = V[3 * i + 1]; faceXYZ[o + 2] = V[3 * i + 2] - Z0; }
         faceKind[t] = n;
@@ -2027,7 +2029,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  paths and drives lie on the ground as it's drawn, a hair above it, as their strips did. */
   function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "grass" | "dirt" | "gravel", Geo>) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
-    const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04 };
+    const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0 };
     const onGround = (k: string) => LIFT[k] === 0.04 && !levelPaths;
     // (a point is in several triangles and outlines: the drawn ground under it is found once)
     const groundAt = new Float64Array(V.length / 3).fill(NaN);
@@ -2092,12 +2094,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const [n, e] of sf.e.entries()) {
       if (n % 100 === 99) yield;
       const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
+      // (the railway's bed is drawn as its ballast, railway.ts: only a retaining wall the sheet stands
+      // at its edge is drawn here, and without the sheet nothing)
+      if (kind === "bed" && !meet) continue;
       let along = 0;
       for (let k = 0; k + 1 < e.i.length; k++) {
         const a = at(e.i[k], kind), b = at(e.i[k + 1], kind);
         const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
         const other = owner.get(key(e.i[k + 1], e.i[k]));
+        if (kind === "bed") {
+          const ma = meet!.meets(e.i[k]), mb = meet!.meets(e.i[k + 1]);
+          if (!other && !meet!.onSeam(e.i[k], e.i[k + 1]) && ma < Infinity && mb < Infinity
+              && Math.max(Math.abs(a[1] - ma), Math.abs(b[1] - mb)) > 0.45) sheetEdge(a, b, ma, mb, l, along, geo.bridge);
+          along += l;
+          continue;
+        }
         let stepA = NaN, stepB = NaN;
         if (other) {
           stepA = at(other.b, other.kind)[1]; stepB = at(other.a, other.kind)[1];
@@ -2955,11 +2967,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   mark("face-cells");
   let levelAt = NaN;    // the height of the street the last lift() found you on
+  let onBed = false;    // whether that was the railway's bed, which lifts nothing but is no ground
+  const BED = FACE_KINDS.indexOf("bed");
   /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
   const lift = (x: number, z: number) => {
     const y = -z;
+    onBed = false;
     for (const t of faceCells.get(surfKey(x, y)) ?? []) {
-      if (faceWeights(t, x, y) >= -1e-6) { levelAt = faceZ(t); return FACE_LIFT[faceKind[t]]; }
+      if (faceWeights(t, x, y) >= -1e-6) { levelAt = faceZ(t); onBed = faceKind[t] === BED; return FACE_LIFT[faceKind[t]]; }
     }
     let road = 0, pave = false, path = 0, best = Infinity;
     for (const s of surfCells.get(surfKey(x, y)) ?? []) {
@@ -2979,6 +2994,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const t = y === undefined ? null : map.inTunnel(x, z, y) ?? map.deck(x, z, y);
     if (t !== null) return t;
     const l = lift(x, z);
+    if (onBed) return levelAt;
     // (paths are draped on the ground as it's drawn, not the survey's, so that's where feet go on them)
     if (l === FACE_LIFT[3]) return (levelPaths && !isNaN(levelAt) ? levelAt : drawnGround(x, z)) + l;
     return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.trueGround(x, z)) + l : drawnGround(x, z);
