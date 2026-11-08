@@ -9,7 +9,7 @@ differently from it, and why, is written up there under stage 3.
 What the sheet is made of:
   - the faces (`sf`), drawn at their written heights: streets level across, pavements a kerb up,
     paths level across and following the hill along their length;
-  - the railway's bed (`sf` "bed"), drawn as ballast just under the ballast's top, where the line
+  - the railway's bed (`sf` "bed"), drawn as ballast just over the line's own ballast, where the line
     runs on the ground, up to its tunnels' mouths: the ground meets it like any other face;
   - the ground grid (`t`), drawn as it is, in every cell no face touches (with the hill the game
     raises over the canal's tunnels, `tunnel_hills`, which the sheet's moves are measured from);
@@ -21,7 +21,8 @@ What the sheet is made of:
     than that (or than the bank down from a house standing above it), a low retaining wall stands
     at the face's edge for what is left over, in the
     square's own wall material (at a cliff's top, down to the cliff's foot). A flight of steps is
-    sunk into the hill: the hill beside it is held up to SUNK_MOST over it by such a wall. A grid
+    sunk into the hill: the hill beside it is held up to SUNK_MOST over it by such a wall, and a
+    wall within NARROW of a lower face's edge goes down to that face's level. A grid
     point is never built up more than FILL_MOST over the survey, nor at all within a cell and a half
     of the water or a bridge's deck, and is kept DECK_UNDER under a deck's underside, out to its
     abutments, where a face ending under the deck's end is held by a wall as an abutment.
@@ -70,6 +71,7 @@ DECK_UNDER = 0.5      # metres the ground is kept under a deck's underside, so t
 DECK_DEPTH = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck
 FOOT_WAYS = {"footway", "path", "cycleway", "steps", "bridleway"}
 FOOT_DEPTH = 0.4      # metres under a building's ground height the ground beside it may be cut to (its walls go 0.6 down)
+NARROW = 0.5          # metres: ground narrower than this between two faces' edges is the lower one's level
 SUNK_MOST = 1.2       # metres of hill a flight's retaining wall holds beside it
 BETWEEN = 1.0         # metres: ground this near faces of two kinds is between them
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
@@ -430,6 +432,16 @@ def ground_sheet(tile, canal=None):
         k = np.nonzero((u >= -tol) & (u <= 1 + tol) & (d <= half))[0]
         bound = za + (zb - za) * np.clip(u[k], 0, 1) - DECK_UNDER
         meet[k] = np.minimum(meet[k], bound)
+    # A wall at a face's edge a hand's breadth (NARROW) from a lower face's edge goes down to that
+    # face: the ground between is too narrow to slope, and stood as a strip of grass up the wall's foot
+    # (a cutting's wall over the railway's bed).
+    pts = shapely.points(F.V[spots, :2])
+    si_, sj_ = shapely.STRtree(pts).query(pts, predicate="dwithin", distance=NARROW)
+    low = (top[sj_] < top[si_] - 0.3) & (top[si_] > g[si_])
+    if low.any():
+        floor = np.full(len(spots), np.inf)
+        np.minimum.at(floor, si_[low], top[sj_[low]])
+        meet = np.minimum(meet, floor)
     meet = np.round(meet, 2)
     held = np.round((meet - top) * 100).astype(np.int64)
     hf = dict(zip(spots.tolist(), (top + held / 100).tolist()))

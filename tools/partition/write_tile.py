@@ -4522,9 +4522,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
 
     def step_of(a, b):
         return PATH_STEP if shapely.contains_xy(paths_edge, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2) else STREET_STEP
+    # (the points along a square's edge at fixed spots only on a path's, a front path's, a drive's or
+    # a plaza's face: a street's is levelled on across the edge from its own slope)
     for f, q in zip(flat, simple):
-        _points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), kept, sq=sq)
-    simple = noded([_points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), also=kept, sq=sq)
+        _points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), kept, sq=sq if f in (True, "g") else None)
+    simple = noded([_points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), also=kept, sq=sq if f in (True, "g") else None)
                     for f, q in zip(flat, simple)])
 
     v, at = [], {}
