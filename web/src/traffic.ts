@@ -919,9 +919,10 @@ export class Traffic {
 
   /**
    * The shortest way by road through each of the points in turn (scene x, z), along the middle of
-   * the streets the traffic uses, for the bus routes (busdriver.ts). Null if two of them don't join up.
+   * the streets the traffic uses, for the bus routes (busdriver.ts). Null if two of them don't join up
+   * (skip: pass over one in the middle that doesn't, and carry on from the last one that did).
    */
-  way(through: { x: number; z: number }[]): { x: number; z: number }[] | null {
+  way(through: { x: number; z: number }[], skip = false): { x: number; z: number }[] | null {
     const near = (x: number, z: number) => {
       let best = -1, bd = Infinity;
       for (let r = 0; r <= 3 && best < 0; r++)
@@ -936,9 +937,11 @@ export class Traffic {
     if (ends.some((n) => n < 0)) return null;
     const N = this.nodes.length, g = new Float64Array(N), from = new Int32Array(N);
     const out: { x: number; z: number }[] = [];
-    for (let k = 0; k + 1 < ends.length; k++) {
+    // (a point along the way that can't be got to from the last, or on to the next, is passed over, the
+    // first and last excepted: a route traced from the real one can catch a path or a one-way the wrong way)
+    for (let k = 0, at = ends[0]; k + 1 < ends.length; k++) {
       // A*, on a heap of [cost so far plus the straight line still to go, node]
-      const a = ends[k], b = ends[k + 1], B = this.nodes[b];
+      const a = at, b = ends[k + 1], B = this.nodes[b];
       g.fill(Infinity); from.fill(-1);
       g[a] = 0;
       const heap: [number, number][] = [[0, a]];
@@ -974,7 +977,8 @@ export class Traffic {
           push(c + Math.hypot(B.x - V.x, B.z - V.z), e.b);
         }
       }
-      if (a !== b && from[b] < 0) return null;
+      if (a !== b && from[b] < 0) { if (k + 2 < ends.length && skip) continue; return null; }
+      at = b;
       const leg: number[] = [];
       for (let n = b; n !== a; n = from[n]) leg.push(n);
       leg.push(a);
