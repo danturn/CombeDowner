@@ -144,7 +144,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   poster's red.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, race across town and fight off Seagull Attack. Win one and it's done for
-  the day; lose and you can have another go straight away, team challenges too.
+  the day. Lose one (a team challenge, Seagull Attack, a Wanted man, a pub takeover) and its card
+  offers Retry (R or Enter, □ on a pad, or tap it) or Abort (Esc): Retry starts it again in the same
+  place for everyone who was in it and didn't abort, through the usual entries and countdown. A race
+  keeps its own Again.
   A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
   says last one to the next pub buys (a race from his door); the Gaffer cuffed, and his phone gives
   away the street the Flag Lads are eyeing next; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
@@ -286,7 +289,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   (in Bath, the city centre from Bath Spa up to the Royal Crescent) are always the last zone, and the
   rest open in a sweep round them; where a map starts you in its centre, you start just outside it instead. Each zone has its own structure and a challenge or two, each marked on both maps
   with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
-  sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
+  sockets and the wall moves out to take in the next zone (a drum roll while it loads, then a cymbal), with a fly-over of it, its name, its
   challenge and any new way to get about, its card landing with a fanfare, a cheer and a shower of
   confetti (a bigger one still when the last zone opens). Buses, bus routes, canal boats, balloons,
   trains and the cable car open up with the zone they're in, from the second on (before then a bus
