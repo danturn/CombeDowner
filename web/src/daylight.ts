@@ -85,14 +85,13 @@ export function gameWait(secs: number): string {
 
 /** ?nightout=1 makes it a night out all the time, for testing. */
 const ALWAYS_OUT = q.get("nightout") === "1";
-/** Whether it's a night out (naughtyboys.ts): Thursday (student night in Bath), Friday or Saturday,
- *  from eight in the evening till three the next morning, on the day the watch shows (so Saturday's
- *  small hours are still Friday night's). Like the watch, it moves on with the clock when the debug
- *  panel moves it. */
+/** Whether it's a Friday or Saturday night out (naughtyboys.ts): from eight in the evening till
+ *  three the next morning, on the day the watch shows (so Saturday's small hours are still Friday
+ *  night's). Like the watch, it moves on with the clock when the debug panel moves it. */
 export function nightOut(): boolean {
   if (ALWAYS_OUT) return true;
   const day = new Date(watchDay() * 86400000).getUTCDay(), hour = timeOfDay() * 24;
-  return hour >= 20 ? day >= 4 && day <= 6 : hour < 3 && (day === 5 || day === 6 || day === 0);
+  return hour >= 20 ? day === 5 || day === 6 : hour < 3 && (day === 6 || day === 0);
 }
 
 /** Whether the clock is the shared one, stopped by ?time, or moved on by the debug panel. */
