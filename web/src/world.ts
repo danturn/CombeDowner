@@ -854,6 +854,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (sheet) { const open = openSeams(sheet, sheetGrid); if (open) console.warn(`ground sheet: ${open} cracks between cells in the square at ${T.x0.toFixed(0)},${T.y0.toFixed(0)}`); }
   const gridH = (k: number) => tPos[3 * k + 1];
   yield;
+  // The lowest a wall under a bridge or a street's edge may stand to at data (x, y), given the ground
+  // there: over the canal its bank's top, and over a river or a pond the wall's own top, since the
+  // ground there is the water's bed, and a wall down to it hung under a skew bridge as a wedge.
+  const canalD = map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null);
+  const wallFoot = (x: number, y: number, g: number, top: number) => {
+    const h = map.works?.across(x, y) ?? lockAt(canalD, x, y);
+    if (h !== null) return Math.max(g, Math.min(top, h - Z0));
+    return map.inWater(x, -y) ? top : g;
+  };
   // the height the terrain is drawn at (a little below the true ground under streets)
   // (and inside the canal's banks, where its own ground is drawn instead: works.ts)
   const drawnGround = (x: number, z: number) => {
@@ -1299,7 +1308,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
           if (!flat || (level && p[i][3])) return { x, y, top, foot: top - lift - 0.35 };   // (a bridge's span has its own sides)
           const dg = drawnGround(x, -y);
-          return { x, y, top: Math.max(top, Math.min(dg, top + 0.02)), foot: Math.min(top - lift - 0.1, dg - 0.03), up: dg, off: Math.abs(map.trueGround(x, -y) - (top - lift)) };
+          let foot = Math.min(top - lift - 0.1, dg - 0.03);
+          if (top - foot > 0.45) foot = wallFoot(x, y, foot, top - lift - 0.1);
+          return { x, y, top: Math.max(top, Math.min(dg, top + 0.02)), foot, up: dg, off: Math.abs(map.trueGround(x, -y) - (top - lift)) };
         };
         for (let i = 0; i < p.length - 1; i++) {
           if (p[i][4]) continue;
@@ -1739,7 +1750,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             // (a stone bridge's side goes down to the bank beside its abutments, where no arch
             // springs: as a wall with an upright end, not a wedge slanting across to the next point)
             if (A.top - A.g <= 0.3 && B.top - B.g <= 0.3) continue;
-            const bank = (q: Pt) => ground(q.x + q.nx * w, -(q.y + q.ny * w)) - 0.3;
+            const bank = (q: Pt) => { const x = q.x + q.nx * w, y = q.y + q.ny * w; return wallFoot(x, y, ground(x, -y) - 0.3, q.top - DECK); };
             const foot = (q: Pt, wall: boolean) => { const f = archAt(q.s) ?? q.top - DECK; return wall ? Math.min(f, bank(q)) : f; };
             for (const [Q, R, wall] of besideAbutments(A, B)) {
               const fQ = foot(Q, wall), fR = foot(R, wall), uQ = along(Q), uR = along(R);
@@ -1902,7 +1913,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const n = Math.max(2, Math.ceil((Ws(1) + Ws(-1)) / 1.0));
           for (let k = 0; k < n; k++) {
             const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
-            const g1 = ground(q.x + q.nx * o1, -(q.y + q.ny * o1)) - 0.3, g2 = ground(q.x + q.nx * o2, -(q.y + q.ny * o2)) - 0.3;
+            const foot = (o: number) => { const x = q.x + q.nx * o, y = q.y + q.ny * o; return wallFoot(x, y, ground(x, -y) - 0.3, underside); };
+            const g1 = foot(o1), g2 = foot(o2);
             if (underside <= Math.min(g1, g2)) continue;
             facing(g, at(q, o1, Math.min(g1, underside)), at(q, o2, Math.min(g2, underside)), at(q, o2, underside), at(q, o1, underside), fwd,
               [o1 / 2.5, Math.min(g1, underside) / 2.5], [o2 / 2.5, Math.min(g2, underside) / 2.5], [o2 / 2.5, underside / 2.5], [o1 / 2.5, underside / 2.5], stone ? STONE : CONCRETE);
