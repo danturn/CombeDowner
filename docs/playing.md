@@ -459,9 +459,11 @@ about that too), and when it's whole again they walk off the way they came and f
 
 #### Driving the bus
 
-Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station, Widcombe, Prior
-Park Road and Ralph Allen Drive, up to Combe Down) or the old 4 (the bus station, through town and up
-Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. At the wheel of a
+Take the wheel of a bus or minibus and you're on a route: the 2, as First really run it, a loop from
+the bus station (out by Widcombe, Prior Park Road, Ralph Allen Drive, The Avenue and Church Road,
+through Combe Down to Fox Hill and round Queen's Drive, then back by Bradford Road and North Road), or
+the old 4 (the bus station, through town and up Lansdown Road to Lansdown, there and back), whichever
+runs nearer, and round again. At the wheel of a
 bus or a coach, as at a narrowboat's tiller, the naughty boys leave you be (your passengers they
 don't). Inside, a Badgerline bus or minibus is fitted out as the real ones were: rows of green
 moquette seats either side of the gangway, cream panels and pillars round the windows, lights along
