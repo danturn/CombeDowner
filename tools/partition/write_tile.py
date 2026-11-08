@@ -149,10 +149,11 @@ RAIL_HALF = 4.5
 RAIL_BED = 2.3
 # Metres a deck stands over the track to be a bridge over the railway rather than a way beside it.
 RAIL_OVER = 3.0
-# Metres either side of the track that the ground meets its ballast, at the rails' foot: the
-# ballast's shoulders run from 1.6 m out at 0.25 m over it down through it there (web/src/railway.ts),
-# so the line sits in the ground with its ballast standing a little proud, not on a heap of it.
-BED_HALF = 1.9
+# Metres over a rail's foot that the bed's face lies: just under the ballast's top (web/src/railway.ts),
+# which it carries on out flat to RAIL_BED either side, so the ground meets the line flush.
+BED_TOP = 0.23
+# Metres round a point that tracks share its bed's height, so two lines side by side lie on one bed.
+BED_SHARE = 5.0
 # Metres: two tracks' beds nearer than this run together, the ground not drawn between their ballast.
 BED_JOIN = 1.2
 CANAL_MARGIN = 0.8
@@ -2748,10 +2749,10 @@ SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt"
 
 def rail_beds(rail, square):
     """The railway's bed in a square, where the track runs on the ground (not on its bridges, nor in
-    its tunnels, up to whose mouths it runs): BED_HALF either side, and the height of the bed's face
-    at a point, the nearest rail's foot. The game
-    draws the ballast and the track on it (railway.ts); the bed is a face only for the ground to meet,
-    so the line sits level across in its cutting or on its bank, flush with the ground beside it."""
+    its tunnels, up to whose mouths it runs): RAIL_BED either side, and the height of its face at a
+    point, BED_TOP over the rails' foot, shared between tracks side by side. With the sheet the game
+    draws it as ballast, the sleepers and rails on it (railway.ts), and the ground meets its edge, so
+    the line lies level across in its cutting or on its bank, flush with the ground beside it."""
     if not rail:
         return None, None
     portals = [q[:2] for q in rail.get("portals") or []]
@@ -2778,16 +2779,20 @@ def rail_beds(rail, square):
     if not segs:
         return None, None
     lines = [LineString([a[:2], b[:2]]) for a, b in segs]
-    bed = unary_union([l.buffer(BED_HALF, cap_style="flat") for l in lines])
+    bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines])
     bed = bed.buffer(BED_JOIN / 2, join_style="mitre").buffer(-BED_JOIN / 2, join_style="mitre").intersection(square)
     tree = STRtree(lines)
 
     def z_at(x, y):
         pt = Point(x, y)
-        k = int(tree.query_nearest(pt, all_matches=False)[0])
-        (a, b), l = segs[k], lines[k]
-        f = l.project(pt) / (l.length or 1)
-        return a[2] + (b[2] - a[2]) * f
+        near = [int(k) for k in tree.query(pt, predicate="dwithin", distance=BED_SHARE)] or [int(tree.query_nearest(pt, all_matches=False)[0])]
+        zs, ws = [], []
+        for k in near:
+            (a, b), l = segs[k], lines[k]
+            f = l.project(pt) / (l.length or 1)
+            zs.append(a[2] + (b[2] - a[2]) * f)
+            ws.append(1 / (l.distance(pt) ** 2 + 0.01))
+        return float(np.dot(zs, ws) / sum(ws)) + BED_TOP
     return bed, z_at
 
 

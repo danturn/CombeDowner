@@ -1373,6 +1373,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
     // paths the map says are worn grass, bare earth or gravel
     grass: flatMat("#b3ad78", 1, groundTex), dirt: flatMat("#86684a", 1, groundTex), gravel: flatMat("#b9b2a2", 1, groundTex),
+    // the railway's bed, with the sheet: its ballast's colour (railway.ts), just under its top
+    ballast: flatMat("#7b746a", 0),
   };
   // ---- bridges ---------------------------------------------------------------------------
   // A road or path on a bridge is drawn at its own height by strips; this builds what holds it
@@ -1932,7 +1934,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  own picks out roads that carry their own heights (bridges). */
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean, sf?: MapData["sf"]): Generator<void, THREE.Mesh[]> {
-    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), steel: new Geo(), front: new Geo(), drive: new Geo(), grass: new Geo(), dirt: new Geo(), gravel: new Geo() };
+    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), steel: new Geo(), front: new Geo(), drive: new Geo(), grass: new Geo(), dirt: new Geo(), gravel: new Geo(), bed: new Geo() };
     faceGeo = geo.bridge;
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
@@ -1994,6 +1996,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     add(geo.bridge.build(), bridgeMat, true, false, "stone");
     add(geo.steel.build(), steelMat, true, false, "steel");
     add(geo.front.build(), S.pathMat!, false, true, "front");
+    add(geo.bed.build(), roadMats.ballast, false, false, "ballast");
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream, false, false, "stream");
     return out;
   }
@@ -2027,7 +2030,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** A square's street and path faces: carriageways and pavements raised by their kerbs, and round
    *  each piece a face down to the ground beside it, a kerb or, where tall, Bath stone. Paths, front
    *  paths and drives lie on the ground as it's drawn, a hair above it, as their strips did. */
-  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "grass" | "dirt" | "gravel", Geo>) {
+  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "grass" | "dirt" | "gravel" | "bed", Geo>) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
     const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0 };
     const onGround = (k: string) => LIFT[k] === 0.04 && !levelPaths;
@@ -2053,6 +2056,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
     yield* laid.flush();
+    if (meet) {
+      const T = sf.bed ?? [];
+      for (let k = 0; k + 2 < T.length; k += 3) facingTri(geo.bed, at(T[k], "bed"), at(T[k + 1], "bed"), at(T[k + 2], "bed"), up, [0, 0], [0, 0], [0, 0], white);
+    }
     // streets of different kinds cut from one piece (a pedestrian street in a carriageway's outline)
     // meet along edges no outline marks, so a step between them needs its face drawn here
     const NP = V.length / 3, edgeKey = (a: number, b: number) => a * NP + b;
@@ -2094,8 +2101,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const [n, e] of sf.e.entries()) {
       if (n % 100 === 99) yield;
       const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
-      // (the railway's bed is drawn as its ballast, railway.ts: only a retaining wall the sheet stands
-      // at its edge is drawn here, and without the sheet nothing)
+      // (round the railway's bed only a retaining wall the sheet stands at its edge, and without the
+      // sheet nothing: the line's own ballast and banks are drawn instead, railway.ts)
       if (kind === "bed" && !meet) continue;
       let along = 0;
       for (let k = 0; k + 1 < e.i.length; k++) {
