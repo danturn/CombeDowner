@@ -45,7 +45,7 @@ import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { inSafeZone } from "./safezones";
-import { nightOut } from "./daylight";
+import { nightOut, timeOfDay } from "./daylight";
 import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
 
@@ -981,9 +981,12 @@ export class NaughtyBoys {
     const want = CROWD - staying.length;
     const free = this.list.filter((c) => c.state === GONE).length - 6;   // leave a few for the jobs
     if (want > 0 && free > 0) {
-      // all at once, stood about already, if nobody's close enough to see; or one at a time, walking in
-      // from wherever's out of everyone's way
-      const all = !near(70), n = all ? Math.min(want, free) : 1;
+      // all at once, stood about already, if nobody's close enough to see, or if there's no crowd at all
+      // once the night's well under way (someone's just arrived in the middle of it: by train, or
+      // straight into a pub); otherwise, as it gets going at eight or to make up their numbers, one at a
+      // time, walking in from wherever's out of everyone's way
+      const started = timeOfDay() * 24, early = started >= 20 && started < 20.5;
+      const all = !near(70) || (!staying.length && !early), n = all ? Math.min(want, free) : 1;
       const from = NIGHT_IN.filter((p) => !everyone.some((t) => Math.hypot(t.x - p[0], t.z + p[1]) < 30));
       if (all || from.length) {
         for (let k = 0; k < n; k++) {
