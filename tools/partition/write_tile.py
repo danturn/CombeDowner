@@ -154,6 +154,10 @@ RAIL_OVER = 3.0
 BED_TOP = 0.23
 # Metres round a point that tracks share its bed's height, so two lines side by side lie on one bed.
 BED_SHARE = 5.0
+# Metres either side of a track that its ballast's top reaches (web/src/railway.ts): the bed is level
+# with it that far, and slopes only beyond, so no ballast stands proud of a bed sloping between two
+# tracks at different heights.
+BALLAST_TOP = 1.6
 # Metres: two tracks' beds nearer than this run together, the ground not drawn between their ballast.
 BED_JOIN = 1.2
 CANAL_MARGIN = 0.8
@@ -2748,8 +2752,8 @@ SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt"
 
 
 def rail_beds(rail, square):
-    """The railway's bed in a square, where the track runs on the ground (not on its bridges, nor in
-    its tunnels, up to whose mouths it runs): RAIL_BED either side, and the height of its face at a
+    """The railway's bed in a square, where the track runs on the ground (not on its bridges or the
+    stretch up to one, which the line's own bank carries, nor in its tunnels, up to whose mouths it runs): RAIL_BED either side, and the height of its face at a
     point, BED_TOP over the rails' foot, shared between tracks side by side. With the sheet the game
     draws it as ballast, the sleepers and rails on it (railway.ts), and the ground meets its edge, so
     the line lies level across in its cutting or on its bank, flush with the ground beside it."""
@@ -2762,7 +2766,7 @@ def rail_beds(rail, square):
         p = t["p"]
         for a, b in zip(p, p[1:]):
             fa, fb = (a[3] if len(a) > 3 else 0), (b[3] if len(b) > 3 else 0)
-            if (fa, fb) == (0, 0) or {fa, fb} == {0, 1}:
+            if (fa, fb) == (0, 0):
                 seg = (a[:3], b[:3])
             elif {fa, fb} == {0, 2} and portals:
                 # (up to the tunnel's mouth, between the two)
@@ -2786,22 +2790,26 @@ def rail_beds(rail, square):
     def z_at(x, y):
         pt = Point(x, y)
         near = [int(k) for k in tree.query(pt, predicate="dwithin", distance=BED_SHARE)] or [int(tree.query_nearest(pt, all_matches=False)[0])]
-        zs, ws = [], []
+        zs, ds = [], []
         for k in near:
             (a, b), l = segs[k], lines[k]
             f = l.project(pt) / (l.length or 1)
             zs.append(a[2] + (b[2] - a[2]) * f)
-            ws.append(1 / (l.distance(pt) ** 2 + 0.01))
-        return float(np.dot(zs, ws) / sum(ws)) + BED_TOP
+            ds.append(l.distance(pt))
+        if min(ds) <= BALLAST_TOP + 0.05:
+            return zs[int(np.argmin(ds))] + BED_TOP
+        ws = 1 / ((np.asarray(ds) - BALLAST_TOP) ** 2 + 0.01)
+        return float(np.dot(zs, ws) / ws.sum()) + BED_TOP
 
     def along_tracks(g):
-        """g cut along each track's middle, so its faces have corners there at the track's own height:
-        between two tracks at different heights the bed slopes from one to the other, rather than
-        burying the lower one's sleepers."""
+        """g cut along each track's ballast's edges, so its faces have corners there at the track's own
+        height: the bed is level under each track's ballast, and between two tracks at different
+        heights slopes from one's ballast to the other's."""
         if g.is_empty:
             return g
         # (each stretch a little longer, so where the bed stops square across it the cut runs right through)
-        longer = [shapely.affinity.scale(l, (l.length + 1) / (l.length or 1), (l.length + 1) / (l.length or 1)) for l in lines]
+        longer = [shapely.affinity.scale(e, (e.length + 1) / (e.length or 1), (e.length + 1) / (e.length or 1))
+                  for l in lines for e in (l.offset_curve(BALLAST_TOP), l.offset_curve(-BALLAST_TOP)) if e.length > 0]
         inner = unary_union(longer).intersection(g)
         cut = unary_union([shapely.snap(g.boundary, inner, 0.01), inner])
         return shapely.GeometryCollection([q for q in shapely.get_parts(shapely.polygonize(shapely.get_parts(cut)))
