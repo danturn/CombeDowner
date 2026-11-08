@@ -66,7 +66,8 @@ export function bannerSpot(map: GameMap, x: number, z: number): BannerSpot {
         const yaw = Math.atan2(vw.sx - px, vw.sz - pz), cs = Math.cos(yaw), sn = Math.sin(yaw);
         const eye = [ex, map.ground(ex, ez) + 1.6, ez];
         const ties: number[][] = [];
-        for (const [lx, ly] of [[-W / 2, H / 2], [W / 2, H / 2], [-W / 2, -H / 2], [W / 2, -H / 2], [0, 0]]) ties.push([px + lx * cs, ground + cy + ly, pz - lx * sn]);
+        // (halves as * 0.5: minified, "x / 2" can come out as "of/2", which the build's import scan misreads as a regular expression)
+        for (const [lx, ly] of [[-W * 0.5, H * 0.5], [W * 0.5, H * 0.5], [-W * 0.5, -H * 0.5], [W * 0.5, -H * 0.5], [0, 0]]) ties.push([px + lx * cs, ground + cy + ly, pz - lx * sn]);
         let bad = 0;
         for (const t of ties) {
           if (crowns.some((c) => Math.hypot(t[0] - c.x, t[1] - c.y, t[2] - c.z) < c.r + 0.4)) { bad += 100; continue; }

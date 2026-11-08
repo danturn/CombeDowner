@@ -6,13 +6,15 @@
 // said to be approaching, not in service. On a map whose trains aren't Great Western's (OPERATORS)
 // it's just "the fourteen twenty service", without the British Transport Police.
 //
-// Each announcement is said in short phrases, one after another, the way the real ones are stitched
-// together from recorded pieces, which gives them that stop-start rhythm. The station hands the
-// browser one phrase at a time, each as loud as the speakers are where you are now, so walking off
-// the platform fades them and once you're out of earshot the rest goes unsaid, instead of the whole
-// announcement following you up into town. The browser's speech
-// can't be run through the game's sound (there's no way to filter or echo it), so the phrasing,
-// the voice and its pace are what make it sound like a station.
+// Each announcement is stitched together from recorded pieces, the way the real ones are, which gives
+// them that stop-start rhythm: every word and phrase they use was said once by a British woman's voice
+// (tools/station_voice.py, into public/sounds/station.mp3) and they're played one after another
+// through the station's tannoy (audio.ts): thin, a little overdriven, the speakers down the platform
+// answering, and a click and a hum as it comes on. Walk off the platform and it fades, and once
+// you're out of earshot the rest goes unsaid, instead of following you up into town. Until those
+// pieces have loaded, or for a phrase with a word that isn't among them, the browser's own voice reads
+// it out instead (a British woman's if it has one), unfiltered: browsers give a page no way to put
+// their speech through its sound.
 //
 // Who decides what: nobody. The times come from the trains' timetable (railway.ts), which runs to
 // the clock, so everyone at the same station hears the same announcement at the same moment, and
@@ -22,6 +24,41 @@ import { clockAt } from "./daylight";
 import type { Departure, Railway } from "./railway";
 
 const synth = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;
+
+// ---- the recorded voice ------------------------------------------------------------------------------
+/** The pieces, by name (station_voice.py's key: lower case, words only, a full stop kept at the end), and the sound they're in. */
+let pieces: Map<string, [number, number]> | null = null, sound: AudioBuffer | null = null, loading = false, longest = 1;
+// (letters, digits and apostrophes, the rest made spaces: spelt out, as a regular expression with a quote in it upsets the build)
+const norm = (t: string) => [...t.toLowerCase()].map((ch) => ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9") || ch === "'" ? ch : " ")).join("").replace(/ +/g, " ").trim();
+async function loadVoice() {
+  const c = SFX.context();
+  if (loading || !c) return;
+  loading = true;
+  try {
+    const base = import.meta.env.BASE_URL;
+    const [index, mp3] = await Promise.all([fetch(`${base}sounds/station.json`).then((r) => r.json()), fetch(`${base}sounds/station.mp3`).then((r) => r.arrayBuffer())]);
+    sound = await c.decodeAudioData(mp3);
+    pieces = new Map(Object.entries(index.pieces as Record<string, [number, number]>));
+    longest = Math.max(...[...pieces.keys()].map((k) => k.split(" ").length));
+  } catch { loading = false; }   // (try again next time you're at a station)
+}
+/** A phrase as the recorded pieces that say it, or null if one of its words isn't among them. The
+ *  longest piece that fits each time; the last word of a sentence in its falling form, if there is one. */
+function recorded(text: string): [number, number][] | null {
+  if (!pieces) return null;
+  const words = norm(text).split(" ").filter((w) => w), out: [number, number][] = [], end = text.trim().endsWith(".");
+  for (let i = 0; i < words.length;) {
+    let hit: [number, number] | undefined, n = Math.min(longest, words.length - i);
+    for (; n > 0 && !hit; n--) {
+      const k = words.slice(i, i + n).join(" ");
+      hit = (end && i + n === words.length ? pieces.get(k + ".") : undefined) ?? pieces.get(k) ?? pieces.get(k + ".");
+      if (hit) { i += n; break; }
+    }
+    if (!hit) return null;
+    out.push(hit);
+  }
+  return out;
+}
 
 const RANGE = 35;          // metres from a platform (its edge, not the middle) you can hear the station's speakers
 const FULL = 6;            // and within this of one they're as loud as they get
@@ -90,18 +127,26 @@ export class Announcer {
   private loud = 0;
   /** When the phrase the station handed the browser was handed over (0: none is being said). */
   private saying = 0;
+  /** The tannoy, while you're near enough a station to hear it, and how far off its speakers are. */
+  private pa: ReturnType<typeof SFX.tannoy> = null;
+  private far = 0;
+  private playing: AudioBufferSourceNode[] = [];
+  private paOff = 0;   // when the speakers click off, after the last piece (ctx time)
 
   /** Each frame: if you're near a station, announce what's due there. */
   update(dt: number, rail: Railway | null | undefined, x: number, y: number, z: number, mapId = "", now = Date.now() / 1000) {
     this.t -= dt;
-    if (this.t > 0 || !rail || !synth) return;
+    if (this.t > 0 || !rail) return;
     this.t = 0.5;
     const near = rail.stationNear(x, z, RANGE, y);
     // out of earshot: what's left of an announcement goes unsaid
-    if (!near) { this.fillerAt = 0; this.queue.length = 0; this.loud = 0; return; }
+    if (!near) { this.fillerAt = 0; this.queue.length = 0; this.loud = 0; this.hush(); return; }
+    if (!pieces) void loadVoice();
     // full on and round the platforms, falling away quickly to nothing at the edge of earshot
     const off = Math.max(0, Math.min(1, (near.far - FULL) / (RANGE - FULL)));
     const loud = this.loud = (1 - off) * (1 - off) * SFX.effectsVolume();
+    this.far = near.far;
+    this.pa?.set(loud * 1.6, Math.max(4, near.far), 0);
     // the browser can fail to say a phrase has ended; give up waiting on one after a while
     if (this.saying && performance.now() - this.saying > 12000) this.saying = 0;
     if (!this.saying) this.next();
@@ -131,7 +176,7 @@ export class Announcer {
       this.fillerAt = now + FILLER[0] + Math.random() * (FILLER[1] - FILLER[0]);
       // never over a train's announcement
       const fillers = op ? FILLERS : FILLERS.slice(1);
-      if (!synth.speaking && !synth.pending && !this.queue.length) this.say(fillers[Math.floor(Math.random() * fillers.length)], loud);
+      if (!synth?.speaking && !synth?.pending && !this.queue.length && !this.playing.length) this.say(fillers[Math.floor(Math.random() * fillers.length)], loud);
     }
     if (this.said.size > 200) this.said.clear();
   }
@@ -146,9 +191,51 @@ export class Announcer {
   }
 
   private say(lines: string[], loud: number) {
-    if (!synth || document.hidden || loud <= 0.05) return;
-    this.queue.push(...lines.filter((t) => t));
+    if (document.hidden || loud <= 0.05) return;
+    lines = lines.filter((t) => t);
+    // all from the recordings, through the tannoy, or all in the browser's voice: never half and half
+    const parts = lines.map(recorded);
+    if (sound && parts.every((p) => p)) { this.speak(parts as [number, number][][]); return; }
+    if (!synth) return;
+    this.queue.push(...lines);
     if (!this.saying) this.next();
+  }
+
+  /** An announcement from the recorded pieces, each phrase after the last with a short breath between. */
+  private speak(phrases: [number, number][][]) {
+    const c = SFX.context();
+    if (!c || !sound) return;
+    this.pa ??= SFX.tannoy();
+    const pa = this.pa;
+    if (!pa) return;
+    pa.set(this.loud * 1.6, Math.max(4, this.far), 0);
+    // after whatever's being said already
+    let t = Math.max(c.currentTime + 0.15, this.paOff + 0.6);
+    pa.on(t);
+    t += 0.25;
+    for (const ph of phrases) {
+      for (const [at, dur] of ph) {
+        const src = c.createBufferSource();
+        src.buffer = sound;
+        src.connect(pa.input);
+        src.start(t, at, dur);
+        src.onended = () => { this.playing = this.playing.filter((s) => s !== src); src.disconnect(); };
+        this.playing.push(src);
+        t += dur + 0.03;
+      }
+      t += 0.22;
+    }
+    this.paOff = t;
+    pa.off(t);
+  }
+
+  /** Out of earshot: the rest goes unsaid and the tannoy's let go. */
+  private hush() {
+    for (const s of this.playing) { try { s.stop(); } catch { /* not started */ } }
+    this.playing = [];
+    this.paOff = 0;
+    this.pa?.stop();
+    this.pa = null;
   }
 
   /** Hand the browser the next phrase, if you can still hear the speakers; the one after follows

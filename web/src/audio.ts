@@ -1220,6 +1220,56 @@ export function placedOut(): { node: AudioNode; set(vol: number, distance: numbe
 }
 
 /**
+ * A station's tannoy (announce.ts): what goes into input comes out of the platform speakers. Thin and
+ * boxy, a little overdriven, with the mains hum under it while it's on, and the speakers further down
+ * the platform answering a moment later. set() it as placedOut's (how loud, how far off) every so often;
+ * on() and off() click the speakers on and off round an announcement.
+ */
+export function tannoy(): { input: AudioNode; set(vol: number, distance: number, pan: number): void; on(at: number): void; off(at: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const place = placedOut();
+  if (!place) return null;
+  const c = ctx, input = c.createGain();
+  const filter = (type: BiquadFilterType, f: number, q: number, gain = 0) => { const b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; b.gain.value = gain; return b; };
+  const hp = filter("highpass", 450, 0.8), honk = filter("peaking", 1900, 1.3, 8), lp = filter("lowpass", 3300, 0.9);
+  const drive = c.createGain(), shaper = c.createWaveShaper(), post = c.createGain();
+  drive.gain.value = 2.6; post.gain.value = 0.55;
+  const curve = new Float32Array(1024);
+  const full = 1 / Math.tanh(2.2), step = 2 / (curve.length - 1);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh((i * step - 1) * 2.2) * full;
+  shaper.curve = curve;
+  input.connect(hp).connect(honk).connect(lp).connect(drive).connect(shaper).connect(post).connect(place.node);
+  // the speakers further down the platform
+  const echoes: AudioNode[] = [];
+  for (const [d, g] of [[0.11, 0.42], [0.24, 0.2]]) {
+    const dl = c.createDelay(0.5), gn = c.createGain();
+    dl.delayTime.value = d; gn.gain.value = g;
+    post.connect(dl).connect(gn).connect(place.node);
+    echoes.push(dl, gn);
+  }
+  // the mains hum and a little hiss, only while it's on
+  const hum = c.createOscillator(), humG = c.createGain(), hiss = c.createBufferSource(), hissF = filter("bandpass", 2600, 0.7), hissG = c.createGain();
+  hum.type = "sawtooth"; hum.frequency.value = 100; humG.gain.value = 0;
+  hiss.buffer = noise; hiss.loop = true; hissG.gain.value = 0;
+  hum.connect(humG).connect(hp); hiss.connect(hissF).connect(hissG).connect(hp);
+  hum.start(); hiss.start();
+  const click = (at: number, vol: number) => burst(hp, at, 0.025, vol, 1500, { q: 0.7 });
+  let stopped = false;
+  return {
+    input,
+    set: place.set,
+    on(at) { click(at, 0.5); humG.gain.setTargetAtTime(0.012, at, 0.02); hissG.gain.setTargetAtTime(0.02, at, 0.02); },
+    off(at) { humG.gain.setTargetAtTime(0, at, 0.03); hissG.gain.setTargetAtTime(0, at, 0.03); click(at + 0.02, 0.35); },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      place.stop();
+      setTimeout(() => { hum.stop(); hiss.stop(); for (const n of [input, hp, honk, lp, drive, shaper, post, hum, humG, hiss, hissF, hissG, ...echoes]) n.disconnect(); }, 1200);
+    },
+  };
+}
+
+/**
  * A hot air balloon's burner (balloons.ts): a deep roar of flame, fluttering a little, from a loop of
  * noise. Call set() every frame with how hard it's burning (0..1), and stop() when it's out of earshot.
  */
