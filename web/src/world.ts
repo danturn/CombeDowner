@@ -1904,6 +1904,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
             const g1 = ground(q.x + q.nx * o1, -(q.y + q.ny * o1)) - 0.3, g2 = ground(q.x + q.nx * o2, -(q.y + q.ny * o2)) - 0.3;
             if (underside <= Math.min(g1, g2)) continue;
+            // (a skew bridge's end reaches out over the water: none of the abutment stands in it, or its
+            // foot, following the bed, hung down under the deck as a wedge into the canal or the river)
+            const om = (o1 + o2) / 2, mx = q.x + q.nx * om, my = q.y + q.ny * om;
+            if ((map.works?.across(mx, my) ?? lockAt(canalData, mx, my)) !== null || map.inWater(mx, -my)) continue;
             facing(g, at(q, o1, Math.min(g1, underside)), at(q, o2, Math.min(g2, underside)), at(q, o2, underside), at(q, o1, underside), fwd,
               [o1 / 2.5, Math.min(g1, underside) / 2.5], [o2 / 2.5, Math.min(g2, underside) / 2.5], [o2 / 2.5, underside / 2.5], [o1 / 2.5, underside / 2.5], stone ? STONE : CONCRETE);
           }
