@@ -158,6 +158,10 @@ BED_SHARE = 5.0
 # with it that far, and slopes only beyond, so no ballast stands proud of a bed sloping between two
 # tracks at different heights.
 BALLAST_TOP = 1.6
+# Metres of ground kept between the bed and a street, path or building beside or across it, so each
+# meets the ground at its own height (with a retaining wall where they differ) rather than standing
+# a step over the other along an edge the two share.
+BED_CLEAR = 0.5
 # Metres: two tracks' beds nearer than this run together, the ground not drawn between their ballast.
 BED_JOIN = 1.2
 CANAL_MARGIN = 0.8
@@ -4351,7 +4355,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     bed, bed_z, along_tracks = rail_beds(rail, square)
     if bed is not None:
         bed = along_tracks(_minus(bed, unary_union([road, pave, path, front, drive, plaza, *buildings]
-                                                   + ([tubes] if isinstance(tubes, shapely.Geometry) else []))))
+                                                   + ([tubes] if isinstance(tubes, shapely.Geometry) else [])).buffer(BED_CLEAR)))
     else:
         bed = Polygon()
     pieces = []
