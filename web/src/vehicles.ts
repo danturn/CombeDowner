@@ -1469,6 +1469,16 @@ export class Vehicles {
     // and in the square with Royal Avenue in, the Golf Driver in its space, in place of the car the map parked there
     const golf = driverSpot(map);
     if (golf) add("golfdriver", golf.x, golf.z, golf.a);
+    // and at the bus station, a Badgerline double-decker and a minibus always on the stands, to take out on a
+    // timetabled run (busdriver.ts); last of all, so nothing else's number moves
+    let stands = 0;
+    for (const f of map.d.fx ?? []) {
+      if (f[0] !== "bus" || f[5] !== "Bath Bus Station" || stands >= 2) continue;
+      const kind: VKind = stands ? "minibus" : "bus", at = this.stopSpot({ x: +f[1], z: -f[2], a: +f[4] }, kind);
+      if (!at || placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < SPECS.bus.L + 2)) continue;
+      placed.push(at);
+      add(kind, at.x, at.z, at.a, true); stands++;
+    }
   }
 
   /** Where Mr D's chip van is parked: at the top of Old Bond Street, on its west side just south of
