@@ -4708,8 +4708,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         # as a spike in the paving.
         flat = piece_of[n][1]
         key = (round(x, 2), round(y, 2), flat)
+        # (a plaza is at a path's level along the edge they share, so the two share the corner)
         if flat == "g" and (key[0], key[1], True) in at:
             return at[(key[0], key[1], True)]
+        if flat is True and key not in at and (key[0], key[1], "g") in at:
+            return at[(key[0], key[1], "g")]
         if key not in at:
             (ax, ay, az), (bx, by, bz) = v[3 * a:3 * a + 3], v[3 * b:3 * b + 3]
             ex, ey = bx - ax, by - ay
