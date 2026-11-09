@@ -1281,7 +1281,9 @@ export class NaughtyBoys {
   }
 
   private gather(spot: { x: number; z: number }, kind: number, size: number) {
-    if (inSafeZone(this.map, spot.x, spot.z)) return;
+    // the Crescent's residents live there, so a school's safe zone (St Andrew's is just behind the
+    // Crescent, and takes in every front door) doesn't keep them indoors
+    if (kind !== RESIDENT && inSafeZone(this.map, spot.x, spot.z)) return;
     const gang = look(kind, Math.floor(Math.random() * KITS[kind]));
     for (let n = 0; n < size; n++) {
       const c = this.list.find((o) => o.state === GONE);
