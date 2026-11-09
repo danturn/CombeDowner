@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
+import { breakable, holed } from "./gaps";
 import { type BarMat, BRIDGE_DECK, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeKind, bridgeSpans, deckLift, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops, stepsDetail } from "./furniture";
@@ -26,7 +27,8 @@ import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
-import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
+import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
+import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
 
 const CHUNK = 320;
@@ -155,6 +157,11 @@ export interface World {
   unbuilt(x: number, z: number, r: number): number;
   /** Start on the squares round wherever we are now, straight away: after a jump. */
   look(): void;
+  /** Build just the squares within r of these spots (scene x, z) in full, instead of those round
+   *  the player, until called again with none: everywhere a fly-over will see (reveal.ts). */
+  alsoBuild(spots: { x: number; z: number }[], r: number): void;
+  /** How many of those are still to load and build. */
+  alsoUnbuilt(): number;
   /** Build the squares in bigger slices a frame, while the view is covered (arrive.ts). */
   rush: boolean;
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
@@ -2524,8 +2531,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
   const barGeos = new Map<string, Geo>();
-  const barGeo = (x: number, y: number, mat: BarMat) => {
-    const k = `${mat}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
+  // (hedges and fences a car can smash through go in meshes of their own, which leave the gaps out: gaps.ts)
+  const barGeo = (x: number, y: number, mat: BarMat, smash = false) => {
+    const k = `${mat}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}${smash ? ":smash" : ""}`;
     let g = barGeos.get(k);
     if (!g) barGeos.set(k, (g = new Geo()));
     return g;
@@ -2562,7 +2570,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (p.length < 2) return;
     const l = { ...run, p };
     const spec = barrierLook(l.c), hh = barrierHeight(l), t = spec.t / 2;
-    const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
+    const g = barGeo(l.p[0][0], l.p[0][1], spec.mat, breakable(l.c));
     if (spec.mat === "steel") { crashBarrier(l, g, spec.col); return; }
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);
@@ -2640,7 +2648,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const [k, geo] of barGeos) {
     const g = geo.build();
     if (!g) continue;
-    const m = new THREE.Mesh(g, barMats[k.split(":")[0] as BarMat]);
+    const mat = barMats[k.split(":")[0] as BarMat], smash = k.endsWith(":smash") ? holed(mat) : null;
+    const m = new THREE.Mesh(g, smash ? smash.m : mat);
+    if (smash) m.customDepthMaterial = smash.depth;
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
     culler.add(m, 230);
@@ -2950,9 +2960,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // day, and left out of the drawing while they and the other such lights are all dark, with the
   // shaders for both ready beforehand: unlit.ts) so nothing has to be rebuilt at dusk. A light
   // that moves to another lamp fades out first and back in there, so pools of light don't jump.
-  const LAMP_LIGHTS = 4;
+  // How many there are follows how far you see (view.ts) when the map's built, since every light
+  // costs every lit pixel something: a phone keeps to four, a desktop seeing further lights more of
+  // the street round it. On the move, the lamps ahead of you are lit before those behind, and sooner.
+  const LAMP_LIGHTS = lampLightsFor(view.fogFar), LAMP_REACH = LAMP_LIGHTS > 4 ? 28 : 22, LAMP_LOOK = 60 + LAMP_LIGHTS * 12;
   const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
-    const l = new THREE.PointLight("#ffc77a", 0, 22, 1.4);
+    const l = new THREE.PointLight("#ffc77a", 0, LAMP_REACH, 1.4);
     l.userData = { on: false, k: 0, to: new THREE.Vector3() };
     scene.add(l);
     darkable(scene, l);
@@ -2975,17 +2988,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     return h;
   };
-  let lampT = 0;
+  let lampT = 0, lastX = NaN, lastZ = NaN, goX = 0, goZ = 0;   // (goX, goZ: which way you're going, m/s, smoothed)
   const near: [number, number, number, number][] = [];
   const lampDay = new THREE.Color("#d8d4c2"), lampNight = new THREE.Color("#fff3c8").multiplyScalar(1.6);
   const placeLamps = (px: number, pz: number) => {
     near.length = 0;
-    for (const m of [map, ...map.tilesNear(px, pz, 80)]) {
+    const sp = Math.hypot(goX, goZ), ux = sp > 3 ? goX / sp : 0, uz = sp > 3 ? goZ / sp : 0;
+    for (const m of [map, ...map.tilesNear(px, pz, LAMP_LOOK)]) {
       const h = headsOf(m);
       // the street lamps, and those on landmarks: the station platforms' (landmarks/index.ts)
       for (const l of [h, landmarkLamps(m)]) for (let i = 0; i < l.length; i += 3) {
-        const d = (l[i] - px) ** 2 + (l[i + 2] - pz) ** 2;
-        if (d < 80 * 80) near.push([d, l[i], l[i + 1], l[i + 2]]);
+        const dx = l[i] - px, dz = l[i + 2] - pz, d2 = dx * dx + dz * dz;
+        if (d2 >= LAMP_LOOK * LAMP_LOOK) continue;
+        // one behind you counts as further off than it is, the more so the further behind
+        const behind = d2 > 1 ? Math.max(0, -(dx * ux + dz * uz) / Math.sqrt(d2)) : 0;
+        near.push([d2 * (1 + 3 * behind), l[i], l[i + 1], l[i + 2]]);
       }
     }
     near.sort((a, b) => a[0] - b[0]);
@@ -3002,11 +3019,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     });
   };
   /** Fade each light towards its lamp: out, across, and in again. */
-  const fadeLamps = (dt: number) => {
+  const fadeLamps = (dt: number, quick: boolean) => {
+    const rate = quick ? 6 : 3;
     for (const l of lampLights) {
       const u = l.userData, there = l.position.equals(u.to);
-      if (!u.on || !there) u.k = Math.max(0, u.k - dt * 3);
-      else u.k = Math.min(1, u.k + dt * 3);
+      if (!u.on || !there) u.k = Math.max(0, u.k - dt * rate);
+      else u.k = Math.min(1, u.k + dt * rate);
       if (u.k === 0 && !there) l.position.copy(u.to);
     }
   };
@@ -3069,6 +3087,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     unbuilt: (x, z, r) => tiles?.unbuiltNear(x, z, r) ?? 0,
     look: () => tiles?.look(),
+    alsoBuild: (spots, r) => tiles?.alsoBuild(spots, r),
+    alsoUnbuilt: () => tiles?.alsoUnbuilt() ?? 0,
     get rush() { return tiles?.rush ?? false; },
     set rush(on: boolean) { if (tiles) tiles.rush = on; },
     get tunnel() { return dark; },
@@ -3121,13 +3141,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
       for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
       LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);
-      if ((lampT -= dt) <= 0) { lampT = 0.4; placeLamps(px, pz); }
-      fadeLamps(dt);
+      if (Number.isFinite(lastX) && dt > 0) {
+        const k = Math.min(1, dt * 3), vx = (px - lastX) / dt, vz = (pz - lastZ) / dt;
+        if (Math.hypot(vx, vz) < 80) { goX += (vx - goX) * k; goZ += (vz - goZ) * k; }   // (not a jump to somewhere else)
+      }
+      lastX = px; lastZ = pz;
+      const quick = Math.hypot(goX, goZ) > 8;
+      if ((lampT -= dt) <= 0) { lampT = quick ? 0.2 : 0.4; placeLamps(px, pz); }
+      fadeLamps(dt, quick);
       if (W) W.skies += performance.now() - W0;
       let b4 = performance.now();
       for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
       if (W) W.lamps += performance.now() - b4;
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
+      SIGNAL_TIME.value = signalClock();   // the traffic lights' lamps (signals.ts)
       LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
       b4 = performance.now();
       vegetation.update(px, pz, dt);

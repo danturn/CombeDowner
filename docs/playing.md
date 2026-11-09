@@ -141,9 +141,12 @@ Standing on a roof is fine.
 
 Day turns to night and back every 24 minutes, the same for everyone since it comes from the clock.
 At night the stars and moon come out, street lamps light the pavements, windows light up across
-Bath, and traffic puts its headlights on (they come on in tunnels too). On a computer you can see
+Bath, and traffic puts its headlights on (they come on in tunnels too), each headlamp throwing a beam
+of its own. On a computer you can see
 about 900 m by day and the lamps' glow from right across town at night; phones and iPads see a
-little over half as far, to keep them smooth.
+little over half as far, to keep them smooth. The street lamps round you light the street: four of
+them on a phone or iPad, and more on a computer the further its draw distance (it takes effect from
+the next game), and when you're on the move, the lamps ahead of you light up first.
 
 The watch on your wrist, bottom left above your health, tells the game's time: a black G-Shock
 with the hours and minutes, the day of the week and the date (a new game day every 24 minutes).
@@ -274,7 +277,10 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
-A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. At a
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Up in the bell
+chamber the four lanes of the note highway are the face buttons as they sit, Square, Triangle,
+Cross and Circle left to right (A, W, S and D on the keys), two at once for a chord; while you ring
+they do nothing else. At a
 narrowboat's helm the pad works as at a car's wheel: the triggers are the throttle, R1 rings the bell
 and Triangle lets go. Down the mines,
 R2 swings or shoots, L2 is the healing light, Square uses (hold it to pump, wind or pick a friend
@@ -293,8 +299,10 @@ and round again), and L steps the draw distance through 600 to 6000 m.
 
 ## Finding your way
 
-**The minimap and the big map** (M, or tap the minimap) show the ground at the same detail all
-over Bath. The big map zooms with the wheel, + and −, or a pinch, and drags about. Its key says
+**The minimap and the big map** (M, or tap the minimap) show Bath plainly, the same all over: grey
+land, green parks and woods, blue water, bright streets with the main roads brightest, faint
+footpaths and dark blocks for the buildings. The faster you go, the further out the minimap zooms,
+so you can see where you're heading. The big map zooms with the wheel, + and −, or a pinch, and drags about. Its key says
 what everything is; click a row to hide that kind of thing on all the maps, and again to bring it
 back. The squares you've cleared of the Flag Lads' flags are washed faintly green, with a pint on
 each pub you've won back, and a line in the map's corner says how much of Bath is yours; point at or tap
@@ -360,6 +368,12 @@ a combo, banked when you roll on the ground for a moment, and your bests on each
 Come down sideways or mid-trick and you bail, back on in under two seconds. Someone pushing a
 trolley can give a mate a lift: they walk up to the basket and press E to climb in.
 
+Other riders are solid: you can't ride through them. Lean on someone riding alongside and you're
+both shoved apart sideways, each turned a little off your line and a little slower; run into the
+back of someone and they're pushed on a touch while you're held up. Each bump thuds, jolts the view
+a little, kicks up dust (sparks, if it's hard) and rumbles a controller. Bumps are only between
+riders: on foot, and in cars, nothing changes.
+
 Speed traps (yellow boxes on poles, on the maps as yellow cameras) at the foot of Bath's steepest
 streets clock you as you go past, however you're moving (on foot, on a ride, in a car or
 on a bus) and anywhere across the road, and a manual down Milsom Street is timed. Both keep your
@@ -380,8 +394,9 @@ with your hands full, E swaps what you've got for what you're standing on.
 
 The cars parked along The Firs and Fox Hill have their keys in: Ford Escort XR3is, Reliant Robins,
 Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (siren and lights), a Transit, a Mr
-Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait at stops, and at
-any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
+Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait on the bus station's
+stands, and now and then one's laid over at a stop off the bus routes (never along them, so you don't
+keep finding one in your way when you're driving one), and at any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
 you. Each cricket club has its heavy roller out. Mr D's chip van, red with yellow trim and the yellow
 "Mr.D's" oval, is parked at the top of Old Bond Street, where Milsom Street meets New Bond Street,
 with its hatch open, the awning up and Mr D in it with his arms folded; you can drive that off too.
@@ -403,6 +418,19 @@ Blue, Sand, Poppy Red and the rest), and you'll see the odd one in town and in t
 Rover pulls away smartly and keeps up with anything on the road, fields, verges and tracks are the
 same to it as the road, and it takes the hills better than anything else.
 
+The traffic keeps to the roads people really drive on: how busy each road is comes from the
+Department for Transport's traffic counts, so it's thick on the main roads, the A4 through town and out along the London Road, and
+thin up the side streets, where a car only turns off now and then. How many cars there are round you
+follows the same counts and the time of day: the morning and evening rush on a weekday, a later and
+flatter day at the weekend, and hardly anything in the small hours. Traffic lights work,
+the British way (red, red and amber, green, amber), the same for everyone, and the cars stop at red
+and queue behind each other; at a crossing with lights it's red for the traffic now and then for
+anyone crossing. One-way streets go one way, and each side of a dual carriageway (the Bristol Road,
+the London Road) is its own one-way road, so the traffic keeps left on its own carriageway. At a
+roundabout it goes round clockwise, giving way to anything already on it coming from the right, and
+comes off within a lap. A car that has to turn round (at a dead end, or stuck behind something that isn't
+moving) does a turn in the road, backing up with its reversing lights on.
+
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer (the mouse just looks about, and
 the camera swings back behind half a second after you leave it, or as soon as you put your foot
@@ -417,7 +445,8 @@ the chase camera, the driver's seat and the bonnet camera. From the driver's sea
 a low dash: the speedo shows your speed, the wheel turns as you steer, and the buses have a cab of
 their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
 racing game, sits just above the bonnet at the foot of the windscreen (on a bus or a coach, at the
-front of the cab) with nothing of the inside in the way. It remembers which you like. Each engine has a voice of its own:
+front of the cab) with nothing of the inside in the way. It remembers which you like. From either, your head rides the bumps as a driver's does:
+a rough road jostles the car round you, but the view tips with a hill only gently, a moment behind. Each engine has a voice of its own:
 it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
 the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
 The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit
@@ -426,11 +455,27 @@ hard and it rolls, and one left on its roof catches fire and goes up, hurting an
 never players or cats. The fireball flashes orange over the street round it, which you see best at
 night.
 
+Hedges and fences give way too: hit one at more than about 18 mph and you smash straight through,
+leaves or splinters flying, and hardly slow down, so you can cut across gardens and fields. Slower
+than that and they stop you like a wall. Walls, railings and gates never give. Five minutes later the
+hole's been mended: an old couple, Derek and Maureen, come walking up a little before, him with a
+hammer and her with the twine, and grumble while they work about drivers today, nobody having any
+respect, and it all being those video games. You can't hurt them (shoot them and they'll tell you
+about that too), and when it's whole again they walk off the way they came and fade away.
+
 #### Driving the bus
 
-Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station, Widcombe, Prior
-Park Road and Ralph Allen Drive, up to Combe Down) or the old 4 (the bus station, through town and up
-Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. The route is a
+Take the wheel of a bus or minibus and you're on a route: the 2, as First really run it, a loop from
+the bus station (out by Widcombe, Prior Park Road, Ralph Allen Drive, The Avenue and Church Road,
+through Combe Down to Fox Hill and round Queen's Drive, then back by Bradford Road and North Road), or
+the old 4 (the bus station, through town and up Lansdown Road to Lansdown, there and back), whichever
+runs nearer, and round again. At the wheel of a
+bus or a coach, as at a narrowboat's tiller, the naughty boys leave you be (your passengers they
+don't). Inside, a Badgerline bus or minibus is fitted out as the real ones were: rows of green
+moquette seats either side of the gangway, cream panels and pillars round the windows, lights along
+the ceiling, yellow poles and rails with red bell pushes, and on the double-decker the stairs up
+behind the cab. Everyone you pick up takes a seat of their own (a window seat on an empty one first)
+and stays in it till their stop; look round from the driver's seat to see who's on. The route is a
 green line on the minimap and the big map, with its stops along it and the next one ringed in
 yellow; every bus stop round about is on the minimap anyway, as a little white disc. A card over the
 speedo says where you're heading, the next stop and how far, and who's on.
@@ -443,6 +488,21 @@ tell you what they think of you (numpty is the kindest of it). Drive past people
 leave them standing. Get out and the shift's paused: back in the same bus within two minutes and it
 carries on. The passengers are yours alone: anyone riding along sees the bus stop and go, but not who
 gets on.
+
+**A timetabled run.** At the bus station, a beacon on the pavement by the stands (Bus driver on the
+maps) is where you take a job as a driver: press {use} there and you're at the wheel of a Badgerline bus
+on the stand at the start of the route, facing the way it goes, sometimes with people already
+waiting to get on. It's a timetabled run: out to the end of the route and back, calling at every
+stop, to the timetable. (Get in a bus anywhere else, the station included, and it's the ordinary route.) The panel shows whether
+you're on time, early or late (in real minutes and seconds: the timetable allows a steady pace
+between stops and a little time at each), and you leave the station half a minute after you take the
+job. Get to a stop early and you wait there: the panel counts down to when you're due away, and a
+ding says it's time to go. You start with 100 points. Leaving a stop early costs points, so does
+getting to one more than 15 seconds late (the later, the more), missing a stop altogether, and
+getting back to the station late. Back at the station, what's left decides the prizes: 50 points
+gets you a conductor's cash bag, 75 an inspector's whistle as well, and 90 an inspector's
+gold-braided cap too (with the bus driver's cap if you left nobody at a stop). Once you've finished,
+get out before starting another.
 
 On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down, with a recovery
 truck in front and its owner pacing the pavement, telling anyone who'll listen. He can't be hurt:
@@ -501,7 +561,9 @@ bound and where it calls, which platform, and how long till it's due, all on the
 same time as the sky and your watch, so a train every few real minutes is one every few hours).
 The station speakers announce each train in GWR's own words ("Platform two for the fourteen twenty
 Great Western Railway service to Westbury, calling at..."), again as it approaches, and now and then
-remind you to "See it. Say it. Sorted." You hear them on the platforms and just round the station, fading as
+remind you to "See it. Say it. Sorted." They're stitched together from recorded pieces, as the real
+ones are, and come out of the station's tannoy: tinny, a little crackly, with a click and a hum as it
+comes on and the speakers further down the platform answering. You hear them on the platforms and just round the station, fading as
 you walk off, and an announcement stops once you're out of earshot. After
 dark the lamps under the canopies light the platforms. Stand on any platform
 and the middle of the screen tells you the next train from it too.
@@ -548,6 +610,15 @@ it's going, and the reward drops where it finishes. Its title card comes up over
 four seconds, clear of that card and of the prompts under the crosshair, and anything the game has
 to call out waits till it's gone. Everyone gets the same noticeboards that day,
 and a job you've done stays ticked off till the next. Call off a job from the pause menu.
+
+Lose a job or a team challenge and its result card has **Retry** and **Abort** in place of Continue.
+Retry (R or Enter, □ on a pad, or tap it) takes it again in the same place, just as if from its
+noticeboard: the entries open, and everyone who's in is put back at its start for the countdown.
+Anyone else who was in it and still has the card up is entered too; Abort (Esc, Options on a pad,
+or tap it, or just let the card go) leaves it, and you're asked to join like anyone else. If two of
+you press Retry at once it starts the once, with you both in it. A lost pub takeover's card has
+Retry too: the Flag Lads take the pub again straight away. A lost job still leaves its scar and its
+line in the paper. Races keep their own Again and time trials instead.
 
 **Today's jobs**: when you join, the front page of the Bath Chronicle shows three little missions
 for the day (shoot some flags down, win a pub back, ride a couple of kilometres, land a combo, have
@@ -667,7 +738,9 @@ checkpoint, and what's left over carries on to the one after; it's set from bron
 spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
 getting short. Run out and you're out of the placings and the medals, but you can ride on to the
 line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Boost pads lie
-along the road between checkpoints, two or three on most legs. Killed on the way, you're out of the
+along the road between checkpoints, two or three on most legs. Racers are solid to each other, as
+all riders are, so you can lean on someone for the line; ride hard into another racer, going faster
+than them, and they come off. Killed on the way, you're out of the
 race: no time and no medal.
 
 At the end comes a results card: your place in big podium colours, your time, your medal with a
@@ -699,9 +772,15 @@ tourist shows through walls and hedges, green to red as their sandwich goes, fla
 after it; the ring is on the minimap. The tourists point out gulls on the way, wave their arms and
 shoo, duck, shout for help if you're far off, cheer a good shot and storm off when their sandwich is
 gone. Each wave comes in from one side, with a banner naming what's in it, and every kind looks
-different: white herring gulls, slate-winged hoverers in an amber ring (it goes green as you stare),
-a small dark gang coming in low and tight, brown walkers on foot, fat yellowish poopers trailing
-drips. Between waves three crates go out and the team takes one. One is always a box of rounds,
+different: white herring gulls, slate-winged hoverers, a small dark gang coming in low and tight,
+brown walkers on foot, fat yellowish poopers trailing drips. A hoverer hanging over a bench has a
+ring of dark segments round it, and they light up one by one while your crosshair's on it: fill the
+ring and it gives up (the ring is only there while staring works). A gull flying off with a bite
+carries it in its beak, slowly, with flashing red brackets round it that show through roofs: shoot
+it before it gets away and the bite's saved. A gull that's beaten (shot, stared out or shouted off)
+bursts into feathers, squawks, tumbles and turns a see-through grey as it beats off over the roofs,
+three times as fast as any thief; it can't be shot again, and nothing's left round it. Between
+waves three crates go out and the team takes one. One is always a box of rounds,
 enough for everyone for the next two waves (more for a harder poster), so you choose ammo or an
 upgrade (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings): aim well and you
 can skip the rounds. Stars for how much sandwich is left, a daily twist (bank holiday, Chip
@@ -851,6 +930,31 @@ While there's wood to fetch, a pair of prefects in suits turns up behind anyone 
 court and follows them about, telling them to hurry up, do more, and stop dawdling. They don't carry
 any wood themselves.
 
+### The Climb
+
+A team challenge up a crag of its own, high over the cloud, which only counts when the whole team
+stands on top together. Walk into the face (or E) to grab a hold; the keys or the stick reach for
+the next, Space lunges and C lets go. Your grip drains as you hang and comes back on a ledge or a
+big white jug. With a team a few stretches start blank, their first hold (big and orange) out
+of reach from the ledge under it: a mate crouches (C) and you stand on their shoulders and jump for
+it. There's one such stretch with two or three of you, two with four or five and three with six or
+more, and with four or more one of them (a bigger red hold) needs two stacked: one crouches, the
+next stands on their shoulders and crouches too, and the third climbs up on top. Alone there are
+none. On a ledge, E by the lip hauls up a mate just below.
+
+Ropes: the first one onto a ledge can drop its rope (E by the coil). With a team the rope only
+holds while someone on the ledge holds it: E at its top takes the strain, and you stay put while
+you do. A strain meter under the crosshair shows how many are hanging on it, and your grip drains
+faster the more there are, so send them up one at a time. E (or C) lets go, and the rope goes slack:
+anyone on it slides down to the ledge below and the rope lies in a heap there until someone up top
+holds it again. Alone the rope is tied off and holds on its own.
+
+The traverse: with a team there's a gap in its holds too wide for anyone to lunge across. Whoever
+gets to the hold before it can stretch across (E) as a bridge: the others reach for the bridge
+like a hold and climb over to the far side. The bridge's grip drains fast, so be quick. Once a
+mate is hanging on the far side, the bridge reaches their way (D or the stick) and is pulled
+across; E brings the bridge back to the near hold instead. Alone the traverse has no gap.
+
 ### The wardrobe
 
 Daft things to wear, earned round Bath and seen by everyone: a seagull on your head, a splattered
@@ -912,8 +1016,11 @@ boys and Naughty Girls (short skirts, going-out tops, heels and a handbag) stood
 threes. Every so often two of them kick off with each other, sometimes with a mate piling in, till
 one has had enough and legs it. They leave you alone unless you get right in among them or shoot
 one, and then only the few nearest join in. The girls slap rather than punch, and tell you what
-they think of you. More of them wander in up George Street and Milsom Street to keep the numbers
-up, and at three they all drift off home. (`?nightout=1` in the address makes every night a
+they think of you. They come out of the pubs and restaurants round about (the restaurants till
+eleven, the pubs all night) to keep the numbers up, and turn up already stood about if you arrive in
+the middle of the night (by train, or straight into a pub). After midnight half of them drift down to
+Mr D's chip van at the top of Old Bond Street and hang about there, and at three they all head back
+to the pubs and off home. (`?nightout=1` in the address makes every night a
 night out, to try it.)
 
 ### Safe zones

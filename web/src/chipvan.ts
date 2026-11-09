@@ -10,6 +10,10 @@ import type { Part } from "./furniture";
 import { model, prof } from "./furniture";
 import type { Lamps } from "./headlights";
 
+/** Where Mr D's chip van parks (data metres, and the way it faces): at the top of Old Bond Street, facing south
+ *  down it (vehicles.ts parks it; on a night out the crowd drifts over to it after midnight, naughtyboys.ts). */
+export const MR_DS = { x: -1120.3, y: 2305.2, a: -1.312, map: "combe-down" };
+
 /** Its size: length, width, height. Front at +x, the hatch on the nearside (-z), like every vehicle. */
 export const CHIP = { L: 5.8, W: 2.1, H: 2.74 };
 const RED = "#c8201e", YELLOW = "#f2c418", WHITE = "#f4f4f0", GLASS = "#1d252c", BLACK = "#18191b", LAMP = "#e9ecee", TAIL = "#a3221b",

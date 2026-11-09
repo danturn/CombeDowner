@@ -14,7 +14,7 @@ import { keycaps } from "../keycap";
 import { closeModals } from "../modal";
 import { STREETS, controlsPage, ctl, ctlText } from "../controls";
 import { show } from "../show";
-import { Reveal, type Shot } from "../reveal";
+import { Reveal, loadingHit, loadingLook, type Shot } from "../reveal";
 import { comboLine } from "../combo";
 import { FlagJuice } from "../flagjuice";
 import * as THREE from "three";
@@ -246,7 +246,7 @@ const DRAW: Record<string, Record<string, () => void>> = {
   },
   result: {
     "Job done, with rewards": () => MS.missionResult({ result: "won", label: "Seagull Attack", title: "Seagulls seen off!", lead: "340", medal: "★★☆", lines: ["7 of 9 bites saved"], colour: "#8fd0f0", rewards, sound: null }),
-    "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null }),
+    "Job failed": () => MS.missionResult({ result: "lost", label: "Push the Bus", title: "It got away from you", lines: ["Back down Horsecombe Vale and smashed into a car"], colour: "#f2c318", sound: null, retry: () => {} }),
     "Called off": () => MS.missionResult({ result: "lost", label: "The Lock Run", title: "Job called off", lines: ["Ann called it off"], colour: "#3a8fd8", sound: null }),
     "Race: gold": () => MS.missionResult({ result: "won", kind: "race", label: "BMX climb to Moorlands Recreation Playground", title: "Winner!", place: 1, lead: "1:18.6", medal: "Gold medal", lines: ["1.4 s inside gold"], best: "NEW BEST! 2.1 s quicker",
       stats: [{ k: "Top speed", v: "31 mph" }, { k: "Boosts", v: "3" }], rows: [{ name: "You", time: "1:18.6", me: true }, { name: "Ann", time: "1:22.0" }, { name: "Bo", time: "–", dnf: true }],
@@ -291,6 +291,9 @@ const DRAW: Record<string, Record<string, () => void>> = {
     "New zone": () => revealCard({ kind: "spot", x: 0, z: 0, kicker: "A new part of the map is open", title: "Widcombe", sub: "New challenge: Bell Ringing", lines: ["The buses run out this way now"] }),
     "Whole map": () => revealCard({ kind: "map", x: 0, z: 0, kicker: "Every zone is open", title: "The whole map is yours" }),
   },
+  revealload: {
+    "Loading, on a loop": () => revealLoading(),
+  },
 };
 
 /** The Chronicle on #scoreboard: on joining, or under Tab with the league table on top. */
@@ -318,8 +321,31 @@ function brief(at: "board" | "recall", b: Brief, touch = false) {
   if (touch) el.querySelectorAll("kbd[data-ctl]").forEach((k) => { k.textContent = "Use"; });
   el.hidden = false;
 }
+/** The loading screen as the game draws it, with pretend loading: the bars fill over a few
+ *  seconds, the cymbal, the cover lifts off the card, then round again. */
+function revealLoading() {
+  const r = new Reveal(null as never, null as never, () => false) as any;
+  r.card({ kind: "spot", x: 0, z: 0, kicker: "A new part of the map is open", title: "Widcombe", sub: "New challenge: Bell Ringing" });
+  const el = document.getElementById("reveal")!, veil = el.querySelector<HTMLElement>(".rvveil")!;
+  const t0 = performance.now(), LOAD = 3500, LIFT = 450, LOOP = 6000;
+  let hit = -1;
+  keep(() => {
+    const t = (performance.now() - t0) % LOOP, round = Math.floor((performance.now() - t0) / LOOP);
+    if (t < LOAD) {
+      veil.classList.remove("rvhit"); el.classList.remove("shown");
+      // in fits and starts, as squares come in
+      loadingLook(veil, Math.floor((t / LOAD) * 7) / 7);
+      veil.style.opacity = "1";
+    } else {
+      if (hit !== round) { hit = round; loadingLook(veil, 1); loadingHit(veil); }
+      veil.style.opacity = String(Math.max(0, 1 - (t - LOAD) / LIFT));
+      el.classList.toggle("shown", t > LOAD + LIFT);
+    }
+  }, 30);
+}
+
 function revealCard(s: Shot) {
-  const r = new Reveal(null as never, () => false) as any;
+  const r = new Reveal(null as never, null as never, () => false) as any;
   r.card(s);
   document.getElementById("reveal")?.classList.add("shown");
 }

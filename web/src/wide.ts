@@ -20,7 +20,8 @@ import type { Building, Line, Place, Pond, RayHit, Road } from "./map";
  *   then 1 and a pitched roof (rise, hip at each end, middle x, y, ridge angle in milliradians,
  *   length along the ridge, width), or 0 for a flat roof; then the chimney count and stacks.
  * Each road in rd: class (an index into cl), name (into nm), 1 if it's on a bridge (its points
- * then carry their heights as well: x, y, z), then its points. Each pond or river piece in wp:
+ * then carry their heights as well: x, y, z), then its points; its speed limit and which way it
+ * runs if it's one way are in ms and ow, in the same order. Each pond or river piece in wp:
  * the water's level, the number of rings, then the rings. Each stream in wl: its points. Trees
  * are three 16-bit numbers each (x and y in half metres, size in hundredths) in base64.
  */
@@ -31,6 +32,7 @@ export interface WideData {
   cl: string[]; nm: string[]; bl: number[][]; rd: number[][]; wp: number[][]; wl: number[][]; tr: string; pl: Place[];
   lm?: (number | string)[][];                     // landmarks out in Bath (tools/landmarks/<map>_bath.py), as in MapData
   ms?: number[];                                  // each road's speed limit in mph, in rd's order (0: none)
+  ow?: number[];                                  // and which way a one-way road runs: 1 with its points, -1 against them, 0 both ways
 }
 
 export interface WideRoad extends Road { bridge: boolean }
@@ -99,7 +101,7 @@ export class Wide {
       let p = unpack(f, 3, count, n);
       // points carry absolute heights like the detailed map's roads
       p = p.map((q) => [q[0], q[1], n > 2 ? q[2] : this.ground(q[0], -q[1]) + this.z0]);
-      this.rd.push({ c: d.cl[f[0]], n: d.nm[f[1]], p, bridge: !!f[2], ms: d.ms?.[i] || undefined });
+      this.rd.push({ c: d.cl[f[0]], n: d.nm[f[1]], p, bridge: !!f[2], ms: d.ms?.[i] || undefined, ow: d.ow?.[i] || undefined });
     }
     for (const f of d.wp) {
       const rings: number[][][] = [];

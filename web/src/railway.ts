@@ -1011,13 +1011,26 @@ export class Railway {
   }
 
   /** The station nearest scene (x, z) and how far it is to the nearest of its platforms (0 on
-   *  or over one), or null if there's none within `range` metres. */
-  stationNear(x: number, z: number, range: number): { station: string; far: number } | null {
+   *  one), or null if there's none within `range` metres. Given y (feet, scene height), how far above
+   *  or below the platform counts too, past a few metres. */
+  stationNear(x: number, z: number, range: number, y?: number): { station: string; far: number } | null {
     let best: { station: string; far: number } | null = null;
+    const px = x, py = -z;
     for (const p of this.plat) {
       if (!p.n) continue;
-      const dx = Math.max(p.x0 - x, 0, x - p.x1), dy = Math.max(p.y0 + z, 0, -z - p.y1);
-      const far = Math.hypot(dx, dy);
+      // the box round it first, which is quick, then how far from the platform itself (0 on it)
+      if (Math.max(p.x0 - px, 0, px - p.x1, p.y0 - py, 0, py - p.y1) > range) continue;
+      let far = Infinity, inside = false;
+      const r = p.r;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [ax, ay] = r[j], [bx, by] = r[i], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+        const f = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / l2));
+        far = Math.min(far, Math.hypot(px - ax - vx * f, py - ay - vy * f));
+        if ((ay > py) !== (by > py) && px < ax + ((py - ay) * vx) / (vy || 1e-9)) inside = !inside;
+      }
+      if (inside) far = 0;
+      // up on a road bridge over it, or down below it, the speakers sound further off
+      if (y !== undefined) far = Math.hypot(far, Math.max(0, Math.abs(y - p.z) - 3));
       if (far <= range && (!best || far < best.far)) best = { station: p.n, far };
     }
     return best;

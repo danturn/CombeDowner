@@ -1,7 +1,8 @@
-// The bus driver game. Take the wheel of a Badgerline bus or minibus and you're on a route: the 2
-// (the bus station, Widcombe, Prior Park Road and Ralph Allen Drive, up to Combe Down) or the 4 (the
-// bus station, through town and up Lansdown Road to Lansdown), whichever runs nearer, there and back
-// and round again. The route's line is on the minimap and the big map, with its stops (the real ones,
+// The bus driver game. Take the wheel of a Badgerline bus or minibus and you're on a route: the 2, as
+// it really runs, a loop from the bus station (out by Widcombe, Prior Park Road, Ralph Allen Drive and
+// The Avenue, through Combe Down to Fox Hill and round Queen's Drive, and back by Bradford Road and
+// North Road), or the 4 (the bus station, through town and up Lansdown Road to Lansdown, there and
+// back), whichever runs nearer, and round again. The route's line is on the minimap and the big map, with its stops (the real ones,
 // found as the squares of Bath round you load) and the next stop picked out in yellow.
 //
 // People wait at the stops along it: pull in by one and stop, and they get on, a fare each (the
@@ -18,6 +19,17 @@
 //
 // The shift wears the shared mission screens (missionscreens.ts): a title card as it starts, the
 // route's status panel while you drive, and a short result card when it's over.
+//
+// The timetabled run is a job, taken at the bus station: a beacon on the pavement by the stands, marked on
+// the maps, where E takes a job as a driver. You're put at the wheel of a bus at the start of the
+// route, facing the way it goes, at the station's stand (sometimes with people waiting to get on), and
+// it's a timetabled run: out to the end of the route and
+// back, calling at every stop, with the timetable to keep to. It's in real minutes and seconds (a game
+// minute is only a real second, so a run would take hours of game time) and allows a steady pace
+// between stops and a little time at each. Get to a stop early and you wait there till it's time to go,
+// with the countdown on the panel and a ding when it's time; leave early and it costs you. Run late
+// and that costs you too, the later the more, and so does missing a stop. You start with 100 points,
+// and back at the station what's left decides the prizes: the more on time, the more you get (TIERS).
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { model, type Part } from "./furniture";
@@ -28,18 +40,25 @@ import { speak } from "./posh";
 import { esc } from "./hudkit";
 import { missionBegin, missionClear, missionProgress, missionResult } from "./missionscreens";
 import { earn } from "./wardrobe";
+import { seatedGeometry } from "./businside";
+import { beacon } from "./beacon";
 import type { Traffic } from "./traffic";
 import type { Stop, Vehicle } from "./vehicles";
+import { MAP, ROUTES } from "./busroutes";
+export { busRouteSpots } from "./busroutes";
 
-/** The two routes, as the places they go through in turn (data metres east and north), out to the end and back. */
-const ROUTES = [
-  { n: "2", end: "Combe Down", via: [[-950, 1728], [-800, 1574], [-450, 1350], [-130, 880], [-60, 500], [11, 14], [-7, -339]] },
-  { n: "4", end: "Lansdown", via: [[-950, 1728], [-826, 1850], [-832, 1990], [-880, 2200], [-985, 2270], [-1040, 2380], [-1170, 2490], [-1300, 3100], [-1700, 4170], [-3270, 5747]] },
-];
-const MAP = "combe-down";      // the map they're on
-/** Where each route runs on a map (scene x, z), for the zones to open them once one is open all the way (zones.ts). */
-export const busRouteSpots = (mapId: string): [number, number][][] => (mapId === MAP ? ROUTES.map((r) => r.via.map(([x, y]) => [x, -y] as [number, number])) : []);
 const HOME = "the Bus Station";
+/** The timetabled run (TIMED): where it starts (scene x, z, the bus station, where both routes begin) and how near to it. */
+const STATION = { x: -950, z: -1728, r: 140 };
+const LEAD = 20;               // seconds from taking the wheel to the first departure
+const SPEED = 8.5;             // m/s: the timetable's pace between stops
+const DWELL = 10;              // seconds it allows at each stop
+const GRACE = 15;              // seconds late that still counts as on time
+/** Points for a timetabled run, and the prizes: each tier gets its own and those below it. */
+const TIERS: { at: number; medal: string; id: string }[] = [
+  { at: 50, medal: "Bronze", id: "cashbag" }, { at: 75, medal: "Silver", id: "whistle" }, { at: 90, medal: "Gold", id: "inspcap" },
+];
+const clockOf = (secs: number) => { const t = Math.max(0, Math.round(secs)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
 const ON_LINE = 25;            // metres off the route's line and you're still on it
 const KERB = 14;               // a stop this far from the line, on the left, is on the route
 const AT_STOP = 15;            // how far before or past a stop's flag the bus can pull in for it
@@ -106,6 +125,14 @@ function lookGeo(k: number): THREE.BufferGeometry {
   });
   return looks[k % looks.length];
 }
+/** The same people, sat down on the bus (businside.ts). */
+const sat = new Map<number, THREE.BufferGeometry>();
+function seatedLook(seed: number): THREE.BufferGeometry {
+  const k = seed % LOOKS.length;
+  let g = sat.get(k);
+  if (!g) sat.set(k, (g = seatedGeometry(...LOOKS[k])));
+  return g;
+}
 function person(scene: THREE.Scene, seed: number): THREE.Group {
   skinMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
   const g = new THREE.Group(), m = new THREE.Mesh(lookGeo(seed), skinMat);
@@ -139,6 +166,16 @@ export class BusDriver {
   private onLine = false;
   private next: RStop | null = null;
   private riders: Rider[] = [];
+  /** The timetabled run, if this is one: when it began (s), the points lost and what for, stops called at so
+   *  far, and while you're at a stop, when you're due away from it. */
+  private timed: { t0: number; lost: number; late: number; early: number; missed: number; calls: number; away: number; rung: boolean } | null = null;
+  private finished: Vehicle | null = null;   // the bus you finished a timetabled run in: no new shift till you get out
+  private job = false;                       // you've taken a job at the depot: the next bus you're put in is a timetabled run
+  /** The depot: where you take a job as a driver, on the pavement by the bus station's stands (scene), and its beacon. */
+  private depot: { x: number; y: number; z: number; beacon: ReturnType<typeof beacon> } | null = null;
+  private depotNew = false;
+  private depotT = 0;
+  private seated = "";   // who's sat inside the bus as drawn, by their seeds
   private boarding: Person[] = [];    // walking to the door
   private walking: Person[] = [];     // got off, walking away
   private serving: RStop | null = null;
@@ -151,10 +188,43 @@ export class BusDriver {
   constructor(private map: GameMap, private scene: THREE.Scene, private traffic: Traffic, private ground: (x: number, z: number) => number,
     private toast: (text: string) => void) {}
 
+  // ---- the depot ---------------------------------------------------------------------------------------
+
+  /** Where you take a job as a driver, once the bus station's square has loaded. */
+  spot(): { x: number; z: number } | undefined { return this.depot ?? undefined; }
+  /** True once, when the depot's first found (for the maps). */
+  spotChanged() { const n = this.depotNew; this.depotNew = false; return n; }
+  /** Are you stood at the depot's beacon? */
+  jobAt(x: number, z: number, y: number) { const d = this.depot; return !!d && Math.hypot(x - d.x, z - d.z) < 1.6 && Math.abs(y - d.y) < 2; }
+  /** You've taken the job: the bus you're put in next is a timetabled run (game.ts puts you in one). */
+  takeJob() { this.job = true; }
+
+  /** The depot, on the pavement behind the bus station's stand nearest where the routes start. */
+  private findDepot(stops: Stop[]) {
+    if (this.depot || this.map.d.id !== MAP) return;
+    let best: Stop | null = null, bd = 120;
+    for (const st of stops) {
+      if (!/bus station/i.test(st.n ?? "")) continue;
+      const d = Math.hypot(st.x - STATION.x, st.z - STATION.z);
+      if (d < bd) { bd = d; best = st; }
+    }
+    if (!best) return;
+    // a bus at the stand faces (cos a, -sin a); its door, and the pavement, are on its left
+    const lx = -Math.sin(best.a), lz = -Math.cos(best.a), x = best.x + lx * 3, z = best.z + lz * 3, y = this.ground(x, z);
+    const b = beacon();
+    b.group.position.set(x, y, z);
+    this.scene.add(b.group);
+    this.depot = { x, y, z, beacon: b };
+    this.depotNew = true;
+  }
+
   /** Every frame: v is the bus you're driving, if you're driving one. stops: every bus stop loaded just now. */
   update(dt: number, v: Vehicle | null, stops: () => Stop[]) {
     const now = performance.now();
-    if (v && v !== this.bus) this.start(v);
+    if ((this.depotT -= dt) <= 0 && !this.depot) { this.depotT = 2; this.findDepot(stops()); }
+    this.depot?.beacon.update(now / 1000);
+    if (!v) this.finished = null;
+    if (v && v !== this.bus && v !== this.finished) this.start(v, stops);
     else if (v && this.paused) { this.paused = 0; this.toast(`Back at the wheel of the ${this.line!.n}`); }
     else if (!v && this.bus && !this.paused) this.paused = now;
     if (this.paused && now - this.paused > KEEP) this.end();
@@ -164,9 +234,19 @@ export class BusDriver {
     if ((this.scanT -= dt) <= 0) { this.scanT = 1; this.find(line, stops()); }
     this.follow(line, bus);
     this.atStops(dt, line, bus);
+    if (this.timed) { this.keepTime(line, bus); if (!this.bus) return; }
     this.people(dt, line, bus);
     this.saidT -= dt;
+    this.seatRiders(bus);
     this.hud(line);
+  }
+
+  /** Sit everyone on board in a seat of their own, inside the bus (when they get on or off). */
+  private seatRiders(bus: Vehicle) {
+    const key = this.riders.map((r) => r.seed).join(",");
+    if (key === this.seated) return;
+    this.seated = key;
+    bus.carry(this.riders.map((r) => ({ seed: r.seed, geo: seatedLook(r.seed) })));
   }
 
   /** The route you're driving, for the maps: null when you're not. */
@@ -183,10 +263,11 @@ export class BusDriver {
     if (this.lines) return this.lines;
     return (this.lines = this.map.d.id !== MAP ? [] : ROUTES.map((r) => {
       const via = r.via.map(([x, y]) => ({ x, z: -y }));
-      const out = this.traffic.way(via), back = this.traffic.way([...via].reverse());
+      // a loop goes right round and comes back its own way; the rest come back the way they went
+      const out = this.traffic.way(via, true), back = r.loop ? out : this.traffic.way([...via].reverse(), true);
       if (!out || !back || Math.hypot(out[0].x - via[0].x, out[0].z - via[0].z) > 60) return null;
       // the loop, with no stretch longer than 8 m (to follow the bus along it closely)
-      const raw = [...out, ...back.slice(1)], pts: { x: number; z: number }[] = [];
+      const raw = r.loop ? out : [...out, ...back.slice(1)], pts: { x: number; z: number }[] = [];
       for (let i = 0; i < raw.length; i++) {
         const a = raw[i], b = raw[(i + 1) % raw.length], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 8));
         if (i === raw.length - 1 && Math.hypot(b.x - a.x, b.z - a.z) < 1) break;
@@ -194,7 +275,8 @@ export class BusDriver {
       }
       const s = [0];
       for (let i = 1; i <= pts.length; i++) s.push(s[i - 1] + Math.hypot(pts[i % pts.length].x - pts[i - 1].x, pts[i % pts.length].z - pts[i - 1].z));
-      const L = s[pts.length], end = via[via.length - 1];
+      // where it turns for home: the end of the route, or round a loop, the furthest it gets from the station
+      const L = s[pts.length], end = r.loop ? via.reduce((f, p) => (Math.hypot(p.x - via[0].x, p.z - via[0].z) > Math.hypot(f.x - via[0].x, f.z - via[0].z) ? p : f)) : via[via.length - 1];
       let turn = 0, bd = Infinity;
       pts.forEach((p, i) => { const d = Math.hypot(p.x - end.x, p.z - end.z); if (d < bd) { bd = d; turn = s[i]; } });
       const grid = new Map<string, number[]>();
@@ -251,7 +333,7 @@ export class BusDriver {
 
   // ---- the shift --------------------------------------------------------------------------------------
 
-  private start(v: Vehicle) {
+  private start(v: Vehicle, stops: () => Stop[]) {
     this.end();
     const lines = this.routes().filter((l): l is Line => !!l);
     if (!lines.length) return;
@@ -265,10 +347,17 @@ export class BusDriver {
     this.locate(line, v, true);
     this.fares = this.cheers = this.moans = this.stranded = 0;
     this.scanT = 0;
-    missionBegin({ label: `Badgerline · Route ${line.n}`, colour: GREEN, title: `You're on the ${line.n}`, goal: `${HOME} to ${line.end} and back. Follow the green line, and stop for anyone waiting` });
+    // a job taken at the depot: a timetabled run, from the stand at the start of the route
+    this.timed = this.job ? { t0: performance.now() / 1000, lost: 0, late: 0, early: 0, missed: 0, calls: 0, away: 0, rung: false } : null;
+    if (this.job) { this.job = false; this.find(line, stops()); this.toStand(line, v); }
+    if (this.timed) missionBegin({ label: `Badgerline · Route ${line.n} · Timetabled`, colour: GREEN, title: `The ${line.n} to ${line.end}`,
+      goal: `Out to ${line.end} and back to ${HOME}, calling at every stop. Keep to the timetable: get there early and wait till it's time to go, and don't run late`,
+      detail: `You leave the station in ${LEAD} seconds. 100 points to start: ${TIERS.map((t) => `${t.at}+ for ${t.medal.toLowerCase()}`).join(", ")}` });
+    else missionBegin({ label: `Badgerline · Route ${line.n}`, colour: GREEN, title: `You're on the ${line.n}`, goal: `${HOME} to ${line.end} and back. Follow the green line, and stop for anyone waiting` });
   }
 
   private end() {
+    if (this.timed) { this.timed = null; this.fares = 0; }   // a timetabled run given up: no card, no prizes
     if (this.bus && this.fares) {
       missionResult({ result: "over", kind: "bus", label: `Badgerline · Route ${this.line?.n ?? ""}`, title: "Shift over", colour: GREEN,
         lines: [`${this.fares} fare${this.fares === 1 ? "" : "s"}, ${this.cheers} "cheers drive", ${this.moans} moan${this.moans === 1 ? "" : "s"}`] });
@@ -279,10 +368,34 @@ export class BusDriver {
     for (const p of this.boarding) gone(p);
     this.boarding = [];
     this.riders = [];
+    this.bus?.carry([]);
+    this.seated = "";
     this.serving = null;
     this.bus = this.line = this.next = null;
     this.paused = 0;
     missionClear("bus");
+  }
+
+  /** Put the bus on the stand at the start of the route, in its lane facing the way it goes, with the
+   *  station's stop at its door (and sometimes people there waiting to get on). */
+  private toStand(line: Line, v: Vehicle) {
+    const at = 30, i = Math.max(0, line.s.findIndex((s) => s >= at) - 1), p = line.pts[i], q = line.pts[(i + 1) % line.pts.length];
+    const len = Math.hypot(q.x - p.x, q.z - p.z) || 1, hx = (q.x - p.x) / len, hz = (q.z - p.z) / len, lx = hz, lz = -hx;
+    const f = (at - line.s[i]) / len, cx = p.x + (q.x - p.x) * f + lx * 1.7, cz = p.z + (q.z - p.z) * f + lz * 1.7;
+    v.place(cx, cz, Math.atan2(-hz, hx));
+    v.vx = v.vz = 0;
+    // the stand: the station's own stop if the route has one there, else one where the door is
+    const door = this.door(v);
+    let st = line.stops.find((o) => o.s < at + 60 && Math.hypot(o.x - door.x, o.z - door.z) < 25);
+    if (!st) {
+      st = { x: door.x, z: door.z, s: at + v.hl - 1.1, name: "Bath Bus Station", rx: -lx, rz: -lz, hx, hz, served: -Infinity, crowd: null };
+      line.stops.push(st);
+      line.stops.sort((a, b) => a.s - b.s);
+    } else { st.x = door.x; st.z = door.z; }
+    this.clear(st);
+    if (Math.random() < 0.35) st.crowd = [];   // (nobody waiting this time)
+    this.S = 0;
+    this.locate(line, v, true);
   }
 
   /** Where the bus is on the line. everywhere: look all round the loop (when it's lost its place). */
@@ -332,9 +445,72 @@ export class BusDriver {
     }
   }
 
+  // ---- the timetable ---------------------------------------------------------------------------------
+
+  /** When the timetable has the bus where it is now (s, performance.now's): the first departure, then a steady pace and a little at each stop so far. */
+  private due(): number {
+    const T = this.timed!;
+    return T.t0 + LEAD + Math.max(0, this.S) / SPEED + T.calls * DWELL;
+  }
+
+  /** Points off, for what. */
+  private lose(n: number, why: string) {
+    const T = this.timed!, k = Math.round(n);
+    if (k <= 0) return;
+    T.lost += k;
+    this.toast(`${why}: −${k} point${k === 1 ? "" : "s"}`);
+  }
+
+  /** Called at a stop on a timetabled run: how late (or early) you are, and when you're due away. */
+  private called(st: RStop) {
+    const T = this.timed!, now = performance.now() / 1000, due = this.due(), late = now - due;
+    if (late > GRACE) { T.late++; this.lose(Math.min(8, (late - GRACE) / 4), `${clockOf(late)} late at ${st.name}`); }
+    T.calls++;
+    T.away = due + DWELL; T.rung = now >= T.away;
+  }
+
+  /** Every frame of a timetabled run: the ding when it's time to go, leaving early, and the end back at the station. */
+  private keepTime(line: Line, v: Vehicle) {
+    const T = this.timed!, now = performance.now() / 1000;
+    // the first departure, from the station itself
+    if (!T.calls && T.away === 0) { T.away = T.t0 + LEAD; T.rung = false; }
+    if (T.away > 0 && !T.rung && now >= T.away) { T.rung = true; SFX.busBell(); this.toast("Time to go"); }
+    // moving off: leaving early costs you (the station's departure counts once you're 20 m off)
+    const moving = Math.abs(v.speed) > 1.2 && (T.calls > 0 || this.S > 20);
+    if (T.away > 0 && moving) {
+      if (now < T.away - 2) { T.early++; this.lose(Math.max(2, Math.min(8, (T.away - now) / 2)), `Left ${clockOf(T.away - now)} early`); }
+      T.away = -1;   // gone: wait for the next stop
+    }
+    // back at the station: the end of the run
+    if (this.S >= line.L - 40 && this.onLine && Math.hypot(v.x - STATION.x, v.z - STATION.z) < STATION.r) this.finish(line, v, now);
+  }
+
+  private finish(line: Line, v: Vehicle, now: number) {
+    const T = this.timed!, late = now - this.due();
+    if (late > GRACE) this.lose(Math.min(15, (late - GRACE) / 4), `Back ${clockOf(late)} late`);
+    const points = Math.max(0, 100 - T.lost), got = TIERS.filter((t) => points >= t.at), top = got[got.length - 1];
+    missionResult({
+      result: got.length ? "won" : "lost", kind: "bus", label: `Badgerline · Route ${line.n} · Timetabled`, colour: GREEN,
+      title: got.length ? "Bang on time" : "Late again", lead: `${points} points`, medal: top?.medal,
+      lines: [
+        `${T.calls} stop${T.calls === 1 ? "" : "s"} called at, ${T.late} late, ${T.early} left early, ${T.missed} missed`,
+        late > GRACE ? `Back at the station ${clockOf(late)} late` : late < -GRACE ? `Back at the station ${clockOf(-late)} early` : "Back at the station on time",
+        `${this.fares} fare${this.fares === 1 ? "" : "s"}, ${this.cheers} "cheers drive", ${this.moans} moan${this.moans === 1 ? "" : "s"}`,
+      ],
+    });
+    // the prizes go on the card as they come in
+    for (const t of got) earn(t.id);
+    if (!this.stranded) earn("buscap");
+    this.timed = null;
+    this.fares = 0;     // (so end() makes no card of its own)
+    this.end();
+    this.finished = v;
+  }
+
   /** Gone past a stop without stopping. */
   private passed(st: RStop) {
     st.served = this.S;
+    if (this.timed) { this.timed.missed++; this.timed.calls++; this.lose(5, `Missed ${st.name}`); }
     let carried = 0;
     for (const r of this.riders) {
       if (r.missed) continue;
@@ -381,6 +557,7 @@ export class BusDriver {
       this.serving = st;
       st.served = this.S;
       SFX.busDoors();
+      if (this.timed) this.called(st);
       const off = this.riders.filter((r) => r.missed || r.going === 1);
       this.riders = this.riders.filter((r) => !off.includes(r));
       for (const r of this.riders) r.going--;
@@ -526,6 +703,21 @@ export class BusDriver {
       where = `Next stop: <b>${esc(st.name)}</b>${a > 30 ? ` · ${a < 1000 ? `${Math.round(a / 10) * 10} m` : `${(a / 1000).toFixed(1)} km`}` : ""}`;
     }
     const waiting = st?.crowd?.length ?? 0;
+    const T = this.timed;
+    if (T) {
+      // the timetable: wait at the stop till it's time to go, else how you're running
+      const now = performance.now() / 1000, off = now - this.due();
+      const clock = T.away > 0 && now < T.away ? `<span class="sign">Wait</span> depart in <b>${clockOf(T.away - now)}</b>`
+        : T.away > 0 ? `<b>Time to go</b>`
+          : off > GRACE ? `Running <b style="color:#ff7a6a">${clockOf(off)} late</b>` : off < -GRACE ? `Running <b>${clockOf(-off)} early</b>: ease off` : "<b>On time</b>";
+      missionProgress({
+        id: "bus", label: `Badgerline · Route ${line.n} · Timetabled`, colour: GREEN, goal: to,
+        hint: clock + "<br>" + where + (bell ? `<br><span class="sign">Bus stopping</span>` : ""),
+        sub: `Points ${Math.max(0, 100 - T.lost)} · On board ${this.riders.length}` + (this.saidT > 0 && this.said ? `<br>“${esc(this.said)}”` : ""),
+        flash: `${bell ? "bell" : ""}|${this.saidN}|${T.lost}|${T.away > 0 && now >= T.away}`,
+      });
+      return;
+    }
     missionProgress({
       id: "bus", label: `Badgerline · Route ${line.n}`, colour: GREEN, goal: to,
       hint: where + (waiting && this.onLine ? `<br>${waiting} waiting there` : "") + (bell ? `<br><span class="sign">Bus stopping</span>` : ""),

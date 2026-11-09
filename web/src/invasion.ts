@@ -46,7 +46,8 @@
 // within 400 m (cuff him with E once he gives up, or put him down) for bonus prizes. If he gets away
 // he is the next game day's Wanted poster (wanted.ts), kept by the host like the day's scars.
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and no flags go
-// up near it for the rest of the day. Shoot the last flag on the map and a card says the place (by
+// up near it for the rest of the day; any of the crew still standing, his right-hand man too, leg it.
+// A boss's bar only shows while he's still to be beaten, so not for a Gaffer stood about in cuffs. Shoot the last flag on the map and a card says the place (by
 // the map's own name) is safe from the Flag Lads, and none go up for QUIET_DAYS days. Each day (a
 // "season" in the code, from midnight GMT) the Flag Lads start again with a few new clusters.
 //
@@ -86,7 +87,9 @@
 // host). Older pages find none of the squares they expect in it and ignore it. The Gaffers who got
 // away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag
 // down tells everyone at once ("down", with the cluster and the flag), so it drops on every screen;
-// the host counts it, and clears the street when its last flag is down.
+// the host counts it, and clears the street when its last flag is down. The games list (gameslist.ts)
+// can have the host call a takeover at a pub of its choosing, there and then, and so can Retry on a
+// lost takeover's card ("again", with the pub, to the host; older pages ignore it).
 // The night out (nightout.ts) listens in: it is told, on every screen, when a pub is won or lost and
 // when the Gaffer is caught or gets away, and it can ask the host which street the lads are eyeing
 // next (which is then where their next cluster goes) and to send a ladder crew somewhere. Nothing of
@@ -174,6 +177,7 @@ const FLAP = 35;                   // metres: you hear the nearest flag flapping
 const BANNER_SECS = 150;           // alone, the lads need this long on the ladder to get the banner up
 const BANNER_FASTER = 0.2;         // and each other player in the room makes it this much quicker
 const BANNER_FLOOR = 55;           // but never quicker than this
+const FIGHT_REACH = 200;           // metres from a takeover's pub its bosses still count as in the fight
 const KNOCK_BACK = 0.25;           // a lad shot off the ladder sets the banner back this much
 const LADDER_AGAIN = 15;           // seconds before another lad goes up the ladder
 const CUFF_REACH = 3;              // close enough to cuff the Gaffer
@@ -823,6 +827,11 @@ export class Invasion {
     const weight = (p: { x: number; z: number }) => this.flagsAround(p.x, p.z, 600) / 20 + 0.05;
     let r = Math.random() * pubs.reduce((s, p) => s + weight(p), 0);
     const p = pubs.find((o) => (r -= weight(o)) <= 0) ?? pubs[0];
+    this.addCall(p, vice);
+    return true;
+  }
+
+  private addCall(p: { name: string; x: number; z: number; d: number }, vice: boolean) {
     this.calls.push({
       id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z,
       until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30, left: -1, boss: 0,
@@ -830,7 +839,26 @@ export class Invasion {
     });
     this.dirty = true;
     this.sendT = 0;
-    return true;
+  }
+
+  /** Whether the Flag Lads could take this pub now (the games list, gameslist.ts): not one won back
+   *  this season, nor by a school, nor while the town's been made safe from them. */
+  canTake(name: string) {
+    const p = this.w.pubs().find((q) => q.name === name);
+    return !!p && this.on && !this.saved && !this.freed.some((f) => f.n === name) && !inSafeZone(this.w.map, p.x, p.z, 30);
+  }
+
+  /** Host: the Flag Lads take this pub straight away (the games list). */
+  takeNow(name: string) {
+    const p = this.w.pubs().find((q) => q.name === name);
+    if (!p || !this.w.isHost || !this.canTake(name) || this.takenOver(name)) return;
+    this.addCall({ ...p, d: 0 }, this.calls.length > 0);
+  }
+
+  /** The pavement outside a pub, where its takeover's fought. */
+  pubFront(name: string) {
+    const p = this.w.pubs().find((q) => q.name === name);
+    return p ? this.frontOf({ name, x: p.x, z: p.z }) : null;
   }
 
   private hostCall(c: Call, dt: number, alive: Target[], room: number) {
@@ -882,7 +910,7 @@ export class Invasion {
   private ladderLads(room: number) { return Math.min(3, 1 + Math.floor((room - 1) / 2)); }
 
   /** Where the front of a pub is: the spot on the pavement outside, and the way out from the door. */
-  private frontOf(c: Call) {
+  private frontOf(c: Pick<Call, "name" | "x" | "z">) {
     const pub: { yaw?: number } = this.w.pubs().find((p) => p.name === c.name) ?? {};
     let ux = 0, uz = 1, d = 4;
     if (pub.yaw !== undefined) { ux = Math.sin(pub.yaw); uz = Math.cos(pub.yaw); }
@@ -1004,7 +1032,11 @@ export class Invasion {
     const k = this.calls.indexOf(c);
     if (k < 0) return;
     this.calls.splice(k, 1);
-    for (const g of [...c.crew, ...c.lads, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) this.w.naughtyBoys.release(g.i, g.gen);
+    for (const g of [...c.crew, ...c.lads, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) {
+      // the pub's won with a lad or the right-hand man still standing: left about, they'd pick fights and keep his bar up
+      if (won) this.w.naughtyBoys.rout(g.i, g.gen, c);
+      this.w.naughtyBoys.release(g.i, g.gen);
+    }
     if (c.fled && won === false && this.chase) { this.w.naughtyBoys.flee(this.chase.i, this.chase.gen, 1, false); this.w.naughtyBoys.release(this.chase.i, this.chase.gen, true); this.endChase(); }
     if (!this.calls.length) this.callT = 240 + Math.random() * 120;
     this.dirty = true;
@@ -1194,11 +1226,22 @@ export class Invasion {
     this.onMessage(msg, this.w.selfId);
   }
 
+  /** Retry on a lost takeover's card: the host has the lads take the pub again (once, however many ask). */
+  private retake(name: string) {
+    const d = { k: "again", n: name };
+    this.w.send(d);
+    this.onMessage(d, this.w.selfId);
+  }
+
   onMessage(d: any, from: string) {
     if (!d || typeof d !== "object" || !this.on) return;
     if (d.k === "busy") {
       if (from === this.w.selfId) return;
       if (d.b) this.busyAt.set(from, performance.now()); else this.busyAt.delete(from);
+      return;
+    }
+    if (d.k === "again") {
+      if (this.w.isHost && typeof d.n === "string") this.takeNow(d.n);
       return;
     }
     if (d.k === "s") {
@@ -1260,7 +1303,7 @@ export class Invasion {
         else this.w.toast(line);
         this.w.feed(`${named(name, GREEN)} won back from the Flag Lads`);
       } else {
-        if (there) missionResult({ result: "lost", label: "Pub takeover", title: "Too slow", colour: PURPLE, sound: null, lines: [`The Flag Lads keep ${d.name}, and the streets round it fill up with flags`] });
+        if (there) missionResult({ result: "lost", label: "Pub takeover", title: "Too slow", colour: PURPLE, sound: null, lines: [`The Flag Lads keep ${d.name}, and the streets round it fill up with flags`], retry: () => this.retake(name) });
         else this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`);
         this.w.feed(`The Flag Lads kept ${named(name, PURPLE)}`);
       }
@@ -1405,6 +1448,14 @@ export class Invasion {
   joined(id: string) {
     if (this.w.isHost && this.on) this.w.send(this.state(), id);
     this.gaffers.joined(id);
+  }
+
+  /** Whether one of the Flag Lads' bosses is still to be beaten (a takeover on round him, or the
+   *  Gaffer on the run), for his bar: once he's caught or it's over he may stand about a while. */
+  inFight(i: number, gen: number, x: number, z: number) {
+    const g = this.runner;
+    if (g && g.i === i && g.gen === gen) return true;
+    return this.calls.some((c) => c.on && Math.hypot(c.x - x, c.z - z) < FIGHT_REACH);
   }
 
   /** The name on the boss bar for one of the Flag Lads' bosses, by their kit (0 the Gaffer, 1 his right-hand man, 2 his cousin). */

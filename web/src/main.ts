@@ -40,6 +40,7 @@ import { easelUp, onEaselRelock } from "./easel";
 import { closeButton, closeModals, modalUp, onModal, onModalRelock } from "./modal";
 import { Unlit } from "./unlit";
 import { Trackpad } from "./trackpad";
+import { gamesUnlocked, openGames, useGames, whenGames } from "./gameslist";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -760,6 +761,19 @@ function pauseButton(id: string, text: string, onclick: () => void) {
   $("trophybtn").after(b);
 }
 pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
+// the games list (gameslist.ts), on the main menu and the pause menu once it's unlocked on this device;
+// from the main menu it starts a game on your own first
+{
+  const fromMenu = document.createElement("button");
+  fromMenu.type = "button"; fromMenu.id = "gamesbtn"; fromMenu.className = "settingsbtn"; fromMenu.textContent = "Games";
+  fromMenu.dataset.page = "700";
+  fromMenu.onclick = () => { if (!game) start("SOLO", true); openGames(); };
+  $("linkbtn").after(fromMenu);
+  pauseButton("gamesbtn2", "Games", () => openGames());
+  $("gamesbtn2").dataset.page = "700";
+  whenGames(() => { fromMenu.hidden = $("gamesbtn2").hidden = !gamesUnlocked(); });
+  useGames({ game: () => game, play: () => { $("pause").hidden = true; lock(); } });
+}
 const paperHud = document.createElement("button");
 paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
 paperHud.onclick = () => readPaper();
@@ -890,9 +904,37 @@ let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 const told = new Set<string>();
 let inputWas = "";
+// ?frames=1: a recording tool (tools/flyover_video.mjs) holds the game still and moves it on a
+// sixtieth of a second at a time itself (window.__frames), so every frame of a recording is there
+const STEPPED = new URLSearchParams(location.search).has("frames");
+let held = false;
+if (STEPPED) (window as any).__frames = {
+  hold(on: boolean) { held = on; },
+  step() { tick(last + 1000 / 60); },
+  /** The fly-over's drum roll as it went, a level a sixtieth of a second, then the cymbal, rendered
+   *  silently to 16-bit stereo at 48 kHz (base64), for the recording's sound. */
+  async roll(levels: number[], big: boolean, tail = 3) {
+    const T = levels.length / 60, b = await SFX.renderOffline(() => {
+      const r = SFX.drumRoll();
+      levels.forEach((p, k) => r.level(p, k / 60));
+      r.hit(big, T);
+    }, T + tail);
+    const n = b.length, pcm = new Int16Array(n * 2), L = b.getChannelData(0), R = b.getChannelData(1);
+    for (let k = 0; k < n; k++) { pcm[2 * k] = Math.max(-1, Math.min(1, L[k])) * 32767; pcm[2 * k + 1] = Math.max(-1, Math.min(1, R[k])) * 32767; }
+    let s = ""; const u = new Uint8Array(pcm.buffer);
+    for (let k = 0; k < u.length; k += 0x8000) s += String.fromCharCode(...u.subarray(k, k + 0x8000));
+    return btoa(s);
+  },
+};
+
 function frame(now: number) {
   // booked first, so something going wrong in one frame can't stop every frame after it
   requestAnimationFrame(frame);
+  if (held) { last = now; return; }
+  tick(now);
+}
+
+function tick(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   const js0 = performance.now();

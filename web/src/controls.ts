@@ -173,10 +173,17 @@ export const PLACES: Record<string, Control[]> = {
   // a big card over the game (a mission's end, a race's results, a bounty's poster: modal.ts)
   card: [
     { id: "card.close", name: "close", keys: ["Escape"], pad: B.options, touch: "×" },
+    // a job or challenge lost: its card offers another go or leaving it there; on a touch screen the buttons are tapped
+    { id: "card.retry", name: "retry", keys: ["KeyR", "Enter"], pad: B.square, touch: "" },
+    { id: "card.abort", name: "abort", keys: ["Escape"], pad: B.options, touch: "" },
   ],
-  // the bells' ringing chamber: a pull is a jump, and use looks to before the ringing (or pulls during it)
+  // the bells' ringing chamber: the note highway's four lanes, laid out as the keys and the face
+  // buttons sit, left to right (a chord is two at once); use looks to before the ringing
   bells: [
-    { id: "bells.pull", name: "pull", keys: ["Space"], via: "jump", say: { touch: "Pull" } },
+    { id: "bells.lane1", name: "ring the left lane", keys: ["KeyA"], pad: B.square, touch: "its pad" },
+    { id: "bells.lane2", name: "ring the second lane", keys: ["KeyW"], pad: B.triangle, touch: "its pad" },
+    { id: "bells.lane3", name: "ring the third lane", keys: ["KeyS"], pad: B.cross, touch: "its pad" },
+    { id: "bells.lane4", name: "ring the right lane", keys: ["KeyD"], pad: B.circle, touch: "its pad" },
     { id: "bells.look", name: "look to now", keys: ["KeyE"], via: "use" },
   ],
   // the Climb: hanging on a hold or a rope

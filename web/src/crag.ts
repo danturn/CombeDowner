@@ -8,16 +8,18 @@
 // hold you in, and anything that falls off the face lands on the grass.
 // The way up is laid out for a team, not found:
 // - the slab, leaning back, easy, up to the first ledge, wide enough for everyone;
-// - a blank wall whose first hold is out of reach without a mate's shoulders (alone there are
-//   lower holds), up to the rope ledge, a small one out to the left;
-// - a traverse right along a band of holds to the far ledge;
+// - a wall up to the rope ledge, a small one out to the left;
+// - a traverse right along a band of holds to the far ledge, with a team broken by a gap only a
+//   human chain crosses (Route.gap);
 // - out under a bulge of overhanging rock and over its lip onto the roof;
 // - up a chimney, a groove in the rock, to the terrace that runs the whole width;
 // - and the headwall to the top, where everyone has to stand together.
 // The rock and the ledges are fixed; the holds come from the day's seed and how many are climbing
 // (routeFor), so every screen climbs the same holds. They're laid as routes, a reach apart: runs of
 // easy moves, a white jug to rest on partway up the long sections, and on each a crux of longer
-// reaches, longer still the more of you there are.
+// reaches, longer still the more of you there are. With a team a few stretches start blank, their
+// first hold out of reach from the ledge under it without a mate's shoulders (liftsFor): one with
+// two or three climbing, up to three with six or more, and with four or more one needs two stacked.
 //
 // Who decides what: nothing here goes over the network. theclimb.ts says how many it's set for.
 import * as THREE from "three";
@@ -29,6 +31,9 @@ export const FRONT = 12.5;     // how far out from the face the grass at the foo
 export const BACK = 12;        // how far back from the edge you can walk on the top
 export const H = 43.5;         // foot to top
 export const BOOST_HOLD = 4.7; // a boost gap's hold above its ledge: out of a jump's reach, in reach off shoulders
+export const STACK_HOLD = 5.7;
+const CHAIN_GAP = [3.8, 4.3];  // the traverse's gap: past a lunge (3.4), and each half within a reach (2.2) of a body across it
+const CHAIN_FROM = -2.5;       // and where along it starts, out in the middle of the traverse // and one that needs two stacked: out of reach off one mate's shoulders, in reach off two
 const LIFT = 1000;             // how far over the challenge's place on the map the foot is
 const EDGE = 16;               // where the grass at the foot ends, and how far back the top goes
 const SIDE = HALF + 1.5;       // where the face turns back at its corners
@@ -47,9 +52,12 @@ export interface Room { ox: number; oz: number; nx: number; nz: number; tx: numb
 /** o: where the rock behind it is, out from the face's line; d: how far it stands out from there. rope: where along
  *  its rope hangs, down to foot (scene Y). */
 export interface Ledge { y: number; s0: number; s1: number; o: number; d: number; rope: number; foot: number; name: string }
-/** rest: a big jug you can hang off and get your grip back. */
-export interface Hold { s: number; y: number; boost: boolean; rest: boolean }
-export interface Route { n: number; ledges: Ledge[]; holds: Hold[] }
+/** rest: a big jug you can hang off and get your grip back; boost: only in reach off a mate's
+ *  shoulders, and two: off two mates stacked. */
+export interface Hold { s: number; y: number; boost: boolean; rest: boolean; two?: boolean }
+/** gap: with a team, the two holds either side of the traverse's gap, too far apart for anyone to
+ *  reach alone: a climber hangs across it as a bridge and the rest climb over them. */
+export interface Route { n: number; ledges: Ledge[]; holds: Hold[]; gap?: [number, number] }
 
 /** The crag over a place on the map whose ground is at ground. */
 export function roomOver(x: number, z: number, ground: number, name: string): Room {
@@ -124,22 +132,22 @@ export function routeFor(room: Room, seed: number, n: number): Route {
   const easy: [number, number] = n <= 1 ? [0.5, 0.75] : [0.55, 0.85];
   const hard: [number, number] = n <= 1 ? [0.9, 1.05] : n === 2 ? [1.1, 1.35] : [1.25, 1.55];
   const spare = n <= 1 ? 0.35 : n === 2 ? 0.15 : n === 3 ? 0.06 : 0;
-  // the wall above the first ledge needs a boost with two of you, the chimney too with three, the headwall with four
-  const boost = [false, n >= 2, false, false, n >= 3, n >= 4];
+  const lift = liftsFor(seed, n), boost = lift.map((x) => x > 0), up = (k: number) => (lift[k] === 2 ? STACK_HOLD : BOOST_HOLD);
   const paths: [number, number][][] = [
     [[-1 + r() * 2, 1.8], [-0.5 + r(), Y1 - 1.6]],
-    boost[1] ? [[-4.6 + (r() - 0.5) * 0.6, Y1 + BOOST_HOLD], [-5.2, Y2 - 1.5]] : [[-3 + r(), Y1 + 1.8], [-5.2, Y2 - 1.5]],
+    boost[1] ? [[-4.6 + (r() - 0.5) * 0.6, Y1 + up(1)], [-5.2, Y2 - 1.5]] : [[-3 + r(), Y1 + 1.8], [-5.2, Y2 - 1.5]],
     [[-5 + r() * 0.6, Y2 + 1.8], [-1.5, Y2 + 2.4], [2.5, Y2 + 2.0], [4.6 + r() * 0.6, Y3 - 1.6]],
     [[5 + r() * 0.6, Y3 + 1.8], [2.6, Y3 + 4.0], [0.6 + r(), Y4 - 1.5]],
     [],
-    [[(r() - 0.5) * 2, Y5 + (boost[5] ? BOOST_HOLD : 1.8)], [-1 + r() * 2, H - 1.5]],
+    [[(r() - 0.5) * 2, Y5 + (boost[5] ? up(5) : 1.8)], [-1 + r() * 2, H - 1.5]],
   ];
   const floors = [0, Y1, Y2, Y3, Y4, Y5, H];
   const holds: Hold[] = [];
+  let chain: [number, number] | undefined;
   const clampS = (s: number) => Math.max(-HALF + 0.6, Math.min(HALF - 0.6, s));
   for (let k = 0; k < 6; k++) {
     const pts: [number, number][] = k === 4
-      ? [[0, Y4 + (boost[4] ? BOOST_HOLD : 1.8)], [0, Y5 - 1.5]]
+      ? [[0, Y4 + (boost[4] ? up(4) : 1.8)], [0, Y5 - 1.5]]
       : paths[k];
     const lens = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]));
     const total = lens.reduce((a, b) => a + b, 0);
@@ -164,8 +172,28 @@ export function routeFor(room: Room, seed: number, n: number): Route {
       const last = main[main.length - 1];
       if (!last || Math.hypot(p.s - last.s, p.y - last.y) >= 0.45) main.push(p);
     });
-    // three or more: one gap under the bulge only a lunge will cross
     let gap: [number, number] | null = null;
+    // a team: the traverse has a gap past any lunge, though not past a body stretched across it
+    if (k === 2 && n >= 2) {
+      const mid = Math.max(1, main.findIndex((p) => p.s >= CHAIN_FROM));
+      for (const from of [mid, 1]) {
+        for (let i = from; i < main.length - 2 && !gap; i++) {
+          for (let j = i + 2; j < main.length - 1; j++) {
+            const d = Math.hypot(main[j].s - main[i].s, main[j].y - main[i].y);
+            if (d > CHAIN_GAP[1]) break;
+            if (d >= CHAIN_GAP[0]) { main.splice(i + 1, j - i - 1); gap = [i, i + 1]; break; }
+          }
+        }
+      }
+      // holds spaced so no pair falls in it: the far side drawn in to it
+      for (let j = mid + 2; !gap && j < main.length - 1; j++) {
+        const a = main[mid], b = main[j], d = Math.hypot(b.s - a.s, b.y - a.y), w = (CHAIN_GAP[0] + CHAIN_GAP[1]) / 2;
+        if (d < CHAIN_GAP[0]) continue;
+        main[j] = { s: a.s + ((b.s - a.s) * w) / d, y: a.y + ((b.y - a.y) * w) / d };
+        main.splice(mid + 1, j - mid - 1); gap = [mid, mid + 1];
+      }
+    }
+    // three or more: one gap under the bulge only a lunge will cross
     if (k === 3 && n >= 3) {
       for (let i = 1; i < main.length - 2 && !gap; i++) {
         for (let j = i + 2; j < main.length - 1; j++) {
@@ -185,11 +213,12 @@ export function routeFor(room: Room, seed: number, n: number): Route {
         if (mid < best) { best = mid; rest = i; }
       });
     }
-    const lo = floors[k] + (boost[k] ? BOOST_HOLD : 1.6), hi = floors[k + 1] - 0.6;
+    const lo = floors[k] + (boost[k] ? up(k) : 1.6), hi = floors[k + 1] - 0.6;
     const placed: { s: number; y: number }[] = [];
+    if (gap && k === 2) chain = [holds.length + gap[0], holds.length + gap[1]];
     main.forEach((p, i) => {
       const s = clampS(p.s);
-      holds.push({ s, y: Y + p.y, boost: i === 0 && boost[k], rest: i === rest });
+      holds.push({ s, y: Y + p.y, boost: i === 0 && boost[k], rest: i === rest, ...(i === 0 && lift[k] === 2 ? { two: true } : {}) });
       placed.push({ s, y: p.y });
     });
     // a spare beside the line now and then, never crowding another or bridging the lunge
@@ -203,7 +232,24 @@ export function routeFor(room: Room, seed: number, n: number): Route {
       });
     }
   }
-  return { n, ledges, holds };
+  return chain ? { n, ledges, holds, gap: chain } : { n, ledges, holds };
+}
+
+/** Which stretches start blank, their first hold only in reach off a mate's shoulders (1) or two
+ *  mates stacked (2): one with two or three climbing, two with four or five, three with six or more,
+ *  among the wall over the first ledge, the chimney and the headwall; with four or more one of them
+ *  needs two stacked (never the chimney, too short for it). Its own draw from the seed, so the
+ *  rest of the route doesn't shift with it. */
+export function liftsFor(seed: number, n: number): number[] {
+  const lift = [0, 0, 0, 0, 0, 0];
+  const count = n <= 1 ? 0 : n <= 3 ? 1 : n <= 5 ? 2 : 3;
+  if (!count) return lift;
+  const r = rng(hash("climb lifts", seed, n)), pool = [1, 4, 5];
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const chosen = pool.slice(0, count);
+  for (const k of chosen) lift[k] = 1;
+  if (n >= 4) lift[chosen.find((k) => k !== 4)!] = 2;
+  return lift;
 }
 
 // ---- drawing it ----
@@ -523,6 +569,7 @@ function cloudSea() {
 
 const HOLD_COLOURS = ["#e8323c", "#2f6fe0", "#f5d21f", "#3cc24a", "#a24de0", "#ff5fb0", "#1fc8c8"];
 const BOOST_COLOUR = "#ff8a1f";
+const STACK_COLOUR = "#ff3a14";
 const REST_COLOUR = "#f2efe6";
 
 /** The crag, built: put group in the scene; holds and ropes change with the route. Everything in it is
@@ -554,11 +601,11 @@ export function buildCrag(room: Room) {
     const mesh = new THREE.InstancedMesh(holdGeo, holdMat, Math.max(1, route.holds.length));
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), out = new THREE.Vector3(0, 0, 1), v3 = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
     route.holds.forEach((h, i) => {
-      const ly = h.y - room.y0, k = h.boost ? 1.5 : 1;
+      const ly = h.y - room.y0, k = h.two ? 1.8 : h.boost ? 1.5 : 1;
       q.setFromAxisAngle(out, h.rest ? 0 : i * 2.4);
       if (h.rest) sc.set(2.6, 0.75, 1.1); else sc.set(1.2 * k, 0.9 * k, 0.6);
       mesh.setMatrixAt(i, m4.compose(v3.set(h.s, ly, rockOut(h.s, ly) + 0.06), q, sc));
-      mesh.setColorAt(i, c.set(h.boost ? BOOST_COLOUR : h.rest ? REST_COLOUR : HOLD_COLOURS[(i * 3) % HOLD_COLOURS.length]));
+      mesh.setColorAt(i, c.set(h.two ? STACK_COLOUR : h.boost ? BOOST_COLOUR : h.rest ? REST_COLOUR : HOLD_COLOURS[(i * 3) % HOLD_COLOURS.length]));
     });
     mesh.count = route.holds.length;
     mesh.receiveShadow = true;
@@ -572,13 +619,20 @@ export function buildCrag(room: Room) {
   const ropeMesh = new THREE.InstancedMesh(ropeGeo, ropeMat, 8), coilMesh = new THREE.InstancedMesh(coilGeo, ropeMat, 8);
   ropeMesh.count = coilMesh.count = 0;
   group.add(ropeMesh, coilMesh);
-  function setRopes(route: Route, down: Set<number>) {
+  /** held: the dropped ropes someone up there is holding; the rest have gone slack, an end over the
+   *  lip and the rest in a heap at the bottom. Leave it out and every dropped rope hangs. */
+  function setRopes(route: Route, down: Set<number>, held = down) {
     let n = 0, c = 0;
     const m4 = new THREE.Matrix4(), v3 = new THREE.Vector3(), sc = new THREE.Vector3(), flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), none = new THREE.Quaternion();
     route.ledges.forEach((l, k) => {
       if (k === 0) return;
       const ly = l.y - room.y0;
-      if (down.has(k)) {
+      if (down.has(k) && !held.has(k)) {
+        const under = route.ledges.find((x, j) => j > 0 && x.y === l.foot);
+        const out = under ? Math.min(ropeOut(l), under.o + under.d - 0.4) : ropeOut(l) + 0.4;
+        ropeMesh.setMatrixAt(n++, m4.compose(v3.set(l.rope, ly - 0.5, ropeOut(l)), none, sc.set(1, 1.2, 1)));
+        coilMesh.setMatrixAt(c++, m4.compose(v3.set(l.rope, l.foot - room.y0 + 0.09, out), flat, sc.set(1.3, 1.3, 1)));
+      } else if (down.has(k)) {
         const len = l.y - l.foot + 0.2;
         ropeMesh.setMatrixAt(n++, m4.compose(v3.set(l.rope, ly - len / 2 + 0.1, ropeOut(l)), none, sc.set(1, len, 1)));
       } else coilMesh.setMatrixAt(c++, m4.compose(v3.set(l.rope, ly + 0.09, coilOut(l)), flat, sc.set(1, 1, 1)));

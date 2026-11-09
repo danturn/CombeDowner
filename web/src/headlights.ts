@@ -8,7 +8,7 @@
 // The lamps themselves are instanced meshes (white at the front, red at the back, and the brake,
 // reversing and indicator lamps) laid over every lit vehicle's own lamps, so they cost a draw call
 // each however many cars there are, and the last three none at all when nothing's showing them. The
-// beams are a few spotlights, moved to whichever lit vehicles are nearest the camera every so often:
+// beams are a few spotlights, one from each headlamp, moved to whichever lit vehicles are nearest the camera every so often:
 // always there (dark by day, and left out of the drawing while they and the street lamps are all
 // dark, unlit.ts), as with the street lamps (world.ts).
 //
@@ -26,7 +26,8 @@ export interface Lamps { front: LampPair; back?: LampPair }
  *  braking or backing up, and which way it's signalling (1 left, -1 right). */
 export interface Lit { frame: THREE.Object3D; lamps: Lamps; brake?: boolean; reverse?: boolean; signal?: number }
 
-const BEAMS = 4;              // spotlights, on the nearest lit vehicles
+// vehicles whose headlamps throw beams (two spotlights each, one per lamp): fewer on a phone or iPad, where each costs more
+const BEAMS = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1 ? 2 : 4;
 const MAX = 80;               // vehicles with their lamps drawn at once
 const REACH = 260;            // lamps drawn this far from the camera, m
 const BEAM_FULL = 35, BEAM_GONE = 75;   // beams fade out between these distances, so they don't pop on and off
@@ -60,8 +61,8 @@ export class Headlights {
     this.brakes = lamps(new THREE.MeshBasicMaterial({ color: new THREE.Color("#ff2414").multiplyScalar(1.8) }));
     this.reverses = lamps(new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffffff").multiplyScalar(1.6) }));
     this.signals = lamps(new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffa31a").multiplyScalar(1.8) }));
-    for (let k = 0; k < BEAMS; k++) {
-      const l = new THREE.SpotLight("#fff1d6", 0, 50, 0.52, 0.55, 1.3);
+    for (let k = 0; k < BEAMS * 2; k++) {
+      const l = new THREE.SpotLight("#fff1d6", 0, 50, 0.48, 0.55, 1.3);
       scene.add(l, l.target);
       darkable(scene, l);
       this.beams.push(l);
@@ -115,14 +116,14 @@ export class Headlights {
       this.chosen = near.slice(0, BEAMS).map(([, l]) => l.frame);
     }
     this.beams.forEach((b, k) => {
-      // (one that's since been wrecked or driven out of reach goes dark)
-      const l = this.chosen[k] && near.find(([, o]) => o.frame === this.chosen[k])?.[1];
+      // two to a vehicle, one out of each headlamp (one that's since been wrecked or driven out of reach goes dark)
+      const c = this.chosen[k >> 1], l = c && near.find(([, o]) => o.frame === c)?.[1];
       if (!l) { b.intensity = 0; return; }
-      const [along, up] = l.lamps.front;
-      l.frame.localToWorld(b.position.set(along + 0.1, up, 0));
-      l.frame.localToWorld(b.target.position.set(along + AIM, up - DIP, 0));
+      const [along, up, across] = l.lamps.front, side = k & 1 ? -1 : 1;
+      l.frame.localToWorld(b.position.set(along + 0.1, up, across * side));
+      l.frame.localToWorld(b.target.position.set(along + AIM, up - DIP, across * side * 1.6));
       const d = Math.hypot(b.position.x - cam.x, b.position.z - cam.z);
-      b.intensity = 200 * this.on * (1 - THREE.MathUtils.smoothstep(d, BEAM_FULL, BEAM_GONE));
+      b.intensity = 110 * this.on * (1 - THREE.MathUtils.smoothstep(d, BEAM_FULL, BEAM_GONE));
     });
   }
 

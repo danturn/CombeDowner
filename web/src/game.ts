@@ -56,7 +56,8 @@
 // - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
 // - Rides (rides.ts): you ride yourself, like walking, and say what you're on in your position updates. A hard
 //   crash into a wall you tell the host about, as with a train, and it takes it as damage. Tricks and their
-//   score (ridetricks.ts) are yours alone.
+//   score (ridetricks.ts) are yours alone. Other riders are solid (ridebump.ts): each screen holds its own
+//   rider clear of the others, and whoever sees a bump first sends the other their half of it ("rb").
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 //   Someone over a race's line or out of it, waiting for the others (race.ts), says so in their position
@@ -76,7 +77,8 @@
 //   filling a socket are asks ("odq"). A milestone's fly-over (reveal.ts) plays on every screen.
 // - The zones (zones.ts): how many are open follows from the sockets full, so the wall stands in the
 //   same place on every screen with nothing more sent; the host's word on the sockets also says
-//   whether the room is in free play.
+//   whether the room is in free play. A game picked from the games list (gameslist.ts) takes the wall
+//   down on every screen till it's over, and the pub takeover from there goes round as "gl".
 // - Which of the zones, the strange objects and the team challenges are on (features.ts) is the
 //   host's say, sent with its state ("st"); everyone else plays by the host's switches.
 import * as THREE from "three";
@@ -87,6 +89,8 @@ import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
+import { Menders } from "./menders";
+import { addGap } from "./gaps";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { RecordPlayer } from "./recordplayer";
@@ -122,6 +126,7 @@ import { carryIcon } from "./carryicons";
 import { IDKFA } from "./cheats";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
+import { gamesFollow, gamesHeard } from "./gameslist";
 import { NightOut } from "./nightout";
 import { missionActive, missionProgress, missionClear, missionResultUp, missionReward } from "./missionscreens";
 import { guide, news, noticeHold, noticeUp, people, reward, named } from "./notice";
@@ -159,11 +164,12 @@ import { SUIT_ID, Wingsuit } from "./wingsuit";
 import type { Route } from "./railway";
 import { Balloons } from "./balloons";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
+import { RideBumps, type Rider } from "./ridebump";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import * as Telemetry from "./telemetry";
 import { Sports } from "./sport";
-import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
+import { isBus, isCoach, isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { BusDriver, busRouteSpots } from "./busdriver";
 import { view } from "./view";
@@ -295,7 +301,7 @@ const CAR_LINE: Record<string, string> = {
 /** A vehicle the host is driving: naughty boys on their way somewhere, or a bus someone's called (by them, to pull in at). */
 /** Something E could do where you stand: what the prompt says, the touch button's word (none when
  *  E only says why not), what to call it, where it is to be looked at and how far off it is. */
-type UseKind = "tour" | "deli" | "board" | "again" | "car" | "stop" | "balloon" | "trolley" | "tiller" | "moored" | "lock" | "odd" | "wood" | "swap" | "ladder" | "train";
+type UseKind = "busjob" | "tour" | "deli" | "board" | "again" | "car" | "stop" | "balloon" | "trolley" | "tiller" | "moored" | "lock" | "odd" | "wood" | "swap" | "ladder" | "train";
 interface UseChoice { k: UseKind; text: string; button?: string; what: string; x: number; y: number; z: number; r: number; d: number; aimed: boolean; off: number }
 
 interface Delivery {
@@ -398,6 +404,7 @@ export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
   readonly effects: Effects;
+  private rideBumps: RideBumps;
   private skids: Skids;                             // skid marks and tyre smoke
   readonly naughtyBoys: NaughtyBoys;
   readonly bendy: Bendy;
@@ -458,6 +465,7 @@ export class Game {
   private bellWas = false;                       // at a tiller: the bell key last frame, so holding it rings once
   private steerer: Avatar | null = null;         // you, stood at the tiller, for the chase camera to see
   private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
+  private head = { pitch: 0, roll: 0, lift: 0, y: 0 };   // the driver's head, steadied against the bumps (driverView)
   private slideCam = 0;                          // how far the chase camera has swung out for a slide, 0 to 1
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
@@ -478,6 +486,7 @@ export class Game {
   private mineTour: MineTour;
   private deliDoor: DeliDoor;
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
+  private menders: Menders;                    // the old couple who mend the hedges and fences you drive through (gaps.ts)
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private records: RecordPlayer;               // the record player on Solsbury Hill
@@ -639,6 +648,7 @@ export class Game {
     this.player.canProne = true;
     this.player.noDive = () => !!this.car || !!this.ride || this.riding || this.oddments.carrying(this.net.selfId) || this.map.inWater(this.player.pos.x, this.player.pos.z);
     this.effects = new Effects(world.scene);
+    this.rideBumps = new RideBumps((to, d) => this.net.send("rb", d, to), this.effects);
     this.blood = new Blood(world.scene, world.surface);
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
@@ -700,6 +710,7 @@ export class Game {
     this.mineTour = new MineTour(map, world.scene);
     this.deliDoor = new DeliDoor(map, world.scene);
     this.breakdown = new Breakdown(map, world.scene);
+    this.menders = new Menders(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
     this.dayBendy = new DayBendy(map, world.scene);
     this.records = new RecordPlayer(map, world.scene);
@@ -718,7 +729,7 @@ export class Game {
     this.oddments.onGot = () => this.tookOddment();
     this.oddments.leave = (ride, x, z) => { if (isRide(ride as Kind)) { this.pickups.place(x, z, ride as RideKind, LEFT_LIFE); this.net.send("pk", this.pickups.snapshot()); } };
     this.oddments.onOpen = () => this.quests?.repost();
-    this.reveal = new Reveal(map, () => this.freeMode);
+    this.reveal = new Reveal(map, world, () => this.freeMode);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -922,6 +933,8 @@ export class Game {
     this.listen("tfw", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.applyWrecks(d); }));
     this.listen("tfx", here((d, from) => { if (this.isHost && Array.isArray(d)) this.traffic.shove(d[0], d[1], d[2], d[3], from); }));
     this.listen("tfp", here((d, from) => { if (this.isHost && Array.isArray(d)) this.knockParked(d[0], d[1], d[2], d[3], from); }));
+    // someone's driven through a hedge or a fence
+    this.listen("hgb", here((d) => { if (Array.isArray(d)) this.smashed(d[0], d[1], d[2], d[3], d[4] === 1, false); }));
     this.listen("vk", here((d, from) => {
       const v = Array.isArray(d) ? this.vehicles.list.find((o) => o.i === d[0]) : undefined;
       if (this.isHost && v) this.knockVehicle(v, d[1], d[2], d[3], from);
@@ -934,7 +947,9 @@ export class Game {
     this.listen("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
     this.listen("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
     this.listen("mk", here((d, from) => this.onMarker(d, from)));
-    this.listen("qe", here((d, from) => this.quests.onMessage(d, from)));
+    this.listen("qe", here((d, from) => { this.quests.onMessage(d, from); if (d?.k === "start") gamesFollow(this, d); }));
+    this.listen("gl", here((d) => gamesHeard(this, d)));
+    this.listen("rb", here((d, from) => { if (this.onRide()) this.rideBumps.heard(this.player, this.otherRiders().find((o) => o.id === from), d); }));
     this.listen("bv", here((d, from) => this.invasion.onMessage(d, from)));
     this.listen("no", here((d, from) => this.night.onMessage(d, from)));
     this.listen("scr", here((d, from) => this.scars.onMessage(d, from)));
@@ -1425,6 +1440,20 @@ export class Game {
   mapPicture() { return this.minimap.picture(); }
 
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
+  /** The zones' wall down on this screen, or back up (gameslist.ts). */
+  liftZones(on: boolean) { this.zones.lift(on); }
+  /** The zones' names in the order they open (gameslist.ts's area openings). */
+  zoneNames(): string[] { return this.zones.list.map((z) => z.name); }
+  /** Zone k's opening fly-over (k at the count: the last zone's, over the whole map) on this screen
+   *  alone, for the games list: nothing opens, nothing is saved and nothing is sent. */
+  playOpening(k: number): boolean {
+    if (this.reveal.on) return false;
+    const p = this.player.pos;
+    this.reveal.play(this.oddments.shotFor(k), this.camera, { x: p.x, z: p.z });
+    return true;
+  }
+  /** A fly-over is playing, or its cover still lifting. */
+  get flying() { return this.reveal.busy; }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
   get knownIds(): string[] { return [...this.known]; }
@@ -2511,13 +2540,15 @@ export class Game {
   /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
   private gameSpots() {
     const named = (s: { x: number; z: number } | undefined, name?: string) => s && { x: s.x, z: s.z, name };
-    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood")].filter((s) => !!s);
+    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood"),
+      named(this.busDriver.spot(), "Bus driver")].filter((s) => !!s);
   }
 
   private targets(): Target[] {
     const p = this.player.pos;
-    // nobody goes for you while you're at a narrowboat's tiller: you're above all that
-    const helm = (id: string) => !!this.world.canal?.helmOf(id);
+    // nobody goes for you while you're at a narrowboat's tiller, or at the wheel of a bus or a coach: you're above all that
+    // (the passengers on a bus are fair game, as they always were)
+    const helm = (id: string) => !!this.world.canal?.helmOf(id) || this.vehicles.list.some((v) => v.driver === id && (isBus(v.kind) || isCoach(v.kind)));
     const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive || helm(this.net.selfId) }];
     for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive || helm(r.id) });
     return out;
@@ -2743,6 +2774,8 @@ export class Game {
     const chest = p.y + 1.2;
     const tour = this.mineTour.near(p.x, p.z, p.y) ? this.mineTour.spot() : undefined;
     if (tour) add("tour", "<b>{use}</b> Go in for a mine tour", "the door", tour.x, chest, tour.z, 0.6, far(tour.x, tour.z), "Go in");
+    const depot = this.busDriver.jobAt(p.x, p.z, p.y) ? this.busDriver.spot() : undefined;
+    if (depot) add("busjob", "<b>{use}</b> Take a job as a driver", "the depot", depot.x, chest, depot.z, 0.8, far(depot.x, depot.z), "Take the job");
     const deli = this.deliDoor.near(p.x, p.z, p.y) ? this.deliDoor.spot() : undefined;
     if (deli) add("deli", "<b>{use}</b> Work a shift in the deli kitchen", "the door", deli.x, chest, deli.z, 0.6, far(deli.x, deli.z), "Go in");
     const board = this.quests.board();
@@ -2830,6 +2863,7 @@ export class Game {
   /** E on what useChoice picked. */
   private useOn(c: UseChoice) {
     switch (c.k) {
+      case "busjob": this.takeBusJob(); break;
       case "tour": this.goDownMine(); break;
       case "deli": this.goInDeli(); break;
       case "board": this.quests.takeBoard(); break;
@@ -2867,6 +2901,28 @@ export class Game {
     this.askedAt = performance.now();
     this.nicking = v.t !== undefined;
     const claim = { v: v.i, life: this.life, t: v.t };
+    if (this.isHost) this.applyEnter(this.net.selfId, claim);
+    else this.net.send("vin", claim, this.hostId);
+  }
+
+  /** A job as a driver at the bus station's depot: into the driver's seat of a Badgerline bus on the stands,
+   *  and off on a timetabled run (busdriver.ts puts it at the start of the route, facing the way it goes). */
+  private takeBusJob() {
+    if (!this.zones.can("busroute")) { this.news(this.zones.shut("busroute")); return; }
+    const d = this.busDriver.spot();
+    if (!d) return;
+    let best: Vehicle | null = null, bd = 120;
+    for (const v of this.vehicles.list) {
+      if ((v.kind !== "bus" && v.kind !== "minibus") || v.driver || v.seats.some((id) => id)) continue;
+      const far = Math.hypot(v.x - d.x, v.z - d.z);
+      if (far < bd) { bd = far; best = v; }
+    }
+    if (!best) { this.news("No bus on the stands just now: try again in a minute"); return; }
+    this.busDriver.takeJob();
+    this.askedCar = best.i;
+    this.askedAt = performance.now();
+    this.nicking = false;
+    const claim = { v: best.i, life: this.life, k: 0 };
     if (this.isHost) this.applyEnter(this.net.selfId, claim);
     else this.net.send("vin", claim, this.hostId);
   }
@@ -2961,7 +3017,8 @@ export class Game {
     const blink = performance.now() % 760 < 380;
     if (v.signal && blink !== this.blinkWas) SFX.relay(blink);
     this.blinkWas = blink;
-    v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z), this.shoving(v, this.net.selfId));
+    v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z), this.shoving(v, this.net.selfId),
+      (x, z, ux, uz, leafy) => this.smashed(x, z, ux, uz, leafy, true));
     v.pose(dt, performance.now());
     if (v.impact > 3) SFX.crash(Math.min(1, (v.impact - 3) / 12));
     if (v.spec.milk && v.impact > 3.5) this.smashMilk(v);
@@ -2979,7 +3036,7 @@ export class Game {
       if (from) p.pitch = v.restPitch;
     }
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
-    if (from) { this.driverView(v, s.yaw, settle); return; }
+    if (from) { this.driverView(v, s.yaw, settle, dt); return; }
     this.insideYaw = null;
     // the chase camera: the mouse only looks about, and it swings back behind as you drive on. In a
     // slide it hangs back towards the way the car's really going, lagging and pulling out wider, so
@@ -3008,10 +3065,22 @@ export class Game {
   /**
    * The driver's own view, from their seat over the dash or from the bonnet (cockpit.ts). It turns with the vehicle; look
    * about with the mouse, and it eases back to straight ahead as the chase camera does. It pitches with the
-   * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
+   * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about. Your head rides
+   * the bumps as a driver's does: it follows the body's pitch, roll and rise a moment behind, so a rough road jostles
+   * the dash in front of you a little rather than shaking the whole view, and a hill still tips you as it comes.
    */
-  private driverView(v: Vehicle, ahead: number, settle: number) {
-    const p = this.player;
+  private driverView(v: Vehicle, ahead: number, settle: number, dt: number) {
+    const p = this.player, h = this.head, tilt = v.tilt, y = v.root.position.y;
+    if (this.insideYaw === null) Object.assign(h, { pitch: tilt.pitch, roll: tilt.roll, lift: 0, y });   // just sat in: no lag to catch up
+    else {
+      // a bump comes and goes in a fraction of a second and the head barely notices; a slope stays and the head comes round to it
+      const ease = (rate: number) => 1 - Math.exp(-dt * rate), near = (x: number, to: number, most: number) => Math.max(to - most, Math.min(to + most, x));
+      h.pitch = near(h.pitch + (tilt.pitch - h.pitch) * ease(4), tilt.pitch, 0.12);
+      h.roll = near(h.roll + (tilt.roll - h.roll) * ease(3), tilt.roll, 0.12);
+      // and it rises and falls more softly than the wheels, never far off the seat (so never up through the roof)
+      h.y = near(h.y + (y - h.y) * ease(7), y, 0.1);
+      h.lift = h.y - y;
+    }
     if (this.insideYaw !== null) p.yaw += Math.atan2(Math.sin(ahead - this.insideYaw), Math.cos(ahead - this.insideYaw));
     this.insideYaw = ahead;
     let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
@@ -3022,8 +3091,8 @@ export class Game {
     off = Math.max(-2.4, Math.min(2.4, off));
     p.yaw = ahead + off;
     p.pitch = Math.max(-0.8, Math.min(0.5, p.pitch));
-    const tilt = v.eyes(this.camera.position);
-    this.camera.rotation.set(p.pitch + tilt.pitch * Math.cos(off), p.yaw, -tilt.roll * 0.3, "YXZ");
+    v.eyes(this.camera.position, h);
+    this.camera.rotation.set(p.pitch + h.pitch * Math.cos(off), p.yaw, -h.roll * 0.3, "YXZ");
   }
 
   /** A passenger: sat in your seat as it goes along, looking about through your own eyes (and free to shoot). */
@@ -3053,6 +3122,18 @@ export class Game {
         else this.shoveCar(o.n, dvx, dvz, spin, by);
       },
     };
+  }
+
+  /** A hedge or a fence smashed through at scene (x, z), running (ux, uz) (gaps.ts): the hole, leaves or splinters flying, and the noise. mine: you did it, so tell everyone. */
+  private smashed(x: number, z: number, ux: number, uz: number, leafy: boolean, mine: boolean) {
+    if (![x, z, ux, uz].every(Number.isFinite) || !addGap(x, z, ux, uz, performance.now() / 1000, leafy)) return;
+    const y = this.map.ground(x, z) + 0.7, at = new THREE.Vector3(x, y, z);
+    for (const s of [-1, 1]) this.effects.impact(at, new THREE.Vector3(-uz * s, 0.6, ux * s).normalize(), leafy ? "#4f7a35" : "#7a5b3c", 10);
+    SFX.smashThrough(leafy, ...this.hear(x, y, z));
+    if (mine) {
+      const q = (v: number) => Math.round(v * 100) / 100;
+      this.net.send("hgb", [q(x), q(z), q(ux), q(uz), leafy ? 1 : 0]);
+    }
   }
 
   /** A car in the traffic's been driven into: knock it (the host runs it; anyone else sees it go straight away and tells the host). */
@@ -3597,6 +3678,27 @@ export class Game {
     else this.net.send("ow", claim, this.hostId);
   }
 
+  /** On your own ride, free to be bumped: not held on a start line or waiting out a race. */
+  private onRide() { return this.riding && this.alive && !!this.held && !this.car && !this.ride && !this.basket && !this.quests.held() && !this.sheltered(); }
+
+  /** The other players out on rides, where we draw them, that can be bumped into. */
+  private otherRiders(): Rider[] {
+    const out: Rider[] = [];
+    for (const r of this.remotes.values()) {
+      const kind = rideOf(r.rideCode);
+      if (kind && r.avatar.alive && !r.inCar && !r.waiting && !r.cab && !r.bal) out.push({ id: r.id, kind, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw });
+    }
+    return out;
+  }
+
+  /** Riders are solid to each other (ridebump.ts): yours is held clear of the rest and knocks are traded. */
+  private bumpRiders(dt: number, held: boolean) {
+    const others = this.otherRiders();
+    this.rideBumps.watch(others, dt);
+    if (held || !this.onRide()) return;
+    for (const b of this.rideBumps.update(this.player, this.held!, others)) this.quests.bumped(b.id, b.closing, b.mine, b.theirs);
+  }
+
   /** Everyone's rides, under them: yours, and the other players' from their position updates. */
   private drawRides(dt: number) {
     const p = this.player;
@@ -3638,7 +3740,7 @@ export class Game {
     if (rail) {
       const onTrain = !!this.carrier && rail.near.includes(this.carrier.m as never);
       const hit = rail.update(dt, p.x, p.y, p.z, this.alive && !this.ride && !onTrain);
-      this.announcer.update(dt, rail, p.x, p.z, this.map.d.id);
+      this.announcer.update(dt, rail, p.x, p.y, p.z, this.map.d.id);
       if (hit) {
         SFX.crash(1);
         const claim = { life: this.life, s: Math.round(hit.speed) };
@@ -4134,11 +4236,14 @@ export class Game {
     // the BMW's owner: rounds stop at him, but he can't be hurt
     const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
     if (bloke !== null) { maxD = bloke; victim = null; naughtyBoy = null; cat = null; }
+    // and the old couple mending a hedge (menders.ts)
+    const mender = !boss ? this.menders.hit(origin, dir, maxD) : null;
+    if (mender) { maxD = mender.dist; victim = null; naughtyBoy = null; cat = null; }
     // and Jamie the same (jamie.ts)
-    const jamie = !boss && bloke === null ? this.jamie.hit(origin, dir, maxD) : null;
+    const jamie = !boss && bloke === null && !mender ? this.jamie.hit(origin, dir, maxD) : null;
     if (jamie !== null) { maxD = jamie; victim = null; naughtyBoy = null; cat = null; }
     // and Bendy by day (daybendy.ts)
-    const teacher = !boss && bloke === null && jamie === null ? this.dayBendy.hit(origin, dir, maxD) : null;
+    const teacher = !boss && bloke === null && !mender && jamie === null ? this.dayBendy.hit(origin, dir, maxD) : null;
     if (teacher !== null) { maxD = teacher; victim = null; naughtyBoy = null; cat = null; }
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
@@ -4195,6 +4300,11 @@ export class Game {
       const claim = { c: naughtyBoy.i, g: naughtyBoy.gen, head, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isHost) this.applyNaughtyBoyHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
+    } else if (mender) {
+      mark = 1;
+      if (melee) SFX.punch();
+      else if (!paint) this.effects.impact(end, dir.clone().negate(), mender.her ? "#c9b48e" : "#6d5a3e", 4);
+      this.menders.ouch(mender, maxD);
     } else if (bloke !== null) {
       mark = 1;
       if (melee) SFX.punch();
@@ -4275,6 +4385,7 @@ export class Game {
       if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
     }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
+    this.menders.update(dt, now / 1000, p.pos.x, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);
@@ -4307,6 +4418,9 @@ export class Game {
     const driving = car && (car.kind === "bus" || car.kind === "minibus") ? car : null;
     if (driving && !this.zones.can("busroute") && this.routeShut !== driving.i && busRouteSpots(this.mapId).length) { this.routeShut = driving.i; this.news(this.zones.shut("busroute")); }
     this.busDriver.update(dt, driving && this.zones.can("busroute") ? driving : null, () => this.vehicles.allStops());
+    if (this.busDriver.spotChanged()) this.minimap.spots = this.gameSpots();
+    // a bus's inside is drawn only while you're in it, sat down or stood up in it (businside.ts)
+    for (const v of this.vehicles.list) v.showInside(v.seats.includes(this.net.selfId) || (v.distance(p.pos.x, p.pos.z) === 0 && p.pos.y > v.y - 0.5 && p.pos.y < v.y + v.spec.H));
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
@@ -4326,6 +4440,7 @@ export class Game {
       // shut in a building after all (shoved in by a car, a square loading in round you, down into a
       // courtyard off a roof): out on to the nearest clear ground, as the others will see you
       else if (this.alive && p.unstick()) this.sendState();
+      this.bumpRiders(dt, !!held);
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       if (p.suitHit) this.suitCrash(p.suitHit);
       this.wingsuit.hint(p, p.pos.y - this.map.floor(p.pos.x, p.pos.z, p.pos.y));
@@ -4653,6 +4768,7 @@ export class Game {
       for (const c of this.naughtyBoys.living()) {
         const at = this.naughtyBoys.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
+        if (at.kind === CHAIR && !this.invasion.inFight(c.i, at.gen, at.x, at.z)) continue;
         bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
         bossOff = false;

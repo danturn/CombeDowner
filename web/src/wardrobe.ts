@@ -39,6 +39,9 @@ export const WEARABLES: Wearable[] = [
   { id: "loaf", slot: "back", name: "Baguette in a rucksack", how: "Work ten shifts at the Darling Deli" },
   { id: "crown", slot: "head", name: "Clear-up crown", how: "Be there when the last zone of the map opens" },
   { id: "buscap", slot: "head", name: "Bus driver's cap", how: "Drive a bus all the way round its route without leaving anyone at a stop" },
+  { id: "cashbag", slot: "back", name: "Conductor's cash bag", how: "50 points on a timetabled bus run from the bus station" },
+  { id: "whistle", slot: "face", name: "Inspector's whistle", how: "75 points on a timetabled bus run from the bus station" },
+  { id: "inspcap", slot: "head", name: "Inspector's gold-braided cap", how: "90 points on a timetabled bus run from the bus station" },
   { id: "clippie", slot: "head", name: "Clippie's ticket machine hat", how: "Sell fifty tickets at the door in Push the Bus" },
   { id: "hood", slot: "head", name: "Pensioner's plastic rain hood", how: "Gold on Push the Bus, with every pensioner aboard and happy" },
   { id: "muffs", slot: "head", name: "Bell-ringer's earmuffs", how: "Ring a touch through without a single clash" },
@@ -309,6 +312,27 @@ export function wearGeometry(id: string): { geo: THREE.BufferGeometry; on: "head
     }
     case "buscap":
       return { on: "head", geo: part(peakedCap("#26304a", "#26304a", "#1b1b1d", "#2f8a3a", "#f2c230")) };
+    case "inspcap":
+      return { on: "head", geo: part([...peakedCap("#14161c", "#14161c", "#0d0e10", "#d8b048", "#d8b048"),
+        [box(0.22, 0.012, 0.012, 0, 0, 0).rotateX(-0.25).translate(0, C + 0.092, -0.236), "#d8b048"],   // braid along the peak
+        [box(0.22, 0.012, 0.012, 0, 0, 0).rotateX(-0.25).translate(0, C + 0.1, -0.2), "#d8b048"]]) };
+    case "cashbag":
+      // a leather satchel at your hip on a strap over the shoulder, its flap buckled
+      return { on: "body", geo: part([
+        [box(0.1, 0.2, 0.24, 0.25, 0.02, 0), "#5a3a22"],
+        [box(0.105, 0.08, 0.245, 0.25, 0.09, 0), "#4a2e1a"],
+        [box(0.11, 0.03, 0.03, 0.25, 0.07, -0.08), "#c9a24a"],
+        [box(0.04, 0.75, 0.012, 0, 0, 0).rotateZ(-0.62).translate(0.03, 0.34, -0.15), "#4a2e1a"],
+        [box(0.04, 0.75, 0.012, 0, 0, 0).rotateZ(-0.62).translate(0.03, 0.34, 0.15), "#4a2e1a"],
+      ]) };
+    case "whistle":
+      // a silver whistle in your mouth, on its chain
+      return { on: "head", geo: part([
+        [cyl(0.016, 0.016, 0.07, 0, 0, 0, 10).rotateX(Math.PI / 2).translate(0.02, C - 0.06, -0.19), "#d4d7da"],
+        [ball(0.024, 0.02, C - 0.075, -0.215), "#d4d7da"],
+        [box(0.012, 0.012, 0.012, 0.04, C - 0.1, -0.2), "#b9bcc0"], [box(0.012, 0.012, 0.012, 0.05, C - 0.14, -0.185), "#b9bcc0"],
+        [box(0.012, 0.012, 0.012, 0.055, C - 0.18, -0.17), "#b9bcc0"], [box(0.012, 0.012, 0.012, 0.055, C - 0.22, -0.155), "#b9bcc0"],
+      ]) };
     case "lockcap":
       return { on: "head", geo: part([...peakedCap("#f4f4f2", "#1d2438", "#14161c", "#1d2438", "#f2c230"),
         [box(0.2, 0.014, 0.014, 0, C + 0.115, -0.165), "#f2c230"]]) };

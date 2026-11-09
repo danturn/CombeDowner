@@ -18,8 +18,12 @@
 //                    chosen by the kind of mission, the mode's own title and words, a results table,
 //                    what you won listed on it, Continue (and Again where there is one) with the
 //                    same keys and 8 s timer for everything, the one end sound, and confetti for a
-//                    win. The driving test's report, the night out's front page and the gallery's
-//                    verdict are variants of it (missionSheet, missionNight, a body of its own).
+//                    win; a loss that can be had another go at has Retry and Abort instead. The
+//                    driving test's report, the night out's front page and the gallery's verdict
+//                    are variants of it (missionSheet, missionNight, a body of its own).
+//   missionPaper     a cutting held up low in the middle while something's read out, with nothing to
+//                    press (the gallery's critics, one card each, then their marks), its words typed
+//                    out and a stamp (stampHtml, the one the verdict card wears too) coming down on it.
 //
 // All drawn on the page in the HUD's layer, so they go when it does. Nothing goes over the
 // network: each player's screen draws them from the events that player already gets. Panels are
@@ -194,7 +198,27 @@ body:has(.msc-count:not([hidden]),.msc-wait:not([hidden])) #clickhint{visibility
 @keyframes msc-in{from{transform:scale(2.2) rotate(-5deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes msc-punch{0%{transform:scale(2.6);opacity:0}25%{transform:scale(.92);opacity:1}40%{transform:scale(1.04)}70%{transform:scale(1);opacity:1}100%{transform:scale(.96);opacity:0}}
 @keyframes msc-dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
-@keyframes msc-fill{from{width:100%}to{width:0}}`);
+@keyframes msc-fill{from{width:100%}to{width:0}}
+.msc-stamp{display:inline-block;font-weight:900;font-size:22px;line-height:1.1;color:var(--sc);border:3px solid var(--sc);padding:2px 10px;transform:rotate(-6deg);white-space:nowrap}
+.msc-result.v-paper{background:none;pointer-events:none;z-index:7;justify-content:flex-end;padding-bottom:15vh;box-sizing:border-box}
+.msc-result.v-paper .rcard{width:min(520px,92vw);overflow:hidden;padding:12px 22px 14px}
+.msc-result.v-paper .title{font-size:clamp(20px,3.6vmin,26px);margin:2px 0 4px}
+.msc-result.v-paper .said{font-size:clamp(16px,2.8vmin,20px);line-height:1.35;margin:6px 0 0}
+.msc-result.v-paper .said .ahead{visibility:hidden}
+.msc-result.v-paper .stamped{display:flex;justify-content:flex-end;min-height:48px;margin-top:4px}
+.msc-result.v-paper .stamped .msc-stamp{font-size:clamp(26px,5vmin,36px);animation:msc-stamp .35s cubic-bezier(.2,1.6,.4,1) both}
+.msc-result.v-paper table{margin-top:4px}
+@media (max-width:700px),(max-height:500px){
+  .msc-result.v-paper{padding-bottom:6px}
+  .msc-result.v-paper .rcard{width:min(640px,86vw);padding:6px 16px 8px}
+  .msc-result.v-paper .cut-flag{margin-bottom:4px}
+  .msc-result.v-paper .title{font-size:19px;margin:0 0 2px}
+  .msc-result.v-paper .said{font-size:15px;line-height:1.28;margin-top:2px}
+  .msc-result.v-paper .stamped{min-height:36px;margin-top:0}
+  .msc-result.v-paper .stamped .msc-stamp{font-size:24px}
+  .msc-result.v-paper table{font-size:13px}
+  .msc-result.v-paper td{padding:1px 0}}
+@keyframes msc-stamp{from{transform:scale(2.6) rotate(-16deg);opacity:0}to{transform:rotate(-6deg);opacity:1}}`);
 
 /** A banner element of the given kind, in the HUD, hidden till written. */
 function banner(cls: string): HTMLDivElement {
@@ -538,6 +562,10 @@ export interface MissionResult {
   colour?: string;
   /** The Again button's go, if there is one. */
   again?: () => void;
+  /** A loss that can be had another go at: Retry and Abort take Continue's place. retry starts it
+   *  again; abort is the card put away any other way (Abort, Esc, a click off it, its timer). */
+  retry?: () => void;
+  abort?: () => void;
   /** The end sound: left out, the job's win or loss; null for none. */
   sound?: (() => void) | null;
   /** A variant's own body (html, already escaped) after the title: a report, a front page, a verdict. */
@@ -585,6 +613,7 @@ export function missionResult(o: MissionResult): ResultHandle {
   const leadRow = o.place || o.lead || o.medal
     ? `<div class="lead">${o.place ? `<span class="place">${nth(o.place)}</span>` : ""}${o.lead ? `<span class="time">${esc(o.lead)}</span>` : ""}${o.medal ? `<span class="medal">${esc(o.medal)}</span>` : ""}</div>` : "";
   const ok = ctl("jump"), more = o.again ? ctl("again") : "";
+  const hint = (k: string) => (k ? ` <small>(${esc(k)})</small>` : "");
   band.innerHTML = flag
     + (o.label ? `<div class="kind">${esc(o.label)}</div>` : "")
     + `<div class="title">${esc(o.title)}</div>`
@@ -594,7 +623,8 @@ export function missionResult(o: MissionResult): ResultHandle {
     + `<div class="table"></div>`
     + (o.stats?.length ? `<div class="stats">${o.stats.map((x) => `${esc(x.k)} <b>${esc(x.v)}</b>`).join(" &nbsp;·&nbsp; ")}</div>` : "")
     + `<ul class="rewards"></ul>`
-    + `<div class="go">${o.again ? `<button type="button" class="again">Again <small>(${esc(more)})</small></button>` : ""}<button type="button" class="main">Continue <small>(${esc(ok)})</small><span class="fill"></span></button></div>`;
+    + `<div class="go">${o.retry ? `<button type="button" class="again">Retry${hint(ctl("card.retry"))}</button><button type="button" class="main">Abort${hint(ctl("card.abort"))}<span class="fill"></span></button>`
+      : `${o.again ? `<button type="button" class="again">Again <small>(${esc(more)})</small></button>` : ""}<button type="button" class="main">Continue <small>(${esc(ok)})</small><span class="fill"></span></button>`}</div>`;
   el.appendChild(band);
   layer().appendChild(el);
   const table = band.querySelector<HTMLElement>(".table")!, list = band.querySelector<HTMLElement>(".rewards")!;
@@ -613,31 +643,34 @@ export function missionResult(o: MissionResult): ResultHandle {
     list.appendChild(li);
     if (pic) void Promise.resolve(pic).then((url) => { if (url) { const img = document.createElement("img"); img.className = "pic"; img.alt = ""; img.src = url; li.prepend(img); li.classList.add("haspic"); } }, () => {});
   };
-  const remove = () => {
+  const remove = (retrying = false) => {
     if (gone) return;
     gone = true;
+    if (!retrying) o.abort?.();
     clearTimeout(timer);
     removeEventListener("keydown", onKey, true);
     el.classList.add("out");
     window.setTimeout(() => el.remove(), 500);
     if (ending === handle) ending = null;
   };
-  const handle: ResultHandle = { rows, reward, remove };
+  const handle: ResultHandle = { rows, reward, remove: () => remove() };
   ending = handle;
   rows(o.rows ?? []);
   for (const r of o.rewards ?? []) if (r) reward(r);
-  // jump (Space, Enter, ✕) carries on; use (E, □) or Backspace goes again. Taken here so the press
-  // doesn't jump or get in a car too.
+  const retry = () => { remove(true); o.retry?.(); };
+  // jump (Space, Enter, ✕) carries on; use (E, □) or Backspace goes again; on a loss, retry (R, Enter,
+  // □) has another go. Taken here so the press doesn't jump, reload or get in a car too.
   const onKey = (k: KeyboardEvent) => {
     if (k.repeat) return;
-    if (k.code === "Space" || k.code === "Enter") { k.preventDefault(); k.stopImmediatePropagation(); remove(); }
+    if (o.retry && isKey(k.code, "card.retry")) { k.preventDefault(); k.stopImmediatePropagation(); retry(); }
+    else if (k.code === "Space" || k.code === "Enter") { k.preventDefault(); k.stopImmediatePropagation(); remove(); }
     else if (o.again && (k.code === "Backspace" || isKey(k.code, "use"))) { k.preventDefault(); k.stopImmediatePropagation(); remove(); o.again(); }
   };
   addEventListener("keydown", onKey, true);
   band.querySelector<HTMLButtonElement>("button.main")!.addEventListener("click", () => { remove(); modalClicked(); });
-  band.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { remove(); o.again?.(); modalClicked(); });
-  modal(el, () => band, remove);
-  const timer = window.setTimeout(remove, secs * 1000);
+  band.querySelector<HTMLButtonElement>("button.again")?.addEventListener("click", () => { if (o.retry) retry(); else { remove(); o.again?.(); } modalClicked(); });
+  modal(el, () => band, () => remove());
+  const timer = window.setTimeout(() => remove(), secs * 1000);
   if (o.sound !== null) (o.sound ?? (() => { if (o.result !== "over") SFX.jobDone(won); }))();
 
   const burst = () => {
@@ -703,6 +736,73 @@ export function missionNight(o: { pub: string; head: string; stand: string; by: 
     body: `<div class="by">${esc(o.by)}</div><div class="stand">${esc(o.stand)}</div>${o.body.map((p) => `<p>${esc(p)}</p>`).join("")}`
       + `<div class="cols">${o.items.map((i) => `<div><h4>${i.head}</h4>${i.text}</div>`).join("")}</div>`,
   });
+}
+
+/** A rubber stamp, the one look for a verdict or a mark stamped on a card. */
+export const stampHtml = (text: string, colour: string) => `<span class="msc-stamp" style="--sc:${colour}">${esc(text)}</span>`;
+
+export interface MissionPaper {
+  /** The section of the paper it's from, along the top. */
+  flag: string;
+  /** Small over the title, and the title. */
+  label?: string; title: string;
+  /** Words typed out, over typing seconds. */
+  text?: string; typing?: number;
+  /** The stamp, and how far in it comes down. */
+  stamp?: { text: string; colour: string; at: number };
+  /** Anything more, as html (a table). */
+  body?: string;
+  colour?: string;
+  /** Seconds it's up, and how far into them it already is (on a screen that's caught up late). */
+  secs: number; since?: number;
+}
+let paper: { remove(): void } | null = null;
+
+/** A cutting held up low in the middle of the screen for its time, under whatever it's about, with
+ *  nothing to press, so you can still look about. Each new one takes the place of the last. */
+export function missionPaper(o: MissionPaper): { remove(): void } {
+  paper?.remove();
+  const el = document.createElement("div");
+  el.className = "msc msc-result v-paper";
+  colourOn(el, o.colour);
+  tearOff(el);
+  const band = document.createElement("div");
+  band.className = "rcard cut";
+  band.innerHTML = cutFlag(o.flag)
+    + (o.label ? `<div class="kind">${esc(o.label)}</div>` : "")
+    + `<div class="title">${esc(o.title)}</div>`
+    + (o.text !== undefined ? `<p class="said"><span class="typed"></span><span class="ahead"></span></p>` : "")
+    + (o.body ?? "")
+    + (o.stamp ? `<div class="stamped"></div>` : "");
+  el.appendChild(band);
+  layer().appendChild(el);
+  const t0 = performance.now() - (o.since ?? 0) * 1000, text = o.text ?? "";
+  const typed = band.querySelector<HTMLElement>(".typed"), ahead = band.querySelector<HTMLElement>(".ahead");
+  const stamped = band.querySelector<HTMLElement>(".stamped");
+  let shown = -1, gone = false;
+  const tick = () => {
+    const t = (performance.now() - t0) / 1000;
+    if (typed && ahead) {
+      // the rest is there but unseen, so the card doesn't grow as it types
+      const n = Math.min(text.length, Math.floor(text.length * t / Math.max(0.1, o.typing ?? 0)));
+      if (n !== shown) { shown = n; typed.textContent = text.slice(0, n); ahead.textContent = text.slice(n); }
+    }
+    if (o.stamp && stamped && !stamped.firstChild && t >= o.stamp.at) { stamped.innerHTML = stampHtml(o.stamp.text, o.stamp.colour); if (t - o.stamp.at < 0.5) SFX.jobStep(); }
+    if (t >= o.secs) remove();
+  };
+  const timer = window.setInterval(tick, 40);
+  const remove = () => {
+    if (gone) return;
+    gone = true;
+    clearInterval(timer);
+    el.classList.add("out");
+    window.setTimeout(() => el.remove(), 500);
+    if (paper === handle) paper = null;
+  };
+  const handle = { remove };
+  paper = handle;
+  tick();
+  return handle;
 }
 
 /** A race place as a word with its ending: "1st". */

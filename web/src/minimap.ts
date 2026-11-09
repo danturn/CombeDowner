@@ -27,7 +27,12 @@ import { GROUND } from "./groundkinds";
 import { drawMinePubs, drawMineUnder, type Mine } from "./yours";
 import { sizeOf } from "./show";
 
-const RANGE = 140;          // metres from the centre of the minimap to its edge
+const RANGE = 140;          // metres from the centre of the minimap to its edge, standing still
+const ZOOM_OUT = 2.3;       // going flat out it shows this many times as far, so you see where you're heading
+// The look, kept plain as a satnav's or an old radar's: flat grey land, green parks and woods (groundkinds.ts),
+// blue water, bright streets with the main roads brightest, footpaths faint, and the buildings dark blocks.
+const WATER = "#2f6d9e", PATH = "#59616a", TUNNEL = "#6b737b", STREET = "#b9bfc5", MAIN = "#e9e5d6", BUILDING = "#4d545c";
+const MAIN_ROADS = new Set(["trunk", "primary", "secondary", "tertiary"]);
 // offscreen canvas size in pixels: half on a phone or tablet, where four of these at full size are
 // memory it can't spare and the screen is too small to show the difference
 const BASE = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1 ? 1024 : 2048;
@@ -40,7 +45,8 @@ const CLUSTER_PX = 5;       // job badges right on top of each other on the big 
 const REACH_PX = 22;        // how near the pointer (CSS pixels) a thing on the big map has to be to be named, or marked
 const PINTS_ZOOM = 4;       // the pubs' pints are faint till the big map is zoomed in this far, so they don't drown the jobs
 const PINT_NAMES_ZOOM = 6;  // and named from this close in
-const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
+// the sharp patch of the wider map round the player: metres and pixels across (wide enough for the minimap zoomed right out)
+const LOCAL = 1300, LOCAL_PX = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1 ? 1200 : 1700;
 
 /** A dot on the maps. layer: the key's layer it belongs to (none: always shown). */
 export interface Blip { x: number; z: number; colour: string; layer?: string }
@@ -702,31 +708,30 @@ export class Minimap {
       g.fillRect(px - cw / 2, py - ch / 2, cw, ch);
     }
     // water
-    g.fillStyle = "#3f6f8c";
+    g.fillStyle = WATER;
     for (const w of D.wp) {
       g.beginPath();
       for (const ring of w.r) ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
       g.fill("evenodd");
     }
-    g.strokeStyle = "#3f6f8c";
+    g.strokeStyle = WATER;
     g.lineWidth = 1.5 / this.mpp;
     for (const l of D.wl) this.line(g, l.p, P);
-    // roads: paths thin and sandy, streets wide and pale
+    // roads: paths thin and faint, streets wide and bright, the main roads brightest
     g.lineCap = g.lineJoin = "round";
-    g.strokeStyle = "#a89a78";
-    g.lineWidth = 1.6 / this.mpp;
+    g.strokeStyle = PATH;
+    g.lineWidth = 1.2 / this.mpp;
     for (const r of D.rd) if (PATHS.has(r.c)) this.line(g, r.p, P);
     // tunnels: dashed, under everything above them
     g.setLineDash([5 / this.mpp, 4 / this.mpp]);
-    g.strokeStyle = "#8d8070";
+    g.strokeStyle = TUNNEL;
     g.lineWidth = 3 / this.mpp;
     for (const t of D.tn ?? []) this.line(g, t.p, P);
     g.setLineDash([]);
-    g.strokeStyle = "#a89a78";
-    g.strokeStyle = "#c9c4b6";
-    for (const r of D.rd) {
-      if (PATHS.has(r.c)) continue;
-      g.lineWidth = (r.c === "primary" || r.c === "tertiary" ? 8 : r.c === "service" ? 4 : 6) / this.mpp;
+    for (const main of [false, true]) for (const r of D.rd) {
+      if (PATHS.has(r.c) || MAIN_ROADS.has(r.c) !== main) continue;
+      g.strokeStyle = main ? MAIN : STREET;
+      g.lineWidth = (main ? 9 : r.c === "service" ? 4 : 6) / this.mpp;
       this.line(g, r.p, P);
     }
     this.railway(g, map, P, this.mpp);
@@ -757,14 +762,11 @@ export class Minimap {
     }
     this.labels = [...best].map(([name, v]) => ({ name, ...v }));
     // buildings
-    g.fillStyle = "#e3c98f";
-    g.strokeStyle = "#8a7550";
-    g.lineWidth = 1;
+    g.fillStyle = BUILDING;
     for (const b of D.bl) {
       g.beginPath();
       for (const ring of b.r) { ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y)))); g.closePath(); }
       g.fill("evenodd");
-      g.stroke();
     }
     if (map.wide) { this.drawWide(map); return; }
     // outside the force field
@@ -821,7 +823,7 @@ export class Minimap {
     // and the squares' own ground over it, at full detail
     map.groundKinds?.paint(g, x0, y1, mpp, size);
     const pick = <T,>(all: T[], key: "wp" | "wl" | "rd" | "bl") => chunks ? chunks.flatMap((c) => c[key].map((i) => all[i])) : all;
-    g.fillStyle = g.strokeStyle = "#3f6f8c";
+    g.fillStyle = g.strokeStyle = WATER;
     for (const w of pick(W.wp, "wp")) {
       g.beginPath();
       for (const ring of w.r) ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
@@ -831,24 +833,21 @@ export class Minimap {
     for (const l of pick(W.wl, "wl")) this.line(g, l.p, P);
     const roads = pick(W.rd, "rd");
     g.lineCap = g.lineJoin = "round";
-    g.strokeStyle = "#a89a78";
-    g.lineWidth = Math.max(0.6, 1.6 / mpp);
+    g.strokeStyle = PATH;
+    g.lineWidth = Math.max(0.5, 1.2 / mpp);
     for (const r of roads) if (PATHS.has(r.c)) this.line(g, r.p, P);
-    g.strokeStyle = "#c9c4b6";
-    for (const r of roads) {
-      if (PATHS.has(r.c)) continue;
-      g.lineWidth = Math.max(1, (r.c === "primary" || r.c === "secondary" ? 9 : r.c === "service" ? 4 : 6) / mpp);
+    for (const main of [false, true]) for (const r of roads) {
+      if (PATHS.has(r.c) || MAIN_ROADS.has(r.c) !== main) continue;
+      g.strokeStyle = main ? MAIN : STREET;
+      g.lineWidth = Math.max(1, (main ? 9 : r.c === "service" ? 4 : 6) / mpp);
       this.line(g, r.p, P);
     }
     this.railway(g, map, P, mpp);
-    g.fillStyle = "#e3c98f";
-    g.strokeStyle = "#8a7550";
-    g.lineWidth = 1;
+    g.fillStyle = BUILDING;
     for (const b of pick(W.bl, "bl")) {
       g.beginPath();
       for (const ring of b.r) { ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y)))); g.closePath(); }
       g.fill("evenodd");
-      if (mpp < 2) g.stroke();
     }
     // the detailed map on top, then outside the force field
     const [bx0, by0, bx1, by1] = map.d.b;
@@ -860,7 +859,7 @@ export class Minimap {
    *  once they've gone far enough that its edge could show. */
   private localPatch(x: number, z: number) {
     const L = this.local, W = this.map?.wide;
-    if (!W || (L && Math.hypot(x - L.cx, -z - L.cy) < LOCAL / 2 - RANGE * 1.5)) return L;
+    if (!W || (L && Math.hypot(x - L.cx, -z - L.cy) < LOCAL / 2 - RANGE * ZOOM_OUT * 1.1)) return L;
     const canvas = L?.canvas ?? document.createElement("canvas");
     canvas.width = canvas.height = LOCAL_PX;
     const mpp = LOCAL / LOCAL_PX, cx = x, cy = -z, x0 = cx - LOCAL / 2, y1 = cy + LOCAL / 2;
@@ -885,9 +884,9 @@ export class Minimap {
       const flush = () => {
         if (run.length > 1) {
           g.setLineDash(inTunnel ? [2 / mpp, 3 / mpp] : []);
-          g.strokeStyle = "#3b3b3b"; g.lineWidth = Math.max(1.2, 3 / mpp);
+          g.strokeStyle = "#8a9096"; g.lineWidth = Math.max(1.2, 3 / mpp);
           this.line(g, run, P);
-          if (!inTunnel) { g.setLineDash([4 / mpp, 4 / mpp]); g.strokeStyle = "#f2f2f2"; g.lineWidth = Math.max(0.6, 1.4 / mpp); this.line(g, run, P); }
+          if (!inTunnel) { g.setLineDash([4 / mpp, 4 / mpp]); g.strokeStyle = "#2c3136"; g.lineWidth = Math.max(0.6, 1.4 / mpp); this.line(g, run, P); }
         }
         run = [];
       };
@@ -899,11 +898,10 @@ export class Minimap {
       flush();
     }
     g.setLineDash([]);
-    g.fillStyle = "#8d8880";
     for (const pl of R.platforms) {
       g.beginPath();
       pl.r.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
-      g.lineWidth = Math.max(1, 2.5 / mpp); g.strokeStyle = "#8d8880";
+      g.lineWidth = Math.max(1, 2.5 / mpp); g.strokeStyle = "#646a70";
       g.stroke();
     }
     g.lineCap = "round";
@@ -1519,6 +1517,24 @@ export class Minimap {
       this.routes.map((r) => [idOf(r.pts), r.gates, r.colour]), bus && [idOf(bus.pts), bus.colour, bus.stops]]);
   }
   private drawn = "";
+  // how fast you're going (m/s, smoothed, from how far you've come), and how far out the minimap's zoomed for it
+  private seen: { x: number; z: number; t: number } | null = null;
+  private pace = 0;
+  private out = 1;
+
+  /** How far out to zoom for going at the speed you are, eased so it doesn't pump in and out. */
+  private zoomFor(x: number, z: number): number {
+    const t = performance.now() / 1000, s = this.seen;
+    if (s && t > s.t) {
+      const dt = Math.min(0.5, t - s.t), v = Math.hypot(x - s.x, z - s.z) / (t - s.t);
+      if (v < 120) this.pace += (v - this.pace) * Math.min(1, dt * 2);   // (not a jump to somewhere else)
+      const want = 1 + (ZOOM_OUT - 1) * Math.min(1, Math.max(0, (this.pace - 6) / 22));
+      this.out += (want - this.out) * Math.min(1, dt * (want > this.out ? 0.8 : 0.5));
+      if (Math.abs(want - this.out) < 0.005) this.out = want;
+    }
+    this.seen = { x, z, t };
+    return Math.round(this.out * 100) / 100;
+  }
 
   /** Draw the minimap around the player at scene (x, z) facing yaw, with the other players at the
    *  rim, pointing their way, when they're out of range. */
@@ -1528,10 +1544,11 @@ export class Minimap {
     if (!css) return;
     if (this.size !== Math.round(css * dpr)) { this.size = Math.round(css * dpr); c.width = c.height = this.size; }
     const S = this.size, R = S / 2, g = this.ctx;
-    const key = this.drawKey(x, z, yaw, dpr, blips, mates);
+    const out = this.zoomFor(x, z), range = RANGE * out;
+    const key = this.drawKey(x, z, yaw, dpr, blips, mates) + out;
     if (key && key === this.drawn) return;
     this.drawn = key;
-    const scale = R / RANGE;                       // screen px per metre
+    const scale = R / range;                       // screen px per metre
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, S, S);
     g.save();
@@ -1547,7 +1564,7 @@ export class Minimap {
     else g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
     const on = (layer?: string) => !layer || !this.off.has(layer);
     if (this.zones) drawZones(g, this.zones, (px, pz) => [(px - x) * scale, (pz - z) * scale], dpr, 0);
-    if (on("flags")) drawTint(g, this.tint.filter((t) => Math.hypot(t.x - x, t.z - z) < RANGE * 1.5 + t.r), (px, pz) => [(px - x) * scale, (pz - z) * scale], scale, 0);
+    if (on("flags")) drawTint(g, this.tint.filter((t) => Math.hypot(t.x - x, t.z - z) < range * 1.5 + t.r), (px, pz) => [(px - x) * scale, (pz - z) * scale], scale, 0);
     // the bus route you're driving, under everything else; then the bus stops, upright
     const bus = on("route") ? this.bus : null;
     if (bus) routeLine(g, bus, (px, pz) => [(px - x) * scale, (pz - z) * scale], 3.2 * dpr);

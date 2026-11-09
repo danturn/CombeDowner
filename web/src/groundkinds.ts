@@ -6,9 +6,12 @@
 import { fetchPacked, packedName } from "./pack";
 
 /** The minimap's colour for each kind of ground, by its character in the maps' ground grids ('0' up;
- *  the wild ground's rock, heath, sand and wetland after the town's, tools/wild.py). */
-export const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b",
-  "#86847c", "#6f6d47", "#cbbd92", "#4d6346"];
+ *  the wild ground's rock, heath, sand and wetland after the town's, tools/wild.py), kept plain: gardens,
+ *  paving, flowerbeds and playgrounds are all just land, and the open green ground two shades of green.
+ *  Garden grass, pitches, woods, fields, cemeteries, paving, flowerbeds, playgrounds, rock, heath, sand, wetland. */
+const LAND = "#3b4148", GREEN = "#40603d", WOOD = "#34502f";
+export const GROUND = [LAND, GREEN, WOOD, GREEN, GREEN, LAND, LAND, LAND,
+  "#4f5357", GREEN, "#857a5c", GREEN];
 const RGB = GROUND.map((c) => parseInt(c.slice(1), 16));
 
 export class GroundKinds {

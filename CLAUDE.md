@@ -169,8 +169,11 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
-  The one exception is `web/Record player/`: MIDI files Spencer adds there, which the record
-  player on Solsbury Hill plays (`recordplayer.ts`, `midiplayer.ts`). Leave what's in it alone.
+  The exceptions are `web/Record player/`: MIDI files Spencer adds there, which the record
+  player on Solsbury Hill plays (`recordplayer.ts`, `midiplayer.ts`) (leave what's in it alone), and
+  the station announcer's voice, `web/public/sounds/station.mp3` and `.json`: every piece the
+  announcements are stitched from, said once by a recorded voice so they can go through the tannoy
+  (`announce.ts`). Don't edit those by hand: change `tools/station_voice.py` and run it again.
 - **The map** is built by the Python tools in `tools/` from Overture Maps, Environment Agency
   lidar, tree canopy, energy certificates and OSM, all of Bath in one run of square builds
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and

@@ -1,3 +1,6 @@
+# Builds the game and publishes it to combedowner.com. In the repo's Settings → Pages, Source must be
+# "GitHub Actions" and the custom domain combedowner.com (there's no CNAME file): if the repo is ever
+# made private and public again, Pages comes back as "Deploy from a branch" and shows the README.
 name: Deploy to GitHub Pages
 
 on:

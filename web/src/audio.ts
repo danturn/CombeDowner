@@ -1220,6 +1220,56 @@ export function placedOut(): { node: AudioNode; set(vol: number, distance: numbe
 }
 
 /**
+ * A station's tannoy (announce.ts): what goes into input comes out of the platform speakers. Thin and
+ * boxy, a little overdriven, with the mains hum under it while it's on, and the speakers further down
+ * the platform answering a moment later. set() it as placedOut's (how loud, how far off) every so often;
+ * on() and off() click the speakers on and off round an announcement.
+ */
+export function tannoy(): { input: AudioNode; set(vol: number, distance: number, pan: number): void; on(at: number): void; off(at: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const place = placedOut();
+  if (!place) return null;
+  const c = ctx, input = c.createGain();
+  const filter = (type: BiquadFilterType, f: number, q: number, gain = 0) => { const b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; b.gain.value = gain; return b; };
+  const hp = filter("highpass", 450, 0.8), honk = filter("peaking", 1900, 1.3, 8), lp = filter("lowpass", 3300, 0.9);
+  const drive = c.createGain(), shaper = c.createWaveShaper(), post = c.createGain();
+  drive.gain.value = 2.6; post.gain.value = 0.55;
+  const curve = new Float32Array(1024);
+  const full = 1 / Math.tanh(2.2), step = 2 / (curve.length - 1);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh((i * step - 1) * 2.2) * full;
+  shaper.curve = curve;
+  input.connect(hp).connect(honk).connect(lp).connect(drive).connect(shaper).connect(post).connect(place.node);
+  // the speakers further down the platform
+  const echoes: AudioNode[] = [];
+  for (const [d, g] of [[0.11, 0.42], [0.24, 0.2]]) {
+    const dl = c.createDelay(0.5), gn = c.createGain();
+    dl.delayTime.value = d; gn.gain.value = g;
+    post.connect(dl).connect(gn).connect(place.node);
+    echoes.push(dl, gn);
+  }
+  // the mains hum and a little hiss, only while it's on
+  const hum = c.createOscillator(), humG = c.createGain(), hiss = c.createBufferSource(), hissF = filter("bandpass", 2600, 0.7), hissG = c.createGain();
+  hum.type = "sawtooth"; hum.frequency.value = 100; humG.gain.value = 0;
+  hiss.buffer = noise; hiss.loop = true; hissG.gain.value = 0;
+  hum.connect(humG).connect(hp); hiss.connect(hissF).connect(hissG).connect(hp);
+  hum.start(); hiss.start();
+  const click = (at: number, vol: number) => burst(hp, at, 0.025, vol, 1500, { q: 0.7 });
+  let stopped = false;
+  return {
+    input,
+    set: place.set,
+    on(at) { click(at, 0.5); humG.gain.setTargetAtTime(0.012, at, 0.02); hissG.gain.setTargetAtTime(0.02, at, 0.02); },
+    off(at) { humG.gain.setTargetAtTime(0, at, 0.03); hissG.gain.setTargetAtTime(0, at, 0.03); click(at + 0.02, 0.35); },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      place.stop();
+      setTimeout(() => { hum.stop(); hiss.stop(); for (const n of [input, hp, honk, lp, drive, shaper, post, hum, humG, hiss, hissF, hissG, ...echoes]) n.disconnect(); }, 1200);
+    },
+  };
+}
+
+/**
  * A hot air balloon's burner (balloons.ts): a deep roar of flame, fluttering a little, from a loop of
  * noise. Call set() every frame with how hard it's burning (0..1), and stop() when it's out of earshot.
  */
@@ -1334,6 +1384,28 @@ export function boom(distance = 0, pan = 0) {
   burst(d, t, 1.7, 1.0, 1000 * j, { type: "lowpass", to: 110 });
   burst(d, t, 0.4, 0.7, 2600 * j, { q: 0.6, to: 500 });
   for (let k = 0; k < 9; k++) clink(d, t + 0.45 + Math.random() * 1.2, 0.04 + Math.random() * 0.06, 1400 + Math.random() * 3000);
+}
+
+/** A car going through a hedge (leafy: a rush of leaves and twigs snapping) or a fence (boards cracking and clattering): gaps.ts. */
+export function smashThrough(leafy: boolean, distance = 0, pan = 0) {
+  if (!ctx || distance > 80) return;
+  const t = now(), j = vary(), d = out(1.2 * fall(distance, 8), pan, distance, 0.15);
+  if (leafy) {
+    burst(d, t, 0.45, 0.9, 2600 * j, { type: "bandpass", q: 0.6, to: 900, attack: 0.02 });
+    for (let k = 0; k < 7; k++) clack(d, t + Math.random() * 0.3, 0.12 + Math.random() * 0.12, 1800 + Math.random() * 1600);
+  } else {
+    tone(d, t, 0.12, 0.5, 160 * j, 70);
+    burst(d, t, 0.04, 0.9, 1700 * j, { q: 1.2 });
+    for (let k = 0; k < 6; k++) clack(d, t + 0.03 + Math.random() * 0.35, 0.3 - k * 0.03, 600 + Math.random() * 700);
+  }
+}
+
+/** A hammer knocking a fence post back in (menders.ts). */
+export function mendTap(distance = 0, pan = 0) {
+  if (!ctx || distance > 40) return;
+  const t = now(), d = out(0.5 * fall(distance, 6), pan, distance, 0.15);
+  clack(d, t, 0.5, 1100 * vary());
+  tone(d, t, 0.06, 0.25, 220, 150, "triangle");
 }
 
 /** A bundle of firewood thrown on the bonfire (bonfire.ts): a hollow wooden clatter. */
@@ -2285,6 +2357,15 @@ export function whoosh() {
   tone(d, t, 0.4, 0.1, 300, 900, "triangle", 0.1);
 }
 
+/** Bumping another rider, hard as 0..1: a body's thud, a scuff, and a rattle of the ride when it's hard. */
+export function bump(hard: number) {
+  if (!ctx) return;
+  const k = Math.max(0, Math.min(1, hard)), t = now(), d = out(0.35 + 0.5 * k, 0, 0, 0.08);
+  tone(d, t, 0.12 + 0.08 * k, 0.6, 140 - 40 * k, 55);
+  burst(d, t, 0.08 + 0.1 * k, 0.25 + 0.2 * k, 500 + 600 * k, { q: 0.7 });
+  if (k > 0.35) clack(d, t + 0.03, 0.12 + 0.15 * k, 1800);
+}
+
 /** Barged off your ride: a dull thump and a clatter. */
 export function thump() {
   if (!ctx) return;
@@ -2558,6 +2639,55 @@ export function unlockFanfare(big = false): Playing {
       unduck();
       d.gain.cancelScheduledValues(c.currentTime);
       d.gain.setTargetAtTime(0, c.currentTime, 0.12);
+    },
+  };
+}
+
+/** A soft snare roll that goes on as long as it's fed, then a cymbal to end it. */
+export interface Roll extends Playing {
+  /** Once a frame while it rolls: how far the loading has got, 0 to 1; it swells towards the end.
+   *  at: the sound's clock now (a recording renders it ahead of time). */
+  level(p: number, at?: number): void;
+  /** The cymbal, now (or at), and the roll stops. */
+  hit(big?: boolean, at?: number): void;
+}
+
+/**
+ * The drum roll under the fly-over's cover while the new part of the map loads (reveal.ts). Its
+ * strokes are laid out a moment ahead of the sound's clock each frame, so a slow frame never
+ * leaves a gap, and stop() fades out the few already laid out, leaving nothing hanging.
+ */
+export function drumRoll(): Roll {
+  if (!ctx) return { level() {}, hit() {}, stop() {} };
+  const c = ctx, d = out(1, 0, 0, 0.2);
+  let next = now(), k = 0, rolling = true, p = 0;
+  const stroke = (t: number) => {
+    // alternate hands, one a little heavier, and faster and louder as it nears done
+    const v = (0.09 + 0.13 * p * p) * (k % 2 ? 0.8 : 1) * vary(0.1);
+    burst(d, t, 0.07, v, 3400 * vary(0.08), { q: 0.6 });
+    if (k % 2 === 0) tone(d, t, 0.05, v * 0.6, 220, 175, "triangle");
+  };
+  return {
+    level(to, at = c.currentTime) {
+      if (!rolling) return;
+      p = Math.max(p, Math.min(1, to));
+      const until = at + 0.12;
+      if (next < at) next = at + 0.005;
+      while (next < until) { stroke(next); next += 0.062 - 0.016 * p; k++; }
+    },
+    hit(big = false, at?: number) {
+      if (!rolling) return;
+      rolling = false;
+      const t = at ?? now(), v = big ? 1.3 : 1;
+      burst(d, t, big ? 2.4 : 1.7, 0.2 * v, 8000, { type: "highpass", attack: 0.003 });
+      burst(d, t, 0.8, 0.1 * v, 4200, { q: 0.7 });
+      tone(d, t, 0.35, 0.22 * v, 110, 62);
+      for (const f of [3150, 4420, 5970]) tone(d, t, 1.2, 0.01 * v, f, f * 0.99, "square");
+    },
+    stop() {
+      rolling = false;
+      d.gain.cancelScheduledValues(c.currentTime);
+      d.gain.setTargetAtTime(0, c.currentTime, 0.02);
     },
   };
 }

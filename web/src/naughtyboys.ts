@@ -45,7 +45,8 @@ import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { inSafeZone } from "./safezones";
-import { nightOut } from "./daylight";
+import { nightOut, timeOfDay } from "./daylight";
+import { MR_DS } from "./chipvan";
 import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
 
@@ -94,7 +95,8 @@ const DELAY = 130;                         // ms behind real time when drawing f
 // Street, and which way Milsom Street runs from there (south); where more of them walk in from (along
 // George Street both ways and up Milsom Street); and how many.
 const NIGHT = { x: -1168, y: 2490, ux: 0.303, uy: -0.953, map: "combe-down" };
-const NIGHT_IN = [[-1215, 2476], [-1118, 2506], [-1146, 2412]];
+const NIGHT_IN = [[-1215, 2476], [-1118, 2506], [-1146, 2412]];   // (where they come from if the pubs round about haven't loaded)
+const NIGHT_DOORS = 300;                   // the pubs and restaurants this near the top of Milsom Street are where the crowd come from
 const CROWD = 16;
 const NIGHT_NEAR = 320;                    // the night's on while anyone's this close
 const CROWD_SPOT = 7;                      // one of the crowd only goes for you this close (or if you shoot)
@@ -109,7 +111,7 @@ const GONE = 0, ALIVE = 1, DEAD = 2;
  *  someone arriving, and when the next one turns out anyway. */
 interface Ground { kind: number; spots: { x: number; z: number }[]; on: (x: number, z: number) => boolean; met: Map<string, number>; owed: boolean; next: number }
 /** A player the naughty boys might go for. */
-/** passive: they've passive mode on (settings.ts), or they're at a narrowboat's tiller, so nobody here goes for them. */
+/** passive: they've passive mode on (settings.ts), or they're at a narrowboat's tiller or driving a bus or coach, so nobody here goes for them. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
 export interface NaughtyBoyState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */
@@ -946,6 +948,12 @@ export class NaughtyBoys {
   private fightT = FIGHT_EVERY[0];
   /** Where each of tonight's crowd stands about, in twos and threes (scene x, z), made afresh each night. */
   private spots: { x: number; z: number }[] = [];
+  /** And round Mr D's chip van, where half of them drift after midnight. */
+  private vanSpots: { x: number; z: number }[] = [];
+  private toVan = false;
+  /** The doors of the pubs and restaurants round about (scene x, z, and whether it's a pub): where they come out of, and go back to. */
+  private doors: { x: number; z: number; pub: boolean }[] = [];
+  private doorsSeen = -1;
 
   /**
    * Once a second: on a Friday or Saturday night, with anyone near the top of Milsom Street, keep a
@@ -958,14 +966,15 @@ export class NaughtyBoys {
     const jx = NIGHT.x, jz = -NIGHT.y, near = (r: number) => everyone.some((t) => Math.hypot(t.x - jx, t.z - jz) < r);
     const crowd = this.list.filter((c) => c.crowd && c.state === ALIVE);
     const on = this.map.d.id === NIGHT.map && nightOut() && near(NIGHT_NEAR);
+    const hour = timeOfDay() * 24, doors = this.nightDoors(hour);
     if (!on) {
       for (const c of crowd) {
-        // nobody about: gone; the night's over: off home the way they came, and gone once they're there
-        const home = NIGHT_IN.reduce((b, p) => (Math.hypot(p[0] - c.x, -p[1] - c.z) < Math.hypot(b[0] - c.x, -b[1] - c.z) ? p : b));
-        if (!near(NIGHT_NEAR + 60) || (c.leaving && Math.hypot(home[0] - c.x, -home[1] - c.z) < 4)) { c.keep = false; c.crowd = false; c.state = GONE; continue; }
-        if (!c.leaving) { c.leaving = true; c.foe = -1; this.sendTo(c.i, c.gen, home[0], -home[1]); }
+        // nobody about: gone; the night's over: off home the way they came (the nearest pub or restaurant), and gone once they're there
+        const home = doors.reduce((b, p) => (Math.hypot(p.x - c.x, p.z - c.z) < Math.hypot(b.x - c.x, b.z - c.z) ? p : b));
+        if (!near(NIGHT_NEAR + 60) || (c.leaving && Math.hypot(home.x - c.x, home.z - c.z) < 4)) { c.keep = false; c.crowd = false; c.state = GONE; continue; }
+        if (!c.leaving) { c.leaving = true; c.foe = -1; this.sendTo(c.i, c.gen, home.x, home.z); }
       }
-      if (!crowd.length) this.spots = [];
+      if (!crowd.length) { this.spots = []; this.vanSpots = []; this.toVan = false; }
       return;
     }
     // tonight's spots: little groups across the top of Milsom Street, clear of George Street's traffic
@@ -977,20 +986,44 @@ export class NaughtyBoys {
       }
       if (!this.spots.length) this.spots.push({ x: jx + NIGHT.ux * 15, z: jz - NIGHT.uy * 15 });
     }
+    // and round Mr D's van: on the pavement by its hatch, a few steps off
+    if (!this.vanSpots.length) {
+      for (let k = 0; k < 5; k++) {
+        const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 4;
+        const at = clearSpot(this.map, MR_DS.x + Math.cos(a) * r, -MR_DS.y + Math.sin(a) * r, 2);
+        if (at) this.vanSpots.push({ x: at[0], z: at[1] });
+      }
+    }
+    // after midnight, half of them drift over to the chip van (every other one: the rest stay on George Street)
+    const late = hour < 3 && this.vanSpots.length > 0;
+    const spotFor = (k: number) => (late && k % 2 ? this.vanSpots[k % this.vanSpots.length] : this.spots[k % this.spots.length]);
     const staying = crowd.filter((c) => !c.leaving);
+    if (late && !this.toVan) {
+      this.toVan = true;
+      staying.forEach((c, k) => {
+        if (!(k % 2) || c.foe >= 0 || c.target) return;
+        const s = spotFor(k);
+        this.sendTo(c.i, c.gen, s.x + (Math.random() - 0.5) * 2.4, s.z + (Math.random() - 0.5) * 2.4);
+      });
+    }
+    if (!late) this.toVan = false;
     const want = CROWD - staying.length;
     const free = this.list.filter((c) => c.state === GONE).length - 6;   // leave a few for the jobs
     if (want > 0 && free > 0) {
-      // all at once, stood about already, if nobody's close enough to see; or one at a time, walking in
-      // from wherever's out of everyone's way
-      const all = !near(70), n = all ? Math.min(want, free) : 1;
-      const from = NIGHT_IN.filter((p) => !everyone.some((t) => Math.hypot(t.x - p[0], t.z + p[1]) < 30));
+      // all at once, stood about already, if nobody's close enough to see, or if there's no crowd at all
+      // once the night's well under way (someone's just arrived in the middle of it: by train, or
+      // straight into a pub); otherwise, as it gets going at eight or to make up their numbers, one at a
+      // time, walking in from wherever's out of everyone's way
+      const started = timeOfDay() * 24, early = started >= 20 && started < 20.5;
+      const all = !near(70) || (!staying.length && !early), n = all ? Math.min(want, free) : 1;
+      // out of the pubs and restaurants round about (not one you're stood in the door of)
+      const from = doors.filter((p) => !everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < 30));
       if (all || from.length) {
         for (let k = 0; k < n; k++) {
-          const spot = this.spots[(staying.length + k) % this.spots.length];
+          const spot = spotFor(staying.length + k);
           const hx = spot.x + (Math.random() - 0.5) * 2.4, hz = spot.z + (Math.random() - 0.5) * 2.4;
           const p = all ? null : pick(from), lk = look(Math.random() < 0.5 ? NAUGHTY : GIRL, 0);
-          const [who] = this.bring(p ? p[0] : hx, p ? -p[1] : hz, lk + (lk >> 4 === GIRL ? Math.floor(Math.random() * KITS[GIRL]) : 0), 1, everyone, undefined, 0);
+          const [who] = this.bring(p ? p.x : hx, p ? p.z : hz, lk + (lk >> 4 === GIRL ? Math.floor(Math.random() * KITS[GIRL]) : 0), 1, everyone, undefined, 0);
           if (!who) break;
           const c = this.list[who.i];
           c.crowd = true;
@@ -1008,6 +1041,25 @@ export class NaughtyBoys {
     a.foe = b.i; b.foe = a.i; a.fightT = b.fightT = 0;
     const mate = Math.random() < 0.35 ? idle.find((o) => o !== a && o !== b && Math.hypot(o.x - b.x, o.z - b.z) < 8) : undefined;
     if (mate) { mate.foe = a.i; mate.fightT = 0; }
+  }
+
+  /** The doors of the pubs and restaurants near the top of Milsom Street, in front of their signs (looked
+   *  for again as squares load): restaurants only till eleven, the pubs all night. Never empty. */
+  private nightDoors(hour: number): { x: number; z: number; pub: boolean }[] {
+    if (this.doorsSeen !== this.map.tilesVersion) {
+      this.doorsSeen = this.map.tilesVersion;
+      const jx = NIGHT.x, jz = -NIGHT.y, out: { x: number; z: number; pub: boolean }[] = [];
+      for (const area of [this.map, ...this.map.tilesNear(jx, jz, NIGHT_DOORS)]) for (const [x, y, , a, , , style] of area.d.sh ?? []) {
+        if (style !== "pub" && style !== "cafe") continue;
+        const dx = +x + Math.sin(+a) * 2.5, dz = -y + Math.cos(+a) * 2.5;
+        if (Math.hypot(dx - jx, dz - jz) > NIGHT_DOORS || out.some((o) => Math.hypot(o.x - dx, o.z - dz) < 4)) continue;
+        const at = clearSpot(this.map, dx, dz, 2);
+        if (at) out.push({ x: at[0], z: at[1], pub: style === "pub" });
+      }
+      this.doors = out;
+    }
+    const open = this.doors.filter((d) => d.pub || (hour >= 18 && hour < 23));
+    return open.length ? open : NIGHT_IN.map(([x, y]) => ({ x, z: -y, pub: true }));
   }
 
   /** Host: one of the crowd lands one on another, who has a go back if they weren't already. */
@@ -1173,8 +1225,15 @@ export class NaughtyBoys {
   release(i: number, gen: number, now = false) {
     const c = this.list[i];
     if (!c || c.gen !== gen) return;
-    c.keep = false; c.rush = false;
+    c.keep = false; c.rush = false; c.stay = false;
     if (now && c.state === ALIVE) c.state = GONE;
+  }
+
+  /** Host: the fight he was brought for is over and lost, so he's had enough: down, then up and
+   *  legging it, as if he'd been beaten, rather than hanging about to pick another. */
+  rout(i: number, gen: number, from?: { x: number; z: number }) {
+    const c = this.list[i];
+    if (c && c.state === ALIVE && c.gen === gen) this.down(c, from);
   }
 
   /**
@@ -1192,6 +1251,11 @@ export class NaughtyBoys {
       return "dmg";
     }
     if (c.hp > 0) return "dmg";
+    this.down(c, from);
+    return "kill";
+  }
+
+  private down(c: NaughtyBoy, from?: { x: number; z: number; a?: number }) {
     c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = ""; c.foe = -1; c.vx = c.vz = 0; c.detour = 0; c.hop = c.hopV = 0;
     let ux = Math.random() - 0.5, uz = Math.random() - 0.5;
     if (from && from.a !== undefined && Number.isFinite(from.a)) {
@@ -1201,7 +1265,6 @@ export class NaughtyBoys {
     } else if (from && Math.hypot(c.x - from.x, c.z - from.z) > 0.1) { ux = c.x - from.x; uz = c.z - from.z; }
     const l = Math.hypot(ux, uz) || 1;
     c.fleeX = ux / l; c.fleeZ = uz / l;
-    return "kill";
   }
 
   /** Host: the naughty boy goes for whoever shot him. */

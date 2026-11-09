@@ -24,6 +24,13 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
+// A job or challenge won is done for the day on that screen; one lost can be taken again straight away.
+// Its result card says so: Retry takes it again, in the same place, as if from its noticeboard (the
+// entries, the line-up, everyone put back at its spots), and Abort leaves it. Whoever was in it and
+// still has the card up when someone else's Retry comes round is entered for it; anyone who aborted
+// is asked to join like everyone else. Two Retries at once are two takes of one job: the first taken
+// stands, and whoever took the other is entered for it. Nothing new goes round for any of that. A
+// race keeps its own Again instead.
 // A job lost (bar Seagull Attack) leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
 // so stopping or swapping jobs costs nothing.
 // A Gaffer who got away from a pub takeover (invasion.ts, gaffer.ts) is the next game day's Wanted
@@ -35,6 +42,10 @@
 // Team challenges (challenges.ts) are jobs too, kept off the noticeboards until the strange
 // structure (oddments.ts) opens them up. They have no board: the thing itself stands waiting at its
 // place (a broken-down bus, two balloons on the grass), and you walk up to it to start it.
+//
+// The games list (gameslist.ts), a hidden page for trying them out, starts any job or challenge here
+// and now for the whole room with everyone entered, whatever's on and whatever's been done today; it
+// goes round as a "start" as from a noticeboard.
 //
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
@@ -53,7 +64,7 @@ import { type Grade, bestFor, gradeMission, jobWon } from "./trophies";
 import { ctl, input } from "./controls";
 import { esc, layer } from "./hudkit";
 import { type Brief, briefCut, briefHtml, briefMore } from "./brief";
-import { type MissionResult, missionBegin, missionCall, missionClear, missionProgress, missionResult, missionWaiting } from "./missionscreens";
+import { type MissionResult, missionBegin, missionCall, missionClear, missionProgress, missionResult, missionResultDrop, missionWaiting } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
 import * as Paper from "./paper";
@@ -61,6 +72,7 @@ import { Lineup, type LineupConfig } from "./lineup";
 import { named } from "./notice";
 
 const RECALL_SECS = 14;     // seconds the brief stays up when J brings it back
+const LIST_ENTRY = 2;       // seconds for a games-list start to reach everyone, all of them entered already
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -262,6 +274,8 @@ export interface Job {
   /** E's use isn't about anything in front of you just now (going again after a race), so
    *  anything else E could do where you stand comes first. */
   aside?(): boolean;
+  /** Riding, you ran into rider id on your screen (ridebump.ts), closing at this speed, with your speed and theirs (m/s). */
+  bumped?(id: string, closing: number, mine: number, theirs: number): void;
   /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
   naughtyBoyDown?(i: number, by: string): void;
   card(): Card;
@@ -516,6 +530,8 @@ export class Quests {
   private luP: unknown;                // how far the job had got, for someone joining, to take on at GO
   private started = 0;            // when the running job was taken (ms since 1970), and by whom
   private by = "";
+  private cast: string[] = [];    // who's in the running job
+  private lost: number | null = null;   // the seed of the job I lost, while its card offers Retry
   private finishT = 0;            // seconds the "job done" card stays up
   private doneSeeds = new Set<number>();   // jobs finished today, by their seed
   private stageKey: string | null = null;   // the stage banner last shown for the job; null before the first look
@@ -792,6 +808,7 @@ export class Quests {
     const kind = kinds.get(o.kind);
     if (!kind) return;
     if (this.job || this.lu) this.clear();
+    this.lost = null;
     this.takeDown();
     this.started = t; this.by = by; this.finishT = 0;
     this.local = local;
@@ -800,6 +817,7 @@ export class Quests {
     if (local || entry === undefined) {
       // a go of your own, or taken on an older page: no line-up, it starts here and now
       const cast = local ? [this.w.selfId] : this.w.players().map((q) => q.id).sort();
+      this.cast = cast;
       this.job = kind.start(o, this.w, t, by, local, cast);
       if (p !== undefined) this.job.restore?.(p);
       this.startCard(o, kind);
@@ -827,6 +845,7 @@ export class Quests {
     const kind = kinds.get(lu.offer.kind)!;
     lu.goNow();
     missionWaiting(null);
+    this.cast = lu.cast!;
     this.job = kind.start(lu.offer, this.w, lu.go, lu.by, false, lu.cast!);
     if (this.luP !== undefined) { this.job.restore?.(this.luP); this.luP = undefined; }
   }
@@ -867,8 +886,12 @@ export class Quests {
     const job = this.job!, d = job.done!;
     missionClear("job");
     const prizes = d.won && !this.local && job.offer.stars > 0 ? [`${job.offer.stars} prize${job.offer.stars > 1 ? "s" : ""} where you finished`] : [];
+    // a race has its own Again, so only the rest get Retry
+    const o = job.offer, retry = !d.won && !this.local && !job.restart && this.cast.includes(this.w.selfId);
+    if (retry) this.lost = o.seed;
+    const choice = retry ? { retry: () => this.retry(o), abort: () => { if (this.lost === o.seed) this.lost = null; } } : {};
     // a job that gives a lead figure has said what its line would: the line goes
-    if (!d.screen) this.endCard(d.won, d.title ?? (d.won ? "Job done!" : "Job failed"), d.card?.lead ? "" : d.text, d.card, prizes);
+    if (!d.screen) this.endCard(d.won, d.title ?? (d.won ? "Job done!" : "Job failed"), d.card?.lead ? "" : d.text, { ...d.card, ...choice }, prizes);
     // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
     for (const id of d.wear ?? []) earn(id);
     if (d.won) { jobWon(); gradeMission(job.offer.kind, d.grade ?? { tier: 1 }); }
@@ -877,7 +900,8 @@ export class Quests {
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
     this.onEnd(job.offer, d);
     this.finishT = 6;
-    if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
+    // only a win puts a job by for the day: one lost can be had another go at
+    if (d.won && !kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
     this.onDone(d.won);
     if (!d.won) this.scar();
@@ -888,6 +912,14 @@ export class Quests {
         this.w.prize(at.x + Math.cos(a) * 1.8, at.z + Math.sin(a) * 1.8, k === 0);
       }
     }
+  }
+
+  /** Retry on a lost job's card: take it again, or join someone else's go at it already lining up. */
+  private retry(o: Offer) {
+    this.lost = null;
+    if (this.current?.seed === o.seed && this.lining) { this.lu!.use(); return; }
+    if (this.current && !this.job?.done && !this.local) { this.w.toast("Another job's started since"); return; }
+    this.take(o);
   }
 
   private scar() {
@@ -918,16 +950,31 @@ export class Quests {
     if (!d || typeof d !== "object") return;
     if (d.k === "start" && d.o && typeof d.o.seed === "number") {
       const t = Number(d.t) || 0, by = String(d.by ?? from);
+      const back = this.lost === d.o.seed;
+      const lu = d.lu === undefined ? undefined : Math.max(0, Math.min(120, Number(d.lu) || 0));
       if (this.current && this.current.seed === d.o.seed && !this.local) {
-        if (this.lining) this.lu!.restore(d.l);
-        else if (d.p !== undefined && this.job && !this.job.done) this.job.restore?.(d.p);
-        return;
+        if (t === this.started && by === this.by) {
+          if (this.lining) this.lu!.restore(d.l);
+          else if (d.p !== undefined && this.job && !this.job.done) this.job.restore?.(d.p);
+          return;
+        }
+        if (this.job && !this.job.done) return;
+        if (this.lining) {
+          // the same job taken twice at once (two Retries): the first taken stands, and I'm in it if I took mine
+          if (this.started < t || (this.started === t && this.by < by)) return;
+          const mine = this.lu!.inIt();
+          this.begin(d.o as Offer, t, by, d.p, false, lu);
+          this.lu?.restore(d.l);
+          if (mine) this.lu?.use();
+          return;
+        }
       }
       // two jobs taken at once: the first one taken (then the lower id) stands
       if (this.current && !this.job?.done && !this.local && (this.started < t || (this.started === t && this.by < by))) return;
-      const lu = d.lu === undefined ? undefined : Math.max(0, Math.min(120, Number(d.lu) || 0));
       this.begin(d.o as Offer, t, by, d.p, false, lu);
       if (this.lu) this.lu.restore(d.l);
+      // in the job I lost and not aborted: someone's Retry takes me back in
+      if (back && this.lu) { missionResultDrop(); this.lu.use(); }
       return;
     }
     if (d.k === "stop") {
@@ -936,6 +983,44 @@ export class Quests {
     }
     if (this.lining && d.s === this.lu!.offer.seed) { this.lu!.event(d, from); return; }
     if (this.job && d.s === this.job.offer.seed) this.job.event?.(d, from);
+  }
+
+  // ---- the games list (gameslist.ts) ---------------------------------------------------------------
+
+  /** The minigame on, started or still lining up. */
+  get taken(): Offer | null { return this.current; }
+  /** What the jobs are lent, for the games list to put people in place with. */
+  get world(): QuestWorld { return this.w; }
+  /** The pubs are in, so a job can find its place. */
+  get isReady() { return this.ready(); }
+
+  /** A poster for a job of this kind at the nearest spot to you that it can be set at, up today or
+   *  not; a fresh salt makes a fresh one. */
+  offerFor(id: string, salt: number): Offer | null {
+    const kind = kinds.get(id);
+    if (!kind || kind.challenge) return null;
+    const me = this.w.me(), ok = (x: number, z: number) => this.w.map.fieldEdge(x, z) > 90;
+    const spots: PostSpot[] = [
+      ...this.w.pubs().filter((p) => ok(p.x, p.z)).map((p) => ({ x: p.x, z: p.z, name: p.name, pub: true })),
+      ...this.w.places().filter((p) => ok(p.x, p.z)).map((p) => ({ x: p.x, z: p.z, name: p.n, pub: false })),
+    ].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z));
+    for (let k = 0; k < Math.min(40, spots.length); k++) {
+      const o = kind.offer(rng(hash("games", id, salt, k)), spots[k], this.w);
+      if (o) return o;
+    }
+    return null;
+  }
+
+  /** Start a job now for everyone in the room, all of them entered already, calling off whatever's on
+   *  and never mind whether it's been done today. mark goes round with it. */
+  startFor(o: Offer, mark: object) {
+    const was = this.current;
+    if (was && !this.local) this.w.send("qe", { k: "stop", s: was.seed });
+    const ids = this.w.players().map((p) => p.id);
+    this.begin(o, Date.now(), this.w.selfId, undefined, false, ids.length > 1 ? LIST_ENTRY : 0);
+    if (!this.lu) return;
+    for (const id of ids) this.lu.enter(id);
+    this.w.send("qe", { k: "start", o, t: this.started, by: this.by, lu: this.lu.entrySecs, l: this.lu.state(), ...mark });
   }
 
   /** Someone joined: the host tells them what job's on. */
@@ -961,6 +1046,7 @@ export class Quests {
   movers(): Mover[] { return this.job && !this.job.done ? this.job.movers?.() ?? [] : []; }
 
   /** Waiting for the job's end, out of harm's way (a race you're out of, while others ride on). */
+  bumped(id: string, closing: number, mine: number, theirs: number) { if (this.job && !this.job.done) this.job.bumped?.(id, closing, mine, theirs); }
   waiting(): boolean { return !!this.job && !this.job.done && !!this.job.waiting?.(); }
   spectate() { return this.job && !this.job.done ? this.job.spectate?.() ?? null : null; }
   cycle(by: number): boolean { return !!this.job && !this.job.done && !!this.job.cycle?.(by); }
