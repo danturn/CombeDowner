@@ -1013,7 +1013,10 @@ A line starting with `/` is a command, for trying things out:
   again to stop) and Weapon changes speed. A controller flies it as real drones do ("Mode 2"): the
   left stick climbs, sinks and turns, the right stick moves you about, the D-pad's up and down tilt
   the camera, and L1 and R1 pick the speed. The view leans into turns, and along the top are your
-  height, speed and snaps.
+  height, speed, zoom, the view and the snaps you've taken this flight. Nothing else of the HUD
+  shows while you fly (the full map and the scores still come up when you ask), and nobody goes
+  for you: the naughty boys, the teams, the cats and Bendy leave you be, and the people who chat
+  as you pass (and Jamie, with his ciggies) don't notice you.
   C (Circle on a controller, or a tap on the view's name at the top) goes round the drone's views of
   the scenery, each lit the same night or day: Normal; Clay, everything plain white so the shapes
   show for themselves; Outlines, the clay with a dark line wherever a surface turns or one thing

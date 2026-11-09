@@ -1291,7 +1291,9 @@ body.reveal #touch { visibility: hidden; }
   #droneosd .bar { gap: 8px; font-size: 11px; flex-wrap: wrap; justify-content: center; white-space: normal; }
   #droneosd .key { grid-template-columns: repeat(2, auto); font-size: 10px; }
 }
-body.droning #ammo { display: none; }   /* no gun while you fly the drone */
+/* flying the drone, the HUD is the drone's alone (drone.ts): the crosshair, the touch controls, and
+   the full map and the scores when you ask for them, and nothing else */
+body.droning #hud > :not(#crosshair):not(#touch):not(#clickhint):not(#bigmap):not(#scoreboard) { display: none !important; }
 /* the drone's "what's what" (drone.ts): what's under the crosshair, named just below it */
 #droneseen {
   position: fixed; top: calc(50% + 22px); left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none;

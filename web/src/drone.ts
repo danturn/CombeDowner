@@ -32,9 +32,16 @@
 // in Claude Code) gets the sheet. /drone pic 3 copies just snap 3's picture, bigger; /drone clear
 // forgets them all.
 //
+// While you fly the HUD is the drone's alone (height, speed, zoom, the view and this flight's snaps along
+// the top: style.css hides the rest), and the game's people leave you be (game.ts): the host's naughty
+// boys, cats and Bendy take you as passive, and those who talk to you as you pass think you're far
+// overhead.
+//
 // Who decides what: it's all yours. You fly by moving yourself, so your position goes out as ever and
 // the squares of Bath load round you as you go; others see you floating. While the drone's up you're
-// in god mode by your own word ("god", game.ts), so nobody's shots take it out of the sky. Snaps never
+// in god mode by your own word ("god", game.ts), so nobody's shots take it out of the sky, and say
+// you're flying ("dr"), so the host's people leave you be (an older host doesn't know it, and its
+// naughty boys still come for you, harmlessly). Snaps never
 // leave your machine except by your own paste.
 import * as THREE from "three";
 import { chatLine } from "./chat";
@@ -116,6 +123,7 @@ export class Drone {
   private outline: THREE.LineSegments | null = null;
   private osdT = 0;
   private count = 0;
+  private flightFrom = 0;              // how many snaps there were when this flight began
 
   constructor(private h: DroneHooks) {}
 
@@ -129,7 +137,7 @@ export class Drone {
     }
     if (word === "copy") { this.copy(); return; }
     if (word === "pic" || word === "pics") { this.copyPic(Number(arg)); return; }
-    if (word === "clear") { const n = this.snaps.length; this.snaps.length = 0; chatLine(n ? `Forgot ${n} snap${n === 1 ? "" : "s"}` : "No snaps to forget"); this.drawOsd(); return; }
+    if (word === "clear") { const n = this.snaps.length; this.snaps.length = 0; this.flightFrom = 0; chatLine(n ? `Forgot ${n} snap${n === 1 ? "" : "s"}` : "No snaps to forget"); this.drawOsd(); return; }
     chatLine("/drone to fly or land, /drone copy, /drone pic 3, /drone clear");
   }
 
@@ -144,6 +152,7 @@ export class Drone {
     this.roll = 0;
     this.lastYaw = p.yaw;
     this.trig = true;   // the press that's down now doesn't snap
+    this.flightFrom = this.snaps.length;
     this.h.changed(true);
     this.showOsd(true);
     chatLine(`Drone up. ${this.snaps.length ? `${this.snaps.length} snaps so far. ` : ""}Shoot to snap; type here to note the last snap; /drone copy when you're done; /drone to land`);
@@ -404,7 +413,7 @@ export class Drone {
     if (!o || !this.on) return;
     const m = this.h.map, e = this.eye;
     const alt = Math.round(e.y - m.ground(e.x, e.z)), kmh = Math.round(this.v.length() * 3.6);
-    const bar = `<div class="bar"><span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length}</span><span class="zoom">ZOOM ${this.zoom}x</span><span class="look">${this.looks.name} (${ctl("droneview")})</span></div>`;
+    const bar = `<div class="bar"><span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length - this.flightFrom}${this.flightFrom ? ` (${this.snaps.length} IN ALL)` : ""}</span><span class="zoom">ZOOM ${this.zoom}x</span><span class="look">${this.looks.name} (${ctl("droneview")})</span></div>`;
     if (lookChanged || this.shownLook !== this.looks.id) {
       this.shownLook = this.looks.id;
       o.innerHTML = bar + (this.looks.id === "kinds" ? `<ul class="key">${(Object.keys(KINDS) as Kind[]).filter((k) => k !== "sky" && k !== "field")
