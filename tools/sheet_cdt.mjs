@@ -23,7 +23,7 @@ for (const sq of opt.squares.trim().split(/\s+/)) {
   if (!d.sf?.l || !d.gs || !d.t) continue;
   const T = d.t, grid = { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny }, NG = T.nx * T.ny;
   const meet = G.sheetFaces(d.sf, d.gs, d.b, 0, LIFT, grid, false);
-  const S = G.buildSheetCdt(grid, () => 0, G.coveredCells(d.gs.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.inFace);
+  const S = G.buildSheetCdt(grid, () => 0, G.coveredCells(d.gs.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.faceTop, 0.3, d.gs.x);
   const X = (k) => k >= NG ? S.px[k - NG] : T.x0 + (k % T.nx) * T.dx, Y = (k) => k >= NG ? S.py[k - NG] : T.y0 + Math.floor(k / T.nx) * T.dy;
   const tris = [];
   for (const k of S.tri) tris.push(+X(k).toFixed(6), +Y(k).toFixed(6));

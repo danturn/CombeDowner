@@ -209,7 +209,6 @@ def roofs_solid(root, map_id, only=None):
     args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
             "--per", os.environ.get("CD_ROOFS_PER", "40")]
     if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
-    if GROUND != "cdt": args += ["--query", f"ground={GROUND}"]
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
@@ -224,7 +223,7 @@ def ground_seams(root, map_id, only=None):
     here = os.path.dirname(os.path.abspath(__file__))
     args = ["node", os.path.join(here, "ground_seams.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--rules"]
     if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
-    if GROUND_CDT: args += ["--query", "ground=cdt"]
+    if GROUND != "cdt": args += ["--query", f"ground={GROUND}"]
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):

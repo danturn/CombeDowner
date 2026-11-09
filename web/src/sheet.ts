@@ -239,16 +239,16 @@ class FlipSet {
  *  where the edge crosses the grid. Only the cells the free edges pass through, and those round them,
  *  are triangulated: elsewhere the grid's two triangles stay, and where the two meet there are only
  *  grid points, so they close up. A grid point within `clear` metres of a free edge is left out: kept,
- *  it made slivers between itself and the edge. What lies inside a face (found by `inFace`) draws no
+ *  it made slivers between itself and the edge. What lies inside a face (`faceTop` finite) draws no
  *  ground. Returns the same as buildSheet, with `near` for heights, and the middles (x, y in turn) of
  *  any free edges that couldn't be held (crossing one already held). */
-export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, inFace: (x: number, y: number) => boolean, clear = 0.3): Sheet & { lost: number[] } {
-  return drain(buildSheetCdtGen(G, corner, covered, E, inFace, clear, false));
+export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, faceTop: (x: number, y: number) => number, clear = 0.3, odd: ArrayLike<number> = []): Sheet & { lost: number[] } {
+  return drain(buildSheetCdtGen(G, corner, covered, E, faceTop, clear, false, odd));
 }
 
 /** buildSheetCdt a few milliseconds at a time, its triangulation in a worker if `offMain` (waiting
  *  on it with buildWait set). */
-export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, inFace: (x: number, y: number) => boolean, clear = 0.3, offMain = false, sl = new Slice()): Generator<void, Sheet & { lost: number[] }> {
+export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, faceTop: (x: number, y: number) => number, clear = 0.3, offMain = false, odd: ArrayLike<number> = [], sl = new Slice()): Generator<void, Sheet & { lost: number[] }> {
   const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1, NG = nx * ny;
   const cellOf = (x: number, y: number) => Math.min(ch - 1, Math.max(0, Math.floor((y - y0) / dy))) * cw + Math.min(cw - 1, Math.max(0, Math.floor((x - x0) / dx)));
   // each free edge clipped to the grid, and the cells it passes through
@@ -355,6 +355,11 @@ export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, c
   const held = cons.filter(([a, b]) => a >= 0 && b >= 0);
   const state = new Uint8Array(cw * ch);
   for (let c = 0; c < state.length; c++) state[c] = R[c] ? 2 : covered[c] ? 1 : 0;
+  // (where faces overlap, gs's odd cells, their outlines don't bound what they cover: the ground there
+  // is drawn under them too where it stays below them, as the cut sheet draws those cells whole, or
+  // it left cracks between them)
+  const overlap = new Uint8Array(cw * ch);
+  for (let k = 0; k < odd.length; k++) overlap[odd[k]] = 1;
   const px: number[] = [], py: number[] = [], ph: number[] = [];
   const index = PK.map((k, n) => { if (k >= 0) return k; px.push(P[2 * n] + x0); py.push(P[2 * n + 1] + y0); ph.push(PH[n]); return NG + px.length - 1; });
   const lost: number[] = [];
@@ -408,7 +413,9 @@ export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, c
       let a = T[t], b = T[t + 1], d = T[t + 2];
       const cx = (P[2 * a] + P[2 * b] + P[2 * d]) / 3 + x0, cy = (P[2 * a + 1] + P[2 * b + 1] + P[2 * d + 1]) / 3 + y0;
       const c = cellOf(cx, cy);
-      if (!R[c] || inFace(cx, cy)) continue;
+      if (!R[c]) continue;
+      const top = faceTop(cx, cy);
+      if (top < Infinity && !(overlap[c] && Math.max(PH[a], PH[b], PH[d]) <= top + 0.01)) continue;
       // (anticlockwise seen from above, as the grid's own are)
       if ((P[2 * b] - P[2 * a]) * (P[2 * d + 1] - P[2 * a + 1]) - (P[2 * b + 1] - P[2 * a + 1]) * (P[2 * d] - P[2 * a]) < 0) [b, d] = [d, b];
       (byCell[c] ??= []).push(index[a], index[b], index[d]);
@@ -672,29 +679,35 @@ export function* sheetFacesGen(sf: NonNullable<import("./map").MapData["sf"]>, g
    *  x, y and how far along (0 to 1), or undefined if none. */
   const alongEdge = (a: number, b: number) => cutsOf.get(spot[a] * NP + spot[b]);
   // the faces' triangles by the grid cells they reach over, to tell what lies inside one
-  const cw = G.nx - 1, ch = G.ny - 1, faceIn = new Map<number, number[]>(), tris: number[] = [];
+  const cw = G.nx - 1, ch = G.ny - 1, faceIn = new Map<number, number[]>(), tris: number[] = [], triLift: number[] = [];
   const cellI = (x: number) => Math.min(cw - 1, Math.max(0, Math.floor((x - G.x0) / G.dx))), cellJ = (y: number) => Math.min(ch - 1, Math.max(0, Math.floor((y - G.y0) / G.dy)));
-  for (const kind of KINDS) {
+  for (const [n, kind] of KINDS.entries()) {
     const T = sf[kind] ?? [];
     for (let k = 0; k + 2 < T.length; k += 3) {
       if (sl.due()) { yield; sl.go(); }
+      triLift.push(lift[n]);
       const t = tris.length / 3, xs = [V[3 * T[k]], V[3 * T[k + 1]], V[3 * T[k + 2]]], ys = [V[3 * T[k] + 1], V[3 * T[k + 1] + 1], V[3 * T[k + 2] + 1]];
       tris.push(T[k], T[k + 1], T[k + 2]);
       for (let j = cellJ(Math.min(...ys)); j <= cellJ(Math.max(...ys)); j++) for (let i = cellI(Math.min(...xs)); i <= cellI(Math.max(...xs)); i++) (faceIn.get(j * cw + i) ?? faceIn.set(j * cw + i, []).get(j * cw + i)!).push(t);
     }
   }
-  /** Whether data (x, y) lies inside a face (any kind). */
-  const inFace = (x: number, y: number) => {
+  /** The scene height of the lowest face top over data (x, y), or Infinity where no face is. */
+  const faceTop = (x: number, y: number) => {
+    let low = Infinity;
     for (const t of faceIn.get(cellJ(y) * cw + cellI(x)) ?? []) {
       const a = tris[3 * t], b = tris[3 * t + 1], c = tris[3 * t + 2];
       const ax = V[3 * a], ay = V[3 * a + 1], bx = V[3 * b], by = V[3 * b + 1], cx = V[3 * c], cy = V[3 * c + 1];
       const d1 = (bx - ax) * (y - ay) - (by - ay) * (x - ax), d2 = (cx - bx) * (y - by) - (cy - by) * (x - bx), d3 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx);
       // (on the edge between two of a face's triangles counts as in)
-      if ((d1 >= 0 && d2 >= 0 && d3 >= 0 && d1 + d2 + d3 > 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0 && d1 + d2 + d3 < 0)) return true;
+      if (!((d1 >= 0 && d2 >= 0 && d3 >= 0 && d1 + d2 + d3 > 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0 && d1 + d2 + d3 < 0))) continue;
+      const sum = d1 + d2 + d3, h = (d2 * V[3 * a + 2] + d3 * V[3 * b + 2] + d1 * V[3 * c + 2]) / sum - Z0 + triLift[t];
+      if (h < low) low = h;
     }
-    return false;
+    return low;
   };
-  return { edges: E, meets, onSeam, spot, alongEdge, inFace };
+  /** Whether data (x, y) lies inside a face (any kind). */
+  const inFace = (x: number, y: number) => faceTop(x, y) < Infinity;
+  return { edges: E, meets, onSeam, spot, alongEdge, inFace, faceTop };
 }
 
 /** The grid's heights (decimetres) with the sheet's carving: the grid points beside the faces cut down

@@ -887,14 +887,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const sheetT1 = performance.now();
   // (a square loading while you play triangulates its ground in a worker; the map built at the start, at once)
   const sheet: Sheet | null = !meet ? null : CDT
-    ? yield* buildSheetCdtGen(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.inFace, Number(new URLSearchParams(location.search).get("cdtclear") ?? 0.3), !!into)
+    ? yield* buildSheetCdtGen(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.faceTop, Number(new URLSearchParams(location.search).get("cdtclear") ?? 0.3), !!into, D.gs!.x)
     : yield* buildSheetGen(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x);
   (globalThis as any).__wphase = phase;
   // (tools/ground_seams.mjs times the sheet by leaving a list here)
   if (sheet) (globalThis as { __sheetMs?: unknown[] }).__sheetMs?.push({ x0: T.x0, y0: T.y0, cdt: CDT, ms: meetMs + performance.now() - sheetT1, lost: ((sheet as { lost?: number[] }).lost?.length ?? 0) / 2 });
   if (sheet && !CDT) { const open = openSeams(sheet, sheetGrid); if (open) console.warn(`ground sheet: ${open} cracks between cells in the square at ${T.x0.toFixed(0)},${T.y0.toFixed(0)}`); }
   const gridH = (k: number) => tPos[3 * k + 1];
-  if ((globalThis as any).__dbgSheet) (globalThis as any).__dbgSheet.push({ sheet, tPos, T, meet, Z0 });   // DEBUG-REMOVE
   yield;
   // The lowest a wall under a bridge or a street's edge may stand to at data (x, y), given the ground
   // there: over the canal its bank's top, and over a river or a pond the wall's own top, since the
