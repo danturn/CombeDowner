@@ -96,7 +96,7 @@ Bath's great buildings are modelled by hand:
   the Avon on one great arch between paired Doric pilasters, with the railway through its smaller
   arch, a deep cornice at the towpaths and balustrades at the ends. Walk the towpaths across it.
 - **Sham Castle** on Bathampton Down: Ralph Allen's folly, all front, with an arch you can walk
-  through.
+  through. After dark it's floodlit gold from lamps on the grass in front, as it is for real.
 - **Prior Park** above Combe Down: Allen's Palladian mansion, its giant portico looking down the
   valley, the steps up from the lawn, and its wings stepping down the hill.
 - **Kingswood School** on Lansdown: Wilson's Tudor Gothic range with its tall entrance tower, and
