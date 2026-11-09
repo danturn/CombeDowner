@@ -294,11 +294,19 @@ function wallFeet(group) {
     }
     return false;
   };
+  // a side's foot corners: the lowest of the corners standing one over another (a quad's diagonal
+  // runs from a foot to a top, so it is no foot edge)
+  const column = new Map(), colKey = (p) => `${Math.round(p[0] * 100)},${Math.round(p[1] * 100)}`;
+  tri("walls-fences", (a, b, c) => {
+    if (normalZ(a, b, c) > 0.2) return;
+    for (const p of [a, b, c]) { const k = colKey(p), o = column.get(k); column.set(k, o ? [Math.min(o[0], p[2]), Math.max(o[1], p[2])] : [p[2], p[2]]); }
+  });
+  const isFoot = (p) => { const o = column.get(colKey(p)); return o && o[1] - o[0] > 0.2 && p[2] - o[0] < 0.01; };
   const gaps = new Map();
   tri("walls-fences", (a, b, c) => {
     if (normalZ(a, b, c) > 0.2) return;
     for (const [p, q, r] of [[a, b, c], [b, c, a], [c, a, b]]) {
-      if (Math.max(p[2], q[2]) > r[2] - 0.2) continue;
+      if (Math.max(p[2], q[2]) > r[2] - 0.2 || !isFoot(p) || !isFoot(q)) continue;
       const L = Math.hypot(q[0] - p[0], q[1] - p[1]);
       if (L < 0.05) continue;
       const k = Math.max(1, Math.round(L / 0.25));

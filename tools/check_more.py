@@ -79,7 +79,7 @@ from the packs alone, a few seconds a square:
     face's top meets another triangle, edge to edge or along a run of edges on its line, or has more
     ground or a face just across it; the rest are cracks the sky shows through, each scored by its
     length in metres. Edges along a square's own sides are left to rule 14. CD_SEAMS=0 leaves it out.
-39-43 are faults found by playing, from the packs alone (played below):
+39-45 are faults found by playing, from the packs alone (played below):
 39. Road markings lie on the carriageway, square across it, on the street that gives way and out
     past the other street's kerb line.
 40. A lane's or yard's carriageway (the service face, a lighter grey) stops at the kerbed street it
@@ -89,6 +89,7 @@ from the packs alone, a few seconds a square:
 43. Flights of steps don't lie over each other, and no handrail stands on a pavement or the road.
 44. No wall, fence or hedge stands with its foot over what is drawn under it, the sky showing
     through beneath it (tools/ground_seams.mjs, with rule 38; CD_SEAMS=0 leaves it out).
+45. No street face of the map's is left inside a set piece's outline, over its own deck and paving.
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -2063,12 +2064,47 @@ def _street_lines(m):
     return out
 
 
-def markings(m, sheet, note, at, sq, fig):
+@functools.lru_cache(maxsize=16)
+def _streets_of(path):
+    return _street_lines(json.load(open(path))) if os.path.exists(path) else []
+
+
+def _streets_round(m, f):
+    """This square's carriageways and the next squares' within 30 m of it, a street cut at a square's
+    side joined up again with its piece over the side, so a junction just over the side is seen."""
+    tag = os.path.basename(f)[:-5]
+    out = _street_lines(m)
+    try: ti, tj = map(int, tag.split("_"))
+    except ValueError: return out
+    near = box(*m["b"]).buffer(30)
+    for a in (-1, 0, 1):
+        for b in (-1, 0, 1):
+            if a or b:
+                out += [(r, l) for r, l in _streets_of(os.path.join(os.path.dirname(f), f"{ti + a}_{tj + b}.json")) if l.intersects(near)]
+    x0, y0, x1, y1 = m["b"]
+    on_side = lambda p: min(abs(p[0] - x0), abs(p[0] - x1), abs(p[1] - y0), abs(p[1] - y1)) < 0.5
+    joined, used = [], set()
+    for i, (r, l) in enumerate(out):
+        if i in used: continue
+        used.add(i)
+        for j, (o, ol) in enumerate(out):
+            if j in used or o.get("n") != r.get("n") or o["c"] != r["c"]: continue
+            ends = [(p, q) for p in (l.coords[0], l.coords[-1]) for q in (ol.coords[0], ol.coords[-1]) if on_side(p) and math.dist(p, q) < 0.5]
+            if ends:
+                merged = shapely.line_merge(shapely.union_all([l, ol]))
+                if merged.geom_type == "LineString":
+                    l = merged; used.add(j)
+        joined.append((r, l))
+    return joined
+
+
+def markings(m, f, sheet, note, at, sq, fig):
     """39. Road markings (furniture.ts: mk's centre dashes and give-way lines, cx's stop lines, studs and
     zebra stripes) lie on the carriageway as drawn, the road and service faces, and are square to it:
     (a) none lies off the carriageway by more than MARK_OFF; (b) a give-way line and a crossing's stop
     line lie square across their street, within SQUARE_TO; (c) a give-way line is on the street that
-    gives way: not across one running straight on past a side road no greater than it; (d) and it stands
+    gives way: not across one running straight on with no side road, or past only lesser ones, nor
+    where no street meets it at all; (d) and it stands
     out past the other street's pavement, not back in line with it, where it runs across the mouth of
     the junction between the kerb corners."""
     if not sheet.ok: return
@@ -2078,7 +2114,7 @@ def markings(m, sheet, note, at, sq, fig):
     own = box(*m["b"]).buffer(-0.5)
     decks = [LineString([q[:2] for q in r["p"]]).buffer(_road_half(r["c"], r.get("w")) + 2) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
     if decks: own = own.difference(shapely.union_all(decks))
-    streets = _street_lines(m)
+    streets = _streets_round(m, f)
     if not streets: return
     stree = shapely.STRtree([l for _, l in streets])
     totals = dict(marks=0, off=0, crooked=0, through=0, back=0)
@@ -2149,7 +2185,11 @@ def markings(m, sheet, note, at, sq, fig):
                     if vl < 1.0: continue
                     turn = math.degrees(math.acos(max(-1.0, min(1.0, (vx * ux + vy * uy) / vl))))
                     (ahead if turn < STRAIGHT_ON else side).append((o, ol))
-            if ahead and all(RANK.get(o["c"], 0) <= RANK.get(r["c"], 0) for o, _ in side):
+            if not ahead and not side:
+                totals["through"] += 1
+                note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y), f"across {name!r}, where no street meets it")
+                continue
+            if ahead and all(RANK.get(o["c"], 0) < RANK.get(r["c"], 0) for o, _ in side):
                 totals["through"] += 1
                 runs = ", ".join(sorted({o.get("n") or o["c"] for o, _ in ahead}))
                 note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y),
@@ -2306,6 +2346,16 @@ def square_joins(m, f, sheet, note, at, fig):
     fig["square side mismatched m"] = fig.get("square side mismatched m", 0) + total
 
 
+def _leaving(l, end, reach=1.5):
+    """The unit direction a line leaves one of its ends (0 or -1) in, over its first reach metres."""
+    s = 0.0 if end == 0 else l.length
+    a = l.interpolate(s)
+    b = l.interpolate(min(reach, l.length) if end == 0 else max(0.0, l.length - reach))
+    dx, dy = b.x - a.x, b.y - a.y
+    d = math.hypot(dx, dy) or 1.0
+    return dx / d, dy / d
+
+
 def flights_and_rails(m, sheet, note, at, inner, fig):
     """43. Flights of steps (furniture.ts stepsDetail) keep to themselves: no two flights' treads lie
     over each other (beyond where one runs on from the other's end), and no handrail stands out on a
@@ -2326,14 +2376,20 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
             if j <= i: continue
             o, ol, os_ = fl[int(j)]
             both = s.intersection(os_)
-            # (one flight running on from another's end shares a landing with it)
-            for e in (l.coords[0], l.coords[-1], ol.coords[0], ol.coords[-1]):
-                if min(Point(e).distance(Point(p)) for p in (ol.coords[0], ol.coords[-1], l.coords[0], l.coords[-1]) if p != e) < 1.0:
-                    both = both.difference(Point(e).buffer(0.9))
+            # (one flight running on from another's end shares a landing with it, unless it turns
+            # straight back over the other's first treads)
+            back = False
+            for e, f_ in ((l, 0), (l, -1)):
+                for g_, h_ in ((ol, 0), (ol, -1)):
+                    if Point(e.coords[f_]).distance(Point(g_.coords[h_])) >= 1.0: continue
+                    u, v = _leaving(e, f_), _leaving(g_, h_)
+                    back |= math.degrees(math.acos(max(-1.0, min(1.0, u[0] * v[0] + u[1] * v[1])))) < 40
+                    both = both.difference(Point(e.coords[f_]).buffer(0.9)).difference(Point(g_.coords[h_]).buffer(0.9))
+            if back: both = s.intersection(os_)
             if both.area < 0.3 or not inner.contains(both.representative_point()): continue
             totals["crossing"] += 1
             c = both.representative_point()
-            note("43 flights of steps over each other", both.area, at(c.x, c.y), f"{r.get('n') or 'steps'!r} and {o.get('n') or 'steps'!r} share {both.area:.1f} m2")
+            note("43 flights of steps over each other", both.area, at(c.x, c.y), f"{r.get('n') or 'steps'!r} and {o.get('n') or 'steps'!r} share {both.area:.1f} m2" + (", one turning straight back over the other" if back else ""))
     paving = ("pave", "road", "service")
     for r, l, s in fl:
         sides = (r.get("hr") or 0) & 7
@@ -2357,13 +2413,40 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
     for k, v in totals.items(): fig[f"flights {k}"] = fig.get(f"flights {k}", 0) + v
 
 
+def set_piece_faces(m, sheet, note, at, inner, fig):
+    """45. Inside a set piece's outline the set piece draws its own ground (landmarks/setpieces.ts hides
+    the map's buildings, trees and small things there): no street face of the map's is left inside it,
+    drawn over or through the set piece's own deck and paving. Each set piece's score is the faces'
+    area inside its outline in m2."""
+    if not sheet.ok or not m.get("sp"): return
+    total = 0.0
+    for ring in m["sp"]:
+        if len(ring) < 3: continue
+        g = _poly(ring).intersection(inner)
+        if g.is_empty: continue
+        hit = sheet.tree.query(g, predicate="intersects")
+        if not len(hit): continue
+        area = {}
+        for t in hit:
+            a = sheet.polys[t].intersection(g).area
+            if a > 1e-4: area[FACE_KINDS[sheet.K[t]]] = area.get(FACE_KINDS[sheet.K[t]], 0) + a
+        if sum(area.values()) < 1: continue
+        total += sum(area.values())
+        c = g.representative_point()
+        note("45 street faces inside a set piece", sum(area.values()), at(c.x, c.y), ", ".join(f"{k} {v:.0f} m2" for k, v in sorted(area.items(), key=lambda kv: -kv[1])))
+    fig["faces in set pieces m2"] = fig.get("faces in set pieces m2", 0) + total
+
+
 def played(m, f, sheet, note, at, sq, inner, fig):
-    """Rules 39 to 43, for one square."""
-    markings(m, sheet, note, at, sq, fig)
+    """Rules 39 to 43 and 45, for one square. (Each looks at what lies within the square itself, so they run
+    up to a metre from its sides rather than EDGE: what they measure is drawn there by this square.)"""
+    inner = sq.buffer(-1.0)
+    markings(m, f, sheet, note, at, sq, fig)
     lanes_in_streets(m, sheet, note, at, inner, fig)
     road_steps(m, sheet, note, at, inner, fig)
     square_joins(m, f, sheet, note, at, fig)
     flights_and_rails(m, sheet, note, at, inner, fig)
+    set_piece_faces(m, sheet, note, at, inner, fig)
 
 
 @functools.lru_cache(maxsize=2)
