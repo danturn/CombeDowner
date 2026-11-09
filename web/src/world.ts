@@ -2060,9 +2060,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     };
     ma = overWater(a, ma); mb = overWater(b, mb);
     const da = a[1] - ma, db = b[1] - mb;
-    if (Math.max(Math.abs(da), Math.abs(db)) < 0.02) return;
+    // (where the heights agree a face is still needed if the edge crosses a grid line: the sheet has a
+    // point there that the face's edge hasn't, and the two leave a hairline crack the sky shows through)
+    const cell = (q: number[]) => [Math.floor((q[0] - sheetGrid.x0) / sheetGrid.dx), Math.floor((-q[2] - sheetGrid.y0) / sheetGrid.dy)];
+    const [ia, ja] = cell(a), [ib, jb] = cell(b);
+    if (Math.max(Math.abs(da), Math.abs(db)) < 1e-4 && ia === ib && ja === jb) return;
     const side = da + db > 0 ? 1 : -1, out = [(b[2] - a[2]) / l * -side, 0, -(b[0] - a[0]) / l * -side];
-    const lo = (q: number[], m: number) => [q[0], Math.min(q[1], m), q[2]], hi = (q: number[], m: number) => [q[0], Math.max(q[1], m), q[2]];
+    const lo = (q: number[], m: number) => [q[0], Math.min(q[1], m) - 0.05, q[2]], hi = (q: number[], m: number) => [q[0], Math.max(q[1], m), q[2]];
     const A = lo(a, ma), B = lo(b, mb), C = hi(b, mb), D = hi(a, ma);
     if (Math.max(Math.abs(da), Math.abs(db)) > 0.45) { retaining.push([A, B, C, D, out, [along, l]]); return; }
     facing(g, A, B, C, D, out, [along, A[1]], [along + l, B[1]], [along + l, C[1]], [along, D[1]], [1, 1, 1]);
