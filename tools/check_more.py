@@ -74,6 +74,11 @@ from the packs alone, a few seconds a square:
 36. No wall, fence or hedge on water, the canal's banks, verges or a lock's paving, or along a path.
 37. A building OpenStreetMap or Wikidata says was built as a church, or whose name says so, is drawn as one (the same test as
     the build's, tools/worship.py, read from data/<map>/ beside the packs).
+38. The ground is closed, as the game draws it (tools/ground_seams.mjs builds each square's ground,
+    faces, kerbs and retaining walls with the game's own world.ts): every edge of the ground or of a
+    face's top meets another triangle, edge to edge or along a run of edges on its line, or has more
+    ground or a face just across it; the rest are cracks the sky shows through, each scored by its
+    length in metres. Edges along a square's own sides are left to rule 14. CD_SEAMS=0 leaves it out.
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -203,6 +208,20 @@ def roofs_solid(root, map_id, only=None):
     here = os.path.dirname(os.path.abspath(__file__))
     args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
             "--per", os.environ.get("CD_ROOFS_PER", "40")]
+    if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
+    try:
+        return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return []
+
+
+@functools.lru_cache(maxsize=2)
+def ground_seams(root, map_id, only=None):
+    """Rule 38's cracks over the squares given (all if None), from tools/ground_seams.mjs building each
+    square's ground and faces as the game does; none if it can't be run. CD_SEAMS=0 leaves it out."""
+    if os.environ.get("CD_SEAMS") == "0": return []
+    here = os.path.dirname(os.path.abspath(__file__))
+    args = ["node", os.path.join(here, "ground_seams.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--rules"]
     if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
@@ -406,7 +425,7 @@ def square(m, tag, note, f):
     gameplay(m, whole, blds, homes, htree, solid, roads, rlines, rtree, waters, wtree, note, at, sq, pts, hits)
     for w in watertight(root, map_id) + trackclear(root, map_id):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
-    for w in overroad(root, map_id, OVERROAD_ONLY[0]) + roofs_solid(root, map_id, OVERROAD_ONLY[0]):
+    for w in overroad(root, map_id, OVERROAD_ONLY[0]) + roofs_solid(root, map_id, OVERROAD_ONLY[0]) + ground_seams(root, map_id, OVERROAD_ONLY[0]):
         if sq.contains(Point(w["x"], w["y"])): note(w["rule"], w["score"], at(w["x"], w["y"]), w["what"])
     street_faces(m, roads, rlines, marked, note, at, sq)
     boats(m, whole, roads, rlines, rtree, marked, waters, wtree, ground, note, at, sq)

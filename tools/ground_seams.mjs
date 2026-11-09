@@ -14,18 +14,22 @@
 // feet of kerbs, walls and the like (only edges of the ground's and the faces' tops are checked; a
 // kerb or a wall still closes an edge it shares).
 //
-//   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n]
+//   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules]
 //
 // --most n prints up to n gaps per square, as data x, y and a ?at= to look from. Exits 1 if any
-// square has a gap, so a build can stop on it.
+// square has a gap, so a build can stop on it. --rules prints the gaps as tools/check_more.py's
+// rule 38 findings instead (and always exits 0).
 import fs from "fs";
 import path from "path";
 import { fakeBrowser, bundleGame } from "./node_game.mjs";
 
 const here = path.dirname(new URL(import.meta.url).pathname), web = path.join(here, "..", "web");
 const argv = process.argv.slice(2);
-const opt = { map: "combe-down", squares: "", json: "", most: "0", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
-for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
+const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" ? "1" : argv[++i];
+// (with --rules the findings are the output, for tools/check_more.py rule 38, and the rest goes to stderr)
+if (opt.rules) console.log = console.error;
+const say = (...a) => console.log(...a);
 globalThis.__keepArrays = true;
 fakeBrowser(opt.maps);
 const G = await bundleGame(`
@@ -119,7 +123,6 @@ function seams(d, group) {
         const e = ek(p, q);
         uses.set(e, (uses.get(e) ?? 0) + 1);
         if (isTop) checked.set(e, [p, q, r]);
-        if (process.env.GS_AT) (globalThis.__dbg ??= []).push([p, q, name, isTop]);
       }
     }
   });
@@ -169,7 +172,6 @@ function seams(d, group) {
     for (const [u, w] of spans) { if (u > reach + slack) return false; reach = Math.max(reach, w); }
     return reach >= 1 - slack;
   };
-  if (process.env.GS_AT) { const [X, Y] = process.env.GS_AT.split(",").map(Number); for (const [p, q, nm, top] of globalThis.__dbg) { const vx = px[q] - px[p], vy = py[q] - py[p], tt = Math.max(0, Math.min(1, ((X - px[p]) * vx + (Y - py[p]) * vy) / (vx * vx + vy * vy || 1))); if (Math.hypot(px[p] + vx * tt - X, py[p] + vy * tt - Y) < Number(process.env.GS_R ?? 0.6)) console.log(nm, top ? "top" : "side", uses.get(ek(p, q)), [px[p], py[p], pz[p]].map((v) => v.toFixed(4)).join(" "), "->", [px[q], py[q], pz[q]].map((v) => v.toFixed(4)).join(" ")); } globalThis.__dbg = []; }
   // the tops by the cells they cover, to tell an edge with more ground or a face just across it
   const topCell = new Map();
   for (let n = 0; n < tops.length; n += 3) {
@@ -214,6 +216,7 @@ let squares = index.tiles.map(([i, j]) => [i, j]);
 if (opt.squares) squares = opt.squares.trim().split(/\s+/).map((s) => s.split(",").map(Number));
 const report = {}, most = Number(opt.most) || 0, t0 = Date.now();
 let total = { open: 0, tee: 0, under: 0, gap: 0, folds: 0 }, bad = 0;
+const findings = [];
 for (const [ti, tj] of squares) {
   const s = await square(ti, tj);
   if (!s) continue;
@@ -221,10 +224,13 @@ for (const [ti, tj] of squares) {
   s.done();
   for (const k of Object.keys(total)) total[k] += r[k];
   if (r.gap) bad++;
+  for (const [x, y, l] of opt.rules ? r.gaps : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
   report[`${ti},${tj}`] = { open: r.open, tee: r.tee, under: r.under, gap: r.gap, folds: r.folds, gaps: r.gaps.slice(0, 200).map(([x, y, l]) => [+x.toFixed(2), +y.toFixed(2), +l.toFixed(3)]) };
-  console.log(`${ti},${tj}: ${r.open} open edges, ${r.tee} tees, ${r.under} overlapped, ${r.gap} gaps, ${r.folds} edges three or more triangles share`);
-  for (const [x, y] of r.gaps.slice(0, most)) console.log(`    gap at ${x.toFixed(2)},${y.toFixed(2)}  ?at=${x.toFixed(1)},${(y - 6).toFixed(1)},0,-35`);
+  say(`${ti},${tj}: ${r.open} open edges, ${r.tee} tees, ${r.under} overlapped, ${r.gap} gaps, ${r.folds} edges three or more triangles share`);
+  for (const [x, y] of r.gaps.slice(0, most)) say(`    gap at ${x.toFixed(2)},${y.toFixed(2)}  ?at=${x.toFixed(1)},${(y - 6).toFixed(1)},0,-35`);
 }
-console.log(`${opt.map}: ${Object.keys(report).length} squares, ${total.open} open edges, ${total.tee} tees, ${total.under} overlapped, ${total.gap} gaps (${bad} squares with gaps), ${total.folds} shared by three or more, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+say(`${opt.map}: ${Object.keys(report).length} squares, ${total.open} open edges, ${total.tee} tees, ${total.under} overlapped, ${total.gap} gaps (${bad} squares with gaps), ${total.folds} shared by three or more, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 if (opt.json) fs.writeFileSync(opt.json, JSON.stringify({ total, squares: report }, null, 1));
-process.exit(bad ? 1 : 0);
+// (exit only once the findings are written: a pipe takes a large write in pieces)
+if (opt.rules) process.stdout.write(JSON.stringify(findings), () => process.exit(0));
+else process.exit(bad ? 1 : 0);

@@ -391,6 +391,7 @@ def main():
         check_more.OVERROAD_ONLY[0] = tuple(os.path.basename(f)[:-5] for f in files if "_" in os.path.basename(f))
     check_more.overroad(root, map_id, check_more.OVERROAD_ONLY[0])
     check_more.roofs_solid(root, map_id, check_more.OVERROAD_ONLY[0])
+    check_more.ground_seams(root, map_id, check_more.OVERROAD_ONLY[0])
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check
