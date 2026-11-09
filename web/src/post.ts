@@ -12,11 +12,18 @@
 // second time as which way each surface faces and how far off it is, and a line is put wherever
 // either jumps, where the surface turns a corner or one thing stands in front of another (dark on
 // Outlines' white clay, bright on Blueprint's dark).
+// Depth of field (Settings, off unless you turn it on): for the drone and the cinematic camera
+// (drone.ts, cinema.ts), what's nearer or further than the point in focus is blurred, as through a
+// real lens: more the wider the aperture and the longer the lens, so a long shot across the valley
+// blurs its background more than a wide one close up. It reads how far off each pixel is from the
+// depth the world was drawn with (kept beside the picture once it's first wanted), so nothing is
+// drawn twice; a sharp thing in front is never smeared by the blur behind it.
 // Nothing here goes over the network; the frame's draw calls are handed to telemetry.ts to count.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { FullScreenQuad, Pass } from "three/examples/jsm/postprocessing/Pass.js";
 import * as Telemetry from "./telemetry";
 
 // tone mapping (ACES, as every page sets the renderer) and the screen's sRGB, then the grade
@@ -68,6 +75,59 @@ const EdgeShader = {
     }`,
 };
 
+// depth of field: each pixel is the average of those round it whose own blur reaches it, out to
+// its blur's size (a disc of 32 taps in a sunflower spiral). A pixel behind this one only counts as
+// far as this one's own blur reaches, so the background never bleeds over something sharp in front;
+// one in front counts as far as its blur reaches, so a blurred foreground spreads over what's behind.
+const DofShader = {
+  uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, size: { value: new THREE.Vector2(1, 1) },
+    focus: { value: 10 }, aperture: { value: 0.05 }, flen: { value: 500 }, near: { value: 0.1 }, far: { value: 1000 }, maxR: { value: 8 } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 size; uniform float focus, aperture, flen, near, far, maxR; varying vec2 vUv;
+    #include <packing>
+    float distAt(vec2 uv){ return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, near, far); }
+    // the blur's radius in pixels, for something this far off (a thin lens: aperture in metres, focal length in pixels)
+    float blurAt(float d){ return min(maxR, 0.5 * aperture * flen * abs(d - focus) / (max(d, 0.01) * focus)); }
+    void main(){
+      float d0 = distAt(vUv), b0 = blurAt(d0);
+      vec3 sum = texture2D(tDiffuse, vUv).rgb; float n = 1.0;
+      for (int i = 0; i < 32; i++) {
+        float r = sqrt((float(i) + 0.5) / 32.0) * maxR, a = float(i) * 2.39996;
+        vec2 uv = vUv + vec2(cos(a), sin(a)) * r / size;
+        float d = distAt(uv), b = blurAt(d);
+        float reach = d > d0 ? min(b, b0) : b;
+        float w = clamp(reach - r + 1.0, 0.0, 1.0);
+        sum += texture2D(tDiffuse, uv).rgb * w; n += w;
+      }
+      gl_FragColor = vec4(sum / n, 1.0);
+    }`,
+};
+
+/** Depth of field to draw: how far off the focus is (metres) and how wide the aperture (metres: a
+ *  real lens's is a few centimetres; wider blurs more). */
+export interface Focus { focus: number; aperture: number }
+
+const DOF_KEY = "cd-dof";
+/** Depth of field for the drone and the cinematic camera: Settings, off unless chosen on this computer. */
+export let depthOfField = (() => { try { return localStorage.getItem(DOF_KEY) === "1"; } catch { return false; } })();
+export function setDepthOfField(on: boolean) {
+  depthOfField = on;
+  try { localStorage.setItem(DOF_KEY, on ? "1" : "0"); } catch { /* private window: just this visit */ }
+}
+
+/** The depth of field pass: reads the picture and its depth as the world was drawn into it. */
+class DofPass extends Pass {
+  readonly material = new THREE.ShaderMaterial(DofShader);
+  private quad = new FullScreenQuad(this.material);
+  render(renderer: THREE.WebGLRenderer, write: THREE.WebGLRenderTarget, read: THREE.WebGLRenderTarget) {
+    this.material.uniforms.tDiffuse.value = read.texture;
+    this.material.uniforms.tDepth.value = read.depthTexture;
+    renderer.setRenderTarget(this.renderToScreen ? null : write);
+    if (this.clear) renderer.clear();
+    this.quad.render(renderer);
+  }
+}
+
 /** Whether anything in this scene would be drawn: something visible to draw, all its parents visible too. */
 function drawsAnything(o: THREE.Object3D): boolean {
   if (!o.visible) return false;
@@ -99,6 +159,9 @@ export class Post {
   private edges: ShaderPass;
   private faced: THREE.WebGLRenderTarget | null = null;
   private facing = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
+  // depth of field, and whether the picture's buffers keep their depth for it yet
+  private dof = new DofPass();
+  private deep = false;
   /** Screen pixels per CSS pixel the page asked the renderer for; the renderer itself is held at 1. */
   private ratio: number;
 
@@ -122,7 +185,8 @@ export class Post {
     this.retro.uniforms.grade.value = fx ? 1 : 0;
     this.edges = new ShaderPass(EdgeShader);
     this.edges.enabled = false;
-    for (const p of [this.worldPass, this.edges, this.weaponPass, this.retro]) this.composer.addPass(p);
+    this.dof.enabled = false;
+    for (const p of [this.worldPass, this.dof, this.edges, this.weaponPass, this.retro]) this.composer.addPass(p);
     renderer.domElement.style.imageRendering = "pixelated";
   }
 
@@ -142,11 +206,13 @@ export class Post {
     this.composer.setSize(w, h);
     this.retro.uniforms.size.value.set(w, h);
     this.edges.uniforms.size.value.set(w, h);
+    this.dof.material.uniforms.size.value.set(w, h);
     this.faced?.setSize(w, h);
   }
 
-  /** edges: the drone's Outlines or Blueprint view (looks.ts): the lines' colour, and how far they cover what's under them. */
-  render(world: THREE.Scene, weapon: THREE.Scene | null, edges: { ink: THREE.Color; strength: number } | null = null) {
+  /** edges: the drone's Outlines or Blueprint view (looks.ts): the lines' colour, and how far they cover what's under them.
+   *  focus: depth of field to draw (only if it's on in Settings). */
+  render(world: THREE.Scene, weapon: THREE.Scene | null, edges: { ink: THREE.Color; strength: number } | null = null, focus: Focus | null = null) {
     this.worldPass.scene = world;
     // with nothing in your hands (in a car, on a menu) the pass would only clear the depth and draw nothing
     this.weaponPass.enabled = !!weapon && drawsAnything(weapon);
@@ -162,6 +228,7 @@ export class Post {
     info.autoReset = false;
     info.reset();
     this.retro.uniforms.toneMappingExposure.value = this.renderer.toneMappingExposure;
+    this.focus(depthOfField ? focus : null);
     this.edges.enabled = !!edges;
     if (edges) {
       this.edges.uniforms.ink.value.copy(edges.ink);
@@ -170,6 +237,26 @@ export class Post {
     }
     this.composer.render();
     Telemetry.drawn(this.renderer);
+  }
+
+  /** Set up this frame's depth of field, or none. */
+  private focus(f: Focus | null) {
+    this.dof.enabled = !!f;
+    if (!f) return;
+    if (!this.deep) {
+      // the first time it's wanted: the picture's two buffers keep their depth from now on
+      this.deep = true;
+      for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+        t.depthTexture = new THREE.DepthTexture(t.width, t.height);
+        t.dispose();
+      }
+    }
+    const u = this.dof.material.uniforms, c = this.camera, h = (u.size.value as THREE.Vector2).y;
+    u.focus.value = Math.max(0.3, f.focus);
+    u.aperture.value = f.aperture;
+    u.flen.value = h / 2 / Math.tan((c.fov * Math.PI) / 360);
+    u.near.value = c.near; u.far.value = c.far;
+    u.maxR.value = Math.max(3, Math.round(h / 60));
   }
 
   /** The world drawn as which way each surface faces, and how far off it is, for the outlines. */

@@ -273,7 +273,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
 | Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out (let go of a tiller) |
-| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | chase camera, driver's seat or bonnet camera |
+| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | chase camera, driver's seat, bonnet or cinematic camera (in a balloon: basket, chase or cinematic) |
 | Triangle | switch weapon | get out |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
@@ -449,7 +449,12 @@ speed, until you lift off or brake and the nose tucks in. The left and right arr
 touch screen) work the indicators, which tick away and cancel themselves once you're round the
 corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
 sees them, the traffic's brake lights too. C (View on a touch screen) goes round
-the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
+the chase camera, the driver's seat, the bonnet camera and the cinematic camera. The cinematic camera
+is GTA V's: it cuts every few seconds between shots a film crew would set up, low by the kerb as you
+sweep past, up on a crane or a rooftop, tracking alongside, out in front looking back, down by the back
+wheel, from a helicopter, from a hillside across the valley on a long lens, and lined up with a
+landmark behind you (the Abbey, Pulteney Bridge, Sham Castle...). It never sits inside a building, and
+cuts away if anything gets between it and you. From the driver's seat you look out over
 a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
 and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
 XR3i's sports seats, three-spoke wheel and furry dice (they swing on their strings as you pull away, brake, corner and hit the bumps), the GTI's tartan seats and golf-ball gear knob,
@@ -553,8 +558,9 @@ at the stern to take the tiller: W and S set the throttle, A and D put the tille
 the boat's little bell (Fire on a touch screen), and ← and → wave to people on the bank with your
 left or right hand (◀ ▶ on a touch screen). It answers
 slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
-with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
-back deck for a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead. Any boat moored by the bank is yours too: press E at
+with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) goes from the
+back deck to a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead, and on
+to the cinematic camera (towpath shots, bridges, the hills either side). Any boat moored by the bank is yours too: press E at
 its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). At the
 tiller you're above it all: no naughty boy, team or Flag Lad will come for you or lay a finger on
 you. Every
@@ -612,8 +618,13 @@ the envelope, **S** opens the vent at the top to let it out, and **A** and **D**
 few seconds to tell, so burn in short blasts and wait: let it cool and you sink. The wind blows
 harder higher up and comes from a different way, so choosing your height is how you choose where
 you go. The panel shows how high you are over the ground, how fast you're climbing or sinking, and
-how hot the envelope is. You can't climb out till you're down again (anywhere: a field, a street, a
-roof); come down too hard and it hurts. A balloon left on its own comes down and is packed up where
+how hot the envelope is. C (View on a touch screen, Circle on a controller) goes from the basket to a
+chase camera well back, to see the whole balloon with you in the basket (the mouse swings it round),
+and on to the cinematic camera: stood in a field looking up as you drift over, clinging to the basket
+looking up into the envelope as the burner roars, over the crown looking down at the city, from a hill
+across the valley, or with a landmark behind you. You can't climb out till you're down again
+(anywhere: a field, a street, a roof), unless you've the wingsuit on: then E jumps you over the side
+the way you're looking, and Space opens the wingsuit as you fall. Come down too hard and it hurts. A balloon left on its own comes down and is packed up where
 it lands, and the crews have it back on the lawn before the next dawn. `?time=06:00` in the address
 stops the clock in the morning, to try it.
 
@@ -1042,6 +1053,11 @@ A line starting with `/` is a command, for trying things out:
   person, bench or landmark in a box round it; a street or the ground just named. `,` and `.` zoom out and in, from
   1x to 8x (the D-pad's left and right, or a tap on the zoom at the top). A snap says which view
   it was in, and how far zoomed.
+  With Depth of field ticked in Settings (Video; it's off to start with), the drone's camera focuses
+  on whatever's under the crosshair, racking from one thing to the next, and blurs what's nearer and
+  further; `[` and `]` close the aperture down or open it up (F/16 to F/1, deeper or shallower; L3 on a
+  controller goes round them), and the screen shows the aperture and the focus distance. The
+  cinematic camera uses it too, focused on you.
   Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where
   you were and what the crosshair's on. Whatever you type on the phone while you're flying is a note
   on your latest snap rather than a text. Every snap and note puts this flight's snaps on the

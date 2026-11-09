@@ -9,7 +9,7 @@
 // Passive mode also has a tickbox of its own on the main menu, under the game name, kept in step with this one.
 // Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
-// Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
+// Video: automatic (quality.ts), draw distance (view.ts), resolution, the retro look and depth of field (post.ts), field of view (view.ts,
 // used by game.ts), how far the shadows reach (Off to Ultra, a share of the draw distance: shadows.ts), and
 // how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), and the debug panel (debug.ts, also F3). Choosing a distance, resolution or shadows yourself turns automatic off.
 // Controls: mouse sensitivity, turning the look round for the mouse and
@@ -27,7 +27,7 @@ import { mine, progressionDefault, setProgression } from "./features";
 import { resetPadSettings } from "./gamepad";
 import { invertSettings, resetInvert } from "./invert";
 import { closeButton } from "./modal";
-import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
+import { RES_DEFAULT, RES_STEPS, depthOfField, setDepthOfField, type Post } from "./post";
 import { quality } from "./quality";
 import { SHADOW_DEFAULT, SHADOW_LEVELS, SHADOW_OFF, setShadowLevel, shadowLevel, shadowLevelName, shadowReach } from "./shadows";
 import { DETAIL_DEFAULT, DETAIL_LEVELS, FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, detailLevel, setDetail, setFov, setView, view } from "./view";
@@ -82,7 +82,7 @@ export function settingsPage(h: Hooks) {
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const auto = $<HTMLInputElement>("set-auto");
   const detail = $<HTMLSelectElement>("set-detail"), detailHint = $("set-detail-hint");
-  const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
+  const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dof = $<HTMLInputElement>("set-dof"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
 
@@ -115,6 +115,7 @@ export function settingsPage(h: Hooks) {
     shadows.value = String(shadowLevel); showReach();
     detail.value = String(detailLevel); showDetail();
     fx.checked = h.post.retroLook;
+    dof.checked = depthOfField;
     dbg.checked = h.debug.open;
     calm.checked = passive;
     sens.value = String(sensitivity);
@@ -158,6 +159,7 @@ export function settingsPage(h: Hooks) {
   shadows.onchange = () => { quality.manual(); setShadows(Number(shadows.value)); };
   detail.onchange = () => { setDetail(Number(detail.value), true); showDetail(); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
+  dof.onchange = () => setDepthOfField(dof.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
   calm.onchange = () => setPassive(calm.checked);
   menuCalm.onchange = () => setPassive(menuCalm.checked);

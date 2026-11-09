@@ -34,6 +34,7 @@ export interface Telemetry {
   snaps: number; allSnaps: number;
   flight: number;           // seconds since take-off
   lookKey: string;          // the control that changes the view, as it's named for this player
+  dof: string;              // depth of field: the aperture and the focus ("" with it off in Settings)
 }
 
 const INK = "#d6ecc8", SHADE = "rgba(0, 0, 0, 0.55)", REC = "#ff5a48";
@@ -130,7 +131,7 @@ export class DroneScreen {
     const left = [`${t.clock}  BATH`, `SQ: ${t.square || "-"}`, `SPD: ${t.gear}/${t.gears}`, `ZOOM: ${t.zoom.toFixed(1)}X`,
       `GMB: ${t.tilt >= 0 ? "+" : ""}${Math.round(t.tilt)}°`, `V.S: ${t.vs >= 0 ? "+" : ""}${t.vs.toFixed(1)} M/S`];
     left.forEach((s, i) => this.text(g, s, pad, top + i * lh, "left"));
-    const right = [dms(t.lat, "N", "S"), dms(t.lon, "E", "W"), `DST: ${Math.round(t.dst)}`, `RNG: ${t.rng === null ? "---" : t.rng.toFixed(1)}`, `ELV: ${Math.round(t.elv)}M`];
+    const right = [dms(t.lat, "N", "S"), dms(t.lon, "E", "W"), `DST: ${Math.round(t.dst)}`, `RNG: ${t.rng === null ? "---" : t.rng.toFixed(1)}`, `ELV: ${Math.round(t.elv)}M`, ...(t.dof ? [t.dof] : [])];
     right.forEach((s, i) => this.text(g, s, W - pad, top + i * lh, "right"));
     // over the frame: recording, and the snaps
     const mm = Math.floor(t.flight / 60), ss = Math.floor(t.flight % 60);

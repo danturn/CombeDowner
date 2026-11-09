@@ -49,6 +49,7 @@
 // - Hot air balloons (balloons.ts): whoever's flying one sends where it is ("bl"); anyone else in the
 //   basket rides along and says where they stand in it. The host sends where the ones nobody's in
 //   have come down; the lawn they wait on and the other flights run to the clock.
+// - The cinematic camera (cinema.ts), the balloon's chase camera and depth of field are your own view: nothing about them is sent.
 // - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
 //   your own screen like any move.
 // - Driving a bus on the 2 or the 4 (busdriver.ts): the route, its stops and its passengers are the
@@ -167,6 +168,8 @@ import { Wings } from "./wings";
 import { SUIT_ID, Wingsuit } from "./wingsuit";
 import type { Route } from "./railway";
 import { Balloons } from "./balloons";
+import { Cinema, type Subject } from "./cinema";
+import type { Focus } from "./post";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideBumps, type Rider } from "./ridebump";
 import { RideTricks } from "./ridetricks";
@@ -251,9 +254,16 @@ const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
 const KICK_WAIT = 0.15;                  // seconds after your last shot before your aim settles from the kick
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
-const BOAT_CHASE_KEY = "cd-boat-chase";  // whether you steer a narrowboat from the back deck or with the chase camera (C)
-const INSIDE_KEY = "cd-inside";         // how you drive (C): "0" the chase camera, "1" from the driver's seat, "2" from the bonnet
-const DRIVE_VIEWS = ["chase", "cockpit", "bonnet"] as const;
+const BOAT_CHASE_KEY = "cd-boat-chase";  // how you steer a narrowboat (C): "0" from the back deck, "1" the chase camera, "2" the cinematic camera
+const INSIDE_KEY = "cd-inside";         // how you drive (C): "0" the chase camera, "1" from the driver's seat, "2" from the bonnet, "3" the cinematic camera
+const BALLOON_KEY = "cd-balloon-view";  // how you see a balloon you're in (C): "0" from the basket, "1" the chase camera, "2" the cinematic camera
+const DRIVE_VIEWS = ["chase", "cockpit", "bonnet", "cinema"] as const;
+const BOAT_VIEWS = ["deck", "chase", "cinema"] as const;
+const BALLOON_VIEWS = ["basket", "chase", "cinema"] as const;
+/** Which of views was kept on this computer under key, or the first. */
+const keptView = <T extends readonly string[]>(views: T, key: string): T[number] => {
+  try { return views[Number(localStorage.getItem(key))] ?? views[0]; } catch { return views[0]; }
+};
 type DriveView = (typeof DRIVE_VIEWS)[number];
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
@@ -476,7 +486,12 @@ export class Game {
   private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
   private driveView: DriveView = (() => { try { return DRIVE_VIEWS[Number(localStorage.getItem(INSIDE_KEY))] ?? "chase"; } catch { return "chase"; } })();
   private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
-  private boatChase = (() => { try { return localStorage.getItem(BOAT_CHASE_KEY) === "1"; } catch { return false; } })();   // at a tiller: the chase camera, not the back deck
+  private boatView: (typeof BOAT_VIEWS)[number] = keptView(BOAT_VIEWS, BOAT_CHASE_KEY);   // at a tiller: the back deck, the chase camera or the cinematic one
+  private balloonView: (typeof BALLOON_VIEWS)[number] = keptView(BALLOON_VIEWS, BALLOON_KEY);   // in a balloon: the basket, the chase camera or the cinematic one
+  private cinema: Cinema;                        // the cinematic camera (cinema.ts)
+  private filmed = false;                        // the cinematic camera's had the view since the lens was last set
+  private lensNow: Focus | null = null;          // the cinematic camera's depth of field, this frame
+  private aloftMe: Avatar | null = null;         // you, stood in a balloon's basket, for the chase and cinematic cameras to see
   private boatYaw: number | null = null;         // at a tiller: which way the boat was heading last frame, so your view turns with it
   private wave = 0;                              // at a tiller: waving, 1 the left hand, 2 the right, 3 both (← and →)
   private waveHeld = 0;                          // the same from the ◀ ▶ buttons on a touch screen
@@ -718,6 +733,7 @@ export class Game {
     this.wings.onNote = (f, d, b) => this.net.send("gtr", [Math.round(f * 10) / 10, Math.round(d * 100) / 100, b]);
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.balloons = new Balloons(map, world.scene, this.net.selfId, (d) => this.net.send("bl", d));
+    this.cinema = new Cinema(map);
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text) => this.news(text);
     this.sports.who = () => ({ id: this.net.selfId, name: this.name });
@@ -1097,6 +1113,7 @@ export class Game {
       if (this.drone.on && this.active && !e.repeat && isKey(e.code, "droneview")) this.drone.nextLook();
       // and , and . zoom out and in (the soundtrack's keys the rest of the time: main.ts)
       if (this.drone.on && this.active && isKey(e.code, "dronezoom") && !(e.target instanceof HTMLInputElement)) this.drone.zoomStep(e.code === "Period" ? 1 : -1);
+      if (this.drone.on && this.active && isKey(e.code, "dronefocus") && !(e.target instanceof HTMLInputElement)) this.drone.apertureStep(e.code === "BracketRight" ? 1 : -1);
       // no mouse to click (an iPad's keyboard): Enter shoots, held for a burst, and / aims, again to stop
       if (isKey(e.code, "keyfire") && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
         e.preventDefault();
@@ -1108,7 +1125,7 @@ export class Game {
       }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (isKey(e.code, "bino") && !e.repeat && this.active) this.toggleBinoculars();
-      if (isKey(e.code, "view") && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
+      if (isKey(e.code, "view") && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId) || this.balloons.aboard >= 0)) this.toggleView();
       if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && this.active && this.car) this.indicate(e.code === "ArrowLeft" ? 1 : -1);
       if (isKey(e.code, "ride") && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
@@ -1417,27 +1434,55 @@ export class Game {
   /** ◀ or ▶ let go. */
   indicateEnd(d: number) { this.waveHeld &= d > 0 ? 2 : 1; }
 
-  /** Driving: from the driver's own seat, looking out over the dash, or the chase camera behind (C, or View on a touch screen). Remembered on this computer. */
+  /** Driving: from the driver's own seat, looking out over the dash, the chase camera behind, or the
+   *  cinematic camera (C, or View on a touch screen); at a tiller and in a balloon the same, round its
+   *  own views. Remembered on this computer. */
   toggleView() {
+    const keepAs = (key: string, n: number) => { try { localStorage.setItem(key, String(n)); } catch { /* storage may be blocked */ } };
+    const next = <T extends readonly string[]>(views: T, now: T[number]) => (views.indexOf(now) + 1) % views.length;
+    this.cinema.cut();
+    const p = this.player;
+    if (this.balloons.aboard >= 0 && !this.car) {
+      // in a balloon's basket: from where you stand, the chase camera well back, or the cinematic camera
+      const n = next(BALLOON_VIEWS, this.balloonView);
+      this.balloonView = BALLOON_VIEWS[n];
+      keepAs(BALLOON_KEY, n);
+      if (this.balloonView !== "basket") this.aiming = this.binoculars = false;
+      p.pitch = this.balloonView === "chase" ? -0.25 : 0;
+      this.news(this.balloonView === "basket" ? "In the basket" : this.balloonView === "chase" ? "Chase camera" : "Cinematic camera");
+      return;
+    }
     const helm = this.world.canal?.helmOf(this.net.selfId);
     if (helm && !this.car) {
-      // at a narrowboat's tiller: from the back deck, or the chase camera, high and well back
-      this.boatChase = !this.boatChase;
-      try { localStorage.setItem(BOAT_CHASE_KEY, this.boatChase ? "1" : "0"); } catch { /* storage may be blocked */ }
-      this.player.yaw = this.world.canal!.stern(helm).yaw;
-      this.player.pitch = this.boatChase ? -0.3 : -0.08;
-      this.news(this.boatChase ? "Chase camera" : "On the back deck");
+      // at a narrowboat's tiller: from the back deck, the chase camera, high and well back, or the cinematic camera
+      const n = next(BOAT_VIEWS, this.boatView);
+      this.boatView = BOAT_VIEWS[n];
+      keepAs(BOAT_CHASE_KEY, n);
+      p.yaw = this.world.canal!.stern(helm).yaw;
+      p.pitch = this.boatView === "chase" ? -0.3 : -0.08;
+      this.news(this.boatView === "chase" ? "Chase camera" : this.boatView === "deck" ? "On the back deck" : "Cinematic camera");
       return;
     }
     if (!this.car) return;
-    const n = (DRIVE_VIEWS.indexOf(this.driveView) + 1) % DRIVE_VIEWS.length;
+    const n = next(DRIVE_VIEWS, this.driveView);
     this.driveView = DRIVE_VIEWS[n];
-    try { localStorage.setItem(INSIDE_KEY, String(n)); } catch { /* storage may be blocked */ }
-    const p = this.player;
+    keepAs(INSIDE_KEY, n);
     p.yaw = this.car.seat().yaw;
     p.pitch = this.driveView === "chase" ? -0.15 : -0.06;
-    this.news(this.driveView === "cockpit" ? "Driver's seat" : this.driveView === "bonnet" ? "Bonnet camera" : "Chase camera");
+    this.news(this.driveView === "cockpit" ? "Driver's seat" : this.driveView === "bonnet" ? "Bonnet camera" : this.driveView === "cinema" ? "Cinematic camera" : "Chase camera");
   }
+
+  /** The cinematic camera has the view this frame (cinema.ts), of s. */
+  private film(dt: number, s: Subject) {
+    this.cinema.film(dt, s, this.camera);
+    this.filmed = true;
+  }
+
+  /** The depth of field to draw this frame (post.ts, if it's on in Settings): the drone's, or the cinematic camera's. */
+  get lens(): Focus | null { return this.drone.lens ?? this.lensNow; }
+
+  /** In a balloon, seen from outside it (the chase or cinematic camera), not from the basket. */
+  private get balloonOutside() { return this.balloons.aboard >= 0 && this.balloonView !== "basket"; }
 
   reload() {
     if (this.alive && this.weapon.startReload()) this.reloadSound = SFX.reload(this.weapon.kind === "sniper" ? "sniper" : "rifle");
@@ -3106,7 +3151,7 @@ export class Game {
     p.vel.set(v.vx, 0, v.vz);
     p.onGround = true;
     p.speed = Math.abs(v.speed);
-    const from = this.driveView === "chase" ? null : this.driveView;
+    const from = this.driveView === "cockpit" || this.driveView === "bonnet" ? this.driveView : null;
     if (this.insideOf !== (from ? v : null) || v.view !== from) {
       this.insideOf?.inside(null); this.insideOf = from ? v : null; this.insideOf?.inside(from);
       if (from) p.pitch = v.restPitch;
@@ -3114,6 +3159,7 @@ export class Game {
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
     if (from) { this.driverView(v, s.yaw, settle, dt); return; }
     this.insideYaw = null;
+    if (this.driveView === "cinema") { this.film(dt, { x: v.x, y: v.y, z: v.z, yaw: s.yaw, len: v.hl, wid: v.hw, h: v.spec.H, medium: "road", vx: v.vx, vz: v.vz }); return; }
     // the chase camera: the mouse only looks about, and it swings back behind as you drive on. In a
     // slide it hangs back towards the way the car's really going, lagging and pulling out wider, so
     // you see it come round side on
@@ -3479,9 +3525,10 @@ export class Game {
     this.boatYaw = ahead;
     const settle = settleRate(performance.now() - p.lookedAt, Math.abs(b.v) > 0.3, this.throttle > 0, dt);
     let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
-    if (settle) { off -= off * settle; p.pitch += ((this.boatChase ? -0.3 : -0.08) - p.pitch) * settle; }
+    if (settle) { off -= off * settle; p.pitch += ((this.boatView === "chase" ? -0.3 : -0.08) - p.pitch) * settle; }
     p.yaw = ahead + off;
-    if (!this.boatChase) {
+    if (this.boatView === "cinema") { this.film(dt, { x: b.x, y: b.y, z: b.z, yaw: ahead, len: b.hl, wid: b.hw, h: Math.max(1.5, b.top - b.y), medium: "water" }); return; }
+    if (this.boatView === "deck") {
       p.pitch = Math.max(-0.8, Math.min(0.5, p.pitch));
       p.applyToCamera(this.camera);
       return;
@@ -3509,7 +3556,7 @@ export class Game {
       r.avatar.still = !!b;
       if (b) { const t = canal.stern(b); r.avatar.pin(t.x, t.y, t.z); }
     }
-    const show = !!helm && this.boatChase && this.alive;
+    const show = !!helm && this.boatView !== "deck" && this.alive;
     if (show && !this.steerer) {
       this.steerer = new Avatar(this.name, colourFor(this.net.selfId), this.net.selfId);
       this.steerer.tagged = false;
@@ -3585,6 +3632,8 @@ export class Game {
   private useBalloon(): boolean {
     const B = this.balloons, p = this.player;
     if (B.aboard >= 0) {
+      // too high to climb out: over the side, if you've the wingsuit on
+      if (B.clearance() > 3 && this.suitWorn && this.alive) { this.jumpOut(); return true; }
       const out = B.leave();
       if (!out) { this.guide("Too high to climb out. S opens the vent to bring her down"); return true; }
       this.leftBalloon(out);
@@ -3600,6 +3649,23 @@ export class Game {
     this.guide(B.flying ? `You're flying ${near.b.name}. {burner} for the burner, {vent} for the vent, {steer} to turn` : `Aboard ${near.b.name}. Enjoy the view`);
     this.sendState();
     return true;
+  }
+
+  /** Over the side of the basket in mid-air, the way you're looking, in the wingsuit: you fall clear,
+   *  and jump opens it. The balloon comes down on its own, or someone else in the basket flies it. */
+  private jumpOut() {
+    const B = this.balloons, b = B.mine, at = B.standing(), p = this.player;
+    if (!b || !at) return;
+    B.leave(true);
+    const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    p.pos.set(b.x + fx * 1.5, at.y + 1.3, b.z + fz * 1.5);
+    p.vel.set(b.vx + fx * 3.5, Math.max(0, b.vy) + 2.5, b.vz + fz * 3.5);
+    p.onGround = false;
+    p.crouchLatch = p.proneLatch = false;
+    this.cinema.stop();
+    SFX.swing();
+    this.guide("Over the side! {jump} to open your wingsuit");
+    this.sendState();
   }
 
   /** Stepping out of the basket, onto the ground beside it. */
@@ -3635,9 +3701,15 @@ export class Game {
     }
   }
 
-  /** Stood in a balloon's basket: carried along in it, looking (and shooting) about, and turning with it. */
-  private inBalloon() {
+  /**
+   * Stood in a balloon's basket: carried along in it, looking (and shooting) about, and turning with
+   * it. Or seen from outside (C): the chase camera, well back to take in the whole envelope, swinging
+   * round it with the mouse and turning as the basket does; or the cinematic camera (cinema.ts). From
+   * outside you see yourself in the basket, and you can't shoot.
+   */
+  private inBalloon(dt: number) {
     const p = this.player, at = this.balloons.standing(), b = this.balloons.mine;
+    this.showAloft(at && this.balloonOutside && this.alive ? at : null, dt);
     if (!at || !b) return;
     p.yaw += b.a - this.balloonA;
     this.balloonA = b.a;
@@ -3646,7 +3718,36 @@ export class Game {
     p.onGround = true;
     p.speed = 0;
     p.crouch = 0;
-    p.applyToCamera(this.camera);
+    if (this.balloonView === "basket") { p.applyToCamera(this.camera); return; }
+    if (this.balloonView === "cinema") { this.film(dt, { x: b.x, y: b.y, z: b.z, yaw: b.a, len: 9, wid: 9, h: 26, medium: "air", vx: b.vx, vy: b.vy, vz: b.vz }); return; }
+    p.pitch = Math.max(-1.2, Math.min(0.6, p.pitch));
+    const cp = Math.cos(p.pitch);
+    const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
+    // looking at the envelope's waist, from far enough back to see it from the crown to the basket
+    const target = new THREE.Vector3(b.x, b.y + 10, b.z), reach = 40;
+    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, reach);
+    const cam = target.addScaledVector(back, hit ? Math.max(3, hit.dist - 0.5) : reach);
+    cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, b.y + 1) + 0.8);
+    this.camera.position.copy(cam);
+    this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
+  }
+
+  /** You in the basket, drawn for the chase and cinematic cameras to see (null: not drawn). */
+  private showAloft(at: { x: number; y: number; z: number } | null, dt: number) {
+    if (at && !this.aloftMe) {
+      this.aloftMe = new Avatar(this.name, colourFor(this.net.selfId), this.net.selfId);
+      this.aloftMe.tagged = false;
+      this.aloftMe.still = true;
+      this.aloftMe.setWear(myWear());
+      this.world.scene.add(this.aloftMe.root);
+    }
+    const me = this.aloftMe;
+    if (!me) return;
+    me.root.visible = !!at;
+    if (!at) return;
+    me.wave = this.wave;
+    me.holdAt(at.x, at.y, at.z, this.player.yaw, 0, 0);
+    me.update(performance.now(), dt);
   }
 
   /** Which way you're pushing the keys or the stick: x right, y forward, -1..1. */
@@ -4506,7 +4607,7 @@ export class Game {
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
-    else if (aloft) this.inBalloon();
+    else if (aloft) this.inBalloon(dt);
     else if (perch) this.perched(perch);
     else if (this.drone.on) {
       // the drone (drone.ts): flying in place of walking, through anything; dying brings it down
@@ -4561,7 +4662,7 @@ export class Game {
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.drone.on) this.drone.trigger(this.active && (this.firing || this.shootOnce));   // a snap, not a shot
     else if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && !this.arrival.up && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
+    else if (this.active && this.alive && !this.arrival.up && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.balloonOutside && !this.scars.spray(this.camera)) this.shoot();
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
@@ -4592,18 +4693,29 @@ export class Game {
     this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket && !aloft);
     if (!this.alive) p.suitOpen = false;
     this.wingsuit.update(dt, p, this.camera);
-    w.model.visible = this.alive && !this.perchBare && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
-    if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
+    const outside = this.balloonOutside;
+    w.model.visible = this.alive && !this.perchBare && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm && !outside;
+    if (this.scoped || this.bino >= 0.5 || tv || car || helm || outside) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
     w.handlebars(w.model.visible && !ride && p.tumble <= 0 ? barsOf : null, this.camera, p.heading, -p.steer * 0.5, p.speed, dt);
     look.dx = look.dy = 0;
     const base = this.drone.fovFor(view.fov), gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
-    if (Math.abs(this.camera.fov - fov) > 0.01) {
-      this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
+    if (this.filmed && this.cinema.fov !== null) {
+      // the cinematic camera's own lens, cut to as it cuts, and its depth of field
+      this.camera.fov = this.cinema.fov;
       this.camera.updateProjectionMatrix();
+      this.lensNow = this.cinema.lens;
+    } else {
+      if (this.cinema.fov !== null) this.cinema.stop();
+      this.lensNow = null;
+      if (Math.abs(this.camera.fov - fov) > 0.01) {
+        this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
+        this.camera.updateProjectionMatrix();
+      }
     }
+    this.filmed = false;
     if (tv) {
       const b = this.broadcast;
       this.camera.position.copy(b.pos);
@@ -4927,7 +5039,7 @@ export class Game {
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     setStyle(ch, "--gap", `${gap.toFixed(1)}px`);
-    setStyle(ch, "opacity", w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car ? "0" : "1");
+    setStyle(ch, "opacity", w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car || this.balloonOutside ? "0" : "1");
     // aiming the paintball marker: its red dot, square in the middle where the paint goes
     setHidden($("reddot"), !(w.kind === "rifle" && !gore() && w.aim > 0.6 && w.model.visible));
     this.driveHud();
@@ -4998,9 +5110,10 @@ export class Game {
       const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
       say($("drivename"), `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`);
       say($("mph"), String(sky.up));
-      const out = this.balloons.clearance() <= 3;
-      show($("drivehint"), !flying ? (out ? stripOf([["use", "get out"]]) : "Along for the ride")
-        : stripOf([["burner", "burner"], ["vent", "vent"], ["steer", "turn"], ...(out ? [["use", "get out"] as [string, string]] : [])]));
+      const out = this.balloons.clearance() <= 3, leap = !out && this.suitWorn;
+      const leave: [string, string][] = out ? [["use", "get out"]] : leap ? [["use", "jump"]] : [];
+      show($("drivehint"), !flying ? (leave.length ? stripOf([...leave, ["view", "view"]]) : "Along for the ride")
+        : stripOf([["burner", "burner"], ["vent", "vent"], ["steer", "turn"], ["view", "view"], ...leave]));
     }
     if (helm) {
       say($("drivename"), `${helm.name}, narrowboat`);
@@ -5077,10 +5190,10 @@ export class Game {
     if (!badge.firstChild) badge.innerHTML = carryIcon("suit");
     setHidden(badge, !(this.alive && this.suitWorn));
     badge.classList.toggle("open", this.player.suitOpen);
-    const balloonOut = aloft && !!sky && this.balloons.clearance() <= 3;
+    const balloonOut = aloft && !!sky && (this.balloons.clearance() <= 3 || this.suitWorn);
     setHidden($("t-car"), !ride && !helm && !this.basket && !balloonOut && !goal && !(job || acts(odds) || tape) && !pick?.button);
     setHidden($("t-ride"), (!this.held && !lad && !odd) || !!ride || !!this.basket);
-    setHidden($("t-view"), !this.car && !this.world.canal?.helmOf(this.net.selfId));
+    setHidden($("t-view"), !this.car && !this.world.canal?.helmOf(this.net.selfId) && !aloft);
     for (const id of ["t-sigl", "t-sigr"]) setHidden($(id), !this.car && !this.world.canal?.helmOf(this.net.selfId));
     say($("t-ride"), this.riding ? "Get off" : lad ? "Put up" : odd ? "Put down" : "Ride");
     setHidden($("t-trick"), !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind);
@@ -5327,6 +5440,8 @@ export class Game {
     this.zones.dispose();
     this.oddments.dispose();
     this.balloons.dispose();
+    this.cinema.dispose();
+    if (this.aloftMe) this.world.scene.remove(this.aloftMe.root);
     this.quests.dispose();
     this.scars.dispose();
     this.invasion.dispose();

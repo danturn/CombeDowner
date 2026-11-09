@@ -22,6 +22,11 @@
 // out and in, from 1x to 8x (the D-pad's left and right, or a tap on the zoom at the top), and the
 // mouse looks round more slowly the further in you are.
 //
+// Depth of field (with it on in Settings: post.ts draws it): the drone focuses on whatever's under
+// the crosshair, racking from one thing to the next as a real camera does, and [ and ] open the
+// aperture wider (a shallower focus, more blur either side of it) or close it down (L3 on a
+// controller goes round them). The aperture and the focus distance show on the drone's screen.
+//
 // P takes off and lands again, as /drone on the chat phone does.
 //
 // Snaps, for noting what's wrong with the map: the trigger (a click, Fire, R2) takes one. Each keeps
@@ -61,6 +66,7 @@ import { Looks } from "./looks";
 import { DroneScreen } from "./droneosd";
 import { Picker, type Picked } from "./pick";
 import { roofMeshTop, type Building, type GameMap } from "./map";
+import { depthOfField, type Focus } from "./post";
 import type { Player } from "./player";
 
 const SPEEDS = [3, 8, 20, 45, 90];     // m/s, picked with the wheel; the middle one to start
@@ -75,6 +81,10 @@ const PIC_W = 960;                     // a snap's picture, at most this wide
 const SHEET_W = 480;                   // each snap's width on the contact sheet
 const RAY = 3000;                      // how far the crosshair's ray looks for something
 const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8];   // , and . step through these
+/** [ and ] step through these apertures (depth of field), as a share of the focus distance: wider
+ *  blurs more. And what they're called on the drone's screen, as a camera's f-numbers. */
+const APERTURES = [0.0015, 0.003, 0.006, 0.012, 0.024, 0.048];
+const F_STOPS = ["F/16", "F/8", "F/4", "F/2", "F/1.4", "F/1"];
 const SHEET_MAX = 1500;                // the contact sheet's pictures, no wider than this all told
 const PRINT_PX = 15, PRINT_PAD = 10, PRINT_MIN_W = 960;   // the text printed under them
 
@@ -114,6 +124,8 @@ export class Drone {
   readonly looks = new Looks();
   private gear = 2;
   private zoomAt = 0;
+  private stop = 2;                    // which of APERTURES
+  private focusAt = 50;                // metres: where it's focused, racking towards what's under the crosshair
   private eye = new THREE.Vector3();
   private v = new THREE.Vector3();
   private roll = 0;
@@ -209,6 +221,20 @@ export class Drone {
     this.drawOsd();
   }
 
+  /** ] and [: the aperture wider (1, a shallower focus) or narrower (-1); L3 goes round them (wrap). */
+  apertureStep(by: number, wrap = false) {
+    if (!depthOfField) { chatLine("Depth of field is off: turn it on in Settings, Video"); return; }
+    const n = this.stop + by;
+    this.stop = wrap ? (n + APERTURES.length) % APERTURES.length : Math.max(0, Math.min(APERTURES.length - 1, n));
+    this.drawOsd();
+  }
+
+  /** The depth of field to draw while the drone's up (post.ts draws it if it's on in Settings). */
+  get lens(): Focus | null {
+    if (!this.on) return null;
+    return { focus: this.focusAt, aperture: APERTURES[this.stop] * this.focusAt };
+  }
+
   /** The camera's field of view (degrees, top to bottom) for the game's own, zoomed. */
   fovFor(base: number): number {
     if (!this.on || this.zoom === 1) return base;
@@ -223,6 +249,7 @@ export class Drone {
     if (b === B.up || b === B.down) { this.tilt = down ? (b === B.up ? 1 : -1) : 0; return true; }
     if (b === B.l1 || b === B.r1) { if (down) this.gearStep(b === B.r1 ? 1 : -1); return true; }
     if (b === B.left || b === B.right) { if (down) this.zoomStep(b === B.right ? 1 : -1); return true; }
+    if (b === B.l3) { if (down) this.apertureStep(1, true); return true; }
     return false;
   }
 
@@ -273,6 +300,9 @@ export class Drone {
       const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion), hit = m.raycast(this.eye.x, this.eye.y, this.eye.z, d.x, d.y, d.z, RAY);
       this.range = hit ? hit.dist : null;
     }
+    // the focus racks over to what's under the crosshair (the far distance, if that's the sky)
+    const sharp = Math.log(Math.max(0.5, this.range ?? 2000)), rack = 1 - Math.exp(-dt * 5);
+    this.focusAt = Math.exp(Math.log(this.focusAt) + (sharp - Math.log(this.focusAt)) * rack);
     this.drawOsd();
   }
 
@@ -466,6 +496,7 @@ export class Drone {
       look: this.looks.name, kinds: this.looks.id === "kinds", lookKey: ctl("droneview"),
       snaps: this.snaps.length - this.flightFrom, allSnaps: this.snaps.length,
       flight: (performance.now() - this.upAt) / 1000,
+      dof: depthOfField ? `DOF: ${F_STOPS[this.stop]} @ ${this.focusAt < 1000 ? this.focusAt.toFixed(this.focusAt < 10 ? 1 : 0) : "INF"}` : "",
     });
   }
 

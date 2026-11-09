@@ -871,6 +871,7 @@ padActions(STREETS, {
   crouch: (down) => {
     const p = game?.player;
     if (!down || !p || p.diveBusy) return;
+    if (game!.balloons.aboard >= 0) { game!.toggleView(); return; }   // in a balloon's basket: Circle goes round the views
     if (p.proneLatch || p.crouchLatch) p.proneLatch = p.crouchLatch = false;
     else p.crouchLatch = true;
   },
@@ -968,7 +969,7 @@ function tick(now: number) {
   const looks = game?.drone.on ? game.drone.looks : null;
   try {
     looks?.before(current.world.scene);
-    post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.edges ?? null);
+    post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.edges ?? null, game?.lens ?? null);
   } finally { (looks ?? game?.drone.looks)?.after(current.world.scene); }
   game?.drone.framed(renderer.domElement);   // a drone snap's picture, while this frame's still there to copy
   game?.drone.peek(renderer);                // and in its "what's what" view, what's under the crosshair
