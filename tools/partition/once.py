@@ -340,6 +340,8 @@ def build_graph(out, raw, log=print):
     roads = []
     detail = way_detail(D, bb)
     for g, p in D.lines_near(bb, "osm-roads"):
+        if p.get("osm") == "way/93266203":
+            continue
         if g.geom_type == "LineString" and g.is_ring:
             p = dict(p, _ring=True)
         g = g.intersection(box(*bb))
