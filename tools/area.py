@@ -172,6 +172,21 @@ MAPS = {
             half=1900,
         ),
     ),
+    "grwyne-fawr": dict(
+        name="Grwyne Fawr Reservoir",
+        centre=(-3.12385, 51.97110),   # lon, lat: fixed once anything is placed by coordinates
+        field=600,                     # the detailed box's own force field: the wide circle below is the play area
+        half=1565,
+        zones=[],                      # local character areas, see "Zones" in docs/new-area.md
+        default_zone="suburb",
+        region="GB-WLS",                     # ISO 3166-2: which of England's sources the build fetches (tools/new_area.py)
+        z0=544,                          # metres: what every square's ground heights are measured from (the ground at the middle)
+        wide=dict(
+            field=2000,
+            field_centre=(0, 0),
+            half=2150,
+        ),
+    ),
 }
 
 
