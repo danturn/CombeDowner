@@ -32,10 +32,6 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
-        env:
-          # The game runs its models in the browser (onnxruntime-web): the Node one's GPU libraries, fetched
-          # from Microsoft on install, are never used, and a slow fetch of them was failing the deploy.
-          ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm run build
         working-directory: web
         env:
