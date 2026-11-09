@@ -5,7 +5,8 @@
 // automatic settings (quality.ts) choose the distance and ease it back when frames are slow. The draw distance in Settings (settings.ts), or its
 // button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
 // ?view=1200 in the address tries a distance for one visit without remembering it. The field of
-// view lives here too. Nothing here goes over the network: everyone sees as far as they like.
+// view lives here too, and the scenery detail Settings offers (how far grass grows round you and how
+// far trees keep their full crowns), remembered on this computer and changed on the spot. Nothing here goes over the network: everyone sees as far as they like.
 
 const touch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
 const asked = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("view")) : 0;
@@ -54,6 +55,38 @@ export const SQUARES = askedSquares >= 1 ? Math.round(askedSquares) : touch ? 9 
 export const SIMPLER_FAR = 850;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
 export const TREE_TO = [50, 140, 480];
+
+/** How far round you grass grows (shared by every square's grass: grass.ts), metres. */
+export const GRASS = { reach: touch ? 26 : 42 };
+
+/** Scenery detail, as Settings offers it: how far grass grows round you, and how far off trees keep
+ *  their full crowns and then their simpler ones (past that they're flat pictures, to the fog). Low
+ *  is what a phone or iPad had before there was a choice, Medium a computer's. Further is slower:
+ *  grass grows with the square of its reach. */
+export const DETAIL_LEVELS = [
+  { name: "Low", grass: 26, trees: [50, 140] },
+  { name: "Medium", grass: 42, trees: [50, 140] },
+  { name: "High", grass: 64, trees: [90, 240] },
+  { name: "Ultra", grass: 90, trees: [150, 400] },
+  { name: "Max", grass: 130, trees: [250, 650] },
+];
+export const DETAIL_DEFAULT = touch ? 0 : 1;
+const DETAIL_KEY = "cd-detail";
+export let detailLevel = DETAIL_DEFAULT;
+
+/** Scenery detail at DETAIL_LEVELS[i], from now on; keep: remember it on this computer. */
+export function setDetail(i: number, keep = false) {
+  detailLevel = Math.max(0, Math.min(DETAIL_LEVELS.length - 1, Math.round(i)));
+  const l = DETAIL_LEVELS[detailLevel];
+  GRASS.reach = l.grass;
+  TREE_TO[0] = l.trees[0]; TREE_TO[1] = l.trees[1];
+  if (keep) { try { localStorage.setItem(DETAIL_KEY, String(detailLevel)); } catch { /* private window: just this visit */ } }
+}
+{
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(DETAIL_KEY); } catch { /* storage blocked */ }
+  setDetail(saved !== null && Number.isFinite(Number(saved)) ? Number(saved) : DETAIL_DEFAULT);
+}
 
 /** See as far as this, metres (by day). keep: remember it on this computer for next time. */
 export function setView(far: number, keep = false) {

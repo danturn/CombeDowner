@@ -190,6 +190,10 @@ open it, and Back or Esc takes you back to the list:
   the draw distance (a tenth, a quarter, half, or all of it), never further than 3 km (1 km on a phone
   or tablet), past which a house's shadow is smaller than a pixel. The page says how far that is at
   your draw distance. Close by they stay as sharp at every level; further off they're coarser.
+  Scenery detail goes Low, Medium, High, Ultra or Max: how far round you the grass grows (26 m to
+  130 m) and how far off trees keep their full crowns (50 m to 250 m) and then their simpler ones
+  (140 m to 650 m) before they turn to flat pictures. It changes on the spot; a phone or tablet
+  starts on Low, a computer on Medium.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
