@@ -1,7 +1,8 @@
 // Vehicles you can drive. The cars parked along The Firs (by Firs Field) and Fox Hill are swapped
 // for ones with the keys in: Ford Escort XR3is, Reliant Robins, Vauxhall Novas, Austin Metros, Ford
 // Sierras, a Police Sierra, a Transit van, a Mr Whippy van, a milk float and a Sinclair C5. Badgerline
-// double-deckers and minibuses wait at bus stops, and each cricket club has its heavy roller out.
+// double-deckers and minibuses wait on the bus station's stands and, now and then, at a stop off the
+// routes you can drive, and each cricket club has its heavy roller out.
 // A Kingswood School minibus is parked up on Lansdown by Grenville's monument, on a school trip, and
 // Mr D's chip van (chipvan.ts) is parked at the top of Old Bond Street, by Milsom Street.
 //
@@ -44,6 +45,7 @@ import { GLASS, glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
 import { CHIP, CHIP_LAMPS, chipDecals, chipParts, MR_DS } from "./chipvan";
+import { onRoute } from "./busroutes";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
 /** The two ways of driving from inside rather than with the chase camera. */
@@ -1427,14 +1429,15 @@ export class Vehicles {
       const kind = p.street === "The Firs" ? FIRS[f++ % FIRS.length] : FOX[fox++ % FOX.length];
       add(kind, p.x, p.z, p.a);
     }
-    // a bus waiting at some of the stops: double-deckers and minibuses turn and turn about. A bus
-    // station is a row of stops a few metres apart, so a stop within a bus's length of one that has a
-    // bus already goes without, and so does one by the square's edge, where the next square's buses
-    // (which this square can't see) could pull in on top of it
+    // now and then a bus waiting at a stop, laid over (double-deckers and minibuses turn and turn about):
+    // seldom, as in life, and never at a stop along the routes you can drive (busroutes.ts), where you'd
+    // keep finding one already in your way. A bus station is a row of stops a few metres apart, so a stop
+    // within a bus's length of one that has a bus already goes without, and so does one by the square's
+    // edge, where the next square's buses (which this square can't see) could pull in on top of it
     let n = 0;
     const placed: { x: number; z: number }[] = [], b = map.d.b, edge = SPECS.bus.L + 2;
     stops.forEach((s) => {
-      if (rand() > 0.35) return;
+      if (rand() > 0.06 || onRoute(this.map.d.id ?? "", s.x, s.z)) return;
       const kind: VKind = n % 2 ? "minibus" : "bus", at = this.stopSpot(s, kind);
       if (!at || placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < SPECS.bus.L + 3)) return;
       if (b && b[2] > b[0] && (at.x < b[0] + edge || at.x > b[2] - edge || -at.z < b[1] + edge || -at.z > b[3] - edge)) return;

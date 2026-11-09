@@ -394,8 +394,9 @@ with your hands full, E swaps what you've got for what you're standing on.
 
 The cars parked along The Firs and Fox Hill have their keys in: Ford Escort XR3is, Reliant Robins,
 Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (siren and lights), a Transit, a Mr
-Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait at stops, and at
-any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
+Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait on the bus station's
+stands, and now and then one's laid over at a stop off the bus routes (never along them, so you don't
+keep finding one in your way when you're driving one), and at any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
 you. Each cricket club has its heavy roller out. Mr D's chip van, red with yellow trim and the yellow
 "Mr.D's" oval, is parked at the top of Old Bond Street, where Milsom Street meets New Bond Street,
 with its hatch open, the awning up and Mr D in it with his arms folded; you can drive that off too.
