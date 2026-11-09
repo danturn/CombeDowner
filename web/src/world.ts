@@ -548,7 +548,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ?roads=strips draws every street as strips along its line, as before the faces, to compare
   const SURFACES = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips";
   // off under Node, where the clash check runs this code: check_more.py measures the sheet itself (CD_GROUND=sheet)
-const SHEET = typeof location !== "undefined" && groundSheet();
+  const SHEET = typeof location !== "undefined" && groundSheet();
   // A square with its streets' faces lets them decide where the ground is pulled down, what height you
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
   // fall short in others, which showed as grass and hillside through the street

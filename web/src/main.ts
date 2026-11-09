@@ -829,6 +829,14 @@ fullscreenButton($("fullscreen"));
 const pictureHooks = settingsPage({
   post, debug, renderer, scene: () => current.world.scene,
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
+  here: () => {
+    if (!game) return null;
+    const p = game.player.pos, deg = (r: number) => Math.round(r * 180 / Math.PI);
+    const url = new URL(location.href);
+    url.searchParams.delete("ground");
+    url.searchParams.set("at", `${p.x.toFixed(1)},${(-p.z).toFixed(1)},${(deg(-game.player.yaw) % 360 + 360) % 360},${deg(game.player.pitch)}`);
+    return url.href;
+  },
 });
 {
   // the pixels drawn at Normal (about 540 lines) on this screen, as post.ts sizes them

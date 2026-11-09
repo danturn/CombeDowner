@@ -10,7 +10,7 @@
 // Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
-// used by game.ts), shadows, the debug panel (debug.ts, also F3), and the new ground (world.ts, from the next game). Choosing a distance, resolution or
+// used by game.ts), shadows, the debug panel (debug.ts, also F3), and the new ground (world.ts; changing it in a game reloads the page where you stand). Choosing a distance, resolution or
 // shadows yourself turns automatic off. Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
@@ -69,6 +69,8 @@ interface Hooks {
   scene: () => THREE.Scene;
   /** Mouse sensitivity changed (the game turns it into radians per pixel). */
   onSensitivity: (v: number) => void;
+  /** Where to reload to so you come back where you're standing (null with no game on): the ground is built as each square loads. */
+  here: () => string | null;
 }
 
 /** Wire up the Settings page and the buttons that open it. Returns what the automatic settings (quality.ts) need. */
@@ -141,7 +143,11 @@ export function settingsPage(h: Hooks) {
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
   // squares already built keep the ground they were built with, so this takes from the next game
-  ground.onchange = () => keep("cd-ground", ground.checked);
+  ground.onchange = () => {
+    keep("cd-ground", ground.checked);
+    const url = h.here();
+    if (url) location.replace(url);
+  };
   calm.onchange = () => setPassive(calm.checked);
   menuCalm.onchange = () => setPassive(menuCalm.checked);
   sens.oninput = () => setSens(Number(sens.value));
