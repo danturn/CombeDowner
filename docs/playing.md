@@ -452,7 +452,7 @@ sees them, the traffic's brake lights too. C (View on a touch screen) goes round
 the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
 a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
 and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
-XR3i's sports seats, three-spoke wheel and furry dice, the GTI's tartan seats and golf-ball gear knob,
+XR3i's sports seats, three-spoke wheel and furry dice (they swing on their strings as you pull away, brake, corner and hit the bumps), the GTI's tartan seats and golf-ball gear knob,
 the Land Rover's painted metal, its dials in the middle of the dash and its three levers, the Robin's
 one big speedo, a van's bench seat and bulkhead, and a newer hatchback's airbag wheel, glowing radio
 and air freshener. Look round and it's all there: pedals, gear stick and handbrake, the radio and
