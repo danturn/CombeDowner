@@ -1515,13 +1515,26 @@ wall now stop at the canal's bank top (`works.across`, or a lock) and over a riv
 own top (`wallFoot` in `world.ts`), the same for every bridge. It is the same in A, and the counts
 didn't move.
 
-**The seam steps** (9 of overroad's 17 steps between pieces of path) are faces either side of a seam
-cut at different points and given heights from different ways: each square levels its faces from the
-ways it holds, and near a seam the two squares hold different ones (a footway that turns back just
-inside one of them pulls its side down 18 cm). The ways themselves agree at the seam. Making the two
-sides agree needs the two squares to share their seam (the same points, from the same ways), which
-is a cross-square step in a build where each square is built on its own: left for Dan (see the
-round's report for the options).
+**The seam steps** (9 of overroad's 17 steps between pieces of path) were faces either side of a seam
+cut at different points and levelled from different ways. A path's, front path's, drive's or plaza's
+face is now given points along a square's edge at whole metres in map coordinates (`SEAM_STEP`,
+`_seam_points`), the same spots the next square uses, and on the edge takes the height of the path
+where it crosses the edge (`seam_z`: the end of a way within 0.2 m of the edge, the same point in both
+squares), or the ground there. Each square is still built on its own: a square built alone with
+`--only` writes the same faces, ground and sheet as when built with its neighbours (its overhead wires
+differ, as they always have: they are strung to whatever neighbours' files the build finds). This is
+the halo's second half without the first: the ways are not levelled past the square's edge, as their
+height where they cross it already agrees. Steps between pieces of path went 17 to 9, with only one
+(5 cm, grass) left on a seam; the others are A's own and stage 2's, listed above.
+
+**The cutting's walls and the bed** (Dan's look at round 17): the bed lies at 0.27 m over the rails'
+foot, just over the line's own ballast (0.25) and under the sleepers (0.32), so the ballast no longer
+shows along it as a second strip; it runs on (`BED_FILL`, 2 m) to a street, path or building
+standing a metre or more over it, stopping 0.15 m short so the sheet stands the street's wall in the
+gap; and a wall within `NARROW` (0.5 m) of the bed's edge goes down to the bed (`sheet.py`), so no
+ledge of grass shows up the wall's foot. Under a skew bridge over the canal, the sheet's wall under a
+street running on off the span stops at the canal's bank, or isn't there at all where the street
+stands over the towpath higher than a walker's headroom or over the water.
 
 **The railway, and Dan's notes on the shots** (round 13; the table in §12.4 stands except as
 below). Dan saw the railway standing on the sheet as slabs: beds raised over the grass, two tracks
