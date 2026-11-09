@@ -1369,6 +1369,14 @@ const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "
 /** Fox Hill: the estate, and what the lads there drive. */
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
+/** Where the police park up round town, and how many on each street: always a pair on Broad Street,
+ *  and one by the old police station on Manvers Street and on a few other streets in the middle of
+ *  Bath, in each square the street runs through. */
+const COPS: [string, number][] = [["Broad Street", 2], ["Manvers Street", 1], ["Walcot Street", 1], ["Monmouth Street", 1], ["Green Park Road", 1], ["Dorchester Street", 1], ["Bathwick Street", 1]];
+
+/** A police car going with its siren on: where it is and how fast it's going (scene coords). */
+export interface Siren { x: number; z: number; vx: number; vz: number }
+
 /** A bus stop: its flag, the way a bus stands at it, and its name (n). */
 export interface Stop { x: number; z: number; a: number; n?: string }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
@@ -1507,6 +1515,17 @@ export class Vehicles {
       placed.push(at);
       add(kind, at.x, at.z, at.a, true); stands++;
     }
+    // and the police, parked up nose to tail at the kerb where they always are (COPS): after
+    // everything else, so nothing else's number moves
+    const P = SPECS.police, free = (x: number, z: number) => !placed.some((p) => Math.hypot(p.x - x, p.z - z) < 9);
+    for (const [street, n] of COPS) {
+      for (let k = 0; k < n; k++) {
+        const at = this.kerbSpot(map, street, P, free);
+        if (!at) break;
+        placed.push(at);
+        add("police", at.x, at.z, at.a, true);
+      }
+    }
   }
 
   /** Where Mr D's chip van is parked: at the top of Old Bond Street, on its west side just south of
@@ -1526,7 +1545,7 @@ export class Vehicles {
   }
 
   /** Somewhere along the kerb of the street of that name in this square to park something of spec S, on the left as the traffic goes, or null if there's no room. */
-  private kerbSpot(map: GameMap, street: string, S: Spec): { x: number; z: number; a: number } | null {
+  private kerbSpot(map: GameMap, street: string, S: Spec, free: (x: number, z: number) => boolean = () => true): { x: number; z: number; a: number } | null {
     for (const r of map.d.rd) {
       if (r.n !== street || PATHS.has(r.c) || r.bridge) continue;
       const way = (r.ow ?? 1) < 0 ? -1 : 1, off = Math.max(0, roadHalf(r.c, r.w) - S.W / 2 - 0.15);
@@ -1538,7 +1557,7 @@ export class Vehicles {
         for (let s = S.L / 2 + 1; s <= len - S.L / 2 - 1; s += 3) {
           const along = way > 0 ? s : len - s, x = ax + ((bx - ax) / len) * along + nx * off, y = ay + ((by - ay) / len) * along + ny * off;
           const a = Math.atan2(uy, ux), c = Math.cos(a), sn = Math.sin(a), z = -y;
-          const ok = [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+          const ok = free(x, z) && [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
           if (ok) return { x, z, a };
         }
       }
@@ -1653,6 +1672,12 @@ export class Vehicles {
   /** A vehicle of a job's own (a driving test's learner car), numbered the same on every screen, so the host's word on who sits in it reaches it. */
   own(i: number, kind: VKind, paint: string, x: number, z: number, a: number, label = ""): Vehicle {
     return this.byI.get(i) ?? this.add(i, kind, paint, x, z, a, label);
+  }
+
+  /** The police cars going with the siren on, for the naughty boys to scarper from and the traffic
+   *  to pull over for (the host runs both). */
+  sirens(): Siren[] {
+    return this.list.filter((v) => v.siren && v.spec.siren === "siren").map((v) => ({ x: v.x, z: v.z, vx: v.vx, vz: v.vz }));
   }
 
   /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */

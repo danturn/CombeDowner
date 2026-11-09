@@ -421,6 +421,11 @@ keep finding one in your way when you're driving one), and at any stop you can p
 you. Each cricket club has its heavy roller out. Mr D's chip van, red with yellow trim and the yellow
 "Mr.D's" oval, is parked at the top of Old Bond Street, where Milsom Street meets New Bond Street,
 with its hatch open, the awning up and Mr D in it with his arms folded; you can drive that off too.
+More Police Sierras are parked up round the middle of Bath: always two on Broad Street, one by the
+old police station on Manvers Street, and one each on Walcot Street, Monmouth Street, Green Park
+Road, Dorchester Street and Bathwick Street. Put the siren on and any naughty boys and girls within
+earshot drop what they're doing and scarper, one or two shouting a warning, and the traffic pulls in
+to the kerb and stops till you're past.
 Arleen's coaches, from Peasedown St John, are about too, in white with
 ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts and Van Hool
 Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
