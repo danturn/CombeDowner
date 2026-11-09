@@ -1,7 +1,8 @@
 // Builds the three.js scene from the map: terrain, roads, buildings, walls, trees, water and sky.
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
-// borrows the builders here so it looks the same. With ?ground=sheet, a square that carries its
-// ground sheet (gs) draws its ground from it, cut along its street and path faces' edges (sheet.ts).
+// borrows the builders here so it looks the same. A square that carries its ground sheet (gs) draws
+// its ground from it, cut along its street and path faces' edges (sheet.ts); ?ground=old draws the
+// grid let down under the faces instead, to compare.
 import * as THREE from "three";
 import { darkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -537,14 +538,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const LEVEL = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "old";
   // ?roads=strips draws every street as strips along its line, as before the faces, to compare
   const SURFACES = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips";
-  const SHEET = typeof location !== "undefined" && new URLSearchParams(location.search).get("ground") === "sheet";
+  // off under Node, where the clash check runs this code: check_more.py measures the sheet itself (CD_GROUND=sheet)
+const SHEET = typeof location !== "undefined" && new URLSearchParams(location.search).get("ground") !== "old";
   // A square with its streets' faces lets them decide where the ground is pulled down, what height you
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
   // fall short in others, which showed as grass and hillside through the street
   const faced = !!D.sf && SURFACES;
   // (a square written with its paths level across draws them at their written height, not on the ground)
   const levelPaths = faced && !!D.sf!.pl, PATH_UNDER = 0.02, PATH_FILL = 1.5;
-  // ?ground=sheet draws the ground as one sheet with the faces where the square has one (gs, sheet.ts):
+  // the ground is drawn as one sheet with the faces where the square has one (gs, sheet.ts):
   // nothing of it under a face, and it meets each face's edge, carved or built up to it
   const sheetOn = SHEET && levelPaths && !!D.sf!.l && !!D.gs && !map.fine;
   // (the grid's heights, in decimetres, with the sheet's carving)

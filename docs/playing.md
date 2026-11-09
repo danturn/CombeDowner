@@ -1130,7 +1130,7 @@ Add these to the address:
 | `?res=full` | full resolution |
 | `?fx=0` | turns off the retro colour grade |
 | `?trees=flat` | draws every tree as a flat picture |
-| `?ground=sheet` | draws and walks the ground as one sheet with the streets and paths, meeting their edges (with retaining walls where a bank can't), where a square carries it |
+| `?ground=old` | draws and walks the ground as the survey's grid let down under the streets and paths, instead of the one sheet that meets their edges (the default), to compare |
 | `?portal=b,440,4470` | tries another style on the tunnel mouths nearest that spot (a stone, b concrete box, c grass banks, d concrete trough, e bare cut face; no spot for every tunnel) |
 | `?gore=1` / `?gore=0` | real guns and blood, or paintball |
 | `?wood=25` | starts Get Wood's bonfire with that many bundles on it |

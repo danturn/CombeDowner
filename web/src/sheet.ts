@@ -1,5 +1,5 @@
 // The ground as one sheet with the street, pavement and path faces (`gs`, written by
-// tools/partition/sheet.py; drawn with ?ground=sheet). Every grid cell a face's free edge passes
+// tools/partition/sheet.py; drawn unless ?ground=old). Every grid cell a face's free edge passes
 // through is cut along those edges, and only what lies outside the faces is drawn, filled between the
 // cell's corners and the edges at the height the ground meets each face there; a cell wholly under
 // faces draws no ground. Built as a square loads, from its `sf` and `gs`: world.ts draws the fill with
