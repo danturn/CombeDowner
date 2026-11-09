@@ -1,7 +1,8 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
 // Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
-// the Bell Inn on Walcot Street, Grenville's monument on Lansdown, Bath Spa station and the Dundas Aqueduct), and of Cape
+// the Bell Inn on Walcot Street, Grenville's monument on Lansdown, the Skyline gate above Prior Park,
+// Bath Spa station and the Dundas Aqueduct), and of Cape
 // Town's (the Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, and at the V&A
 // Waterfront the Clock Tower, the Cape Wheel, Zeitz MOCAA and the boats moored in the harbour) standing in for the plain
 // scenery the map tools build there.
@@ -55,6 +56,7 @@ import { CASTLE_Y, CASTLE_OUTLINE } from "./castle";
 import { CITY_HALL_Y } from "./cityhall";
 import { ST_GEORGES_Y } from "./stgeorges";
 import { AUWAL_Y } from "./auwal";
+import { skylineArgs } from "./skylinegate";
 import { CLOCK_TOWER, CAPE_WHEEL, ZEITZ, ZEITZ_SINK, ALFRED_BOATS, FERRY_BOATS } from "./waterfront";
 
 type LonLat = [number, number];
@@ -72,6 +74,8 @@ export interface PlaceCtx {
   water: number | null;
   /** The ground's height at its origin, above sea level, as the square's terrain has it. */
   ground: number;
+  /** The ground's height at x, z in its frame, above sea level, as the square's terrain draws it. */
+  groundAt: (x: number, z: number) => number;
   /** Its frame's x, z of data x, y. */
   local: (x: number, y: number) => [number, number];
   /** The level of the water at x, z in its frame, above sea level, if that's in a river or a pond. */
@@ -251,6 +255,19 @@ export const SET_PIECES: SetPiece[] = [
     // Bath Road (map.ts).
     name: "Grenville's monument", kind: "grenville", at: [-2.4014397, 51.4314187], bearing: 200, height: (c) => c.ground,
     outline: [[-2.4, -2.4], [2.4, -2.4], [2.4, 2.4], [-2.4, 2.4]],
+  },
+  {
+    // landmarks/skylinegate.ts. The gateway on the Bath Skyline path between Prior Park and Rainbow
+    // Wood. The origin: the middle of the near pier, at the ground there; x runs north-east along
+    // the path between the piers, its front (+z) to the wood, the field behind. Set where the map's
+    // paths meet: the gravel path up out of the field goes through the kissing gate, and the earth
+    // path along the field's top runs between the piers. The outline takes in the field's edge from
+    // the wire fence's far corner to the piers, the railings' run along the path, and the far pier,
+    // but not the paths' own points, so the paths stay joined up for everyone walking about.
+    name: "The Skyline gate", kind: "skylinegate", at: [-2.339853, 51.3672786], bearing: 35, height: (c) => c.groundAt(0, 0),
+    outline: [[-0.2, 1.15], [-5.37, -3.35], [-4.32, -4.55], [-4.7, -4.88], [-6.28, -3.07], [-7.97, -4.55], [-11.89, -8.42], [-10.78, -9.7], [-5.24, -7.08], [1.7, -1.04]],
+    more: [[[0, 0.35], [44, -0.6], [44, -1.9], [0, -1.2]], [[-0.6, 2.95], [3.2, 2.5], [3.2, 4.5], [-0.6, 4.5]]],
+    args: skylineArgs,
   },
   {
     // landmarks/bathspa.ts. The origin: the middle of the station building's front on the
@@ -551,7 +568,16 @@ export function maskSetPieces(d: MapData) {
     const fi = Math.min(T.nx - 1.001, Math.max(0, (ox - T.x0) / T.dx)), fj = Math.min(T.ny - 1.001, Math.max(0, (oy - T.y0) / T.dy));
     const gi = Math.floor(fi), gj = Math.floor(fj), gu = fi - gi, gv = fj - gj, gh = (i: number, j: number) => T.h[j * T.nx + i] / 10 + T.z0;
     const ground = (gh(gi, gj) * (1 - gu) + gh(gi + 1, gj) * gu) * (1 - gv) + (gh(gi, gj + 1) * (1 - gu) + gh(gi + 1, gj + 1) * gu) * gv;
-    const ctx: PlaceCtx = { local, waterAt, ground, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
+    // the ground anywhere in its frame, as the terrain's triangles draw it (map.ts bareGround)
+    const groundAt = (lx: number, lz: number) => {
+      const [x, y] = at(lx, lz);
+      const fi = Math.min(T.nx - 1.001, Math.max(0, (x - T.x0) / T.dx)), fj = Math.min(T.ny - 1.001, Math.max(0, (y - T.y0) / T.dy));
+      const i = Math.floor(fi), j = Math.floor(fj), u = fi - i, v = fj - j, n = T.nx, k = j * n + i;
+      const H = (q: number) => T.h[q] / 10 + T.z0;
+      return u + v <= 1 ? H(k) + (H(k + 1) - H(k)) * u + (H(k + n) - H(k)) * v
+        : H(k + n + 1) + (H(k + n) - H(k + n + 1)) * (1 - u) + (H(k + 1) - H(k + n + 1)) * (1 - v);
+    };
+    const ctx: PlaceCtx = { local, waterAt, ground, groundAt, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
     const z = typeof sp.height === "number" ? sp.height : sp.height(ctx);
     for (const p of ctx.held) for (const q of p) { q[2] = q[3] - z; q.length = 3; }
     if (sp.sink) lower(d, sp.sink.map((r) => ({ ...r, y: z + r.y })), local, hide, mx0, mx1, my0, my1);

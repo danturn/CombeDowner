@@ -105,6 +105,10 @@ Bath's great buildings are modelled by hand:
   lights, covered seating and the Back Bar with its own stage.
 - **Sir Bevil Grenville's monument**, out on Lansdown where the battle was fought in 1643: a stone
   pedestal on steps with the Grenvilles' griffin on top.
+- **The Skyline gate**, between Prior Park and Rainbow Wood, where the path out of the wood meets
+  the top of the fields and Bath opens out below: two old stone gate piers either side of the path,
+  one still holding its iron gate open, low estate railings along the field, a five-bar field gate,
+  a kissing gate with a waymarker beside it, and a stump and a fallen trunk out in the grass.
 
 ### Streets, walls and bridges
 
