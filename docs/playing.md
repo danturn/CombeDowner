@@ -194,7 +194,12 @@ open it, and Back or Esc takes you back to the list:
   debug panel. Shadows go Off, Low, Medium, High or Ultra: how far from you they reach, as a share of
   the draw distance (a tenth, a quarter, half, or all of it), never further than 3 km (1 km on a phone
   or tablet), past which a house's shadow is smaller than a pixel. The page says how far that is at
-  your draw distance. Close by they stay as sharp at every level; further off they're coarser.
+  your draw distance. Close by they stay as sharp at every level; further off they're coarser. Trees
+  cast them as far as they reach, even where they're drawn as flat pictures.
+  Scenery detail goes Low, Medium, High, Ultra or Max: how far round you the grass grows (26 m to
+  130 m) and how far off trees keep their full crowns (50 m to 250 m) and then their simpler ones
+  (140 m to 650 m) before they turn to flat pictures. It changes on the spot; a phone or tablet
+  starts on Low, a computer on Medium.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
@@ -452,7 +457,7 @@ sees them, the traffic's brake lights too. C (View on a touch screen) goes round
 the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
 a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
 and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
-XR3i's sports seats, three-spoke wheel and furry dice, the GTI's tartan seats and golf-ball gear knob,
+XR3i's sports seats, three-spoke wheel and furry dice (they swing on their strings as you pull away, brake, corner and hit the bumps), the GTI's tartan seats and golf-ball gear knob,
 the Land Rover's painted metal, its dials in the middle of the dash and its three levers, the Robin's
 one big speedo, a van's bench seat and bulkhead, and a newer hatchback's airbag wheel, glowing radio
 and air freshener. Look round and it's all there: pedals, gear stick and handbrake, the radio and

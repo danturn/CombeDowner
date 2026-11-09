@@ -5,7 +5,7 @@
 // the top of a steering wheel on its column (the indicator stalk moving as you signal), the pedals, the
 // centre console with the radio, heater, gear stick and handbrake, the seats, the doors' insides up to
 // the windows, the pillars and their belts, a roof lining fitted to the body's own roof line, the sun
-// visors and mirror, and a parcel shelf over the boot or a van's bulkhead. Each kind is fitted out as
+// visors and mirror (the XR3i's furry dice swinging from it), and a parcel shelf over the boot or a van's bulkhead. Each kind is fitted out as
 // its real one was, and drawn in more detail at the longest draw distances (interior.ts). The open ones (the
 // C5 and the heavy roller) have no roof to frame. The buses have a cab of their own, being so
 // different: a big flat wheel nearly lying down on its column, a long low dash, its dials read down through the wheel, under a split
@@ -101,6 +101,10 @@ export class Cockpit {
   private stalk: THREE.Group | null = null;   // the indicator stalk, up or down as you signal
   private stalkSide = -1;               // which side of the column it's on (-1 left, 1 right)
   private turns: number;                // how far the wheel turns at full lock, radians
+  /** The furry dice on the mirror, each a weight on a string swinging as the car moves under it (swing()). */
+  private dice: Die[] = [];
+  private heading = 0;                  // which way the car faces, unwound, for the dice's twist
+  private last = 0;                     // when they last swung (performance.now())
   /** The part of the body to cut away round you while you drive, in the vehicle's own frame (vehicles.ts): the cabin of a car. Null for the open ones, buses and coaches. */
   cut: THREE.Box3 | null = null;
   private top: number;                  // what the speedo reads up to, mph
@@ -384,12 +388,19 @@ export class Cockpit {
       P.push([flat(new THREE.PlaneGeometry(0.12, 0.07)), "#f1f1ec", x, y, z], [flat(new THREE.PlaneGeometry(0.12, 0.016)), "#2e7d4a", x - 0.001, y + 0.02, z]);
     }
     if (props.has("dice")) for (const s of [1, -1]) {
-      P.push([box(0.003, 0.12, 0.003), "#e6e6e6", mx, my - 0.06, s * 0.02], [rb(0.042, 0.042, 0.042, 0.014), "#f3f1ee", mx, my - 0.14, s * 0.025]);
+      // each on its own string from the mirror's stem, hung from where the string's tied and swinging from there (swing())
+      const D: Part[] = [[box(0.003, 0.12, 0.003), "#e6e6e6", 0, -0.06, 0], [rb(0.042, 0.042, 0.042, 0.014), "#f3f1ee", 0, -0.14, s * 0.005]];
       // their spots, on the faces you can see: three on the side towards you, one and two on the others
-      const pip = (x: number, y: number, z: number) => P.push([new THREE.SphereGeometry(0.0055, 6, 4), "#151515", x, y, z]);
-      for (const k of [-1, 0, 1]) pip(mx - 0.021, my - 0.14 + k * 0.011, s * 0.025 + k * 0.011);
-      pip(mx, my - 0.14, s * 0.025 + s * 0.021);
-      for (const k of [-1, 1]) pip(mx + k * 0.009, my - 0.14 + k * 0.009, s * 0.025 - s * 0.021);
+      const pip = (x: number, y: number, z: number) => D.push([new THREE.SphereGeometry(0.0055, 6, 4), "#151515", x, y, z]);
+      for (const k of [-1, 0, 1]) pip(-0.021, -0.14 + k * 0.011, s * 0.005 + k * 0.011);
+      pip(0, -0.14, s * 0.005 + s * 0.021);
+      for (const k of [-1, 1]) pip(k * 0.009, -0.14 + k * 0.009, s * 0.005 - s * 0.021);
+      const g = new THREE.Group();
+      g.position.set(mx, my, s * 0.02);
+      g.add(new THREE.Mesh(model(D), new THREE.MeshLambertMaterial({ vertexColors: true })));
+      this.group.add(g);
+      // the two strings a touch different, so the pair don't swing in step
+      this.dice.push({ g, len: s > 0 ? 0.14 : 0.147, bob: new THREE.Vector3(), prev: new THREE.Vector3(), at: new THREE.Vector3(), twist: 0, spin: 0, ready: false });
     }
     if (props.has("tree")) P.push([box(0.002, 0.09, 0.002), "#e6e6e6", mx, my - 0.045, 0], [flat(prof([[0, 0.05], [-0.03, 0.01], [-0.015, 0.012], [-0.035, -0.03], [0.035, -0.03], [0.015, 0.012], [0.03, 0.01]], 0.003)).rotateZ(-lean), "#1f8a3a", mx, my - 0.12, 0]);
     if (props.has("atlas") && !single) C.push([box(0.21, 0.016, 0.29).rotateY(0.3), "#f2c230", al + 0.05, ct + 0.01, -ac], [box(0.212, 0.017, 0.06).rotateY(0.3), "#1d4f9c", al + 0.05 + 0.03, ct + 0.011, -ac - 0.08]);
@@ -584,6 +595,59 @@ export class Cockpit {
     const mph = Math.abs(speed) * 2.237;
     if (this.needles[0]) this.needles[0].rotation.z = 2.3 - 4.6 * Math.min(1, mph / this.top);
     if (this.needles[1]) this.needles[1].rotation.z = 2.3 - 4.6 * Math.max(0.1, Math.min(1, revs));
+    if (this.dice.length) this.swing();
+  }
+
+  /**
+   * The dice swing as a weight on a string would: each is a point in the world pulled down by gravity and
+   * held its string's length from where it's tied, which goes wherever the car takes it. So they hang
+   * back as you pull away, swing forward as you brake, out to the side round a corner and jump over the
+   * bumps, and settle slowly (a string and a bit of fluff don't hold much back). Turning, they lag behind
+   * the car's heading and twist on their strings, then unwind. They're kept off the windscreen and the roof.
+   */
+  private swing() {
+    const now = performance.now(), dt = Math.min(0.05, this.last ? (now - this.last) / 1000 : 0);
+    this.last = now;
+    this.group.updateWorldMatrix(true, false);
+    const m = this.group.matrixWorld, q = this.group.getWorldQuaternion(SW.q), inv = SW.inv.copy(q).invert();
+    // which way the car faces, unwound so a full circle doesn't make the dice spin back the other way
+    const fwd = SW.v.set(1, 0, 0).applyQuaternion(q), h = Math.atan2(-fwd.z, fwd.x);
+    let dh = h - (this.heading % (Math.PI * 2));
+    dh -= Math.round(dh / (Math.PI * 2)) * Math.PI * 2;
+    const yawRate = dt > 0 ? dh / dt : 0;
+    this.heading += dh;
+    for (const d of this.dice) {
+      const tie = SW.tie.copy(d.g.position).applyMatrix4(m);
+      if (!d.ready || tie.distanceToSquared(d.at) > 100) {
+        // first time, or the car's been moved somewhere new: hanging straight down, still
+        d.bob.copy(tie).y -= d.len; d.prev.copy(d.bob); d.at.copy(tie); d.ready = true; d.twist = d.spin = 0;
+      }
+      const n = Math.max(1, Math.ceil(dt / 0.006)), step = dt / n, keep = Math.exp(-1.4 * step);
+      for (let k = 1; k <= n; k++) {
+        const at = SW.at.lerpVectors(d.at, tie, k / n);
+        // where it'd go next, carrying on as it was (less a little for the air) and falling, then back on its string
+        const vel = SW.vel.subVectors(d.bob, d.prev).multiplyScalar(keep);
+        d.prev.copy(d.bob);
+        d.bob.add(vel).y -= 9.81 * step * step;
+        const dir = SW.dir.subVectors(d.bob, at).applyQuaternion(inv);
+        if (dir.lengthSq() < 1e-10) dir.set(0, -1, 0);
+        dir.normalize();
+        // no further than 70 degrees off hanging straight down in the car (the windscreen's ahead, the lining's above)
+        if (-dir.y < 0.342) {
+          const side = Math.hypot(dir.x, dir.z) || 1;
+          dir.set((dir.x / side) * 0.94, -0.342, (dir.z / side) * 0.94);
+        }
+        d.bob.copy(dir).applyQuaternion(q).multiplyScalar(d.len).add(at);
+      }
+      d.at.copy(tie);
+      // twisting on the string: the car turns under the die, which lags behind and is wound back by the string
+      // (a change in how fast the car's turning leaves the die turning as it was, so it twists the other way)
+      d.spin += (-30 * d.twist - 1.2 * d.spin) * dt - (yawRate - (d.yaw ?? yawRate));
+      d.yaw = yawRate;
+      d.twist = Math.max(-1.2, Math.min(1.2, d.twist + d.spin * dt));
+      const dir = SW.dir.subVectors(d.bob, tie).applyQuaternion(inv).normalize();
+      d.g.quaternion.setFromUnitVectors(DOWN, dir).multiply(SW.tw.setFromAxisAngle(UP, d.twist));
+    }
   }
 
   dispose() {
@@ -594,6 +658,14 @@ export class Cockpit {
     });
   }
 }
+
+/** One of the furry dice: the group hung where its string's tied, the string's length, where the die is in the world
+ *  now and was a moment ago, where the string's tied in the world, its twist on the string and how fast that's going,
+ *  and the car's rate of turn last time. */
+interface Die { g: THREE.Group; len: number; bob: THREE.Vector3; prev: THREE.Vector3; at: THREE.Vector3; twist: number; spin: number; yaw?: number; ready: boolean }
+const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0);
+/** Spare vectors for the dice's swinging, so it makes nothing new each frame. */
+const SW = { q: new THREE.Quaternion(), inv: new THREE.Quaternion(), tw: new THREE.Quaternion(), v: new THREE.Vector3(), tie: new THREE.Vector3(), at: new THREE.Vector3(), vel: new THREE.Vector3(), dir: new THREE.Vector3() };
 
 /** Parts merged into one geometry with per-vertex colours, like model(), but keeping texture coordinates for a cloth or a carpet: perMetre repeats a metre. */
 function modelUV(parts: Part[], perMetre: number): THREE.BufferGeometry {

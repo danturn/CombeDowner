@@ -11,7 +11,7 @@
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
 // used by game.ts), how far the shadows reach (Off to Ultra, a share of the draw distance: shadows.ts), and
-// the debug panel (debug.ts, also F3). Choosing a distance, resolution or shadows yourself turns automatic off.
+// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), and the debug panel (debug.ts, also F3). Choosing a distance, resolution or shadows yourself turns automatic off.
 // Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
@@ -30,7 +30,7 @@ import { closeButton } from "./modal";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
 import { quality } from "./quality";
 import { SHADOW_DEFAULT, SHADOW_LEVELS, SHADOW_OFF, setShadowLevel, shadowLevel, shadowLevelName, shadowReach } from "./shadows";
-import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
+import { DETAIL_DEFAULT, DETAIL_LEVELS, FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, detailLevel, setDetail, setFov, setView, view } from "./view";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -81,6 +81,7 @@ export function settingsPage(h: Hooks) {
   const viewSel = $<HTMLSelectElement>("set-view"), resSel = $<HTMLSelectElement>("set-res");
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const auto = $<HTMLInputElement>("set-auto");
+  const detail = $<HTMLSelectElement>("set-detail"), detailHint = $("set-detail-hint");
   const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
@@ -97,6 +98,11 @@ export function settingsPage(h: Hooks) {
     const m = shadowReach();
     shadowsHint.textContent = m ? `At this draw distance they reach ${m >= 1000 ? `${+(m / 1000).toFixed(1)} km` : `${m} m`}. Further is slower.` : "No shadows: the quickest.";
   };
+  DETAIL_LEVELS.forEach((l, i) => option(detail, String(i), `${l.name}${i === DETAIL_DEFAULT ? " (normal)" : ""}`));
+  const showDetail = () => {
+    const l = DETAIL_LEVELS[detailLevel];
+    detailHint.textContent = `Grass to ${l.grass} m round you, trees in full to ${l.trees[0]} m and simpler to ${l.trees[1]} m. More is slower.`;
+  };
   RES_STEPS.forEach((r, i) => option(resSel, String(i), r.lines ? `${r.name} (${r.lines} lines)` : `${r.name} (your screen's own)`));
 
   /** Show what's in force now. */
@@ -107,6 +113,7 @@ export function settingsPage(h: Hooks) {
     resSel.value = String(h.post.resolution);
     fov.value = String(view.fov); fovVal.textContent = `${view.fov}°`;
     shadows.value = String(shadowLevel); showReach();
+    detail.value = String(detailLevel); showDetail();
     fx.checked = h.post.retroLook;
     dbg.checked = h.debug.open;
     calm.checked = passive;
@@ -149,6 +156,7 @@ export function settingsPage(h: Hooks) {
   resSel.onchange = () => { quality.manual(); h.post.setResolution(Number(resSel.value)); };
   fov.oninput = () => { setFov(Number(fov.value)); fovVal.textContent = `${view.fov}°`; };
   shadows.onchange = () => { quality.manual(); setShadows(Number(shadows.value)); };
+  detail.onchange = () => { setDetail(Number(detail.value), true); showDetail(); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
   calm.onchange = () => setPassive(calm.checked);
