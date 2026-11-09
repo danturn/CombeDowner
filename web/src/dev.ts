@@ -5,6 +5,8 @@
 //   /day     moves the clock on to midday, for everyone in the game, as F3's "+3 hours" does
 //   /spawn   puts a list on the phone of the people, animals, vehicles and things you can bring,
 //            5 m in front of you; /spawn cat (or a number off the list) brings one straight away
+//   /drone   flies you about as a camera drone, and takes snaps of what's wrong to paste to Claude
+//            Code (drone.ts says how); /drone copy, /drone pic 3 and /drone clear do the rest
 //   /help    lists these
 //
 // Who decides what:
@@ -52,12 +54,15 @@ export interface DevHooks {
   spawn(what: string, x: number, z: number, a: number): void;
   /** God mode went on or off. */
   god(on: boolean): void;
+  /** /drone, with whatever came after it (drone.ts). */
+  drone(rest: string): void;
 }
 
 const HELP = [
   "/idkfa  God mode, every weapon",
   "/day  Midday, for everyone",
   "/spawn  Bring something, 5 m in front",
+  "/drone  Fly about; shoot to snap; /drone copy",
   "/help  This list",
 ];
 
@@ -85,6 +90,7 @@ export class Dev {
       if (s) this.spawn(s); else chatLine(`Nothing called "${rest.trim()}" to spawn. /spawn for the list`);
       return;
     }
+    if (word === "drone") { this.hooks.drone(rest); return; }
     if (word === "help" || word === "?") { for (const l of HELP) chatLine(l); return; }
     chatLine(`No command /${word}. /help for the list`);
   }

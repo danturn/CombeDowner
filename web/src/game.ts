@@ -126,6 +126,7 @@ import { carryIcon } from "./carryicons";
 import { IDKFA } from "./cheats";
 import { chatLine, useChat } from "./chat";
 import { Dev, hostSpawn } from "./dev";
+import { Drone } from "./drone";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target, look } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { gamesFollow, gamesHeard } from "./gameslist";
@@ -423,6 +424,8 @@ export class Game {
   readonly ladders: Ladders;
   /** The chat phone's commands (dev.ts): god mode, the clock, spawning. */
   readonly dev: Dev;
+  /** The drone (/drone on the chat phone, drone.ts): flying about to look, and snaps of what's wrong. */
+  readonly drone: Drone;
   readonly wings: Wings;
   private wingsuit: Wingsuit;
   private suitWorn = false;                       // the wingsuit on your back (looked at once a second)
@@ -671,10 +674,27 @@ export class Game {
       me: () => (this.alive ? { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw } : null),
       spawn: (w, x, z, a) => { if (this.isHost) this.devSpawn(w, x, z, a); else this.net.send("dv", { w, x, z, a }, this.hostId); },
       god: (on) => { if (on) { this.weapon.armAll(); SFX.pickup("ammo"); } },
+      drone: (rest) => this.drone.command(rest),
+    });
+    this.drone = new Drone({
+      map, player: this.player, camera: this.camera, mapId: this.mapId,
+      why: () => !this.alive ? "Not while you're dead"
+        : this.ride || this.riding || this.basket || this.balloons.aboard >= 0 || this.world.canal?.helmOf(this.net.selfId) ? "Get off what you're on first"
+        : null,
+      changed: (on) => {
+        const p = this.player;
+        p.ladder = null; p.suitOpen = false; this.aiming = this.binoculars = false;
+        if (!on) p.unstick();
+        this.sendState();
+      },
     });
     useChat({
       canOpen: () => this.active && !this.mapOpen,
-      say: (t) => { this.net.send("tx", { n: this.name, t }); chatLine(t, { name: this.name, colour: "#e3a33b", me: true }); },
+      say: (t) => {
+        // with the drone up, what you type is a note on your latest snap
+        if (this.drone.on && this.drone.note(t)) return;
+        this.net.send("tx", { n: this.name, t }); chatLine(t, { name: this.name, colour: "#e3a33b", me: true });
+      },
       command: (word, rest) => this.dev.run(word, rest),
     });
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
@@ -1437,6 +1457,7 @@ export class Game {
 
   /** Next or previous weapon you can use. */
   cycleWeapon(way: number) {
+    if (this.drone.on) { this.drone.gearStep(way, input() === "touch"); return; }   // the drone's speed: the wheel, Q, the touch Weapon button
     if (this.quests.cycle(way)) return;   // watching a race: L1 and R1 switch racer
     const w = this.weapon;
     for (let i = 1; i < SLOTS.length; i++) {
@@ -2486,7 +2507,7 @@ export class Game {
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
     if ((GANG.includes(by) || BOSS_GANG.includes(by)) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
-    if (id === this.net.selfId ? this.dev.god : this.remotes.get(id)?.god) return;   // god mode (dev.ts)
+    if (id === this.net.selfId ? this.dev.god || this.drone.on : this.remotes.get(id)?.god) return;   // god mode (dev.ts), or flying the drone
     if (id === this.net.selfId ? this.sheltered() : this.remotes.get(id)?.waiting) return;   // out of a race watching the others finish, or arriving
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
@@ -4395,7 +4416,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, god: this.dev.god, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, god: this.dev.god || this.drone.on, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -4419,7 +4440,8 @@ export class Game {
     const lining = this.sports.lining, filming = this.broadcast.on;
     if (this.useKey) {
       this.useKey = false;
-      if (this.quests.enter()) { /* into a minigame while its entries are open, wherever you are */ }
+      if (this.drone.on) { /* nothing to use from up in the air */ }
+      else if (this.quests.enter()) { /* into a minigame while its entries are open, wherever you are */ }
       else if (!this.useHeld()) { const c = this.useChoice().pick; if (c) this.useOn(c); }
     }
     // (a door found in a square that's just loaded goes on the maps)
@@ -4472,6 +4494,11 @@ export class Game {
     else if (this.basket) this.inBasket();
     else if (aloft) this.inBalloon();
     else if (perch) this.perched(perch);
+    else if (this.drone.on) {
+      // the drone (drone.ts): flying in place of walking, through anything; dying brings it down
+      if (!this.alive) this.drone.land();
+      else this.drone.fly(dt, this.active && !this.mapOpen && !this.reveal.on);
+    }
     else {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
@@ -4508,7 +4535,7 @@ export class Game {
     else if (p.sprinting && w.reloading > 0) w.cancelReload();
     this.wasAiming = this.aiming;
     this.wasReloading = w.reloading > 0;
-    if (p.sprinting || !this.alive || car || helm) this.aiming = this.binoculars = false;
+    if (p.sprinting || !this.alive || car || helm || this.drone.on) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists
     if (this.alive && !w.has(w.kind) && w.gun.interval - w.cooldown > 0.5) {
@@ -4518,7 +4545,8 @@ export class Game {
     }
     this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
-    if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
+    if (this.drone.on) this.drone.trigger(this.active && (this.firing || this.shootOnce));   // a snap, not a shot
+    else if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
     else if (this.active && this.alive && !this.arrival.up && (this.firing || this.shootOnce) && !p.sprinting && !p.diveBusy && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
@@ -5300,6 +5328,7 @@ export class Game {
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
     if (leave) { this.voice.dispose(); this.net.leave(); }
     for (const r of this.remotes.values()) this.world.scene.remove(r.avatar.root);
+    this.drone.dispose();
     this.listeners.abort();   // and drop this game's key and mouse listeners (travelling starts another)
   }
 }

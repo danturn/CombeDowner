@@ -849,7 +849,8 @@ const pad = new GamepadControls(() => game && {
   player: () => game!.player,
   look: (dx, dy) => game!.look(dx, dy),
   driving: () => game!.atWheel,
-  button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
+  button: (b, down) => { if (game?.drone.on && game.drone.padButton(b, down)) return; if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
+  fly: (lx, ly, rx, ry) => { if (!game?.drone.on) return false; game.drone.sticks(lx, ly, rx, ry); return true; },
 }, (text) => game?.news(text));
 const hold = (code: string) => (down: boolean) => key(code, down);
 // toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
@@ -959,7 +960,9 @@ function tick(now: number) {
   renderer.shadowMap.autoUpdate = false;
   if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
   unlit.frame(current.world.scene, camera, dt, post.worldTarget);
-  post.render(current.world.scene, game ? game.weapon.scene : null);
+  // no gun in your hands while you fly the drone
+  post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null);
+  game?.drone.framed(renderer.domElement);   // a drone snap's picture, while this frame's still there to copy
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
   frames++; fpsT += raw;

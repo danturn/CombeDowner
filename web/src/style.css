@@ -1268,3 +1268,18 @@ body.reveal #touch { visibility: hidden; }
   #chatphone { top: 112px; right: calc(12px + var(--sr, 0px)); width: 240px; }
   .nk-screen { height: min(260px, calc(100dvh - 210px)); }
 }
+
+/* the drone's screen (drone.ts): height, speed and snaps along the top, like an FPV drone's goggles */
+#droneosd {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; gap: 14px; padding: 4px 10px; pointer-events: none;
+  font: bold 13px/1.2 ui-monospace, monospace; color: #fff; letter-spacing: 0.04em;
+  text-shadow: 0 0 2px #000, 0 0 4px #000; background: rgba(0, 0, 0, 0.25); border-radius: 3px;
+  white-space: nowrap;
+}
+#droneosd .rec { color: #ff4a3a; animation: dronerec 1s steps(2) infinite; }
+@keyframes dronerec { 50% { opacity: 0.3; } }
+#droneosd.flash { animation: droneflash 0.25s ease-out; }
+@keyframes droneflash { from { background: rgba(255, 255, 255, 0.9); } }
+@media (max-width: 520px) { #droneosd { gap: 8px; font-size: 11px; } }
+body.droning #ammo { display: none; }   /* no gun while you fly the drone */

@@ -140,6 +140,14 @@ nine go together) and prints the two commands: rebuild just those squares
 (`tools/prep_tiles.py ... --only ti,tj ...`), then shoot the view. Rebuild the whole map, and
 run the clash check (`tools/check_map.py`), once the change is right.
 
+Spencer reports what's wrong with the map with the drone (`/drone` on the chat phone,
+`web/src/drone.ts`): he flies to it, shoots to snap, notes it, and pastes `/drone copy`'s text
+and contact sheet to you. Each `#n` line's `at=` is the camera (east, north, bearing, tilt, height
+off the ground), ready for `npm run shoot` and `square_at.py`; `aim=` is the point under the
+crosshair (east, north, height off the ground there, and how far); `square` is the square it's in;
+`hit` is what the game's solid ray met there (so "ground" under something that looks solid means
+it isn't in the collision). The sheet's pictures carry the same numbers, crosshair on the spot.
+
 On Dan's fork, Dan's agents run full map builds and screenshots on Dan's Mac, through the
 project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
 [--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a

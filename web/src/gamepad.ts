@@ -32,6 +32,8 @@ export interface PadPage {
   driving(): boolean;
   /** A button pressed or let go. Let-gos come even once you've paused, so nothing's left held down. */
   button(b: number, down: boolean): void;
+  /** Flying the drone (drone.ts): both sticks go to it, as a drone's controller has them, and true. */
+  fly?(lx: number, ly: number, rx: number, ry: number): boolean;
 }
 
 /** Press or let go of a keyboard key, as if typed: the game's own keys do the rest. */
@@ -545,13 +547,17 @@ export class GamepadControls {
     if (playing && page && p) {
       this.unfocus();
       let [mx, my] = stick(ax[0] ?? 0, ax[1] ?? 0);
-      if (page.driving()) {
+      const [rx, ry] = stick(ax[2] ?? 0, ax[3] ?? 0);
+      // flying the drone, both sticks are its (Mode 2): nothing walks or looks
+      const flying = page.fly?.(mx, my, rx, ry) ?? false;
+      if (flying) mx = my = 0;
+      else if (page.driving()) {
         const r = val(B.r2), l = val(B.l2);
         if (r > TRIGGER_DEAD || l > TRIGGER_DEAD) my = l - r;
       }
       if (mx || my) { p.joy.x = mx; p.joy.y = my; this.movedJoy = p.padStick = true; }
       else if (this.movedJoy) { p.joy.x = p.joy.y = 0; this.movedJoy = p.padStick = p.sprintLatch = false; }
-      const [lx, ly] = stick(ax[2] ?? 0, ax[3] ?? 0);
+      const [lx, ly] = flying ? [0, 0] : [rx, ry];
       const m = Math.hypot(lx, ly);
       this.fullT = m >= RAMP_NEAR_FULL ? this.fullT + dt : 0;
       if (m) {
