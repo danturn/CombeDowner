@@ -437,14 +437,22 @@ def ground_sheet(tile, canal=None):
     # the bed: the ground between is too narrow to slope, and stood as a strip of grass up the foot of
     # the cutting's wall. (Not beside other faces: a pavement's wall let down to a path beside it
     # left the pavement on a lip.)
-    pts = shapely.points(F.V[spots, :2])
-    si_, sj_ = shapely.STRtree(pts).query(pts, predicate="dwithin", distance=NARROW)
-    on_bed = np.asarray([int(v) in F.bed for v in spots.tolist()], bool)
-    low = (top[sj_] < top[si_] - 0.3) & (top[si_] > g[si_]) & on_bed[sj_] & ~on_bed[si_]
-    if low.any():
-        floor = np.full(len(spots), np.inf)
-        np.minimum.at(floor, si_[low], top[sj_[low]])
-        meet = np.minimum(meet, floor)
+    on_bed = np.asarray([int(sp[a]) in F.bed and int(sp[b]) in F.bed for a, b in F.free.tolist()], bool)
+    if on_bed.any():
+        lines = shapely.linestrings(F.V[F.free[on_bed]][:, :, :2])
+        ends = F.tops[on_bed]
+        pts = shapely.points(F.V[spots, :2])
+        si_, ei_ = shapely.STRtree(lines).query(pts, predicate="dwithin", distance=NARROW)
+        keep = np.asarray([int(v) not in F.bed for v in spots[si_].tolist()], bool) if len(si_) else np.zeros(0, bool)
+        si_, ei_ = si_[keep], ei_[keep]
+        if len(si_):
+            f = shapely.line_locate_point(lines[ei_], pts[si_], normalized=True)
+            bz = ends[ei_, 0] + (ends[ei_, 1] - ends[ei_, 0]) * f
+            low = (bz < top[si_] - 0.3) & (top[si_] > g[si_])
+            if low.any():
+                floor = np.full(len(spots), np.inf)
+                np.minimum.at(floor, si_[low], bz[low])
+                meet = np.minimum(meet, floor)
     meet = np.round(meet, 2)
     held = np.round((meet - top) * 100).astype(np.int64)
     hf = dict(zip(spots.tolist(), (top + held / 100).tolist()))
