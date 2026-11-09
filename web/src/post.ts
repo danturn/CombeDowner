@@ -8,9 +8,10 @@
 // Resolution in Settings (settings.ts) picks how many lines that is (fewer for a faster frame on a
 // big or dense screen, more for a sharper one), and Retro look turns the grade off; both are
 // remembered on this computer for every page.
-// The drone's Outlines view (looks.ts) adds a pass of its own: the world is drawn a second time as
-// which way each surface faces and how far off it is, and a dark line is put wherever either jumps,
-// where the surface turns a corner or one thing stands in front of another.
+// The drone's Outlines and Blueprint views (looks.ts) add a pass of their own: the world is drawn a
+// second time as which way each surface faces and how far off it is, and a line is put wherever
+// either jumps, where the surface turns a corner or one thing stands in front of another (dark on
+// Outlines' white clay, bright on Blueprint's dark).
 // Nothing here goes over the network; the frame's draw calls are handed to telemetry.ts to count.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -46,9 +47,10 @@ const RetroShader = {
 // jumps) or one thing stands in front of another (the depth doesn't run on evenly, as it does across
 // any flat surface on screen, however it's tilted)
 const EdgeShader = {
-  uniforms: { tDiffuse: { value: null }, tNormal: { value: null }, tDepth: { value: null }, size: { value: new THREE.Vector2(1, 1) } },
+  uniforms: { tDiffuse: { value: null }, tNormal: { value: null }, tDepth: { value: null }, size: { value: new THREE.Vector2(1, 1) },
+    ink: { value: new THREE.Color(0, 0, 0) }, strength: { value: 0.85 } },
   vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-  fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tNormal; uniform sampler2D tDepth; uniform vec2 size; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tNormal; uniform sampler2D tDepth; uniform vec2 size; uniform vec3 ink; uniform float strength; varying vec2 vUv;
     vec3 nAt(vec2 uv){ return texture2D(tNormal, uv).xyz * 2.0 - 1.0; }
     float dAt(vec2 uv){ return texture2D(tDepth, uv).x; }
     void main(){
@@ -62,7 +64,7 @@ const EdgeShader = {
       vec3 n = nAt(vUv);
       float turn = max(max(1.0 - dot(n, nAt(vUv + ax)), 1.0 - dot(n, nAt(vUv - ax))), max(1.0 - dot(n, nAt(vUv + ay)), 1.0 - dot(n, nAt(vUv - ay))));
       edge = max(edge, smoothstep(0.12, 0.3, turn));
-      gl_FragColor = vec4(c.rgb * (1.0 - 0.85 * edge), c.a);
+      gl_FragColor = vec4(mix(c.rgb, ink, strength * edge), c.a);
     }`,
 };
 
@@ -143,8 +145,8 @@ export class Post {
     this.faced?.setSize(w, h);
   }
 
-  /** edges: the drone's Outlines view (looks.ts). */
-  render(world: THREE.Scene, weapon: THREE.Scene | null, edges = false) {
+  /** edges: the drone's Outlines or Blueprint view (looks.ts): the lines' colour, and how far they cover what's under them. */
+  render(world: THREE.Scene, weapon: THREE.Scene | null, edges: { ink: THREE.Color; strength: number } | null = null) {
     this.worldPass.scene = world;
     // with nothing in your hands (in a car, on a menu) the pass would only clear the depth and draw nothing
     this.weaponPass.enabled = !!weapon && drawsAnything(weapon);
@@ -160,8 +162,12 @@ export class Post {
     info.autoReset = false;
     info.reset();
     this.retro.uniforms.toneMappingExposure.value = this.renderer.toneMappingExposure;
-    this.edges.enabled = edges;
-    if (edges) this.drawFacing(world);
+    this.edges.enabled = !!edges;
+    if (edges) {
+      this.edges.uniforms.ink.value.copy(edges.ink);
+      this.edges.uniforms.strength.value = edges.strength;
+      this.drawFacing(world);
+    }
     this.composer.render();
     Telemetry.drawn(this.renderer);
   }

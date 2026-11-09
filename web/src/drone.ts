@@ -12,8 +12,10 @@
 // slides, as an FPV drone's camera does, but never off what the crosshair's on.
 //
 // C (Circle on a controller, or a tap on the view's name at the top of a touch screen) goes round the
-// drone's views of the scenery (looks.ts): normal, plain white clay, clay with outlines, wireframe,
-// and "what's what", each kind of thing in its own colour with a key down the side.
+// drone's views of the scenery (looks.ts): normal, plain white clay, clay with outlines, blueprint,
+// and "what's what", each kind of thing in its own colour with a key under the bar. , and . zoom
+// out and in, from 1x to 8x (the D-pad's left and right, or a tap on the zoom at the top), and the
+// mouse looks round more slowly the further in you are.
 //
 // Snaps, for noting what's wrong with the map: the trigger (a click, Fire, R2) takes one. Each keeps
 // a small picture of the view, crosshair and all, and where you were and what the crosshair was on,
@@ -52,6 +54,7 @@ const ROLL = 0.18;                     // radians of lean at full slide or a bri
 const PIC_W = 960;                     // a snap's picture, at most this wide
 const SHEET_W = 480;                   // each snap's width on the contact sheet
 const RAY = 3000;                      // how far the crosshair's ray looks for something
+const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8];   // , and . step through these
 
 const held = (keys: Set<string>, id: string, fallback: string) => (control(id)?.keys ?? [fallback]).some((c) => keys.has(c));
 
@@ -86,6 +89,7 @@ export class Drone {
   /** The view the drone shows the scenery in (looks.ts). */
   readonly looks = new Looks();
   private gear = 2;
+  private zoomAt = 0;
   private eye = new THREE.Vector3();
   private v = new THREE.Vector3();
   private roll = 0;
@@ -140,6 +144,7 @@ export class Drone {
     p.pos.set(x, Math.max(y, m.ground(x, z)), z);
     p.vel.set(0, 0, 0);
     p.crouchLatch = false;
+    this.zoomAt = 0;
     this.h.changed(false);
     this.showOsd(false);
     chatLine(this.snaps.length ? `Landed. ${this.snaps.length} snap${this.snaps.length === 1 ? "" : "s"} kept: /drone copy` : "Landed");
@@ -152,6 +157,22 @@ export class Drone {
     this.drawOsd();
   }
 
+  /** How far in the camera's zoomed. */
+  get zoom() { return ZOOMS[this.zoomAt]; }
+
+  /** , and ., the D-pad's left and right, a tap on the zoom at the top (round from the top): zoom out or in. */
+  zoomStep(by: number, wrap = false) {
+    const n = this.zoomAt + by;
+    this.zoomAt = wrap ? (n + ZOOMS.length) % ZOOMS.length : Math.max(0, Math.min(ZOOMS.length - 1, n));
+    this.drawOsd();
+  }
+
+  /** The camera's field of view (degrees, top to bottom) for the game's own, zoomed. */
+  fovFor(base: number): number {
+    if (!this.on || this.zoom === 1) return base;
+    return 2 * Math.atan(Math.tan(base * Math.PI / 360) / this.zoom) * 180 / Math.PI;
+  }
+
   /** A game controller's sticks while the drone's up (gamepad.ts): Mode 2. */
   sticks(lx: number, ly: number, rx: number, ry: number) { this.pad = { lx, ly, rx, ry, at: performance.now() }; }
 
@@ -159,6 +180,7 @@ export class Drone {
   padButton(b: number, down: boolean): boolean {
     if (b === B.up || b === B.down) { this.tilt = down ? (b === B.up ? 1 : -1) : 0; return true; }
     if (b === B.l1 || b === B.r1) { if (down) this.gearStep(b === B.r1 ? 1 : -1); return true; }
+    if (b === B.left || b === B.right) { if (down) this.zoomStep(b === B.right ? 1 : -1); return true; }
     return false;
   }
 
@@ -242,7 +264,7 @@ export class Drone {
       what = hit.mover ? "vehicle" : hit.kind;
     } else square = sq(e.x, e.z);
     const t = timeOfDay() * 24, hh = Math.floor(t), mm = Math.floor((t - hh) * 60);
-    const look = this.looks.id === "normal" ? "" : this.looks.name;
+    const look = (this.looks.id === "normal" ? "" : this.looks.name) + (this.zoom === 1 ? "" : `${this.looks.id === "normal" ? "" : ", "}zoomed ${this.zoom}x`);
     const s: Snap = { n: ++this.count, time: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, at, aim, square, hit: what, look, note: "", pic: null };
     this.snaps.push(s);
     this.wanted = s;
@@ -347,7 +369,11 @@ export class Drone {
       this.osd.id = "droneosd";
       document.body.append(this.osd);
       // on a touch screen, a tap on the view's name changes it
-      this.osd.addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest(".look")) { e.preventDefault(); this.nextLook(); } });
+      this.osd.addEventListener("pointerdown", (e) => {
+        const t = e.target as HTMLElement;
+        if (t.closest(".look")) { e.preventDefault(); this.nextLook(); }
+        else if (t.closest(".zoom")) { e.preventDefault(); this.zoomStep(1, true); }
+      });
     }
     if (this.osd) this.osd.hidden = !on;
     document.body.classList.toggle("droning", on);
@@ -361,7 +387,7 @@ export class Drone {
     if (!o || !this.on) return;
     const m = this.h.map, e = this.eye;
     const alt = Math.round(e.y - m.ground(e.x, e.z)), kmh = Math.round(this.v.length() * 3.6);
-    const bar = `<div class="bar"><span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length}</span><span class="look">${this.looks.name} (${ctl("droneview")})</span></div>`;
+    const bar = `<div class="bar"><span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length}</span><span class="zoom">ZOOM ${this.zoom}x</span><span class="look">${this.looks.name} (${ctl("droneview")})</span></div>`;
     if (lookChanged || this.shownLook !== this.looks.id) {
       this.shownLook = this.looks.id;
       o.innerHTML = bar + (this.looks.id === "kinds" ? `<ul class="key">${(Object.keys(KINDS) as Kind[]).filter((k) => k !== "sky" && k !== "field")

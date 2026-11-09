@@ -1091,6 +1091,8 @@ export class Game {
       if (this.active && !e.repeat && isKey(e.code, "use")) { this.leaveKey = true; this.useKey = true; }
       // flying the drone: C goes round its views of the scenery (looks.ts)
       if (this.drone.on && this.active && !e.repeat && isKey(e.code, "droneview")) this.drone.nextLook();
+      // and , and . zoom out and in (the soundtrack's keys the rest of the time: main.ts)
+      if (this.drone.on && this.active && isKey(e.code, "dronezoom") && !(e.target instanceof HTMLInputElement)) this.drone.zoomStep(e.code === "Period" ? 1 : -1);
       // no mouse to click (an iPad's keyboard): Enter shoots, held for a burst, and / aims, again to stop
       if (isKey(e.code, "keyfire") && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
         e.preventDefault();
@@ -1369,7 +1371,7 @@ export class Game {
     if (this.mapOpen) { const c = this.minimap.cursor; this.minimap.zoomFull(Math.exp(-dy * 0.0008), c?.[0], c?.[1]); return; }
     // after the map: a drag on the map zooms it the way the hand goes, whoever plays inverted
     if (from) [dx, dy] = inverted(from, dx, dy);
-    const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
+    const zoom = (1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM)) / (this.drone.on ? this.drone.zoom : 1);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
   }
@@ -4587,7 +4589,7 @@ export class Game {
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
     w.handlebars(w.model.visible && !ride && p.tumble <= 0 ? barsOf : null, this.camera, p.heading, -p.steer * 0.5, p.speed, dt);
     look.dx = look.dy = 0;
-    const base = view.fov, gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
+    const base = this.drone.fovFor(view.fov), gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);

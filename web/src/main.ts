@@ -529,8 +529,9 @@ addEventListener("keydown", (e) => {
   }
   // playing without the mouse captured yet: Esc still pauses
   else if (e.code === "Escape" && game?.active && document.pointerLockElement !== canvas) { $("clickhint").hidden = true; showPause(); }
-  // , and . step back and forward through the soundtrack, as in Winamp's playlist
-  if ((e.code === "Comma" || e.code === "Period") && !e.repeat && !(e.target instanceof HTMLInputElement)) {
+  // , and . step back and forward through the soundtrack, as in Winamp's playlist (flying the drone,
+  // they zoom instead: game.ts)
+  if ((e.code === "Comma" || e.code === "Period") && !e.repeat && !(e.target instanceof HTMLInputElement) && !game?.drone.on) {
     SFX.unlock();
     if (e.code === "Comma") SFX.previousTrack(); else SFX.nextTrack();
   }
@@ -962,10 +963,12 @@ function tick(now: number) {
   unlit.frame(current.world.scene, camera, dt, post.worldTarget);
   // no gun in your hands while you fly the drone, and the drone's view of the scenery (looks.ts) is
   // put on for this drawing only
+  // (always taken off again, even if the drawing goes wrong, so the game's own look comes back)
   const looks = game?.drone.on ? game.drone.looks : null;
-  looks?.before(current.world.scene);
-  post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.id === "lines");
-  looks?.after(current.world.scene);
+  try {
+    looks?.before(current.world.scene);
+    post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.edges ?? null);
+  } finally { (looks ?? game?.drone.looks)?.after(current.world.scene); }
   game?.drone.framed(renderer.domElement);   // a drone snap's picture, while this frame's still there to copy
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);

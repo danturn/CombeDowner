@@ -6,7 +6,9 @@
 //                so the shapes show for themselves
 //   Outlines     clay with a dark line wherever the surface turns or one thing stands in front of
 //                another, as in a drawing
-//   Wireframe    every triangle as lines, on a dark ground
+//   Blueprint    the same lines, bright, on dark shapes against a dark ground: every edge and
+//                nothing else (a true wireframe of every triangle would need each model kept in
+//                memory twice over, as the game lets go of its own copy once the graphics card has it)
 //   What's what  each kind of thing in its own colour (kinds.ts): the lidar's ground, the streets,
 //                the buildings the map build makes, the set pieces, the landmarks, walls and fences,
 //                plants, water and the rest, with a key on the drone's screen
@@ -14,20 +16,24 @@
 // They're lit the same at any time of day (a picture of a lit ball, drawn here, that each surface
 // takes its shade from by the way it faces you), the sky and the force field are left out, and the
 // fog fades to the plain background, so night or day the shapes read the same. Each is put on just
-// for the drawing of a frame and taken off straight after (before and after, round post.ts), so
-// nothing else in the game ever sees a changed material, and squares that load in are covered at once.
+// for the drawing of a frame and taken off straight after (before and after, round post.ts, after
+// even if the drawing goes wrong), so nothing else in the game ever sees a changed material, squares
+// that load in are covered at once, and Normal is always the game's own look.
 //
 // Nothing here goes over the network: it's only what your own screen shows.
 import * as THREE from "three";
 import { KINDS, kindOf, type Kind } from "./kinds";
 
-export type LookId = "normal" | "clay" | "lines" | "wire" | "kinds";
+export type LookId = "normal" | "clay" | "lines" | "blueprint" | "kinds";
 export const LOOKS: { id: LookId; name: string }[] = [
   { id: "normal", name: "Normal" }, { id: "clay", name: "Clay" }, { id: "lines", name: "Outlines" },
-  { id: "wire", name: "Wireframe" }, { id: "kinds", name: "What's what" },
+  { id: "blueprint", name: "Blueprint" }, { id: "kinds", name: "What's what" },
 ];
 
-const LIGHT_BG = new THREE.Color("#cdd5dc"), DARK_BG = new THREE.Color("#0e1216"), WIRE = "#8fe3ff";
+const LIGHT_BG = new THREE.Color("#cdd5dc"), DARK_BG = new THREE.Color("#0d1620");
+// the lines each view draws (post.ts): dark on the clay, bright on the blueprint (bright enough to
+// come through the colour grade's tone mapping a clear pale blue)
+const INK = { lines: { ink: new THREE.Color(0, 0, 0), strength: 0.85 }, blueprint: { ink: new THREE.Color(0.45, 1.1, 1.5), strength: 1 } };
 
 let lit: THREE.Texture | null = null;
 /** A ball lit from above and to the left, white to grey: every surface's shade, by which way it faces you. */
@@ -48,7 +54,7 @@ function litBall(): THREE.Texture {
 export class Looks {
   private i = 0;
   private clay: THREE.MeshMatcapMaterial | null = null;
-  private wire: THREE.MeshBasicMaterial | null = null;
+  private dark: THREE.MeshMatcapMaterial | null = null;
   private byKind = new Map<Kind, THREE.MeshMatcapMaterial>();
   // what before() changed, for after() to put back
   private bg: THREE.Color | THREE.Texture | null = null;
@@ -60,6 +66,12 @@ export class Looks {
   get id(): LookId { return LOOKS[this.i].id; }
   get name(): string { return LOOKS[this.i].name; }
 
+  /** The lines this view draws over the world (post.ts), if it draws any. */
+  get edges(): { ink: THREE.Color; strength: number } | null {
+    const id = this.id;
+    return id === "lines" || id === "blueprint" ? INK[id] : null;
+  }
+
   /** On to the next view (or back, by -1). */
   next(by = 1) { this.i = (this.i + by + LOOKS.length) % LOOKS.length; }
 
@@ -67,8 +79,10 @@ export class Looks {
   before(scene: THREE.Scene) {
     const id = this.id;
     if (id === "normal") return;
+    // (never twice over: what's saved must be the game's own)
+    if (this.on) this.after(scene);
     this.on = true;
-    const bg = id === "wire" ? DARK_BG : LIGHT_BG;
+    const bg = id === "blueprint" ? DARK_BG : LIGHT_BG;
     this.bg = scene.background as THREE.Color | THREE.Texture | null;
     scene.background = bg;
     const fog = scene.fog as THREE.Fog | THREE.FogExp2 | null;
@@ -85,8 +99,8 @@ export class Looks {
         this.swapped.push([m, m.material]);
         m.material = Array.isArray(m.material) ? m.material.map(() => mat) : mat;
       });
-    } else if (id === "wire") {
-      scene.overrideMaterial = this.wire ??= new THREE.MeshBasicMaterial({ color: WIRE, wireframe: true });
+    } else if (id === "blueprint") {
+      scene.overrideMaterial = this.dark ??= new THREE.MeshMatcapMaterial({ color: "#1b2a3a", matcap: litBall(), side: THREE.DoubleSide });
     } else {
       scene.overrideMaterial = this.clay ??= new THREE.MeshMatcapMaterial({ color: "#ffffff", matcap: litBall(), side: THREE.DoubleSide });
     }
