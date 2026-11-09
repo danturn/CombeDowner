@@ -1,6 +1,9 @@
 // Sports pitches, marked out for what they're mapped for (tools/pitches.py): football pitches with
 // goals and nets, rugby pitches with H posts, and cricket fields with a wicket, stumps and a rope,
-// in Combe Down and in every square of Bath (each square builds its own).
+// in Combe Down and in every square of Bath (each square builds its own). Running tracks too: the
+// red lanes round an infield, with their lines and the finish line (a square's `rt`; a page from
+// before tracks passes them by). Nothing here is sent over the network: every player draws the
+// same from the map.
 import * as THREE from "three";
 import { GameMap, POST_GAP, POST_HEIGHT, SCREEN, footballLayout, pitchId, rugbyLayout } from "./map";
 import { Culler } from "./cull";
@@ -13,10 +16,10 @@ const PAD = ["#1d3f8f", "#a3202a", "#14532d", "#1b1b1b", "#d9a400", "#5b2a86"].m
 
 /** ground(x, z): height of the drawn terrain at scene (x, z). */
 export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler, ground: (x: number, z: number) => number, groundTex: THREE.Texture) {
-  const pitches = map.d.pi ?? [];
+  const pitches = map.d.pi ?? [], tracks = map.d.rt ?? [];
   if (!map.d.tile) STUMPS.clear();   // a new game (a square of Bath only adds its own)
-  if (!pitches.length) return;
-  const lines: number[] = [], stripes: number[] = [], squares: number[] = [], strips: number[] = [];
+  if (!pitches.length && !tracks.length) return;
+  const lines: number[] = [], stripes: number[] = [], squares: number[] = [], strips: number[] = [], lanes: number[] = [];
   const white = new THREE.MeshLambertMaterial({ color: "#f2f0e8" });
   const at = (x: number, y: number, lift: number) => [x, ground(x, -y) + lift, -y];
 
@@ -205,10 +208,57 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
     }
   }
 
+  // running tracks: one red surface and the lines in with the pitches' (so a square's tracks are one draw more)
+  for (const t of tracks) runningTrack(t, lanes, lines, at);
+
+  flat(lanes, "#a9513b");
   flat(lines, "#eeeee6", { polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
   flat(stripes, "#ffffff", { transparent: true, opacity: 0.07, depthWrite: false });
   flat(squares, "#7f9e52", { map: groundTex });
   flat(strips, "#c9b98a", { map: groundTex, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+}
+
+const TRACK_LINE = 0.1;   // a lane line's width, a little over the real 5 cm so it holds up at a distance
+const TRACK_KERB = 0.5;   // the red surface's margin past the outside lane (KERB in tools/pitches.py)
+
+/** A running track (tools/pitches.py tracks: x, y, long axis, straight, bend radius at the inner
+ *  kerb, lanes, lane width), draped over the ground as the pitches' markings are: the red surface
+ *  from the inner kerb to a little past the outside lane into `red`, and into `white` a line along
+ *  every lane's edge and the finish line across them all at the end of the home straight. */
+function runningTrack(t: number[], red: number[], white: number[], at: (x: number, y: number, lift: number) => number[]) {
+  const [cx, cy, ang, S, R, n, lane] = t;
+  const ux = Math.cos(ang), uy = Math.sin(ang);
+  // round the inner kerb anticlockwise, a point every 2 m or so: where on the spine (the line
+  // between the bends' middles) it is, and the way out from there, along the track and across it
+  const ring: number[][] = [];
+  const nS = Math.max(2, Math.ceil(S / 2)), nB = Math.max(8, Math.ceil((Math.PI * R) / 2));
+  for (let k = 0; k < nS; k++) ring.push([-S / 2 + (S * k) / nS, 0, -1]);                 // the home straight
+  for (let k = 0; k < nB; k++) { const a = -Math.PI / 2 + (Math.PI * k) / nB; ring.push([S / 2, Math.cos(a), Math.sin(a)]); }
+  for (let k = 0; k < nS; k++) ring.push([S / 2 - (S * k) / nS, 0, 1]);                   // the back straight
+  for (let k = 0; k < nB; k++) { const a = Math.PI / 2 + (Math.PI * k) / nB; ring.push([-S / 2, Math.cos(a), Math.sin(a)]); }
+  /** The point d metres out from the inner kerb at ring point k, in data coords. */
+  const P = (k: number, d: number) => {
+    const [s, os, on] = ring[k % ring.length], s1 = s + os * (R + d), t1 = on * (R + d);
+    return [cx + ux * s1 - uy * t1, cy + uy * s1 + ux * t1];
+  };
+  /** A patch of ground, corner (u, v) at q(u, v) in data coords, in nu x nv cells, its faces up. */
+  const patch = (out: number[], q: (u: number, v: number) => number[], nu: number, nv: number, lift: number) => {
+    for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
+      const a = q(i, j), b = q(i + 1, j), c = q(i + 1, j + 1), d = q(i, j + 1);
+      const A = at(a[0], a[1], lift), B = at(b[0], b[1], lift), C = at(c[0], c[1], lift), D = at(d[0], d[1], lift);
+      if ((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]) > 0) out.push(...A, ...B, ...C, ...A, ...C, ...D);
+      else out.push(...A, ...C, ...B, ...A, ...D, ...C);
+    }
+  };
+  const band = (out: number[], d0: number, d1: number, cells: number, lift: number) =>
+    patch(out, (k, j) => P(k, d0 + ((d1 - d0) * j) / cells), ring.length, cells, lift);
+  const outer = n * lane + TRACK_KERB;
+  band(red, -0.15, outer, Math.max(1, Math.ceil(outer / 2)), 0.03);
+  for (let k = 0; k <= n; k++) band(white, k * lane - TRACK_LINE / 2, k * lane + TRACK_LINE / 2, 1, 0.05);
+  // the finish line, across every lane where the home straight meets the bend
+  const fin = (s: number, d: number) => { const t1 = -(R + d); return [cx + ux * s - uy * t1, cy + uy * s + ux * t1]; };
+  const cells = Math.max(1, Math.ceil(n * lane / 2));
+  patch(white, (i, j) => fin(S / 2 - TRACK_LINE * 1.5 + i * TRACK_LINE * 3, (n * lane * j) / cells), 1, cells, 0.05);
 }
 
 /** A football goal standing on its line, the net out behind it (+x): the white posts and bar

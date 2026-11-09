@@ -863,7 +863,9 @@ there hears the same bit at the same time.
 
 ### Ball games
 
-Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
+Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Running
+tracks (Kingswood's on Lansdown, the university's on Claverton Down) are red, with their lanes and
+the finish line marked, and an infield with nothing else on it is a rugby pitch. Now and
 then a ball turns up on one (a white dot on the map): a penalty or a shot from the edge of the box,
 a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim (a tap for a
 fine nudge, hold to swing round quickly), W and S set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
