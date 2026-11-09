@@ -42,7 +42,7 @@ export type Medium = "road" | "water" | "air";
  *  fast it's going, if that's known (otherwise it's worked out from where it's been). */
 export interface Subject { x: number; y: number; z: number; yaw: number; len: number; wid: number; h: number; medium: Medium; vx?: number; vy?: number; vz?: number }
 
-type Kind = "roadside" | "kerb" | "crane" | "track" | "lead" | "wheel" | "heli" | "backdrop" | "vista" | "orbit" | "trail" | "follow" | "top"
+type Kind = "roadside" | "kerb" | "hover" | "crane" | "track" | "lead" | "wheel" | "heli" | "backdrop" | "vista" | "orbit" | "trail" | "follow" | "top"
   | "below" | "basket" | "crown" | "alongside";
 
 interface Shot {
@@ -68,6 +68,9 @@ interface Shot {
   passed?: number;
   /** How long it's been unable to see the way ahead, while going. */
   blind?: number;
+  /** A drive-by: a camera set up by the road (or hovering over it) that it comes up to and sweeps
+   *  past. It's let run its course, till a moment after it's gone by. */
+  by?: boolean;
 }
 
 /** Something on the road or the water that could be hit (scene x and z). */
@@ -154,7 +157,7 @@ export class Cinema {
         const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
         if ((sh.at.x - s.x) * fx + (sh.at.z - s.z) * fz < -(s.len + 3)) {
           sh.passed = (sh.passed ?? 0) + dt;
-          if (sh.passed > 0.7) this.shot = null;
+          if (sh.passed > (sh.by ? 1.3 : 0.7)) this.shot = null;
         }
       }
       // can't see where it's going: the faster it goes, the sooner it cuts, and at once if
@@ -163,7 +166,8 @@ export class Cinema {
         this.aheadT = 0.2;
         const seen = this.fov === null ? 1 : this.seesAhead(this.cam, this.looking, this.fov, s, speed, 0);
         sh.blind = seen < 0.34 ? (sh.blind ?? 0) + 0.2 : 0;
-        const allowed = this.danger < 2.5 ? 0.2 : THREE.MathUtils.clamp(4.5 - speed / 7, 1, 4);
+        // (a drive-by is left to sweep past unless something's about to be hit)
+        const allowed = this.danger < 1.5 ? 0.2 : sh.by ? Infinity : THREE.MathUtils.clamp(4.5 - speed / 7, 1, 4);
         if (sh.blind > allowed && sh.t > 0.6) this.shot = null;
       }
     }
@@ -225,8 +229,8 @@ export class Cinema {
       : !moving
         ? [["orbit", 3], ["backdrop", 4], ["vista", 3], ["crane", 2], ["kerb", 2], ["follow", 2]]
         : s.medium === "water"
-          ? [["trail", 4], ["follow", 4], ["top", 3], ["roadside", 3], ["kerb", 2], ["track", 3], ["lead", 2], ["crane", 4], ["backdrop", 4], ["vista", 3], ["heli", 3]]
-          : [["trail", 4], ["follow", 4], ["top", 3], ["heli", 3], ["roadside", 3], ["kerb", 3], ["track", 3], ["lead", 3], ["wheel", 3], ["crane", 4], ["backdrop", 4], ["vista", 3]];
+          ? [["trail", 4], ["follow", 4], ["top", 3], ["roadside", 4], ["kerb", 3], ["hover", 4], ["track", 3], ["lead", 2], ["crane", 4], ["backdrop", 4], ["vista", 3], ["heli", 3]]
+          : [["trail", 4], ["follow", 4], ["top", 3], ["heli", 3], ["roadside", 5], ["kerb", 4], ["hover", 5], ["track", 3], ["lead", 3], ["wheel", 3], ["crane", 4], ["backdrop", 4], ["vista", 3]];
     const found: { shot: Shot; score: number }[] = [];
     for (const [kind, weight] of kinds) {
       if (kind === this.last) continue;
@@ -240,7 +244,7 @@ export class Cinema {
     if (!found.length) return this.fallback(s);
     // moving: after a shot that can't see the way ahead, or with something coming up, one that can
     // (and one of those to start with)
-    if (moving && (!this.lastEasy || this.danger < 3.5) && found.some((f) => f.shot.easy)) found.splice(0, found.length, ...found.filter((f) => f.shot.easy));
+    if (moving && (!this.lastEasy || this.danger < 2) && found.some((f) => f.shot.easy)) found.splice(0, found.length, ...found.filter((f) => f.shot.easy));
     found.sort((a, b) => b.score - a.score);
     // mostly the best, sometimes the next one or two, so it doesn't settle into a pattern
     const pick = found[Math.min(found.length - 1, Math.floor(Math.random() ** 2 * 3))];
@@ -254,22 +258,31 @@ export class Cinema {
       ({ kind, fixed, at, aim, fov, fovEnd: more.fovEnd ?? fov, roll: 0, spin: 0, len, t: 0, reach: 1e9, blocked: 0, ...more });
     const mid = new THREE.Vector3(0, s.h * 0.45, 0);
     // where it'll be in t seconds, if it keeps going as it is
-    const ahead = (t: number) => new THREE.Vector3(s.x + this.vel.x * t, s.y + this.vel.y * t, s.z + this.vel.z * t);
+    // (round the bend, if it's turning)
+    const ahead = (t: number) => this.path(s, speed, t).setY(s.y + this.vel.y * t);
     const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)), right = new THREE.Vector3(-fwd.z, 0, fwd.x);
     switch (kind) {
       case "roadside": {
         // by the kerb up ahead, at about head height, panning round as it goes by
-        const t = rnd(1.4, 2.4) * slow, A = ahead(t), off = side() * (W + rnd(3, 8));
+        const t = rnd(1.6, 3) * slow, A = ahead(t), off = side() * (W + rnd(3, 8));
         const at = A.addScaledVector(right, off);
         at.y = this.lowest(at.x, at.z, s) + rnd(0.6, 1.6);
-        return shot(true, at, mid, rnd(38, 50), t + rnd(1.2, 2), { reach: 40 + L * 2 });
+        return shot(true, at, mid, rnd(38, 50), t + 1.8, { reach: 40 + L * 2, by: true });
       }
       case "kerb": {
         // right down on the ground, close to its path: it comes at you and rushes past, towering over
-        const t = rnd(1.2, 2.2) * slow, A = ahead(t), off = side() * (W + rnd(1.2, 3));
+        const t = rnd(1.4, 2.6) * slow, A = ahead(t), off = side() * (W + rnd(1.2, 3));
         const at = A.addScaledVector(right, off);
         at.y = this.lowest(at.x, at.z, s) + rnd(0.18, 0.4);
-        return shot(true, at, new THREE.Vector3(0, s.h * 0.6, 0), rnd(58, 70), t + rnd(1.2, 2), { reach: 30 + L * 2 });
+        return shot(true, at, new THREE.Vector3(0, s.h * 0.6, 0), rnd(58, 70), t + 1.6, { reach: 30 + L * 2, by: true });
+      }
+      case "hover": {
+        // a helicopter hanging over the road up ahead: it comes at you and sweeps past underneath,
+        // the camera turning to watch it go
+        const t = rnd(2, 3.6) * slow, A = ahead(t), off = side() * (Math.random() < 0.35 ? rnd(0, 3) : W + rnd(5, 16));
+        const at = A.addScaledVector(right, off);
+        at.y = Math.max(this.top(at.x, at.z), s.y) + rnd(9, 24);
+        return shot(true, at, mid, rnd(44, 56), t + 2, { reach: 120 + L * 2, by: true });
       }
       case "crane": {
         // up high, on a crane or a rooftop, looking down on it, slowly closing in
@@ -431,7 +444,8 @@ export class Cinema {
         a = (now + this.seesAhead(at, later.setY(s.y + s.h * 0.5), (shot.fov + shot.fovEnd) / 2, s, speed, t)) / 2;
       } else a = now;
       shot.easy = a >= 0.6;
-      const need = this.danger < 3.5 ? 1 : THREE.MathUtils.clamp((speed - 4) / 22, 0, 0.85);
+      // (a drive-by is the point of the thing: it's let off lightly, as long as nothing's about to be hit)
+      const need = this.danger < 2 ? 1 : THREE.MathUtils.clamp((speed - 4) / 22, 0, 0.7) * (shot.by ? 0.35 : 1);
       score *= 1 - need + need * (0.12 + 0.88 * a);
     }
     return score;
@@ -480,13 +494,15 @@ export class Cinema {
    *  anything else game.ts says is about, and a wall, building, fence or tree where the road bends. */
   private lookOut(s: Subject, speed: number): number {
     if (speed < 3) return Infinity;
-    const T = this.lookahead(speed) / speed * 1.2, steps = 8, reach = s.wid + 1.2;
+    // only what's right in its way: its own width and a bit (a car parked at the kerb beside it isn't),
+    // and no further off than it'd take to stop
+    const T = Math.min(2.4, this.lookahead(speed) / speed), steps = 8, reach = s.wid + 0.5;
     let first = Infinity, prev = new THREE.Vector3(s.x, s.y, s.z);
     const near = this.obstacles?.(s.x, s.z, this.lookahead(speed) * 1.3 + s.len) ?? [];
     for (let i = 1; i <= steps && first === Infinity; i++) {
       const t = (T * i) / steps, p = this.path(s, speed, t);
       // anything standing on the path here
-      for (const o of near) if (Math.hypot(o.x - p.x, o.z - p.z) < reach + 1) { first = Math.min(first, t); break; }
+      for (const o of near) if (Math.hypot(o.x - p.x, o.z - p.z) < reach + 0.4) { first = Math.min(first, t); break; }
       // and anything solid across it between here and the last point, at bumper height
       const y = s.y + 0.8, dx = p.x - prev.x, dz = p.z - prev.z, dl = Math.hypot(dx, dz);
       if (first === Infinity && dl > 0.1) {
