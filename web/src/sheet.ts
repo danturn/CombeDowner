@@ -407,6 +407,25 @@ export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, c
       }
     };
     for (const [a, b] of held) { hold(a, b, 0); if (sl.due()) { yield; sl.go(); } }
+    // (a triangle lies at the faces' height all over if it does at its middle, and just in from each
+    // corner and from the middle of each side; a sliver along the line between two faces is the
+    // hairline itself, and stays)
+    const atFaces = (a: number, b: number, d: number, cx: number, cy: number) => {
+      const ux = P[2 * b] - P[2 * a], uy = P[2 * b + 1] - P[2 * a + 1], vx = P[2 * d] - P[2 * a], vy = P[2 * d + 1] - P[2 * a + 1];
+      const long = Math.max(Math.hypot(ux, uy), Math.hypot(vx, vy), Math.hypot(vx - ux, vy - uy));
+      if (Math.abs(ux * vy - uy * vx) / long < 0.02) return false;
+      const mh = (PH[a] + PH[b] + PH[d]) / 3;
+      if (Math.abs(mh - faceTop(cx, cy)) > 0.002) return false;
+      const near = (x: number, y: number, h: number) => {
+        const f = 0.15, px = x + (cx - x) * f, py = y + (cy - y) * f;
+        return Math.abs(h + (mh - h) * f - faceTop(px, py)) <= 0.003;
+      };
+      for (const [p, q] of [[a, b], [b, d], [d, a]]) {
+        if (!near(P[2 * p] + x0, P[2 * p + 1] + y0, PH[p])) return false;
+        if (!near((P[2 * p] + P[2 * q]) / 2 + x0, (P[2 * p + 1] + P[2 * q + 1]) / 2 + y0, (PH[p] + PH[q]) / 2)) return false;
+      }
+      return true;
+    };
     const T = del.triangles;
     for (let t = 0; t < T.length; t += 3) {
       if (sl.due()) { yield; sl.go(); }
@@ -415,8 +434,10 @@ export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, c
       const c = cellOf(cx, cy);
       if (!R[c]) continue;
       const top = faceTop(cx, cy);
-      // (ground at the face's own height there adds nothing the face doesn't draw, and flickers with it)
-      if (top < Infinity && !(overlap[c] && Math.max(PH[a], PH[b], PH[d]) <= top + 0.01 && (PH[a] + PH[b] + PH[d]) / 3 < top - 0.002)) continue;
+      if (top < Infinity && !(overlap[c] && Math.max(PH[a], PH[b], PH[d]) <= top + 0.01)) continue;
+      // (ground lying at the faces' own height all over adds nothing they don't draw, and flickers with
+      // them; where some of it reaches past them, over a hairline between two, it stays)
+      if (top < Infinity && atFaces(a, b, d, cx, cy)) continue;
       // (anticlockwise seen from above, as the grid's own are)
       if ((P[2 * b] - P[2 * a]) * (P[2 * d + 1] - P[2 * a + 1]) - (P[2 * b + 1] - P[2 * a + 1]) * (P[2 * d] - P[2 * a]) < 0) [b, d] = [d, b];
       (byCell[c] ??= []).push(index[a], index[b], index[d]);
