@@ -82,6 +82,8 @@ work on it. Useful URL options:
   only far-off ones are; `web/src/trees.ts`).
 - `?nightout=1` makes every night a Friday night out, with the crowd at the top of Milsom Street
   (`nightOut` in `web/src/daylight.ts`, `naughtyboys.ts`).
+- `?lights=2` tries a Street lights level (0 Low to 4 Max) for one visit: how far off lit lamps
+  show after dark, and the lamps' painted pools of light (`web/src/lamppools.ts`).
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?squares=16` sets the most squares of Bath built in full at once (`SQUARES` in `web/src/view.ts`),
   the memory budget; `node tools/memory_probe.mjs` measures the memory along a fixed trip round Bath.

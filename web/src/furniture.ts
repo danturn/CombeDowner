@@ -51,8 +51,9 @@ export const LAMP_GLOW = new THREE.ShaderMaterial({
       vec4 mv = modelViewMatrix * vec4(position, 1.0);
       float d = -mv.z;
       vFade = smoothstep(25.0, 60.0, d) * (1.0 - smoothstep(far * 0.8, far * 1.1, d));
-      float s = scale * 2.2 * size / d;
-      gl_PointSize = clamp(s, least, 14.0 * size);
+      // (bigger only far off: close by, the lamp's own glass is there to see)
+      float s = scale * 2.2 * mix(1.0, size, smoothstep(60.0, 300.0, d)) / d;
+      gl_PointSize = clamp(s, least, 14.0);
       // the smaller it's drawn, the brighter its middle, up to bright times
       vBright = mix(bright, 1.0, smoothstep(least, least * 3.0, s));
       gl_Position = projectionMatrix * mv;

@@ -3,6 +3,7 @@
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
 import { darkable, undarkable } from "./unlit";
+import { LAMP_COLOUR, LAMP_DECAY, LAMP_POWER, LampPools, lampLit } from "./lamppools";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
 import { breakable, holed } from "./gaps";
@@ -352,7 +353,7 @@ function railMasonry(map: GameMap): Masonry {
       seen.set(key, k);
       return k;
     },
-    material: (k) => (MASON_MATS[k] ??= new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide })),
+    material: (k) => (MASON_MATS[k] ??= lampLit(new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide }))),
   };
 }
 
@@ -389,7 +390,7 @@ function anyWalls(kind: TX.WallKind) {
       .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(");
   };
   mat.customProgramCacheKey = () => "anyWalls";
-  return mat;
+  return lampLit(mat);
 }
 
 /** The sky, light and fog. */
@@ -980,6 +981,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // reuse the first square's (it goes by the code above, the same for all), and a square with
   // fewer mouths would leave gaps in the list and stop the drawing
   if (ownTerr) terrMat.customProgramCacheKey = () => `terrain:${mouth.a.length}:${works ? 1 : 0}`;
+  lampLit(terrMat);   // (after dark, the far-off lamps' pools of light: lamppools.ts)
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped: a square of Bath is three by three of them (each one costs
   // the computer a little to draw however small, and Bath has a lot of squares in sight).
@@ -1018,7 +1020,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     };
     const g = works.geometry(map.z0, (x, y) => drawnBare(x, -y) + map.z0, colour);
     if (g) {
-      const m = new THREE.Mesh(g, S.worksMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide }));
+      const m = new THREE.Mesh(g, S.worksMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide })));
       m.receiveShadow = true;
       freeOnUpload(g);
       g.computeBoundingSphere();
@@ -1226,7 +1228,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // a plain colour, with a texture where one is given (a stream has none): three.js warns about a
   // material whose "map" is undefined, so it's left out entirely rather than passed as undefined
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
-    new THREE.MeshLambertMaterial({ color, ...(map ? { map } : {}), polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
+    lampLit(new THREE.MeshLambertMaterial({ color, ...(map ? { map } : {}), polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 }));
   const asphalt: THREE.Texture = S.asphalt ??= TX.asphalt();
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material, thin = false) => {
@@ -1817,8 +1819,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     mat.customProgramCacheKey = () => id;
     return (S[id] = mat);
   };
-  const bridgeMat: THREE.Material = S.bridgeMat ??= new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true });
-  const steelMat: THREE.Material = S.steelMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+  const bridgeMat: THREE.Material = S.bridgeMat ??= lampLit(new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }));
+  const steelMat: THREE.Material = S.steelMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
    *  own picks out roads that carry their own heights (bridges). */
@@ -2596,6 +2598,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),
     steel: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
   };
+  for (const m of Object.values(barMats)) lampLit(m);
   for (const [k, geo] of barGeos) {
     const g = geo.build();
     if (!g) continue;
@@ -2915,10 +2918,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   let lampCount = 0, lampLook = 60;
   /** Light as many lamps as the Street lights setting asks for now. */
   const countLamps = () => {
-    const n = Math.max(2, LAMP_NORMAL + LIGHT_LEVELS[lightLevel].pools);
+    const n = Math.max(2, LAMP_NORMAL + LIGHT_LEVELS[lightLevel].lit);
     if (n === lampCount) return;
     while (lampLights.length < n) {
-      const l = new THREE.PointLight("#ffc77a", 0, LAMP_REACH, 1.4);
+      const l = new THREE.PointLight(LAMP_COLOUR, 0, LAMP_REACH, LAMP_DECAY);
       l.userData = { on: false, k: 0, to: new THREE.Vector3() };
       scene.add(l);
       darkable(scene, l);
@@ -2977,7 +2980,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (n) l.userData.to.set(n[1], n[2], n[3]);
       l.userData.on = !!n;
     });
+    litTo = 0;
+    for (const l of lampLights) if (l.userData.on) litTo = Math.max(litTo, Math.hypot(l.userData.to.x - px, l.userData.to.z - pz));
   };
+  // Past the lamps really lit, every lamp's pool of light painted on the ground, roads and walls
+  // (lamppools.ts), fading in just beyond the furthest one lit, so lit streets show right across town.
+  let litTo = 60, litReach = 60;
+  const squareIds = new WeakMap<GameMap, number>();
+  let squareN = 0;
+  const squareId = (m: GameMap) => { let k = squareIds.get(m); if (k === undefined) squareIds.set(m, (k = ++squareN)); return k; };
+  const pools = new LampPools(
+    (x, z, r) => [map, ...map.tilesNear(x, z, r)].flatMap((m) => [headsOf(m), landmarkLamps(m)]),
+    (x, z, r) => map.tilesNear(x, z, r).map(squareId).join());
   /** Fade each light towards its lamp: out, across, and in again. */
   const fadeLamps = (dt: number, quick: boolean) => {
     const rate = quick ? 6 : 3;
@@ -3112,7 +3126,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       fadeLamps(dt, quick);
       if (W) W.skies += performance.now() - W0;
       let b4 = performance.now();
-      for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
+      for (const l of lampLights) l.intensity = l.userData.k * night * LAMP_POWER * (1 - dark);
+      litReach += (litTo - litReach) * Math.min(1, dt * 2);
+      pools.update(night * (1 - dark), px, pz, litReach, dt);
       if (W) W.lamps += performance.now() - b4;
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
       SIGNAL_TIME.value = signalClock();   // the traffic lights' lamps (signals.ts)
