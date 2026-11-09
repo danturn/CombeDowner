@@ -2656,7 +2656,34 @@ if _merged:
     if keys is not None: keys = [k for n, k in enumerate(keys) if n not in _merged]
 blds, footprints, bld_props, bld_fresh = [], [], [], []
 as_built = [c[0] for c in cand]     # each outline as the game draws it, for the doors to stand on its walls
-at_measured, uphill, faced = 0, [0, 0], 0       # (unmeasured, measured on ground not the map's)
+at_measured, uphill, faced, boxed = 0, [0, 0], 0, 0       # (unmeasured, measured on ground not the map's)
+
+
+def box_dormer(poly, roof, eaves):
+    """A house with a box dormer the width of it (buildings.classify): its roof slopes up from the
+    wall nearer a street to the ridge, and runs on level from there to the back wall, which stands
+    up to meet it. As a lidar roof mesh (map.ts RoofMesh), which pages that don't know the form
+    already draw; the plain roof in rr stays for any that don't know those either."""
+    q = roof["rect"]
+    sides = [((q[0][0] + q[1][0]) / 2, (q[0][1] + q[1][1]) / 2), ((q[3][0] + q[2][0]) / 2, (q[3][1] + q[2][1]) / 2)]
+    near = lambda pt: min((road_lines[streets_[int(j)]].distance(shapely.Point(pt))
+                           for j in street_tree.query(shapely.Point(pt).buffer(60))), default=1e9) if street_tree else 1e9
+    front, back = sides if near(sides[0]) <= near(sides[1]) else sides[::-1]
+    depth = math.dist(front, back) or 1
+    nx, ny = (back[0] - front[0]) / depth, (back[1] - front[1]) / depth
+    k = roof["rise"] / (depth / 2)
+    slope = (k * nx, k * ny, eaves - k * (front[0] * nx + front[1] * ny))
+    top = eaves + roof["rise"]
+    # the half-plane up to the ridge, from the street side
+    mx, my = front[0] + nx * depth / 2, front[1] + ny * depth / 2
+    big = 4 * (depth + math.dist(q[0], q[1]))
+    tx, ty = -ny, nx
+    half = shapely.Polygon([(mx + tx * big, my + ty * big), (mx - tx * big, my - ty * big),
+                            (mx - tx * big - nx * big, my - ty * big - ny * big), (mx + tx * big - nx * big, my + ty * big - ny * big)])
+    faces = [(0, g) for g in shapely.get_parts(poly.intersection(half)) if g.geom_type == "Polygon" and g.area > 0.01]
+    faces += [(1, g) for g in shapely.get_parts(poly.difference(half)) if g.geom_type == "Polygon" and g.area > 0.01]
+    V, T, Wl, rings, tops = roof_faces.mesh(poly, faces, [slope, (0.0, 0.0, top)], eaves, top)
+    return roof_faces.for_game(dict(v=V, t=T, w=Wl, r=rings, z=tops), 0.0)
 for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     if not ring: continue       # a sliver with no area once rounded: nothing to build
@@ -2691,8 +2718,13 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
         out["rp"] = round(b["roof"]["rise"], 1)
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
         if b["roof"].get("sure_ends"): out["hs"] = 1
+    if b["level"] and b["kind"] in ("terrace", "semi"): out["lt"] = 1
     k = roof_faces.ring_key(out) if FACES else None
-    if k in FACES:
+    _whole = shapely.Polygon(ring, holes).buffer(0) if b["roof"] and b["roof"].get("box") else None
+    if _whole is not None and _whole.geom_type == "Polygon" and k not in FACES:
+        out["r"], out["rm"] = box_dormer(_whole, b["roof"], eaves)
+        boxed += 1
+    elif k in FACES:
         # into the map's frame as the eaves were: the survey's heights over its ground at the walls
         # (where the survey gave no eaves here, its ground as the roofs were fitted)
         up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - FACES[k]["base"]
@@ -2713,6 +2745,7 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
     bld_props.append(p)
     bld_fresh.append(f)
 if FACES: print(f"roofs: {faced} of {len(blds)} in faces from the lidar")
+if boxed: print(f"roofs: {boxed} row houses with a box dormer the width of the house")
 print(f"buildings: {at_measured} of {len(blds)} at their measured eaves height; by the hill behind them, "
       f"{uphill[0]} unmeasured and {uphill[1]} where the survey's ground isn't the map's")
 
@@ -4095,7 +4128,7 @@ if KEEP:
         for k in kept.query(c.buffer(1.5)):
             o = kept_bl[int(k)]; op = shapely.Polygon(o["r"][0])
             if op.centroid.distance(c) < 1.5 and abs(op.area - poly.area) < poly.area / 6:
-                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "hs", "ch", "pp", "st", "c"):
+                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "hs", "lt", "ch", "pp", "st", "c"):
                     if key_ in o: b[key_] = o[key_]
                     elif key_ in b: del b[key_]
                 # (its eaves at the height the earlier build measured, on this build's ground)
