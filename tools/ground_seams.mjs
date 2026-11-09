@@ -14,6 +14,9 @@
 // feet of kerbs, walls and the like (only edges of the ground's and the faces' tops are checked; a
 // kerb or a wall still closes an edge it shares).
 //
+// With --rules it also gives rule 44's walls standing over the ground (wallFeet below; --feet works them out
+// without --rules).
+//
 //   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules] [--query ground=cdt] [--heights] [--slices]
 //
 // --most n prints up to n gaps per square, as data x, y and a ?at= to look from. Exits 1 if any
@@ -25,8 +28,8 @@ import { fakeBrowser, bundleGame } from "./node_game.mjs";
 
 const here = path.dirname(new URL(import.meta.url).pathname), web = path.join(here, "..", "web");
 const argv = process.argv.slice(2);
-const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", slices: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
-for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--heights" || argv[i] === "--slices" ? "1" : argv[++i];
+const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", slices: "", feet: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--feet" || argv[i] === "--heights" || argv[i] === "--slices" ? "1" : argv[++i];
 // (with --rules the findings are the output, for tools/check_more.py rule 38, and the rest goes to stderr)
 if (opt.rules) console.log = console.error;
 const say = (...a) => console.log(...a);
@@ -221,6 +224,114 @@ function seams(d, group) {
   return { open, tee, under, gap: gaps.length, folds, gaps };
 }
 
+// Rule 44: does every wall, fence and hedge stand down on what is drawn under it? Each foot edge of
+// their sides (an edge of an upright triangle lying below its third corner) is looked at every 0.25 m
+// along: the highest top of the ground or a face under that point (no higher than a metre over the
+// foot, so a deck overhead isn't taken for it) is found, and where the foot stands more than FOOT_GAP
+// over it, the sky shows through under the wall. Each place is a run of such points, scored by its
+// length in metres.
+const FOOT_GAP = 0.05;
+function wallFeet(group) {
+  const CELL = 2, tops = [], cell = new Map(), v = new THREE.Vector3();
+  const tri = (name, f) => group.traverse((o) => {
+    let top = o;
+    while (top.parent && top.parent !== group) top = top.parent;
+    if ((top.name || o.name) !== name || !o.geometry || o.isInstancedMesh) return;
+    const g = o.geometry, P = g.attributes.position;
+    if (!P?.array) return;
+    const n = g.index ? g.index.count : P.count, at = (k) => g.index ? g.index.array[k] : k, c = [];
+    for (let k = 0; k + 2 < n; k += 3) {
+      for (let m = 0; m < 3; m++) { v.fromBufferAttribute(P, at(k + m)).applyMatrix4(o.matrixWorld); c[m] = [v.x, -v.z, v.y]; }
+      f(c[0], c[1], c[2]);
+    }
+  });
+  const normalZ = (a, b, c) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], wx = c[0] - a[0], wy = c[1] - a[1], wz = c[2] - a[2];
+    const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx, l = Math.hypot(nx, ny, nz);
+    return l > 1e-12 ? Math.abs(nz) / l : 0;
+  };
+  for (const name of ["ground", "roads"]) tri(name, (a, b, c) => {
+    if (normalZ(a, b, c) < 0.05) return;
+    const n = tops.length;
+    tops.push([a, b, c]);
+    const i0 = Math.floor(Math.min(a[0], b[0], c[0]) / CELL), i1 = Math.floor(Math.max(a[0], b[0], c[0]) / CELL);
+    const j0 = Math.floor(Math.min(a[1], b[1], c[1]) / CELL), j1 = Math.floor(Math.max(a[1], b[1], c[1]) / CELL);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) (cell.get(`${i},${j}`) ?? cell.set(`${i},${j}`, []).get(`${i},${j}`)).push(n);
+  });
+  const under = (x, y, foot) => {
+    let best = -Infinity;
+    for (const n of cell.get(`${Math.floor(x / CELL)},${Math.floor(y / CELL)}`) ?? []) {
+      const [a, b, c] = tops[n];
+      const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+      if (Math.abs(d) < 1e-12) continue;
+      const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d, l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d, l3 = 1 - l1 - l2;
+      if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+      const z = l1 * a[2] + l2 * b[2] + l3 * c[2];
+      if (z <= foot + 1.0 && z > best) best = z;
+    }
+    return best;
+  };
+  // the upright faces (walls, kerbs, retaining walls), to tell a foot with a wall below it that closes the gap
+  const sides = [], sideCell = new Map();
+  for (const name of ["walls-fences", "roads", "ground"]) tri(name, (a, b, c) => {
+    if (normalZ(a, b, c) > 0.2) return;
+    const n = sides.length;
+    sides.push([a, b, c]);
+    const i0 = Math.floor(Math.min(a[0], b[0], c[0]) / CELL), i1 = Math.floor(Math.max(a[0], b[0], c[0]) / CELL);
+    const j0 = Math.floor(Math.min(a[1], b[1], c[1]) / CELL), j1 = Math.floor(Math.max(a[1], b[1], c[1]) / CELL);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) (sideCell.get(`${i},${j}`) ?? sideCell.set(`${i},${j}`, []).get(`${i},${j}`)).push(n);
+  });
+  const segDist = (x, y, p, q) => {
+    const ex = q[0] - p[0], ey = q[1] - p[1], l2 = ex * ex + ey * ey;
+    const t = l2 > 1e-12 ? Math.max(0, Math.min(1, ((x - p[0]) * ex + (y - p[1]) * ey) / l2)) : 0;
+    return Math.hypot(p[0] + ex * t - x, p[1] + ey * t - y);
+  };
+  const closed = (x, y, z, foot) => {
+    for (const n of sideCell.get(`${Math.floor(x / CELL)},${Math.floor(y / CELL)}`) ?? []) {
+      const [a, b, c] = sides[n];
+      if (Math.min(a[2], b[2], c[2]) > z + FOOT_GAP || Math.max(a[2], b[2], c[2]) < (z + foot) / 2) continue;
+      if (Math.min(segDist(x, y, a, b), segDist(x, y, b, c), segDist(x, y, c, a)) <= 0.15) return true;
+    }
+    return false;
+  };
+  const gaps = new Map();
+  tri("walls-fences", (a, b, c) => {
+    if (normalZ(a, b, c) > 0.2) return;
+    for (const [p, q, r] of [[a, b, c], [b, c, a], [c, a, b]]) {
+      if (Math.max(p[2], q[2]) > r[2] - 0.2) continue;
+      const L = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (L < 0.05) continue;
+      const k = Math.max(1, Math.round(L / 0.25));
+      for (let s = 0; s <= k; s++) {
+        const t = s / k, x = p[0] + (q[0] - p[0]) * t, y = p[1] + (q[1] - p[1]) * t, foot = p[2] + (q[2] - p[2]) * t;
+        const z = under(x, y, foot);
+        if (!(z > -Infinity) || foot - z <= FOOT_GAP || closed(x, y, z, foot)) continue;
+        // (gathered in half-metre cells, each with its worst gap)
+        const key = `${Math.round(x * 2)},${Math.round(y * 2)}`, o = gaps.get(key);
+        if (!o || o[2] < foot - z) gaps.set(key, [x, y, foot - z]);
+      }
+    }
+  });
+  // runs of neighbouring cells, each a place
+  const left = new Map(gaps), places = [];
+  for (const [key, g] of gaps) {
+    if (!left.has(key)) continue;
+    left.delete(key);
+    const todo = [key], run = [g];
+    while (todo.length) {
+      const [i, j] = todo.pop().split(",").map(Number);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const kk = `${i + a},${j + b}`, o = left.get(kk);
+        if (!o) continue;
+        left.delete(kk); todo.push(kk); run.push(o);
+      }
+    }
+    const worst = run.reduce((w, o) => (o[2] > w[2] ? o : w));
+    places.push([worst[0], worst[1], run.length * 0.5, worst[2]]);
+  }
+  return places;
+}
+
 // --heights: does the height you stand at (the map's ground) match the drawn ground, at the middle of
 // each ground triangle? Counts those where you'd stand more than a centimetre below it (sunk in), and
 // the worst, and those more than a centimetre above it (on a face or a deck over it, or out).
@@ -267,9 +378,11 @@ for (const [ti, tj] of squares) {
     tris[name] = (tris[name] ?? 0) + n / 3;
   });
   if (opt.heights) Object.assign(r, heights(s.group));
+  const feet = opt.rules || opt.feet ? wallFeet(s.group) : [];
   s.done();
   for (const k of Object.keys(total)) total[k] += r[k];
   if (r.gap) bad++;
+  for (const [x, y, l, gap] of feet) if (l >= 0.5) findings.push({ rule: "44 wall's foot over the ground", score: +l.toFixed(1), x, y, what: `${l.toFixed(1)} m of a wall, fence or hedge standing up to ${gap.toFixed(2)} m over what is drawn under it: the sky shows through` });
   for (const [x, y, l] of opt.rules ? r.gaps : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
   report[`${ti},${tj}`] = { open: r.open, tee: r.tee, under: r.under, gap: r.gap, folds: r.folds, gaps: r.gaps.slice(0, 200).map(([x, y, l]) => [+x.toFixed(2), +y.toFixed(2), +l.toFixed(3)]) };
   const sheetMs = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.ms, 0), lost = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.lost, 0);
