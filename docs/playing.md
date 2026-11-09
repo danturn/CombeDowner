@@ -462,8 +462,11 @@ the chase camera, the driver's seat, the bonnet camera and the cinematic camera.
 is GTA V's: it cuts every few seconds between shots a film crew would set up, low by the kerb as you
 sweep past, up on a crane or a rooftop, tracking alongside, out in front looking back, down by the back
 wheel, from a helicopter, from a hillside across the valley on a long lens, and lined up with a
-landmark behind you (the Abbey, Pulteney Bridge, Sham Castle...). It never sits inside a building, and
-cuts away if anything gets between it and you. From the driver's seat you look out over
+landmark behind you (the Abbey, Pulteney Bridge, Sham Castle...). It's meant to be hard to drive by,
+but not too hard: most shots, and at least every other one, look the way you're going (low behind you
+down the road ahead, a drone following above, a helicopter high and wide), the others are short, and a
+camera you've driven past cuts away. It never sits inside a building, and cuts away if anything gets
+between it and you. From the driver's seat you look out over
 a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
 and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
 XR3i's sports seats, three-spoke wheel and furry dice (they swing on their strings as you pull away, brake, corner and hit the bumps), the GTI's tartan seats and golf-ball gear knob,

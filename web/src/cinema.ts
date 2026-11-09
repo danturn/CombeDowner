@@ -12,6 +12,12 @@
 // With depth of field on in Settings (post.ts), it's focused on you, and the longer the lens the
 // more what's in front and behind melts away; close shots keep more of the scene sharp.
 //
+// It has to be drivable, though, hard as that is: on the road and the water, at least every other
+// shot looks the way you're going (low behind you looking down the road ahead, a drone following
+// above, a helicopter high up and wide), and those come up most. The ones that don't (kerbside,
+// alongside, out in front looking back) are short, and a fixed camera you've gone past cuts away
+// rather than watch you disappear.
+//
 // Every camera spot is checked before it's used: never inside a building (on its roof is fine),
 // never under the ground or the water, and with a clear view of you. If a building, a hill or a tree
 // gets in the way during a shot, or you've gone by and away, it cuts to the next one.
@@ -30,7 +36,7 @@ export type Medium = "road" | "water" | "air";
  *  fast it's going, if that's known (otherwise it's worked out from where it's been). */
 export interface Subject { x: number; y: number; z: number; yaw: number; len: number; wid: number; h: number; medium: Medium; vx?: number; vy?: number; vz?: number }
 
-type Kind = "roadside" | "kerb" | "crane" | "track" | "lead" | "wheel" | "heli" | "backdrop" | "vista" | "orbit"
+type Kind = "roadside" | "kerb" | "crane" | "track" | "lead" | "wheel" | "heli" | "backdrop" | "vista" | "orbit" | "trail" | "follow" | "top"
   | "below" | "basket" | "crown" | "alongside";
 
 interface Shot {
@@ -50,6 +56,10 @@ interface Shot {
   blocked: number;
   /** The landmark it lines up behind the subject, if any. */
   mark?: THREE.Vector3;
+  /** It looks the way it's going, so you can drive by it (checked when it's chosen). */
+  easy?: boolean;
+  /** Fixed shots: how long since it went past the camera. */
+  passed?: number;
 }
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _look = new THREE.Vector3();
@@ -59,6 +69,7 @@ const side = () => (Math.random() < 0.5 ? -1 : 1);
 export class Cinema {
   private shot: Shot | null = null;
   private last: Kind | null = null;
+  private lastEasy = false;              // the last shot looked the way it was going
   private yaw = 0;                       // the way the shots are set out from: where it's going, smoothed
   private vel = new THREE.Vector3();     // how fast it's going, worked out from where it's been
   private was: THREE.Vector3 | null = null;
@@ -109,10 +120,19 @@ export class Cinema {
       sh.t += dt;
       if (sh.t > sh.len) this.shot = null;
       else if (sh.fixed && this.where(sh, s, _w).distanceTo(this.centre(s)) > sh.reach) this.shot = null;
+      else if (sh.fixed && s.medium !== "air" && speed > 2) {
+        // gone past the camera: a moment to see it go, then cut, so you're not left driving away from it
+        const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+        if ((sh.at.x - s.x) * fx + (sh.at.z - s.z) * fz < -(s.len + 3)) {
+          sh.passed = (sh.passed ?? 0) + dt;
+          if (sh.passed > 0.7) this.shot = null;
+        }
+      }
     }
     if (!this.shot) {
       this.shot = this.choose(s, speed);
       this.last = this.shot.kind;
+      this.lastEasy = !!this.shot.easy;
       this.where(this.shot, s, this.cam);
       this.aimAt(this.shot, s, this.looking);
       // a fixed shot follows it in from wherever it starts, and cuts once it's gone well past
@@ -161,13 +181,14 @@ export class Cinema {
   /** Set up a few of each kind of shot that suits it, keep the ones that can see it from somewhere
    *  sensible, and pick among the most dramatic, not the same kind twice running. */
   private choose(s: Subject, speed: number): Shot {
+    const moving = s.medium !== "air" && speed >= (s.medium === "water" ? 0.7 : 2.5);
     const kinds: [Kind, number][] = s.medium === "air"
       ? [["below", 5], ["vista", 4], ["backdrop", 5], ["basket", 4], ["crown", 3], ["alongside", 3], ["heli", 2]]
-      : speed < (s.medium === "water" ? 0.7 : 2.5)
-        ? [["orbit", 3], ["backdrop", 4], ["vista", 3], ["crane", 2], ["kerb", 2]]
+      : !moving
+        ? [["orbit", 3], ["backdrop", 4], ["vista", 3], ["crane", 2], ["kerb", 2], ["follow", 2]]
         : s.medium === "water"
-          ? [["roadside", 4], ["kerb", 3], ["track", 3], ["lead", 2], ["crane", 3], ["backdrop", 5], ["vista", 3], ["heli", 2]]
-          : [["roadside", 5], ["kerb", 4], ["track", 3], ["lead", 3], ["wheel", 3], ["crane", 3], ["backdrop", 5], ["vista", 3], ["heli", 2]];
+          ? [["trail", 5], ["follow", 5], ["top", 4], ["roadside", 3], ["kerb", 2], ["track", 2], ["lead", 1], ["crane", 3], ["backdrop", 4], ["vista", 2], ["heli", 3]]
+          : [["trail", 6], ["follow", 6], ["top", 5], ["heli", 3], ["roadside", 3], ["kerb", 2], ["track", 2], ["lead", 1], ["wheel", 2], ["crane", 3], ["backdrop", 4], ["vista", 2]];
     const found: { shot: Shot; score: number }[] = [];
     for (const [kind, weight] of kinds) {
       if (kind === this.last) continue;
@@ -179,6 +200,8 @@ export class Cinema {
       }
     }
     if (!found.length) return this.fallback(s);
+    // moving: after a shot you can't drive by, one you can (and one of those to start with)
+    if (moving && !this.lastEasy && found.some((f) => f.shot.easy)) found.splice(0, found.length, ...found.filter((f) => f.shot.easy));
     found.sort((a, b) => b.score - a.score);
     // mostly the best, sometimes the next one or two, so it doesn't settle into a pattern
     const pick = found[Math.min(found.length - 1, Math.floor(Math.random() ** 2 * 3))];
@@ -197,14 +220,14 @@ export class Cinema {
     switch (kind) {
       case "roadside": {
         // by the kerb up ahead, at about head height, panning round as it goes by
-        const t = rnd(1.8, 3.2) * slow, A = ahead(t), off = side() * (W + rnd(3, 8));
+        const t = rnd(1.4, 2.4) * slow, A = ahead(t), off = side() * (W + rnd(3, 8));
         const at = A.addScaledVector(right, off);
         at.y = this.lowest(at.x, at.z, s) + rnd(0.6, 1.6);
-        return shot(true, at, mid, rnd(38, 50), t + rnd(1.6, 2.6), { reach: 40 + L * 2 });
+        return shot(true, at, mid, rnd(38, 50), t + rnd(1.2, 2), { reach: 40 + L * 2 });
       }
       case "kerb": {
         // right down on the ground, close to its path: it comes at you and rushes past, towering over
-        const t = rnd(1.5, 2.6) * slow, A = ahead(t), off = side() * (W + rnd(1.2, 3));
+        const t = rnd(1.2, 2.2) * slow, A = ahead(t), off = side() * (W + rnd(1.2, 3));
         const at = A.addScaledVector(right, off);
         at.y = this.lowest(at.x, at.z, s) + rnd(0.18, 0.4);
         return shot(true, at, new THREE.Vector3(0, s.h * 0.6, 0), rnd(58, 70), t + rnd(1.2, 2), { reach: 30 + L * 2 });
@@ -218,21 +241,34 @@ export class Cinema {
         return shot(true, at, mid, f, rnd(4.5, 6.5), { fovEnd: f * 0.75, reach: 90 + L * 2 });
       }
       case "track":
-        // alongside, as from a tracking car in the next lane
-        return shot(false, new THREE.Vector3(side() * (W + rnd(2.5, 4.5)), rnd(0.5, 1.4), rnd(-L * 0.4, L * 0.6)),
-          new THREE.Vector3(0, s.h * 0.4, -L * 0.6), rnd(42, 55), rnd(3.5, 5.5), { roll: rnd(-0.03, 0.03) });
+        // alongside, as from a tracking car in the next lane, a little behind, so the road ahead shows past it
+        return shot(false, new THREE.Vector3(side() * (W + rnd(2.5, 4.5)), rnd(0.8, 1.8), rnd(L * 0.2, L * 1.2)),
+          new THREE.Vector3(0, s.h * 0.4, -L - 4), rnd(48, 58), rnd(3, 4.5), { roll: rnd(-0.03, 0.03) });
       case "lead":
         // out in front, low, looking back at it as it chases you down the road
-        return shot(false, new THREE.Vector3(side() * rnd(0, 2), rnd(0.6, 1.4), -(L + rnd(4, 8))), mid, rnd(45, 58), rnd(3, 4.5));
+        return shot(false, new THREE.Vector3(side() * rnd(0, 2), rnd(0.6, 1.4), -(L + rnd(4, 8))), mid, rnd(45, 58), rnd(2, 3));
+      case "trail":
+        // low behind it on a long arm, looking past it down the road ahead
+        return shot(false, new THREE.Vector3(side() * rnd(0, 1.8), s.h * 0.6 + rnd(0.8, 2), L + rnd(5, 9)),
+          new THREE.Vector3(0, s.h * 0.5, -(L + 12 + speed)), rnd(46, 56), rnd(5, 8), { roll: rnd(-0.02, 0.02) });
+      case "follow":
+        // a drone following above and behind, the road ahead laid out in front of it
+        return shot(false, new THREE.Vector3(side() * rnd(0, 4), rnd(7, 13), L + rnd(9, 16)),
+          new THREE.Vector3(0, 0, -(L + 10 + speed * 0.6)), rnd(56, 64), rnd(5, 8));
+      case "top":
+        // the helicopter, high up and wide, looking down on the streets it's heading into
+        return shot(false, new THREE.Vector3(side() * rnd(0, 10), rnd(28, 45), rnd(6, 16)),
+          new THREE.Vector3(0, 0, -(L + 4 + speed * 0.4)), rnd(56, 64), rnd(6, 9), { spin: side() * rnd(0, 0.02) });
       case "wheel":
         // down by the back wheel, looking along the side to the road ahead
         return shot(false, new THREE.Vector3(side() * (W + 0.55), rnd(0.25, 0.45), L * 0.75), new THREE.Vector3(0, s.h * 0.35, -L - 12),
           rnd(66, 76), rnd(2.5, 3.8), { roll: rnd(-0.07, 0.07) });
       case "heli": {
-        // from the helicopter, high behind and to one side, circling slowly
-        const a = air ? rnd(50, 80) : rnd(16, 30);
-        return shot(false, new THREE.Vector3(side() * rnd(6, 16) * (air ? 3 : 1), air ? rnd(5, 20) : rnd(14, 28), a), mid,
-          rnd(30, 40), rnd(5, 7), { spin: side() * rnd(0.04, 0.09) });
+        // from the helicopter, high behind and to one side, circling slowly; on the ground, wide, and
+        // looking ahead of it rather than at it
+        if (air) return shot(false, new THREE.Vector3(side() * rnd(18, 48), rnd(5, 20), rnd(50, 80)), mid, rnd(30, 40), rnd(5, 7), { spin: side() * rnd(0.04, 0.09) });
+        return shot(false, new THREE.Vector3(side() * rnd(8, 18), rnd(18, 30), L + rnd(14, 26)), new THREE.Vector3(0, 0, -(L + 10 + speed)),
+          rnd(48, 58), rnd(5, 7), { spin: side() * rnd(0.01, 0.03) });
       }
       case "orbit":
         // stood still or nearly: a slow circle round it
@@ -344,6 +380,24 @@ export class Cinema {
       else score += 1;
     }
     if (speed < 2.5 && shot.kind === "roadside") score *= 0.2;
+    // on the road or the water, a shot that looks the way it's going is one you can drive by
+    if (s.medium !== "air") {
+      const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw), facing = (x: number, z: number) => {
+        const h = Math.hypot(x, z);
+        return h < 0.5 ? 1 : (x * fx + z * fz) / h;
+      };
+      let f: number;
+      if (shot.fixed) {
+        // a fixed camera: which way it looks at it now, and as it comes by
+        const t = shot.len * 0.7;
+        f = Math.min(facing(c.x - at.x, c.z - at.z), facing(c.x + this.vel.x * t - at.x, c.z + this.vel.z * t - at.z));
+      } else {
+        this.aimAt(shot, s, _look);
+        f = facing(_look.x - at.x, _look.z - at.z);
+      }
+      shot.easy = f > 0.45;
+      score *= Math.max(0.2, 0.5 + f);
+    }
     return score;
   }
 
