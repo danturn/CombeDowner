@@ -34,6 +34,15 @@ import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
 import { buildSheet, carved, coveredCells, fillAt, nearFaces, openSeams, sheetFaces, type Sheet } from "./sheet";
 
+/** The ground drawn as one sheet with the faces (the Settings page's choice, cd-ground), unless
+ *  ?ground=old or ?ground=sheet in the address says otherwise for this visit. */
+export function groundSheet(): boolean {
+  const q = new URLSearchParams(location.search).get("ground");
+  if (q === "old") return false;
+  if (q === "sheet") return true;
+  try { return localStorage.getItem("cd-ground") !== "0"; } catch { return true; }
+}
+
 const CHUNK = 320;
 
 /** Accumulates non-indexed triangles with normals, UVs and colours, straight into the typed arrays
@@ -539,7 +548,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ?roads=strips draws every street as strips along its line, as before the faces, to compare
   const SURFACES = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips";
   // off under Node, where the clash check runs this code: check_more.py measures the sheet itself (CD_GROUND=sheet)
-const SHEET = typeof location !== "undefined" && new URLSearchParams(location.search).get("ground") !== "old";
+const SHEET = typeof location !== "undefined" && groundSheet();
   // A square with its streets' faces lets them decide where the ground is pulled down, what height you
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
   // fall short in others, which showed as grass and hillside through the street

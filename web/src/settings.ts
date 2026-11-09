@@ -10,7 +10,7 @@
 // Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
-// used by game.ts), shadows, and the debug panel (debug.ts, also F3). Choosing a distance, resolution or
+// used by game.ts), shadows, the debug panel (debug.ts, also F3), and the new ground (world.ts, from the next game). Choosing a distance, resolution or
 // shadows yourself turns automatic off. Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
@@ -78,6 +78,7 @@ export function settingsPage(h: Hooks) {
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const auto = $<HTMLInputElement>("set-auto");
   const shadows = $<HTMLInputElement>("set-shadows"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
+  const ground = $<HTMLInputElement>("set-ground");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
 
@@ -99,6 +100,7 @@ export function settingsPage(h: Hooks) {
     shadows.checked = h.renderer.shadowMap.enabled;
     fx.checked = h.post.retroLook;
     dbg.checked = h.debug.open;
+    ground.checked = load("cd-ground", 1) !== 0;
     calm.checked = passive;
     sens.value = String(sensitivity);
     music.value = String(load("cd-music", MUSIC));
@@ -138,6 +140,8 @@ export function settingsPage(h: Hooks) {
   shadows.onchange = () => { quality.manual(); setShadows(shadows.checked); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
+  // squares already built keep the ground they were built with, so this takes from the next game
+  ground.onchange = () => keep("cd-ground", ground.checked);
   calm.onchange = () => setPassive(calm.checked);
   menuCalm.onchange = () => setPassive(menuCalm.checked);
   sens.oninput = () => setSens(Number(sens.value));
