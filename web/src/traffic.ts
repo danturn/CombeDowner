@@ -268,26 +268,42 @@ export class Traffic {
         else { there.back = back; A.out.push(there); B.out.push(back); this.edges.push(there, back); }
       }
     }
+    // the dead ends: points only one other point is joined to, whichever way. (On a one-way street
+    // every point has just the one way out, so counting ways out would take the whole street for
+    // dead ends and join its points up both ways, a stretch you could drive the wrong way.)
+    const into: Edge[][] = this.nodes.map(() => []);
+    for (const e of this.edges) into[e.b].push(e);
+    const near = this.nodes.map((n, i) => new Set([...n.out.map((e) => e.b), ...into[i].map((e) => e.a)]));
+    // whether traffic can come in to a point, and go on out of it, before any joins: a join goes only
+    // the way its roads let traffic through (off the end of a one-way street, on to the start of one)
+    const comes = into.map((es) => es.length > 0), goes = this.nodes.map((n) => n.out.length > 0);
+    const ends = this.nodes.map((_, i) => i).filter((i) => near[i].size === 1);
+    const joined = new Set<number>();
+    const join = (i: number, j: number, d: number) => {
+      const A = this.nodes[i], B = this.nodes[j], e = A.out[0] ?? into[i][0], len = Math.max(0.1, d);
+      const fwd = comes[i] && goes[j], rev = comes[j] && goes[i];
+      if (!fwd && !rev) return false;
+      const there: Edge = { a: i, b: j, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
+      const back: Edge = { ...there, a: j, b: i, dx: -there.dx, dz: -there.dz };
+      if (fwd && rev) { there.back = back; back.back = there; }
+      if (fwd) { A.out.push(there); this.edges.push(there); }
+      if (rev) { B.out.push(back); this.edges.push(back); }
+      near[i].add(j); near[j].add(i);
+      return true;
+    };
     // dead ends right by another dead end (where the two maps meet): joined
-    const ends = this.nodes.map((_, i) => i).filter((i) => this.nodes[i].out.length === 1);
     const endCells = new Map<string, number[]>();
     for (const i of ends) { const k = `${Math.floor(this.nodes[i].x / 4)},${Math.floor(this.nodes[i].z / 4)}`; (endCells.get(k) ?? endCells.set(k, []).get(k)!).push(i); }
     for (const i of ends) {
       const A = this.nodes[i];
-      if (A.out.length !== 1) continue;
+      if (joined.has(i)) continue;
       let best = -1, bd = 2.5;
       for (let ci = Math.floor(A.x / 4) - 1; ci <= Math.floor(A.x / 4) + 1; ci++) for (let cj = Math.floor(A.z / 4) - 1; cj <= Math.floor(A.z / 4) + 1; cj++)
         for (const j of endCells.get(`${ci},${cj}`) ?? []) {
           const d = Math.hypot(this.nodes[j].x - A.x, this.nodes[j].z - A.z);
-          if (j !== i && this.nodes[j].out.length === 1 && d < bd) { bd = d; best = j; }
+          if (j !== i && !joined.has(j) && !near[i].has(j) && d < bd && ((comes[i] && goes[j]) || (comes[j] && goes[i]))) { bd = d; best = j; }
         }
-      if (best < 0) continue;
-      const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
-      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
-      const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
-      there.back = back;
-      A.out.push(there); B.out.push(back);
-      this.edges.push(there, back);
+      if (best >= 0 && join(i, best, bd)) { joined.add(i); joined.add(best); }
     }
     // and a dead end that stops just short of a point on another road (the top of Prior Park Road,
     // where Ralph Allen Drive comes in a hand's width off it): joined on to it
@@ -295,20 +311,14 @@ export class Traffic {
     this.nodes.forEach((n, i) => { const k = `${Math.floor(n.x / 4)},${Math.floor(n.z / 4)}`; (all.get(k) ?? all.set(k, []).get(k)!).push(i); });
     for (const i of ends) {
       const A = this.nodes[i];
-      if (A.out.length !== 1) continue;
+      if (joined.has(i)) continue;
       let best = -1, bd = 1.2;
       for (let ci = Math.floor(A.x / 4) - 1; ci <= Math.floor(A.x / 4) + 1; ci++) for (let cj = Math.floor(A.z / 4) - 1; cj <= Math.floor(A.z / 4) + 1; cj++)
         for (const j of all.get(`${ci},${cj}`) ?? []) {
           const d = Math.hypot(this.nodes[j].x - A.x, this.nodes[j].z - A.z);
-          if (j !== i && d < bd && !A.out.some((e) => e.b === j)) { bd = d; best = j; }
+          if (j !== i && d < bd && !near[i].has(j) && ((comes[i] && goes[j]) || (comes[j] && goes[i]))) { bd = d; best = j; }
         }
-      if (best < 0) continue;
-      const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
-      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
-      const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
-      there.back = back;
-      A.out.push(there); B.out.push(back);
-      this.edges.push(there, back);
+      if (best >= 0 && join(i, best, bd)) { joined.add(i); joined.add(best); }
     }
     // filed by the square each stretch's middle is in
     for (const e of this.edges) {
