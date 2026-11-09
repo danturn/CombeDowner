@@ -103,6 +103,7 @@ export const STREETS: Control[] = [
   { id: "mark", name: "Mark the spot", keys: ["KeyG"], mouse: 1, pad: B.right, where: "foot" },
   { id: "pause", name: "Pause", keys: ["Escape"], pad: B.options, touch: "II" },
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },
+  { id: "chat", name: "Chat phone: text everyone, or a /command", keys: ["Backslash"], say: { pad: "the pause menu", touch: "the pause menu" }, live: true },
   // purposes that are another control's in their own place
   { id: "heave", name: "Heave (Push the Bus)", keys: ["Space"], via: "jump", say: { touch: "Heave" } },
   { id: "kick", name: "Kick or bowl, lined up at a ball", keys: ["Space"], via: "jump", say: { touch: "Fire" } },
@@ -214,7 +215,7 @@ export const PLACES: Record<string, Control[]> = {
 
 const KEY_NAME: Record<string, string> = {
   Space: "Space", Tab: "Tab", Escape: "Esc", ShiftLeft: "Shift", Enter: "Enter", Backspace: "Backspace", Wheel: "the mouse wheel",
-  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Comma: ",", Period: ".", Slash: "/", Backquote: "`",
+  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Comma: ",", Period: ".", Slash: "/", Backquote: "`", Backslash: "\\",
   Mouse0: "Left click", Mouse1: "Middle click", Mouse2: "Right click",
 };
 /** A key code as the keyboard prints it. */

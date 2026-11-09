@@ -643,6 +643,19 @@ export function bolt() {
   clink(d, t + 0.95, 0.4, 2800); clack(d, t + 0.96, 0.3, 900);             // down and locked
 }
 
+/** A text message coming in on the chat phone (chat.ts): "SMS" in Morse, short short short, long
+ *  long, short short short, in the thin square beep of an old mobile's speaker. */
+export function textIn() {
+  if (!ctx) return;
+  const d = out(0.16, 0, 0, 0.02);
+  let t = now();
+  for (const len of [1, 1, 1, 0, 3, 3, 0, 1, 1, 1]) {
+    if (!len) { t += 0.13; continue; }   // the gap between letters
+    tone(d, t, 0.065 * len, 0.5, 1760, 1760, "square", 0.003);
+    t += 0.065 * len + 0.065;
+  }
+}
+
 /** The rifle's bolt locking back on the last round. */
 export function lastRound() {
   if (!ctx) return;

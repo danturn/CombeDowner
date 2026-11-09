@@ -124,6 +124,8 @@ import { limitShown } from "./limits";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { IDKFA } from "./cheats";
+import { chatLine, useChat } from "./chat";
+import { Dev, hostSpawn } from "./dev";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target, look } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { gamesFollow, gamesHeard } from "./gameslist";
@@ -342,6 +344,7 @@ interface Remote {
   torch?: boolean;                          // their torch is on
   inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
   smoking?: boolean;                        // smoking one of Jamie's cigarettes, by their own word: nothing hurts them
+  god?: boolean;                            // in god mode (/idkfa on the chat phone, dev.ts), by their own word: nothing hurts them
   waiting?: boolean;                        // out of a race and waiting for it to end, by their own word: nothing hurts them
   carOff?: number;                          // seconds they've said they're out while our list has them in a seat (a stale seat)
 }
@@ -360,6 +363,7 @@ interface StateExtra {
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
+  god?: boolean;       // god mode (dev.ts): the host lets nothing hurt them either
   rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts), or arriving (arrive.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
   vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
@@ -378,7 +382,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, ws: e.ws === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
+      wings: e.wings === true, ws: e.ws === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, god: e.god === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -417,6 +421,8 @@ export class Game {
   readonly cats: Cats;
   readonly pickups: Pickups;
   readonly ladders: Ladders;
+  /** The chat phone's commands (dev.ts): god mode, the clock, spawning. */
+  readonly dev: Dev;
   readonly wings: Wings;
   private wingsuit: Wingsuit;
   private suitWorn = false;                       // the wingsuit on your back (looked at once a second)
@@ -660,6 +666,17 @@ export class Game {
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.news(text));
     onIdkfa = () => { if (!this.alive) return; this.weapon.fillUp(); SFX.pickup("ammo"); this.news("IDKFA: very happy ammo added"); };
+    // the chat phone (chat.ts): text for everyone in the room, and /commands (dev.ts)
+    this.dev = new Dev({
+      me: () => (this.alive ? { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw } : null),
+      spawn: (w, x, z, a) => { if (this.isHost) this.devSpawn(w, x, z, a); else this.net.send("dv", { w, x, z, a }, this.hostId); },
+      god: (on) => { if (on) { this.weapon.armAll(); SFX.pickup("ammo"); } },
+    });
+    useChat({
+      canOpen: () => this.active && !this.mapOpen,
+      say: (t) => { this.net.send("tx", { n: this.name, t }); chatLine(t, { name: this.name, colour: "#e3a33b", me: true }); },
+      command: (word, rest) => this.dev.run(word, rest),
+    });
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
     // your Progression setting may have changed on the menu since the page opened
     setFeatures(myFeatures);
@@ -877,6 +894,14 @@ export class Game {
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     this.listen("hello", (d, from) => this.onHello(d, from));
+    // a text off someone's chat phone (chat.ts): to everyone in the room, on any map
+    this.listen("tx", (d, from) => {
+      const t = typeof d?.t === "string" ? d.t.trim().slice(0, 160) : "";
+      const name = String(d?.n || this.remotes.get(from)?.name || "Someone").slice(0, 24);
+      if (t) chatLine(t, { name, colour: colourFor(from) });
+    });
+    // host: someone's /spawn (dev.ts)
+    this.listen("dv", here((d) => { if (this.isHost) this.devSpawn(d?.w, Number(d?.x), Number(d?.z), Number(d?.a)); }));
     // the game's clock (daylight.ts): the host's, set at dawn when their game started and moved on
     // by the debug panel or a train journey, goes to everyone; anyone else asks the host to move it
     this.listen("clk", here((d, from) => {
@@ -2008,6 +2033,7 @@ export class Game {
     r.avatar.setWings(!!e?.wings, !!e?.glow);
     r.avatar.setSuit(!!e?.ws);
     r.smoking = !!e?.smoke;
+    r.god = !!e?.god;
     r.waiting = !!e?.rw;
     r.avatar.setRage(r.smoking);
     // whether they're in a vehicle, by their own word (undefined from pages that don't say)
@@ -2445,6 +2471,14 @@ export class Game {
     if (e.hp !== undefined) this.sendScores();
   }
 
+  /** Host: bring what a /spawn asked for (dev.ts), sent round with the rest of its kind. */
+  private devSpawn(what: unknown, x: number, z: number, a: number) {
+    hostSpawn({
+      vehicles: this.vehicles, naughtyBoys: this.naughtyBoys, cats: this.cats, pickups: this.pickups,
+      targets: () => this.targets(), pickupsChanged: () => this.net.send("pk", this.pickups.snapshot()),
+    }, what, x, z, a);
+  }
+
   /** Take health off a player and tell everyone. by is the shooter's id, or one of GANG. w is the weapon slot. */
   private hurt(id: string, amount: number, by: string, head: boolean, life: number, w?: number) {
     const target = this.entry(id);
@@ -2452,6 +2486,7 @@ export class Game {
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
     if ((GANG.includes(by) || BOSS_GANG.includes(by)) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
+    if (id === this.net.selfId ? this.dev.god : this.remotes.get(id)?.god) return;   // god mode (dev.ts)
     if (id === this.net.selfId ? this.sheltered() : this.remotes.get(id)?.waiting) return;   // out of a race watching the others finish, or arriving
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
@@ -4360,7 +4395,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, god: this.dev.god, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -4399,6 +4434,7 @@ export class Game {
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.golfDriver.update(dt, this.vehicles.list, (v) => this.vehicles.of(this.net.selfId)?.v === v, p.pos.x, p.pos.y, p.pos.z);
+    if (this.dev.god && this.alive) this.weapon.armAll();   // god mode: every gun, never dry
     this.flash.update(dt);
     this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
     this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);

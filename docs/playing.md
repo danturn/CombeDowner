@@ -995,6 +995,19 @@ For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or 
 while playing. The browser remembers it, and it's only what you see.
 Type `cheats` while playing for a page listing every cheat.
 
+Press `\` (or Chat and commands in the pause menu, on a touch screen) to get your phone out: an old
+Nokia's colour screen on the right, counting down the 160 letters a text can have. Type and press
+Enter, and it goes to everyone in the game, in any town; texts from the others come in with the old
+"SMS" beep, and the phone pops up to show them for a few seconds. Esc, Back or `\` put it away.
+A line starting with `/` is a command, for trying things out:
+
+- `/idkfa`: god mode. Nothing hurts you, and you've every weapon, never running dry. Again to stop.
+- `/day`: moves the clock on to midday, for everyone in the game.
+- `/spawn`: a list on the phone of people (naughty boys, the teams, the Flag Lads), cats, every
+  vehicle and things to pick up. ↑ ↓ and Enter (or a tap) brings one 5 m in front of you, and typing
+  narrows the list down; `/spawn cat` or `/spawn 8` brings one straight off.
+- `/help`: the list of these.
+
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
 you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a
 low lunge two or three metres forward that lands you flat with a thud, and a moment to get your

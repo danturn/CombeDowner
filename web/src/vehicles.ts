@@ -1374,6 +1374,8 @@ export interface Stop { x: number; z: number; a: number; n?: string }
 const ROLLER = 65000;
 /** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
 const START = 64000;
+/** Vehicles brought by /spawn (dev.ts) are numbered from here on: past every map's parked cars, and short of TILE_CAR. */
+const CONJURED = 2 ** 39;
 
 /** Is this vehicle number one of a square's start-up vehicles (the buses, and the cars with keys in)? */
 export function isStartup(i: number): boolean {
@@ -1634,6 +1636,17 @@ export class Vehicles {
     // square's waiting list here, so dropSquare never measures it
     if (!this.started.has(i)) this.started.set(i, { kind, paint, x: NaN, z: NaN });
     return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
+  }
+
+  /** Host: a vehicle brought by /spawn (dev.ts), in a paint of its kind's, numbered well clear of
+   *  every other range. It goes out to everyone like a square's start-up vehicle (its kind and
+   *  paint in the "vh" list), but with no square of its own it's never cleared away with one. */
+  conjure(kind: VKind, x: number, z: number, a: number): Vehicle | undefined {
+    const P = SPECS[kind]?.paint;
+    if (!P?.length) return undefined;
+    const i = CONJURED + Math.floor(Math.random() * 2 ** 30), paint = Math.floor(Math.random() * P.length);
+    this.started.set(i, { kind, paint, x: NaN, z: NaN });
+    return this.add(i, kind, P[paint], x, z, a);
   }
 
   /** A vehicle of a job's own (a driving test's learner car), numbered the same on every screen, so the host's word on who sits in it reaches it. */

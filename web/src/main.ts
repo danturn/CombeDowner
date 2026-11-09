@@ -38,6 +38,7 @@ import { mine } from "./features";
 import { openLink } from "./link";
 import { easelUp, onEaselRelock } from "./easel";
 import { closeButton, closeModals, modalUp, onModal, onModalRelock } from "./modal";
+import { openChat } from "./chat";
 import { Unlit } from "./unlit";
 import { Trackpad } from "./trackpad";
 import { gamesUnlocked, openGames, useGames, whenGames } from "./gameslist";
@@ -761,6 +762,8 @@ function pauseButton(id: string, text: string, onclick: () => void) {
   $("trophybtn").after(b);
 }
 pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
+// the chat phone (chat.ts): \ on a keyboard, and here for a touch screen
+pauseButton("chatbtn", "Chat and commands", () => { if (!game) return; $("pause").hidden = true; game.active = true; openChat(); });
 // the games list (gameslist.ts), on the main menu and the pause menu once it's unlocked on this device;
 // from the main menu it starts a game on your own first
 {
