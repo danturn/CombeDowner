@@ -15,7 +15,7 @@
 // kerb or a wall still closes an edge it shares).
 //
 // With --rules it also gives rule 44's walls standing over the ground (wallFeet below; --feet works them out
-// without --rules).
+// without --rules), and rule 45's street faces left inside a set piece (setPieceFaces).
 //
 //   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules] [--query ground=cdt] [--heights] [--slices]
 //
@@ -340,6 +340,42 @@ function wallFeet(group) {
   return places;
 }
 
+// Rule 45: no street face of the map's left inside a set piece's outline, as the game leaves them
+// (landmarks/setpieces.ts: the faces it lays its own ground over are taken out as the square is built,
+// so this reads the square's faces after the build). Each outline's part in the square is a place,
+// scored by the faces' area in m2, those whose middle is inside it.
+const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"];
+function setPieceFaces(d) {
+  const sf = d.sf, out = [];
+  if (!sf || !d.so?.length) return out;
+  const V = sf.v, [bx0, by0, bx1, by1] = d.b;
+  const inRing = (ring, x, y) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  for (const ring of d.so) {
+    const area = {};
+    let sx = 0, sy = 0, n = 0;
+    for (const kind of FACE_KINDS) {
+      const I = sf[kind] ?? [];
+      for (let k = 0; k + 2 < I.length; k += 3) {
+        const a = 3 * I[k], b = 3 * I[k + 1], c = 3 * I[k + 2];
+        const x = (V[a] + V[b] + V[c]) / 3, y = (V[a + 1] + V[b + 1] + V[c + 1]) / 3;
+        if (x < bx0 || x >= bx1 || y < by0 || y >= by1 || !inRing(ring, x, y)) continue;
+        area[kind] = (area[kind] ?? 0) + Math.abs((V[b] - V[a]) * (V[c + 1] - V[a + 1]) - (V[b + 1] - V[a + 1]) * (V[c] - V[a])) / 2;
+        sx += x; sy += y; n++;
+      }
+    }
+    const total = Object.values(area).reduce((t, v) => t + v, 0);
+    if (total >= 1) out.push([sx / n, sy / n, total, Object.entries(area).sort((p, q) => q[1] - p[1]).map(([k, v]) => `${k} ${v.toFixed(0)} m2`).join(", ")]);
+  }
+  return out;
+}
+
 // --heights: does the height you stand at (the map's ground) match the drawn ground, at the middle of
 // each ground triangle? Counts those where you'd stand more than a centimetre below it (sunk in), and
 // the worst, and those more than a centimetre above it (on a face or a deck over it, or out).
@@ -387,9 +423,11 @@ for (const [ti, tj] of squares) {
   });
   if (opt.heights) Object.assign(r, heights(s.group));
   const feet = opt.rules || opt.feet ? wallFeet(s.group) : [];
+  const inPieces = opt.rules ? setPieceFaces(s.d) : [];
   s.done();
   for (const k of Object.keys(total)) total[k] += r[k];
   if (r.gap) bad++;
+  for (const [x, y, a, what] of inPieces) findings.push({ rule: "45 street faces inside a set piece", score: +a.toFixed(1), x, y, what });
   for (const [x, y, l, gap] of feet) if (l >= 0.5) findings.push({ rule: "44 wall's foot over the ground", score: +l.toFixed(1), x, y, what: `${l.toFixed(1)} m of a wall, fence or hedge standing up to ${gap.toFixed(2)} m over what is drawn under it: the sky shows through` });
   for (const [x, y, l] of opt.rules ? r.gaps : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
   report[`${ti},${tj}`] = { open: r.open, tee: r.tee, under: r.under, gap: r.gap, folds: r.folds, gaps: r.gaps.slice(0, 200).map(([x, y, l]) => [+x.toFixed(2), +y.toFixed(2), +l.toFixed(3)]) };

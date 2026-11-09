@@ -89,7 +89,8 @@ from the packs alone, a few seconds a square:
 43. Flights of steps don't lie over each other, and no handrail stands on a pavement or the road.
 44. No wall, fence or hedge stands with its foot over what is drawn under it, the sky showing
     through beneath it (tools/ground_seams.mjs, with rule 38; CD_SEAMS=0 leaves it out).
-45. No street face of the map's is left inside a set piece's outline, over its own deck and paving.
+45. No street face of the map's is left inside a set piece's outline, as the game leaves them (the set
+    piece takes out those it lays its own ground over; tools/ground_seams.mjs, with rule 38).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -2413,32 +2414,8 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
     for k, v in totals.items(): fig[f"flights {k}"] = fig.get(f"flights {k}", 0) + v
 
 
-def set_piece_faces(m, sheet, note, at, inner, fig):
-    """45. Inside a set piece's outline the set piece draws its own ground (landmarks/setpieces.ts hides
-    the map's buildings, trees and small things there): no street face of the map's is left inside it,
-    drawn over or through the set piece's own deck and paving. Each set piece's score is the faces'
-    area inside its outline in m2."""
-    if not sheet.ok or not m.get("sp"): return
-    total = 0.0
-    for ring in m["sp"]:
-        if len(ring) < 3: continue
-        g = _poly(ring).intersection(inner)
-        if g.is_empty: continue
-        hit = sheet.tree.query(g, predicate="intersects")
-        if not len(hit): continue
-        area = {}
-        for t in hit:
-            a = sheet.polys[t].intersection(g).area
-            if a > 1e-4: area[FACE_KINDS[sheet.K[t]]] = area.get(FACE_KINDS[sheet.K[t]], 0) + a
-        if sum(area.values()) < 1: continue
-        total += sum(area.values())
-        c = g.representative_point()
-        note("45 street faces inside a set piece", sum(area.values()), at(c.x, c.y), ", ".join(f"{k} {v:.0f} m2" for k, v in sorted(area.items(), key=lambda kv: -kv[1])))
-    fig["faces in set pieces m2"] = fig.get("faces in set pieces m2", 0) + total
-
-
 def played(m, f, sheet, note, at, sq, inner, fig):
-    """Rules 39 to 43 and 45, for one square. (Each looks at what lies within the square itself, so they run
+    """Rules 39 to 43, for one square. (Each looks at what lies within the square itself, so they run
     up to a metre from its sides rather than EDGE: what they measure is drawn there by this square.)"""
     inner = sq.buffer(-1.0)
     markings(m, f, sheet, note, at, sq, fig)
@@ -2446,7 +2423,6 @@ def played(m, f, sheet, note, at, sq, inner, fig):
     road_steps(m, sheet, note, at, inner, fig)
     square_joins(m, f, sheet, note, at, fig)
     flights_and_rails(m, sheet, note, at, inner, fig)
-    set_piece_faces(m, sheet, note, at, inner, fig)
 
 
 @functools.lru_cache(maxsize=2)
