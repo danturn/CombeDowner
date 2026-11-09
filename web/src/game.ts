@@ -184,7 +184,7 @@ import { freeRoam, passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
-import { count as wardCount, earn, myWear, onEarn, tally, wearing } from "./wardrobe";
+import { count as wardCount, earn, myWear, onEarn, tally, wear as wearItem, wearing } from "./wardrobe";
 import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
 import * as Yours from "./yours";
@@ -734,6 +734,7 @@ export class Game {
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.balloons = new Balloons(map, world.scene, this.net.selfId, (d) => this.net.send("bl", d));
     this.cinema = new Cinema(map);
+    this.cinema.company = () => this.balloons.company();
     // what you might hit, for the cinematic camera to keep in shot: the traffic, parked cars, other vehicles and the other players
     this.cinema.obstacles = (x, z, r) => {
       const out: InTheWay[] = [], near = (o: InTheWay) => Math.abs(o.x - x) < r && Math.abs(o.z - z) < r;
@@ -3642,8 +3643,12 @@ export class Game {
   private useBalloon(): boolean {
     const B = this.balloons, p = this.player;
     if (B.aboard >= 0) {
-      // too high to climb out: over the side, if you've the wingsuit on
-      if (B.clearance() > 3 && this.suitWorn && this.alive) { this.jumpOut(); return true; }
+      // too high to climb out: over the side in the wingsuit. A basket 15 m up is as good as any
+      // roof for earning it, and if it's in your wardrobe rather than on your back, it goes on now
+      if (this.canLeap) {
+        if (!this.suitWorn) { if (!earn(SUIT_ID)) wearItem(SUIT_ID); this.suitWorn = wearing(SUIT_ID); }
+        if (this.suitWorn) { this.jumpOut(); return true; }
+      }
       const out = B.leave();
       if (!out) { this.guide("Too high to climb out. S opens the vent to bring her down"); return true; }
       this.leftBalloon(out);
@@ -3659,6 +3664,13 @@ export class Game {
     this.guide(B.flying ? `You're flying ${near.b.name}. {burner} for the burner, {vent} for the vent, {steer} to turn` : `Aboard ${near.b.name}. Enjoy the view`);
     this.sendState();
     return true;
+  }
+
+  /** High enough in a balloon's basket to jump out in the wingsuit: with it on, anywhere you can't
+   *  climb out; without it, 15 m up, high enough to earn it (wingsuit.ts). */
+  private get canLeap() {
+    const c = this.balloons.clearance();
+    return this.balloons.aboard >= 0 && this.alive && c > 3 && (this.suitWorn || c >= 15);
   }
 
   /** Over the side of the basket in mid-air, the way you're looking, in the wingsuit: you fall clear,
@@ -5120,7 +5132,7 @@ export class Game {
       const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
       say($("drivename"), `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`);
       say($("mph"), String(sky.up));
-      const out = this.balloons.clearance() <= 3, leap = !out && this.suitWorn;
+      const out = this.balloons.clearance() <= 3, leap = !out && this.canLeap;
       const leave: [string, string][] = out ? [["use", "get out"]] : leap ? [["use", "jump"]] : [];
       show($("drivehint"), !flying ? (leave.length ? stripOf([...leave, ["view", "view"]]) : "Along for the ride")
         : stripOf([["burner", "burner"], ["vent", "vent"], ["steer", "turn"], ["view", "view"], ...leave]));
@@ -5200,7 +5212,7 @@ export class Game {
     if (!badge.firstChild) badge.innerHTML = carryIcon("suit");
     setHidden(badge, !(this.alive && this.suitWorn));
     badge.classList.toggle("open", this.player.suitOpen);
-    const balloonOut = aloft && !!sky && (this.balloons.clearance() <= 3 || this.suitWorn);
+    const balloonOut = aloft && !!sky && (this.balloons.clearance() <= 3 || this.canLeap);
     setHidden($("t-car"), !ride && !helm && !this.basket && !balloonOut && !goal && !(job || acts(odds) || tape) && !pick?.button);
     setHidden($("t-ride"), (!this.held && !lad && !odd) || !!ride || !!this.basket);
     setHidden($("t-view"), !this.car && !this.world.canal?.helmOf(this.net.selfId) && !aloft);

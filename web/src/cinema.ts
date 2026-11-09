@@ -5,12 +5,16 @@
 // down by the back wheel, from a helicopter, and the long lens from a hillside across the valley.
 // Where it can, it lines you up with one of Bath's landmarks behind you (the Abbey, Pulteney Bridge,
 // Sham Castle...), and it looks for the dramatic angle: low and looking up, or high on a hill
-// looking down. Under a balloon it stands in a field or a street looking up as you drift over,
-// clings to the basket looking up into the envelope with the burner roaring, or hangs over the crown
-// looking down past it to the city.
+// looking down.
 //
-// With depth of field on in Settings (post.ts), it's focused on you, and the longer the lens the
-// more what's in front and behind melts away; close shots keep more of the scene sharp.
+// A balloon is filmed as television films one from a helicopter: long lenses from a long way off,
+// circling slowly or flying alongside, a little above it so the land fills the picture behind, with
+// slow zooms in and out and wide shots that make it small over the city. It tilts down from a set
+// piece to the balloon drifting past it, or frames the two together, and frames it with another
+// balloon off in the distance. At dawn and dusk it puts the low sun behind it, and by night the moon.
+// Taking off (and coming in to land) it's down on the ground: wide across the lawn with the other
+// balloons standing, a camera rising on a crane beside it as it lifts, the Royal Crescent behind.
+// Now and then it hangs over the crown looking down past the envelope, or clings to the basket.
 //
 // It has to be drivable, though, hard as that is. On the road and the water it works out where
 // you're going (curving with you as you turn), and how far ahead you need to see at the speed
@@ -33,6 +37,7 @@ import * as THREE from "three";
 import type { GameMap } from "./map";
 import { SET_PIECES } from "./landmarks/setpieces";
 import type { Focus } from "./post";
+import { sky } from "./daylight";
 
 /** What's being filmed: on the road, on the water, or in the air. */
 export type Medium = "road" | "water" | "air";
@@ -43,7 +48,7 @@ export type Medium = "road" | "water" | "air";
 export interface Subject { x: number; y: number; z: number; yaw: number; len: number; wid: number; h: number; medium: Medium; vx?: number; vy?: number; vz?: number }
 
 type Kind = "roadside" | "kerb" | "hover" | "crane" | "track" | "lead" | "wheel" | "heli" | "backdrop" | "vista" | "orbit" | "trail" | "follow" | "top"
-  | "below" | "basket" | "crown" | "alongside";
+  | "basket" | "crown" | "circle" | "pace" | "wide" | "sun" | "moon" | "setpiece" | "pair" | "lift" | "riser" | "lawn";
 
 interface Shot {
   kind: Kind;
@@ -68,6 +73,13 @@ interface Shot {
   passed?: number;
   /** How long it's been unable to see the way ahead, while going. */
   blind?: number;
+  /** Fixed shots: rising this fast (metres a second, as on a crane), up to climbTo metres. */
+  climb?: number; climbTo?: number;
+  /** A point in the world it frames with the subject: the aim's mix of the way to it (0 the subject,
+   *  1 the point), and, for a tilt from it to the subject, how long that takes (seconds). */
+  target?: THREE.Vector3; mix?: number; pan?: number;
+  /** A balloon shot from the ground (it can be low, and look up). */
+  ground?: boolean;
   /** A drive-by: a camera set up by the road (or hovering over it) that it comes up to and sweeps
    *  past. It's let run its course, till a moment after it's gone by. */
   by?: boolean;
@@ -96,6 +108,7 @@ export class Cinema {
   fov: number | null = null;
   private focusD = 20;                   // how far off it is, for the focus
   private aspect = 16 / 9;
+  private medium: Medium = "road";
   private heading = 0;                   // the way it's going, this moment (not smoothed)
   private turn = 0;                      // how fast that's turning, radians a second, smoothed
   private danger = Infinity;             // seconds till it hits the nearest thing on its path
@@ -104,6 +117,8 @@ export class Cinema {
   /** What's about that could be hit within r metres of scene (x, z): the traffic, parked cars, other
    *  vehicles, people (game.ts says, leaving out what's being filmed). */
   obstacles: ((x: number, z: number, r: number) => Obstacle[]) | null = null;
+  /** The other balloons up and full, the middles of their envelopes (game.ts, from balloons.ts). */
+  company: (() => THREE.Vector3[]) | null = null;
 
   constructor(private map: GameMap) {}
 
@@ -121,6 +136,7 @@ export class Cinema {
   /** A frame: where the camera goes and what it looks at, for subject s. */
   film(dt: number, s: Subject, camera: THREE.PerspectiveCamera) {
     dt = Math.min(dt, 0.1);
+    this.medium = s.medium;
     const here = new THREE.Vector3(s.x, s.y, s.z);
     if (s.vx !== undefined && s.vz !== undefined) {
       _v.set(s.vx, s.vy ?? 0, s.vz);
@@ -146,6 +162,7 @@ export class Cinema {
     const want = s.medium !== "air" && speed > 2 ? Math.atan2(-this.vel.x, -this.vel.z) : s.yaw;
     const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
     this.yaw += this.shot ? d * Math.min(1, dt * 1.5) : d;
+    if (s.medium === "air") this.yaw = 0;   // a balloon's shots are set out on the map's own axes, as a helicopter would
 
     const sh = this.shot;
     if (sh) {
@@ -187,12 +204,13 @@ export class Cinema {
     if (shot.fixed) this.cam.copy(_w);
     else {
       this.cam.lerp(_w, Math.min(1, dt * (shot.kind === "basket" || shot.kind === "wheel" ? 14 : 6)));
-      const g = this.lowest(this.cam.x, this.cam.z, s);
-      if (this.cam.y < g + 0.25) this.cam.y = g + 0.25;
+      // (a helicopter stays well up off the ground)
+      const g = this.lowest(this.cam.x, this.cam.z, s) + (s.medium === "air" && !shot.ground && shot.kind !== "basket" && shot.kind !== "crown" ? 8 : 0.25);
+      if (this.cam.y < g) this.cam.y = g;
     }
     // and what it looks at, eased so it follows smoothly rather than locked on
     this.aimAt(shot, s, _look);
-    this.looking.lerp(_look, Math.min(1, dt * (shot.fixed ? 5 : 9)));
+    this.looking.lerp(_look, Math.min(1, dt * (shot.fixed ? 5 : 9) * (s.medium === "air" ? 0.5 : 1)));
     // lost sight of it, or the camera's gone inside something: cut
     if ((this.checkT -= dt) <= 0) {
       this.checkT = 0.12;
@@ -214,7 +232,8 @@ export class Cinema {
    *  either side looks alike near or far), a little wider for the shots made to look dreamy. */
   get lens(): Focus | null {
     if (this.fov === null || !this.shot) return null;
-    const k = this.shot.kind, wide = k === "basket" || k === "crown" || k === "kerb" || k === "wheel" ? 0.006 : 0.01;
+    // (from the helicopter's long lenses, only a little, so the land behind still reads)
+    const k = this.shot.kind, wide = k === "basket" || k === "crown" || k === "kerb" || k === "wheel" ? 0.006 : this.medium === "air" ? 0.0025 : 0.01;
     return { focus: this.focusD, aperture: this.focusD * wide };
   }
 
@@ -224,8 +243,11 @@ export class Cinema {
    *  sensible, and pick among the most dramatic, not the same kind twice running. */
   private choose(s: Subject, speed: number): Shot {
     const moving = s.medium !== "air" && speed >= (s.medium === "water" ? 0.7 : 2.5);
+    const low = s.medium === "air" && s.y - this.map.ground(s.x, s.z) < 60;
     const kinds: [Kind, number][] = s.medium === "air"
-      ? [["below", 5], ["vista", 4], ["backdrop", 5], ["basket", 4], ["crown", 3], ["alongside", 3], ["heli", 2]]
+      ? low
+        ? [["lift", 5], ["riser", 5], ["lawn", 5], ["circle", 3], ["setpiece", 3], ["sun", 5], ["moon", 5], ["wide", 2], ["basket", 1]]
+        : [["circle", 5], ["pace", 4], ["wide", 3], ["setpiece", 6], ["pair", 4], ["sun", 7], ["moon", 7], ["crown", 2], ["basket", 1]]
       : !moving
         ? [["orbit", 3], ["backdrop", 4], ["vista", 3], ["crane", 2], ["kerb", 2], ["follow", 2]]
         : s.medium === "water"
@@ -327,15 +349,8 @@ export class Cinema {
         return shot(false, new THREE.Vector3(L * 1.6 + rnd(3, 6), rnd(1.2, 3.5), 0), mid, rnd(40, 50), rnd(6, 8), { spin: side() * rnd(0.2, 0.3) });
       case "backdrop": return this.backdrop(s, speed, mid, shot);
       case "vista": return this.vista(s, speed, mid, shot);
-      case "below": {
-        // stood in a field or a street under where it's drifting, looking up
-        const t = rnd(5, 12), A = ahead(t);
-        const at = A.addScaledVector(right, side() * rnd(15, 60)).addScaledVector(fwd, rnd(-10, 25));
-        if (this.map.indoors(at.x, at.z)) return null;
-        at.y = this.map.ground(at.x, at.z) + 1.7;
-        if (s.y - at.y < 25) return null;   // not high enough to look up at
-        return shot(true, at, new THREE.Vector3(0, s.h * 0.55, 0), rnd(35, 50), rnd(6, 9), { fovEnd: rnd(28, 34), reach: 900 });
-      }
+      case "circle": case "pace": case "wide": case "sun": case "moon": case "setpiece": case "pair": case "lift": case "riser": case "lawn":
+        return this.air(kind, s, shot);
       case "basket":
         // clinging to the outside of the basket, looking up into the envelope over the burner
         return shot(false, new THREE.Vector3(side() * rnd(1.4, 2), rnd(-0.8, 0.2), side() * rnd(1.4, 2)), new THREE.Vector3(0, s.h * 0.62, 0),
@@ -344,10 +359,124 @@ export class Cinema {
         // over the top of the envelope, looking down past it at the basket and the ground far below
         return shot(false, new THREE.Vector3(side() * rnd(5, 9), s.h + rnd(8, 16), rnd(4, 10)), new THREE.Vector3(0, -6, 0),
           rnd(55, 66), rnd(4.5, 6.5), { spin: side() * rnd(0.05, 0.1) });
-      case "alongside":
-        // flying beside it, a little below, the envelope against the sky
-        return shot(false, new THREE.Vector3(side() * rnd(28, 45), rnd(-8, 4), rnd(-10, 10)), mid, rnd(38, 46), rnd(5, 7), { spin: side() * rnd(0.03, 0.06) });
     }
+  }
+
+  /** A balloon's shots, as from a television helicopter (and, taking off and landing, from the ground). */
+  private air(kind: Kind, s: Subject, shot: (fixed: boolean, at: THREE.Vector3, aim: THREE.Vector3, fov: number, len: number, more?: Partial<Shot>) => Shot): Shot | null {
+    const c = this.centre(s), H = s.h;
+    // aimed a little under the envelope's middle, so looking down it sits high in the picture with the land below
+    const aim = new THREE.Vector3(0, H * 0.32, 0);
+    // a lens that makes the balloon this share of the picture's height from d metres off
+    const fit = (d: number, share: number) => THREE.MathUtils.clamp((2 * Math.atan(H / share / 2 / Math.max(1, d)) * 180) / Math.PI, 6, 70);
+    // and one that takes in two things seen from a camera at at
+    const both = (at: THREE.Vector3, p: THREE.Vector3) => {
+      const a = _v.copy(c).sub(at).normalize(), b = p.clone().sub(at).normalize();
+      return THREE.MathUtils.clamp((Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1)) * 180) / Math.PI * 1.7 + fit(at.distanceTo(c), 4), 14, 65);
+    };
+    // the offset of a world point from the balloon, as a moving shot holds it (the frame's the map's own, set at the cut)
+    const off = (p: THREE.Vector3) => new THREE.Vector3(p.x - s.x, p.y - s.y, p.z - s.z);
+    const zoom = (f: number) => ({ fovEnd: f * (Math.random() < 0.5 ? rnd(0.65, 0.85) : rnd(1.15, 1.4)) });   // a slow push in, or pull out
+    const sk = sky(), sunUp = sk.sun.y > 0.05;
+    // round the sunny side, so the envelope's lit and its colours glow
+    const lit = () => (sunUp && Math.random() < 0.75 ? Math.atan2(sk.sun.x, sk.sun.z) + rnd(-1.1, 1.1) : rnd(0, Math.PI * 2));
+    switch (kind) {
+      case "circle": {
+        // the helicopter circling slowly, a long way off and above, on a long lens
+        const d = rnd(110, 260), a = lit(), at = new THREE.Vector3(Math.sin(a) * d, H * 0.45 + rnd(15, 70), Math.cos(a) * d);
+        const f = fit(d, rnd(0.35, 0.55));
+        return shot(false, at, aim, f, rnd(9, 13), { spin: side() * rnd(0.02, 0.045), ...zoom(f) });
+      }
+      case "pace": {
+        // flying alongside it, the way it's drifting, the land going by beneath
+        const sp = Math.hypot(this.vel.x, this.vel.z), ux = sp > 0.3 ? this.vel.x / sp : 1, uz = sp > 0.3 ? this.vel.z / sp : 0, sd = side(), d = rnd(140, 300);
+        const at = new THREE.Vector3(-uz * sd * d + ux * rnd(-40, 40), H * 0.45 + rnd(10, 50), ux * sd * d + uz * rnd(-40, 40));
+        const f = fit(d, rnd(0.3, 0.5));
+        return shot(false, at, aim, f, rnd(9, 12), { spin: side() * rnd(0, 0.012), ...zoom(f) });
+      }
+      case "wide": {
+        // the establishing shot: high and far, the balloon small over the city, slowly closing in
+        const d = rnd(350, 700), a = lit(), at = new THREE.Vector3(Math.sin(a) * d, H * 0.45 + rnd(60, 150), Math.cos(a) * d);
+        const f = rnd(30, 45);
+        return shot(false, at, new THREE.Vector3(0, 0, 0), f, rnd(10, 14), { fovEnd: f * rnd(0.45, 0.65), spin: side() * rnd(0.005, 0.015) });
+      }
+      case "sun": case "moon": {
+        // the low sun (dawn and dusk) or the moon (by night) behind it, on a long lens
+        const sun = kind === "sun";
+        if (sun ? sk.sun.y < -0.03 || sk.sun.y > 0.33 : sk.night < 0.5) return null;
+        const dir = (sun ? sk.sun : sk.light).clone().normalize(), hz = Math.hypot(dir.x, dir.z) || 1, elev = Math.atan2(dir.y, hz);
+        const d = rnd(160, 320), ux = dir.x / hz, uz = dir.z / hz;
+        // set a little under the line to it, so the glow sits over the envelope
+        const at = new THREE.Vector3(c.x - ux * d, c.y - d * Math.tan(elev) * rnd(0.55, 0.8), c.z - uz * d);
+        at.y = Math.max(at.y, this.map.ground(at.x, at.z) + 3);
+        const glow = c.clone().addScaledVector(dir, d * 0.6), f = both(at, glow);
+        return shot(true, at, aim, f, rnd(9, 12), { target: glow, mix: 0.3, fovEnd: f * rnd(0.85, 0.95), reach: 2000, ground: true });
+      }
+      case "setpiece": {
+        // a landmark: a tilt down from it to the balloon drifting by, or the two framed together
+        const near = this.landmarks().filter((m) => Math.hypot(m.x - c.x, m.z - c.z) < 1500);
+        if (!near.length) return null;
+        near.sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z));
+        const m = near[Math.floor(Math.random() ** 2 * Math.min(3, near.length))];
+        const dh = Math.hypot(c.x - m.x, c.z - m.z) || 1, ux = (c.x - m.x) / dh, uz = (c.z - m.z) / dh;
+        let at: THREE.Vector3;
+        if (Math.random() < 0.5 || dh < 120) {
+          // from beyond the balloon, looking down past it to the landmark below and behind
+          const d = rnd(150, 300), sw = rnd(-0.35, 0.35);
+          at = new THREE.Vector3(c.x + (ux - uz * sw) * d, Math.max(c.y + rnd(25, 80), m.y + 60), c.z + (uz + ux * sw) * d);
+        } else {
+          // from beyond the landmark, looking over it to the balloon
+          const d = rnd(90, 220), sw = rnd(-0.3, 0.3);
+          at = new THREE.Vector3(m.x - (ux - uz * sw) * d, m.y + rnd(40, 100), m.z - (uz + ux * sw) * d);
+        }
+        const f = both(at, m), moving = at.distanceTo(c) < 400;
+        const tilt = Math.random() < 0.45 ? { pan: rnd(3, 4.5) } : {};
+        return moving
+          ? shot(false, off(at), aim, f, rnd(9, 12), { target: m, mix: 0.35, spin: side() * rnd(0, 0.01), fovEnd: f * 0.9, ...tilt })
+          : shot(true, at, aim, f, rnd(9, 12), { target: m, mix: 0.35, fovEnd: f * 0.85, reach: 3000, ...tilt });
+      }
+      case "pair": {
+        // another balloon off in the distance behind it
+        const others = (this.company?.() ?? []).filter((o) => { const d = o.distanceTo(c); return d > 40 && d < 900; });
+        if (!others.length) return null;
+        const o = others[Math.floor(Math.random() * others.length)], dh = Math.hypot(c.x - o.x, c.z - o.z) || 1;
+        const ux = (c.x - o.x) / dh, uz = (c.z - o.z) / dh, d = rnd(120, 240), sw = rnd(-0.4, 0.4);
+        const at = new THREE.Vector3(c.x + (ux - uz * sw) * d, Math.max(c.y, o.y) + rnd(5, 35), c.z + (uz + ux * sw) * d);
+        const f = both(at, o);
+        return shot(false, off(at), aim, f, rnd(9, 12), { target: o, mix: 0.3, spin: side() * rnd(0, 0.01), fovEnd: f * 0.9 });
+      }
+      case "lift": {
+        // on the ground, well back, wide: it fills, stands and lifts away, a landmark behind if there's one near
+        const mk = this.landmarks().filter((m) => Math.hypot(m.x - c.x, m.z - c.z) < 900)
+          .sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z))[0];
+        const a = mk && Math.random() < 0.7 ? Math.atan2(c.x - mk.x, c.z - mk.z) + rnd(-0.35, 0.35) : lit();
+        const d = rnd(50, 110), at = new THREE.Vector3(c.x + Math.sin(a) * d, 0, c.z + Math.cos(a) * d);
+        if (this.map.indoors(at.x, at.z)) return null;
+        at.y = this.map.ground(at.x, at.z) + rnd(1.5, 4);
+        const f = fit(d, rnd(0.3, 0.45));
+        return shot(true, at, aim, f, rnd(8, 11), { fovEnd: f * rnd(1.1, 1.3), reach: 3000, ground: true });
+      }
+      case "riser": {
+        // a camera on a crane beside it, rising as it lifts, the park and the city opening out
+        const a = lit(), d = rnd(25, 50), at = new THREE.Vector3(c.x + Math.sin(a) * d, 0, c.z + Math.cos(a) * d);
+        if (this.map.indoors(at.x, at.z)) return null;
+        at.y = this.map.ground(at.x, at.z) + 2;
+        const f = fit(d, rnd(0.55, 0.75));
+        return shot(true, at, aim, f, rnd(9, 12), { climb: rnd(2, 4), climbTo: rnd(35, 60), fovEnd: f * 1.25, reach: 3000, ground: true });
+      }
+      case "lawn": {
+        // down on the lawn behind another balloon standing ready, looking past it to this one
+        const others = (this.company?.() ?? []).filter((o) => { const d = Math.hypot(o.x - c.x, o.z - c.z); return d > 12 && d < 160 && o.y - this.map.ground(o.x, o.z) < 30; });
+        if (!others.length) return null;
+        const o = others[Math.floor(Math.random() * others.length)], dh = Math.hypot(o.x - c.x, o.z - c.z);
+        const ux = (o.x - c.x) / dh, uz = (o.z - c.z) / dh, d = rnd(14, 30), sw = rnd(-0.5, 0.5);
+        const at = new THREE.Vector3(o.x + (ux - uz * sw) * d, 0, o.z + (uz + ux * sw) * d);
+        if (this.map.indoors(at.x, at.z)) return null;
+        at.y = this.map.ground(at.x, at.z) + 1.7;
+        return shot(true, at, aim, both(at, o) * 0.8, rnd(8, 11), { target: o, mix: 0.12, reach: 3000, ground: true });
+      }
+    }
+    return null;
   }
 
   /** A landmark behind it, lined up from the far side: the camera's low, so it's set against it. */
@@ -419,6 +548,7 @@ export class Cinema {
       later.addScaledVector(this.vel, shot.len * 0.6);
       if (this.inside(later) || later.y < this.lowest(later.x, later.z, s) + 0.15) return 0;
     }
+    if (s.medium === "air") return this.judgeAir(shot, at, c);
     // looking up at it is dramatic; so's looking down from a great height
     const up = c.y - at.y, flat = Math.hypot(c.x - at.x, c.z - at.z) || 1, angle = Math.atan2(up, flat);
     if (angle > 0.15) score += Math.min(1, angle);
@@ -435,7 +565,7 @@ export class Cinema {
     // on the road or the water, a shot you can drive by shows the way ahead: judged as it starts and,
     // for a fixed camera, again as it comes by. The faster it's going (or with something coming up),
     // the more that counts
-    if (s.medium !== "air") {
+    {
       let a: number;
       this.aimAt(shot, s, _look);
       const now = this.seesAhead(at, _look, shot.fov, s, speed, 0);
@@ -448,6 +578,32 @@ export class Cinema {
       const need = this.danger < 2 ? 1 : THREE.MathUtils.clamp((speed - 4) / 22, 0, 0.7) * (shot.by ? 0.35 : 1);
       score *= 1 - need + need * (0.12 + 0.88 * a);
     }
+    return score;
+  }
+
+  /** How good a balloon's shot is: the balloon and the land, so looking down on it a little, lit by
+   *  the sun, with what it frames it with in view too. Looking up only from the ground, and at the sun or moon. */
+  private judgeAir(shot: Shot, at: THREE.Vector3, c: THREE.Vector3): number {
+    let score = 1;
+    const angle = Math.atan2(c.y - at.y, Math.hypot(c.x - at.x, c.z - at.z) || 1);
+    const k = shot.kind, special = shot.ground || k === "basket" || k === "crown";
+    if (!special && angle > 0.08) score *= 0.25;
+    else if (angle < -0.04 && angle > -0.7) score += 1;
+    const sk = sky();
+    if (sk.sun.y > 0.05 && k !== "sun" && k !== "moon") {
+      const dx = at.x - c.x, dz = at.z - c.z, dh = Math.hypot(dx, dz) || 1, sh = Math.hypot(sk.sun.x, sk.sun.z) || 1;
+      if ((dx * sk.sun.x + dz * sk.sun.z) / (dh * sh) > 0.2) score += 0.6;
+    }
+    if (shot.target) {
+      // what it's framed with must be in view
+      const p = shot.target, d = at.distanceTo(p);
+      _v.copy(p).sub(at).divideScalar(d);
+      const hit = k === "sun" || k === "moon" ? null : this.map.raycast(at.x, at.y, at.z, _v.x, _v.y, _v.z, d);
+      if (hit && hit.dist < d * 0.85 && !hit.mover) score *= 0.2;
+      else score += 1;
+    }
+    // golden hour: the sun shot's the one
+    if (k === "sun" && sk.sun.y < 0.2) score += 1.5;
     return score;
   }
 
@@ -518,7 +674,11 @@ export class Cinema {
 
   /** Where a shot's camera is this frame. */
   private where(shot: Shot, s: Subject, out: THREE.Vector3): THREE.Vector3 {
-    if (shot.fixed) return out.copy(shot.at);
+    if (shot.fixed) {
+      out.copy(shot.at);
+      if (shot.climb) out.y += Math.min(shot.climbTo ?? Infinity, shot.climb * shot.t);
+      return out;
+    }
     const a = this.yaw + shot.spin * shot.t, c = Math.cos(a), sn = Math.sin(a);
     const { x, y, z } = shot.at;
     // the subject's frame: x to its right, z behind it
@@ -533,6 +693,12 @@ export class Cinema {
     if (shot.fixed) out.addScaledVector(this.vel, 0.25);
     // with a landmark behind, it frames the two together: mostly the subject, the landmark rising behind
     if (shot.mark) out.lerp(_v.copy(shot.mark), 0.04);
+    // something framed with it: partway to that, or at first on it, tilting across to the subject
+    if (shot.target) {
+      let m = shot.mix ?? 0;
+      if (shot.pan) { const k = THREE.MathUtils.smoothstep(shot.t, 0.6, shot.pan); m = 1 + (m - 1) * k; }
+      out.lerp(shot.target, m);
+    }
     return out;
   }
 

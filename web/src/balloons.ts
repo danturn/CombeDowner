@@ -167,6 +167,8 @@ export class View {
   private flame: THREE.Mesh;
   private mat: THREE.MeshLambertMaterial;
   private glow = 0;
+  /** Up and full, standing or flying (not lying on the lawn, packed or put away). */
+  standing = false;
   constructor(scene: THREE.Scene | null, design: number) {
     this.mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, emissive: "#ff8a2a", emissiveIntensity: 0 });
     this.env = new THREE.Mesh(envelope(DESIGNS[design % DESIGNS.length]), this.mat);
@@ -186,6 +188,7 @@ export class View {
   pose(x: number, y: number, z: number, a: number, fill: number, burn: boolean, dt: number, packed = false) {
     const r = this.root;
     r.visible = true;
+    this.standing = !packed && fill > 0.95;
     r.position.set(x, y, z);
     r.rotation.y = a;
     // filling: it lies on its side, downwind of the basket, swelling, then stands up as it heats
@@ -201,7 +204,7 @@ export class View {
     this.mat.emissiveIntensity = this.glow;
   }
 
-  hide() { this.root.visible = false; }
+  hide() { this.root.visible = false; this.standing = false; }
 
   dispose() {
     this.root.removeFromParent();
@@ -496,6 +499,15 @@ export class Balloons {
     if (d > HEAR) { if (r) { r.set(0, d, pan); if (!on) { r.stop(); this.roars.delete(v); } } return; }
     if (!r) { const made = SFX.burner(); if (!made) return; this.roars.set(v, (r = made)); }
     r.set(1, d, pan);
+  }
+
+  /** Every balloon up and full but yours, the middles of their envelopes (scene coords), for the
+   *  cinematic camera to frame yours with (cinema.ts). */
+  company(): THREE.Vector3[] {
+    const out: THREE.Vector3[] = [];
+    for (const v of [...this.list.filter((b) => b.i !== this.aboard).map((b) => b.view), ...this.flights.map((f) => f.view)])
+      if (v.standing && v.root.visible) out.push(v.root.position.clone().setY(v.root.position.y + RISE + ENV_R * 1.2));
+    return out;
   }
 
   /** What the gauges say, for the panel: how high you are over the ground (m), how fast you're

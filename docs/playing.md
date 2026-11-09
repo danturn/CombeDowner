@@ -645,11 +645,16 @@ harder higher up and comes from a different way, so choosing your height is how 
 you go. The panel shows how high you are over the ground, how fast you're climbing or sinking, and
 how hot the envelope is. C (View on a touch screen, Circle on a controller) goes from the basket to a
 chase camera well back, to see the whole balloon with you in the basket (the mouse swings it round),
-and on to the cinematic camera: stood in a field looking up as you drift over, clinging to the basket
-looking up into the envelope as the burner roars, over the crown looking down at the city, from a hill
-across the valley, or with a landmark behind you. You can't climb out till you're down again
-(anywhere: a field, a street, a roof), unless you've the wingsuit on: then E jumps you over the side
-the way you're looking, and Space opens the wingsuit as you fall. Come down too hard and it hurts. A balloon left on its own comes down and is packed up where
+and on to the cinematic camera, which films you as the television does from a helicopter: long
+lenses from a long way off, circling slowly or flying alongside a little above you so Bath fills the
+picture behind, slow zooms in and out, and wide shots with the balloon small over the city. It tilts
+down from a set piece to you drifting past it, or frames the two of you together, picks out another
+balloon in the distance behind you, and at dawn and dusk puts the low sun behind you (by night, the
+moon). Taking off and coming in to land it's down on the ground: wide across the lawn past the other
+balloons standing ready, a camera rising on a crane beside you as you lift, the Royal Crescent behind.
+You can't climb out till you're down again (anywhere: a field, a street, a roof), but from 15 m up E
+jumps you over the side the way you're looking, in the wingsuit (a basket that high earns it, as any
+roof does, and it goes on your back if it was in your wardrobe): Space opens it as you fall. Come down too hard and it hurts. A balloon left on its own comes down and is packed up where
 it lands, and the crews have it back on the lawn before the next dawn. `?time=06:00` in the address
 stops the clock in the morning, to try it.
 
