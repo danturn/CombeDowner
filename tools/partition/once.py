@@ -632,6 +632,7 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
 
 CELL = 250.0            # metres: the squares the corridors are joined in before the city's blocks
                         # are cut from them (`worked_pieces`)
+HAIR = 1e-5             # metres: past the micrometre a settled block's corners can move (`_exact_block`)
 BLOCK_CAP = 2000.0      # metres across: a worked block bigger than this is reported (plan, stage 3b)
 MIN_BLOCK = 5.0         # m^2: the plan's own floor for ground worth calling a worked block, the
                         # same threshold the build uses for a block (`build`: "area > 5")
@@ -680,14 +681,38 @@ def _parts(g):
     return list(g.geoms) if hasattr(g, "geoms") else [g]
 
 
-def _block_pieces(blk, buildings, btree, corner, ctree, cap):
-    """One block's worked pieces, as [(piece, over_cap)] (see `worked_pieces`)."""
+def _exact_block(blk, buildings, btree, corner, ctree, frame):
+    """A settled block (`_settled`) given back its edges exactly: grown by a hair past the
+    micrometre it may have moved, then the corridors and buildings round it taken out again, so it
+    meets them corner for corner as the ground divided from it must."""
+    grown = blk.buffer(HAIR, join_style="mitre").intersection(frame)
+    # (only what touches it: a far corridor whose box happens to overlap would join the union, and a
+    # union's last digits depend on everything in it)
+    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown, predicate="intersects")))]
+    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(grown, predicate="intersects")))]
+    g = grown.difference(unary_union(nc) if nc else Polygon()).difference(unary_union(nb) if nb else Polygon())
+    if not g.is_valid:
+        g = g.buffer(0)
+    parts = [q for q in _parts(g) if q.geom_type == "Polygon" and q.area > MIN_BLOCK]
+    return parts[0] if len(parts) == 1 else unary_union(parts) if parts else Polygon()
+
+
+def _block_pieces(blk, buildings, btree, corner, ctree, cap, frame):
+    """One block's outline (`_exact_block`) and its worked pieces, as (block, [(piece, over_cap)])
+    (see `worked_pieces`)."""
+    blk = _exact_block(blk, buildings, btree, corner, ctree, frame)
+    return blk, _pieces_of(blk, buildings, btree, corner, ctree, cap)
+
+
+def _pieces_of(blk, buildings, btree, corner, ctree, cap):
     out = []
+    if blk.is_empty:
+        return out
     # only the buildings that can reach this block, and the corridors that can carve it
     near = blk.buffer(REACH_GROW)
     # in index order: `bunion` is a unary_union of these, and a union's noding can depend on the
     # order of its inputs (an STRtree's `query` order depends on how the index was built)
-    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near)))]
+    nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near, predicate="intersects")))]
     if not nb:
         return []                           # no building near: no worked block, just open land
     # The plan's definition, kept exactly: `block ∩ buffer(buildings, REACH_GROW)`, then the
@@ -697,7 +722,7 @@ def _block_pieces(blk, buildings, btree, corner, ctree, cap):
     # (measured: 195,471 pieces and 420 km2 against 6,691 and 39.98 km2).
     bunion = unary_union(nb)
     grown = bunion.buffer(REACH_GROW).intersection(blk)
-    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown)))]
+    nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown, predicate="intersects")))]
     W = grown.difference(unary_union(nc) if nc else Polygon()).difference(bunion)
     pieces = [p for p in _parts(W) if p.area > MIN_BLOCK]
     for p in pieces:
@@ -735,12 +760,12 @@ def _settled(g):
     return shapely.normalize(shapely.set_precision(g, 1e-6))
 
 
-def _wp_init(buildings, corner):
-    _WP.update(b=buildings, c=corner, bt=STRtree(buildings), ct=STRtree(corner))
+def _wp_init(buildings, corner, frame):
+    _WP.update(b=buildings, c=corner, bt=STRtree(buildings), ct=STRtree(corner), f=frame)
 
 
 def _wp_block(blk, cap):
-    return _block_pieces(blk, _WP["b"], _WP["bt"], _WP["c"], _WP["ct"], cap)
+    return _block_pieces(blk, _WP["b"], _WP["bt"], _WP["c"], _WP["ct"], cap, _WP["f"])
 
 
 def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print, jobs=1):
@@ -774,20 +799,24 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print, jobs=1):
     blocks = [b for b in (_settled(p) for p in _parts(W0) if p.area > MIN_BLOCK) if not b.is_empty]
     log(f"  pass 2: {len(blocks)} blocks")
 
-    out = []
+    out, done = [], []
+    frame = box(*bb)
     if jobs > 1:
         from concurrent.futures import ProcessPoolExecutor
         # the blocks are independent, and their pieces are put back in block order
-        with ProcessPoolExecutor(jobs, initializer=_wp_init, initargs=(buildings, corner)) as pool:
+        with ProcessPoolExecutor(jobs, initializer=_wp_init, initargs=(buildings, corner, frame)) as pool:
             order = sorted(range(len(blocks)), key=lambda k: -shapely.get_num_coordinates(blocks[k]))
             futures = {k: pool.submit(_wp_block, blocks[k], cap) for k in order}
-            for k in range(len(blocks)):
-                out += futures[k].result()
+            results = [futures[k].result() for k in range(len(blocks))]
     else:
         btree = STRtree(buildings)
         ctree = STRtree(corner)
-        for blk in blocks:
-            out += _block_pieces(blk, buildings, btree, corner, ctree, cap)
+        results = [_block_pieces(blk, buildings, btree, corner, ctree, cap, frame) for blk in blocks]
+    for blk, pieces in results:
+        if not blk.is_empty:
+            done.append(blk)
+        out += pieces
+    blocks = done
     n_over = sum(1 for _p, over in out if over)
     if n_over:
         log(f"  pass 2: {n_over} worked blocks are over the {cap:.0f} m cap and are still built")
