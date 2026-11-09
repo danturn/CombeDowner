@@ -47,7 +47,7 @@ from . import MARGIN, Q, evidence_of, lap, zone_at
 from .buildings import clean_buildings
 from .corridors import CORNERED, PATHS, PATHW, REACH, fit_cross_section, line_corners, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
-from .graph import street_graph
+from .graph import as_built, street_graph
 from structures import match_structures, osm_structures
 from maxspeed import resolve as speed_limits
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
@@ -346,6 +346,7 @@ def build_graph(out, raw, log=print):
         for l in (g.geoms if hasattr(g, "geoms") else [g]):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))
+    roads = as_built(roads)
     log(f"  {len(roads)} road pieces over the whole map")
     # each way's speed limit rides along in its tags, as "_ms", to the squares' streets
     limits, _ = speed_limits(roads, log=log)
