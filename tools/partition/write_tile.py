@@ -2933,14 +2933,16 @@ NEEDLE = 0.05       # metres across the base of a face's corner thinner than tha
 NEEDLE_ANGLE = 20   # degrees: a corner sharper than this, with such a base, is a needle
 
 
-def needles_off(pieces, walls=None):
+def needles_off(pieces, walls=None, street=None):
     """The faces (a coverage: no two overlap, neighbours share their corners) with each needle taken
     off: a corner a few centimetres across at its base and sharp as a pin, standing out of a face as
     a spike or cut into it as a slit. A slit in a pavement showed the ground in a hairline, and its
     two sides read as a pavement ending twice. The pin's corner is dropped from every face that has
     it, so a spike of one face into a slit of its neighbour goes to the neighbour and the two still
     meet; one that a third face shares as an ordinary corner, or that a wall, fence or hedge stands
-    in (`walls`: a slit cut round its end), is left alone."""
+    in (`walls`: a slit cut round its end), is left alone. Only street faces (`street`, a flag for each
+    piece: carriageways and pavements) are trimmed: a path's sharp corners are where it meets a flight
+    of steps, and its treads are laid to them."""
     key = lambda p: (round(p[0], 6), round(p[1], 6))
     rings = []      # [piece, part, ring number, coords without the closing repeat]
     for n, g in enumerate(pieces):
@@ -2957,6 +2959,8 @@ def needles_off(pieces, walls=None):
                 users[key(p)].append((k, i))
 
         def pin(k, i):
+            if street is not None and not street[rings[k][0]]:
+                return None
             c = rings[k][3]
             if len(c) < 4:
                 return None
@@ -4588,7 +4592,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     barriers = unary_union(barriers) if barriers else None
     if barriers is not None:
         shapely.prepare(barriers)
-    simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)), barriers)
+    simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)), barriers,
+                         [cls in ("carriageway", "pavement") for cls, _ in pieces])
     # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
     # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
     # street that steepens, with a gap under its edge and parked cars sunk into it)
