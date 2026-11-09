@@ -1129,13 +1129,15 @@ five minutes while anyone's still on it. They're bigger and quicker than naughty
 come looking for anyone near their pitch.
 
 The lawn in front of the Royal Crescent, inside the ha-ha, is private: it's for the people who live
-there and the guests of the hotel. Step over the ha-ha's fence on to it and the residents come out of
-their front doors to see you off: gentlemen in tweed, blazers and morning coats with their umbrellas,
-ladies in long dresses, big hats and pearls swinging their handbags, and now and then a hotel guest
-in his bathrobe and slippers. They're the posh lot's answer to naughty boys, and they tell you what
-they think of you all the way ("Get off the lawn!"). They only go for someone on the lawn or right by
-it, give up once you're well off it with a parting word ("And stay off!"), and go back indoors once
-it's clear. More come out every minute or so while anyone's still on it.
+there and the guests of the hotel. Like the teams at their pitches, the residents are out on it,
+standing about on the grass and on their doorsteps, whenever anyone's in sight of it: gentlemen in
+tweed, blazers and morning coats with their umbrellas, ladies in long dresses, big hats and pearls
+with their handbags, and now and then a hotel guest in his bathrobe and slippers. Step over the
+fence on to the lawn and they come for you. They're the posh lot's answer to naughty boys, and they
+tell you what they think of you all the way ("Get off the lawn!"). They only go for someone on the
+lawn or right by it, give up once you're well off it with a parting word ("And stay off!"), and go
+back to where they were standing. More come out every minute or so while anyone's still on it, and
+they go back indoors once there's nobody about.
 
 On Friday and Saturday nights (by your watch, from eight in the evening till three in the morning)
 there's a night out at the top of Milsom Street, where it meets George Street: a crowd of naughty

@@ -38,12 +38,13 @@
 // all drift off home.
 //
 // And on the Royal Crescent there are the residents: the lawn in front of it, inside the ha-ha, is
-// private, for the people who live there and the guests of the hotel. Step on to it and out they come
-// from their front doors (gentlemen in tweed, blazers and morning coats, ladies in long dresses, big
-// hats and pearls, and the odd hotel guest in his bathrobe and slippers), swinging umbrellas and
+// private, for the people who live there and the guests of the hotel. Like the teams at their pitch,
+// they're out on it, standing about taking the air, whenever anyone's in sight of it (gentlemen in
+// tweed, blazers and morning coats, ladies in long dresses, big hats and pearls, and the odd hotel
+// guest in his bathrobe and slippers). Step on to it and they come for you, swinging umbrellas and
 // handbags and telling you exactly what they think of you, posh. They only go for someone on the lawn
-// or right by it, see you off it, tell you to stay off, and go back indoors once it's clear. More come
-// out every minute or so while anyone's still on it.
+// or right by it, see you off it, tell you to stay off, and go back to where they were standing. More
+// come out every minute or so while anyone's on it, and they go back indoors once nobody's about.
 //
 // Hear a police car coming with its siren going and the naughty boys and girls scarper: whatever
 // they were up to, they drop it and run from it, one or two shouting a warning, and drift back to
@@ -120,7 +121,7 @@ const THROWN = 6;                          // how hard a car sends him sprawling
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
 // The Royal Crescent's private lawn (data metres): its wire fence round from the ha-ha's west end, by
 // the Crescent's front, to the ha-ha's east end; the ha-ha closes it. And the residents' doorsteps,
-// on the flagged pavement in front of every third house, where they come out.
+// on the flagged pavement in front of every third house, where a few of them stand.
 const LAWN = {
   map: "combe-down",
   ring: [[-1685.7, 2705.4], [-1679.8, 2707.9], [-1676.3, 2710.5], [-1673.7, 2714.1], [-1670.5, 2726.5], [-1666.4, 2734.4],
@@ -134,6 +135,8 @@ const LAWN = {
 const LAWN_NEAR = 3;                       // the residents only go for someone on the lawn or this close to it
 const LAWN_LEASH = 18;                     // and give up once they're this far off it
 const LAWN_AGAIN = [45, 75];               // while anyone's on it, more come out every 45 to 75 seconds
+const LAWN_SEEN = 150;                     // they're out on the lawn while anyone's this close to it
+const LAWN_MOST = 9;                       // and no more than this many out at once
 // The night out: where the crowd stands (data metres), the top of Milsom Street, where it meets George
 // Street, and which way Milsom Street runs from there (south); where more of them walk in from (along
 // George Street both ways and up Milsom Street); and how many.
@@ -798,7 +801,7 @@ export class NaughtyBoys {
       c.scarper = this.heard(c);
       if (c.scarper) { c.target = ""; c.foe = -1; c.rush = false; c.calmT = Math.max(c.calmT, SIREN_CALM); }
       else this.think(c, dt, prey);
-      // one of the Crescent's residents, back at his front door with nobody on the lawn: back indoors
+      // one of the Crescent's residents, back where he was standing with nobody about: back indoors
       if (c.kind === RESIDENT && !c.keep && !c.target && !this.lawnBusy && Math.hypot(c.x - c.baseX, c.z - c.baseZ) < 2.5) { c.state = GONE; continue; }
       // wander off the map's edge of interest: too far from anyone to matter
       if (!c.keep && !c.target && c.foe < 0 && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
@@ -1055,7 +1058,7 @@ export class NaughtyBoys {
   // ---- host: the Royal Crescent's lawn -------------------------------------------------------
 
   private lawn: Ground | null = null;
-  /** Whether anyone's on the lawn just now (looked at once a second). */
+  /** Whether anyone's near the lawn just now (looked at once a second). */
   private lawnBusy = false;
 
   /** How far scene (x, z) is off the Crescent's lawn: 0 on it (and everywhere, on another map). */
@@ -1072,18 +1075,24 @@ export class NaughtyBoys {
     return best;
   }
 
-  /** The lawn, as a ground the residents turn out to, once someone's on it (so the squares round it
-   *  are in, for their doorsteps to be found). Null on another map, or till then. */
+  /** The lawn, as a ground the residents turn out to, once someone's in sight of it (so the squares
+   *  round it are in, for their spots to be found): all over the lawn, and on their doorsteps. Null on
+   *  another map, or till then. */
   private lawnGround(alive: Target[]): Ground | null {
     if (this.lawn || this.map.d.id !== LAWN.map) return this.lawn;
-    if (!alive.some((t) => inRing(LAWN.ring, t.x, -t.z))) return null;
-    const spots = LAWN.doors.flatMap(([x, y]) => { const s = clearSpot(this.map, x, -y, 3); return s ? [{ x: s[0], z: s[1] }] : []; });
+    if (!alive.some((t) => this.offLawn(t.x, t.z) < LAWN_SEEN)) return null;
+    // across the lawn: partway out from its middle towards every few points of its fence
+    const r = LAWN.ring, mx = r.reduce((a, p) => a + p[0], 0) / r.length, my = r.reduce((a, p) => a + p[1], 0) / r.length;
+    const across = [[mx, my], ...r.filter((_, i) => i % 3 === 0).flatMap(([x, y]) => [0.45, 0.8].map((f) => [mx + (x - mx) * f, my + (y - my) * f]))]
+      .filter(([x, y]) => inRing(r, x, y));
+    const spots = [...across, ...LAWN.doors].flatMap(([x, y]) => { const s = clearSpot(this.map, x, -y, 4); return s ? [{ x: s[0], z: s[1] }] : []; });
     if (!spots.length) return null;
-    return this.lawn = { kind: RESIDENT, spots, on: (x, z) => inRing(LAWN.ring, x, -z), met: new Map(), owed: false, next: 0, again: LAWN_AGAIN };
+    return this.lawn = { kind: RESIDENT, spots, on: (x, z) => this.offLawn(x, z) < LAWN_SEEN, met: new Map(), owed: false, next: 0, again: LAWN_AGAIN };
   }
 
   /** The teams turn out at a pitch when someone walks on to it, and every few minutes while anyone's
-   *  still there; and the Crescent's residents come out when someone walks on to their lawn. */
+   *  still there; and the Crescent's residents are out on their lawn while anyone's in sight of it,
+   *  more of them every minute or so while someone's on it. */
   private turnOut(everyone: Target[], alive: Target[]) {
     const busy = new Set<Ground>();
     const lawn = this.lawnGround(alive);
@@ -1099,19 +1108,23 @@ export class NaughtyBoys {
       }
     }
     this.lawnBusy = !!lawn && busy.has(lawn);
+    const trespass = !!lawn && alive.some((t) => this.offLawn(t.x, t.z) === 0);
     for (const g of busy) {
       if (!g.owed && this.clock < g.next) continue;
       const free = this.list.filter((c) => c.state === GONE).length - 6;   // leave a few for the jobs
       const taken = this.list.filter((c) => c.state === ALIVE);
       const residents = g.kind === RESIDENT;
+      const out = residents ? taken.filter((c) => c.kind === RESIDENT).length : 0;
+      // the residents: the first few are out while anyone's about, and only someone on the lawn brings more
+      if (residents && (out >= LAWN_MOST || (out && !trespass))) continue;
       const near = g.spots.filter((s) => !everyone.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < (residents ? 15 : TEAM_CLEAR))
         && (residents || !taken.some((c) => Math.hypot(c.baseX - s.x, c.baseZ - s.z) < 12)));
       if (free <= 0 || !near.length) continue;    // no room just now: try again in a moment
       g.owed = false;
       const again = g.again ?? TEAM_AGAIN;
       g.next = this.clock + again[0] + Math.random() * (again[1] - again[0]);
-      const size = Math.min(free, 3 + Math.floor(Math.random() * 3));
-      // the residents each come out of their own front door, each dressed their own way
+      const size = Math.min(free, 3 + Math.floor(Math.random() * 3), residents ? LAWN_MOST - out : 99);
+      // the residents each stand in a spot of their own, each dressed their own way
       if (residents) for (let k = 0; k < size; k++) this.gather(pick(near), g.kind, 1);
       else this.gather(pick(near), g.kind, size);
     }
