@@ -20,7 +20,7 @@
 import { chatLine, chatPick, type PickItem } from "./chat";
 import { ctlText } from "./controls";
 import { skipHours, timeOfDay } from "./daylight";
-import { KITS, look, NAUGHTY, RUGBY, CRICKET, SOCIETY, LADDER, CHAIR, GIRL, type NaughtyBoys, type Target } from "./naughtyboys";
+import { KITS, look, NAUGHTY, RUGBY, CRICKET, SOCIETY, LADDER, CHAIR, GIRL, RESIDENT, type NaughtyBoys, type Target } from "./naughtyboys";
 import type { Cats } from "./cats";
 import type { Pickups, Kind as PickupKind } from "./pickups";
 import { SPECS, type VKind, type Vehicles } from "./vehicles";
@@ -32,6 +32,7 @@ const PEOPLE: [string, string, number][] = [
   ["boy", "Naughty boy", NAUGHTY], ["girl", "Naughty girl, on a night out", GIRL],
   ["rugby", "Rugby lad", RUGBY], ["cricket", "Cricketer", CRICKET],
   ["flaglad", "Flag Lad", SOCIETY], ["ladder", "Flag Lads' ladder man", LADDER], ["gaffer", "The Gaffer", CHAIR],
+  ["resident", "Royal Crescent resident", RESIDENT],
 ];
 const THINGS: [PickupKind, string][] = [
   ["sniper", "Sniper rifle"], ["ammo", "Tin of rounds"], ["sammo", "Box of sniper rounds"], ["pint", "Pint"],

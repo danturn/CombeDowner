@@ -12,7 +12,7 @@
 import * as THREE from "three";
 import { Avatar, COLOURS } from "./avatar";
 import { Figure as CatFigure, coatsOf } from "./cats";
-import { BOSS, CHAIR, CRICKET, FLEE, Figure, GIRL, KITS, LADDER, LOUD, NAUGHTY, OFF_SECS, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
+import { BOSS, CHAIR, CRICKET, FLEE, Figure, GIRL, KITS, LADDER, LOUD, NAUGHTY, OFF_SECS, RESIDENT, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
 import { SLOTS, WEARABLES, type Slot } from "./wardrobe";
 import { BOSS_SCALE, gullFigure, touristOnBench } from "./gulls";
 import { Figure as BendyFigure } from "./bendy";
@@ -53,6 +53,8 @@ const ENTRIES: Entry[] = [
     kits: kits(["Navy and red", "Maroon and gold", "Green and gold", "Purple and gold", "Navy and gold"]).slice(0, KITS[CRICKET]) },
   { group: "Gangs", kind: "gang", name: "Naughty girl", blurb: "Out on a Friday or Saturday night at the top of Milsom Street: a short skirt, heels and a handbag. She slaps, says what she thinks of you, and kicks off with anyone, her own lot included. The lads never hit her back.", look: look(GIRL, 0),
     kits: kits(["Pink top, black skirt", "Little black dress", "Red dress", "White top, gold skirt", "Turquoise top, white skirt", "Silver top, black skirt"]).slice(0, KITS[GIRL]) },
+  { group: "Gangs", kind: "gang", name: "Royal Crescent resident", blurb: "Step on to the private lawn in front of the Royal Crescent and they come out of their front doors to see you off it: umbrellas, handbags and a great deal of tutting. Once you're off it they tell you to stay off, and go back in.", look: look(RESIDENT, 0),
+    kits: kits(["Tweed and a flat cap", "Blazer and a panama", "Morning coat and a topper", "Blue dress, white hat", "Burgundy dress and hat", "Green dress, straw hat", "Hotel guest in a bathrobe"]).slice(0, KITS[RESIDENT]) },
   { group: "The Flag Lads", kind: "gang", name: "Flag lad", blurb: "England shirts, some with the flag worn as a cape. They only turn up at the pubs they've taken over.", look: look(SOCIETY, 0),
     kits: ["White shirt, jeans", "White shirt and cape, shorts", "Red away shirt", "White shirt and cape, black jeans"] },
   { group: "The Flag Lads", kind: "gang", name: "Ladder lad", blurb: "Hi-vis and a ladder: puts cleared flags back up, and runs from you rather than fight.", look: look(LADDER, 0),

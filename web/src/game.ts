@@ -129,7 +129,7 @@ import { chatLine, useChat } from "./chat";
 import { Dev, hostSpawn } from "./dev";
 import { Drone } from "./drone";
 import { tag } from "./kinds";
-import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target, look } from "./naughtyboys";
+import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RESIDENT, RUGBY, SOCIETY, Target, look } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { gamesFollow, gamesHeard } from "./gameslist";
 import { NightOut } from "./nightout";
@@ -211,7 +211,7 @@ const TAKEOVER_NEAR = 150;      // metres from a pub takeover that's on: you're 
 const AFTER_YOU: Record<number, [string, string]> = {
   [NAUGHTY]: ["a naughty boy", "naughty boys"], [RUGBY]: ["a rugby player", "rugby players"],
   [CRICKET]: ["a cricketer", "cricketers"], [SOCIETY]: ["a Flag Lad", "Flag Lads"], [CHAIR]: ["a Flag Lads boss", "Flag Lads bosses"],
-  [GIRL]: ["a naughty girl", "naughty girls"],
+  [GIRL]: ["a naughty girl", "naughty girls"], [RESIDENT]: ["one of the Crescent's residents", "the Crescent's residents"],
 };
 const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
@@ -807,11 +807,12 @@ export class Game {
       SFX.punch(d, pan);
       if (Math.random() < 0.5) SFX.effort(d, pan, voice);
     };
-    this.naughtyBoys.onShout = (x, y, z, voice, kind, line, scared) => {
+    this.naughtyBoys.onShout = (x, y, z, voice, kind, line, scared, woman) => {
       const [d, pan] = this.hear(x, y + 1.6, z);
+      woman ||= kind === GIRL;
       // legging it, they all say their piece out loud, high and frightened
-      if (scared) Posh.speak(line, voice, d, undefined, kind === GIRL, 1.5);
-      else if (kind === NAUGHTY) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d, undefined, kind === GIRL);
+      if (scared) Posh.speak(line, voice, d, undefined, woman, 1.5);
+      else if (kind === NAUGHTY) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d, undefined, woman);
     };
     this.cats.onSound = (what, x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 0.3, z);
