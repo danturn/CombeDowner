@@ -415,7 +415,8 @@ export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, c
       const c = cellOf(cx, cy);
       if (!R[c]) continue;
       const top = faceTop(cx, cy);
-      if (top < Infinity && !(overlap[c] && Math.max(PH[a], PH[b], PH[d]) <= top + 0.01)) continue;
+      // (ground at the face's own height there adds nothing the face doesn't draw, and flickers with it)
+      if (top < Infinity && !(overlap[c] && Math.max(PH[a], PH[b], PH[d]) <= top + 0.01 && (PH[a] + PH[b] + PH[d]) / 3 < top - 0.002)) continue;
       // (anticlockwise seen from above, as the grid's own are)
       if ((P[2 * b] - P[2 * a]) * (P[2 * d + 1] - P[2 * a + 1]) - (P[2 * b + 1] - P[2 * a + 1]) * (P[2 * d] - P[2 * a]) < 0) [b, d] = [d, b];
       (byCell[c] ??= []).push(index[a], index[b], index[d]);
