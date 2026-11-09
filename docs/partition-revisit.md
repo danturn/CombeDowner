@@ -1609,3 +1609,28 @@ same as main):
   2 m). The heights are the 4 m grid's, so a path on a bank the grid sees as steep but the survey
   doesn't can be stepped for a few metres.
 
+
+## The ground sheet, stage 3 (7 November)
+
+Behind `?ground=sheet`, on the twelve test squares. What was traded, to come back to:
+
+- [ ] **The sheet's cut cells are cut by the game, not baked.** The build writes only which cells
+  lie wholly under faces, the grid points carved or built up to meet them, and where a retaining
+  wall holds the ground off a face (`gs`, 1–5 KB gzipped a square, 0.5–1.1%). Writing the cut
+  cells' triangles out would have been about 12% more download a square, over the 5% gate, so
+  the game cuts each cell along the faces' free edges as the square loads (`web/src/sheet.ts`,
+  about 0.1 s a square under Node). `tools/partition/sheet.py` `Land` cuts them the same way for
+  the checks.
+- [ ] **Where faces of two heights meet at one corner, the ground meets the lower.** A free
+  edge's ends each have one ground height, the lowest face top there, so a pavement whose corner
+  touches a path a metre below it keeps a side face down to the path's level (counted by rule 26:
+  these are the faces' own heights, from stage 2, not the ground).
+- [ ] **A retaining wall is wherever a 3 m bank can't meet a face's edge** (more than 2 m of
+  cut or 1.5 m of fill), drawn in the square's commonest kind of wall. Ground held up by one beside
+  a face can stand over a face across a narrow gap, which rule 27's lumps now count (1–2 a square).
+  Its length is a figure of rule 26's ("retaining wall m"), not a fault.
+- [ ] **Bridges and steps are not attached to the sheet yet** (stage 4). The ground isn't built
+  up within a cell and a half of a deck or the water, but the sheet still meets a face's edge
+  where it ends at a deck, so a little more ground stands within half a metre of some decks'
+  undersides (rule 31, Cape Town most). Flights keep their treads as before; the ground beside
+  them is now the batter, not the cut to a straight climb.

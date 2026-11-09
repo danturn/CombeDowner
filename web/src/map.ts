@@ -86,7 +86,11 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number };   // grass, dirt, gravel: paths the map says are made of that; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; bed?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number };   // grass, dirt, gravel: paths the map says are made of that; bed: the railway's bed, met by the ground, its ballast drawn by railway.ts; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
+  // the ground as one sheet with the faces (tools/partition/sheet.py; drawn with ?ground=sheet): the cells under faces as
+  // run lengths, the grid points carved or built up to meet the faces (h, by hz decimetres), the face corners where the ground
+  // meets a face below or above its top (s, by sz centimetres: a retaining wall), the square's wall for those, and the cells where faces overlap (x), drawn whole
+  gs?: { n: number; c: ArrayLike<number>; h: ArrayLike<number>; hz: ArrayLike<number>; s: ArrayLike<number>; sz: ArrayLike<number>; w: string; x: ArrayLike<number> };
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -1168,7 +1172,8 @@ export class GameMap {
 
   /** The surface as it's drawn (world.ts `surface`): the streets' faces and the terrain let down
    *  under them. Once the scene is built, everything stands on it, so what you walk and drive on is
-   *  what you see, not the survey's grid a metre under a street or above one in a cutting. */
+   *  what you see, not the survey's grid a metre under a street or above one in a cutting. With
+   *  ?ground=sheet, a square's ground is its sheet (world.ts, sheet.ts), cut along the faces' edges. */
   private drawn: ((x: number, z: number) => number) | null = null;
   standOnDrawn(surface: ((x: number, z: number) => number) | null) { this.drawn = surface; }
 

@@ -21,6 +21,11 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Ground plan stage 3, the ground sheet (branch `claude/ground-sheet`):** a new `gs` key in each
+  square (`tools/partition/sheet.py`, written by `write_tile.build_tile`), drawn and walked with
+  `?ground=sheet` (`web/src/sheet.ts`, `world.ts`, `sfpack.ts`, `map.ts`); `tools/check_more.py`
+  measures it with `CD_GROUND=sheet`. Default drawing unchanged.
+
 - **Packed map files (branch `claude/pack-squares`):** the game downloads each square, `-wide` and
   `-ground` as a `.pack.gz` (`web/src/pack.ts`), packed from the JSON in every build by
   `tools/pack_squares.mjs` and checked to read back exactly; `dist` carries no square JSON. Touches

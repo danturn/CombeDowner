@@ -587,6 +587,7 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
             tris = v[np.concatenate(ids)]
             ttree = shapely.STRtree(shapely.polygons(tris[:, :, :2]))
     sq = box(*m["b"])
+    laid = check_more.set_piece_streets(tuple(m["centre"])) if m.get("centre") else []
     for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
         if what == "railway" or len(xy) < 2: continue
         span = LineString(xy)
@@ -605,6 +606,8 @@ def flights_and_openings(m, tag, note, ground, roads, marks, rail_pts):
         for k in ttree.query(outline.buffer(-0.3), predicate="intersects"):
             t = tris[int(k)]
             cx, cy = t[:, 0].mean(), t[:, 1].mean()
+            # (a face in a set piece's street isn't drawn: the game cuts it out and lays the street)
+            if any(st.contains(Point(cx, cy)) for st in laid): continue
             u = under_at(cx, cy)
             if t[:, 2].max() > u - 1.0 and t[:, 2].min() < u - 2.5:
                 note("10 face rising into a bridge", t[:, 2].max() - t[:, 2].min(), (tag, round(cx), round(cy)), f"{t[:, 2].min():.1f} to {t[:, 2].max():.1f} m under {what}")
@@ -740,7 +743,8 @@ def fit_together(m, tag, note, f=None):
     # along its own line, with no gateway, drive or front path in between. One ending in the open,
     # with nothing ahead of it in reach, is a real loose end (a park wall, a ruin), not a fault.
     F = check_more.faces_of(m)
-    ground_faces = shapely.union_all([F[k] for k in F] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
+    # (not the railway's bed, which the sheet makes a face: a lineside fence doesn't run to the ballast)
+    ground_faces = shapely.union_all([F[k] for k in F if k != "bed"] + [line(r["p"]).buffer((r.get("w") or RW.get(r["c"], 2)) / 2) for r in m["rd"] if len(r["p"]) > 1] or [Polygon()])
     meets = shapely.union_all([ground_faces] + homes).buffer(MEETS)
     shapely.prepare(meets)
     ahead = [h.exterior for h in homes if h.geom_type == "Polygon"] + [g for g in getattr(ground_faces.boundary, "geoms", [ground_faces.boundary])]
