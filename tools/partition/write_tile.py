@@ -7302,8 +7302,12 @@ def ways_and_banks(part, canal, sq):
     a guessed one goes with it."""
     x0, y0, x1, y1 = sq
     near = box(x0 - 20, y0 - 20, x1 + 20, y1 + 20)
-    parts = [face_shape(f).buffer(0).buffer(-WAY_KEEP) for f in part["faces"]
+    # (a path's faces are joined before the strip along the edge is kept: kept along each face's own
+    # edge, a wall on the line between two faces of one path, or a stub run on across it, stood in a
+    # strip down the middle of the path)
+    paths = [face_shape(f).buffer(0).buffer(MEND, join_style="mitre") for f in part["faces"]
              if f["cls"] == "path" and len(f["xy"]) > 2 and face_shape(f).intersects(near)]
+    parts = [unary_union(paths).buffer(-MEND - WAY_KEEP, join_style="mitre")] if paths else []
     for run in (canal or {}).get("runs", []):
         p = run["p"]
         for st in stretches({i for i in range(len(p) - 1) if not (p[i][6] | p[i + 1][6]) & 1}):
