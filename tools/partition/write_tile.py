@@ -2949,7 +2949,7 @@ def _mend_corners(tris, v, point_at):
     face's, or one rounded off its line) made a corner of the triangle on that edge too, so two faces
     meet corner to corner along their whole length and their outlines agree: with a corner on only
     one side, the faces' edges were apart by up to a centimetre and the sky showed between them.
-    `point_at(x, y, piece)` is the point a piece has at a place."""
+    `point_at(x, y, piece, a, b)` is the point a piece has at a place on its edge from corner a to b."""
     place = lambda i: (v[3 * i], v[3 * i + 1])
     tris = [t for t in tris if len(set(map(place, t[2]))) == 3]
     for _ in range(4):
@@ -2978,7 +2978,7 @@ def _mend_corners(tris, v, point_at):
                 key = (place(p), place(q)) if turn > 0 else (place(q), place(p))
                 if key not in cuts:
                     continue
-                along = [point_at(x, y, n) for _, (x, y) in sorted(cuts[key], reverse=turn < 0)]
+                along = [point_at(x, y, n, p, q) for _, (x, y) in sorted(cuts[key], reverse=turn < 0)]
                 chain = [p] + [m for m in along if m is not None and place(m) not in (place(p), place(q), place(r))] + [q]
                 out += [[kind, n, [chain[j], chain[j + 1], r], turn] for j in range(len(chain) - 1)]
                 break
@@ -4702,7 +4702,25 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                     (a, b), c = pts[:2], pts[2]
                     turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
                     tris.append([kind, len(piece_of) - 1, ids, 1 if turn > 0 else -1])
-    tris = _mend_corners(tris, v, lambda x, y, n: point(x, y, piece_of[n][1]))
+    def mend_point(x, y, n, a, b):
+        # A corner the face has no point of its own at lies on its edge's line, at the height along
+        # it: levelled afresh, a pavement corner could take a different street's level and stand up
+        # as a spike in the paving.
+        flat = piece_of[n][1]
+        key = (round(x, 2), round(y, 2), flat)
+        # (a plaza is at a path's level along the edge they share, so the two share the corner)
+        if flat == "g" and (key[0], key[1], True) in at:
+            return at[(key[0], key[1], True)]
+        if flat is True and key not in at and (key[0], key[1], "g") in at:
+            return at[(key[0], key[1], "g")]
+        if key not in at:
+            (ax, ay, az), (bx, by, bz) = v[3 * a:3 * a + 3], v[3 * b:3 * b + 3]
+            ex, ey = bx - ax, by - ay
+            t = min(1.0, max(0.0, ((key[0] - ax) * ex + (key[1] - ay) * ey) / ((ex * ex + ey * ey) or 1.0)))
+            at[key] = len(v) // 3
+            v.extend([key[0], key[1], round(az + (bz - az) * t, 2)])
+        return at[key]
+    tris = _mend_corners(tris, v, mend_point)
     for kind, n, ids, _ in tris:
         out[kind] += ids
         (walk if piece_of[n][0] == "pavement" else kerbside).update(ids)
@@ -7302,8 +7320,12 @@ def ways_and_banks(part, canal, sq):
     a guessed one goes with it."""
     x0, y0, x1, y1 = sq
     near = box(x0 - 20, y0 - 20, x1 + 20, y1 + 20)
-    parts = [face_shape(f).buffer(0).buffer(-WAY_KEEP) for f in part["faces"]
+    # (a path's faces are joined before the strip along the edge is kept: kept along each face's own
+    # edge, a wall on the line between two faces of one path, or a stub run on across it, stood in a
+    # strip down the middle of the path)
+    paths = [face_shape(f).buffer(0).buffer(MEND, join_style="mitre") for f in part["faces"]
              if f["cls"] == "path" and len(f["xy"]) > 2 and face_shape(f).intersects(near)]
+    parts = [unary_union(paths).buffer(-MEND - WAY_KEEP, join_style="mitre")] if paths else []
     for run in (canal or {}).get("runs", []):
         p = run["p"]
         for st in stretches({i for i in range(len(p) - 1) if not (p[i][6] | p[i + 1][6]) & 1}):
