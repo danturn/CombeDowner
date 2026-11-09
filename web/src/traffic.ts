@@ -19,6 +19,10 @@
 // blocked) it doesn't go round and round trying, it does a turn in the road, back on the opposite lock
 // and forward again, a few metres at a time, till it's facing its way, reversing lights on as it backs.
 //
+// Hear a police car coming with its siren going (behind, or coming the other way) and they pull in to
+// the kerb and stop to let it by, staying put where something's parked in the way, and carry on
+// once it's gone past and away.
+//
 // Who decides what: the host drives them all, spawning them on roads a little way off from the
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
 // second. Everyone else draws them a moment behind, smoothed between updates, as for the naughty boys.
@@ -33,7 +37,7 @@ import { COACH, COACH_LAMPS, coachDecals, coachSteerable } from "./coaches";
 import { charred, glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { CAR_LAMPS, contact, twist } from "./vehicles";
+import { CAR_LAMPS, contact, type Siren, twist } from "./vehicles";
 import { AMBER, GREEN, type Signal, lightAt, signalClock, signalsOf } from "./signals";
 import { timeOfDay, watchDay } from "./daylight";
 import { tag } from "./kinds";
@@ -44,6 +48,7 @@ export const TRAFFIC_ID = 100000;
 export const PARKED = 2 ** 45;
 /** A road's traffic, vehicles a day, where the DfT haven't counted it: by the kind of road it is. */
 const FLOW: Record<string, number> = { trunk: 20000, primary: 14000, secondary: 8000, tertiary: 4000, unclassified: 700, residential: 400, living_street: 150 };
+const SIREN_HEARD = 70;              // a siren this near (m) and it pulls over
 const COUNTED = 35;                  // a count point this near a road (m) is that road's
 const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
 const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
@@ -437,6 +442,8 @@ export class Traffic {
   onSmoke?: (x: number, y: number, z: number, alight: boolean) => void;
   /** Everyone but the host: parked car i (a vehicle number) has been knocked into the road, so it's to come out of the street furniture. */
   onUnpark?: (i: number) => void;
+  /** Host: the police cars going with their sirens on (game.ts sets them each frame). */
+  sirens: Siren[] = [];
   /** The make of parked car i (a vehicle number), for one knocked into the road (makes.ts). */
   parkedMake: (i: number) => number = () => 0;
 
@@ -551,6 +558,14 @@ export class Traffic {
       if (c.lost && !c.leg) want = Math.min(want, 2);
       dodge = Math.max(0, committed, Math.min(dodge, room));
       if (squeeze && !dodge) dodge = -e.kerb;
+      // a siren coming: in to the kerb and stop (not on a roundabout, nor in the middle of a turn in
+      // the road), or just stop where it is if there's something parked alongside
+      if (!c.leg && !e.ring && this.pullOver(c)) {
+        const beside = seen.some(([u, w, o]) => o.parked && u > -c.hl - o.r - 1 && u < c.hl + o.r + 4 && w > -0.6);
+        dodge = beside || committed ? committed : -e.kerb;
+        want = Math.min(want, beside || c.dodge < dodge + 0.3 ? 0 : 4);
+        held = true;
+      }
       c.dodge += Math.max(-1.5 * dt, Math.min(1.5 * dt, dodge - c.dodge));
       c.blockT = blocked ? c.blockT + dt : 0;
       // (not while it waits at the lights, or in the queue behind a car going its way, or turns in the road)
@@ -591,6 +606,19 @@ export class Traffic {
         }
       }
     }
+  }
+
+  /** Should it pull over for a siren: one near that's behind it, or coming at it, or right alongside,
+   *  rather than gone past and on its way? */
+  private pullOver(c: Car): boolean {
+    const hx = Math.cos(c.a), hz = -Math.sin(c.a);
+    for (const s of this.sirens) {
+      const dx = s.x - c.x, dz = s.z - c.z, d = Math.hypot(dx, dz);
+      if (d > SIREN_HEARD) continue;
+      const u = dx * hx + dz * hz, closing = -(s.vx * dx + s.vz * dz) / (d || 1);   // how fast it's coming this way
+      if (closing > 1 || d < 12 || (u < c.hl && closing > -1)) return true;
+    }
+    return false;
   }
 
   // ---- wrecks ----------------------------------------------------------------------------------

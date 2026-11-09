@@ -4805,6 +4805,8 @@ export class Game {
     }
     if (this.isHost) { this.vhT -= dt; if (this.vhT <= 0) this.sendVehicles(); }
     const host = this.isHost;
+    // a police car's siren: the naughty boys scarper and the traffic pulls over
+    if (host) this.naughtyBoys.sirens = this.traffic.sirens = this.vehicles.sirens();
     if (host) this.naughtyBoys.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, gangOf(this.naughtyBoys.at(i)?.look ?? 0), false, this.entry(id).life));
     this.naughtyBoys.update(dt, host);
     this.chT -= dt;
