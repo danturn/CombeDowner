@@ -587,9 +587,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   address tries another number.
 - **Smooth on any machine**: the game picks how far you see, the resolution and shadows for your
   device (a quick check of its processor and graphics chip as it loads, then the menu's backdrop),
-  and if frames get slow for a few seconds it eases back gently: shadows redrawn less often, then a
-  few fewer lines, then a shorter view (never under 500 m), then no shadows. It steps back up when
-  there's room, and never thins out trees, buildings or grass. Choosing a draw distance, resolution
+  and if frames get slow for a few seconds it eases back gently: far-reaching shadows back to Low,
+  shadows redrawn less often, then a few fewer lines, then a shorter view (never under 500 m), then
+  no shadows. It steps back up when there's room, and never thins out trees, buildings or grass. Choosing a draw distance, resolution
   or shadows yourself (or L in the debug panel) turns this off; tick Automatic in Settings to turn
   it back on.
 - **If your phone crashes starting a game**: the next time you open the page it starts in safe

@@ -30,6 +30,7 @@ import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
+import { SunShadows } from "./shadows";
 import { tag, tagSince } from "./kinds";
 
 const CHUNK = 320;
@@ -403,11 +404,9 @@ function makeShell(scene: THREE.Scene) {
   scene.add(hemi);
   const sun = new THREE.DirectionalLight("#fff0d8", 2.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(shadowSize, shadowSize);
-  Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
-  sun.shadow.bias = -0.0006;
-  sun.shadow.normalBias = 0.04;
-  scene.add(sun, sun.target);
+  // its shadows reach as far as Settings say, in squares round you (shadows.ts)
+  const shadows = new SunShadows(sun, shadowSize);
+  scene.add(shadows.group);
 
   // ---- sky dome -----------------------------------------------------------------
   const sky = new THREE.Mesh(
@@ -459,7 +458,7 @@ function makeShell(scene: THREE.Scene) {
   );
   sky.renderOrder = -1;
   scene.add(tag(sky, "sky"));
-  return { tunnelDark, hemi, sun, sky };
+  return { tunnelDark, hemi, sun, shadows, sky };
 }
 
 /**
@@ -2897,7 +2896,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const STILL = new Set(["ground", "buildings", "walls-fences", "trees", "woods", "doors-bays", "landmarks-tunnels", "furniture", "shops", "pitches"]);
   stayPut(scene, scene.children.filter((c) => STILL.has(c.name)));
 
-  const { tunnelDark, hemi, sun, sky } = shell!;
+  const { tunnelDark, hemi, sun, shadows, sky } = shell!;
   const murk = new THREE.Color();
   const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
 
@@ -3118,11 +3117,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);
       sky.position.set(px, py, pz);
-      // keep the shadow camera on the player, snapped to texels so shadows don't shimmer
-      const snap = 140 / 2048;
-      const cx = Math.round(px / snap) * snap, cz = Math.round(pz / snap) * snap;
-      sun.target.position.set(cx, py, cz);
-      sun.position.set(cx + sk.light.x * 200, py + sk.light.y * 200, cz + sk.light.z * 200);
+      // keep the shadows' squares round the player (shadows.ts)
+      shadows.follow(px, py, pz, sk.light);
     },
     dispose() {
       tiles?.dispose();
@@ -3138,7 +3134,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }
       });
       textures.forEach((t) => t.dispose());
-      sun.dispose();
+      sun.dispose(); shadows.dispose();
     },
   } satisfies World;
 }

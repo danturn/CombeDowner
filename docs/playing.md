@@ -186,7 +186,10 @@ open it, and Back or Esc takes you back to the list:
 - Video: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
-  debug panel.
+  debug panel. Shadows go Off, Low, Medium, High or Ultra: how far from you they reach, as a share of
+  the draw distance (a tenth, a quarter, half, or all of it), never further than 3 km (1 km on a phone
+  or tablet), past which a house's shadow is smaller than a pixel. The page says how far that is at
+  your draw distance. Close by they stay as sharp at every level; further off they're coarser.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
