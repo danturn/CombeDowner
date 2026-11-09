@@ -32,8 +32,9 @@
 // in Claude Code) gets the sheet. /drone pic 3 copies just snap 3's picture, bigger; /drone clear
 // forgets them all.
 //
-// While you fly the HUD is the drone's alone (height, speed, zoom, the view and this flight's snaps along
-// the top: style.css hides the rest), and the game's people leave you be (game.ts): the host's naughty
+// While you fly the HUD is the drone's alone, a camera feed's screen (droneosd.ts: heading, height
+// and speed ladders, where you are, the range to the crosshair, the view, the zoom and this flight's
+// snaps; style.css hides the rest), and the game's people leave you be (game.ts): the host's naughty
 // boys, cats and Bendy take you as passive, and those who talk to you as you pass think you're far
 // overhead.
 //
@@ -52,6 +53,7 @@ import * as SFX from "./audio";
 import { BUILT } from "./version";
 import { KINDS, kindOf, type Kind } from "./kinds";
 import { Looks } from "./looks";
+import { DroneScreen } from "./droneosd";
 import { Picker, type Picked } from "./pick";
 import { roofMeshTop, type Building, type GameMap } from "./map";
 import type { Player } from "./player";
@@ -113,15 +115,17 @@ export class Drone {
   private wanted: Snap | null = null;
   private pad = { lx: 0, ly: 0, rx: 0, ry: 0, at: 0 };
   private tilt = 0;                    // the D-pad: -1 down, 1 up
-  private osd: HTMLDivElement | null = null;
+  private screen: DroneScreen | null = null;
+  private home = new THREE.Vector3();  // where it took off, for how far it's gone
+  private upAt = 0;                    // when it took off (ms)
+  private range: number | null = null; // metres to what's under the crosshair, by the game's own ray
+  private rangeT = 0;
   // "what's what": what's under the crosshair, its name below it and its outline
   private picker = new Picker();
   private peekAt = 0;
   private peeking = false;
   private seen: { text: string; kind: Kind } | null = null;
-  private seenEl: HTMLDivElement | null = null;
   private outline: THREE.LineSegments | null = null;
-  private osdT = 0;
   private count = 0;
   private flightFrom = 0;              // how many snaps there were when this flight began
 
@@ -153,6 +157,8 @@ export class Drone {
     this.lastYaw = p.yaw;
     this.trig = true;   // the press that's down now doesn't snap
     this.flightFrom = this.snaps.length;
+    this.home.copy(this.eye);
+    this.upAt = performance.now();
     this.h.changed(true);
     this.showOsd(true);
     chatLine(`Drone up. ${this.snaps.length ? `${this.snaps.length} snaps so far. ` : ""}Shoot to snap; type here to note the last snap; /drone copy when you're done; /drone to land`);
@@ -251,7 +257,12 @@ export class Drone {
     const cam = this.h.camera;
     cam.position.copy(this.eye);
     cam.rotation.set(p.pitch, p.yaw, this.roll, "YXZ");
-    if ((this.osdT -= dt) <= 0) { this.osdT = 0.1; this.drawOsd(); }
+    if ((this.rangeT -= dt) <= 0) {
+      this.rangeT = 0.2;
+      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion), hit = m.raycast(this.eye.x, this.eye.y, this.eye.z, d.x, d.y, d.z, RAY);
+      this.range = hit ? hit.dist : null;
+    }
+    this.drawOsd();
   }
 
   /** C: on to the next view of the scenery. */
@@ -295,9 +306,7 @@ export class Drone {
     this.snaps.push(s);
     this.wanted = s;
     SFX.tick();
-    this.osd?.classList.remove("flash");
-    void this.osd?.offsetWidth;
-    this.osd?.classList.add("flash");
+    this.screen?.flash();
     chatLine(`Snap ${s.n}${what === "sky" ? "" : `: ${what}, ${Math.round(hit!.dist)} m`}. Type here to add a note`);
     this.drawOsd();
   }
@@ -390,41 +399,38 @@ export class Drone {
   // ---- the drone's screen: height, speed, and how many snaps ----
 
   private showOsd(on: boolean) {
-    if (on && !this.osd) {
-      this.osd = document.createElement("div");
-      this.osd.id = "droneosd";
-      document.body.append(this.osd);
-      // on a touch screen, a tap on the view's name changes it
-      this.osd.addEventListener("pointerdown", (e) => {
-        const t = e.target as HTMLElement;
-        if (t.closest(".look")) { e.preventDefault(); this.nextLook(); }
-        else if (t.closest(".zoom")) { e.preventDefault(); this.zoomStep(1, true); }
-      });
-    }
-    if (this.osd) this.osd.hidden = !on;
-    document.body.classList.toggle("droning", on);
+    if (on && !this.screen) this.screen = new DroneScreen(() => this.nextLook(), () => this.zoomStep(1, true));
+    this.screen?.show(on);
     this.drawOsd();
   }
 
-  private shownLook = "";
-
-  private drawOsd(lookChanged = false) {
-    const o = this.osd;
-    if (!o || !this.on) return;
-    const m = this.h.map, e = this.eye;
-    const alt = Math.round(e.y - m.ground(e.x, e.z)), kmh = Math.round(this.v.length() * 3.6);
-    const bar = `<div class="bar"><span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length - this.flightFrom}${this.flightFrom ? ` (${this.snaps.length} IN ALL)` : ""}</span><span class="zoom">ZOOM ${this.zoom}x</span><span class="look">${this.looks.name} (${ctl("droneview")})</span></div>`;
-    if (lookChanged || this.shownLook !== this.looks.id) {
-      this.shownLook = this.looks.id;
-      o.innerHTML = bar + (this.looks.id === "kinds" ? `<ul class="key">${(Object.keys(KINDS) as Kind[]).filter((k) => k !== "sky" && k !== "field")
-        .map((k) => `<li><i style="background:${KINDS[k].col}"></i>${KINDS[k].name}</li>`).join("")}</ul>` : "");
-    } else o.querySelector(".bar")!.outerHTML = bar;
+  /** The drone's screen, afresh: once a frame while it flies. */
+  private drawOsd(_lookChanged = false) {
+    if (!this.screen || !this.on) return;
+    const m = this.h.map, e = this.eye, p = this.h.player, deg = 180 / Math.PI;
+    const centre = m.d.centre as [number, number] | undefined, north = -e.z;
+    const lat = centre ? centre[1] + north / 110574 : 0;
+    const lon = centre ? centre[0] + e.x / (111320 * Math.cos(centre[1] * Math.PI / 180)) : 0;
+    const t = timeOfDay() * 24, hh = Math.floor(t), mi = Math.floor((t - hh) * 60);
+    const I = m.tileIndex, S = I ? I.cells * I.dx : 0;
+    this.screen.draw({
+      heading: -p.yaw * deg, tilt: p.pitch * deg,
+      alt: e.y - m.ground(e.x, e.z), elv: e.y + m.z0,
+      hs: Math.hypot(this.v.x, this.v.z), vs: this.v.y, lat, lon,
+      dst: Math.hypot(e.x - this.home.x, e.z - this.home.z), rng: this.range,
+      clock: `${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}`,
+      square: I ? `${Math.floor((e.x - I.x0) / S)},${Math.floor((north - I.y0) / S)}` : "",
+      gear: this.gear + 1, gears: SPEEDS.length, zoom: this.zoom,
+      look: this.looks.name, kinds: this.looks.id === "kinds", lookKey: ctl("droneview"),
+      snaps: this.snaps.length - this.flightFrom, allSnaps: this.snaps.length,
+      flight: (performance.now() - this.upAt) / 1000,
+    });
   }
 
   /** The page is going (a new game, the train): put the screen away. */
   dispose() {
-    this.on = false; this.osd?.remove(); this.osd = null; document.body.classList.remove("droning");
-    this.showSeen(null); this.seenEl?.remove(); this.seenEl = null; this.picker.dispose();
+    this.on = false; this.showSeen(null);
+    this.screen?.remove(); this.screen = null; this.picker.dispose();
   }
 
   // ---- "what's what": naming and outlining what's under the crosshair ----
@@ -446,7 +452,7 @@ export class Drone {
     if (!p) {
       this.seen = null;
       if (this.outline) this.outline.visible = false;
-      if (this.seenEl) this.seenEl.hidden = true;
+      this.screen?.setLock(null);
       return;
     }
     const kind = kindOf(p.mesh), cam = this.h.camera.position;
@@ -471,10 +477,8 @@ export class Drone {
     }
     const text = `${KINDS[kind].name}${detail ? `: ${detail}` : ""}`;
     this.seen = { text, kind };
-    // the name, under the crosshair
-    if (!this.seenEl) { this.seenEl = document.createElement("div"); this.seenEl.id = "droneseen"; document.body.append(this.seenEl); }
-    this.seenEl.hidden = false;
-    this.seenEl.innerHTML = `<i style="background:${KINDS[kind].col}"></i><b>${esc(KINDS[kind].name)}</b>${detail ? ` · ${esc(detail)}` : ""}${away >= 0 ? ` · ${Math.round(away)} m` : ""}`;
+    // the name, on the drone's screen by the frame
+    this.screen?.setLock({ kind, text: `${KINDS[kind].name}${detail ? ` · ${detail}` : ""}${away >= 0 ? ` · ${Math.round(away)} m` : ""}` });
     // the outline, over everything
     if (!lines) { if (this.outline) this.outline.visible = false; return; }
     if (!this.outline) {
@@ -618,8 +622,4 @@ function inRing(ring: number[][], x: number, y: number): boolean {
     if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
-}
-
-function esc(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
