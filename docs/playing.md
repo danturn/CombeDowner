@@ -207,7 +207,10 @@ open it, and Back or Esc takes you back to the list:
   Street lights go Low, Medium, High, Ultra or Max: how far off a lit street lamp still shows after
   dark, as a glow that's drawn bigger and brighter the higher you go so whole streets show from the
   drone high over town, and how many lamps round you light the street (two fewer than normal to six
-  more). It changes on the spot; everyone starts on Medium.
+  more). From Medium up, past those, every lamp's pool of light is painted onto the streets, gardens
+  and walls round it, out to 1 km (Medium) or 2 to 3 km (High to Max), a little brighter far off
+  than close to and showing through the night haze, so the town looks lit from the drone and from
+  the hills; roofs stay dark. It changes on the spot; everyone starts on Medium.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the

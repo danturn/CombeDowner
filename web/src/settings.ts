@@ -106,8 +106,9 @@ export function settingsPage(h: Hooks) {
   };
   LIGHT_LEVELS.forEach((l, i) => option(lights, String(i), `${l.name}${i === LIGHT_DEFAULT ? " (normal)" : ""}`));
   const showLights = () => {
-    const p = LIGHT_LEVELS[lightLevel].pools;
-    lightsHint.textContent = `How far off lit street lamps still show after dark (from the drone too), and ${p === 0 ? "the usual number of" : p > 0 ? `${p} more` : `${-p} fewer`} lamps lighting the street round you. More is slower.`;
+    const l = LIGHT_LEVELS[lightLevel], p = l.lit;
+    const far = l.pools * l.step / 2, reach = far >= 1000 ? `${+(far / 1000).toFixed(1)} km` : `${far} m`;
+    lightsHint.textContent = `How far off lit street lamps show after dark (from the drone too): ${p === 0 ? "the usual number" : p > 0 ? `${p} more` : `${-p} fewer`} light the street round you${l.pools ? `, and their pools of light show on the streets to ${reach}` : ""}. More is slower.`;
   };
   RES_STEPS.forEach((r, i) => option(resSel, String(i), r.lines ? `${r.name} (${r.lines} lines)` : `${r.name} (your screen's own)`));
 

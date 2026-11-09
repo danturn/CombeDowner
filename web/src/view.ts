@@ -4,7 +4,7 @@
 // Phones and iPads see less far, to keep their frame rate up and their memory down. Normally the
 // automatic settings (quality.ts) choose the distance and ease it back when frames are slow. The draw distance in Settings (settings.ts), or its
 // button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
-// ?view=1200 in the address tries a distance for one visit without remembering it. The field of
+// ?view=1200 in the address tries a distance for one visit without remembering it (and ?lights=2 a Street lights level). The field of
 // view lives here too, and the scenery detail Settings offers (how far grass grows round you and how
 // far trees keep their full crowns) and street lights (how far off lit lamps show after dark, and how
 // many light the street round you), remembered on this computer and changed on the spot. Nothing here goes over the network: everyone sees as far as they like.
@@ -94,16 +94,21 @@ export function setDetail(i: number, keep = false) {
  *  a spot that gets smaller the further it is; from the drone high over town every lamp is far off,
  *  so at Medium they're faint specks. Higher levels draw each glow bigger (size), never smaller than
  *  least pixels, and gather a small one's light into a brighter middle (bright), so lit streets show
- *  from the air and right across town. pools: lamps lighting the street round you (world.ts), more or
- *  fewer than this device's normal (lampLightsFor), each costing every lit pixel something, so more
- *  is slower. Changed on the spot (a change in pools makes the lit surfaces' shaders build again,
- *  which can stall a frame or two after dark). */
+ *  from the air and right across town.
+ *  lit: lamps really lighting the street round you (world.ts), more or fewer than this device's
+ *  normal (lampLightsFor), each costing every lit pixel something, so more is slower.
+ *  pools: past those, every lamp's pool of light is painted on the ground, roads and walls instead
+ *  (lamppools.ts), on a picture this many dots across, each dot step metres: it costs the same
+ *  however many lamps there are. 0: none. Far off they're gain times brighter than a real lamp
+ *  would make them, and pierce of that shows through the fog, so the town reads as lit from afar.
+ *  Changed on the spot (a change in lit makes the lit surfaces' shaders build again, which can stall
+ *  a frame or two after dark). */
 export const LIGHT_LEVELS = [
-  { name: "Low", pools: -2, size: 0.8, least: 1.5, bright: 1 },
-  { name: "Medium", pools: 0, size: 1, least: 2, bright: 1 },
-  { name: "High", pools: 2, size: 1.4, least: 3, bright: 2 },
-  { name: "Ultra", pools: 4, size: 1.8, least: 3.5, bright: 2.5 },
-  { name: "Max", pools: 6, size: 2.2, least: 4, bright: 3 },
+  { name: "Low", lit: -2, size: 0.8, least: 1.5, bright: 1, pools: 0, step: 2, gain: 1, pierce: 0 },
+  { name: "Medium", lit: 0, size: 1, least: 2, bright: 1, pools: 1024, step: 2, gain: 2, pierce: 0.4 },
+  { name: "High", lit: 2, size: 1.4, least: 3, bright: 2, pools: 2048, step: 2, gain: 3, pierce: 0.6 },
+  { name: "Ultra", lit: 4, size: 1.8, least: 3.5, bright: 2.5, pools: 2048, step: 2.5, gain: 3.5, pierce: 0.7 },
+  { name: "Max", lit: 6, size: 2.2, least: 4, bright: 3, pools: 2048, step: 3, gain: 4, pierce: 0.8 },
 ];
 export const LIGHT_DEFAULT = 1;
 const LIGHT_KEY = "cd-lights";
@@ -116,7 +121,10 @@ export function setLights(i: number, keep = false) {
 {
   let saved: string | null = null;
   try { saved = localStorage.getItem(LIGHT_KEY); } catch { /* storage blocked */ }
-  setLights(saved !== null && Number.isFinite(Number(saved)) ? Number(saved) : LIGHT_DEFAULT);
+  // ?lights=2 tries a level (0 Low to 4 Max) for one visit, without remembering it
+  const askedLights = typeof location !== "undefined" ? new URLSearchParams(location.search).get("lights") : null;
+  const pick = askedLights ?? saved;
+  setLights(pick !== null && pick !== "" && Number.isFinite(Number(pick)) ? Number(pick) : LIGHT_DEFAULT);
 }
 
 /** See as far as this, metres (by day). keep: remember it on this computer for next time. */
