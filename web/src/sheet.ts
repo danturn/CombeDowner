@@ -32,6 +32,41 @@ export function coveredCells(runs: ArrayLike<number>, cells: number): Uint8Array
   return out;
 }
 
+/** Where a free edge from a to b lies on the grid: its ends (clipped to the grid, where it reaches
+ *  past it) and every point where it crosses a grid line between, in order, as data x, y and how far
+ *  from a to b (0 to 1); nothing if it lies wholly off the grid. Each crossing is put exactly on its
+ *  line, so both cells get the same point, and the faces split their edges at these same points
+ *  (sheetFaces), so the ground and the faces share every corner. */
+export function edgeCuts(G: SheetGrid, ax: number, ay: number, bx: number, by: number): number[][] {
+  const { x0, y0, dx, dy, nx, ny } = G;
+  const X1 = x0 + (nx - 1) * dx, Y1 = y0 + (ny - 1) * dy;
+  // (clipped to the grid: a face at the square's edge reaches a few millimetres past its last line)
+  const ex = bx - ax, ey = by - ay;
+  let t0 = 0, t1 = 1;
+  const clip = (p: number, q: number) => { if (p === 0) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
+  if (!clip(-ex, ax - x0) || !clip(ex, X1 - ax) || !clip(-ey, ay - y0) || !clip(ey, Y1 - ay) || t1 - t0 < 1e-12) return [];
+  // (a clipped end lies on the grid's edge exactly, so it counts as on its cell's edge)
+  const snap = (q: number[]) => { if (Math.abs(q[0] - x0) < 1e-9) q[0] = x0; if (Math.abs(q[0] - X1) < 1e-9) q[0] = X1; if (Math.abs(q[1] - y0) < 1e-9) q[1] = y0; if (Math.abs(q[1] - Y1) < 1e-9) q[1] = Y1; return q; };
+  const a = t0 > 0 ? snap([ax + ex * t0, ay + ey * t0, t0]) : [ax, ay, 0];
+  const b = t1 < 1 ? snap([ax + ex * t1, ay + ey * t1, t1]) : [bx, by, 1];
+  const cuts: number[][] = [a];
+  const fx0 = (a[0] - x0) / dx, fx1 = (b[0] - x0) / dx, fy0 = (a[1] - y0) / dy, fy1 = (b[1] - y0) / dy;
+  for (let i = Math.ceil(Math.min(fx0, fx1)); i <= Math.floor(Math.max(fx0, fx1)); i++) {
+    const lx = x0 + i * dx;
+    if (lx === a[0] || lx === b[0] || b[0] === a[0]) continue;
+    const t = (lx - a[0]) / (b[0] - a[0]);
+    if (t > 0 && t < 1) cuts.push([lx, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+  }
+  for (let j = Math.ceil(Math.min(fy0, fy1)); j <= Math.floor(Math.max(fy0, fy1)); j++) {
+    const ly = y0 + j * dy;
+    if (ly === a[1] || ly === b[1] || b[1] === a[1]) continue;
+    const t = (ly - a[1]) / (b[1] - a[1]);
+    if (t > 0 && t < 1) cuts.push([a[0] + (b[0] - a[0]) * t, ly, a[2] + (b[2] - a[2]) * t]);
+  }
+  cuts.push(b);
+  return cuts.sort((p, q) => p[2] - q[2]);
+}
+
 interface Piece { sx: number; sy: number; sh: number; ex: number; ey: number; eh: number; used: boolean }
 interface Pt { x: number; y: number; h: number; k: number }   // k: a grid point's number, or -1
 
@@ -40,41 +75,10 @@ interface Pt { x: number; y: number; h: number; k: number }   // k: a grid point
 export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, odd: ArrayLike<number> = []): Sheet {
   const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1;
   const lineX = (i: number) => x0 + i * dx, lineY = (j: number) => y0 + j * dy;
-  const X1 = lineX(cw), Y1 = lineY(ch);
   const byCell = new Map<number, Piece[]>();
   for (let s = 0; s < E.n; s++) {
-    let ax = E.ax[s], ay = E.ay[s], ah = E.ah[s], bx = E.bx[s], by = E.by[s], bh = E.bh[s];
-    // (clipped to the grid: a face at the square's edge reaches a few millimetres past its last line)
-    const ex = bx - ax, ey = by - ay;
-    let t0 = 0, t1 = 1;
-    const clip = (p: number, q: number) => { if (p === 0) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
-    if (!clip(-ex, ax - x0) || !clip(ex, X1 - ax) || !clip(-ey, ay - y0) || !clip(ey, Y1 - ay) || t1 - t0 < 1e-12) continue;
-    const P = (t: number) => [ax + ex * t, ay + ey * t, ah + (bh - ah) * t];
-    if (t0 > 0 || t1 < 1) {
-      const a = P(t0), b = P(t1);
-      // (a clipped end lies on the grid's edge exactly, so it counts as on its cell's edge)
-      const snap = (q: number[]) => { if (Math.abs(q[0] - x0) < 1e-9) q[0] = x0; if (Math.abs(q[0] - X1) < 1e-9) q[0] = X1; if (Math.abs(q[1] - y0) < 1e-9) q[1] = y0; if (Math.abs(q[1] - Y1) < 1e-9) q[1] = Y1; };
-      if (t0 > 0) snap(a);
-      if (t1 < 1) snap(b);
-      [ax, ay, ah, bx, by, bh] = [a[0], a[1], a[2], b[0], b[1], b[2]];
-    }
-    const fx0 = (ax - x0) / dx, fx1 = (bx - x0) / dx, fy0 = (ay - y0) / dy, fy1 = (by - y0) / dy;
-    // where it crosses each grid line, each crossing put exactly on its line, so both cells get the same point
-    const cuts: number[][] = [[ax, ay, ah, 0]];
-    for (let i = Math.ceil(Math.min(fx0, fx1)); i <= Math.floor(Math.max(fx0, fx1)); i++) {
-      const lx = lineX(i);
-      if (lx === ax || lx === bx || bx === ax) continue;
-      const t = (lx - ax) / (bx - ax);
-      if (t > 0 && t < 1) cuts.push([lx, ay + (by - ay) * t, ah + (bh - ah) * t, t]);
-    }
-    for (let j = Math.ceil(Math.min(fy0, fy1)); j <= Math.floor(Math.max(fy0, fy1)); j++) {
-      const ly = lineY(j);
-      if (ly === ay || ly === by || by === ay) continue;
-      const t = (ly - ay) / (by - ay);
-      if (t > 0 && t < 1) cuts.push([ax + (bx - ax) * t, ly, ah + (bh - ah) * t, t]);
-    }
-    cuts.push([bx, by, bh, 1]);
-    cuts.sort((p, q) => p[3] - q[3]);
+    const ah = E.ah[s], bh = E.bh[s];
+    const cuts = edgeCuts(G, E.ax[s], E.ay[s], E.bx[s], E.by[s]).map(([x, y, t]) => [x, y, ah + (bh - ah) * t, t]);
     for (let k = 0; k + 1 < cuts.length; k++) {
       const p = cuts[k], q = cuts[k + 1];
       if (p[0] === q[0] && p[1] === q[1]) continue;
@@ -343,7 +347,7 @@ const SEAM = 0.006;   // metres: a face's edge this near the square's edge runs 
  *  one place, a path's and a pavement's, share one), the free edges where a face meets open ground,
  *  and the scene height the ground meets each spot at: the lowest top of the faces there, or the foot
  *  or top of its retaining wall. `lift` is each kind's lift over its written height (world.ts FACE_LIFT). */
-export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: NonNullable<import("./map").MapData["gs"]>, bounds: number[], Z0: number, lift: number[]) {
+export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: NonNullable<import("./map").MapData["gs"]>, bounds: number[], Z0: number, lift: number[], G: SheetGrid) {
   const V = sf.v, NP = V.length / 3;
   const spot = new Int32Array(NP), spots = new Map<string, number>();
   for (let i = 0; i < NP; i++) { const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
@@ -394,9 +398,21 @@ export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: N
     E.ax[k] = V[3 * a]; E.ay[k] = V[3 * a + 1]; E.ah[k] = top[spot[a]];
     E.bx[k] = V[3 * b]; E.by[k] = V[3 * b + 1]; E.bh[k] = top[spot[b]];
   }
+  // the points the sheet puts partway along each free edge, for the faces to put there too
+  const cutsOf = new Map<number, number[][]>();
+  for (let k = 0; k < n; k++) {
+    const inner = edgeCuts(G, E.ax[k], E.ay[k], E.bx[k], E.by[k]).filter((q) => q[2] > 0 && q[2] < 1);
+    if (!inner.length) continue;
+    const a = spot[fa[k]], b = spot[fb[k]];
+    cutsOf.set(a * NP + b, inner);
+    cutsOf.set(b * NP + a, inner.map(([x, y, t]) => [x, y, 1 - t]).reverse());
+  }
   /** The scene height the ground meets corner i at, or Infinity off the free edges. */
   const meets = (i: number) => top[spot[i]];
-  return { edges: E, meets, onSeam, spot };
+  /** The points the sheet has partway along the faces' edge from corner a to b, in order from a: data
+   *  x, y and how far along (0 to 1), or undefined if none. */
+  const alongEdge = (a: number, b: number) => cutsOf.get(spot[a] * NP + spot[b]);
+  return { edges: E, meets, onSeam, spot, alongEdge };
 }
 
 /** The grid's heights (decimetres) with the sheet's carving: the grid points beside the faces cut down

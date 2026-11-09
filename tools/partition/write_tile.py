@@ -2929,6 +2929,90 @@ def _ground_triangles(poly, T):
     return out
 
 
+MEND = 0.015    # metres: a corner this near another face's edge, both rounded to the centimetre, is on it
+
+
+def _half_edges(tris, v, spot):
+    """The edges round the outside of the triangles, each with the faces on its left, as (from, to)
+    by `spot`, the triangles' corner numbers or their places."""
+    count = collections.Counter()
+    for _, _, ids, turn in tris:
+        a, b, c = (spot(i) for i in (ids if turn > 0 else ids[::-1]))
+        if a == b or b == c or a == c:
+            continue
+        count.update(((a, b), (b, c), (c, a)))
+    return [e for e, n in count.items() for _ in range(n - count.get((e[1], e[0]), 0))]
+
+
+def _mend_corners(tris, v, point_at):
+    """The triangles with every corner that lies partway along an outside edge of the faces (another
+    face's, or one rounded off its line) made a corner of the triangle on that edge too, so two faces
+    meet corner to corner along their whole length and their outlines agree: with a corner on only
+    one side, the faces' edges were apart by up to a centimetre and the sky showed between them.
+    `point_at(x, y, piece)` is the point a piece has at a place."""
+    place = lambda i: (v[3 * i], v[3 * i + 1])
+    tris = [t for t in tris if len(set(map(place, t[2]))) == 3]
+    for _ in range(4):
+        edges = _half_edges(tris, v, place)
+        if not edges:
+            break
+        corners = sorted({p for e in edges for p in e})
+        tree = STRtree(shapely.points(corners))
+        lines = shapely.linestrings([[a, b] for a, b in edges])
+        li, ci = tree.query(lines, predicate="dwithin", distance=MEND)
+        cuts = collections.defaultdict(list)
+        for k, m in zip(li.tolist(), ci.tolist()):
+            (a, b), c = edges[k], corners[m]
+            if c == a or c == b:
+                continue
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            t = ((c[0] - a[0]) * ex + (c[1] - a[1]) * ey) / (ex * ex + ey * ey)
+            if 0 < t < 1:
+                cuts[(a, b)].append((t, c))
+        if not cuts:
+            break
+        out = []
+        for kind, n, ids, turn in tris:
+            for k in range(3):
+                p, q, r = ids[k], ids[(k + 1) % 3], ids[(k + 2) % 3]
+                key = (place(p), place(q)) if turn > 0 else (place(q), place(p))
+                if key not in cuts:
+                    continue
+                along = [point_at(x, y, n) for _, (x, y) in sorted(cuts[key], reverse=turn < 0)]
+                chain = [p] + [m for m in along if m is not None and place(m) not in (place(p), place(q), place(r))] + [q]
+                out += [[kind, n, [chain[j], chain[j + 1], r], turn] for j in range(len(chain) - 1)]
+                break
+            else:
+                out.append([kind, n, ids, turn])
+        tris = [t for t in out if len(set(map(place, t[2]))) == 3]
+    return tris
+
+
+def _outlines(tris, v):
+    """Each piece's outline rings, the faces on their left, from its own triangles: (piece, corner
+    numbers round the ring, the first again at the end)."""
+    by_piece = collections.defaultdict(list)
+    for t in tris:
+        by_piece[t[1]].append(t)
+    out = []
+    for n in sorted(by_piece):
+        nxt = collections.defaultdict(list)
+        edges = _half_edges(by_piece[n], v, lambda i: i)
+        for a, b in edges:
+            nxt[a].append(b)
+        for a, _ in edges:
+            if not nxt[a]:
+                continue
+            ring = [a]
+            while nxt[ring[-1]]:
+                ring.append(nxt[ring[-1]].pop(0))
+                if ring[-1] == a:
+                    break
+            if len(ring) >= 2:
+                out.append((n, ring))
+    return out
+
+
 def _triangles(poly):
     """The triangles of a face. A face with a hole that touches its edge, which cutting an area out
     of a pavement can leave, defeats the constrained triangulation, so it is made valid and taken
@@ -4590,12 +4674,15 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             return "path"
         return best[1]
     walk, kerbside = set(), set()
+    # each triangle as [kind, piece, corner ids, +1 if its corners as listed run anticlockwise]
+    tris, piece_of = [], []
     for (cls, _), poly in zip(pieces, simple):
         flat = True if cls in ("path", "front", "drive") else "g" if cls == "plaza" else "r" if cls == "bed" else False
         cls = "drive" if cls == "plaza" else cls
         for poly in getattr(poly, "geoms", [poly]):
             if poly.geom_type != "Polygon" or poly.is_empty:
                 continue
+            piece_of.append((cls, flat))
             for t in (_ground_triangles(poly, T) if flat == "g" and T is not None else _triangles(poly)):
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":
@@ -4612,14 +4699,20 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                     kind = "road" if c in KERBED else "pave" if c == "pedestrian" else "service"
                 ids = [point(x, y, flat) for x, y in pts]
                 if None not in ids:
-                    out[kind] += ids
-                    (walk if cls == "pavement" else kerbside).update(ids)
-            # inside on the left of every outline, so the game knows which way a kerb faces
-            for ring in [orient(poly, 1.0).exterior, *orient(poly, 1.0).interiors]:
-                ids = [point(x, y, flat) for x, y in ring.coords]
-                ids = [k for k in ids if k is not None]
-                if len(ids) >= 2:
-                    out["e"].append(dict(c={"pavement": "pave", "carriageway": "road"}.get(cls, cls), i=ids))
+                    (a, b), c = pts[:2], pts[2]
+                    turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+                    tris.append([kind, len(piece_of) - 1, ids, 1 if turn > 0 else -1])
+    tris = _mend_corners(tris, v, lambda x, y, n: point(x, y, piece_of[n][1]))
+    for kind, n, ids, _ in tris:
+        out[kind] += ids
+        (walk if piece_of[n][0] == "pavement" else kerbside).update(ids)
+    # Each piece's outline is its own triangles' edge, every corner on it, so where the ground meets
+    # the face it meets the face as drawn: an outline running straight past a corner the triangles
+    # have partway along it (a plaza cut at the grid's lines, its corners rounded to the centimetre)
+    # left a crack a few millimetres wide between them that the sky showed through.
+    for n, ring in _outlines(tris, v):
+        cls = piece_of[n][0]
+        out["e"].append(dict(c={"pavement": "pave", "carriageway": "road"}.get(cls, cls), i=ring))
     # A pavement's back edge falls a little towards the ground behind it, where the street is levelled
     # across above it: stood level with the middle of the street, its back stood a kerb and more over
     # the grass and showed as a dark step, wherever the ground falls away from a street (Sydney Road

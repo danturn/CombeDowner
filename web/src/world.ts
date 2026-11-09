@@ -784,7 +784,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
   const cuts = cuttings(map);
-  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT) : null;
+  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT, { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny }) : null;
   // (with the sheet the faces leave roundTo alone, so where one beside a cutting decides the ground is
   // found from their edges here, or the bank behind a wing wall was made up over a track beside it)
   const faceTo = meet ? nearFaces(meet.edges, T, T.dx * 0.75) : roundTo;
@@ -2049,7 +2049,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // wall where it's taller than a kerb (drawn with the walls, in the square's own wall material). A
   // wall holding the ground up above the face faces the face; one the face stands on faces out.
   const retaining: number[][][] = [];
-  const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo) => {
+  const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo, cuts?: number[][]) => {
     // (a face over the water, or over the canal's bank higher than a walker's headroom, is a
     // street running on off its bridge's span: no wall stands under it, in the water or across the towpath)
     const overWater = (q: number[], m: number) => {
@@ -2060,16 +2060,19 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     };
     ma = overWater(a, ma); mb = overWater(b, mb);
     const da = a[1] - ma, db = b[1] - mb;
-    // (where the heights agree a face is still needed if the edge crosses a grid line: the sheet has a
-    // point there that the face's edge hasn't, and the two leave a hairline crack the sky shows through)
-    const cell = (q: number[]) => [Math.floor((q[0] - sheetGrid.x0) / sheetGrid.dx), Math.floor((-q[2] - sheetGrid.y0) / sheetGrid.dy)];
-    const [ia, ja] = cell(a), [ib, jb] = cell(b);
-    if (Math.max(Math.abs(da), Math.abs(db)) < 1e-4 && ia === ib && ja === jb) return;
+    if (Math.max(Math.abs(da), Math.abs(db)) < 0.02) return;
     const side = da + db > 0 ? 1 : -1, out = [(b[2] - a[2]) / l * -side, 0, -(b[0] - a[0]) / l * -side];
-    const lo = (q: number[], m: number) => [q[0], Math.min(q[1], m) - 0.05, q[2]], hi = (q: number[], m: number) => [q[0], Math.max(q[1], m), q[2]];
-    const A = lo(a, ma), B = lo(b, mb), C = hi(b, mb), D = hi(a, ma);
-    if (Math.max(Math.abs(da), Math.abs(db)) > 0.45) { retaining.push([A, B, C, D, out, [along, l]]); return; }
-    facing(g, A, B, C, D, out, [along, A[1]], [along + l, B[1]], [along + l, C[1]], [along, D[1]], [1, 1, 1]);
+    const lo = (q: number[], m: number) => [q[0], Math.min(q[1], m), q[2]], hi = (q: number[], m: number) => [q[0], Math.max(q[1], m), q[2]];
+    const tall = Math.max(Math.abs(da), Math.abs(db)) > 0.45;
+    // (split where the sheet's edge has points partway along, so its foot meets the ground corner to corner)
+    const at = (f: number, q?: number[]) => [q ? q[0] : a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, q ? -q[1] : a[2] + (b[2] - a[2]) * f];
+    const stops = [[0, ...a, ma], ...(cuts ?? []).map((q) => [q[2], ...at(q[2], q), ma + (mb - ma) * q[2]]), [1, ...b, mb]];
+    for (let k = 0; k + 1 < stops.length; k++) {
+      const [f0, x0, y0, z0, m0] = stops[k], [f1, x1, y1, z1, m1] = stops[k + 1], p = [x0, y0, z0], q = [x1, y1, z1];
+      const A = lo(p, m0), B = lo(q, m1), C = hi(q, m1), D = hi(p, m0), u0 = along + l * f0, u1 = along + l * f1;
+      if (tall) retaining.push([A, B, C, D, out, [u0, u1 - u0]]);
+      else facing(g, A, B, C, D, out, [u0, A[1]], [u1, B[1]], [u1, C[1]], [u0, D[1]], [1, 1, 1]);
+    }
   };
   /** A square's street and path faces: carriageways and pavements raised by their kerbs, and round
    *  each piece a face down to the ground beside it, a kerb or, where tall, Bath stone. Paths, front
@@ -2089,6 +2092,31 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       return [x, V[3 * i + 2] - Z0 + LIFT[kind], z];
     };
+    // A face's triangle with an edge where the sheet meets it is split at the points the sheet has
+    // along that edge (where it crosses the grid's lines), so the two share every corner: with a
+    // corner on one side only, a hairline crack opened between them that the sky showed through.
+    const sheetTri = (g: Geo, ids: number[], P: number[][], uv: (q: number[]) => number[]) => {
+      const cut = meet ? [0, 1, 2].map((m) => meet.alongEdge(ids[m], ids[(m + 1) % 3])) : [];
+      const split = cut.filter((c) => c).length;
+      if (!split) { facingTri(g, P[0], P[1], P[2], up, uv(P[0]), uv(P[1]), uv(P[2]), white); return; }
+      const ring: number[][] = [];
+      for (let m = 0; m < 3; m++) {
+        const p = P[m], q = P[(m + 1) % 3];
+        ring.push(p);
+        for (const [x, y, f] of cut[m] ?? []) ring.push([x, p[1] + (q[1] - p[1]) * f, -y]);
+      }
+      // (cut along one edge, fanned from the corner across from it; along more, from the middle)
+      let hub: number[], fan = ring;
+      if (split === 1) {
+        const m = cut.findIndex((c) => c), from = ring.indexOf(P[(m + 2) % 3]);
+        hub = P[(m + 2) % 3];
+        fan = [...ring.slice(from + 1), ...ring.slice(0, from)];
+        for (let k = 0; k + 1 < fan.length; k++) facingTri(g, hub, fan[k], fan[k + 1], up, uv(hub), uv(fan[k]), uv(fan[k + 1]), white);
+        return;
+      }
+      hub = [0, 1, 2].map((j) => (P[0][j] + P[1][j] + P[2][j]) / 3);
+      for (let k = 0; k < fan.length; k++) { const p = fan[k], q = fan[(k + 1) % fan.length]; facingTri(g, hub, p, q, up, uv(hub), uv(p), uv(q), white); }
+    };
     const laid = groundTris();
     for (const kind of ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const) {
       const T = sf[kind] ?? [], g = geo[kind];
@@ -2096,13 +2124,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (k % 1200 === 1197) yield;
         const a = at(T[k], kind), b = at(T[k + 1], kind), c = at(T[k + 2], kind), ua = [a[0] / 4, a[2] / 4], ub = [b[0] / 4, b[2] / 4], uc = [c[0] / 4, c[2] / 4];
         if (onGround(kind)) laid.add(g, a, b, c, ua, ub, uc, LIFT[kind]);
-        else facingTri(g, a, b, c, up, ua, ub, uc, white);
+        else sheetTri(g, [T[k], T[k + 1], T[k + 2]], [a, b, c], (q) => [q[0] / 4, q[2] / 4]);
       }
     }
     yield* laid.flush();
     if (meet) {
       const T = sf.bed ?? [];
-      for (let k = 0; k + 2 < T.length; k += 3) facingTri(geo.bed, at(T[k], "bed"), at(T[k + 1], "bed"), at(T[k + 2], "bed"), up, [0, 0], [0, 0], [0, 0], white);
+      for (let k = 0; k + 2 < T.length; k += 3) sheetTri(geo.bed, [T[k], T[k + 1], T[k + 2]], [at(T[k], "bed"), at(T[k + 1], "bed"), at(T[k + 2], "bed")], () => [0, 0]);
     }
     // streets of different kinds cut from one piece (a pedestrian street in a carriageway's outline)
     // meet along edges no outline marks, so a step between them needs its face drawn here
@@ -2157,7 +2185,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (kind === "bed") {
           const ma = meet!.meets(e.i[k]), mb = meet!.meets(e.i[k + 1]);
           if (!other && !meet!.onSeam(e.i[k], e.i[k + 1]) && ma < Infinity && mb < Infinity
-              && Math.max(Math.abs(a[1] - ma), Math.abs(b[1] - mb)) > 0.45) sheetEdge(a, b, ma, mb, l, along, geo.bridge);
+              && Math.max(Math.abs(a[1] - ma), Math.abs(b[1] - mb)) > 0.45) sheetEdge(a, b, ma, mb, l, along, geo.bridge, meet!.alongEdge(e.i[k], e.i[k + 1]));
           along += l;
           continue;
         }
@@ -2177,7 +2205,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (meet && !other && !meet.onSeam(e.i[k], e.i[k + 1])) {
           // (a corner the sheet doesn't meet is the tip of a spike of no width in the outline: nothing to draw)
           const ma = meet.meets(e.i[k]), mb = meet.meets(e.i[k + 1]);
-          if (ma < Infinity && mb < Infinity) sheetEdge(a, b, ma, mb, l, along, geo[kind === "service" ? "road" : kind as keyof typeof geo]);
+          if (ma < Infinity && mb < Infinity) sheetEdge(a, b, ma, mb, l, along, geo[kind === "service" ? "road" : kind as keyof typeof geo], meet.alongEdge(e.i[k], e.i[k + 1]));
           along += l;
           continue;
         }
