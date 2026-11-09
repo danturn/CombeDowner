@@ -189,7 +189,8 @@ open it, and Back or Esc takes you back to the list:
   debug panel. Shadows go Off, Low, Medium, High or Ultra: how far from you they reach, as a share of
   the draw distance (a tenth, a quarter, half, or all of it), never further than 3 km (1 km on a phone
   or tablet), past which a house's shadow is smaller than a pixel. The page says how far that is at
-  your draw distance. Close by they stay as sharp at every level; further off they're coarser.
+  your draw distance. Close by they stay as sharp at every level; further off they're coarser. Trees
+  cast them as far as they reach, even where they're drawn as flat pictures.
   Scenery detail goes Low, Medium, High, Ultra or Max: how far round you the grass grows (26 m to
   130 m) and how far off trees keep their full crowns (50 m to 250 m) and then their simpler ones
   (140 m to 650 m) before they turn to flat pictures. It changes on the spot; a phone or tablet

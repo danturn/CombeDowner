@@ -34,6 +34,9 @@ export const SHADOW_OFF = 0, SHADOW_LOW = 1, SHADOW_MEDIUM = 2, SHADOW_ULTRA = S
  *  as long as a house's shadow at midday, and drawing the whole city into the shadows again costs
  *  more each time; a phone or tablet stops sooner. */
 export const SHADOW_MOST = MOBILE ? 1000 : 3000;
+/** The layer for things that only cast shadows (the stand-ins for far-off trees, trees.ts): the sun's
+ *  shadow cameras see it, the camera you look through doesn't, so they cost nothing on the screen. */
+export const SHADOW_ONLY = 1;
 /** The sharpest square's half-width, metres: as the shadows always were, with the same detail. */
 const NEAR = 70;
 /** The most squares: each is a light with a shadow map, and each costs every lit surface a little. */
@@ -136,6 +139,7 @@ export class SunShadows {
     }
     for (const l of this.lights) {
       l.shadow.autoUpdate = false;
+      l.shadow.camera.layers.enable(SHADOW_ONLY);
       this.group.add(l, l.target);
       this.drawnAt.push({ x: Infinity, z: Infinity, d: new THREE.Vector3() });
     }

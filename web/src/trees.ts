@@ -3,11 +3,14 @@
 // trunks fork into a few limbs. Crowns sway in the wind. Past a short distance each plant swaps to a
 // cheaper crown, further off to a flat picture that always turns to face you, Duke Nukem style
 // (?trees=flat in the address draws every plant like that, close up too), and past the fog it
-// isn't drawn at all. How many are conifers and the tints of their leaves belong to the map's
+// isn't drawn at all. A flat picture would throw the wrong shadow, so each one far off has a stand-in
+// for its shadow, out as far as the shadows reach (shadows.ts): its cheaper crown and trunk, in a
+// layer only the sun's shadows see, so trees cast shadows as far off as you've asked for them. How many are conifers and the tints of their leaves belong to the map's
 // ecoregion (region.ts). Nothing here goes over the network: everyone grows the same plants from the map.
 import * as THREE from "three";
 import type { Region } from "./region";
 import { TREE_TO } from "./view";
+import { SHADOW_ONLY, shadowReach } from "./shadows";
 import { show } from "./cull";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as TX from "./textures";
@@ -167,6 +170,7 @@ export interface VegetationKit {
 interface Chunk {
   x: number; z: number; r: number; range: number; meshes: THREE.InstancedMesh[][]; to: number[];
   trunk: THREE.InstancedMesh | null; tmat: Float32Array | null;   // trunks, and where each plant's goes
+  shade: THREE.InstancedMesh[]; shadeTrunk: THREE.InstancedMesh | null;   // the far ones' shadows: cheaper crowns and trunks only the sun sees
   flat: THREE.InstancedMesh; cell: THREE.InstancedBufferAttribute; cells: number[];   // the pictures, which one each, and each kind's
   holder: THREE.Group;   // all of its meshes, hidden at once when it's out of range (quicker than hiding each)
   ix: Float32Array; iz: Float32Array; kind: Int8Array; mat: Float32Array; col: Float32Array;
@@ -288,11 +292,19 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     ownGeos.push(fg);
     const flat = instanced(fg, flatMat, n);
     flat.castShadow = false;
-    const all = [...(trunk ? [trunk] : []), ...meshes.flat(), flat];
+    // the far ones' shadows: the cheaper crowns (and trunks), only in the sun's shadows
+    const shadowOnly = (m: THREE.InstancedMesh) => {
+      const s = instanced(m.geometry, m.material as THREE.Material, n);
+      s.receiveShadow = false;
+      s.layers.set(SHADOW_ONLY);
+      return s;
+    };
+    const shade = meshes[1].map(shadowOnly), shadeTrunk = trunk ? shadowOnly(trunk) : null;
+    const all = [...(trunk ? [trunk] : []), ...meshes.flat(), flat, ...shade, ...(shadeTrunk ? [shadeTrunk] : [])];
     const holder = new THREE.Group();
     for (const m of all) holder.add(m);
     scene.add(holder);
-    const ch: Chunk = { x: 0, z: 0, r: 0, meshes, to, trunk, tmat, flat, cell, cells, holder, range: to[to.length - 1], ix: new Float32Array(n), iz: new Float32Array(n), kind: new Int8Array(n),
+    const ch: Chunk = { x: 0, z: 0, r: 0, meshes, to, trunk, tmat, shade, shadeTrunk, flat, cell, cells, holder, range: to[to.length - 1], ix: new Float32Array(n), iz: new Float32Array(n), kind: new Int8Array(n),
       mat: new Float32Array(n * 16), col: new Float32Array(n * 3), sx: Infinity, sz: Infinity, allFar: false };
     const box = new THREE.Box3();
     for (let i = 0; i < n; i++) {
@@ -321,6 +333,9 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     for (const lod of ch.meshes) for (const m of lod) m.count = 0;
     ch.flat.count = 0;
     if (ch.trunk) ch.trunk.count = 0;
+    for (const m of ch.shade) m.count = 0;
+    if (ch.shadeTrunk) ch.shadeTrunk.count = 0;
+    const shadows = FLAT_ALL ? 0 : shadowReach();
     const cell = ch.cell.array as Float32Array;
     for (let i = 0; i < ch.kind.length; i++) {
       const k = ch.kind[i];
@@ -333,9 +348,15 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
         const n = ch.flat.count++;
         copy(ch.flat, n, ch.mat, i, ch.col);
         cell[n] = ch.cells[k];
+        // within the shadows' reach, its shadow from the cheaper crown
+        if (d < shadows) {
+          const s = ch.shade[k];
+          if (s) copy(s, s.count++, ch.mat, i);
+          if (ch.shadeTrunk) copy(ch.shadeTrunk, ch.shadeTrunk.count++, ch.tmat!, i);
+        }
       }
     }
-    for (const m of [...ch.meshes.flat(), ch.flat, ...(ch.trunk ? [ch.trunk] : [])]) {
+    for (const m of [...ch.meshes.flat(), ch.flat, ...(ch.trunk ? [ch.trunk] : []), ...ch.shade, ...(ch.shadeTrunk ? [ch.shadeTrunk] : [])]) {
       show(m, m.count > 0);
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
