@@ -22,7 +22,7 @@ What the sheet is made of:
     at the face's edge for what is left over, in the
     square's own wall material (at a cliff's top, down to the cliff's foot). A flight of steps is
     sunk into the hill: the hill beside it is held up to SUNK_MOST over it by such a wall, and a
-    wall within NARROW of a lower face's edge goes down to that face's level. A grid
+    wall within NARROW of the railway's bed below it goes down to the bed's level. A grid
     point is never built up more than FILL_MOST over the survey, nor at all within a cell and a half
     of the water or a bridge's deck, and is kept DECK_UNDER under a deck's underside, out to its
     abutments, where a face ending under the deck's end is held by a wall as an abutment.
@@ -204,6 +204,7 @@ class Faces:
             for a, b, lift in run:
                 free.append((a, b)); tops.append((V[a, 2] + lift, V[b, 2] + lift)); lifts.append(lift)
         self.free = np.asarray(free, np.int64).reshape(-1, 2)
+        self.bed = {int(sp[i]) for c, idx in self.E if c == "bed" for i in idx.tolist()}
         # (a street, a pavement and a path are each lifted their own way, which tells them apart)
         self.lift = np.asarray(lifts, float)
         self.tops = np.asarray(tops, float).reshape(-1, 2)
@@ -432,12 +433,14 @@ def ground_sheet(tile, canal=None):
         k = np.nonzero((u >= -tol) & (u <= 1 + tol) & (d <= half))[0]
         bound = za + (zb - za) * np.clip(u[k], 0, 1) - DECK_UNDER
         meet[k] = np.minimum(meet[k], bound)
-    # A wall at a face's edge a hand's breadth (NARROW) from a lower face's edge goes down to that
-    # face: the ground between is too narrow to slope, and stood as a strip of grass up the wall's foot
-    # (a cutting's wall over the railway's bed).
+    # A wall at a face's edge a hand's breadth (NARROW) from the railway's bed below it goes down to
+    # the bed: the ground between is too narrow to slope, and stood as a strip of grass up the foot of
+    # the cutting's wall. (Not beside other faces: a pavement's wall let down to a path beside it
+    # left the pavement on a lip.)
     pts = shapely.points(F.V[spots, :2])
     si_, sj_ = shapely.STRtree(pts).query(pts, predicate="dwithin", distance=NARROW)
-    low = (top[sj_] < top[si_] - 0.3) & (top[si_] > g[si_])
+    on_bed = np.asarray([int(v) in F.bed for v in spots.tolist()], bool)
+    low = (top[sj_] < top[si_] - 0.3) & (top[si_] > g[si_]) & on_bed[sj_] & ~on_bed[si_]
     if low.any():
         floor = np.full(len(spots), np.inf)
         np.minimum.at(floor, si_[low], top[sj_[low]])
