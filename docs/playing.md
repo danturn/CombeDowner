@@ -1015,15 +1015,26 @@ A line starting with `/` is a command, for trying things out:
   (or Q) picks one of five speeds. On a touch screen the stick moves, Jump climbs, Crouch sinks (tap
   again to stop) and Weapon changes speed. A controller flies it as real drones do ("Mode 2"): the
   left stick climbs, sinks and turns, the right stick moves you about, the D-pad's up and down tilt
-  the camera, and L1 and R1 pick the speed. The view leans into turns, and along the top are your
-  height, speed and snaps.
+  the camera, and L1 and R1 pick the speed. The view leans into turns, and the screen is a drone
+  camera's feed: a viewfinder with a cross in the middle, the compass heading on a tape across the
+  top, your height above the ground on a ladder down the left and your speed down the right, the
+  time, square, speed setting, zoom, camera tilt and climb in the top left, the latitude and
+  longitude, how far you are from where you took off, the range to what's under the cross and
+  your height above the sea in the top right, REC with the flight's time and the snaps you've
+  taken this flight over the frame, and the view and zoom under it. Nothing else of the HUD
+  shows while you fly (the full map and the scores still come up when you ask), and nobody goes
+  for you: the naughty boys, the teams, the cats and Bendy leave you be, and the people who chat
+  as you pass (and Jamie, with his ciggies) don't notice you.
   C (Circle on a controller, or a tap on the view's name at the top) goes round the drone's views of
   the scenery, each lit the same night or day: Normal; Clay, everything plain white so the shapes
   show for themselves; Outlines, the clay with a dark line wherever a surface turns or one thing
   stands in front of another; Blueprint, the same lines bright on dark shapes; and What's what, each kind
   of thing in its own colour with a key under the bar (the lidar's ground, streets, the map build's
   buildings, set pieces, landmarks, walls and fences, plants, water, the canal's works, the railway
-  and tunnels, street things, far-off scenery, vehicles, people). `,` and `.` zoom out and in, from
+  and tunnels, street things, far-off scenery, vehicles, people). In What's what the thing under the
+  crosshair is named just below it, with its colour and how far off it is, and outlined in yellow: a
+  building from the map's own outline of it, ground to eaves, with its type and height; a tree, car,
+  person, bench or landmark in a box round it; a street or the ground just named. `,` and `.` zoom out and in, from
   1x to 8x (the D-pad's left and right, or a tap on the zoom at the top). A snap says which view
   it was in, and how far zoomed.
   Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where

@@ -118,6 +118,7 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     }
     delete obj.userData.lamps;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });
+    obj.userData.landmark = kind;   // its name, for the drone's "what's what" (drone.ts)
     scene.add(tag(obj, SET_PIECE_KINDS.has(kind as string) ? "setpiece" : "landmark"));
     built.push(obj);
   }

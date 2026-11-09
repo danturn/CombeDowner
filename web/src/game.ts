@@ -347,6 +347,7 @@ interface Remote {
   inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
   smoking?: boolean;                        // smoking one of Jamie's cigarettes, by their own word: nothing hurts them
   god?: boolean;                            // in god mode (/idkfa on the chat phone, dev.ts), by their own word: nothing hurts them
+  drone?: boolean;                          // flying the drone (drone.ts), by their own word: nobody the game runs goes for them
   waiting?: boolean;                        // out of a race and waiting for it to end, by their own word: nothing hurts them
   carOff?: number;                          // seconds they've said they're out while our list has them in a seat (a stale seat)
 }
@@ -366,6 +367,7 @@ interface StateExtra {
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
   god?: boolean;       // god mode (dev.ts): the host lets nothing hurt them either
+  dr?: boolean;        // flying the drone (drone.ts): the host's naughty boys, cats and the rest leave them be
   rw?: boolean;        // over a race's line or out of it, waiting for the others (race.ts), or arriving (arrive.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
   vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
@@ -384,7 +386,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, ws: e.ws === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, god: e.god === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
+      wings: e.wings === true, ws: e.ws === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, god: e.god === true, dr: e.dr === true, rw: e.rw === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -678,7 +680,7 @@ export class Game {
       drone: (rest) => this.drone.command(rest),
     });
     this.drone = new Drone({
-      map, player: this.player, camera: this.camera, mapId: this.mapId,
+      map, player: this.player, camera: this.camera, scene: this.world.scene, mapId: this.mapId,
       why: () => !this.alive ? "Not while you're dead"
         : this.ride || this.riding || this.basket || this.balloons.aboard >= 0 || this.world.canal?.helmOf(this.net.selfId) ? "Get off what you're on first"
         : null,
@@ -2060,6 +2062,7 @@ export class Game {
     r.avatar.setSuit(!!e?.ws);
     r.smoking = !!e?.smoke;
     r.god = !!e?.god;
+    r.drone = !!e?.dr;
     r.waiting = !!e?.rw;
     r.avatar.setRage(r.smoking);
     // whether they're in a vehicle, by their own word (undefined from pages that don't say)
@@ -2619,8 +2622,9 @@ export class Game {
     // nobody goes for you while you're at a narrowboat's tiller, or at the wheel of a bus or a coach: you're above all that
     // (the passengers on a bus are fair game, as they always were)
     const helm = (id: string) => !!this.world.canal?.helmOf(id) || this.vehicles.list.some((v) => v.driver === id && (isBus(v.kind) || isCoach(v.kind)));
-    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive || helm(this.net.selfId) }];
-    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive || helm(r.id) });
+    // nor while you fly the drone (drone.ts)
+    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive || helm(this.net.selfId) || this.drone.on }];
+    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive || helm(r.id) || !!r.drone });
     return out;
   }
 
@@ -4421,7 +4425,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, god: this.dev.god || this.drone.on, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, ws: p.suitOpen, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, god: this.dev.god || this.drone.on, dr: this.drone.on, rw: this.sheltered(), gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -4455,10 +4459,13 @@ export class Game {
       const out = this.upFrom === "deli" ? this.deliDoor.outside() : this.upFrom ? this.mineTour.outside() : undefined;
       if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
     }
-    this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
+    // flying the drone, the people who talk to you as you pass (and Jamie, with his ciggies) take you
+    // for someone far overhead, and leave you be
+    const py = this.drone.on ? p.pos.y + 1e4 : p.pos.y;
+    this.breakdown.update(dt, now / 1000, p.pos.x, py, p.pos.z);
     this.menders.update(dt, now / 1000, p.pos.x, p.pos.z);
-    if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
-    this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
+    if (this.jamie.update(dt, now / 1000, p.pos.x, py, p.pos.z, this.alive && !this.drone.on, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
+    this.dayBendy.update(dt, p.pos.x, py, p.pos.z);
     this.records.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.golfDriver.update(dt, this.vehicles.list, (v) => this.vehicles.of(this.net.selfId)?.v === v, p.pos.x, p.pos.y, p.pos.z);
     if (this.dev.god && this.alive) this.weapon.armAll();   // god mode: every gun, never dry
@@ -5208,7 +5215,7 @@ export class Game {
       get selfId() { return g.net.selfId; },
       get name() { return g.name; },
       get isHost() { return g.isHost; },
-      get passive() { return g.passive; },
+      get passive() { return g.passive || g.drone.on; },   // (flying the drone, nobody in a job goes for you either)
       me: () => { const p = this.player.pos; return { x: p.x, y: p.y, z: p.z, yaw: this.player.yaw, alive: this.alive }; },
       players: () => [
         { id: this.net.selfId, name: this.name, colour: YOUR_ARROW, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },

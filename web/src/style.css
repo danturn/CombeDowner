@@ -1269,26 +1269,20 @@ body.reveal #touch { visibility: hidden; }
   .nk-screen { height: min(260px, calc(100dvh - 210px)); }
 }
 
-/* the drone's screen (drone.ts): height, speed, snaps and the view along the top, like an FPV
-   drone's goggles, and in the "what's what" view (looks.ts) the key to its colours under it */
-#droneosd {
-  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
-  display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
-  font: bold 13px/1.2 ui-monospace, monospace; color: #fff; letter-spacing: 0.04em;
-  text-shadow: 0 0 2px #000, 0 0 4px #000; white-space: nowrap;
-}
-#droneosd .bar { display: flex; gap: 14px; padding: 4px 10px; background: rgba(0, 0, 0, 0.25); border-radius: 3px; }
-#droneosd .rec { color: #ff4a3a; animation: dronerec 1s steps(2) infinite; }
-#droneosd .look, #droneosd .zoom { pointer-events: auto; cursor: pointer; }
-#droneosd .look { color: #ffd23a; }
-@keyframes dronerec { 50% { opacity: 0.3; } }
-#droneosd.flash .bar { animation: droneflash 0.25s ease-out; }
-@keyframes droneflash { from { background: rgba(255, 255, 255, 0.9); } }
-#droneosd .key { list-style: none; margin: 0; padding: 6px 10px; display: grid; grid-template-columns: repeat(3, auto); gap: 3px 14px;
-  background: rgba(0, 0, 0, 0.45); border-radius: 3px; font-size: 12px; }
-#droneosd .key i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 1px solid #0008; vertical-align: -1px; }
-@media (max-width: 520px) {
-  #droneosd .bar { gap: 8px; font-size: 11px; flex-wrap: wrap; justify-content: center; white-space: normal; }
-  #droneosd .key { grid-template-columns: repeat(2, auto); font-size: 10px; }
-}
-body.droning #ammo { display: none; }   /* no gun while you fly the drone */
+/* the drone's screen (droneosd.ts): its lines and numbers are on the canvas; these are the faint scan
+   lines and dark edge of a camera feed, and the words you can tap, the lock and the key round the frame */
+#droneosd { position: fixed; inset: 0; z-index: 6; pointer-events: none; color: #d6ecc8;
+  font: 12px/1.3 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.03em; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55); }
+#droneosd::before { content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.07) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.45) 100%); }
+#droneosd canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#droneosd .under { position: absolute; left: var(--fx); top: var(--fb); display: flex; gap: 16px; white-space: nowrap; }
+#droneosd .under span { pointer-events: auto; cursor: pointer; }
+#droneosd .lock { position: absolute; left: var(--fx); width: var(--fw); top: calc(var(--fb) + 18px); text-align: right; white-space: nowrap; }
+#droneosd .lock i, #droneosd .key i { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border: 1px solid #d6ecc8; vertical-align: -1px; }
+#droneosd .key { position: absolute; left: 14px; top: var(--keytop); list-style: none; margin: 0; padding: 0; font-size: 11px; line-height: 1.45; }
+@media (max-width: 520px), (max-height: 500px) { #droneosd { font-size: 10px; } #droneosd .key { font-size: 9px; } }
+/* flying the drone, the HUD is the drone's alone (drone.ts): the crosshair, the touch controls, and
+   the full map and the scores when you ask for them, and nothing else */
+body.droning #hud > :not(#touch):not(#clickhint):not(#bigmap):not(#scoreboard) { display: none !important; }   /* (the drone draws its own cross) */

@@ -971,6 +971,7 @@ function tick(now: number) {
     post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.edges ?? null);
   } finally { (looks ?? game?.drone.looks)?.after(current.world.scene); }
   game?.drone.framed(renderer.domElement);   // a drone snap's picture, while this frame's still there to copy
+  game?.drone.peek(renderer);                // and in its "what's what" view, what's under the crosshair
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
   frames++; fpsT += raw;
