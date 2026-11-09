@@ -11,7 +11,7 @@
 //
 // Video: automatic (quality.ts), draw distance (view.ts), resolution, the retro look and depth of field (post.ts), field of view (view.ts,
 // used by game.ts), how far the shadows reach (Off to Ultra, a share of the draw distance: shadows.ts), and
-// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), and the debug panel (debug.ts, also F3). Choosing a distance, resolution or shadows yourself turns automatic off.
+// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), how far off lit street lamps show after dark and how many light the street (Low to Max: view.ts, world.ts), and the debug panel (debug.ts, also F3). Choosing a distance, resolution or shadows yourself turns automatic off.
 // Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
@@ -30,7 +30,7 @@ import { closeButton } from "./modal";
 import { RES_DEFAULT, RES_STEPS, depthOfField, setDepthOfField, type Post } from "./post";
 import { quality } from "./quality";
 import { SHADOW_DEFAULT, SHADOW_LEVELS, SHADOW_OFF, setShadowLevel, shadowLevel, shadowLevelName, shadowReach } from "./shadows";
-import { DETAIL_DEFAULT, DETAIL_LEVELS, FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, detailLevel, setDetail, setFov, setView, view } from "./view";
+import { DETAIL_DEFAULT, DETAIL_LEVELS, FOV_DEFAULT, LIGHT_DEFAULT, LIGHT_LEVELS, lightLevel, setLights, VIEW_DEFAULT, VIEW_STEPS, detailLevel, setDetail, setFov, setView, view } from "./view";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -82,6 +82,7 @@ export function settingsPage(h: Hooks) {
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const auto = $<HTMLInputElement>("set-auto");
   const detail = $<HTMLSelectElement>("set-detail"), detailHint = $("set-detail-hint");
+  const lights = $<HTMLSelectElement>("set-lights"), lightsHint = $("set-lights-hint");
   const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dof = $<HTMLInputElement>("set-dof"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
@@ -103,6 +104,11 @@ export function settingsPage(h: Hooks) {
     const l = DETAIL_LEVELS[detailLevel];
     detailHint.textContent = `Grass to ${l.grass} m round you, trees in full to ${l.trees[0]} m and simpler to ${l.trees[1]} m. More is slower.`;
   };
+  LIGHT_LEVELS.forEach((l, i) => option(lights, String(i), `${l.name}${i === LIGHT_DEFAULT ? " (normal)" : ""}`));
+  const showLights = () => {
+    const p = LIGHT_LEVELS[lightLevel].pools;
+    lightsHint.textContent = `How far off lit street lamps still show after dark (from the drone too), and ${p === 0 ? "the usual number of" : p > 0 ? `${p} more` : `${-p} fewer`} lamps lighting the street round you. More is slower.`;
+  };
   RES_STEPS.forEach((r, i) => option(resSel, String(i), r.lines ? `${r.name} (${r.lines} lines)` : `${r.name} (your screen's own)`));
 
   /** Show what's in force now. */
@@ -114,6 +120,7 @@ export function settingsPage(h: Hooks) {
     fov.value = String(view.fov); fovVal.textContent = `${view.fov}°`;
     shadows.value = String(shadowLevel); showReach();
     detail.value = String(detailLevel); showDetail();
+    lights.value = String(lightLevel); showLights();
     fx.checked = h.post.retroLook;
     dof.checked = depthOfField;
     dbg.checked = h.debug.open;
@@ -158,6 +165,7 @@ export function settingsPage(h: Hooks) {
   fov.oninput = () => { setFov(Number(fov.value)); fovVal.textContent = `${view.fov}°`; };
   shadows.onchange = () => { quality.manual(); setShadows(Number(shadows.value)); };
   detail.onchange = () => { setDetail(Number(detail.value), true); showDetail(); };
+  lights.onchange = () => { setLights(Number(lights.value), true); showLights(); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dof.onchange = () => setDepthOfField(dof.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);

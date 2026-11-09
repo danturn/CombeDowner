@@ -6,7 +6,8 @@
 // button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
 // ?view=1200 in the address tries a distance for one visit without remembering it. The field of
 // view lives here too, and the scenery detail Settings offers (how far grass grows round you and how
-// far trees keep their full crowns), remembered on this computer and changed on the spot. Nothing here goes over the network: everyone sees as far as they like.
+// far trees keep their full crowns) and street lights (how far off lit lamps show after dark, and how
+// many light the street round you), remembered on this computer and changed on the spot. Nothing here goes over the network: everyone sees as far as they like.
 
 const touch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
 const asked = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("view")) : 0;
@@ -86,6 +87,36 @@ export function setDetail(i: number, keep = false) {
   let saved: string | null = null;
   try { saved = localStorage.getItem(DETAIL_KEY); } catch { /* storage blocked */ }
   setDetail(saved !== null && Number.isFinite(Number(saved)) ? Number(saved) : DETAIL_DEFAULT);
+}
+
+/** Street lights, as Settings offers them: how far off a lit street lamp still shows after dark,
+ *  and how many lamps round you light the street. Far off, each lamp is only its glow (furniture.ts),
+ *  a spot that gets smaller the further it is; from the drone high over town every lamp is far off,
+ *  so at Medium they're faint specks. Higher levels draw each glow bigger (size), never smaller than
+ *  least pixels, and gather a small one's light into a brighter middle (bright), so lit streets show
+ *  from the air and right across town. pools: lamps lighting the street round you (world.ts), more or
+ *  fewer than this device's normal (lampLightsFor), each costing every lit pixel something, so more
+ *  is slower. Changed on the spot (a change in pools makes the lit surfaces' shaders build again,
+ *  which can stall a frame or two after dark). */
+export const LIGHT_LEVELS = [
+  { name: "Low", pools: -2, size: 0.8, least: 1.5, bright: 1 },
+  { name: "Medium", pools: 0, size: 1, least: 2, bright: 1 },
+  { name: "High", pools: 2, size: 1.4, least: 3, bright: 2 },
+  { name: "Ultra", pools: 4, size: 1.8, least: 3.5, bright: 2.5 },
+  { name: "Max", pools: 6, size: 2.2, least: 4, bright: 3 },
+];
+export const LIGHT_DEFAULT = 1;
+const LIGHT_KEY = "cd-lights";
+export let lightLevel = LIGHT_DEFAULT;
+/** Street lights at LIGHT_LEVELS[i], from now on; keep: remember it on this computer. */
+export function setLights(i: number, keep = false) {
+  lightLevel = Math.max(0, Math.min(LIGHT_LEVELS.length - 1, Math.round(i)));
+  if (keep) { try { localStorage.setItem(LIGHT_KEY, String(lightLevel)); } catch { /* private window: just this visit */ } }
+}
+{
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(LIGHT_KEY); } catch { /* storage blocked */ }
+  setLights(saved !== null && Number.isFinite(Number(saved)) ? Number(saved) : LIGHT_DEFAULT);
 }
 
 /** See as far as this, metres (by day). keep: remember it on this computer for next time. */

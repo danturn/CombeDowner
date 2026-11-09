@@ -204,6 +204,10 @@ open it, and Back or Esc takes you back to the list:
   130 m) and how far off trees keep their full crowns (50 m to 250 m) and then their simpler ones
   (140 m to 650 m) before they turn to flat pictures. It changes on the spot; a phone or tablet
   starts on Low, a computer on Medium.
+  Street lights go Low, Medium, High, Ultra or Max: how far off a lit street lamp still shows after
+  dark, as a glow that's drawn bigger and brighter the higher you go so whole streets show from the
+  drone high over town, and how many lamps round you light the street (two fewer than normal to six
+  more). It changes on the spot; everyone starts on Medium.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the

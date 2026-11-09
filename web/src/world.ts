@@ -2,7 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
-import { darkable } from "./unlit";
+import { darkable, undarkable } from "./unlit";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
 import { breakable, holed } from "./gaps";
@@ -27,7 +27,7 @@ import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
-import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
+import { LIGHT_LEVELS, NIGHT_FAR, SIMPLER_FAR, lampLightsFor, lightLevel, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
 import { SunShadows } from "./shadows";
@@ -2908,15 +2908,28 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // that moves to another lamp fades out first and back in there, so pools of light don't jump.
   // How many there are follows how far you see (view.ts) when the map's built, since every light
   // costs every lit pixel something: a phone keeps to four, a desktop seeing further lights more of
-  // the street round it. On the move, the lamps ahead of you are lit before those behind, and sooner.
-  const LAMP_LIGHTS = lampLightsFor(view.fogFar), LAMP_REACH = LAMP_LIGHTS > 4 ? 28 : 22, LAMP_LOOK = 60 + LAMP_LIGHTS * 12;
-  const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
-    const l = new THREE.PointLight("#ffc77a", 0, LAMP_REACH, 1.4);
-    l.userData = { on: false, k: 0, to: new THREE.Vector3() };
-    scene.add(l);
-    darkable(scene, l);
-    return l;
-  });
+  // the street round it. The Street lights setting (view.ts) adds some or takes some away, on the
+  // spot. On the move, the lamps ahead of you are lit before those behind, and sooner.
+  const LAMP_NORMAL = lampLightsFor(view.fogFar), LAMP_REACH = LAMP_NORMAL > 4 ? 28 : 22;
+  const lampLights: THREE.PointLight[] = [];
+  let lampCount = 0, lampLook = 60;
+  /** Light as many lamps as the Street lights setting asks for now. */
+  const countLamps = () => {
+    const n = Math.max(2, LAMP_NORMAL + LIGHT_LEVELS[lightLevel].pools);
+    if (n === lampCount) return;
+    while (lampLights.length < n) {
+      const l = new THREE.PointLight("#ffc77a", 0, LAMP_REACH, 1.4);
+      l.userData = { on: false, k: 0, to: new THREE.Vector3() };
+      scene.add(l);
+      darkable(scene, l);
+      lampLights.push(l);
+    }
+    const gone = lampLights.splice(n);
+    for (const l of gone) { scene.remove(l); l.dispose(); }
+    if (gone.length) undarkable(scene, ...gone);
+    lampCount = n; lampLook = 60 + n * 12;
+    lampT = 0;
+  };
   const lampHeads = new WeakMap<GameMap, Float32Array>();
   /** Where the glass of every lamp on a map (village or square) is, in scene coordinates. */
   const headsOf = (m: GameMap) => {
@@ -2935,17 +2948,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return h;
   };
   let lampT = 0, lastX = NaN, lastZ = NaN, goX = 0, goZ = 0;   // (goX, goZ: which way you're going, m/s, smoothed)
+  countLamps();
   const near: [number, number, number, number][] = [];
   const lampDay = new THREE.Color("#d8d4c2"), lampNight = new THREE.Color("#fff3c8").multiplyScalar(1.6);
   const placeLamps = (px: number, pz: number) => {
     near.length = 0;
     const sp = Math.hypot(goX, goZ), ux = sp > 3 ? goX / sp : 0, uz = sp > 3 ? goZ / sp : 0;
-    for (const m of [map, ...map.tilesNear(px, pz, LAMP_LOOK)]) {
+    for (const m of [map, ...map.tilesNear(px, pz, lampLook)]) {
       const h = headsOf(m);
       // the street lamps, and those on landmarks: the station platforms' (landmarks/index.ts)
       for (const l of [h, landmarkLamps(m)]) for (let i = 0; i < l.length; i += 3) {
         const dx = l[i] - px, dz = l[i + 2] - pz, d2 = dx * dx + dz * dz;
-        if (d2 >= LAMP_LOOK * LAMP_LOOK) continue;
+        if (d2 >= lampLook * lampLook) continue;
         // one behind you counts as further off than it is, the more so the further behind
         const behind = d2 > 1 ? Math.max(0, -(dx * ux + dz * uz) / Math.sqrt(d2)) : 0;
         near.push([d2 * (1 + 3 * behind), l[i], l[i + 1], l[i + 2]]);
@@ -2953,7 +2967,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     near.sort((a, b) => a[0] - b[0]);
     // a light already at one of the nearest lamps stays there; the rest go to the others
-    const wanted = near.slice(0, LAMP_LIGHTS), free: THREE.PointLight[] = [];
+    const wanted = near.slice(0, lampCount), free: THREE.PointLight[] = [];
     for (const l of lampLights) {
       const k = wanted.findIndex((n) => n[1] === l.userData.to.x && n[3] === l.userData.to.z);
       if (k >= 0 && l.userData.on) wanted.splice(k, 1); else free.push(l);
@@ -3093,6 +3107,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       lastX = px; lastZ = pz;
       const quick = Math.hypot(goX, goZ) > 8;
+      countLamps();
       if ((lampT -= dt) <= 0) { lampT = quick ? 0.2 : 0.4; placeLamps(px, pz); }
       fadeLamps(dt, quick);
       if (W) W.skies += performance.now() - W0;
@@ -3102,6 +3117,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
       SIGNAL_TIME.value = signalClock();   // the traffic lights' lamps (signals.ts)
       LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
+      const shine = LIGHT_LEVELS[lightLevel];
+      LAMP_GLOW.uniforms.size.value = shine.size; LAMP_GLOW.uniforms.least.value = shine.least; LAMP_GLOW.uniforms.bright.value = shine.bright;
       b4 = performance.now();
       vegetation.update(px, pz, dt);
       if (W) W.veg += performance.now() - b4;

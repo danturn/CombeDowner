@@ -35,24 +35,32 @@ export const LAMP_GLASS = new THREE.MeshBasicMaterial({ color: "#d8d4c2" });
  * After dark, each lamp also shines as a soft glow that can be seen from right across town, long
  * after the lamp itself is too small to draw: one point per lamp, faded in from a few dozen metres
  * off (nearer, the glass and the light on the street do the work) and out only at the camera's
- * far edge, so lit streets twinkle through the night haze. world.ts sets how dark it is and
- * where that edge is.
+ * far edge, so lit streets twinkle through the night haze. world.ts sets how dark it is, where that
+ * edge is, and from the Street lights setting (view.ts) how big each glow is drawn (size), how few
+ * pixels it may shrink to (least) and how much brighter a small one's middle gets (bright), so a
+ * far-off lamp doesn't fade to nothing as it shrinks.
  */
 export const LAMP_GLOW = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-  uniforms: { night: { value: 0 }, far: { value: 880 }, scale: { value: 380 } },   // scale: about half the drawn height over tan(half the field of view)
-  vertexShader: `uniform float far, scale; varying float vFade;
+  uniforms: {
+    night: { value: 0 }, far: { value: 880 }, scale: { value: 380 },   // scale: about half the drawn height over tan(half the field of view)
+    size: { value: 1 }, least: { value: 2 }, bright: { value: 1 },
+  },
+  vertexShader: `uniform float far, scale, size, least, bright; varying float vFade, vBright;
     void main(){
       vec4 mv = modelViewMatrix * vec4(position, 1.0);
       float d = -mv.z;
       vFade = smoothstep(25.0, 60.0, d) * (1.0 - smoothstep(far * 0.8, far * 1.1, d));
-      gl_PointSize = clamp(scale * 2.2 / d, 2.0, 14.0);
+      float s = scale * 2.2 * size / d;
+      gl_PointSize = clamp(s, least, 14.0 * size);
+      // the smaller it's drawn, the brighter its middle, up to bright times
+      vBright = mix(bright, 1.0, smoothstep(least, least * 3.0, s));
       gl_Position = projectionMatrix * mv;
     }`,
-  fragmentShader: `uniform float night; varying float vFade;
+  fragmentShader: `uniform float night; varying float vFade, vBright;
     void main(){
       float r = length(gl_PointCoord - 0.5) * 2.0;
-      float a = (1.0 - smoothstep(0.0, 1.0, r)) * night * vFade;
+      float a = min(1.5, (1.0 - smoothstep(0.0, 1.0, r)) * vBright) * night * vFade;
       if (a < 0.01) discard;
       gl_FragColor = vec4(vec3(1.0, 0.8, 0.5) * a, a);
     }`,

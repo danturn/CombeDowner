@@ -24,6 +24,12 @@ export function darkable(scene: THREE.Object3D, ...lights: Darkable[]) {
   all.push(...lights);
 }
 
+/** Lights given to darkable that have gone from scene for good (fewer street lamps lit: world.ts). */
+export function undarkable(scene: THREE.Object3D, ...lights: Darkable[]) {
+  const all = lightsOf.get(scene);
+  if (all) lightsOf.set(scene, all.filter((l) => !lights.includes(l)));
+}
+
 type Lit = THREE.MeshLambertMaterial | THREE.MeshPhongMaterial | THREE.MeshStandardMaterial | THREE.MeshToonMaterial | THREE.ShaderMaterial;
 /** The materials whose shaders depend on the lights (as three decides it). */
 function usesLights(m: THREE.Material): m is Lit {
