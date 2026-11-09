@@ -1036,9 +1036,10 @@ A line starting with `/` is a command, for trying things out:
   it was in, and how far zoomed.
   Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where
   you were and what the crosshair's on. Whatever you type on the phone while you're flying is a note
-  on your latest snap rather than a text. `/drone copy` puts them all on the clipboard at once, for
-  pasting to Claude Code: a line of text per snap (paste as usual) and a contact sheet of the
-  pictures, numbered the same (Ctrl+V in Claude Code). `/drone pic 3` copies just snap 3's
+  on your latest snap rather than a text. Every snap and note puts them all on the clipboard at
+  once, for pasting to Claude Code: a line of text per snap (paste as usual) and a contact sheet of
+  the pictures, numbered the same (Ctrl+V in Claude Code). So take your snaps, then go and paste;
+  `/drone copy` does it by hand if the browser wouldn't. `/drone pic 3` copies just snap 3's
   picture, bigger, and `/drone clear` forgets them. Snaps stay until you close the page.
 - `/help`: the list of these.
 

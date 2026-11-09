@@ -25,7 +25,9 @@
 // Snaps, for noting what's wrong with the map: the trigger (a click, Fire, R2) takes one. Each keeps
 // a small picture of the view, crosshair and all, and where you were and what the crosshair was on,
 // in memory until the page is closed. What you type on the phone while the drone's up is a note on
-// your latest snap instead of a text to everyone. /drone copy puts the lot on the clipboard in one go:
+// your latest snap instead of a text to everyone. Every snap and every note puts the lot on the
+// clipboard afresh, so after a few snaps you can go straight to Claude Code and paste (/drone copy
+// does it by hand, if the browser wouldn't):
 // a few lines of text, one per snap, made for pasting to Claude Code (the view as ?at=, which
 // `npm run shoot` takes, the point under the crosshair and the square it's in), and a contact sheet
 // of all the pictures, numbered the same. A paste of text gets the text and a paste of a picture (Ctrl+V
@@ -128,6 +130,9 @@ export class Drone {
   private outline: THREE.LineSegments | null = null;
   private count = 0;
   private flightFrom = 0;              // how many snaps there were when this flight began
+  private copying = false;             // the clipboard's being written; again: write it once more after, with what's changed
+  private copyAgain = false;
+  private copyTold = false;            // said once this flight that the clipboard wouldn't take them
 
   constructor(private h: DroneHooks) {}
 
@@ -157,6 +162,7 @@ export class Drone {
     this.lastYaw = p.yaw;
     this.trig = true;   // the press that's down now doesn't snap
     this.flightFrom = this.snaps.length;
+    this.copyTold = false;
     this.home.copy(this.eye);
     this.upAt = performance.now();
     this.h.changed(true);
@@ -307,7 +313,7 @@ export class Drone {
     this.wanted = s;
     SFX.tick();
     this.screen?.flash();
-    chatLine(`Snap ${s.n}${what === "sky" ? "" : `: ${what}, ${Math.round(hit!.dist)} m`}. Type here to add a note`);
+    chatLine(`Snap ${s.n}${what === "sky" ? "" : `: ${what}, ${Math.round(hit!.dist)} m`}, on the clipboard. Type here to add a note`);
     this.drawOsd();
   }
 
@@ -324,7 +330,7 @@ export class Drone {
     g.drawImage(canvas, 0, 0, w, h);
     crosshair(g, w / 2, h / 2, Math.max(6, h / 40));
     label(g, `${s.n}`, 6, 6, Math.max(14, h / 22));
-    c.toBlob((b) => { s.pic = b; }, "image/jpeg", 0.85);
+    c.toBlob((b) => { s.pic = b; this.autoCopy(); }, "image/jpeg", 0.85);
   }
 
   /** What you type on the phone while the drone's up: a note on the latest snap. False if there's none. */
@@ -333,6 +339,7 @@ export class Drone {
     if (!s) return false;
     s.note = s.note ? `${s.note}; ${text}` : text;
     chatLine(`Note on snap ${s.n}: ${s.note}`);
+    this.autoCopy();
     return true;
   }
 
@@ -350,16 +357,35 @@ export class Drone {
   /** /drone copy: the text and the contact sheet on the clipboard together. */
   private async copy() {
     if (!this.snaps.length) { chatLine("No snaps yet: fly with /drone and shoot to take one"); return; }
-    const text = this.text(), n = this.snaps.length;
+    const n = this.snaps.length, got = await this.toClipboard();
+    chatLine(got === "both" ? `Copied ${n} snap${n === 1 ? "" : "s"}: paste for the text, Ctrl+V in Claude Code for the pictures`
+      : got === "text" ? `Copied the text of ${n} snap${n === 1 ? "" : "s"} (the pictures wouldn't go: /drone pic 1)` : "Couldn't copy: the browser said no");
+  }
+
+  /** After each snap and note: every snap on the clipboard, text and pictures, without being asked.
+   *  One write at a time; anything new while one's going is written straight after. */
+  private autoCopy() {
+    if (this.copying) { this.copyAgain = true; return; }
+    this.copying = true;
+    this.toClipboard().then((got) => {
+      if (got !== "both" && !this.copyTold) {
+        this.copyTold = true;
+        chatLine(got === "text" ? "Only the snaps' text would go on the clipboard: /drone pic 1 for a picture" : "The browser won't let snaps on the clipboard by themselves: /drone copy when you're done");
+      }
+    }).finally(() => {
+      this.copying = false;
+      if (this.copyAgain) { this.copyAgain = false; this.autoCopy(); }
+    });
+  }
+
+  /** Every snap on the clipboard: the text and the contact sheet together if the browser will, else the text. */
+  private async toClipboard(): Promise<"both" | "text" | "none"> {
+    const text = this.text();
     try {
-      await navigator.clipboard.write([new ClipboardItem({
-        "text/plain": new Blob([text], { type: "text/plain" }),
-        "image/png": this.sheet(),
-      })]);
-      chatLine(`Copied ${n} snap${n === 1 ? "" : "s"}: paste for the text, Ctrl+V in Claude Code for the pictures`);
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([text], { type: "text/plain" }), "image/png": this.sheet() })]);
+      return "both";
     } catch {
-      try { await navigator.clipboard.writeText(text); chatLine(`Copied the text of ${n} snap${n === 1 ? "" : "s"} (the pictures wouldn't go: /drone pic 1)`); }
-      catch { chatLine("Couldn't copy: the browser said no"); }
+      try { await navigator.clipboard.writeText(text); return "text"; } catch { return "none"; }
     }
   }
 
