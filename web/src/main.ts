@@ -906,7 +906,7 @@ padActions(STREETS, {
 padSettings();
 
 let last = performance.now();
-let frames = 0, fpsT = 0, shadowTick = 0;
+let frames = 0, fpsT = 0;
 const told = new Set<string>();
 let inputWas = "";
 // ?frames=1: a recording tool (tools/flyover_video.mjs) holds the game still and moves it on a
@@ -957,9 +957,10 @@ function tick(now: number) {
   }
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   // shadows are drawn afresh every other frame (or less often, if the automatic settings ease back,
-  // quality.ts): they're a good share of a frame's work, and a moving shadow a frame behind can't be seen
+  // quality.ts), the far ones less often still: they're a good share of a frame's work, and a moving
+  // shadow a frame behind can't be seen. Each of the sun's lights says when it's due (shadows.ts).
   renderer.shadowMap.autoUpdate = false;
-  if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
+  renderer.shadowMap.needsUpdate = true;
   unlit.frame(current.world.scene, camera, dt, post.worldTarget);
   // no gun in your hands while you fly the drone, and the drone's view of the scenery (looks.ts) is
   // put on for this drawing only
