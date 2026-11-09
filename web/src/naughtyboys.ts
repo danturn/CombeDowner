@@ -32,7 +32,7 @@
 // Street, where it meets George Street: a crowd of naughty boys and naughty girls (in short skirts
 // and going-out tops, heels and a handbag, who slap rather than punch and say what they think of
 // you) stood about in twos and threes. Every so often two of them kick off with each other, a mate
-// sometimes piling in, till one's had enough and legs it, and the rest carry on. They don't come
+// sometimes piling in (a girl will slap a lad, but a lad never hits a girl back), till one's had enough and legs it, and the rest carry on. They don't come
 // for you unless you get right in among them or shoot one, and only the few nearest join in. More
 // wander in up the streets round about to keep the numbers up, and at three in the morning they
 // all drift off home.
@@ -129,6 +129,10 @@ const featBits = (lk: number) => Math.max(0, Math.round(((lk % 1) - wearing(lk) 
 /** The Gaffer on the run: how he's travelling (0 on foot, 1 a mobility scooter, 2 his van), carried in his look. */
 export const MOUNTS = ["on foot", "on a mobility scooter", "in his van"] as const;
 export const mountOf = (lk: number) => (lk >> 4 === CHAIR ? featBits(lk) & 3 : 0);
+/** On a night out, whether one of the crowd will hit another: the girls slap anyone, lads included,
+ *  but a lad never hits a girl. */
+const mayHit = (c: { kind: number }, o: { kind: number }) => c.kind === GIRL || o.kind !== GIRL;
+
 /** How much bigger than a naughty boy someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : lk >> 4 === GIRL ? 0.95 : 1);
 const STRIDE = 9;                          // numbers per naughty boy in a snapshot
@@ -768,7 +772,7 @@ export class NaughtyBoys {
         const gx = c.lastX - c.x, gz = c.lastZ - c.z, gl = Math.hypot(gx, gz);
         if (gl > 0.6) { dirX = gx / gl; dirZ = gz / gl; spd = c.team.run; }
       }
-    } else if (c.foe >= 0 && this.list[c.foe]?.state === ALIVE) {
+    } else if (c.foe >= 0 && this.list[c.foe]?.state === ALIVE && mayHit(c, this.list[c.foe])) {
       // going for one of the others: square up, then lay into them
       const o = this.list[c.foe], dx = o.x - c.x, dz = o.z - c.z, dist = Math.hypot(dx, dz);
       if (dist < c.team.reach && Math.abs(o.y - c.y) < 1.4) {
@@ -1039,8 +1043,10 @@ export class NaughtyBoys {
     const a = idle.length > 1 ? pick(idle) : null;
     const b = a && idle.filter((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 12).sort((p, q) => Math.hypot(p.x - a.x, p.z - a.z) - Math.hypot(q.x - a.x, q.z - a.z))[0];
     if (!a || !b) { this.fightT = 3; return; }
-    a.foe = b.i; b.foe = a.i; a.fightT = b.fightT = 0;
-    const mate = Math.random() < 0.35 ? idle.find((o) => o !== a && o !== b && Math.hypot(o.x - b.x, o.z - b.z) < 8) : undefined;
+    // a girl will lay into a lad, but a lad never lifts a hand to a girl: he just stands there and takes it
+    if (mayHit(a, b)) { a.foe = b.i; a.fightT = 0; }
+    if (mayHit(b, a)) { b.foe = a.i; b.fightT = 0; }
+    const mate = Math.random() < 0.35 ? idle.find((o) => o !== a && o !== b && mayHit(o, a) && Math.hypot(o.x - b.x, o.z - b.z) < 8) : undefined;
     if (mate) { mate.foe = a.i; mate.fightT = 0; }
   }
 
@@ -1065,7 +1071,7 @@ export class NaughtyBoys {
 
   /** Host: one of the crowd lands one on another, who has a go back if they weren't already. */
   private brawlHit(c: NaughtyBoy, o: NaughtyBoy) {
-    if (o.foe < 0 && !o.target) { o.foe = c.i; o.fightT = 0; }
+    if (o.foe < 0 && !o.target && mayHit(o, c)) { o.foe = c.i; o.fightT = 0; }
     this.damage(o.i, o.gen, c.team.hit, { x: c.x, z: c.z });
   }
 

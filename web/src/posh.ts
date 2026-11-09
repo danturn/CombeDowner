@@ -44,10 +44,12 @@ const GIRLS = [
   "Don't you dare touch my hair!", "Do you know who my boyfriend is?", "Shazza! Get over here!", "Not in these heels!",
   "Are you starting?", "That's my kebab!", "Mind my nails!", "I'm not even drunk!",
 ];
+/** What a naughty girl says more than anything else. */
+const GIRLS_FAVOURITE = "Sorry love, washing me hair tonight!";
 
 /** Something for one of the posh lot (or the Flag Lads, or a naughty girl) to shout. kind 1 is rugby, 2 cricket, 3 a Flag Lad, 5 the Gaffer, 6 a naughty girl. */
 export function line(kind: number) {
-  if (kind === 6) return GIRLS[Math.floor(Math.random() * GIRLS.length)];
+  if (kind === 6) return Math.random() < 0.2 ? GIRLS_FAVOURITE : GIRLS[Math.floor(Math.random() * GIRLS.length)];
   if (kind >= 3) { const own = kind === 5 ? CHAIR : SOCIETY; return own[Math.floor(Math.random() * own.length)]; }
   const own = kind === 1 ? RUGBY : CRICKET;
   const all = Math.random() < 0.3 ? own : ANYONE;

@@ -51,7 +51,7 @@ const ENTRIES: Entry[] = [
     kits: kits(["Navy and white", "Maroon and gold", "Green and white", "Black and gold", "Blue and black", "Red and black"]).slice(0, KITS[RUGBY]) },
   { group: "Gangs", kind: "gang", name: "Cricket team", blurb: "In their whites, swinging bats, which reach further than a fist.", look: look(CRICKET, 0),
     kits: kits(["Navy and red", "Maroon and gold", "Green and gold", "Purple and gold", "Navy and gold"]).slice(0, KITS[CRICKET]) },
-  { group: "Gangs", kind: "gang", name: "Naughty girl", blurb: "Out on a Friday or Saturday night at the top of Milsom Street: a short skirt, heels and a handbag. She slaps, says what she thinks of you, and kicks off with anyone, her own lot included.", look: look(GIRL, 0),
+  { group: "Gangs", kind: "gang", name: "Naughty girl", blurb: "Out on a Friday or Saturday night at the top of Milsom Street: a short skirt, heels and a handbag. She slaps, says what she thinks of you, and kicks off with anyone, her own lot included. The lads never hit her back.", look: look(GIRL, 0),
     kits: kits(["Pink top, black skirt", "Little black dress", "Red dress", "White top, gold skirt", "Turquoise top, white skirt", "Silver top, black skirt"]).slice(0, KITS[GIRL]) },
   { group: "The Flag Lads", kind: "gang", name: "Flag lad", blurb: "England shirts, some with the flag worn as a cape. They only turn up at the pubs they've taken over.", look: look(SOCIETY, 0),
     kits: ["White shirt, jeans", "White shirt and cape, shorts", "Red away shirt", "White shirt and cape, black jeans"] },
