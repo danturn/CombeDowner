@@ -168,7 +168,7 @@ import { Wings } from "./wings";
 import { SUIT_ID, Wingsuit } from "./wingsuit";
 import type { Route } from "./railway";
 import { Balloons } from "./balloons";
-import { Cinema, type Subject } from "./cinema";
+import { Cinema, type Obstacle as InTheWay, type Subject } from "./cinema";
 import type { Focus } from "./post";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideBumps, type Rider } from "./ridebump";
@@ -734,6 +734,15 @@ export class Game {
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.balloons = new Balloons(map, world.scene, this.net.selfId, (d) => this.net.send("bl", d));
     this.cinema = new Cinema(map);
+    // what you might hit, for the cinematic camera to keep in shot: the traffic, parked cars, other vehicles and the other players
+    this.cinema.obstacles = (x, z, r) => {
+      const out: InTheWay[] = [], near = (o: InTheWay) => Math.abs(o.x - x) < r && Math.abs(o.z - z) < r;
+      for (const c of this.traffic.list) if (near(c)) out.push(c);
+      for (const v of this.vehicles.list) if (v !== this.car && near(v)) out.push(v);
+      out.push(...this.vehicles.parkedNear(x, z, r));
+      for (const o of this.remotes.values()) if (o.avatar.alive && near(o.avatar)) out.push(o.avatar);
+      return out;
+    };
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text) => this.news(text);
     this.sports.who = () => ({ id: this.net.selfId, name: this.name });
