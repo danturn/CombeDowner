@@ -21,6 +21,11 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Trial: the ground triangulated round the faces (branch `claude/ground-cdt`, not for merging yet):**
+  `?ground=cdt` draws the sheet's open ground as one constrained triangulation (`web/src/sheet.ts`
+  `buildSheetCdt`, `world.ts`; npm `delaunator`, `@kninnug/constrainautor`), measured with
+  `CD_GROUND=cdt` (`tools/check_more.py`, `tools/sheet_cdt.mjs`) and `tools/ground_seams.mjs --query ground=cdt`.
+
 - **Ground plan stage 3, the ground sheet (branch `claude/ground-sheet`):** a new `gs` key in each
   square (`tools/partition/sheet.py`, written by `write_tile.build_tile`), drawn and walked with
   `?ground=sheet` (`web/src/sheet.ts`, `world.ts`, `sfpack.ts`, `map.ts`); `tools/check_more.py`

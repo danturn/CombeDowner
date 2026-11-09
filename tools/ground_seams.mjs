@@ -14,7 +14,7 @@
 // feet of kerbs, walls and the like (only edges of the ground's and the faces' tops are checked; a
 // kerb or a wall still closes an edge it shares).
 //
-//   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules]
+//   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules] [--query ground=cdt]
 //
 // --most n prints up to n gaps per square, as data x, y and a ?at= to look from. Exits 1 if any
 // square has a gap, so a build can stop on it. --rules prints the gaps as tools/check_more.py's
@@ -25,13 +25,15 @@ import { fakeBrowser, bundleGame } from "./node_game.mjs";
 
 const here = path.dirname(new URL(import.meta.url).pathname), web = path.join(here, "..", "web");
 const argv = process.argv.slice(2);
-const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
-for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" ? "1" : argv[++i];
+const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--heights" ? "1" : argv[++i];
 // (with --rules the findings are the output, for tools/check_more.py rule 38, and the rest goes to stderr)
 if (opt.rules) console.log = console.error;
 const say = (...a) => console.log(...a);
 globalThis.__keepArrays = true;
 fakeBrowser(opt.maps);
+// (--query is more of the address, as the game would have it: ground=cdt for the triangulated ground)
+if (opt.query) globalThis.location.search = "?" + opt.query;
 const G = await bundleGame(`
 export { GameMap, loadMap, tileKey } from "./map";
 export { readSquare } from "./sfpack";
@@ -75,9 +77,11 @@ async function square(ti, tj) {
   const group = new THREE.Group();
   const job = tiles.build(m, group);
   let r;
+  const t0 = performance.now();
   do r = job.next(); while (!r.done);
+  const ms = performance.now() - t0;
   group.updateMatrixWorld(true);
-  const out = { d, group, done: () => { r.value.dispose?.(); core.dropTile(k); } };
+  const out = { d, group, ms, done: () => { r.value.dispose?.(); core.dropTile(k); } };
   return out;
 }
 
@@ -212,20 +216,61 @@ function seams(d, group) {
   return { open, tee, under, gap: gaps.length, folds, gaps };
 }
 
+// --heights: does the height you stand at (the map's ground) match the drawn ground, at the middle of
+// each ground triangle? Counts those where you'd stand more than a centimetre below it (sunk in), and
+// the worst, and those more than a centimetre above it (on a face or a deck over it, or out).
+function heights(group) {
+  let n = 0, off = 0, worst = 0, above = 0;
+  const at = [];
+  const v = new THREE.Vector3();
+  group.traverse((o) => {
+    let top = o;
+    while (top.parent && top.parent !== group) top = top.parent;
+    if ((top.name || o.name) !== "ground" || !o.geometry || o.isInstancedMesh || !o.geometry.index) return;
+    const P = o.geometry.attributes.position, I = o.geometry.index.array;
+    for (let k = 0; k + 2 < I.length; k += 3) {
+      let x = 0, y = 0, z = 0;
+      for (let m = 0; m < 3; m++) { v.fromBufferAttribute(P, I[k + m]).applyMatrix4(o.matrixWorld); x += v.x / 3; y += v.y / 3; z += v.z / 3; }
+      const g = core.ground(x, z);
+      if (!Number.isFinite(g)) continue;
+      n++;
+      if (g - y < -0.01) { off++; worst = Math.max(worst, y - g); if (at.length < 40) at.push([+x.toFixed(2), +(-z).toFixed(2), +(y - g).toFixed(3)]); }
+      else if (g - y > 0.01) above++;
+    }
+  });
+  return { sampled: n, standOff: off, standWorst: +worst.toFixed(3), standAbove: above, standAt: at };
+}
+
 let squares = index.tiles.map(([i, j]) => [i, j]);
 if (opt.squares) squares = opt.squares.trim().split(/\s+/).map((s) => s.split(",").map(Number));
 const report = {}, most = Number(opt.most) || 0, t0 = Date.now();
 let total = { open: 0, tee: 0, under: 0, gap: 0, folds: 0 }, bad = 0;
 const findings = [];
 for (const [ti, tj] of squares) {
+  globalThis.__sheetMs = [];
   const s = await square(ti, tj);
   if (!s) continue;
   const r = seams(s.d, s.group);
+  // the triangles of the ground and of the faces (with their kerbs), as drawn
+  const tris = {};
+  s.group.traverse((o) => {
+    let top = o;
+    while (top.parent && top.parent !== s.group) top = top.parent;
+    const name = top.name || o.name;
+    if (!o.geometry || o.isInstancedMesh || !["ground", "roads"].includes(name)) return;
+    const g = o.geometry, n = g.index ? g.index.count : g.attributes.position?.count ?? 0;
+    tris[name] = (tris[name] ?? 0) + n / 3;
+  });
+  if (opt.heights) Object.assign(r, heights(s.group));
   s.done();
   for (const k of Object.keys(total)) total[k] += r[k];
   if (r.gap) bad++;
   for (const [x, y, l] of opt.rules ? r.gaps : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
   report[`${ti},${tj}`] = { open: r.open, tee: r.tee, under: r.under, gap: r.gap, folds: r.folds, gaps: r.gaps.slice(0, 200).map(([x, y, l]) => [+x.toFixed(2), +y.toFixed(2), +l.toFixed(3)]) };
+  const sheetMs = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.ms, 0), lost = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.lost, 0);
+  if (opt.heights) say(`${ti},${tj}: ${r.standOff} of ${r.sampled} ground triangles' middles stood you sunk in, the worst ${r.standWorst} m; ${r.standAbove} over it`);
+  Object.assign(report[`${ti},${tj}`], { standOff: r.standOff, standWorst: r.standWorst, standAbove: r.standAbove, standAt: r.standAt, tris, buildMs: Math.round(s.ms), sheetMs: +sheetMs.toFixed(1), lost });
+  say(`${ti},${tj}: ground ${tris.ground ?? 0} roads ${tris.roads ?? 0} triangles; built in ${s.ms.toFixed(0)} ms, the sheet ${sheetMs.toFixed(1)} ms${lost ? `, ${lost} free edges not held` : ""}`);
   say(`${ti},${tj}: ${r.open} open edges, ${r.tee} tees, ${r.under} overlapped, ${r.gap} gaps, ${r.folds} edges three or more triangles share`);
   for (const [x, y] of r.gaps.slice(0, most)) say(`    gap at ${x.toFixed(2)},${y.toFixed(2)}  ?at=${x.toFixed(1)},${(y - 6).toFixed(1)},0,-35`);
 }

@@ -32,15 +32,21 @@ import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
-import { buildSheet, carved, coveredCells, fillAt, nearFaces, openSeams, sheetFaces, type Sheet } from "./sheet";
+import { buildSheet, buildSheetCdt, carved, coveredCells, fillAt, nearFaces, openSeams, sheetFaces, type Sheet } from "./sheet";
 
 /** The ground drawn as one sheet with the faces (the Settings page's choice, cd-ground), unless
  *  ?ground=old or ?ground=sheet in the address says otherwise for this visit. */
 export function groundSheet(): boolean {
   const q = new URLSearchParams(location.search).get("ground");
   if (q === "old") return false;
-  if (q === "sheet") return true;
+  if (q === "sheet" || q === "cdt") return true;
   try { return localStorage.getItem("cd-ground") !== "0"; } catch { return true; }
+}
+
+/** ?ground=cdt, a trial: the sheet's open ground triangulated round the faces' edges (sheet.ts buildSheetCdt);
+ *  &cdtclear=metres sets how near a face's edge a grid point is left out (0.3). */
+export function groundCdt(): boolean {
+  return typeof location !== "undefined" && new URLSearchParams(location.search).get("ground") === "cdt";
 }
 
 const CHUNK = 320;
@@ -784,7 +790,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // in front of a tunnel's headwall the cutting is dug to the floor between its wing walls, so you
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
   const cuts = cuttings(map);
-  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT, { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny }) : null;
+  const CDT = sheetOn && groundCdt(), sheetT0 = performance.now();
+  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT, { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny }, !CDT) : null;
+  const meetMs = performance.now() - sheetT0;
   // (with the sheet the faces leave roundTo alone, so where one beside a cutting decides the ground is
   // found from their edges here, or the bank behind a wing wall was made up over a track beside it)
   const faceTo = meet ? nearFaces(meet.edges, T, T.dx * 0.75) : roundTo;
@@ -868,8 +876,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // The sheet: each cell a face's free edge crosses is cut along it, and only the ground outside the
   // faces is drawn there, meeting their edges (sheet.ts); a cell wholly under faces draws none.
   const sheetGrid = { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny };
-  const sheet: Sheet | null = meet ? buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x) : null;
-  if (sheet) { const open = openSeams(sheet, sheetGrid); if (open) console.warn(`ground sheet: ${open} cracks between cells in the square at ${T.x0.toFixed(0)},${T.y0.toFixed(0)}`); }
+  const sheetT1 = performance.now();
+  const sheet: Sheet | null = !meet ? null : CDT
+    ? buildSheetCdt(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.inFace, Number(new URLSearchParams(location.search).get("cdtclear") ?? 0.3))
+    : buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x);
+  // (tools/ground_seams.mjs times the sheet by leaving a list here)
+  if (sheet) (globalThis as { __sheetMs?: unknown[] }).__sheetMs?.push({ x0: T.x0, y0: T.y0, cdt: CDT, ms: meetMs + performance.now() - sheetT1, lost: ((sheet as { lost?: number[] }).lost?.length ?? 0) / 2 });
+  if (sheet && !CDT) { const open = openSeams(sheet, sheetGrid); if (open) console.warn(`ground sheet: ${open} cracks between cells in the square at ${T.x0.toFixed(0)},${T.y0.toFixed(0)}`); }
   const gridH = (k: number) => tPos[3 * k + 1];
   yield;
   // The lowest a wall under a bridge or a street's edge may stand to at data (x, y), given the ground

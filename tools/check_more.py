@@ -209,6 +209,7 @@ def roofs_solid(root, map_id, only=None):
     args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
             "--per", os.environ.get("CD_ROOFS_PER", "40")]
     if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
+    if GROUND_CDT: args += ["--query", "ground=cdt"]
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
@@ -223,6 +224,7 @@ def ground_seams(root, map_id, only=None):
     here = os.path.dirname(os.path.abspath(__file__))
     args = ["node", os.path.join(here, "ground_seams.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--rules"]
     if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
+    if GROUND_CDT: args += ["--query", "ground=cdt"]
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
@@ -238,7 +240,7 @@ def overroad(root, map_id, only=None):
         return []
     args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
     if only: args += ["--only", " ".join(only)]
-    if GROUND_SHEET: args += ["--query", "ground=sheet"]
+    if GROUND_SHEET: args += ["--query", "ground=cdt" if GROUND_CDT else "ground=sheet"]
     try:
         # (the game loads the squares' packs, not their JSON: packs left from an earlier build of the
         # map would be looked at in place of the map being checked)
@@ -674,7 +676,7 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
 
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}   # (a living street is paved flush)
 # (the railway's bed is a face only to the sheet: the game leaves it out without it)
-FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel") + (("bed",) if os.environ.get("CD_GROUND") == "sheet" else ())
+FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel") + (("bed",) if os.environ.get("CD_GROUND") in ("sheet", "cdt") else ())
 
 
 def longest_run(lines):
@@ -912,7 +914,29 @@ _spec = importlib.util.spec_from_file_location("ground_sheet", os.path.join(os.p
 gsheet = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gsheet)
 # CD_GROUND=sheet measures the ground as the game draws it with ?ground=sheet: a square that has the
 # baked sheet (gs) is drawn from it, the rest as before
-GROUND_SHEET = os.environ.get("CD_GROUND") == "sheet"
+GROUND_SHEET = os.environ.get("CD_GROUND") in ("sheet", "cdt")
+# CD_GROUND=cdt, the trial of ?ground=cdt: the open ground triangulated round the faces' edges, as the
+# game's own code does it (tools/sheet_cdt.mjs), its heights found as for the sheet's cut cells
+GROUND_CDT = os.environ.get("CD_GROUND") == "cdt"
+
+
+def cdt_land(m, f, sink):
+    """The sheet's land for square file f with ?ground=cdt's triangles in place of the cut cells'."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    tag = os.path.basename(f)[:-5]
+    out = subprocess.run(["node", os.path.join(here, "sheet_cdt.mjs"), "--maps", os.path.abspath(os.path.dirname(os.path.dirname(f))),
+                          "--map", os.path.basename(os.path.dirname(f)), "--squares", tag.replace("_", ",")], capture_output=True, text=True, check=True).stdout
+    got = json.loads(out).get(tag)
+    land = gsheet.Land(m, sink=sink)
+    if not got: return land
+    T = m["t"]
+    land.tris = np.asarray(got["tris"], float).reshape(-1, 3, 2)
+    land.tz = land._heights(land.tris.reshape(-1, 2)).reshape(-1, 3) if len(land.tris) else np.zeros((0, 3))
+    land.tri_tree = shapely.STRtree(shapely.polygons(land.tris)) if len(land.tris) else None
+    mixed = np.zeros((T["ny"] - 1) * (T["nx"] - 1), bool)
+    mixed[np.asarray(got["cells"], np.int64)] = True
+    land.mixed = mixed.reshape(T["ny"] - 1, T["nx"] - 1)
+    return land
 
 FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04, "grass": 0.04, "dirt": 0.04, "gravel": 0.04, "bed": 0.0}
 ON_GROUND = ("path", "front", "drive", "grass", "dirt", "gravel")    # drawn on the ground as it's drawn, not at their written height
@@ -1948,7 +1972,8 @@ def ground_measures(m, tag, note, f, off_deck=None):
     land = None
     if GROUND_SHEET and sheet.ok and m.get("gs"):
         D, _ = drawn_terrain(m, sheet, faces=False)
-        land = gsheet.Land(m, sink=gsheet.read(m["gs"], m["t"])[1] - D)
+        sink = gsheet.read(m["gs"], m["t"])[1] - D
+        land = cdt_land(m, f, sink) if GROUND_CDT else gsheet.Land(m, sink=sink)
         drawn = land.ground
         # (the land as drawn, carved to meet the faces, for the water's rules)
         ground = terrain(dict(m["t"], h=np.round((gsheet.read(m["gs"], m["t"])[1] - m["t"]["z0"]) * 10).ravel().tolist()))
