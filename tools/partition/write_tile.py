@@ -7478,6 +7478,67 @@ def _drawn_ground(T, x, y):
     return h(i + 1, j + 1) + (h(i, j + 1) - h(i + 1, j + 1)) * (1 - u) + (h(i + 1, j) - h(i + 1, j + 1)) * (1 - v)
 
 
+# metres the ground may fall below, or rise over, a wall's straight line between two of its points:
+# the game sets the foot 0.1 m under the ground at each point, so a smaller dip is hidden, and a
+# rise only buries the foot a little
+WALL_DIP, WALL_RISE = 0.1, 0.2
+
+
+def _folds(T, a, b):
+    """Where the line a-b crosses the grid's cell sides and the cells' diagonals, as fractions of
+    the way along it: the drawn ground is flat between them."""
+    fa = ((a[0] - T["x0"]) / T["dx"], (a[1] - T["y0"]) / T["dy"])
+    fb = ((b[0] - T["x0"]) / T["dx"], (b[1] - T["y0"]) / T["dy"])
+    out = set()
+    for ua, ub in ((fa[0], fb[0]), (fa[1], fb[1]), (fa[0] + fa[1], fb[0] + fb[1])):
+        if abs(ub - ua) < 1e-9:
+            continue
+        lo, hi = sorted((ua, ub))
+        for k in range(math.floor(lo) + 1, math.ceil(hi)):
+            t = (k - ua) / (ub - ua)
+            if 1e-6 < t < 1 - 1e-6:
+                out.add(t)
+    return sorted(out)
+
+
+def walls_follow_the_ground(br, T):
+    """The game stands a wall's foot on the ground only at its points and runs it straight between
+    them, so a wall whose points are far apart hangs in the air where the ground dips between them
+    (a 140 m lawn wall with no point in between). A point is put in at each fold of the ground that
+    strays further than WALL_DIP or WALL_RISE off the straight line, so the wall follows the ground,
+    and a run on level or evenly sloping ground keeps only the points it has."""
+    out = []
+    for b in br:
+        p = b["p"]
+        if len(p) < 2 or any(len(q) < 3 for q in p):
+            out.append(b)
+            continue
+        new = [p[0]]
+        for a, q in zip(p, p[1:]):
+            ts = [0.0] + _folds(T, a, q) + [1.0]
+            g = [_drawn_ground(T, a[0] + (q[0] - a[0]) * t, a[1] + (q[1] - a[1]) * t) for t in ts]
+            keep = set()
+
+            def split(i, j):
+                if j - i < 2:
+                    return
+                def over(m):
+                    d = g[m] - (g[i] + (g[j] - g[i]) * (ts[m] - ts[i]) / (ts[j] - ts[i]))
+                    return max(-d - WALL_DIP, d - WALL_RISE)
+                worst, k = max((over(m), m) for m in range(i + 1, j))
+                if worst > 0:
+                    keep.add(k)
+                    split(i, k)
+                    split(k, j)
+
+            split(0, len(ts) - 1)
+            for m in sorted(keep):
+                new.append([round(a[0] + (q[0] - a[0]) * ts[m], 1), round(a[1] + (q[1] - a[1]) * ts[m], 1), round(g[m], 1)])
+            new.append(q)
+        out.append(dict(b, p=new) if len(new) > len(p) else b)
+    return out
+
+
 WALL_EASE = 6.0     # metres either way along a wall that its height at a point is evened out over
 WALL_EASE_MOST = 0.2    # metres at most that evening out moves a point off the ground as it's drawn
 
@@ -7938,7 +7999,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
-    br = smooth_wall_tops(br, tile["t"])
+    br = smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"])
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt
