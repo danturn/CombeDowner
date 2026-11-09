@@ -4307,11 +4307,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         one, not a pedestrian street (whose paving was taken out of the carriageway already) whose line
         runs nearer. Across a junction the triangles of a carriageway fan out from the corner where a
         pedestrian street meets it, and each one that was nearer that street's line was paved, in a
-        point or a bow tie of paving across the road."""
+        point or a bow tie of paving across the road. Likewise a lane's: a triangle inside a kerbed
+        street's carriageway is that street's, though a lane's line runs nearer, or it shows as a
+        wedge or a row of teeth of the lane's lighter grey in the road."""
         k = nearest(x, y)
-        if k is None or streets[k]["c"] != "pedestrian":
+        if k is None:
             return k
         p = Point(x, y)
+        if streets[k]["c"] not in KERBED and streets[k]["c"] != "pedestrian":
+            inside = sorted((lines[int(j)].distance(p), int(j)) for j in tree.query(p.buffer(20))
+                            if streets[int(j)]["c"] in KERBED and lines[int(j)].distance(p) <= way_width(streets[int(j)]) / 2)
+            return inside[0][1] if inside else k
+        if streets[k]["c"] != "pedestrian":
+            return k
         near = sorted((lines[int(j)].distance(p), int(j)) for j in tree.query(p.buffer(40)) if streets[int(j)]["c"] != "pedestrian")
         return near[0][1] if near and near[0][0] <= reach_of[near[0][1]] else k
 
