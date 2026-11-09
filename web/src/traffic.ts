@@ -336,7 +336,8 @@ export class Traffic {
         // turns off the other way; the map's coarse curves can wiggle a little the wrong way, which is allowed)
         const ring = [e];
         let at = e, len = e.len, turned = 0, closed = false;
-        while (ring.length < 40 && len < 230) {
+        // (by length, not stretches: a big one like the Globe on the Bristol Road is drawn in forty-odd short ones)
+        while (ring.length < 200 && len < 230) {
           const on = this.nodes[at.b].out.filter((o) => o.b !== at.a && !o.dead && turnOf(at, o) * way > -0.25 && turnOf(at, o) * way < 2.8);
           if (!on.length) break;
           const next = on.reduce((b, o) => (turnOf(at, o) * way > turnOf(at, b) * way ? o : b));
