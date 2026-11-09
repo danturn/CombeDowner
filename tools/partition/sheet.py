@@ -1,9 +1,10 @@
 """The ground as one sheet (`gs` in a square's file): the open ground meets the street, pavement and
 path faces at their edges, instead of being drawn under them and let down out of sight.
 
-The game draws `gs` only with `?ground=sheet` (web/src/world.ts); a square without it, or the game
-without the flag, draws the ground as before, from the grid and the faces (`sf`), which `gs` leaves
-as they are. docs/plans/ground-architecture.md, sections 4.2 to 4.7, is the design; what was built
+The game draws `gs` unless `?ground=old` (web/src/world.ts), its open ground triangulated round the
+faces (web/src/sheet.ts buildSheetCdt; `Land` here fills cell by cell, as `?ground=sheet` does, and
+tools/check_more.py swaps in the game's triangles); a square without it draws the ground as before,
+from the grid and the faces (`sf`), which `gs` leaves as they are. docs/plans/ground-architecture.md, sections 4.2 to 4.7, is the design; what was built
 differently from it, and why, is written up there under stage 3.
 
 What the sheet is made of:

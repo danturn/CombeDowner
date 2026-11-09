@@ -1,15 +1,16 @@
 // The ground as one sheet with the street, pavement and path faces (`gs`, written by
-// tools/partition/sheet.py; drawn unless ?ground=old). Every grid cell a face's free edge passes
+// tools/partition/sheet.py; drawn unless ?ground=old). With ?ground=sheet, every grid cell a face's free edge passes
 // through is cut along those edges, and only what lies outside the faces is drawn, filled between the
 // cell's corners and the edges at the height the ground meets each face there; a cell wholly under
 // faces draws no ground. Built as a square loads, from its `sf` and `gs`: world.ts draws the fill with
 // the grid and stands you on it. The checks build the same with tools/partition/sheet.py's `Land`.
-// ?ground=cdt tries another way (buildSheetCdt): the open ground round the faces triangulated in one
-// piece, its corners on a face's edge only where the face has one (checked with CD_GROUND=cdt).
+// Without it, as the game draws it (buildSheetCdt), the open ground round the faces is triangulated in
+// one piece, its corners on a face's edge only where the face has one, a few milliseconds at a time
+// with the triangulation itself in a worker (delaunay.ts); the checks read that through tools/sheet_cdt.mjs.
 // Nothing here goes over the network.
 import { ShapeUtils, Vector2 } from "three";
-import Delaunator from "delaunator";
 import Constrainautor from "@kninnug/constrainautor";
+import { delaunayHere, delaunayOffMain, type Triangulation } from "./delaunay";
 
 export interface SheetGrid { x0: number; y0: number; dx: number; dy: number; nx: number; ny: number }
 
@@ -28,6 +29,26 @@ export interface Sheet {
   /** ?ground=cdt: a fill triangle can reach over several cells, so each cell lists every triangle
    *  over it, for heights (fillAt), as triangle numbers ids[start[c] .. start[c + 1]]. */
   near?: { start: Int32Array; ids: Int32Array };
+}
+
+/** A few milliseconds of building at a time: `due()` says when this slice has had its time (it looks
+ *  at the clock only every so often), `go()` starts the next once the build is back. */
+export class Slice {
+  private t = performance.now(); private n = 0;
+  constructor(private ms = 4) {}
+  due() { if (++this.n & 31) return false; return performance.now() - this.t >= this.ms; }
+  go() { this.t = performance.now(); this.n = 0; }
+}
+
+/** Set by a build waiting on a worker as it yields: tiles.ts moves on to other squares meanwhile,
+ *  rather than asking it again and again in the same frame. */
+export const buildWait = { on: false };
+
+/** A sliced build run straight through, for the tools and the map built whole at the start. */
+export function drain<T>(g: Generator<void, T>): T {
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
 }
 
 /** The cells gs marks as under faces (wholly, or at their south-west corner where a free edge
@@ -80,10 +101,16 @@ interface Pt { x: number; y: number; h: number; k: number }   // k: a grid point
 /** Cut every cell the free edges cross, and fill what lies outside the faces. `corner` is each grid
  *  point's scene height, `covered` the cells gs marks as under faces. */
 export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, odd: ArrayLike<number> = []): Sheet {
+  return drain(buildSheetGen(G, corner, covered, E, odd));
+}
+
+/** buildSheet a few milliseconds at a time. */
+export function* buildSheetGen(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, odd: ArrayLike<number> = [], sl = new Slice()): Generator<void, Sheet> {
   const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1;
   const lineX = (i: number) => x0 + i * dx, lineY = (j: number) => y0 + j * dy;
   const byCell = new Map<number, Piece[]>();
   for (let s = 0; s < E.n; s++) {
+    if (sl.due()) { yield; sl.go(); }
     const ah = E.ah[s], bh = E.bh[s];
     const cuts = edgeCuts(G, E.ax[s], E.ay[s], E.bx[s], E.by[s]).map(([x, y, t]) => [x, y, ah + (bh - ah) * t, t]);
     for (let k = 0; k + 1 < cuts.length; k++) {
@@ -115,6 +142,7 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
   };
   const cellTris = new Map<number, number[]>();
   for (const [c, pieces] of byCell) {
+    if (sl.due()) { yield; sl.go(); }
     const i = c % cw, j = (c - i) / cw;
     const xa = lineX(i), xb = lineX(i + 1), ya = lineY(j), yb = lineY(j + 1);
     const corners: Pt[] = [
@@ -154,6 +182,7 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
     return NG + k;
   };
   for (const [c, extra] of sides) {
+    if (sl.due()) { yield; sl.go(); }
     const i = c % cw, j = (c - i) / cw;
     const xa = lineX(i), xb = lineX(i + 1), ya = lineY(j), yb = lineY(j + 1);
     const ka = j * nx + i, kb = j * nx + i + 1, kc = (j + 1) * nx + i, kd = (j + 1) * nx + i + 1;
@@ -192,6 +221,8 @@ export function buildSheet(G: SheetGrid, corner: (k: number) => number, covered:
   return { state, px: Float64Array.from(px), py: Float64Array.from(py), ph: Float64Array.from(ph), tri: Int32Array.from(tri), start };
 }
 
+const BANK = 0.25;   // metres a grid point beside a face's edge may stand off the edge's height and still be left out
+
 class FlipSet {
   private on: Uint8Array; private list: number[] = [];
   constructor(n: number) { this.on = new Uint8Array(n); }
@@ -202,7 +233,7 @@ class FlipSet {
   forEach(fn: (i: number) => void) { const l = this.list; this.list = []; for (const i of l) if (this.on[i]) fn(i); return this; }
 }
 
-/** The trial of ?ground=cdt: the open ground round the faces as one constrained Delaunay
+/** The open ground round the faces as one constrained Delaunay
  *  triangulation (Delaunator, Constrainautor) of the grid's points and the faces' free edges, so the
  *  ground has a corner along a face's edge only where the face has one, and the faces needn't be split
  *  where the edge crosses the grid. Only the cells the free edges pass through, and those round them,
@@ -212,12 +243,19 @@ class FlipSet {
  *  ground. Returns the same as buildSheet, with `near` for heights, and the middles (x, y in turn) of
  *  any free edges that couldn't be held (crossing one already held). */
 export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, inFace: (x: number, y: number) => boolean, clear = 0.3): Sheet & { lost: number[] } {
+  return drain(buildSheetCdtGen(G, corner, covered, E, inFace, clear, false));
+}
+
+/** buildSheetCdt a few milliseconds at a time, its triangulation in a worker if `offMain` (waiting
+ *  on it with buildWait set). */
+export function* buildSheetCdtGen(G: SheetGrid, corner: (k: number) => number, covered: Uint8Array, E: FreeEdges, inFace: (x: number, y: number) => boolean, clear = 0.3, offMain = false, sl = new Slice()): Generator<void, Sheet & { lost: number[] }> {
   const { x0, y0, dx, dy, nx, ny } = G, cw = nx - 1, ch = ny - 1, NG = nx * ny;
   const cellOf = (x: number, y: number) => Math.min(ch - 1, Math.max(0, Math.floor((y - y0) / dy))) * cw + Math.min(cw - 1, Math.max(0, Math.floor((x - x0) / dx)));
   // each free edge clipped to the grid, and the cells it passes through
   const sx: number[] = [], sy: number[] = [], sh: number[] = [], ex: number[] = [], ey: number[] = [], eh: number[] = [];
   const segsIn = new Map<number, number[]>();
   for (let s = 0; s < E.n; s++) {
+    if (sl.due()) { yield; sl.go(); }
     const cuts = edgeCuts(G, E.ax[s], E.ay[s], E.bx[s], E.by[s]);
     if (cuts.length < 2) continue;
     const a = cuts[0], b = cuts[cuts.length - 1];
@@ -232,6 +270,7 @@ export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, cover
   // on the boundary with the grid's own cells
   const R = new Uint8Array(cw * ch);
   for (const c of segsIn.keys()) {
+    if (sl.due()) { yield; sl.go(); }
     const i = c % cw, j = (c - i) / cw;
     for (let b = Math.max(0, j - 1); b <= Math.min(ch - 1, j + 1); b++) for (let a = Math.max(0, i - 1); a <= Math.min(cw - 1, i + 1); a++) R[b * cw + a] = 1;
   }
@@ -245,6 +284,7 @@ export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, cover
     return true;
   };
   for (const list of segsIn.values()) for (let m = 0; m < list.length; m++) for (let q = m + 1; q < list.length; q++) {
+    if (sl.due()) { yield; sl.go(); }
     const s = list[m], t = list[q];
     if (endOn(s, sx[t], sy[t], sh[t]) || endOn(s, ex[t], ey[t], eh[t]) || endOn(t, sx[s], sy[s], sh[s]) || endOn(t, ex[s], ey[s], eh[s])) continue;
     const ux = ex[s] - sx[s], uy = ey[s] - sy[s], vx = ex[t] - sx[t], vy = ey[t] - sy[t], d = ux * vy - uy * vx;
@@ -272,40 +312,47 @@ export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, cover
   };
   const cons: [number, number][] = [];
   for (let s = 0; s < sx.length; s++) {
+    if (sl.due()) { yield; sl.go(); }
     const stops = [[0, sx[s], sy[s], sh[s]], ...(splits.get(s) ?? []).sort((p, q) => p[0] - q[0]), [1, ex[s], ey[s], eh[s]]];
     let prev = add(stops[0][1], stops[0][2], stops[0][3], -1);
     for (let k = 1; k < stops.length; k++) { const n = add(stops[k][1], stops[k][2], stops[k][3], -1); if (n !== prev) cons.push([prev, n]); prev = n; }
   }
-  const nearEdge = (x: number, y: number) => {
+  // (a grid point standing well above or below the edge beside it holds a bank there: it stays)
+  const nearEdge = (x: number, y: number, h: number) => {
     const i = Math.round((x - x0) / dx), j = Math.round((y - y0) / dy);
     for (let b = j - 1; b <= j; b++) for (let a = i - 1; a <= i; a++) {
       if (a < 0 || b < 0 || a >= cw || b >= ch) continue;
       for (const s of segsIn.get(b * cw + a) ?? []) {
         const vx = ex[s] - sx[s], vy = ey[s] - sy[s], u = Math.min(1, Math.max(0, ((x - sx[s]) * vx + (y - sy[s]) * vy) / (vx * vx + vy * vy)));
-        if (Math.hypot(x - sx[s] - vx * u, y - sy[s] - vy * u) < clear) return true;
+        if (Math.hypot(x - sx[s] - vx * u, y - sy[s] - vy * u) < clear && Math.abs(h - sh[s] - (eh[s] - sh[s]) * u) < BANK) return true;
       }
     }
     return false;
   };
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (sl.due()) { yield; sl.go(); }
     let inR = false;
     for (let b = j - 1; b <= j && !inR; b++) for (let a = i - 1; a <= i; a++) if (a >= 0 && b >= 0 && a < cw && b < ch && R[b * cw + a]) { inR = true; break; }
     if (!inR) continue;
     const x = x0 + i * dx, y = y0 + j * dy, edge = i === 0 || j === 0 || i === cw || j === ch;
-    if (!edge && atGrid[j * nx + i] < 0 && nearEdge(x, y)) continue;
+    if (!edge && atGrid[j * nx + i] < 0 && nearEdge(x, y, corner(j * nx + i))) continue;
     add(x, y, corner(j * nx + i), j * nx + i);
   }
   // the triangulated cells' sides against the grid's own cells, held so nothing crosses them
   const gridPt = (i: number, j: number) => atGrid[j * nx + i];
   for (let c = 0; c < R.length; c++) {
+    if (sl.due()) { yield; sl.go(); }
     if (!R[c]) continue;
     const i = c % cw, j = (c - i) / cw;
     if (i > 0 && !R[c - 1]) cons.push([gridPt(i, j), gridPt(i, j + 1)]);
     if (i < cw - 1 && !R[c + 1]) cons.push([gridPt(i + 1, j), gridPt(i + 1, j + 1)]);
     if (j > 0 && !R[c - cw]) cons.push([gridPt(i, j), gridPt(i + 1, j)]);
     if (j < ch - 1 && !R[c + cw]) cons.push([gridPt(i, j + 1), gridPt(i + 1, j + 1)]);
+    // a cell no edge passes through is folded as the grid folds its own (south-east to north-west):
+    // folded the other way, its heights weren't the grid's, and across a bank it stood up as a ridge
+    if (!segsIn.has(c) && gridPt(i, j) >= 0 && gridPt(i + 1, j + 1) >= 0 && gridPt(i + 1, j) >= 0 && gridPt(i, j + 1) >= 0) cons.push([gridPt(i + 1, j), gridPt(i, j + 1)]);
   }
-  for (let k = cons.length - 1; k >= 0; k--) if (cons[k][0] < 0 || cons[k][1] < 0) cons.splice(k, 1);
+  const held = cons.filter(([a, b]) => a >= 0 && b >= 0);
   const state = new Uint8Array(cw * ch);
   for (let c = 0; c < state.length; c++) state[c] = R[c] ? 2 : covered[c] ? 1 : 0;
   const px: number[] = [], py: number[] = [], ph: number[] = [];
@@ -313,14 +360,27 @@ export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, cover
   const lost: number[] = [];
   const byCell: number[][] = [];
   if (PK.length >= 3) {
-    const del = new Delaunator(Float64Array.from(P));
+    const coords = Float64Array.from(P);
+    let del: Triangulation;
+    const ask = offMain ? delaunayOffMain(coords) : null;
+    if (ask) { while (!ask.result) { buildWait.on = true; yield; } del = ask.result; }
+    else {
+      // (on its own slice, named, so a long one is seen to be this)
+      const g = globalThis as { __wphase?: string }, was = g.__wphase;
+      g.__wphase = "sheet-triangulate";
+      yield;
+      del = delaunayHere(coords);
+      g.__wphase = was;
+      yield;
+    }
+    sl.go();
     const con = new Constrainautor(del);
     // (its own set of edges to look at again is walked whole after every edge held, which over a square's
     // tens of thousands of edges took a second: this one walks only what is in it)
     (con as unknown as { flips: FlipSet }).flips = new FlipSet(del.triangles.length);
     // (an edge through a point lying on it is held in pieces, point to point)
     const pointsIn = new Map<number, number[]>();
-    for (let n = 0; n < PK.length; n++) { const c = cellOf(P[2 * n] + x0, P[2 * n + 1] + y0); (pointsIn.get(c) ?? pointsIn.set(c, []).get(c)!).push(n); }
+    for (let n = 0; n < PK.length; n++) { if (sl.due()) { yield; sl.go(); } const c = cellOf(P[2 * n] + x0, P[2 * n + 1] + y0); (pointsIn.get(c) ?? pointsIn.set(c, []).get(c)!).push(n); }
     const hold = (a: number, b: number, depth: number) => {
       try { con.constrainOne(a, b); }
       catch (e) {
@@ -341,9 +401,10 @@ export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, cover
         hold(prev, b, depth + 1);
       }
     };
-    for (const [a, b] of cons) hold(a, b, 0);
+    for (const [a, b] of held) { hold(a, b, 0); if (sl.due()) { yield; sl.go(); } }
     const T = del.triangles;
     for (let t = 0; t < T.length; t += 3) {
+      if (sl.due()) { yield; sl.go(); }
       let a = T[t], b = T[t + 1], d = T[t + 2];
       const cx = (P[2 * a] + P[2 * b] + P[2 * d]) / 3 + x0, cy = (P[2 * a + 1] + P[2 * b + 1] + P[2 * d + 1]) / 3 + y0;
       const c = cellOf(cx, cy);
@@ -354,19 +415,20 @@ export function buildSheetCdt(G: SheetGrid, corner: (k: number) => number, cover
     }
   }
   const tri: number[] = [], start = new Int32Array(state.length + 1);
-  for (let c = 0; c < state.length; c++) { start[c] = tri.length / 3; const l = byCell[c]; if (l) for (const k of l) tri.push(k); }
+  for (let c = 0; c < state.length; c++) { if (sl.due()) { yield; sl.go(); } start[c] = tri.length / 3; const l = byCell[c]; if (l) for (const k of l) tri.push(k); }
   start[state.length] = tri.length / 3;
   // every cell a triangle reaches over, for heights
   const X = (k: number) => k >= NG ? px[k - NG] : x0 + (k % nx) * dx, Y = (k: number) => k >= NG ? py[k - NG] : y0 + Math.floor(k / nx) * dy;
   const over: number[][] = [];
   for (let t = 0; t < tri.length / 3; t++) {
+    if (sl.due()) { yield; sl.go(); }
     const xa = X(tri[3 * t]), xb = X(tri[3 * t + 1]), xc = X(tri[3 * t + 2]), ya = Y(tri[3 * t]), yb = Y(tri[3 * t + 1]), yc = Y(tri[3 * t + 2]);
     const i0 = Math.max(0, Math.floor((Math.min(xa, xb, xc) - x0) / dx)), i1 = Math.min(cw - 1, Math.floor((Math.max(xa, xb, xc) - x0) / dx));
     const j0 = Math.max(0, Math.floor((Math.min(ya, yb, yc) - y0) / dy)), j1 = Math.min(ch - 1, Math.floor((Math.max(ya, yb, yc) - y0) / dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) (over[j * cw + i] ??= []).push(t);
   }
   const nStart = new Int32Array(state.length + 1), ids: number[] = [];
-  for (let c = 0; c < state.length; c++) { nStart[c] = ids.length; const l = over[c]; if (l) for (const t of l) ids.push(t); }
+  for (let c = 0; c < state.length; c++) { if (sl.due()) { yield; sl.go(); } nStart[c] = ids.length; const l = over[c]; if (l) for (const t of l) ids.push(t); }
   nStart[state.length] = ids.length;
   return { state, px: Float64Array.from(px), py: Float64Array.from(py), ph: Float64Array.from(ph), tri: Int32Array.from(tri), start, near: { start: nStart, ids: Int32Array.from(ids) }, lost };
 }
@@ -536,17 +598,22 @@ const SEAM = 0.006;   // metres: a face's edge this near the square's edge runs 
  *  and the scene height the ground meets each spot at: the lowest top of the faces there, or the foot
  *  or top of its retaining wall. `lift` is each kind's lift over its written height (world.ts FACE_LIFT). */
 export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: NonNullable<import("./map").MapData["gs"]>, bounds: number[], Z0: number, lift: number[], G: SheetGrid, cutAlong = true) {
+  return drain(sheetFacesGen(sf, gs, bounds, Z0, lift, G, cutAlong));
+}
+
+/** sheetFaces a few milliseconds at a time. */
+export function* sheetFacesGen(sf: NonNullable<import("./map").MapData["sf"]>, gs: NonNullable<import("./map").MapData["gs"]>, bounds: number[], Z0: number, lift: number[], G: SheetGrid, cutAlong = true, sl = new Slice()) {
   const V = sf.v, NP = V.length / 3;
   const spot = new Int32Array(NP), spots = new Map<string, number>();
-  for (let i = 0; i < NP; i++) { const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
+  for (let i = 0; i < NP; i++) { if (sl.due()) { yield; sl.go(); } const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
   const kindOf = new Map<number, number>();
-  KINDS.forEach((kind, n) => {
+  for (const [n, kind] of KINDS.entries()) {
     const T = sf[kind] ?? [];
-    for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) {
-      const a = T[k + m], b = T[k + (m + 1) % 3];
-      kindOf.set(Math.min(a, b) * NP + Math.max(a, b), n);
+    for (let k = 0; k + 2 < T.length; k += 3) {
+      if (sl.due()) { yield; sl.go(); }
+      for (let m = 0; m < 3; m++) { const a = T[k + m], b = T[k + (m + 1) % 3]; kindOf.set(Math.min(a, b) * NP + Math.max(a, b), n); }
     }
-  });
+  }
   const owner = new Set<number>();
   for (const e of sf.e) for (let k = 0; k + 1 < e.i.length; k++) owner.add(spot[e.i[k]] * NP + spot[e.i[k + 1]]);
   const [x0, y0, x1, y1] = bounds;
@@ -559,8 +626,10 @@ export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: N
     return ux * vx + uy * vy < 0 && Math.abs(ux * vy - uy * vx) <= 1e-3 * Math.hypot(ux, uy) * Math.hypot(vx, vy);
   };
   for (const e of sf.e) {
+    if (sl.due()) { yield; sl.go(); }
     const run: [number, number, number][] = [];
     for (let k = 0; k + 1 < e.i.length; k++) {
+      if (sl.due()) { yield; sl.go(); }
       const a = e.i[k], b = e.i[k + 1];
       if (spot[a] === spot[b] || owner.has(spot[b] * NP + spot[a]) || onSeam(a, b)) continue;
       const n = kindOf.get(Math.min(a, b) * NP + Math.max(a, b));
@@ -589,6 +658,7 @@ export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: N
   // the points the sheet puts partway along each free edge, for the faces to put there too
   const cutsOf = new Map<number, number[][]>();
   for (let k = 0; k < n; k++) {
+    if (sl.due()) { yield; sl.go(); }
     // (triangulated, ?ground=cdt, the ground has a point partway along an edge only where it leaves the square)
     const inner = edgeCuts(G, E.ax[k], E.ay[k], E.bx[k], E.by[k]).filter((q, m, all) => q[2] > 0 && q[2] < 1 && (cutAlong || m === 0 || m === all.length - 1));
     if (!inner.length) continue;
@@ -607,6 +677,7 @@ export function sheetFaces(sf: NonNullable<import("./map").MapData["sf"]>, gs: N
   for (const kind of KINDS) {
     const T = sf[kind] ?? [];
     for (let k = 0; k + 2 < T.length; k += 3) {
+      if (sl.due()) { yield; sl.go(); }
       const t = tris.length / 3, xs = [V[3 * T[k]], V[3 * T[k + 1]], V[3 * T[k + 2]]], ys = [V[3 * T[k] + 1], V[3 * T[k + 1] + 1], V[3 * T[k + 2] + 1]];
       tris.push(T[k], T[k + 1], T[k + 2]);
       for (let j = cellJ(Math.min(...ys)); j <= cellJ(Math.max(...ys)); j++) for (let i = cellI(Math.min(...xs)); i <= cellI(Math.max(...xs)); i++) (faceIn.get(j * cw + i) ?? faceIn.set(j * cw + i, []).get(j * cw + i)!).push(t);

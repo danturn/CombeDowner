@@ -209,7 +209,7 @@ def roofs_solid(root, map_id, only=None):
     args = ["node", os.path.join(here, "roof_probe.mjs"), "--map", map_id, "--maps", os.path.abspath(root), "--json",
             "--per", os.environ.get("CD_ROOFS_PER", "40")]
     if only: args += ["--squares", " ".join(t.replace("_", ",") for t in only)]
-    if GROUND_CDT: args += ["--query", "ground=cdt"]
+    if GROUND != "cdt": args += ["--query", f"ground={GROUND}"]
     try:
         return json.loads(subprocess.run(args, capture_output=True, text=True, check=True).stdout)
     except (OSError, subprocess.CalledProcessError, ValueError):
@@ -240,7 +240,7 @@ def overroad(root, map_id, only=None):
         return []
     args = ["node", os.path.join(here, "overroad.mjs"), "--map", map_id, "--maps", os.path.abspath(root)]
     if only: args += ["--only", " ".join(only)]
-    if GROUND_SHEET: args += ["--query", "ground=cdt" if GROUND_CDT else "ground=sheet"]
+    if GROUND != "cdt": args += ["--query", f"ground={GROUND}"]
     try:
         # (the game loads the squares' packs, not their JSON: packs left from an earlier build of the
         # map would be looked at in place of the map being checked)
@@ -676,7 +676,7 @@ def small_things(m, roads, rlines, rtree, solid, wtree, ground, note, at, off_de
 
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}   # (a living street is paved flush)
 # (the railway's bed is a face only to the sheet: the game leaves it out without it)
-FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel") + (("bed",) if os.environ.get("CD_GROUND") in ("sheet", "cdt") else ())
+FACE_KINDS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel") + (("bed",) if (os.environ.get("CD_GROUND") or "cdt") in ("sheet", "cdt") else ())
 
 
 def longest_run(lines):
@@ -912,12 +912,13 @@ from shapely.prepared import prep
 import importlib.util
 _spec = importlib.util.spec_from_file_location("ground_sheet", os.path.join(os.path.dirname(os.path.abspath(__file__)), "partition", "sheet.py"))
 gsheet = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(gsheet)
-# CD_GROUND=sheet measures the ground as the game draws it with ?ground=sheet: a square that has the
-# baked sheet (gs) is drawn from it, the rest as before
-GROUND_SHEET = os.environ.get("CD_GROUND") in ("sheet", "cdt")
-# CD_GROUND=cdt, the trial of ?ground=cdt: the open ground triangulated round the faces' edges, as the
-# game's own code does it (tools/sheet_cdt.mjs), its heights found as for the sheet's cut cells
-GROUND_CDT = os.environ.get("CD_GROUND") == "cdt"
+# The ground is measured as the game draws it: a square that has the baked sheet (gs) is drawn from it,
+# its open ground triangulated round the faces' edges as the game's own code does it
+# (tools/sheet_cdt.mjs), heights found as for the sheet's cut cells. CD_GROUND=sheet measures it cut
+# cell by cell instead (?ground=sheet), and CD_GROUND=old the grid let down under the faces (?ground=old).
+GROUND = os.environ.get("CD_GROUND") or "cdt"
+GROUND_SHEET = GROUND in ("sheet", "cdt")
+GROUND_CDT = GROUND == "cdt"
 
 
 def cdt_land(m, f, sink):

@@ -14,7 +14,7 @@
 // feet of kerbs, walls and the like (only edges of the ground's and the faces' tops are checked; a
 // kerb or a wall still closes an edge it shares).
 //
-//   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules] [--query ground=cdt]
+//   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules] [--query ground=cdt] [--heights] [--slices]
 //
 // --most n prints up to n gaps per square, as data x, y and a ?at= to look from. Exits 1 if any
 // square has a gap, so a build can stop on it. --rules prints the gaps as tools/check_more.py's
@@ -25,8 +25,8 @@ import { fakeBrowser, bundleGame } from "./node_game.mjs";
 
 const here = path.dirname(new URL(import.meta.url).pathname), web = path.join(here, "..", "web");
 const argv = process.argv.slice(2);
-const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
-for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--heights" ? "1" : argv[++i];
+const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", slices: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--heights" || argv[i] === "--slices" ? "1" : argv[++i];
 // (with --rules the findings are the output, for tools/check_more.py rule 38, and the rest goes to stderr)
 if (opt.rules) console.log = console.error;
 const say = (...a) => console.log(...a);
@@ -77,11 +77,16 @@ async function square(ti, tj) {
   const group = new THREE.Group();
   const job = tiles.build(m, group);
   let r;
-  const t0 = performance.now();
-  do r = job.next(); while (!r.done);
+  const t0 = performance.now(), slices = {};
+  do {
+    const ph = globalThis.__wphase || "?", s0 = performance.now();
+    r = job.next();
+    const sm = performance.now() - s0;
+    if (!(sm <= (slices[ph] ?? 0))) slices[ph] = +sm.toFixed(1);
+  } while (!r.done);
   const ms = performance.now() - t0;
   group.updateMatrixWorld(true);
-  const out = { d, group, ms, done: () => { r.value.dispose?.(); core.dropTile(k); } };
+  const out = { d, group, ms, slices, done: () => { r.value.dispose?.(); core.dropTile(k); } };
   return out;
 }
 
@@ -270,6 +275,8 @@ for (const [ti, tj] of squares) {
   const sheetMs = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.ms, 0), lost = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.lost, 0);
   if (opt.heights) say(`${ti},${tj}: ${r.standOff} of ${r.sampled} ground triangles' middles stood you sunk in, the worst ${r.standWorst} m; ${r.standAbove} over it`);
   Object.assign(report[`${ti},${tj}`], { standOff: r.standOff, standWorst: r.standWorst, standAbove: r.standAbove, standAt: r.standAt, tris, buildMs: Math.round(s.ms), sheetMs: +sheetMs.toFixed(1), lost });
+  report[`${ti},${tj}`].slices = s.slices;
+  if (opt.slices) say(`${ti},${tj}: longest slice in each part: ${Object.entries(s.slices).sort((p, q) => q[1] - p[1]).slice(0, 8).map(([k, v]) => `${k} ${v} ms`).join(", ")}`);
   say(`${ti},${tj}: ground ${tris.ground ?? 0} roads ${tris.roads ?? 0} triangles; built in ${s.ms.toFixed(0)} ms, the sheet ${sheetMs.toFixed(1)} ms${lost ? `, ${lost} free edges not held` : ""}`);
   say(`${ti},${tj}: ${r.open} open edges, ${r.tee} tees, ${r.under} overlapped, ${r.gap} gaps, ${r.folds} edges three or more triangles share`);
   for (const [x, y] of r.gaps.slice(0, most)) say(`    gap at ${x.toFixed(2)},${y.toFixed(2)}  ?at=${x.toFixed(1)},${(y - 6).toFixed(1)},0,-35`);

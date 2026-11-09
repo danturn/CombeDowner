@@ -1,7 +1,8 @@
 // Builds the three.js scene from the map: terrain, roads, buildings, walls, trees, water and sky.
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same. A square that carries its ground sheet (gs) draws
-// its ground from it, cut along its street and path faces' edges (sheet.ts); ?ground=old draws the
+// its ground from it, triangulated round its street and path faces' edges (sheet.ts; ?ground=sheet
+// cuts each grid cell along them instead); ?ground=old draws the
 // grid let down under the faces instead, to compare.
 import * as THREE from "three";
 import { darkable } from "./unlit";
@@ -32,10 +33,10 @@ import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
-import { buildSheet, buildSheetCdt, carved, coveredCells, fillAt, nearFaces, openSeams, sheetFaces, type Sheet } from "./sheet";
+import { buildSheetGen, buildSheetCdtGen, sheetFacesGen, carved, coveredCells, fillAt, nearFaces, openSeams, type Sheet } from "./sheet";
 
 /** The ground drawn as one sheet with the faces (the Settings page's choice, cd-ground), unless
- *  ?ground=old or ?ground=sheet in the address says otherwise for this visit. */
+ *  ?ground=old, ?ground=sheet or ?ground=cdt in the address says otherwise for this visit. */
 export function groundSheet(): boolean {
   const q = new URLSearchParams(location.search).get("ground");
   if (q === "old") return false;
@@ -43,10 +44,11 @@ export function groundSheet(): boolean {
   try { return localStorage.getItem("cd-ground") !== "0"; } catch { return true; }
 }
 
-/** ?ground=cdt, a trial: the sheet's open ground triangulated round the faces' edges (sheet.ts buildSheetCdt);
- *  &cdtclear=metres sets how near a face's edge a grid point is left out (0.3). */
+/** The sheet's open ground triangulated round the faces' edges (sheet.ts buildSheetCdt), unless
+ *  ?ground=sheet asks for it cut cell by cell as before, to compare; &cdtclear=metres sets how near
+ *  a face's edge a grid point is left out (0.3). */
 export function groundCdt(): boolean {
-  return typeof location !== "undefined" && new URLSearchParams(location.search).get("ground") === "cdt";
+  return typeof location === "undefined" || new URLSearchParams(location.search).get("ground") !== "sheet";
 }
 
 const CHUNK = 320;
@@ -553,7 +555,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const LEVEL = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "old";
   // ?roads=strips draws every street as strips along its line, as before the faces, to compare
   const SURFACES = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips";
-  // off under Node, where the clash check runs this code: check_more.py measures the sheet itself (CD_GROUND=sheet)
+  // off under Node, where the clash check runs this code: check_more.py measures it as the game draws it (CD_GROUND)
   const SHEET = typeof location !== "undefined" && groundSheet();
   // A square with its streets' faces lets them decide where the ground is pulled down, what height you
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
@@ -791,8 +793,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // walk on its floor (the slope up the wall that the grid leaves is hidden: tunnels.ts mouths)
   const cuts = cuttings(map);
   const CDT = sheetOn && groundCdt(), sheetT0 = performance.now();
-  const meet = sheetOn ? sheetFaces(D.sf!, D.gs!, D.b, Z0, FACE_LIFT, { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny }, !CDT) : null;
+  // (named for tiles.ts's long slices while it's built, then back to the phase it was in)
+  const phase = (globalThis as any).__wphase;
+  if (sheetOn) (globalThis as any).__wphase = "sheet";
+  const meet = sheetOn ? yield* sheetFacesGen(D.sf!, D.gs!, D.b, Z0, FACE_LIFT, { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny }, !CDT) : null;
   const meetMs = performance.now() - sheetT0;
+  (globalThis as any).__wphase = phase;
+  if (meet) yield;
   // (with the sheet the faces leave roundTo alone, so where one beside a cutting decides the ground is
   // found from their edges here, or the bank behind a wing wall was made up over a track beside it)
   const faceTo = meet ? nearFaces(meet.edges, T, T.dx * 0.75) : roundTo;
@@ -876,14 +883,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // The sheet: each cell a face's free edge crosses is cut along it, and only the ground outside the
   // faces is drawn there, meeting their edges (sheet.ts); a cell wholly under faces draws none.
   const sheetGrid = { x0: T.x0, y0: T.y0, dx: T.dx, dy: T.dy, nx: T.nx, ny: T.ny };
+  if (meet) { (globalThis as any).__wphase = "sheet"; yield; }
   const sheetT1 = performance.now();
+  // (a square loading while you play triangulates its ground in a worker; the map built at the start, at once)
   const sheet: Sheet | null = !meet ? null : CDT
-    ? buildSheetCdt(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.inFace, Number(new URLSearchParams(location.search).get("cdtclear") ?? 0.3))
-    : buildSheet(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x);
+    ? yield* buildSheetCdtGen(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, meet.inFace, Number(new URLSearchParams(location.search).get("cdtclear") ?? 0.3), !!into)
+    : yield* buildSheetGen(sheetGrid, (k) => tPos[3 * k + 1], coveredCells(D.gs!.c, (T.nx - 1) * (T.ny - 1)), meet.edges, D.gs!.x);
+  (globalThis as any).__wphase = phase;
   // (tools/ground_seams.mjs times the sheet by leaving a list here)
   if (sheet) (globalThis as { __sheetMs?: unknown[] }).__sheetMs?.push({ x0: T.x0, y0: T.y0, cdt: CDT, ms: meetMs + performance.now() - sheetT1, lost: ((sheet as { lost?: number[] }).lost?.length ?? 0) / 2 });
   if (sheet && !CDT) { const open = openSeams(sheet, sheetGrid); if (open) console.warn(`ground sheet: ${open} cracks between cells in the square at ${T.x0.toFixed(0)},${T.y0.toFixed(0)}`); }
   const gridH = (k: number) => tPos[3 * k + 1];
+  if ((globalThis as any).__dbgSheet) (globalThis as any).__dbgSheet.push({ sheet, tPos, T, meet, Z0 });   // DEBUG-REMOVE
   yield;
   // The lowest a wall under a bridge or a street's edge may stand to at data (x, y), given the ground
   // there: over the canal its bank's top, and over a river or a pond the wall's own top, since the
