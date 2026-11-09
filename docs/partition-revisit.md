@@ -1634,3 +1634,20 @@ Behind `?ground=sheet`, on the twelve test squares. What was traded, to come bac
   where it ends at a deck, so a little more ground stands within half a metre of some decks'
   undersides (rule 31, Cape Town most). Flights keep their treads as before; the ground beside
   them is now the batter, not the cut to a straight climb.
+
+## The ground triangulated round the faces (9 November)
+
+The ground is one constrained triangulation round the faces (`web/src/sheet.ts`
+`buildSheetCdtGen`). Dan accepted two counts that went up with it:
+
+- [ ] **A footbridge's foot at 1_4 (-16, 3139): rule 30 up by one.** The ground stands 0.10 m up
+  through 0.2 m² of the deck's end. The triangulation puts a corner on a face's edge only where
+  the face has one, so the ground there is drawn between corners further apart than the old
+  grid's, and rises through the deck's end between them.
+- [ ] **Flights' treads: rule 33 up by three**, for the same reason: with fewer corners along the
+  flight's edge, the ground beside a flight is drawn as a straighter slope and buries or lets go
+  of a few treads' ends.
+
+  If they are looked at again, two ways to go: keep the grid's own points in the triangulation
+  near decks and flights (a few more triangles a square, only there), or put back the points
+  where the grid's lines cross a face's edge there, as the cell-by-cell sheet does.
