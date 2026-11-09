@@ -60,6 +60,7 @@ const SET_BLURB: Record<string, string> = {
   "Empire Hotel": "On Grand Parade, looking over the river.",
   "Sham Castle": "Ralph Allen's folly on Bathampton Down: a castle front with nothing behind it, looking west over Bath.",
   "Holburne Museum": "At the far end of Great Pulteney Street, looking back down it.",
+  "Royal Crescent": "John Wood the Younger's half-ellipse of houses, laid on the curve the map's own footprints make, each house at its own depth behind one columned front.",
   "Prior Park": "Ralph Allen's mansion, its portico looking down the valley to Bath.",
   "Prior Park's wings": "The wings either side of Prior Park, and the links to them.",
   "Kingswood School": "On Lansdown: the tower over the entrance, and the chapel.",

@@ -1,7 +1,7 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
-// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
-// the Bell Inn on Walcot Street, Grenville's monument on Lansdown, Bath Spa station and the Dundas Aqueduct), and of Cape
+// Grand Parade), the Holburne Museum, the Empire Hotel, the Royal Crescent, Sham Castle, Prior Park,
+// Kingswood School, the Bell Inn on Walcot Street, Grenville's monument on Lansdown, Bath Spa station and the Dundas Aqueduct), and of Cape
 // Town's (the Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, and at the V&A
 // Waterfront the Clock Tower, the Cape Wheel, Zeitz MOCAA and the boats moored in the harbour) standing in for the plain
 // scenery the map tools build there.
@@ -49,6 +49,7 @@ import { paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
+import { CRESCENT_OUTLINE, CRESCENT_SOLID, CRESCENT_SINK } from "./royalcrescent";
 import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
 import { BOA_COVERS } from "./bradford";
 import { CASTLE_Y, CASTLE_OUTLINE } from "./castle";
@@ -97,6 +98,9 @@ export interface SetPiece {
   /** Where it's solid all the way through, in its own frame (x0, x1, z0, z1), for spawning and
    *  pubs to keep out of (map.indoors). Its whole outline, if not given. */
   covers?: [number, number, number, number][];
+  /** Where it's solid all the way through, as outlines in its own frame, for a set piece that
+   *  isn't square to its frame (the Royal Crescent's houses, round its curve): as covers. */
+  solid?: [number, number][][];
   /** Its builder's args, worked out where it stands. */
   args?: (c: PlaceCtx, height: number) => (number | string)[];
   /** Ground it lowers, rectangles in its own frame, to y above its origin; street: to the
@@ -199,6 +203,15 @@ export const SET_PIECES: SetPiece[] = [
     // landmarks/grandparade.ts, in Grand Parade's frame.
     name: "Empire Hotel", kind: "empire", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
     outline: [[49, 4.3], [96.5, 4.3], [96.5, 46], [49, 46]],
+  },
+  {
+    // landmarks/royalcrescent.ts. The origin: the middle of the ellipse its front is laid on (out on
+    // the lawn), at the street's level in front of it; its long axis runs east-south-east, so it
+    // looks south-south-west over the lawn. The outline takes in the houses to their backs and
+    // everything in front of them out to the street's pavement, which it flags itself; the ground
+    // there comes down to the pavement's level, and to the floor of the basement areas along the front.
+    name: "Royal Crescent", kind: "crescent", at: [-2.3683485, 51.3869059], bearing: 106.19, height: 51.5,
+    outline: CRESCENT_OUTLINE, solid: CRESCENT_SOLID, sink: CRESCENT_SINK,
   },
   {
     // landmarks/shamcastle.ts. The origin: the middle of the wall, its front looking west to Bath.
@@ -538,7 +551,8 @@ export function maskSetPieces(d: MapData) {
     }
     // where it's solid, for spawning to keep out of
     for (const c of sp.covers ?? []) (d.sp ??= []).push([at(c[0], c[2]), at(c[1], c[2]), at(c[1], c[3]), at(c[0], c[3])]);
-    if (!sp.covers) (d.sp ??= []).push(...rings);
+    for (const r of sp.solid ?? []) (d.sp ??= []).push(r.map(([lx, lz]) => at(lx, lz)));
+    if (!sp.covers && !sp.solid) (d.sp ??= []).push(...rings);
 
     // its height, and the ground it lowers
     const waterAt = (lx: number, lz: number) => {

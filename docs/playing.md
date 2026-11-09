@@ -83,6 +83,11 @@ Bath's great buildings are modelled by hand:
 - **The Holburne Museum** at its far end: the three-arched loggia you can walk up into, its
   portico and urns, and the glass extension in Sydney Gardens behind.
 - **Argyle Street**, from the bridge to Laura Place, a shopfront to every house.
+- **The Royal Crescent**: Wood the Younger's great half-ellipse of houses looking over its lawn,
+  one front of giant Ionic columns all the way round, the round-headed window in the very middle,
+  the balustrade, slate roofs and chimneys above, and every house a different depth behind ("Queen
+  Anne fronts and Mary Anne backs"). Walk the flagged pavement past the area railings, cross the
+  little bridges to the front doors, or get up on the roofs.
 - **Grand Parade** along the river: Davis's colonnade and river wall, with a balustrade, urns and
   cast-iron lamps that light up after dark.
 - **The Empire Hotel** on Orange Grove: its domed octagonal tower, and the roofline of a castle, a

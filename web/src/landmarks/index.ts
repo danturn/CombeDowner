@@ -5,7 +5,7 @@
 // line in KINDS.
 //
 // Set pieces (setpieces.ts: the Abbey, Pulteney Bridge, the Roman Baths, the terraced streets,
-// Grand Parade, the Empire Hotel, the Holburne Museum, Sham Castle, Prior Park, Kingswood School, the Bell Inn, Bath Spa station, the Dundas Aqueduct and Cape Town's) are placed by
+// Grand Parade, the Empire Hotel, the Holburne Museum, the Royal Crescent, Sham Castle, Prior Park, Kingswood School, the Bell Inn, Bath Spa station, the Dundas Aqueduct and Cape Town's) are placed by
 // the game itself as each square loads, not by the pack, as [kind, x, y, height, angle, own,
 // ...args]: own is 1 in the square that draws it, 0 in a square next to it, which only makes it solid there.
 // Their solid shape is taken from their own models (landmarks/shape.ts; map.ts asks landmarkShape).
@@ -24,6 +24,7 @@ import { terraces } from "./terraces";
 import { colonnade, empire } from "./grandparade";
 import { shamCastle } from "./shamcastle";
 import { holburne } from "./holburne";
+import { royalCrescent } from "./royalcrescent";
 import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
 import { bradfordStation } from "./bradford";
@@ -42,9 +43,9 @@ import { tag } from "../kinds";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, tower, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats, dundas };
+const KINDS: Record<string, Builder> = { spire, tower, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, crescent: royalCrescent, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats, dundas };
 /** The set pieces' kinds (setpieces.ts). */
-const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville", "bathspa", "boastation", "castle", "cityhall", "stgeorges", "auwal", "clocktower", "capewheel", "zeitz", "boats", "dundas"]);
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "crescent", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville", "bathspa", "boastation", "castle", "cityhall", "stgeorges", "auwal", "clocktower", "capewheel", "zeitz", "boats", "dundas"]);
 
 const shapes = new Map<string, Shape>();
 // a set piece's model built for its shape, kept for the square that draws it so it isn't built twice
