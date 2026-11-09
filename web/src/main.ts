@@ -272,7 +272,10 @@ function notePlaying() {
   try { sessionStorage.setItem(PLAYING_KEY, JSON.stringify({ code: playingCode, map: current.id, t: Date.now() })); } catch { /* storage may be blocked */ }
 }
 addEventListener("pagehide", notePlaying);
-const refreshed = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload";
+// (or reloaded by the game itself, to put you back where you stood: Settings' new ground)
+const RELOADED_KEY = "cd-reloaded";
+const refreshed = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload"
+  || (() => { try { const r = sessionStorage.getItem(RELOADED_KEY); sessionStorage.removeItem(RELOADED_KEY); return !!r; } catch { return false; } })();
 const wasPlaying = ((): { code: string; map: string } | null => {
   if (!refreshed) return null;
   try {
@@ -831,6 +834,8 @@ const pictureHooks = settingsPage({
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
   here: () => {
     if (!game) return null;
+    notePlaying();
+    try { sessionStorage.setItem(RELOADED_KEY, "1"); } catch { /* storage blocked: back to the menu */ }
     const p = game.player.pos, deg = (r: number) => Math.round(r * 180 / Math.PI);
     const url = new URL(location.href);
     url.searchParams.delete("ground");
