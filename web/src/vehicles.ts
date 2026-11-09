@@ -47,6 +47,7 @@ import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches"
 import { CHIP, CHIP_LAMPS, chipDecals, chipParts, MR_DS } from "./chipvan";
 import { onRoute } from "./busroutes";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
+import { tag } from "./kinds";
 
 /** The two ways of driving from inside rather than with the chase camera. */
 export type InsideView = "cockpit" | "bonnet";
@@ -1405,7 +1406,7 @@ export class Vehicles {
       v.pose(1, 0);
       this.list.push(v);
       this.byI.set(i, v);
-      scene.add(v.root);
+      scene.add(tag(v.root, "vehicle"));
       map.movers.push(v);
       return v;
     };

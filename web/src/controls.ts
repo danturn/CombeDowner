@@ -105,6 +105,7 @@ export const STREETS: Control[] = [
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },
   { id: "chat", name: "Chat phone: text everyone, or a /command", keys: ["Backslash"], say: { pad: "the pause menu", touch: "the pause menu" }, live: true },
   // purposes that are another control's in their own place
+  { id: "droneview", name: "The drone's view of the scenery (/drone)", keys: ["KeyC"], via: "crouch", say: { touch: "the view's name" } },
   { id: "heave", name: "Heave (Push the Bus)", keys: ["Space"], via: "jump", say: { touch: "Heave" } },
   { id: "kick", name: "Kick or bowl, lined up at a ball", keys: ["Space"], via: "jump", say: { touch: "Fire" } },
   { id: "walkoff", name: "Walk off from a ball", keys: ["KeyE"], via: "use", say: { touch: "Jump" } },

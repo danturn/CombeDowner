@@ -28,6 +28,7 @@ import { GameMap } from "./map";
 import { nightNow } from "./daylight";
 import { type Follow, follow } from "./weapon";
 import { bake, dropBaked } from "./bake";
+import { tag } from "./kinds";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -294,7 +295,7 @@ export class Cats {
     for (let i = 0; i < MAX; i++) {
       const c = new Cat(i);
       this.list.push(c);
-      scene.add(c.fig.root);
+      scene.add(tag(c.fig.root, "people"));
     }
   }
 

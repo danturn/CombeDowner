@@ -49,6 +49,7 @@ import { nightOut, timeOfDay } from "./daylight";
 import { MR_DS } from "./chipvan";
 import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
+import { tag } from "./kinds";
 
 /** The kinds of gang: three that hang about, the Flag Lads' three (invasion.ts), who only come when it
  *  brings them, and the naughty girls, who only come out on a Friday or Saturday night. */
@@ -656,7 +657,7 @@ export class NaughtyBoys {
     for (let i = 0; i < SLOTS; i++) {
       const c = new NaughtyBoy(i);
       this.list.push(c);
-      scene.add(c.fig.root);
+      scene.add(tag(c.fig.root, "people"));
     }
   }
 

@@ -23,6 +23,7 @@ import { model, Part } from "./furniture";
 import type { Mover, Pond } from "./map";
 import { compact } from "./railway";
 import { wall } from "./textures";
+import { tag } from "./kinds";
 
 export interface CanalData {
   runs: { lv: number; p: number[][] }[];
@@ -1119,7 +1120,7 @@ export class Canal {
   private make(n: number, len: number, paint: number): Boat {
     const b = new Boat(n, len, paint, this.boatGeo[paint % this.boatGeo.length], this.crewGeo, this.boatMat);
     this.boats.set(n, b);
-    this.scene.add(b.root);
+    this.scene.add(tag(b.root, "vehicle"));
     if (n >= MOOR) this.moor(n - MOOR, true);
     return b;
   }

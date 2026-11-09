@@ -960,8 +960,12 @@ function tick(now: number) {
   renderer.shadowMap.autoUpdate = false;
   if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
   unlit.frame(current.world.scene, camera, dt, post.worldTarget);
-  // no gun in your hands while you fly the drone
-  post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null);
+  // no gun in your hands while you fly the drone, and the drone's view of the scenery (looks.ts) is
+  // put on for this drawing only
+  const looks = game?.drone.on ? game.drone.looks : null;
+  looks?.before(current.world.scene);
+  post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.id === "lines");
+  looks?.after(current.world.scene);
   game?.drone.framed(renderer.domElement);   // a drone snap's picture, while this frame's still there to copy
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);

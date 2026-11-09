@@ -1269,17 +1269,25 @@ body.reveal #touch { visibility: hidden; }
   .nk-screen { height: min(260px, calc(100dvh - 210px)); }
 }
 
-/* the drone's screen (drone.ts): height, speed and snaps along the top, like an FPV drone's goggles */
+/* the drone's screen (drone.ts): height, speed, snaps and the view along the top, like an FPV
+   drone's goggles, and in the "what's what" view (looks.ts) the key to its colours under it */
 #droneosd {
   position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6;
-  display: flex; gap: 14px; padding: 4px 10px; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
   font: bold 13px/1.2 ui-monospace, monospace; color: #fff; letter-spacing: 0.04em;
-  text-shadow: 0 0 2px #000, 0 0 4px #000; background: rgba(0, 0, 0, 0.25); border-radius: 3px;
-  white-space: nowrap;
+  text-shadow: 0 0 2px #000, 0 0 4px #000; white-space: nowrap;
 }
+#droneosd .bar { display: flex; gap: 14px; padding: 4px 10px; background: rgba(0, 0, 0, 0.25); border-radius: 3px; }
 #droneosd .rec { color: #ff4a3a; animation: dronerec 1s steps(2) infinite; }
+#droneosd .look { color: #ffd23a; pointer-events: auto; cursor: pointer; }
 @keyframes dronerec { 50% { opacity: 0.3; } }
-#droneosd.flash { animation: droneflash 0.25s ease-out; }
+#droneosd.flash .bar { animation: droneflash 0.25s ease-out; }
 @keyframes droneflash { from { background: rgba(255, 255, 255, 0.9); } }
-@media (max-width: 520px) { #droneosd { gap: 8px; font-size: 11px; } }
+#droneosd .key { list-style: none; margin: 0; padding: 6px 10px; display: grid; grid-template-columns: repeat(3, auto); gap: 3px 14px;
+  background: rgba(0, 0, 0, 0.45); border-radius: 3px; font-size: 12px; }
+#droneosd .key i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 1px solid #0008; vertical-align: -1px; }
+@media (max-width: 520px) {
+  #droneosd .bar { gap: 8px; font-size: 11px; flex-wrap: wrap; justify-content: center; white-space: normal; }
+  #droneosd .key { grid-template-columns: repeat(2, auto); font-size: 10px; }
+}
 body.droning #ammo { display: none; }   /* no gun while you fly the drone */

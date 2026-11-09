@@ -36,6 +36,7 @@ import type { LampPair, Lamps, Lit } from "./headlights";
 import { CAR_LAMPS, contact, twist } from "./vehicles";
 import { AMBER, GREEN, type Signal, lightAt, signalClock, signalsOf } from "./signals";
 import { timeOfDay, watchDay } from "./daylight";
+import { tag } from "./kinds";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
@@ -890,7 +891,7 @@ export class Traffic {
 
   private add(c: Car) {
     this.cars.set(c.n, c);
-    this.scene.add(c.root);
+    this.scene.add(tag(c.root, "vehicle"));
     this.map.movers.push(c);
   }
 

@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as TX from "../textures";
 import { nightNow } from "../daylight";
+import { kindOf } from "../kinds";
 
 /** Lay a model's texture out by size, tile metres to a repeat, from where each face is in the
  *  set piece: each face takes the two axes it lies across (a wall along x takes x and height). */
@@ -279,6 +280,7 @@ export function mergeAcross(scene: THREE.Object3D, roots: THREE.Object3D[]) {
     merged.computeBoundingSphere();
     const mesh = new THREE.Mesh(merged, mat);
     mesh.castShadow = meshes[0].castShadow; mesh.receiveShadow = meshes[0].receiveShadow;
+    mesh.userData.kind = kindOf(meshes[0]);   // set piece or landmark, for the drone's "what's what" (kinds.ts)
     for (const m of meshes) m.removeFromParent();
     scene.add(mesh);
   }

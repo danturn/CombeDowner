@@ -1014,6 +1014,13 @@ A line starting with `/` is a command, for trying things out:
   left stick climbs, sinks and turns, the right stick moves you about, the D-pad's up and down tilt
   the camera, and L1 and R1 pick the speed. The view leans into turns, and along the top are your
   height, speed and snaps.
+  C (Circle on a controller, or a tap on the view's name at the top) goes round the drone's views of
+  the scenery, each lit the same night or day: Normal; Clay, everything plain white so the shapes
+  show for themselves; Outlines, the clay with a dark line wherever a surface turns or one thing
+  stands in front of another; Wireframe, every triangle on a dark ground; and What's what, each kind
+  of thing in its own colour with a key under the bar (the lidar's ground, streets, the map build's
+  buildings, set pieces, landmarks, walls and fences, plants, water, the canal's works, the railway
+  and tunnels, street things, far-off scenery, vehicles, people). A snap says which view it was in.
   Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where
   you were and what the crosshair's on. Whatever you type on the phone while you're flying is a note
   on your latest snap rather than a text. `/drone copy` puts them all on the clipboard at once, for

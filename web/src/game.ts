@@ -127,6 +127,7 @@ import { IDKFA } from "./cheats";
 import { chatLine, useChat } from "./chat";
 import { Dev, hostSpawn } from "./dev";
 import { Drone } from "./drone";
+import { tag } from "./kinds";
 import { CHAIR, CRICKET, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, RUGBY, SOCIETY, Target, look } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { gamesFollow, gamesHeard } from "./gameslist";
@@ -1088,6 +1089,8 @@ export class Game {
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
       if (this.active && !e.repeat && isKey(e.code, "use")) { this.leaveKey = true; this.useKey = true; }
+      // flying the drone: C goes round its views of the scenery (looks.ts)
+      if (this.drone.on && this.active && !e.repeat && isKey(e.code, "droneview")) this.drone.nextLook();
       // no mouse to click (an iPad's keyboard): Enter shoots, held for a burst, and / aims, again to stop
       if (isKey(e.code, "keyfire") && this.active && !this.mapOpen && !(e.target instanceof HTMLInputElement)) {
         e.preventDefault();
@@ -1985,7 +1988,7 @@ export class Game {
       const colour = colourFor(id);
       r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0, grindStyle: 0, level: 0 };
       this.remotes.set(id, r);
-      this.world.scene.add(r.avatar.root);
+      this.world.scene.add(tag(r.avatar.root, "people"));
     }
     return r;
   }

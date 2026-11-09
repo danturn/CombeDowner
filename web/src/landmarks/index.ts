@@ -38,6 +38,7 @@ import { clockTower, capeWheel, zeitz, boats } from "./waterfront";
 import { dundas } from "./dundas";
 import { type Shape, shapeOf } from "./shape";
 import { mergeAcross, mergeStatic } from "./kit";
+import { tag } from "../kinds";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
@@ -117,7 +118,7 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     }
     delete obj.userData.lamps;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });
-    scene.add(obj);
+    scene.add(tag(obj, SET_PIECE_KINDS.has(kind as string) ? "setpiece" : "landmark"));
     built.push(obj);
   }
   mergeAcross(scene, built);

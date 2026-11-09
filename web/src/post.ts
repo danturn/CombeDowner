@@ -8,6 +8,9 @@
 // Resolution in Settings (settings.ts) picks how many lines that is (fewer for a faster frame on a
 // big or dense screen, more for a sharper one), and Retro look turns the grade off; both are
 // remembered on this computer for every page.
+// The drone's Outlines view (looks.ts) adds a pass of its own: the world is drawn a second time as
+// which way each surface faces and how far off it is, and a dark line is put wherever either jumps,
+// where the surface turns a corner or one thing stands in front of another.
 // Nothing here goes over the network; the frame's draw calls are handed to telemetry.ts to count.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -39,6 +42,30 @@ const RetroShader = {
     }`,
 };
 
+// the drone's outlines (looks.ts): darkens the world where the surface turns sharply (the way it faces
+// jumps) or one thing stands in front of another (the depth doesn't run on evenly, as it does across
+// any flat surface on screen, however it's tilted)
+const EdgeShader = {
+  uniforms: { tDiffuse: { value: null }, tNormal: { value: null }, tDepth: { value: null }, size: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tNormal; uniform sampler2D tDepth; uniform vec2 size; varying vec2 vUv;
+    vec3 nAt(vec2 uv){ return texture2D(tNormal, uv).xyz * 2.0 - 1.0; }
+    float dAt(vec2 uv){ return texture2D(tDepth, uv).x; }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 px = 1.0 / size, ax = vec2(px.x, 0.0), ay = vec2(0.0, px.y);
+      float d = dAt(vUv);
+      float bend = abs(dAt(vUv - ax) + dAt(vUv + ax) - 2.0 * d);
+      bend = max(bend, abs(dAt(vUv - ay) + dAt(vUv + ay) - 2.0 * d));
+      // (the stored depth runs as one over the distance: relative to that, a step is as big near as far)
+      float edge = smoothstep(0.015, 0.05, bend / max(1.0 - d, 1e-7));
+      vec3 n = nAt(vUv);
+      float turn = max(max(1.0 - dot(n, nAt(vUv + ax)), 1.0 - dot(n, nAt(vUv - ax))), max(1.0 - dot(n, nAt(vUv + ay)), 1.0 - dot(n, nAt(vUv - ay))));
+      edge = max(edge, smoothstep(0.12, 0.3, turn));
+      gl_FragColor = vec4(c.rgb * (1.0 - 0.85 * edge), c.a);
+    }`,
+};
+
 /** Whether anything in this scene would be drawn: something visible to draw, all its parents visible too. */
 function drawsAnything(o: THREE.Object3D): boolean {
   if (!o.visible) return false;
@@ -66,6 +93,10 @@ export class Post {
   // enough for the gun however far the main camera's near edge is pushed out to see a long way (view.ts)
   private weaponCam = new THREE.PerspectiveCamera(72, 1, 0.02, 50);
   private retro: ShaderPass;
+  // the drone's outlines: the world's facing and depth, and the pass that draws lines from them
+  private edges: ShaderPass;
+  private faced: THREE.WebGLRenderTarget | null = null;
+  private facing = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
   /** Screen pixels per CSS pixel the page asked the renderer for; the renderer itself is held at 1. */
   private ratio: number;
 
@@ -87,7 +118,9 @@ export class Post {
     let fx = retro;
     try { fx &&= localStorage.getItem(FX_KEY) !== "0"; } catch { /* storage may be blocked */ }
     this.retro.uniforms.grade.value = fx ? 1 : 0;
-    for (const p of [this.worldPass, this.weaponPass, this.retro]) this.composer.addPass(p);
+    this.edges = new ShaderPass(EdgeShader);
+    this.edges.enabled = false;
+    for (const p of [this.worldPass, this.edges, this.weaponPass, this.retro]) this.composer.addPass(p);
     renderer.domElement.style.imageRendering = "pixelated";
   }
 
@@ -106,9 +139,12 @@ export class Post {
     this.composer.setPixelRatio(1);
     this.composer.setSize(w, h);
     this.retro.uniforms.size.value.set(w, h);
+    this.edges.uniforms.size.value.set(w, h);
+    this.faced?.setSize(w, h);
   }
 
-  render(world: THREE.Scene, weapon: THREE.Scene | null) {
+  /** edges: the drone's Outlines view (looks.ts). */
+  render(world: THREE.Scene, weapon: THREE.Scene | null, edges = false) {
     this.worldPass.scene = world;
     // with nothing in your hands (in a car, on a menu) the pass would only clear the depth and draw nothing
     this.weaponPass.enabled = !!weapon && drawsAnything(weapon);
@@ -124,8 +160,27 @@ export class Post {
     info.autoReset = false;
     info.reset();
     this.retro.uniforms.toneMappingExposure.value = this.renderer.toneMappingExposure;
+    this.edges.enabled = edges;
+    if (edges) this.drawFacing(world);
     this.composer.render();
     Telemetry.drawn(this.renderer);
+  }
+
+  /** The world drawn as which way each surface faces, and how far off it is, for the outlines. */
+  private drawFacing(world: THREE.Scene) {
+    const r = this.renderer, size = this.edges.uniforms.size.value as THREE.Vector2;
+    if (!this.faced) {
+      this.faced = new THREE.WebGLRenderTarget(size.x, size.y, { depthTexture: new THREE.DepthTexture(size.x, size.y), samples: 0 });
+      this.edges.uniforms.tNormal.value = this.faced.texture;
+      this.edges.uniforms.tDepth.value = this.faced.depthTexture;
+    }
+    const keep = world.overrideMaterial, was = r.getRenderTarget();
+    world.overrideMaterial = this.facing;
+    r.setRenderTarget(this.faced);
+    r.clear();
+    r.render(world, this.camera);
+    r.setRenderTarget(was);
+    world.overrideMaterial = keep;
   }
 
   /** What the world is drawn into (a buffer, not the screen). */

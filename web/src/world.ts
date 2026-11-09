@@ -30,6 +30,7 @@ import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
+import { tag, tagSince } from "./kinds";
 
 const CHUNK = 320;
 
@@ -457,7 +458,7 @@ function makeShell(scene: THREE.Scene) {
     }),
   );
   sky.renderOrder = -1;
-  scene.add(sky);
+  scene.add(tag(sky, "sky"));
   return { tunnelDark, hemi, sun, sky };
 }
 
@@ -1004,7 +1005,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, (lo + hi) / 2, cz), half);
     const tile = new THREE.Mesh(g, terrMat);
     tile.receiveShadow = true;
-    scene.add(tile);
+    scene.add(tag(tile, "ground"));
     fineTerr.push(tile);
     if (++tfin % 4 === 3) yield;
   }
@@ -1022,7 +1023,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       m.receiveShadow = true;
       freeOnUpload(g);
       g.computeBoundingSphere();
-      scene.add(m);
+      scene.add(tag(m, "canal"));
       fineTerr.push(m);
     }
     yield;
@@ -1077,7 +1078,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     farTerr = new THREE.Mesh(g, terrMat);
     farTerr.receiveShadow = true;
     farTerr.visible = false;
-    scene.add(farTerr);
+    scene.add(tag(farTerr, "ground"));
   }
   yield;
 
@@ -1094,7 +1095,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   sheet.holes.push(new THREE.Path([[T.x0, T.y0], [T.x0, y1], [x1, y1], [x1, T.y0]].map(([x, y]) => new THREE.Vector2(x, y))));
   const outer = new THREE.Mesh(new THREE.ShapeGeometry(sheet).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: "#66774a" }));
   outer.position.y = Math.min(60, edgeH[edgeH.length >> 1]);
-  scene.add(outer);
+  scene.add(tag(outer, "ground"));
   const skirt: number[] = [];
   const edgeLine = (pts: [number, number][]) => {
     for (let k = 0; k < pts.length - 1; k++) {
@@ -1109,7 +1110,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const skirtGeo = new THREE.BufferGeometry();
   skirtGeo.setAttribute("position", new THREE.Float32BufferAttribute(skirt, 3));
   skirtGeo.computeVertexNormals();
-  scene.add(new THREE.Mesh(skirtGeo, new THREE.MeshLambertMaterial({ color: "#5d6b3f", side: THREE.DoubleSide })));
+  scene.add(tag(new THREE.Mesh(skirtGeo, new THREE.MeshLambertMaterial({ color: "#5d6b3f", side: THREE.DoubleSide })), "ground"));
   }
 
   mark("ground");
@@ -1231,7 +1232,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material, thin = false) => {
     if (!g) return;
-    const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(mesh);
+    const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(tag(mesh, "street"));
     if (thin) mesh.userData.thin = true;
   };
   // street centrelines in a grid, so pavements can stop where they meet another street
@@ -2005,7 +2006,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core && map.canalData) {
     if (map.canal instanceof Canal) for (const m of map.canal.moored) { const k = map.movers.indexOf(m); if (k >= 0) map.movers.splice(k, 1); }
     const centre = map.d.centre as [number, number] | undefined;
+    const k0 = scene.children.length;
     const canal = new Canal(map.canalData, scene as THREE.Scene, Z0, centre ? (x, y) => aqueductSetPieceAt(centre, x, y) : undefined);
+    tagSince(scene, k0, "canal");
     map.canal = canal;
     map.movers.push(...canal.moored);
   }
@@ -2018,17 +2021,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
   const railCentre = map.d.centre as [number, number] | undefined;
+  const k1 = scene.children.length;
   const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail(),
     railCentre ? (x, y) => setPieceAt(railCentre, x, y) : undefined, railMasonry(map)) : null;
+  tagSince(scene, k1, "railway");
   if (railway) S.railBank = (x: number, z: number) => railway.bankAt(x, z);
   if (railway) { map.floors.push((x, z, y) => railway.floor(x, z, y)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
+  tagSince(scene, k1, "railway");
+  const k2 = scene.children.length;
   const backdrop = core ? buildBackdrop(map, scene as THREE.Scene, GROUND, earth, shell!.sun, shell!.hemi) : null;
+  tagSince(scene, k2, "far");
   const streams = outsideBores(map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl, boreRoof(map));
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false));
   S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
-  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(m);
+  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(tag(m, "street"));
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   // (a faced square written before the front paths and drives had faces of their own still has the strips)
   if (!faced || !D.sf!.front) {
@@ -2076,7 +2084,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
   }
   if (ponds.length) {
-    scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
+    scene.add(tag(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat), "water"));
     if (ponds.length > 1) for (const g of ponds) g.dispose();
   }
   // a tank's, a pool's or a reservoir's concrete walls, wherever its water stands above the ground
@@ -2164,7 +2172,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       S.weirMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
       const m = new THREE.Mesh(geo, S.weirMat);
       m.receiveShadow = true;
-      scene.add(m);
+      scene.add(tag(m, "water"));
     }
   }
   yield;
@@ -2464,7 +2472,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const [key, g] of buildingModels(c)) {
       const m = new THREE.Mesh(g, wallMats[key]);
       m.castShadow = m.receiveShadow = true;
-      scene.add(m);
+      scene.add(tag(m, "building"));
       yield;
     }
   }
@@ -2596,7 +2604,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const m = new THREE.Mesh(g, smash ? smash.m : mat);
     if (smash) m.customDepthMaterial = smash.depth;
     m.castShadow = m.receiveShadow = true;
-    scene.add(m);
+    scene.add(tag(m, "boundary"));
     culler.add(m, 230);
     yield;
   }
@@ -2686,7 +2694,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (!built) continue;
       const m = new THREE.Mesh(built, canopyMat);
       m.castShadow = true; m.receiveShadow = true;
-      scene.add(m);
+      scene.add(tag(m, "plant"));
       culler.add(m, () => view.sceneryFar);
     }
   }
@@ -2729,7 +2737,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         m.setMatrixAt(k, m4);
         m.setColorAt(k, DOOR[d[4] % DOOR.length]);
       });
-      m.computeBoundingSphere(); scene.add(m); culler.add(m, 150);
+      m.computeBoundingSphere(); scene.add(tag(m, "building")); culler.add(m, 150);
       if (++dk % 6 === 5) yield;
     }
     // porch canopies over about half the front doors
@@ -2739,7 +2747,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (hooded.length) {
       const hm = new THREE.InstancedMesh(hoodGeo, hoodMat, hooded.length);
       hooded.forEach((d, k) => { qq.setFromAxisAngle(up, d[3]); m4.compose(pp.set(d[0], d[2] - Z0, -d[1]), qq, one); hm.setMatrixAt(k, m4); });
-      hm.castShadow = true; hm.computeBoundingSphere(); scene.add(hm); culler.add(hm, 150);
+      hm.castShadow = true; hm.computeBoundingSphere(); scene.add(tag(hm, "building")); culler.add(hm, 150);
     }
     // bay windows, with a small hipped roof on top
     const BAY_TEX: Record<string, "stone" | "brick" | "render"> = { s: "stone", b: "brick", r: "render" };
@@ -2761,7 +2769,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         m4.compose(pp.set(b[0] as number, (b[2] as number) - Z0, -(b[1] as number)), qq, new THREE.Vector3(w, 1, 1));
         bm.setMatrixAt(k, m4); rm.setMatrixAt(k, m4);
       });
-      for (const m of [bm, rm]) { m.castShadow = m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); culler.add(m, 170); }
+      for (const m of [bm, rm]) { m.castShadow = m.receiveShadow = true; m.computeBoundingSphere(); scene.add(tag(m, "building")); culler.add(m, 170); }
     }
   }
 
@@ -3009,7 +3017,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   wallGeo.setIndex(wallIdx);
   const fieldMesh = new THREE.Mesh(wallGeo, fieldMat);
   fieldMesh.renderOrder = 5;
-  scene.add(fieldMesh);
+  scene.add(tag(fieldMesh, "field"));
   const clock = new THREE.Clock();
 
   mark("field");

@@ -11,6 +11,10 @@
 // DJI's controller does), and L1 and R1 pick the speed. The view leans a little into turns and
 // slides, as an FPV drone's camera does, but never off what the crosshair's on.
 //
+// C (Circle on a controller, or a tap on the view's name at the top of a touch screen) goes round the
+// drone's views of the scenery (looks.ts): normal, plain white clay, clay with outlines, wireframe,
+// and "what's what", each kind of thing in its own colour with a key down the side.
+//
 // Snaps, for noting what's wrong with the map: the trigger (a click, Fire, R2) takes one. Each keeps
 // a small picture of the view, crosshair and all, and where you were and what the crosshair was on,
 // in memory until the page is closed. What you type on the phone while the drone's up is a note on
@@ -27,11 +31,13 @@
 // leave your machine except by your own paste.
 import * as THREE from "three";
 import { chatLine } from "./chat";
-import { control } from "./controls";
+import { control, ctl } from "./controls";
 import { timeOfDay } from "./daylight";
 import { B } from "./gamepad";
 import * as SFX from "./audio";
 import { BUILT } from "./version";
+import { KINDS, type Kind } from "./kinds";
+import { Looks } from "./looks";
 import type { GameMap } from "./map";
 import type { Player } from "./player";
 
@@ -57,6 +63,7 @@ export interface Snap {
   aim: string;            // the point under the crosshair: east, north, height off the ground there, then how far
   square: string;         // the square of Bath it's in, ti,tj ("" off the squares)
   hit: string;            // what the game's solid ray hit there: building, barrier, tree, ground, or sky
+  look: string;           // the drone's view it was taken in, if not the normal one
   note: string;
   pic: Blob | null;       // JPEG, once the frame's been drawn
 }
@@ -76,6 +83,8 @@ export interface DroneHooks {
 export class Drone {
   on = false;
   readonly snaps: Snap[] = [];
+  /** The view the drone shows the scenery in (looks.ts). */
+  readonly looks = new Looks();
   private gear = 2;
   private eye = new THREE.Vector3();
   private v = new THREE.Vector3();
@@ -198,6 +207,12 @@ export class Drone {
     if ((this.osdT -= dt) <= 0) { this.osdT = 0.1; this.drawOsd(); }
   }
 
+  /** C: on to the next view of the scenery. */
+  nextLook() {
+    this.looks.next();
+    this.drawOsd(true);
+  }
+
   /** The trigger, once a frame while the drone's up: a press takes a snap. */
   trigger(down: boolean) {
     if (down && !this.trig) this.snap();
@@ -227,7 +242,8 @@ export class Drone {
       what = hit.mover ? "vehicle" : hit.kind;
     } else square = sq(e.x, e.z);
     const t = timeOfDay() * 24, hh = Math.floor(t), mm = Math.floor((t - hh) * 60);
-    const s: Snap = { n: ++this.count, time: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, at, aim, square, hit: what, note: "", pic: null };
+    const look = this.looks.id === "normal" ? "" : this.looks.name;
+    const s: Snap = { n: ++this.count, time: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, at, aim, square, hit: what, look, note: "", pic: null };
     this.snaps.push(s);
     this.wanted = s;
     SFX.tick();
@@ -270,7 +286,7 @@ export class Drone {
       `Drone snaps from Combe Downer: ${this.snaps.length} on map ${this.h.mapId}, build ${BUILT}, ${url}`,
       "at= is the camera as ?at= takes it (east, north, bearing, tilt, height off the ground: npm run shoot takes it too); aim= is the point under the crosshair (east, north, height off the ground there) and how far off; square is ti,tj; hit is what the game's solid ray met. The pictures (pasted separately, if they came) are numbered the same, the crosshair marking the spot.",
     ];
-    for (const s of this.snaps) lines.push(`#${s.n} ${s.time} at=${s.at}${s.aim ? `  aim=${s.aim}` : ""}${s.square ? `  square ${s.square}` : ""}  hit ${s.hit}${s.note ? `  "${s.note}"` : ""}`);
+    for (const s of this.snaps) lines.push(`#${s.n} ${s.time} at=${s.at}${s.aim ? `  aim=${s.aim}` : ""}${s.square ? `  square ${s.square}` : ""}  hit ${s.hit}${s.look ? `  view ${s.look}` : ""}${s.note ? `  "${s.note}"` : ""}`);
     return lines.join("\n");
   }
 
@@ -330,18 +346,27 @@ export class Drone {
       this.osd = document.createElement("div");
       this.osd.id = "droneosd";
       document.body.append(this.osd);
+      // on a touch screen, a tap on the view's name changes it
+      this.osd.addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest(".look")) { e.preventDefault(); this.nextLook(); } });
     }
     if (this.osd) this.osd.hidden = !on;
     document.body.classList.toggle("droning", on);
     this.drawOsd();
   }
 
-  private drawOsd() {
+  private shownLook = "";
+
+  private drawOsd(lookChanged = false) {
     const o = this.osd;
     if (!o || !this.on) return;
     const m = this.h.map, e = this.eye;
     const alt = Math.round(e.y - m.ground(e.x, e.z)), kmh = Math.round(this.v.length() * 3.6);
-    o.innerHTML = `<span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length}</span>`;
+    const bar = `<div class="bar"><span class="rec">● REC</span><span>ALT ${alt} m</span><span>${kmh} km/h</span><span>SPD ${this.gear + 1}/5</span><span>SNAPS ${this.snaps.length}</span><span class="look">${this.looks.name} (${ctl("droneview")})</span></div>`;
+    if (lookChanged || this.shownLook !== this.looks.id) {
+      this.shownLook = this.looks.id;
+      o.innerHTML = bar + (this.looks.id === "kinds" ? `<ul class="key">${(Object.keys(KINDS) as Kind[]).filter((k) => k !== "sky" && k !== "field")
+        .map((k) => `<li><i style="background:${KINDS[k].col}"></i>${KINDS[k].name}</li>`).join("")}</ul>` : "");
+    } else o.querySelector(".bar")!.outerHTML = bar;
   }
 
   /** The page is going (a new game, the train): put the screen away. */
