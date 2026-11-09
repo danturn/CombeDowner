@@ -91,6 +91,7 @@ export interface MapData {
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   pi?: Pitch[];                 // sports pitches: football and rugby pitches and cricket fields
+  rt?: number[][];              // running tracks (tools/pitches.py tracks): x, y, angle, straight, bend radius, lanes, lane width
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
   tn?: Tunnel[];                                  // tunnels you can walk through
