@@ -1292,3 +1292,11 @@ body.reveal #touch { visibility: hidden; }
   #droneosd .key { grid-template-columns: repeat(2, auto); font-size: 10px; }
 }
 body.droning #ammo { display: none; }   /* no gun while you fly the drone */
+/* the drone's "what's what" (drone.ts): what's under the crosshair, named just below it */
+#droneseen {
+  position: fixed; top: calc(50% + 22px); left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none;
+  padding: 3px 8px; background: rgba(0, 0, 0, 0.6); border-radius: 3px; white-space: nowrap;
+  font: 12px/1.3 ui-monospace, monospace; color: #fff; text-shadow: 0 0 2px #000;
+}
+#droneseen i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 1px solid #0008; vertical-align: -1px; }
+#droneseen b { color: #ffe14a; }

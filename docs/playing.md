@@ -1020,7 +1020,10 @@ A line starting with `/` is a command, for trying things out:
   stands in front of another; Blueprint, the same lines bright on dark shapes; and What's what, each kind
   of thing in its own colour with a key under the bar (the lidar's ground, streets, the map build's
   buildings, set pieces, landmarks, walls and fences, plants, water, the canal's works, the railway
-  and tunnels, street things, far-off scenery, vehicles, people). `,` and `.` zoom out and in, from
+  and tunnels, street things, far-off scenery, vehicles, people). In What's what the thing under the
+  crosshair is named just below it, with its colour and how far off it is, and outlined in yellow: a
+  building from the map's own outline of it, ground to eaves, with its type and height; a tree, car,
+  person, bench or landmark in a box round it; a street or the ground just named. `,` and `.` zoom out and in, from
   1x to 8x (the D-pad's left and right, or a tap on the zoom at the top). A snap says which view
   it was in, and how far zoomed.
   Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where

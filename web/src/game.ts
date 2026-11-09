@@ -678,7 +678,7 @@ export class Game {
       drone: (rest) => this.drone.command(rest),
     });
     this.drone = new Drone({
-      map, player: this.player, camera: this.camera, mapId: this.mapId,
+      map, player: this.player, camera: this.camera, scene: this.world.scene, mapId: this.mapId,
       why: () => !this.alive ? "Not while you're dead"
         : this.ride || this.riding || this.basket || this.balloons.aboard >= 0 || this.world.canal?.helmOf(this.net.selfId) ? "Get off what you're on first"
         : null,

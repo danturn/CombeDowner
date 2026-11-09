@@ -13,7 +13,12 @@
 //
 // C (Circle on a controller, or a tap on the view's name at the top of a touch screen) goes round the
 // drone's views of the scenery (looks.ts): normal, plain white clay, clay with outlines, blueprint,
-// and "what's what", each kind of thing in its own colour with a key under the bar. , and . zoom
+// and "what's what", each kind of thing in its own colour with a key under the bar; in that one the
+// thing under the crosshair is named just below it, with its kind's colour, and outlined in yellow
+// (pick.ts finds it as drawn, a few times a second): a building from the map's own outline of it,
+// ground to eaves, with its type and height; anything else that stands on its own (a tree, a car,
+// a person, a bench, a landmark) in a box round it; a big shared surface (a street, the ground) is
+// only named. , and . zoom
 // out and in, from 1x to 8x (the D-pad's left and right, or a tap on the zoom at the top), and the
 // mouse looks round more slowly the further in you are.
 //
@@ -38,9 +43,10 @@ import { timeOfDay } from "./daylight";
 import { B } from "./gamepad";
 import * as SFX from "./audio";
 import { BUILT } from "./version";
-import { KINDS, type Kind } from "./kinds";
+import { KINDS, kindOf, type Kind } from "./kinds";
 import { Looks } from "./looks";
-import type { GameMap } from "./map";
+import { Picker, type Picked } from "./pick";
+import { roofMeshTop, type Building, type GameMap } from "./map";
 import type { Player } from "./player";
 
 const SPEEDS = [3, 8, 20, 45, 90];     // m/s, picked with the wheel; the middle one to start
@@ -67,6 +73,7 @@ export interface Snap {
   square: string;         // the square of Bath it's in, ti,tj ("" off the squares)
   hit: string;            // what the game's solid ray hit there: building, barrier, tree, ground, or sky
   look: string;           // the drone's view it was taken in, if not the normal one
+  seen: string;           // what "what's what" named under the crosshair, if that was the view
   note: string;
   pic: Blob | null;       // JPEG, once the frame's been drawn
 }
@@ -76,6 +83,7 @@ export interface DroneHooks {
   map: GameMap;
   player: Player;
   camera: THREE.PerspectiveCamera;
+  scene: THREE.Scene;
   mapId: string;
   /** Can you take off just now (on your feet, alive, not in a vehicle or on a ride)? A reason if not. */
   why(): string | null;
@@ -99,6 +107,13 @@ export class Drone {
   private pad = { lx: 0, ly: 0, rx: 0, ry: 0, at: 0 };
   private tilt = 0;                    // the D-pad: -1 down, 1 up
   private osd: HTMLDivElement | null = null;
+  // "what's what": what's under the crosshair, its name below it and its outline
+  private picker = new Picker();
+  private peekAt = 0;
+  private peeking = false;
+  private seen: { text: string; kind: Kind } | null = null;
+  private seenEl: HTMLDivElement | null = null;
+  private outline: THREE.LineSegments | null = null;
   private osdT = 0;
   private count = 0;
 
@@ -138,6 +153,7 @@ export class Drone {
   land() {
     if (!this.on) return;
     this.on = false;
+    this.showSeen(null);
     const p = this.h.player, m = this.h.map;
     const x = this.eye.x, z = this.eye.z;
     const y = m.floor(x, z, this.eye.y);
@@ -265,7 +281,8 @@ export class Drone {
     } else square = sq(e.x, e.z);
     const t = timeOfDay() * 24, hh = Math.floor(t), mm = Math.floor((t - hh) * 60);
     const look = (this.looks.id === "normal" ? "" : this.looks.name) + (this.zoom === 1 ? "" : `${this.looks.id === "normal" ? "" : ", "}zoomed ${this.zoom}x`);
-    const s: Snap = { n: ++this.count, time: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, at, aim, square, hit: what, look, note: "", pic: null };
+    const seen = this.looks.id === "kinds" && this.seen ? this.seen.text : "";
+    const s: Snap = { n: ++this.count, time: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`, at, aim, square, hit: what, look, seen, note: "", pic: null };
     this.snaps.push(s);
     this.wanted = s;
     SFX.tick();
@@ -308,7 +325,7 @@ export class Drone {
       `Drone snaps from Combe Downer: ${this.snaps.length} on map ${this.h.mapId}, build ${BUILT}, ${url}`,
       "at= is the camera as ?at= takes it (east, north, bearing, tilt, height off the ground: npm run shoot takes it too); aim= is the point under the crosshair (east, north, height off the ground there) and how far off; square is ti,tj; hit is what the game's solid ray met. The pictures (pasted separately, if they came) are numbered the same, the crosshair marking the spot.",
     ];
-    for (const s of this.snaps) lines.push(`#${s.n} ${s.time} at=${s.at}${s.aim ? `  aim=${s.aim}` : ""}${s.square ? `  square ${s.square}` : ""}  hit ${s.hit}${s.look ? `  view ${s.look}` : ""}${s.note ? `  "${s.note}"` : ""}`);
+    for (const s of this.snaps) lines.push(`#${s.n} ${s.time} at=${s.at}${s.aim ? `  aim=${s.aim}` : ""}${s.square ? `  square ${s.square}` : ""}  hit ${s.hit}${s.look ? `  view ${s.look}` : ""}${s.seen ? `  seen "${s.seen}"` : ""}${s.note ? `  "${s.note}"` : ""}`);
     return lines.join("\n");
   }
 
@@ -396,7 +413,90 @@ export class Drone {
   }
 
   /** The page is going (a new game, the train): put the screen away. */
-  dispose() { this.on = false; this.osd?.remove(); this.osd = null; document.body.classList.remove("droning"); }
+  dispose() {
+    this.on = false; this.osd?.remove(); this.osd = null; document.body.classList.remove("droning");
+    this.showSeen(null); this.seenEl?.remove(); this.seenEl = null; this.picker.dispose();
+  }
+
+  // ---- "what's what": naming and outlining what's under the crosshair ----
+
+  /** main.ts, after each frame's drawn: in "what's what", look again a few times a second. */
+  peek(r: THREE.WebGLRenderer) {
+    if (!this.on || this.looks.id !== "kinds") { if (this.seen || this.outline?.visible) this.showSeen(null); return; }
+    const now = performance.now();
+    if (this.peeking || now - this.peekAt < 120) return;
+    this.peekAt = now;
+    this.peeking = true;
+    this.picker.pick(r, this.h.scene, this.h.camera).then(
+      (p) => { this.peeking = false; if (this.on && this.looks.id === "kinds") this.showSeen(p); },
+      () => { this.peeking = false; });
+  }
+
+  /** Name what's picked under the crosshair and outline it (null: nothing, or the view's gone). */
+  private showSeen(p: Picked | null) {
+    if (!p) {
+      this.seen = null;
+      if (this.outline) this.outline.visible = false;
+      if (this.seenEl) this.seenEl.hidden = true;
+      return;
+    }
+    const kind = kindOf(p.mesh), cam = this.h.camera.position;
+    let detail = "", away = -1, lines: number[] | null = null;
+    const built = kind === "building" ? this.buildingAhead() : null;
+    if (built) {
+      const { b, area, dist } = built;
+      detail = [b.n, b.c?.replace(/_/g, " ")].filter(Boolean).join(", ") + `${b.n || b.c ? ", " : ""}${Math.round(b.h)} m to the eaves`;
+      away = dist;
+      lines = buildingLines(b, area, this.h.map);
+    } else {
+      const thing = thingOf(p);
+      const box = thing ? boxOf(thing.obj, thing.instance) : null;
+      if (box) {
+        const c = new THREE.Vector3();
+        for (let i = 0; i < 8; i++) c.add(box[i]);
+        away = c.divideScalar(8).distanceTo(cam);
+        if (box[0].distanceTo(box[7]) < 80) lines = boxLines(box);
+      }
+      const lm = thing?.obj && landmarkOf(thing.obj);
+      if (lm) detail = lm;
+    }
+    const text = `${KINDS[kind].name}${detail ? `: ${detail}` : ""}`;
+    this.seen = { text, kind };
+    // the name, under the crosshair
+    if (!this.seenEl) { this.seenEl = document.createElement("div"); this.seenEl.id = "droneseen"; document.body.append(this.seenEl); }
+    this.seenEl.hidden = false;
+    this.seenEl.innerHTML = `<i style="background:${KINDS[kind].col}"></i><b>${esc(KINDS[kind].name)}</b>${detail ? ` · ${esc(detail)}` : ""}${away >= 0 ? ` · ${Math.round(away)} m` : ""}`;
+    // the outline, over everything
+    if (!lines) { if (this.outline) this.outline.visible = false; return; }
+    if (!this.outline) {
+      const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(1.8, 1.45, 0.15), depthTest: false, depthWrite: false, transparent: true, fog: false });
+      this.outline = new THREE.LineSegments(new THREE.BufferGeometry(), mat);
+      this.outline.renderOrder = 1000;
+      this.outline.frustumCulled = false;
+      this.outline.userData.kind = "overlay";
+    }
+    if (this.outline.parent !== this.h.scene) this.h.scene.add(this.outline);
+    this.outline.geometry.dispose();
+    this.outline.geometry = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
+    this.outline.visible = true;
+  }
+
+  /** The map's building the crosshair's on, by the game's own ray, and how far off it is. */
+  private buildingAhead(): { b: Building; area: GameMap; dist: number } | null {
+    const m = this.h.map, cam = this.h.camera, e = cam.position;
+    const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const hit = m.raycast(e.x, e.y, e.z, d.x, d.y, d.z, RAY);
+    if (!hit || hit.kind !== "building") return null;
+    // (a little way in past the wall, so the point's inside the outline)
+    const x = e.x + d.x * (hit.dist + 0.4), z = e.z + d.z * (hit.dist + 0.4), north = -z;
+    for (const area of [m, ...m.tilesNear(x, z, 80)]) {
+      for (const b of area.d.bl ?? []) {
+        const ring = b.r[0];
+        if (ring && inRing(ring, x, north)) return { b, area, dist: hit.dist };
+      }
+    }
+    return null;
+  }
 }
 
 /** A crosshair at the middle of a snap, white with a dark edge, so it shows on sky and on stone. */
@@ -419,4 +519,98 @@ function label(g: CanvasRenderingContext2D, text: string, x: number, y: number, 
   const w = g.measureText(t).width;
   g.fillStyle = "rgba(0,0,0,0.65)"; g.fillRect(x - 3, y - 2, w + 6, size + 4);
   g.fillStyle = "#ffd23a"; g.fillText(t, x, y);
+}
+
+/** What a pick landed on, as a thing in its own right: a copy of a model drawn many times over, or
+ *  the nearest group up from the mesh that's marked as what it is (a car, a person, a landmark). */
+function thingOf(p: Picked): { obj: THREE.Object3D; instance: number } | null {
+  if (p.instance >= 0) return { obj: p.mesh, instance: p.instance };
+  for (let o: THREE.Object3D | null = p.mesh; o; o = o.parent) {
+    if (o.userData.kind) return { obj: o, instance: -1 };
+    if (!o.parent || (o.parent as THREE.Scene).isScene) break;
+  }
+  return { obj: p.mesh, instance: -1 };
+}
+
+/** A landmark's or set piece's own name, if o is one or in one. */
+function landmarkOf(o: THREE.Object3D): string {
+  for (let q: THREE.Object3D | null = o; q; q = q.parent) {
+    const k = q.userData.landmark as string | undefined;
+    if (k) return k.charAt(0).toUpperCase() + k.slice(1);
+  }
+  return "";
+}
+
+/** A model's own box, as long as it has one to hand (the game lets go of most models' points once
+ *  they're drawn): its size if it knows it, else round its sphere. */
+function geoBox(g: THREE.BufferGeometry): THREE.Box3 | null {
+  if (g.boundingBox) return g.boundingBox;
+  const pos = g.attributes.position as THREE.BufferAttribute | undefined;
+  if (pos?.array) { g.computeBoundingBox(); return g.boundingBox; }
+  const s = g.boundingSphere;
+  return s ? new THREE.Box3().setFromCenterAndSize(s.center, new THREE.Vector3(1, 1, 1).multiplyScalar(s.radius * 2)) : null;
+}
+
+/** The eight corners of a box round o (one copy of it, if instance isn't -1), in the scene: turned
+ *  with it for one mesh, square to the map for a group of them. Corner 7 is opposite corner 0. */
+function boxOf(o: THREE.Object3D, instance: number): THREE.Vector3[] | null {
+  const corners = (b: THREE.Box3, m: THREE.Matrix4) => [0, 1, 2, 3, 4, 5, 6, 7].map((i) =>
+    new THREE.Vector3(i & 4 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 1 ? b.max.z : b.min.z).applyMatrix4(m));
+  const mesh = o as THREE.Mesh;
+  o.updateWorldMatrix(true, true);
+  if (mesh.isMesh) {
+    const b = geoBox(mesh.geometry);
+    if (!b) return null;
+    const m = mesh.matrixWorld.clone();
+    if (instance >= 0) { const im = new THREE.Matrix4(); (mesh as THREE.InstancedMesh).getMatrixAt(instance, im); m.multiply(im); }
+    return corners(b, m);
+  }
+  const all = new THREE.Box3();
+  o.traverseVisible((c) => {
+    const cm = c as THREE.Mesh;
+    if (!cm.isMesh || (cm as THREE.InstancedMesh).isInstancedMesh) return;
+    const b = geoBox(cm.geometry);
+    if (b) all.union(b.clone().applyMatrix4(cm.matrixWorld));
+  });
+  return all.isEmpty() ? null : corners(all, new THREE.Matrix4());
+}
+
+/** A box's twelve edges, as line ends. */
+function boxLines(c: THREE.Vector3[]): number[] {
+  const out: number[] = [];
+  for (const [a, b] of [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]) out.push(...c[a].toArray(), ...c[b].toArray());
+  return out;
+}
+
+/** A building's outline from the map: round its foot on the ground, round its eaves, and up each corner. */
+function buildingLines(b: Building, area: GameMap, map: GameMap): number[] {
+  const ring = b.r[0], out: number[] = [];
+  const eaves = b.g - area.z0 + b.h, top = b.rm ? roofMeshTop(b) - area.z0 : eaves + (b.rp ?? 0);
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % ring.length];
+    const ga = map.ground(ax, -ay), gb = map.ground(bx, -by);
+    out.push(ax, ga, -ay, bx, gb, -by, ax, eaves, -ay, bx, eaves, -by, ax, ga, -ay, ax, eaves, -ay);
+  }
+  // and a mark up to the top of the roof, from the middle, if it rises well above the eaves
+  if (top > eaves + 1) {
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    out.push(cx, eaves, -cy, cx, top, -cy);
+  }
+  return out;
+}
+
+/** Whether data point (x, y) is inside a ring of [x, y] points. */
+function inRing(ring: number[][], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function esc(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
