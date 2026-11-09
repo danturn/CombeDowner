@@ -22,12 +22,15 @@
 // out and in, from 1x to 8x (the D-pad's left and right, or a tap on the zoom at the top), and the
 // mouse looks round more slowly the further in you are.
 //
+// P takes off and lands again, as /drone on the chat phone does.
+//
 // Snaps, for noting what's wrong with the map: the trigger (a click, Fire, R2) takes one. Each keeps
 // a small picture of the view, crosshair and all, and where you were and what the crosshair was on,
 // in memory until the page is closed. What you type on the phone while the drone's up is a note on
-// your latest snap instead of a text to everyone. Every snap and every note puts the lot on the
-// clipboard afresh, so after a few snaps you can go straight to Claude Code and paste (/drone copy
-// does it by hand, if the browser wouldn't):
+// your latest snap instead of a text to everyone. Every snap and every note puts this flight's snaps
+// on the clipboard afresh, so after a few you can go straight to Claude Code and paste, and the next
+// flight starts a fresh batch; the contact sheet carries the text too, printed under the pictures,
+// so pasting the picture alone is enough. /drone copy does every snap since the page opened, by hand:
 // a few lines of text, one per snap, made for pasting to Claude Code (the view as ?at=, which
 // `npm run shoot` takes, the point under the crosshair and the square it's in), and a contact sheet
 // of all the pictures, numbered the same. A paste of text gets the text and a paste of a picture (Ctrl+V
@@ -72,6 +75,8 @@ const PIC_W = 960;                     // a snap's picture, at most this wide
 const SHEET_W = 480;                   // each snap's width on the contact sheet
 const RAY = 3000;                      // how far the crosshair's ray looks for something
 const ZOOMS = [1, 1.5, 2, 3, 4, 6, 8];   // , and . step through these
+const SHEET_MAX = 1500;                // the contact sheet's pictures, no wider than this all told
+const PRINT_PX = 15, PRINT_PAD = 10, PRINT_MIN_W = 960;   // the text printed under them
 
 const held = (keys: Set<string>, id: string, fallback: string) => (control(id)?.keys ?? [fallback]).some((c) => keys.has(c));
 
@@ -167,7 +172,7 @@ export class Drone {
     this.upAt = performance.now();
     this.h.changed(true);
     this.showOsd(true);
-    chatLine(`Drone up. ${this.snaps.length ? `${this.snaps.length} snaps so far. ` : ""}Shoot to snap; type here to note the last snap; /drone copy when you're done; /drone to land`);
+    chatLine(`Drone up. Shoot to snap: they go on the clipboard as you take them, ready to paste. Type here to note the last one; ${ctl("drone")} to land`);
   }
 
   /** Down on whatever's below: the ground, or a roof. */
@@ -343,21 +348,21 @@ export class Drone {
     return true;
   }
 
-  /** The snaps as text, for pasting to Claude Code. */
-  text(): string {
+  /** Snaps as text, for pasting to Claude Code. */
+  text(snaps = this.snaps): string {
     const url = location.origin + location.pathname;
     const lines = [
-      `Drone snaps from Combe Downer: ${this.snaps.length} on map ${this.h.mapId}, build ${BUILT}, ${url}`,
+      `Drone snaps from Combe Downer: ${snaps.length} on map ${this.h.mapId}, build ${BUILT}, ${url}`,
       "at= is the camera as ?at= takes it (east, north, bearing, tilt, height off the ground: npm run shoot takes it too); aim= is the point under the crosshair (east, north, height off the ground there) and how far off; square is ti,tj; hit is what the game's solid ray met. The pictures (pasted separately, if they came) are numbered the same, the crosshair marking the spot.",
     ];
-    for (const s of this.snaps) lines.push(`#${s.n} ${s.time} at=${s.at}${s.aim ? `  aim=${s.aim}` : ""}${s.square ? `  square ${s.square}` : ""}  hit ${s.hit}${s.look ? `  view ${s.look}` : ""}${s.seen ? `  seen "${s.seen}"` : ""}${s.note ? `  "${s.note}"` : ""}`);
+    for (const s of snaps) lines.push(`#${s.n} ${s.time} at=${s.at}${s.aim ? `  aim=${s.aim}` : ""}${s.square ? `  square ${s.square}` : ""}  hit ${s.hit}${s.look ? `  view ${s.look}` : ""}${s.seen ? `  seen "${s.seen}"` : ""}${s.note ? `  "${s.note}"` : ""}`);
     return lines.join("\n");
   }
 
   /** /drone copy: the text and the contact sheet on the clipboard together. */
   private async copy() {
     if (!this.snaps.length) { chatLine("No snaps yet: fly with /drone and shoot to take one"); return; }
-    const n = this.snaps.length, got = await this.toClipboard();
+    const n = this.snaps.length, got = await this.toClipboard(this.snaps);
     chatLine(got === "both" ? `Copied ${n} snap${n === 1 ? "" : "s"}: paste for the text, Ctrl+V in Claude Code for the pictures`
       : got === "text" ? `Copied the text of ${n} snap${n === 1 ? "" : "s"} (the pictures wouldn't go: /drone pic 1)` : "Couldn't copy: the browser said no");
   }
@@ -367,7 +372,7 @@ export class Drone {
   private autoCopy() {
     if (this.copying) { this.copyAgain = true; return; }
     this.copying = true;
-    this.toClipboard().then((got) => {
+    this.toClipboard(this.snaps.slice(this.flightFrom)).then((got) => {
       if (got !== "both" && !this.copyTold) {
         this.copyTold = true;
         chatLine(got === "text" ? "Only the snaps' text would go on the clipboard: /drone pic 1 for a picture" : "The browser won't let snaps on the clipboard by themselves: /drone copy when you're done");
@@ -378,11 +383,12 @@ export class Drone {
     });
   }
 
-  /** Every snap on the clipboard: the text and the contact sheet together if the browser will, else the text. */
-  private async toClipboard(): Promise<"both" | "text" | "none"> {
-    const text = this.text();
+  /** These snaps on the clipboard: the text and the contact sheet together if the browser will, else the text. */
+  private async toClipboard(snaps: Snap[]): Promise<"both" | "text" | "none"> {
+    if (!snaps.length) return "none";
+    const text = this.text(snaps);
     try {
-      await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([text], { type: "text/plain" }), "image/png": this.sheet() })]);
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": new Blob([text], { type: "text/plain" }), "image/png": this.sheet(snaps) })]);
       return "both";
     } catch {
       try { await navigator.clipboard.writeText(text); return "text"; } catch { return "none"; }
@@ -399,20 +405,30 @@ export class Drone {
     } catch { chatLine("Couldn't copy the picture: the browser said no"); }
   }
 
-  /** All the snaps' pictures on one sheet, as near square as they'll go, each numbered. */
-  private sheet(): Promise<Blob> {
-    return this.png(this.snaps, Math.ceil(Math.sqrt(this.snaps.length)), SHEET_W);
+  /** Snaps' pictures on one sheet, as near square as they'll go, each numbered, with their text
+   *  printed under them, so the picture alone tells Claude Code everything. Kept to a width that a
+   *  pasted picture isn't shrunk from, so the print stays sharp. */
+  private sheet(snaps: Snap[]): Promise<Blob> {
+    const cols = Math.ceil(Math.sqrt(snaps.length));
+    return this.png(snaps, cols, Math.min(SHEET_W, Math.floor((SHEET_MAX - (cols + 1) * 4) / cols)), this.text(snaps));
   }
 
-  private async png(snaps: Snap[], cols: number, tw: number): Promise<Blob> {
+  private async png(snaps: Snap[], cols: number, tw: number, print = ""): Promise<Blob> {
     const pics = await Promise.all(snaps.map(async (s) => (s.pic ? createImageBitmap(s.pic) : null)));
     const first = pics.find(Boolean);
     const th = Math.round(tw * (first ? first.height / first.width : 9 / 16));
     const rows = Math.ceil(snaps.length / cols), gap = 4;
     const c = document.createElement("canvas");
-    c.width = cols * tw + (cols + 1) * gap; c.height = rows * th + (rows + 1) * gap;
     const g = c.getContext("2d")!;
+    // the print, wrapped to the sheet's width (which is at least wide enough to read it at)
+    const W = Math.max(cols * tw + (cols + 1) * gap, print ? PRINT_MIN_W : 0), font = `${PRINT_PX}px ui-monospace, Menlo, Consolas, monospace`;
+    g.font = font;
+    const printed = print ? wrap(g, print, W - 2 * PRINT_PAD) : [];
+    const picsH = rows * th + (rows + 1) * gap, lh = Math.round(PRINT_PX * 1.35);
+    c.width = W; c.height = picsH + (printed.length ? printed.length * lh + 2 * PRINT_PAD : 0);
     g.fillStyle = "#111"; g.fillRect(0, 0, c.width, c.height);
+    g.font = font; g.textBaseline = "top"; g.fillStyle = "#ececec";
+    printed.forEach((l, i) => g.fillText(l, PRINT_PAD, picsH + PRINT_PAD + i * lh));
     snaps.forEach((s, i) => {
       const x = gap + (i % cols) * (tw + gap), y = gap + Math.floor(i / cols) * (th + gap), pic = pics[i];
       if (pic) g.drawImage(pic, x, y, tw, th);
@@ -648,4 +664,18 @@ function inRing(ring: number[][], x: number, y: number): boolean {
     if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
+}
+
+/** Text as lines no wider than w on g's font, broken at spaces; a broken line carries on indented. */
+function wrap(g: CanvasRenderingContext2D, text: string, w: number): string[] {
+  const out: string[] = [];
+  for (const para of text.split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && g.measureText(next).width > w) { out.push(line); line = `    ${word}`; } else line = next;
+    }
+    out.push(line);
+  }
+  return out;
 }

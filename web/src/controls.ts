@@ -103,6 +103,7 @@ export const STREETS: Control[] = [
   { id: "mark", name: "Mark the spot", keys: ["KeyG"], mouse: 1, pad: B.right, where: "foot" },
   { id: "pause", name: "Pause", keys: ["Escape"], pad: B.options, touch: "II" },
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },
+  { id: "drone", name: "Fly the drone, or land it", keys: ["KeyP"], say: { pad: "/drone on the chat phone", touch: "/drone on the chat phone" } },
   { id: "chat", name: "Chat phone: text everyone, or a /command", keys: ["Backslash"], say: { pad: "the pause menu", touch: "the pause menu" }, live: true },
   // purposes that are another control's in their own place
   { id: "droneview", name: "The drone's view of the scenery (/drone)", keys: ["KeyC"], via: "crouch", say: { touch: "the view's name" } },

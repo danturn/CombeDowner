@@ -1009,8 +1009,8 @@ A line starting with `/` is a command, for trying things out:
 - `/spawn`: a list on the phone of people (naughty boys, the teams, the Flag Lads), cats, every
   vehicle and things to pick up. ↑ ↓ and Enter (or a tap) brings one 5 m in front of you, and typing
   narrows the list down; `/spawn cat` or `/spawn 8` brings one straight off.
-- `/drone`: up you go as a camera drone, to fly about Bath and look at it from the air, through
-  anything and unharmed; `/drone` again lands you on whatever's below, roofs included. W A S D move
+- `/drone` (or P): up you go as a camera drone, to fly about Bath and look at it from the air, through
+  anything and unharmed; again lands you on whatever's below, roofs included. W A S D move
   you level the way you're facing, the mouse looks, Space climbs, Shift sinks and the mouse wheel
   (or Q) picks one of five speeds. On a touch screen the stick moves, Jump climbs, Crouch sinks (tap
   again to stop) and Weapon changes speed. A controller flies it as real drones do ("Mode 2"): the
@@ -1039,10 +1039,11 @@ A line starting with `/` is a command, for trying things out:
   it was in, and how far zoomed.
   Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where
   you were and what the crosshair's on. Whatever you type on the phone while you're flying is a note
-  on your latest snap rather than a text. Every snap and note puts them all on the clipboard at
-  once, for pasting to Claude Code: a line of text per snap (paste as usual) and a contact sheet of
-  the pictures, numbered the same (Ctrl+V in Claude Code). So take your snaps, then go and paste;
-  `/drone copy` does it by hand if the browser wouldn't. `/drone pic 3` copies just snap 3's
+  on your latest snap rather than a text. Every snap and note puts this flight's snaps on the
+  clipboard, for pasting to Claude Code: a contact sheet of the pictures, numbered, with every
+  snap's line of text printed under them, so one paste of the picture (Ctrl+V in Claude Code) is
+  all it takes; the text alone pastes as usual. Each flight starts a fresh batch. `/drone copy`
+  copies every snap since the page opened, by hand. `/drone pic 3` copies just snap 3's
   picture, bigger, and `/drone clear` forgets them. Snaps stay until you close the page.
 - `/help`: the list of these.
 

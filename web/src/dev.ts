@@ -18,6 +18,7 @@
 //   ("dv"), and the host brings it (hostSpawn) and sends it round with the others. Players on an older
 //   page don't know "dv", so a guest's /spawn needs a host on this version.
 import { chatLine, chatPick, type PickItem } from "./chat";
+import { ctlText } from "./controls";
 import { skipHours, timeOfDay } from "./daylight";
 import { KITS, look, NAUGHTY, RUGBY, CRICKET, SOCIETY, LADDER, CHAIR, GIRL, type NaughtyBoys, type Target } from "./naughtyboys";
 import type { Cats } from "./cats";
@@ -62,7 +63,7 @@ const HELP = [
   "/idkfa  God mode, every weapon",
   "/day  Midday, for everyone",
   "/spawn  Bring something, 5 m in front",
-  "/drone  Fly about; shoot to snap; /drone copy",
+  "/drone  Fly about (or {drone}); shoot to snap",
   "/help  This list",
 ];
 
@@ -91,7 +92,7 @@ export class Dev {
       return;
     }
     if (word === "drone") { this.hooks.drone(rest); return; }
-    if (word === "help" || word === "?") { for (const l of HELP) chatLine(l); return; }
+    if (word === "help" || word === "?") { for (const l of HELP) chatLine(ctlText(l)); return; }
     chatLine(`No command /${word}. /help for the list`);
   }
 

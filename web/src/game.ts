@@ -1091,6 +1091,8 @@ export class Game {
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
       if (this.active && !e.repeat && isKey(e.code, "use")) { this.leaveKey = true; this.useKey = true; }
+      // P: up in the drone, or down again (drone.ts; /drone on the chat phone does the same)
+      if (this.active && !e.repeat && isKey(e.code, "drone") && !(e.target instanceof HTMLInputElement)) this.drone.command("");
       // flying the drone: C goes round its views of the scenery (looks.ts)
       if (this.drone.on && this.active && !e.repeat && isKey(e.code, "droneview")) this.drone.nextLook();
       // and , and . zoom out and in (the soundtrack's keys the rest of the time: main.ts)
