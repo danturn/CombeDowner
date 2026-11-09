@@ -29,6 +29,7 @@ import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
 import { bradfordStation } from "./bradford";
 import { grenville } from "./grenville";
+import { skylineGate } from "./skylinegate";
 import { bell } from "./bell";
 import { bathSpa } from "./bathspa";
 import { castle } from "./castle";
@@ -43,9 +44,9 @@ import { tag } from "../kinds";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, tower, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, crescent: royalCrescent, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats, dundas };
+const KINDS: Record<string, Builder> = { spire, tower, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, crescent: royalCrescent, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville, skylinegate: skylineGate, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats, dundas };
 /** The set pieces' kinds (setpieces.ts). */
-const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "crescent", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville", "bathspa", "boastation", "castle", "cityhall", "stgeorges", "auwal", "clocktower", "capewheel", "zeitz", "boats", "dundas"]);
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "crescent", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville", "skylinegate", "bathspa", "boastation", "castle", "cityhall", "stgeorges", "auwal", "clocktower", "capewheel", "zeitz", "boats", "dundas"]);
 
 const shapes = new Map<string, Shape>();
 // a set piece's model built for its shape, kept for the square that draws it so it isn't built twice
