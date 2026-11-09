@@ -665,7 +665,8 @@ function figure(colour: string): THREE.Group {
 
 /** How fast a car has to be going (m/s, about 18 mph) to smash through a hedge or a fence rather than bounce off it. */
 export const SMASH_SPEED = 8;
-const HELD = new THREE.Euler();   // (scratch, for the driver's steadied view)
+/** How far the driver's eyes rise and fall in the seat over the bumps, metres: little enough that they never reach the roof lining. */
+const EYE_GIVE = 0.03;
 
 // ---- one vehicle ----------------------------------------------------------------------------
 interface Snap { t: number; x: number; z: number; a: number; vx: number; vz: number; steer: number; tip: number; flags: number }
@@ -791,7 +792,27 @@ export class Vehicle implements Mover {
     const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
     const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
     return { kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
-      decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined };
+      decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined,
+      make: this.label, top: this.roofLine() };
+  }
+
+  /**
+   * How high the top of the body is all along its middle, in its own frame, measured off the body itself (the
+   * roof, and the glass where the windscreen and back window slope away): the cockpit fits its roof lining to it.
+   */
+  private roofLine(): (x: number) => number {
+    const S = this.spec, step = 0.04, x0 = -S.L / 2, tops: number[] = [], ray = new THREE.Raycaster();
+    const meshes = this.body.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh && !this.wheels.includes(o));
+    const o = new THREE.Vector3(), down = new THREE.Vector3();
+    this.root.updateMatrixWorld(true);
+    for (let x = x0; x <= S.L / 2; x += step) {
+      o.set(x, S.H + 1, 0); this.body.localToWorld(o);
+      down.set(0, -1, 0).transformDirection(this.body.matrixWorld);
+      ray.set(o, down);
+      const hit = ray.intersectObjects(meshes, false)[0];
+      tops.push(hit ? this.body.worldToLocal(hit.point).y : 0);
+    }
+    return (x) => tops[Math.max(0, Math.min(tops.length - 1, Math.round((x - x0) / step)))];
   }
 
   /** The driver's own view from inside (game.ts), or null for none: from the seat the inside's drawn round them; either way their own figure's hidden. */
@@ -823,7 +844,7 @@ export class Vehicle implements Mover {
   doorway(b: THREE.Plane[] | null) {
     if (b && !this.ajar && !this.cockpit && !this.view) {
       const S = this.spec;
-      this.cockpit = new Cockpit({ kind: this.kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0], doorway: true });
+      this.cockpit = new Cockpit({ kind: this.kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0], doorway: true, top: this.roofLine() });
       this.body.add(this.cockpit.group);
       this.cutAway(b);
       this.ajar = true;
@@ -864,17 +885,19 @@ export class Vehicle implements Mover {
 
   /**
    * From inside: where the driver's eyes are in the world (into out). Keeps the wheel and dials going. held: the
-   * driver's head steadied against the bumps (game.ts), a pitch and roll that follow the body's gently, and how far
-   * it's lifted; without it the eyes go exactly with the body.
+   * driver's head steadied against the bumps (game.ts), a pitch and roll that follow the body's gently (they turn the
+   * view, not the eyes), and how far it's lifted, which raises the eyes a little; without it they go exactly with the body.
    */
   eyes(out: THREE.Vector3, held?: { pitch: number; roll: number; lift: number }) {
     this.cockpit?.update(this.steer, this.speed, this.rpm, this.signal);
     this.root.updateMatrixWorld(true);
     for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
     out.copy(this.view === "bonnet" && this.bonnet ? this.bonnet : this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
-    if (!held) { this.body.localToWorld(out); return; }
-    out.multiply(this.body.scale).applyEuler(HELD.set(held.roll, this.a, held.pitch, "YZX")).add(this.body.position).applyMatrix4(this.root.matrixWorld);
-    out.y += held.lift;
+    // the eyes stay where the seat puts them in the body, whatever the head's doing: placed by the steadied head's
+    // angles instead, a bump or a crest swung them a hand's width off the seat, out through the roof, a door or
+    // the floor. The steadied head turns only where you look (game.ts), and rises and falls a little in the seat.
+    this.body.localToWorld(out);
+    if (held) out.y += Math.max(-EYE_GIVE, Math.min(EYE_GIVE, held.lift));
   }
 
   /** How far down (a pitch) the driver's view from inside settles to. */

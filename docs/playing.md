@@ -442,11 +442,19 @@ touch screen) work the indicators, which tick away and cancel themselves once yo
 corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
 sees them, the traffic's brake lights too. C (View on a touch screen) goes round
 the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
-a low dash: the speedo shows your speed, the wheel turns as you steer, and the buses have a cab of
-their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
+a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
+and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
+XR3i's sports seats, three-spoke wheel and furry dice, the GTI's tartan seats and golf-ball gear knob,
+the Land Rover's painted metal, its dials in the middle of the dash and its three levers, the Robin's
+one big speedo, a van's bench seat and bulkhead, and a newer hatchback's airbag wheel, glowing radio
+and air freshener. Look round and it's all there: pedals, gear stick and handbrake, the radio and
+heater, the door handles and window winders, seatbelts, sun visors and a tax disc in the windscreen.
+At the longest draw distances the carpet, seats and roof lining show their weave and the windscreen
+its film of dust. The buses have a cab of their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
 racing game, sits just above the bonnet at the foot of the windscreen (on a bus or a coach, at the
 front of the cab) with nothing of the inside in the way. It remembers which you like. From either, your head rides the bumps as a driver's does:
-a rough road jostles the car round you, but the view tips with a hill only gently, a moment behind. Each engine has a voice of its own:
+a rough road jostles the car round you, but the view tips with a hill only gently, a moment behind, and
+you stay sat in your seat, so you never see out through the roof or the floor. Each engine has a voice of its own:
 it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
 the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
 The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit
