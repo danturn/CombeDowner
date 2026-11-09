@@ -35,6 +35,7 @@ import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { CAR_LAMPS, contact, twist } from "./vehicles";
 import { AMBER, GREEN, type Signal, lightAt, signalClock, signalsOf } from "./signals";
+import { timeOfDay, watchDay } from "./daylight";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
@@ -45,8 +46,11 @@ const FLOW: Record<string, number> = { trunk: 20000, primary: 14000, secondary: 
 const COUNTED = 35;                  // a count point this near a road (m) is that road's
 const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
 const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
-const COUNT = 12;                    // cars about round each player (fewer each when there are lots of players)
-const MAX = 24;                      // cars about at once, in all
+const MAX = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1 ? 24 : 40;   // cars about at once, in all (fewer on a phone or iPad)
+const FEWEST = 3;                    // round each player, however quiet the roads
+/** The share of a day's traffic in each hour (UK roads, as the DfT's counts have it), on a weekday and at the weekend. */
+const WEEKDAY = [0.8, 0.5, 0.4, 0.4, 0.6, 1.5, 3.5, 6.5, 7.5, 6, 5.5, 5.7, 6, 6, 6.2, 7, 7.8, 8, 6.5, 4.8, 3.6, 2.9, 2.2, 1.5];
+const WEEKEND = [1.4, 1, 0.7, 0.5, 0.5, 0.7, 1.2, 2, 3.5, 5, 6.5, 7.5, 8, 8, 7.5, 7, 6.8, 6.3, 5.5, 4.5, 3.8, 3, 2.5, 2];
 const CELL = 100;                    // the roads are filed in squares this size, to find ones near the players quickly
 const NEAR = 70, FAR = 220, GONE = 320;   // spawn between NEAR and FAR from the nearest player; gone past GONE
 const HL = 2.08, HW = 0.88, CAR_H = 1.44;   // a car's half length, half width and height (a coach's are its own: coaches.ts)
@@ -373,8 +377,11 @@ export class Traffic {
         players.forEach((p, j) => { if (Math.hypot(p.x - c.x, p.z - c.z) < Math.hypot(players[k].x - c.x, players[k].z - c.z)) k = j; });
         round[k]++;
       }
-      const k = round.indexOf(Math.min(...round));
-      if (round[k] < Math.max(6, Math.min(COUNT, Math.floor(MAX / players.length)))) this.spawn(players[k], nearest);
+      // as many round each player as the roads near them really carry at this time of day (as far as there's room)
+      const want = players.map((p, j) => Math.max(FEWEST, Math.min(Math.floor(MAX / players.length), this.expected(p, j))));
+      let k = 0;
+      round.forEach((n, j) => { if (want[j] - n > want[k] - round[k]) k = j; });
+      if (round[k] < want[k]) this.spawn(players[k], nearest);
     }
     const now = performance.now();
     for (const c of [...this.cars.values()]) if (!c.e && !c.wreck) this.drop(c.n);   // the last host's: we don't know their roads (a wreck needs none)
@@ -651,6 +658,30 @@ export class Traffic {
       return;
     }
   }
+
+  /** How many cars the roads round scene (p) really carry at this time of day (by the game's clock and
+   *  the day your watch shows): each road's vehicles a day, the share of them in this hour, spread along
+   *  it at its speed. Worked out every few seconds for each player (j). */
+  private expected(p: { x: number; z: number }, j: number): number {
+    const had = this.busy[j], now = performance.now();
+    if (had && now - had.t < 3000 && Math.hypot(had.x - p.x, had.z - p.z) < 60) return had.n;
+    const hour = Math.floor(timeOfDay() * 24) % 24, day = new Date(watchDay() * 86400000).getUTCDay();
+    const share = ((day === 0 || day === 6 ? WEEKEND : WEEKDAY)[hour] / 100) / 3600;   // of a day's traffic, each second
+    let n = 0;
+    for (let i = Math.floor((p.x - FAR) / CELL); i <= Math.floor((p.x + FAR) / CELL); i++)
+      for (let k = Math.floor((p.z - FAR) / CELL); k <= Math.floor((p.z + FAR) / CELL); k++)
+        for (const e of this.cells.get(this.cell(i * CELL, k * CELL)) ?? []) {
+          const A = this.nodes[e.a];
+          if (Math.hypot(A.x + e.dx * e.len / 2 - p.x, A.z + e.dz * e.len / 2 - p.z) > FAR) continue;
+          // (a two-way road's traffic is half each way)
+          // (spread at the speed it really goes, not the limit: about 15 mph on average in town, the lights,
+          // junctions and queues counted in, so a busy road holds more cars at once than its limit suggests)
+          n += ((e.back ? e.flow / 2 : e.flow) * share * e.len) / Math.min(e.v, 7);
+        }
+    this.busy[j] = { t: now, x: p.x, z: p.z, n: Math.round(n) };
+    return Math.round(n);
+  }
+  private busy: { t: number; x: number; z: number; n: number }[] = [];
 
   /** Pick its roads ahead, far enough to see what's coming. */
   private plan(c: Car) {

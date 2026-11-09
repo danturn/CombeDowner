@@ -419,7 +419,9 @@ same to it as the road, and it takes the hills better than anything else.
 
 The traffic keeps to the roads people really drive on: how busy each road is comes from the
 Department for Transport's traffic counts, so it's thick on the main roads, the A4 through town and out along the London Road, and
-thin up the side streets, where a car only turns off now and then. Traffic lights work,
+thin up the side streets, where a car only turns off now and then. How many cars there are round you
+follows the same counts and the time of day: the morning and evening rush on a weekday, a later and
+flatter day at the weekend, and hardly anything in the small hours. Traffic lights work,
 the British way (red, red and amber, green, amber), the same for everyone, and the cars stop at red
 and queue behind each other; at a crossing with lights it's red for the traffic now and then for
 anyone crossing. A car that has to turn round (at a dead end, or stuck behind something that isn't
