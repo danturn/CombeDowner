@@ -251,7 +251,9 @@ export class Traffic {
       this.roads.push({ c: r.c, n: r.n ?? "", p: r.p, flow });
       const lane = Math.min(2, Math.max(1.2, (WIDTH[r.c] ?? 6) / 4));
       // how far it can pull out from its lane: up to the far kerb, and a wheel on the pavement
-      const room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
+      let room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
+      // (on a bridge, no further than the middle of the other lane: past that it'd be through the parapet, or off the deck)
+      if (r.bridge) room = Math.min(room, 2 * lane);
       // and how far in toward the kerb, to let someone by
       const kerb = Math.max(0, (WIDTH[r.c] ?? 6) / 2 - lane - HW + 0.3);
       // a one-way street only goes its way (ow: 1 with the points, -1 against them)
@@ -876,6 +878,53 @@ export class Traffic {
     if (off > 40) this.place(c);
   }
 
+  /**
+   * The height to start a car at that's only just turned up (spawned, or first heard of from the
+   * host), found the way it would have got there: coming back to it along its road from 60 m on, a
+   * metre at a time. So one that turns up out over the river is on the bridge's deck, not down on the
+   * river bed (where, keeping to whatever it was on a moment ago, it would then drive the whole way
+   * across under the bridge). Undefined for one that isn't on a road: it sits on the ground.
+   */
+  private arriving(c: Car): number | undefined {
+    if (c.wreck || c.n >= PARKED) return undefined;
+    let e: Edge | undefined = c.e;
+    if (!e) {
+      // (not the host's: the nearest stretch of road going its way)
+      let best = 6;
+      const hx = Math.cos(c.a), hz = -Math.sin(c.a), ci = Math.floor(c.x / CELL), cj = Math.floor(c.z / CELL);
+      for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++)
+        for (const o of this.cells.get(this.cell(i * CELL, j * CELL)) ?? []) {
+          if (o.dead || o.dx * hx + o.dz * hz < 0.5) continue;
+          const A = this.nodes[o.a], along = (c.x - A.x) * o.dx + (c.z - A.z) * o.dz;
+          if (along < -1 || along > o.len + 1) continue;
+          const off = Math.abs((c.z - A.z) * o.dx - (c.x - A.x) * o.dz);
+          if (off < best) { best = off; e = o; }
+        }
+      if (!e) return undefined;
+    }
+    // where it is against its stretch of road: how far along, and how far out to the side of the middle
+    const A = this.nodes[e.a];
+    let s = (c.x - A.x) * e.dx + (c.z - A.z) * e.dz;
+    const side = (c.z - A.z) * e.dx - (c.x - A.x) * e.dz;
+    const pts = [[c.x, c.z]];
+    for (let k = 0; k < 60; k++) {
+      s += 1;
+      while (s > e.len) {
+        // on along the road, the straightest way
+        const outs: Edge[] = this.nodes[e.b].out.filter((o: Edge) => !o.dead && o.b !== e!.a);
+        if (!outs.length) break;
+        s -= e.len;
+        e = outs.reduce((m, o) => (o.dx * e!.dx + o.dz * e!.dz > m.dx * e!.dx + m.dz * e!.dz ? o : m));
+      }
+      if (s > e.len) break;
+      const from = this.nodes[e.a];
+      pts.push([from.x + e.dx * s - e.dz * side, from.z + e.dz * s + e.dx * side]);
+    }
+    let y = this.ground(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    for (let k = pts.length - 2; k >= 0; k--) y = this.ground(pts[k][0], pts[k][1], y);
+    return y;
+  }
+
   /** Where it is on its road: in the left-hand lane, turning smoothly from one stretch to the next. */
   private place(c: Car) {
     const e = c.e, A = this.nodes[e.a];
@@ -1016,8 +1065,9 @@ export class Traffic {
       for (const w of c.wheels) { w.rotation.y = c.steer; w.rotation.z = -c.rolled; }
       // sat on the ground, tilted with the slope
       const cs = Math.cos(c.a), sn = Math.sin(c.a), half = c.coach ? (COACH.front - COACH.rear) / 2 : 1.3;
-      // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed)
-      const was = c.top ? c.y : undefined;
+      // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed;
+      // one that's only just turned up has none yet, and finds its height from along its road)
+      const was = c.top ? c.y : this.arriving(c);
       const hF = this.ground(c.x + cs * half, c.z - sn * half, was), hR = this.ground(c.x - cs * half, c.z + sn * half, was);
       c.y = (hF + hR) / 2;
       // rolled over about its middle, its lowest corner on the ground (or above it, in the air)
