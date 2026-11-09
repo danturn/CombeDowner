@@ -56,7 +56,9 @@ case by case:
     tunnel mouths, pubs and wires, boats, the railway's holes, what is drawn over the streets, whether
     roofs are solid to stand on, and whether paths are whole as they're drawn; and from 24, the
     ground's measures (paths level across, faces meeting, bridges' ends and room under them, tunnels,
-    flights, locks' edges, land and water, fences on water and ways).
+    flights, locks' edges, land and water, fences on water and ways); and from 39, faults found by
+    playing (road markings, lanes' faces in streets, steps in the road, the faces at squares' sides,
+    flights and their handrails, walls standing over the ground).
 """
 import functools, glob, json, math, multiprocessing, os, subprocess, sys, tempfile, collections
 import numpy as np

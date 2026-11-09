@@ -79,6 +79,17 @@ from the packs alone, a few seconds a square:
     face's top meets another triangle, edge to edge or along a run of edges on its line, or has more
     ground or a face just across it; the rest are cracks the sky shows through, each scored by its
     length in metres. Edges along a square's own sides are left to rule 14. CD_SEAMS=0 leaves it out.
+39-45 are faults found by playing, from the packs alone (played below):
+39. Road markings lie on the carriageway, square across it, on the street that gives way and out
+    past the other street's kerb line.
+40. A lane's or yard's carriageway (the service face, a lighter grey) stops at the kerbed street it
+    meets, not reaching into it as a wedge, a point or a row of thin triangles.
+41. No step in the carriageway: no road or lane triangle climbs steeper than 1 in 2.
+42. The faces meet the next square's: the same kind at the same height either side of a square's side.
+43. Flights of steps don't lie over each other, and no handrail stands on a pavement or the road.
+44. No wall, fence or hedge stands with its foot over what is drawn under it, the sky showing
+    through beneath it (tools/ground_seams.mjs, with rule 38; CD_SEAMS=0 leaves it out).
+45. No street face of the map's is left inside a set piece's outline, over its own deck and paving.
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -2007,7 +2018,435 @@ def ground_measures(m, tag, note, f, off_deck=None):
     water(m, cp, ground, note, at, sq, inner, fig)
     fences_on_ways(m, sheet, cp, note, at, inner, fig)
     churches_drawn(m, *_root_of(f), note, at, fig)
+    played(m, f, sheet, note, at, sq, inner, fig)
     return fig
+
+
+# ---- 39 on: faults found by playing ------------------------------------------------------------
+
+GIVES_WAY = {"primary", "secondary", "tertiary", "residential", "unclassified"}   # tools/streets.py KERBED: the streets it paints give-way lines on
+RANK = {"trunk": 6, "primary": 5, "secondary": 4, "tertiary": 3, "unclassified": 2, "residential": 2, "living_street": 1}   # tools/streets.py, which gives way to which
+MARK_OFF = 0.1       # metres of a marking off the carriageway before it counts
+SQUARE_TO = 10.0     # degrees a give-way or stop line may lie off square across its street
+STRAIGHT_ON = 30.0   # degrees within which a street leaving a junction runs straight on
+SEAM_STEP = 0.03     # metres two squares' faces may differ in height where they meet
+ROAD_STEP = 0.1      # metres a carriageway triangle may rise across before a steep one counts as a step
+ROAD_PITCH = 0.5     # the steepest a carriageway triangle may climb (1 in 2: no street in Bath is near it)
+SERVICE_IN = 0.3     # metres in from a kerbed street's edge that a lane's or yard's face may not reach
+RAIL_ON = 0.4        # metres of a flight's handrail standing on a pavement or road before it counts
+
+
+def _dir_at(line, pt, reach=1.0):
+    """The unit direction of a line where it passes nearest a point."""
+    s = line.project(pt)
+    a, b = line.interpolate(max(0.0, s - reach)), line.interpolate(min(line.length, s + reach))
+    dx, dy = b.x - a.x, b.y - a.y
+    l = math.hypot(dx, dy) or 1.0
+    return dx / l, dy / l
+
+
+def _off_square(u, v):
+    """Degrees two directions are off square to each other (0 when at right angles)."""
+    return abs(90.0 - math.degrees(math.acos(min(1.0, abs(u[0] * v[0] + u[1] * v[1])))))
+
+
+def _off_line(u, v):
+    """Degrees two directions are off lying along each other, either way round."""
+    return math.degrees(math.acos(min(1.0, abs(u[0] * v[0] + u[1] * v[1]))))
+
+
+def _street_lines(m):
+    """The square's carriageways off any bridge: each record and its line."""
+    out = []
+    for r in m.get("rd") or []:
+        if len(r["p"]) > 1 and r["c"] in VEHICLE and not any(_flags(r)):
+            out.append((r, LineString([q[:2] for q in r["p"]])))
+    return out
+
+
+@functools.lru_cache(maxsize=16)
+def _streets_of(path):
+    return _street_lines(json.load(open(path))) if os.path.exists(path) else []
+
+
+def _streets_round(m, f):
+    """This square's carriageways and the next squares' within 30 m of it, a street cut at a square's
+    side joined up again with its piece over the side, so a junction just over the side is seen."""
+    tag = os.path.basename(f)[:-5]
+    out = _street_lines(m)
+    try: ti, tj = map(int, tag.split("_"))
+    except ValueError: return out
+    near = box(*m["b"]).buffer(30)
+    for a in (-1, 0, 1):
+        for b in (-1, 0, 1):
+            if a or b:
+                out += [(r, l) for r, l in _streets_of(os.path.join(os.path.dirname(f), f"{ti + a}_{tj + b}.json")) if l.intersects(near)]
+    x0, y0, x1, y1 = m["b"]
+    on_side = lambda p: min(abs(p[0] - x0), abs(p[0] - x1), abs(p[1] - y0), abs(p[1] - y1)) < 0.5
+    joined, used = [], set()
+    for i, (r, l) in enumerate(out):
+        if i in used: continue
+        used.add(i)
+        for j, (o, ol) in enumerate(out):
+            if j in used or o.get("n") != r.get("n") or o["c"] != r["c"]: continue
+            ends = [(p, q) for p in (l.coords[0], l.coords[-1]) for q in (ol.coords[0], ol.coords[-1]) if on_side(p) and math.dist(p, q) < 0.5]
+            if ends:
+                merged = shapely.line_merge(shapely.union_all([l, ol]))
+                if merged.geom_type == "LineString":
+                    l = merged; used.add(j)
+        joined.append((r, l))
+    return joined
+
+
+def markings(m, f, sheet, note, at, sq, fig):
+    """39. Road markings (furniture.ts: mk's centre dashes and give-way lines, cx's stop lines, studs and
+    zebra stripes) lie on the carriageway as drawn, the road and service faces, and are square to it:
+    (a) none lies off the carriageway by more than MARK_OFF; (b) a give-way line and a crossing's stop
+    line lie square across their street, within SQUARE_TO; (c) a give-way line is on the street that
+    gives way: not across one running straight on with no side road, or past only lesser ones, nor
+    where no street meets it at all; (d) and it stands
+    out past the other street's pavement, not back in line with it, where it runs across the mouth of
+    the junction between the kerb corners."""
+    if not sheet.ok: return
+    cars = sheet.union(("road", "service"))
+    if cars.is_empty: return
+    # (near the square's own sides the next square's faces carry on; a bridge's deck is its own)
+    own = box(*m["b"]).buffer(-0.5)
+    decks = [LineString([q[:2] for q in r["p"]]).buffer(_road_half(r["c"], r.get("w")) + 2) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
+    if decks: own = own.difference(shapely.union_all(decks))
+    streets = _streets_round(m, f)
+    if not streets: return
+    stree = shapely.STRtree([l for _, l in streets])
+    totals = dict(marks=0, off=0, crooked=0, through=0, back=0)
+
+    def off_by(g):
+        return g.intersection(own).difference(cars).length if g.geom_type == "LineString" else g.intersection(own).difference(cars).area
+
+    mk = m.get("mk") or []
+    for q in mk:
+        if q[6]: continue
+        seg = LineString([q[:2], q[2:4]])
+        if not own.contains(seg.centroid): continue
+        totals["marks"] += 1
+        out = off_by(seg)
+        if out > MARK_OFF:
+            totals["off"] += 1
+            note("39 road marking off the carriageway", out, at(seg.centroid.x, seg.centroid.y), f"centre dash {out:.1f} m off the road")
+    # give-way lines: the dashes of one junction's line pair gathered together
+    gw = [q for q in mk if q[6]]
+    if gw:
+        segs = [LineString([q[:2], q[2:4]]) for q in gw]
+        blobs = shapely.union_all([s.buffer(0.8) for s in segs])
+        btree = shapely.STRtree(segs)
+        for blob in getattr(blobs, "geoms", [blobs]):
+            mine = [segs[int(k)] for k in btree.query(blob, predicate="intersects")]
+            c = shapely.union_all(mine).centroid
+            if not own.contains(c): continue
+            totals["marks"] += 1
+            out = sum(off_by(s) for s in mine)
+            # the line's direction across, from its two ends
+            ends = np.asarray([p for s in mine for p in s.coords])
+            ax = ends - ends.mean(0)
+            w, vec = np.linalg.eigh(ax.T @ ax)
+            d = vec[:, -1]
+            if out > MARK_OFF:
+                totals["off"] += 1
+                note("39 road marking off the carriageway", out, at(c.x, c.y), f"give-way line {out:.1f} m off the road")
+            # its street: of the carriageways it lies on, the one it is most nearly square across
+            best = None
+            for k in stree.query(c.buffer(1.0)):
+                r, l = streets[int(k)]
+                if r["c"] not in GIVES_WAY or l.distance(c) > _road_half(r["c"], r.get("w")) + 0.5: continue
+                off = _off_square(d, _dir_at(l, c))
+                if best is None or off < best[0]: best = (off, r, l)
+            if best is None: continue
+            off, r, l = best
+            name = r.get("n") or r["c"]
+            if off > SQUARE_TO:
+                totals["crooked"] += 1
+                note("39 give-way or stop line not square to its street", off, at(c.x, c.y), f"give-way line on {name!r} {off:.0f} degrees off square")
+            # the junction it gives way at: the nearer end of its street
+            s = l.project(c)
+            end = Point(l.coords[0]) if s < l.length - s else Point(l.coords[-1])
+            if end.distance(c) > 15: continue
+            ux, uy = end.x - c.x, end.y - c.y
+            ul = math.hypot(ux, uy) or 1.0
+            ux, uy = ux / ul, uy / ul
+            ahead, side = [], []
+            for k in stree.query(end.buffer(1.0)):
+                o, ol = streets[int(k)]
+                if o is r or ol.distance(end) > 1.0: continue
+                so = ol.project(end)
+                for t in (so + 3.0, so - 3.0):
+                    if not 0 <= t <= ol.length: continue
+                    p = ol.interpolate(t)
+                    vx, vy = p.x - end.x, p.y - end.y
+                    vl = math.hypot(vx, vy)
+                    if vl < 1.0: continue
+                    turn = math.degrees(math.acos(max(-1.0, min(1.0, (vx * ux + vy * uy) / vl))))
+                    (ahead if turn < STRAIGHT_ON else side).append((o, ol))
+            if not ahead and not side:
+                totals["through"] += 1
+                note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y), f"across {name!r}, where no street meets it")
+                continue
+            if ahead and all(RANK.get(o["c"], 0) < RANK.get(r["c"], 0) for o, _ in side):
+                totals["through"] += 1
+                runs = ", ".join(sorted({o.get("n") or o["c"] for o, _ in ahead}))
+                note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y),
+                     f"across {name!r}, which runs on as {runs!r}" + (f" past {', '.join(sorted({o.get('n') or o['c'] for o, _ in side}))!r}" if side else ""))
+                continue
+            # the street it meets: how far its pavement reaches out from its middle
+            back = 0.0
+            for o, ol in side + ahead:
+                if o["c"] not in GAME_KERBED: continue
+                pv = max(o.get("pv") or [1.7, 1.7])
+                reach = _road_half(o["c"], o.get("w")) + pv
+                back = max(back, reach - ol.distance(c))
+            if back > 0.3:
+                totals["back"] += 1
+                note("39 give-way line short of the other street's kerb line", back, at(c.x, c.y), f"on {name!r}, {back:.1f} m back inside the other street's carriageway or pavement")
+    # crossings and lights: their stop lines, studs and stripes as furniture.ts lays them
+    for x, y, z, a, kind, w in ((*q[:6],) for q in m.get("cx") or []):
+        c = Point(x, y)
+        if not own.contains(c): continue
+        totals["marks"] += 1
+        h, ux, uy = w / 2, math.cos(a), math.sin(a)
+        nx, ny = -uy, ux
+        quad = lambda s0, s1, t0, t1: Polygon([(x + ux * s + nx * t, y + uy * s + ny * t) for s, t in ((s0, t0), (s1, t0), (s1, t1), (s0, t1))])
+        parts = []
+        if kind == "z":
+            t = -h + 0.25
+            while t + 0.5 <= h - 0.15: parts.append(quad(-1.3, 1.3, t, t + 0.5)); t += 1.0
+        else:
+            sl = 3 if kind == "p" else 2
+            parts += [quad(-sl - 0.15, -sl + 0.15, 0, h - 0.2), quad(sl - 0.15, sl + 0.15, -h + 0.2, 0)]
+        out = sum(off_by(p) for p in parts if p.is_valid) / 0.3
+        what = {"z": "zebra", "p": "crossing", "s": "lights"}.get(kind, kind)
+        if out > MARK_OFF:
+            totals["off"] += 1
+            note("39 road marking off the carriageway", out, at(x, y), f"{what}'s stripes or stop lines {out:.1f} m off the road")
+        best = None
+        for k in stree.query(c.buffer(1.0)):
+            r, l = streets[int(k)]
+            if l.distance(c) > _road_half(r["c"], r.get("w")) + 0.5: continue
+            off = _off_line((ux, uy), _dir_at(l, c, 3.0))
+            if best is None or off < best[0]: best = (off, r)
+        if best and best[0] > SQUARE_TO:
+            totals["crooked"] += 1
+            note("39 give-way or stop line not square to its street", best[0], at(x, y), f"{what} on {best[1].get('n') or best[1]['c']!r} {best[0]:.0f} degrees off square")
+    for k, v in totals.items(): fig[f"marking {k}"] = fig.get(f"marking {k}", 0) + v
+
+
+def lanes_in_streets(m, sheet, note, at, inner, fig):
+    """40. A lane's, yard's or drive's carriageway (the service face, a slightly lighter grey) stops at the
+    kerbed street it meets: none of it lies more than SERVICE_IN inside that street's carriageway, as a
+    wedge or a point of the lighter grey into the road, or a run of thin triangles of it along the
+    street. Each place's score is its area in m2."""
+    if not sheet.ok: return
+    svc = sheet.union(("service",))
+    if svc.is_empty: return
+    strips = [(r, l.buffer(_road_half(r["c"], r.get("w")) - SERVICE_IN, cap_style="flat"))
+              for r, l in _street_lines(m) if r["c"] in GAME_KERBED | {"trunk"} and _road_half(r["c"], r.get("w")) > SERVICE_IN + 0.5]
+    if not strips: return
+    tree = shapely.STRtree([s for _, s in strips])
+    over = svc.intersection(shapely.union_all([s for _, s in strips])).intersection(inner)
+    total = 0.0
+    for g in getattr(over, "geoms", [over]):
+        if g.geom_type != "Polygon" or g.area < 0.5: continue
+        total += g.area
+        c = g.representative_point()
+        k = tree.query(c, predicate="intersects")
+        name = (strips[int(k[0])][0].get("n") or strips[int(k[0])][0]["c"]) if len(k) else ""
+        note("40 lane's face in a street's carriageway", g.area, at(c.x, c.y), f"{g.area:.1f} m2 of the lighter grey in {name!r}")
+    fig["service face in a street m2"] = fig.get("service face in a street m2", 0) + total
+
+
+def road_steps(m, sheet, note, at, inner, fig):
+    """41. Where two pieces of carriageway meet (a side street on to a main one, two streets at a
+    junction), the road blends from one level to the other: no triangle of road or lane face climbs
+    steeper than ROAD_PITCH, a step in the road with the earth showing down its face. Each place's
+    score is the most its triangles rise across, in metres."""
+    if not sheet.ok: return
+    sel = np.nonzero(sheet.kind_mask(("road", "service")))[0]
+    if not len(sel): return
+    A, B, C = sheet.A[sel], sheet.B[sel], sheet.C[sel]
+    n = np.cross(B - A, C - A)
+    flat = np.abs(n[:, 2])
+    pitch = np.hypot(n[:, 0], n[:, 1]) / np.maximum(flat, 1e-9)
+    rise = np.maximum(np.maximum(A[:, 2], B[:, 2]), C[:, 2]) - np.minimum(np.minimum(A[:, 2], B[:, 2]), C[:, 2])
+    mid = (A + B + C)[:, :2] / 3
+    bad = (pitch > ROAD_PITCH) & (rise > ROAD_STEP) & (flat > 1e-6) & shapely.contains_xy(inner, mid[:, 0], mid[:, 1])
+    if not bad.any(): return
+    idx = np.nonzero(bad)[0]
+    blobs = shapely.union_all([sheet.polys[sel[i]].buffer(0.3) for i in idx])
+    tree = shapely.STRtree(shapely.points(mid[idx]))
+    total = 0
+    for g in getattr(blobs, "geoms", [blobs]):
+        mine = idx[tree.query(g, predicate="intersects")]
+        if not len(mine): continue
+        up = float(rise[mine].max())
+        total += 1
+        c = g.representative_point()
+        note("41 step in the carriageway", up, at(c.x, c.y), f"the road rises {up:.2f} m at up to 1 in {1 / float(pitch[mine].max()):.1f}")
+    fig["road steps"] = fig.get("road steps", 0) + total
+
+
+def square_joins(m, f, sheet, note, at, fig):
+    """42. The faces meet the next square's as one: along this square's north and east sides, sampled
+    every half metre a few centimetres either side, a face on one side has the same kind of face at the
+    same height (within SEAM_STEP) on the other. Two kinds of carriageway (a street's and a lane's) shade
+    differently, so a street drawn as one in this square and the other in the next shows a seam down it;
+    a face that stops at the side shows the grass or a step there. Each place's score is its length in
+    metres."""
+    if not sheet.ok: return
+    tag = os.path.basename(f)[:-5]
+    try: ti, tj = map(int, tag.split("_"))
+    except ValueError: return
+    x0, y0, x1, y1 = m["b"]
+    total = 0.0
+    for nb, xs, ys, side in ((f"{ti}_{tj + 1}", None, y1, "north"), (f"{ti + 1}_{tj}", x1, None, "east")):
+        g = os.path.join(os.path.dirname(f), nb + ".json")
+        if not os.path.exists(g): continue
+        o = json.load(open(g))
+        if o.get("centre"): _unmask(o, _set_pieces(tuple(o["centre"])))
+        other = Sheet(o)
+        if not other.ok: continue
+        if ys is not None:
+            t = np.arange(x0 + 0.25, x1, 0.5)
+            ax, ay, bx, by = t, np.full(len(t), ys - 0.03), t, np.full(len(t), ys + 0.03)
+        else:
+            t = np.arange(y0 + 0.25, y1, 0.5)
+            ax, ay, bx, by = np.full(len(t), xs - 0.03), t, np.full(len(t), xs + 0.03), t
+        ta, za = sheet.hit(ax, ay)
+        tb, zb = other.hit(bx, by)
+        ka = np.where(ta >= 0, sheet.K[np.maximum(ta, 0)], -1)
+        kb = np.where(tb >= 0, other.K[np.maximum(tb, 0)], -1)
+        either = (ka >= 0) | (kb >= 0)
+        bad = either & ((ka != kb) | (np.abs(np.nan_to_num(za) - np.nan_to_num(zb)) > SEAM_STEP))
+        # runs of failing samples, each a place
+        k = 0
+        while k < len(t):
+            if not bad[k]: k += 1; continue
+            j = k
+            while j + 1 < len(t) and bad[j + 1]: j += 1
+            length = (j - k + 1) * 0.5
+            if length >= 1.0:
+                total += length
+                mid = (k + j) // 2
+                name = lambda kk: FACE_KINDS[kk] if kk >= 0 else "nothing"
+                kinds = {(name(ka[i]), name(kb[i])) for i in range(k, j + 1)}
+                if all(a == b for a, b in kinds):
+                    dz = float(np.nanmax(np.abs(za[k:j + 1] - zb[k:j + 1])))
+                    what = f"{kinds.pop()[0]} {dz:.2f} m apart in height"
+                else:
+                    a, b = max(((a, b) for a, b in kinds if a != b), key=lambda p: sum(1 for i in range(k, j + 1) if (name(ka[i]), name(kb[i])) == p))
+                    what = f"{a} here, {b} in {nb}"
+                note("42 faces don't meet the next square's", length, at(ax[mid], ay[mid]), f"{length:.0f} m along the {side} side: {what}")
+            k = j + 1
+    fig["square side mismatched m"] = fig.get("square side mismatched m", 0) + total
+
+
+def _leaving(l, end, reach=1.5):
+    """The unit direction a line leaves one of its ends (0 or -1) in, over its first reach metres."""
+    s = 0.0 if end == 0 else l.length
+    a = l.interpolate(s)
+    b = l.interpolate(min(reach, l.length) if end == 0 else max(0.0, l.length - reach))
+    dx, dy = b.x - a.x, b.y - a.y
+    d = math.hypot(dx, dy) or 1.0
+    return dx / d, dy / d
+
+
+def flights_and_rails(m, sheet, note, at, inner, fig):
+    """43. Flights of steps (furniture.ts stepsDetail) keep to themselves: no two flights' treads lie
+    over each other (beyond where one runs on from the other's end), and no handrail stands out on a
+    pavement or the road, more than RAIL_ON of it on a pavement, road or lane face. Scores: the
+    overlap's area in m2, the rail's length on the paving in metres."""
+    if not sheet.ok: return
+    fl = []
+    for r in m.get("rd") or []:
+        if r["c"] != "steps" or len(r["p"]) < 2 or any(_flags(r)): continue
+        l = LineString([q[:2] for q in r["p"]])
+        if l.length < 1: continue
+        fl.append((r, l, l.buffer((r.get("w") or 1.8) / 2, cap_style="flat")))
+    if not fl: return
+    tree = shapely.STRtree([s for *_, s in fl])
+    totals = dict(crossing=0, rails=0)
+    for i, (r, l, s) in enumerate(fl):
+        for j in tree.query(s, predicate="intersects"):
+            if j <= i: continue
+            o, ol, os_ = fl[int(j)]
+            both = s.intersection(os_)
+            # (one flight running on from another's end shares a landing with it, unless it turns
+            # straight back over the other's first treads)
+            back = False
+            for e, f_ in ((l, 0), (l, -1)):
+                for g_, h_ in ((ol, 0), (ol, -1)):
+                    if Point(e.coords[f_]).distance(Point(g_.coords[h_])) >= 1.0: continue
+                    u, v = _leaving(e, f_), _leaving(g_, h_)
+                    back |= math.degrees(math.acos(max(-1.0, min(1.0, u[0] * v[0] + u[1] * v[1])))) < 40
+                    both = both.difference(Point(e.coords[f_]).buffer(0.9)).difference(Point(g_.coords[h_]).buffer(0.9))
+            if back: both = s.intersection(os_)
+            if both.area < 0.3 or not inner.contains(both.representative_point()): continue
+            totals["crossing"] += 1
+            c = both.representative_point()
+            note("43 flights of steps over each other", both.area, at(c.x, c.y), f"{r.get('n') or 'steps'!r} and {o.get('n') or 'steps'!r} share {both.area:.1f} m2" + (", one turning straight back over the other" if back else ""))
+    paving = ("pave", "road", "service")
+    for r, l, s in fl:
+        sides = (r.get("hr") or 0) & 7
+        if not sides or not inner.contains(Point(l.coords[0])): continue
+        w = r.get("w") or 1.8
+        for bit, off in ((1, w / 2 - 0.08), (2, -w / 2 + 0.08), (4, 0.0)):
+            if not sides & bit: continue
+            ss = np.arange(0.15, l.length - 0.15, 0.25)
+            if not len(ss): continue
+            pts = [l.interpolate(t) for t in ss]
+            dirs = [_dir_at(l, p, 0.3) for p in pts]
+            px = np.array([p.x - d[1] * off for p, d in zip(pts, dirs)])
+            py = np.array([p.y + d[0] * off for p, d in zip(pts, dirs)])
+            ti, _ = sheet.hit(px, py, paving)
+            on = int((ti >= 0).sum())
+            length = on * 0.25
+            if length > RAIL_ON:
+                totals["rails"] += 1
+                k = int(np.nonzero(ti >= 0)[0][on // 2])
+                note("43 handrail standing on a pavement or road", length, at(px[k], py[k]), f"{r.get('n') or 'steps'!r}: {length:.1f} m of its rail on {FACE_KINDS[sheet.K[ti[k]]]}")
+    for k, v in totals.items(): fig[f"flights {k}"] = fig.get(f"flights {k}", 0) + v
+
+
+def set_piece_faces(m, sheet, note, at, inner, fig):
+    """45. Inside a set piece's outline the set piece draws its own ground (landmarks/setpieces.ts hides
+    the map's buildings, trees and small things there): no street face of the map's is left inside it,
+    drawn over or through the set piece's own deck and paving. Each set piece's score is the faces'
+    area inside its outline in m2."""
+    if not sheet.ok or not m.get("sp"): return
+    total = 0.0
+    for ring in m["sp"]:
+        if len(ring) < 3: continue
+        g = _poly(ring).intersection(inner)
+        if g.is_empty: continue
+        hit = sheet.tree.query(g, predicate="intersects")
+        if not len(hit): continue
+        area = {}
+        for t in hit:
+            a = sheet.polys[t].intersection(g).area
+            if a > 1e-4: area[FACE_KINDS[sheet.K[t]]] = area.get(FACE_KINDS[sheet.K[t]], 0) + a
+        if sum(area.values()) < 1: continue
+        total += sum(area.values())
+        c = g.representative_point()
+        note("45 street faces inside a set piece", sum(area.values()), at(c.x, c.y), ", ".join(f"{k} {v:.0f} m2" for k, v in sorted(area.items(), key=lambda kv: -kv[1])))
+    fig["faces in set pieces m2"] = fig.get("faces in set pieces m2", 0) + total
+
+
+def played(m, f, sheet, note, at, sq, inner, fig):
+    """Rules 39 to 43 and 45, for one square. (Each looks at what lies within the square itself, so they run
+    up to a metre from its sides rather than EDGE: what they measure is drawn there by this square.)"""
+    inner = sq.buffer(-1.0)
+    markings(m, f, sheet, note, at, sq, fig)
+    lanes_in_streets(m, sheet, note, at, inner, fig)
+    road_steps(m, sheet, note, at, inner, fig)
+    square_joins(m, f, sheet, note, at, fig)
+    flights_and_rails(m, sheet, note, at, inner, fig)
+    set_piece_faces(m, sheet, note, at, inner, fig)
 
 
 @functools.lru_cache(maxsize=2)
