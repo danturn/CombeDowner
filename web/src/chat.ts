@@ -166,6 +166,9 @@ function closeModal() {
   if (x) x.click(); else close();
 }
 
+/** Put the phone away, list and all (a pick that takes you somewhere: dev.ts's /pub). */
+export function putAway() { if (isOpen) closeModal(); }
+
 /** Show the messages for a few seconds without taking what you type (one came in, or you just sent one). */
 function peek() {
   if (isOpen) { scrollDown(); return; }
