@@ -473,7 +473,9 @@ landmark behind you (the Abbey, Pulteney Bridge, Sham Castle...). It's meant to 
 but not too hard: it works out where you're heading (round the bend too, if you're turning) and how
 much road you need to see at your speed, and the faster you go the more the shots show that stretch of
 road (low behind you, a drone or helicopter above, a crane, from the side with the road opening up
-beyond), with the odd one for the drama, like the car coming at you head on. After one of those the
+beyond), mixed with drive-bys (a camera down by the kerb or a helicopter hovering over the road
+up ahead, that you sweep past, left to watch you go) and the odd one just for the drama, like the car
+coming at you head on. After one of those the
 next always shows the way ahead, a shot that's lost sight of it cuts away sooner the faster you're
 going, and if there's something coming up you might hit (traffic, a parked car, someone in the road, a
 wall where the road bends) it cuts at once to a shot that shows it. It never sits inside a building, and cuts away if anything gets
@@ -1116,13 +1118,23 @@ pitch or cricket field (and another when a friend joins you there), then another
 five minutes while anyone's still on it. They're bigger and quicker than naughty boys, and they
 come looking for anyone near their pitch.
 
+The lawn in front of the Royal Crescent, inside the ha-ha, is private: it's for the people who live
+there and the guests of the hotel. Step over the ha-ha's fence on to it and the residents come out of
+their front doors to see you off: gentlemen in tweed, blazers and morning coats with their umbrellas,
+ladies in long dresses, big hats and pearls swinging their handbags, and now and then a hotel guest
+in his bathrobe and slippers. They're the posh lot's answer to naughty boys, and they tell you what
+they think of you all the way ("Get off the lawn!"). They only go for someone on the lawn or right by
+it, give up once you're well off it with a parting word ("And stay off!"), and go back indoors once
+it's clear. More come out every minute or so while anyone's still on it.
+
 On Friday and Saturday nights (by your watch, from eight in the evening till three in the morning)
 there's a night out at the top of Milsom Street, where it meets George Street: a crowd of naughty
 boys and Naughty Girls (short skirts, going-out tops, heels and a handbag) stood about in twos and
 threes. Every so often two of them kick off with each other, sometimes with a mate piling in, till
 one has had enough and legs it. They leave you alone unless you get right in among them or shoot
 one, and then only the few nearest join in. The girls slap rather than punch, and tell you what
-they think of you. They come out of the pubs and restaurants round about (the restaurants till
+they think of you ("Sorry love, washing me hair tonight!" more than anything). A girl will slap a
+lad, but the lads never hit the girls: he just stands there and takes it. They come out of the pubs and restaurants round about (the restaurants till
 eleven, the pubs all night) to keep the numbers up, and turn up already stood about if you arrive in
 the middle of the night (by train, or straight into a pub). After midnight half of them drift down to
 Mr D's chip van at the top of Old Bond Street and hang about there, and at three they all head back
