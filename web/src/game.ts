@@ -86,7 +86,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { padInUse, rumble } from "./gamepad";
 import { B as PAD, control, ctl, ctlText, input, isKey, placeNow, strip, stripOf } from "./controls";
-import { urlSpot } from "./debug";
+import { urlSpot, whereText } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
@@ -435,7 +435,7 @@ export class Game {
   readonly cats: Cats;
   readonly pickups: Pickups;
   readonly ladders: Ladders;
-  /** The chat phone's commands (dev.ts): god mode, the clock, spawning. */
+  /** The chat phone's commands (dev.ts): god mode, the clock, going places, spawning. */
   readonly dev: Dev;
   /** The drone (/drone on the chat phone, drone.ts): flying about to look, and snaps of what's wrong. */
   readonly drone: Drone;
@@ -693,6 +693,16 @@ export class Game {
       spawn: (w, x, z, a) => { if (this.isHost) this.devSpawn(w, x, z, a); else this.net.send("dv", { w, x, z, a }, this.hostId); },
       god: (on) => { if (on) { this.weapon.armAll(); SFX.pickup("ammo"); } },
       drone: (rest) => this.drone.command(rest),
+      pubs: () => this.pubs(),
+      goPub: (i) => (this.drone.on ? "Land the drone first" : this.goTo(i)),
+      goSpot: (at) => {
+        if (!this.alive) return "Not while you're dead";
+        if (this.drone.on) return "Land the drone first";
+        this.goToSpot(at);
+        return null;
+      },
+      where: () => whereText(this),
+      bonfire: () => this.bonfireNight(),
     });
     this.drone = new Drone({
       map, player: this.player, camera: this.camera, scene: this.world.scene, mapId: this.mapId,

@@ -1058,7 +1058,18 @@ Enter, and it goes to everyone in the game, in any town; texts from the others c
 A line starting with `/` is a command, for trying things out:
 
 - `/idkfa`: god mode. Nothing hurts you, and you've every weapon, never running dry. Again to stop.
-- `/day`: moves the clock on to midday, for everyone in the game.
+- `/sunrise`, `/day`, `/noon`, `/sunset`, `/night`, `/midnight`: move the clock on to six in the
+  morning, ten, twelve, quarter to eight in the evening, eleven at night and midnight, for everyone
+  in the game. The clock only goes forward, so `/noon` in the afternoon is tomorrow's.
+- `/fridaynight`: on to nine on the next Friday night, when the town's out.
+- `/time`: says the time and the day. `/time 21:30` (or `/time 9pm`) moves the clock on to then,
+  for everyone.
+- `/bonfire`: Get Wood's bonfire, and dark, as the debug panel's "Bonfire night" does.
+- `/pub`: a list of the pubs, nearest first, to go straight to one as from the big map. `/pub bell`
+  goes to the first pub with "bell" in its name.
+- `/goto 1275,2559`: straight to that spot (metres east and north, as the debug panel shows). Paste a
+  link `/where` or Shift+F3 copied after it to go back there, facing the same way.
+- `/where`: copies where you are, with a link back to the spot.
 - `/spawn`: a list on the phone of people (naughty boys, the teams, the Flag Lads), cats, every
   vehicle and things to pick up. ↑ ↓ and Enter (or a tap) brings one 5 m in front of you, and typing
   narrows the list down; `/spawn cat` or `/spawn 8` brings one straight off.
@@ -1103,7 +1114,7 @@ A line starting with `/` is a command, for trying things out:
   all it takes; the text alone pastes as usual. Each flight starts a fresh batch. `/drone copy`
   copies every snap since the page opened, by hand. `/drone pic 3` copies just snap 3's
   picture, bigger, and `/drone clear` forgets them. Snaps stay until you close the page.
-- `/help`: the list of these.
+- `/help` or `/?`: the list of these.
 
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
 you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a
