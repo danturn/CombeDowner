@@ -83,6 +83,11 @@ Bath's great buildings are modelled by hand:
 - **The Holburne Museum** at its far end: the three-arched loggia you can walk up into, its
   portico and urns, and the glass extension in Sydney Gardens behind.
 - **Argyle Street**, from the bridge to Laura Place, a shopfront to every house.
+- **The Royal Crescent**: Wood the Younger's great half-ellipse of houses looking over its lawn,
+  one front of giant Ionic columns all the way round, the round-headed window in the very middle,
+  the balustrade, slate roofs and chimneys above, and every house a different depth behind ("Queen
+  Anne fronts and Mary Anne backs"). Walk the flagged pavement past the area railings, cross the
+  little bridges to the front doors, or get up on the roofs.
 - **Grand Parade** along the river: Davis's colonnade and river wall, with a balustrade, urns and
   cast-iron lamps that light up after dark.
 - **The Empire Hotel** on Orange Grove: its domed octagonal tower, and the roofline of a castle, a
@@ -105,6 +110,10 @@ Bath's great buildings are modelled by hand:
   lights, covered seating and the Back Bar with its own stage.
 - **Sir Bevil Grenville's monument**, out on Lansdown where the battle was fought in 1643: a stone
   pedestal on steps with the Grenvilles' griffin on top.
+- **The Skyline gate**, between Prior Park and Rainbow Wood, where the path out of the wood meets
+  the top of the fields and Bath opens out below: two old stone gate piers either side of the path,
+  one still holding its iron gate open, low estate railings along the field, a five-bar field gate,
+  a kissing gate with a waymarker beside it, and a stump and a fallen trunk out in the grass.
 
 ### Streets, walls and bridges
 
@@ -865,7 +874,9 @@ there hears the same bit at the same time.
 
 ### Ball games
 
-Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
+Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Running
+tracks (Kingswood's on Lansdown, the university's on Claverton Down) are red, with their lanes and
+the finish line marked, and an infield with nothing else on it is a rugby pitch. Now and
 then a ball turns up on one (a white dot on the map): a penalty or a shot from the edge of the box,
 a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim (a tap for a
 fine nudge, hold to swing round quickly), W and S set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
