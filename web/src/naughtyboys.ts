@@ -45,6 +45,10 @@
 // or right by it, see you off it, tell you to stay off, and go back indoors once it's clear. More come
 // out every minute or so while anyone's still on it.
 //
+// Hear a police car coming with its siren going and the naughty boys and girls scarper: whatever
+// they were up to, they drop it and run from it, one or two shouting a warning, and drift back to
+// their spot once it's gone by. The posh lot and the Flag Lads stand their ground.
+//
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
@@ -58,6 +62,7 @@ import { MR_DS } from "./chipvan";
 import { legIt, line, stayOff } from "./posh";
 import { type Follow, follow } from "./weapon";
 import { tag } from "./kinds";
+import type { Siren } from "./vehicles";
 
 /** The kinds of gang: three that hang about, the Flag Lads' three (invasion.ts), who only come when it
  *  brings them, the naughty girls, who only come out on a Friday or Saturday night, and the Royal
@@ -87,6 +92,17 @@ const HOME_RANGE = 5;                      // how far they drift from their spot
 const LIKES: Record<Haunt["kind"], number> = { corner: 0.3, alley: 1, bus: 2.5, shop: 0, pub: 0 };
 const likes = (h: Haunt) => LIKES[h.kind] * (h.foxhill ? 3 : 1);
 const PITCH_NEAR = 200;                    // the pitches looked at round each player
+const SIREN_HEARD = 60;                     // a siren this near (m) and they scarper
+const SIREN_CALM = 5;                       // and they don't come looking for a fight for this long after it's gone
+/** Which of them scarper from a siren: the naughty boys and girls, not the posh lot or the Flag Lads. */
+const SCARPERS = new Set([NAUGHTY, GIRL]);
+/** What gets shouted on hearing it (the lads', then the girls'). */
+const FEDS = [
+  ["Feds! Leg it!", "It's the Old Bill!", "Five-oh! Scatter!", "Coppers! Run!", "I ain't done nothing!", "Pigs! Split up!"],
+  ["Oh my God, it's the police!", "Run, babe, it's the Old Bill!", "Darren, it's the feds!", "I'm not getting nicked in these shoes!"],
+];
+/** Who he's after, as everyone's told, while he's scarpering from a siren (no player's called that). */
+const SCARPER = "!";
 const TEAM_AGAIN = [180, 300];             // while anyone's on a pitch, another team turns out every 3 to 5 minutes
 const TEAM_BACK = 120;                     // off the pitch this long and walking back on counts as arriving again
 const TEAM_CLEAR = 35;                     // a team turns out at least this far from everyone
@@ -707,12 +723,14 @@ class NaughtyBoy {
   crowd = false;                               // host: one of the night out's crowd
   leaving = false;                             // host: and off home at the end of the night
   foe = -1;                                    // host: which of the others he's fighting, or -1
+  scarper: Siren | null = null;                // host: the siren he's running from
   fightT = 0;                                  // host: how long he's been at it
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
   seenTarget = "";                             // who he was after when last drawn, to hear him shout
   shoutT = 0;                                  // seconds till he shouts again mid-chase
   hopping = false;                             // in the air, as drawn
+  fled = false;                                // scarpering from a siren, as last drawn
 
   constructor(readonly i: number) {}
   /** Who's bleeding, for the blood trails. */
@@ -728,6 +746,8 @@ export class NaughtyBoys {
   private pitches = new WeakMap<GameMap, Ground[]>();
   private spawnT = 5;
   private fieldT = 1;
+  /** Host: the police cars going with their sirens on (game.ts sets them each frame). */
+  sirens: Siren[] = [];
   private clock = 0;
   // Called on every client, to play sounds. voice is a number to give each naughty boy his own voice.
   /** A naughty boy throws a punch. */
@@ -774,13 +794,24 @@ export class NaughtyBoys {
         continue;
       }
       if (c.state !== ALIVE) continue;
-      this.think(c, dt, prey);
+      // a siren coming: drop everything and scarper; otherwise about their business
+      c.scarper = this.heard(c);
+      if (c.scarper) { c.target = ""; c.foe = -1; c.rush = false; c.calmT = Math.max(c.calmT, SIREN_CALM); }
+      else this.think(c, dt, prey);
       // one of the Crescent's residents, back at his front door with nobody on the lawn: back indoors
       if (c.kind === RESIDENT && !c.keep && !c.target && !this.lawnBusy && Math.hypot(c.x - c.baseX, c.z - c.baseZ) < 2.5) { c.state = GONE; continue; }
       // wander off the map's edge of interest: too far from anyone to matter
       if (!c.keep && !c.target && c.foe < 0 && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
       this.move(c, i, dt, prey, punch);
     }
+  }
+
+  /** The nearest siren he can hear, if he's one to run from it. */
+  private heard(c: NaughtyBoy): Siren | null {
+    if (!this.sirens.length || !SCARPERS.has(c.kind) || c.meek || c.bolt) return null;
+    let best: Siren | null = null, bd = SIREN_HEARD;
+    for (const s of this.sirens) { const d = Math.hypot(s.x - c.x, s.z - c.z); if (d < bd) { bd = d; best = s; } }
+    return best;
   }
 
   private sees(c: NaughtyBoy, t: Target, dist: number) {
@@ -852,6 +883,13 @@ export class NaughtyBoys {
     if (scared) {
       const ax = c.x - scared.x, az = c.z - scared.z, al = Math.hypot(ax, az) || 1;
       dirX = ax / al; dirZ = az / al; spd = c.team.run;
+    } else if (c.scarper) {
+      // away from the police car, and off to the side of the way it's going, out of its road
+      const s = c.scarper, ax = c.x - s.x, az = c.z - s.z, al = Math.hypot(ax, az) || 1, sv = Math.hypot(s.vx, s.vz);
+      let ux = ax / al, uz = az / al;
+      if (sv > 2) { const side = (ax * s.vz - az * s.vx) > 0 ? 1 : -1; ux += (s.vz / sv) * side * 0.6; uz -= (s.vx / sv) * side * 0.6; }
+      const ul = Math.hypot(ux, uz) || 1;
+      dirX = ux / ul; dirZ = uz / ul; spd = c.team.run * 1.1;
     } else if (t) {
       const dx = t.x - c.x, dz = t.z - c.z, dist = Math.hypot(dx, dz);
       if (dist < c.team.reach && Math.abs(t.y - c.y) < 1.4 && c.blindT === 0) {
@@ -1425,7 +1463,7 @@ export class NaughtyBoys {
   /** Who he's after, as everyone else is told: a player's id, or "@" and the number of whichever of
    *  the others he's fighting (an older page just finds no player by that name). */
   private aim(c: NaughtyBoy) {
-    return c.target || (c.foe >= 0 ? `@${c.foe}` : "");
+    return c.scarper ? SCARPER : c.target || (c.foe >= 0 ? `@${c.foe}` : "");
   }
 
   // ---- everyone else: the host's updates ------------------------------------------------------
@@ -1484,7 +1522,18 @@ export class NaughtyBoys {
         if (c.punches > c.seenPunches && c.state === ALIVE) { c.punchAnim = 1; this.onSwing(c.dx, c.dy, c.dz, c.voice); }
         c.seenPunches = c.punches;
       }
-      const after = c.state === ALIVE ? (host ? this.aim(c) : c.target) : "";
+      let after = c.state === ALIVE ? (host ? this.aim(c) : c.target) : "";
+      // scarpering from a siren: one in three shouts a warning as they go, high and scared
+      const fled = after === SCARPER;
+      if (fled) {
+        if (!c.fled && c.i % 3 === 0) {
+          const own = FEDS[c.kind === GIRL ? 1 : 0], said = own[Math.floor(Math.random() * own.length)];
+          c.fig.say(said);
+          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, true, isWoman(c.look));
+        }
+        after = "";
+      }
+      c.fled = fled;
       // he shouts when he spots you, and keeps shouting all the way through the chase. The posh ones
       // say whole sentences, so they take turns and leave longer between them.
       const posh = c.kind !== NAUGHTY;
