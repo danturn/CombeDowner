@@ -80,7 +80,11 @@ const GUESS_HOLD = 300, GUESS_END = 800;   // ms: how long to trust our own idea
 
 interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge;
   /** The road it's part of (Traffic.roads), and how many vehicles a day it carries. */
-  road: number; flow: number }
+  road: number; flow: number;
+  /** Part of a roundabout: those coming on to it give way to whoever's already going round. */
+  ring?: boolean;
+  /** The way round a roundabout against the clock, taken out: nothing uses it. */
+  dead?: boolean }
 interface Node { x: number; z: number; out: Edge[] }
 interface Snap { t: number; x: number; z: number; a: number; v: number }
 /** Something sliding about off its wheels' line: a wreck, or our guess at where we've just knocked one. */
@@ -168,6 +172,7 @@ class Car implements Mover {
   legSide = 1;                       // and which way it's turning round: 1 left, -1 right (kept to, so it doesn't dither when its way on is right behind it)
   lost = false;                      // its way on is somewhere it can't drive straight to: slowing for a turn in the road
   sigs: Signal[] = [];               // the traffic lights round about (looked for with the parked cars)
+  ringFrom = -1;                     // where it came on to the roundabout it's going round (a node)
   dodge = 0;                         // how far out from its lane it's pulled, to get past something parked
   parked: Obstacle[] = []; parkedT = 0;   // the cars parked near it, and when to look again
   hits = new Map<string, number>();
@@ -308,7 +313,69 @@ export class Traffic {
       (this.cells.get(k) ?? this.cells.set(k, []).get(k)!).push(e);
     }
     if (map.d.id) void this.loadFlows(map.d.id);
+    this.findRoundabouts();
   }
+
+  /**
+   * The roundabouts: short rings of road that come right round to where they started, small (Bath's are
+   * all within about 35 m of their middles, a mini-roundabout a few metres; a block of one-way streets
+   * in town, which comes round too, is 40 m and more across) and with at least three roads joining (a
+   * cul-de-sac's turning loop has one). Their traffic goes round one way, clockwise, as in Britain:
+   * where the map hasn't marked one as one way, the way round against the clock is taken out. Those
+   * coming on give way to whoever's already going round.
+   */
+  private findRoundabouts() {
+    // (clockwise seen from above is a turn to the right, which here, with z to the south, is +)
+    const turnOf = (a: Edge, b: Edge) => Math.atan2(a.dx * b.dz - a.dz * b.dx, a.dx * b.dx + a.dz * b.dz);
+    const into = new Map<number, Edge[]>();   // what comes in to each node
+    for (const e of this.edges) (into.get(e.b) ?? into.set(e.b, []).get(e.b)!).push(e);
+    for (const e of this.edges) {
+      if (e.ring || e.dead) continue;
+      for (const way of [1, -1]) {
+        // round it goes, the sharpest turn on that's the way it's going round, short of doubling back (an exit
+        // turns off the other way; the map's coarse curves can wiggle a little the wrong way, which is allowed)
+        const ring = [e];
+        let at = e, len = e.len, turned = 0, closed = false;
+        while (ring.length < 40 && len < 230) {
+          const on = this.nodes[at.b].out.filter((o) => o.b !== at.a && !o.dead && turnOf(at, o) * way > -0.25 && turnOf(at, o) * way < 2.8);
+          if (!on.length) break;
+          const next = on.reduce((b, o) => (turnOf(at, o) * way > turnOf(at, b) * way ? o : b));
+          turned += turnOf(at, next);
+          if (next === e) { closed = true; break; }
+          if (ring.includes(next)) break;
+          ring.push(next); len += next.len; at = next;
+        }
+        if (!closed || Math.abs(turned) < 5) continue;
+        const xs = ring.map((r) => this.nodes[r.a]), mx = xs.reduce((t, n) => t + n.x, 0) / xs.length, mz = xs.reduce((t, n) => t + n.z, 0) / xs.length;
+        if (!xs.every((n) => Math.hypot(n.x - mx, n.z - mz) < 36)) continue;
+        // and round, not a triangle or a square: on a circle the middle of each stretch is nearly as far from the
+        // middle as its ends, where a triangle's sides (a little island where a side road meets a main one) pass
+        // in at half that. One the map marks as one way all round is a roundabout whatever its drawing (often
+        // coarse) looks like.
+        const R = xs.reduce((t, n) => t + Math.hypot(n.x - mx, n.z - mz), 0) / xs.length, marked = ring.every((r) => !r.back);
+        if (!marked && !ring.every((r) => Math.hypot(this.nodes[r.a].x + r.dx * r.len / 2 - mx, this.nodes[r.a].z + r.dz * r.len / 2 - mz) > 0.75 * R)) continue;
+        const on = new Set(ring.flatMap((r) => (r.back ? [r, r.back] : [r])));
+        // (a road joining it, whether it leads off it, on to it, or both)
+        const arms = ring.filter((r) => this.nodes[r.a].out.some((o) => !on.has(o) && !o.dead) || (into.get(r.a) ?? []).some((o) => !on.has(o) && !o.dead)).length;
+        if (arms < (marked ? 2 : 3)) continue;
+        // round the right way: clockwise, unless the map says it's one way the other (as it's drawn, it goes)
+        // (walked against the clock with some of it marked one way this way round: the map has it going this way after all)
+        if (!marked && turned < 0 && ring.some((r) => !r.back)) continue;
+        const round = marked || turned > 0 ? ring : ring.map((r) => r.back!);
+        for (const r of round) {
+          r.ring = true;
+          const twin = r.back;
+          if (!twin) continue;
+          twin.dead = true;   // no going round the other way
+          const out = this.nodes[twin.a].out;
+          out.splice(out.indexOf(twin), 1);
+          r.back = undefined;
+        }
+        break;
+      }
+    }
+  }
+
 
   /** How busy each road really is: the DfT's counts (tools/traffic_counts.py), each given to the road it's
    *  on, and to the rest of that road by name; the roads nobody's counted keep their kind's (FLOW). */
@@ -448,6 +515,22 @@ export class Traffic {
           if (light === AMBER && (c.v * c.v) / (2 * 6) > gap) continue;   // too close to stop: on through
           const ok = Math.sqrt(2 * 5 * Math.max(0, gap));
           if (ok < want) { want = ok; held = true; }
+        }
+      }
+      // coming up to a roundabout: give way to anything already on it coming round towards here, waiting at the line till it's clear
+      const onto = c.route[0];
+      if (onto?.ring && !c.e.ring) {
+        const node = c.e.b, B = this.nodes[node], line = c.e.len - c.s - c.hl - 4;   // (the give-way line, short of the ring)
+        if (line > -1.5 && line < 35) {
+          for (const o of this.cars.values()) {
+            if (o === c || o.wreck || !o.e?.ring || Math.hypot(o.x - B.x, o.z - B.z) > 25) continue;
+            // round towards this entry: on the stretch of ring that comes to it, or the one before that, or only just past it
+            const coming = o.e.b === node || o.route[0]?.b === node || (o.e.a === node && o.s < 5);
+            if (!coming) continue;
+            const ok = Math.sqrt(2 * 5 * Math.max(0, line));
+            if (ok < want) { want = ok; held = true; }
+            break;
+          }
         }
       }
       // its way on is somewhere it can't drive straight to: slow right down for a turn in the road
@@ -638,7 +721,7 @@ export class Traffic {
   private spawn(p: { x: number; z: number }, nearest: (x: number, z: number) => number) {
     const near: Edge[] = [];
     for (let i = Math.floor((p.x - FAR) / CELL); i <= Math.floor((p.x + FAR) / CELL); i++)
-      for (let j = Math.floor((p.z - FAR) / CELL); j <= Math.floor((p.z + FAR) / CELL); j++) near.push(...this.cells.get(this.cell(i * CELL, j * CELL)) ?? []);
+      for (let j = Math.floor((p.z - FAR) / CELL); j <= Math.floor((p.z + FAR) / CELL); j++) near.push(...(this.cells.get(this.cell(i * CELL, j * CELL)) ?? []).filter((e) => !e.dead));
     // most of them on the busy roads: picked in proportion to (the root of) the traffic each carries
     const weight = near.map((e) => Math.sqrt(e.flow)), total = weight.reduce((s, w) => s + w, 0);
     const pickOne = () => { let r = Math.random() * total; for (let k = 0; k < near.length; k++) if ((r -= weight[k]) <= 0) return near[k]; return near[near.length - 1]; };
@@ -672,7 +755,7 @@ export class Traffic {
       for (let k = Math.floor((p.z - FAR) / CELL); k <= Math.floor((p.z + FAR) / CELL); k++)
         for (const e of this.cells.get(this.cell(i * CELL, k * CELL)) ?? []) {
           const A = this.nodes[e.a];
-          if (Math.hypot(A.x + e.dx * e.len / 2 - p.x, A.z + e.dz * e.len / 2 - p.z) > FAR) continue;
+          if (e.dead || Math.hypot(A.x + e.dx * e.len / 2 - p.x, A.z + e.dz * e.len / 2 - p.z) > FAR) continue;
           // (a two-way road's traffic is half each way)
           // (spread at the speed it really goes, not the limit: about 15 mph on average in town, the lights,
           // junctions and queues counted in, so a busy road holds more cars at once than its limit suggests)
@@ -687,7 +770,8 @@ export class Traffic {
   private plan(c: Car) {
     let ahead = c.e.len - c.s + c.route.reduce((t, r) => t + r.len, 0);
     while (ahead < 40 || !c.route.length) {
-      const r = this.choose(c.route[c.route.length - 1] ?? c.e);
+      const last = c.route[c.route.length - 1] ?? c.e, r = this.choose(last, c);
+      if (r.ring && !last.ring) c.ringFrom = r.a;   // (coming on to a roundabout here)
       c.route.push(r);
       ahead += r.len;
     }
@@ -705,9 +789,20 @@ export class Traffic {
   }
 
   /** Which way next at the end of e: any road but back the way it came, unless it's a dead end. */
-  private choose(e: Edge): Edge {
+  private choose(e: Edge, c?: Car): Edge {
     const outs = this.nodes[e.b].out.filter((o) => o.b !== e.a);
     if (!outs.length) return e.back ?? e;
+    // going round a roundabout: off at an exit more often than not, and off for certain once it's back where it came on
+    if (e.ring) {
+      const exits = outs.filter((o) => !o.ring), round = outs.find((o) => o.ring);
+      if (exits.length && (!round || (c && e.b === c.ringFrom) || Math.random() < 0.6)) {
+        const w = exits.map((o) => Math.sqrt(o.flow));
+        let r = Math.random() * w.reduce((t, x) => t + x, 0);
+        for (let k = 0; k < exits.length; k++) if ((r -= w[k]) <= 0) return exits[k];
+        return exits[exits.length - 1];
+      }
+      if (round) return round;
+    }
     // mostly straight on, sometimes a turning, and keeping to the busy roads: a side street off a main road is seldom taken
     const w = outs.map((o) => (0.4 + Math.max(0, e.dx * o.dx + e.dz * o.dz)) * Math.min(3, Math.max(0.08, Math.sqrt(o.flow / Math.max(1, e.flow)))));
     let r = Math.random() * w.reduce((s, x) => s + x, 0);

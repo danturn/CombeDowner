@@ -424,7 +424,10 @@ follows the same counts and the time of day: the morning and evening rush on a w
 flatter day at the weekend, and hardly anything in the small hours. Traffic lights work,
 the British way (red, red and amber, green, amber), the same for everyone, and the cars stop at red
 and queue behind each other; at a crossing with lights it's red for the traffic now and then for
-anyone crossing. A car that has to turn round (at a dead end, or stuck behind something that isn't
+anyone crossing. One-way streets go one way, and each side of a dual carriageway (the Bristol Road,
+the London Road) is its own one-way road, so the traffic keeps left on its own carriageway. At a
+roundabout it goes round clockwise, giving way to anything already on it coming from the right, and
+comes off within a lap. A car that has to turn round (at a dead end, or stuck behind something that isn't
 moving) does a turn in the road, backing up with its reversing lights on.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the

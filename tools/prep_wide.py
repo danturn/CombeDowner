@@ -17,7 +17,9 @@ What it keeps, and how simply:
   types for colouring (fields, woods, pitches, hard standing);
 - buildings: every Overture footprint, guessed at by the same rules as the detailed map
   (buildings.classify and the zones in area.py), without lidar or energy certificates;
-- roads and paths, water, and named places, cut into squares (chunks) so the game can stream them;
+- roads and paths (with their speed limits, and which way a one-way road runs: each side of a dual
+  carriageway, a roundabout, a one-way street), water, and named places, cut into squares (chunks)
+  so the game can stream them;
 - trees: every crown in the canopy map, as position and size only.
 There are no gardens, walls, street furniture, doors or shop signs out here (yet).
 
@@ -318,7 +320,7 @@ classes, class_ix = [], {}
 def ix(table, index, v):
     if v not in index: index[v] = len(table); table.append(v)
     return index[v]
-roads, limits = [], []      # limits: each road's speed limit in mph (0 for none), in the same order
+roads, limits, ways = [], [], []   # limits: each road's speed limit in mph (0 for none); ways: one way (below); in the same order
 import maxspeed
 osm_ways = [(transform(proj, g), p) for g, p in L("osm-roads") if g.geom_type == "LineString"] \
     if os.path.exists(f"{src_dir}/osm-roads.geojson") else []
@@ -344,6 +346,17 @@ def limit_of(seg, cls):
         if abs(float(u @ w)) < 0.7: continue      # a street crossing this one
         best = (d, v)
     return best[1] if best else kind_limit.get(maxspeed.kind(cls), 0)
+
+
+def one_way(p):
+    """1 if traffic only goes along the road's points, -1 only against them, 0 both ways: each side of a
+    dual carriageway, a roundabout, a one-way street. The same rule as the squares' (prep_map.py)."""
+    for ar in p.get("access_restrictions") or []:
+        w = ar.get("when") or {}
+        if ar.get("access_type") != "denied" or w.get("mode"): continue
+        if w.get("heading") == "backward": return 1
+        if w.get("heading") == "forward": return -1
+    return 0
 
 
 for g, p in L("segment"):
@@ -383,6 +396,8 @@ for g, p in L("segment"):
             else:
                 roads.append(head + [0] + flat_line(seg.coords))
             limits.append(limit_of(seg, p.get("class")))
+            # (a piece cut from the road keeps its points' order, so it runs the same way)
+            ways.append(one_way(p))
 print(f"roads: {len(roads)} pieces")
 
 # ---- named places -----------------------------------------------------------------------
@@ -458,6 +473,7 @@ out = dict(
     cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,
 )
 if any(limits): out["ms"] = limits
+if any(ways): out["ow"] = ways
 open(out_path, "w").write(json.dumps(out, separators=(",", ":")))
 TOPS.save()
 print(f"{len(blds)} buildings ({sum(1 for b in info if b['roof'])} pitched), {len(roads)} road pieces, {len(ponds)} water pieces, "
