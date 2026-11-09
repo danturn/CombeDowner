@@ -3079,6 +3079,14 @@ def _minus(a, b):
         return shapely.set_precision(a, 1e-3).difference(shapely.set_precision(b.buffer(0), 1e-3))
 
 
+def _both(a, b):
+    """Where a and b overlap, snapped to a millimetre where GEOS cannot settle it, as `_minus`."""
+    try:
+        return a.intersection(b)
+    except shapely.errors.GEOSException:
+        return shapely.set_precision(a.buffer(0), 1e-3).intersection(shapely.set_precision(b.buffer(0), 1e-3))
+
+
 PAVE_TO_WALL = 1.5      # metres: a strip of ground narrower than this between a pavement and a wall or house is paved
 
 
@@ -4310,7 +4318,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # a needle of path poking into a carriageway is that carriageway: the path's own outline ran on
     # across the road to where its line crosses, a hair wide, in a notch of the road's
     thin = path.difference(path.buffer(-NEEDLE, join_style="mitre").buffer(NEEDLE, join_style="mitre"))
-    needles = thin.intersection(road.buffer(NEEDLE, join_style="mitre").buffer(-NEEDLE, join_style="mitre"))
+    needles = _both(thin, road.buffer(NEEDLE, join_style="mitre").buffer(-NEEDLE, join_style="mitre"))
     if not needles.is_empty:
         path, road = path.difference(needles), road.union(needles)
     if bores is not None:

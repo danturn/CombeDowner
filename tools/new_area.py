@@ -317,7 +317,10 @@ def build(args):
     marker = os.path.join(ROOT, raw, "terrain15", ".lidar-ground")
     regrade = lidar and not os.path.exists(marker)
     steps = [
-        # the ecoregion first: it says what the satellite's shrubland is
+        # the downloads packed into the map's own layers, the same for every map: the squares read them
+        # (and it makes the map's data folder, which the ecoregion writes into)
+        ("pack layers", [*py, "tools/mapdata.py", "pack", map_id, raw], True),
+        # the ecoregion next: it says what the satellite's shrubland is
         ("ecoregion", [*py, "tools/region.py", map_id, "fetch"], False),
         # then the railway: the squares cut the ground to its levels
         ("railway", [*py, "tools/railway.py", map_id, raw, f"{maps}-rail.json"], False),

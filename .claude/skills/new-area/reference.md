@@ -23,8 +23,9 @@ from the railway step to the end.
 
 Speed limits (`tools/maxspeed.py`) come from the OpenStreetMap roads download and need no step.
 The map's picture for the telemetry dashboard is sent by the game itself; nothing to do.
-The partition (`tools/partition/`) runs only for a map with `partition=True`, which today is only
-Bath; a new map never sets it.
+The partition (`tools/partition/`) builds every map's squares, a new one's too: `build` packs the
+downloads into the map's layers (`tools/mapdata.py pack`) first, which the partition reads. Never set
+`partition` in `tools/area.py` for a new map.
 
 ## Not automated, by design
 
