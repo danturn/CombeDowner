@@ -2933,13 +2933,14 @@ NEEDLE = 0.05       # metres across the base of a face's corner thinner than tha
 NEEDLE_ANGLE = 20   # degrees: a corner sharper than this, with such a base, is a needle
 
 
-def needles_off(pieces):
+def needles_off(pieces, walls=None):
     """The faces (a coverage: no two overlap, neighbours share their corners) with each needle taken
     off: a corner a few centimetres across at its base and sharp as a pin, standing out of a face as
     a spike or cut into it as a slit. A slit in a pavement showed the ground in a hairline, and its
     two sides read as a pavement ending twice. The pin's corner is dropped from every face that has
     it, so a spike of one face into a slit of its neighbour goes to the neighbour and the two still
-    meet; one that a third face shares as an ordinary corner is left alone."""
+    meet; one that a third face shares as an ordinary corner, or that a wall, fence or hedge stands
+    in (`walls`: a slit cut round its end), is left alone."""
     key = lambda p: (round(p[0], 6), round(p[1], 6))
     rings = []      # [piece, part, ring number, coords without the closing repeat]
     for n, g in enumerate(pieces):
@@ -2964,7 +2965,11 @@ def needles_off(pieces):
             if base >= NEEDLE or min(ta, tb) <= base:
                 return None
             cos = ((a[0] - t[0]) * (b[0] - t[0]) + (a[1] - t[1]) * (b[1] - t[1])) / (ta * tb)
-            return (key(a), key(b)) if cos > math.cos(math.radians(NEEDLE_ANGLE)) else None
+            if cos <= math.cos(math.radians(NEEDLE_ANGLE)):
+                return None
+            if walls is not None and walls.intersects(Polygon([a, t, b]).buffer(NEEDLE)):
+                return None
+            return key(a), key(b)
         drop = collections.defaultdict(set)
         for k, (_, _, _, c) in enumerate(rings):
             for i, t in enumerate(c):
@@ -4579,7 +4584,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                    if q.geom_type == "Polygon" and q.area > 0.05]
     if not pieces:
         return None
-    simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)))
+    barriers = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    barriers = unary_union(barriers) if barriers else None
+    if barriers is not None:
+        shapely.prepare(barriers)
+    simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)), barriers)
     # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
     # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
     # street that steepens, with a gap under its edge and parked cars sunk into it)
@@ -7602,7 +7611,8 @@ def walls_follow_the_ground(br, T):
 
             split(0, len(ts) - 1)
             for m in sorted(keep):
-                new.append([round(a[0] + (q[0] - a[0]) * ts[m], 1), round(a[1] + (q[1] - a[1]) * ts[m], 1), round(g[m], 1)])
+                # (to the centimetre: a point rounded to 0.1 m stood a wall along a path's edge in the path)
+                new.append([round(a[0] + (q[0] - a[0]) * ts[m], 2), round(a[1] + (q[1] - a[1]) * ts[m], 2), round(g[m], 1)])
             new.append(q)
         out.append(dict(b, p=new) if len(new) > len(p) else b)
     return out
