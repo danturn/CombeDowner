@@ -12,11 +12,17 @@
 // With depth of field on in Settings (post.ts), it's focused on you, and the longer the lens the
 // more what's in front and behind melts away; close shots keep more of the scene sharp.
 //
-// It has to be drivable, though, hard as that is: on the road and the water, at least every other
-// shot looks the way you're going (low behind you looking down the road ahead, a drone following
-// above, a helicopter high up and wide), and those come up most. The ones that don't (kerbside,
-// alongside, out in front looking back) are short, and a fixed camera you've gone past cuts away
-// rather than watch you disappear.
+// It has to be drivable, though, hard as that is. On the road and the water it works out where
+// you're going (curving with you as you turn), and how far ahead you need to see at the speed
+// you're doing: a couple of seconds' worth, so further the faster you go. Each shot is judged on
+// whether that stretch of road is in the picture and not hidden behind something, and the faster
+// you go the more that counts, so at speed most shots show the road ahead (low behind you, a drone
+// or a helicopter above, high on a crane, or from the side with the road opening up beyond), with
+// the odd one just for the drama (the car coming at you from the front, right by the kerb as it
+// rushes past). After one of those, the next always shows the way ahead, and one that's lost sight
+// of it cuts away sooner the faster you're going. It also watches for what you might hit: the
+// traffic, parked cars, other vehicles and people on your path, and a wall or a building where
+// the road bends. With something coming up, a shot that can't see it cuts at once to one that can.
 //
 // Every camera spot is checked before it's used: never inside a building (on its roof is fine),
 // never under the ground or the water, and with a clear view of you. If a building, a hill or a tree
@@ -60,9 +66,14 @@ interface Shot {
   easy?: boolean;
   /** Fixed shots: how long since it went past the camera. */
   passed?: number;
+  /** How long it's been unable to see the way ahead, while going. */
+  blind?: number;
 }
 
-const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _look = new THREE.Vector3();
+/** Something on the road or the water that could be hit (scene x and z). */
+export interface Obstacle { x: number; z: number }
+
+const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _look = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const side = () => (Math.random() < 0.5 ? -1 : 1);
 
@@ -81,6 +92,15 @@ export class Cinema {
   /** The lens for this frame, degrees, while it's filming (game.ts uses it in place of its own). */
   fov: number | null = null;
   private focusD = 20;                   // how far off it is, for the focus
+  private aspect = 16 / 9;
+  private heading = 0;                   // the way it's going, this moment (not smoothed)
+  private turn = 0;                      // how fast that's turning, radians a second, smoothed
+  private danger = Infinity;             // seconds till it hits the nearest thing on its path
+  private dangerT = 0;
+  private aheadT = 0;
+  /** What's about that could be hit within r metres of scene (x, z): the traffic, parked cars, other
+   *  vehicles, people (game.ts says, leaving out what's being filmed). */
+  obstacles: ((x: number, z: number, r: number) => Obstacle[]) | null = null;
 
   constructor(private map: GameMap) {}
 
@@ -110,6 +130,15 @@ export class Cinema {
     } else this.vel.set(0, 0, 0);
     this.was = here.clone();
     const speed = Math.hypot(this.vel.x, this.vel.z);
+    this.aspect = camera.aspect || this.aspect;
+    if (speed > 1) {
+      const h = Math.atan2(-this.vel.x, -this.vel.z), dh = Math.atan2(Math.sin(h - this.heading), Math.cos(h - this.heading));
+      if (dt > 0) this.turn += (THREE.MathUtils.clamp(dh / dt, -1.5, 1.5) - this.turn) * Math.min(1, dt * 3);
+      this.heading = h;
+    } else { this.heading = s.yaw; this.turn = 0; }
+    // what's coming up, a few times a second
+    if (s.medium !== "air" && (this.dangerT -= dt) <= 0) { this.dangerT = 0.15; this.danger = this.lookOut(s, speed); }
+    else if (s.medium === "air") this.danger = Infinity;
     // the shots are set out from the way it's going, or the way it faces when it's slow (a balloon from its basket)
     const want = s.medium !== "air" && speed > 2 ? Math.atan2(-this.vel.x, -this.vel.z) : s.yaw;
     const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
@@ -127,6 +156,15 @@ export class Cinema {
           sh.passed = (sh.passed ?? 0) + dt;
           if (sh.passed > 0.7) this.shot = null;
         }
+      }
+      // can't see where it's going: the faster it goes, the sooner it cuts, and at once if
+      // something's coming up that it might hit
+      if (this.shot && s.medium !== "air" && speed > 4 && (this.aheadT -= dt) <= 0) {
+        this.aheadT = 0.2;
+        const seen = this.fov === null ? 1 : this.seesAhead(this.cam, this.looking, this.fov, s, speed, 0);
+        sh.blind = seen < 0.34 ? (sh.blind ?? 0) + 0.2 : 0;
+        const allowed = this.danger < 2.5 ? 0.2 : THREE.MathUtils.clamp(4.5 - speed / 7, 1, 4);
+        if (sh.blind > allowed && sh.t > 0.6) this.shot = null;
       }
     }
     if (!this.shot) {
@@ -187,8 +225,8 @@ export class Cinema {
       : !moving
         ? [["orbit", 3], ["backdrop", 4], ["vista", 3], ["crane", 2], ["kerb", 2], ["follow", 2]]
         : s.medium === "water"
-          ? [["trail", 5], ["follow", 5], ["top", 4], ["roadside", 3], ["kerb", 2], ["track", 2], ["lead", 1], ["crane", 3], ["backdrop", 4], ["vista", 2], ["heli", 3]]
-          : [["trail", 6], ["follow", 6], ["top", 5], ["heli", 3], ["roadside", 3], ["kerb", 2], ["track", 2], ["lead", 1], ["wheel", 2], ["crane", 3], ["backdrop", 4], ["vista", 2]];
+          ? [["trail", 4], ["follow", 4], ["top", 3], ["roadside", 3], ["kerb", 2], ["track", 3], ["lead", 2], ["crane", 4], ["backdrop", 4], ["vista", 3], ["heli", 3]]
+          : [["trail", 4], ["follow", 4], ["top", 3], ["heli", 3], ["roadside", 3], ["kerb", 3], ["track", 3], ["lead", 3], ["wheel", 3], ["crane", 4], ["backdrop", 4], ["vista", 3]];
     const found: { shot: Shot; score: number }[] = [];
     for (const [kind, weight] of kinds) {
       if (kind === this.last) continue;
@@ -200,8 +238,9 @@ export class Cinema {
       }
     }
     if (!found.length) return this.fallback(s);
-    // moving: after a shot you can't drive by, one you can (and one of those to start with)
-    if (moving && !this.lastEasy && found.some((f) => f.shot.easy)) found.splice(0, found.length, ...found.filter((f) => f.shot.easy));
+    // moving: after a shot that can't see the way ahead, or with something coming up, one that can
+    // (and one of those to start with)
+    if (moving && (!this.lastEasy || this.danger < 3.5) && found.some((f) => f.shot.easy)) found.splice(0, found.length, ...found.filter((f) => f.shot.easy));
     found.sort((a, b) => b.score - a.score);
     // mostly the best, sometimes the next one or two, so it doesn't settle into a pattern
     const pick = found[Math.min(found.length - 1, Math.floor(Math.random() ** 2 * 3))];
@@ -380,25 +419,83 @@ export class Cinema {
       else score += 1;
     }
     if (speed < 2.5 && shot.kind === "roadside") score *= 0.2;
-    // on the road or the water, a shot that looks the way it's going is one you can drive by
+    // on the road or the water, a shot you can drive by shows the way ahead: judged as it starts and,
+    // for a fixed camera, again as it comes by. The faster it's going (or with something coming up),
+    // the more that counts
     if (s.medium !== "air") {
-      const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw), facing = (x: number, z: number) => {
-        const h = Math.hypot(x, z);
-        return h < 0.5 ? 1 : (x * fx + z * fz) / h;
-      };
-      let f: number;
+      let a: number;
+      this.aimAt(shot, s, _look);
+      const now = this.seesAhead(at, _look, shot.fov, s, speed, 0);
       if (shot.fixed) {
-        // a fixed camera: which way it looks at it now, and as it comes by
-        const t = shot.len * 0.7;
-        f = Math.min(facing(c.x - at.x, c.z - at.z), facing(c.x + this.vel.x * t - at.x, c.z + this.vel.z * t - at.z));
-      } else {
-        this.aimAt(shot, s, _look);
-        f = facing(_look.x - at.x, _look.z - at.z);
-      }
-      shot.easy = f > 0.45;
-      score *= Math.max(0.2, 0.5 + f);
+        const t = Math.min(shot.len * 0.6, 3), later = this.path(s, speed, t);
+        a = (now + this.seesAhead(at, later.setY(s.y + s.h * 0.5), (shot.fov + shot.fovEnd) / 2, s, speed, t)) / 2;
+      } else a = now;
+      shot.easy = a >= 0.6;
+      const need = this.danger < 3.5 ? 1 : THREE.MathUtils.clamp((speed - 4) / 22, 0, 0.85);
+      score *= 1 - need + need * (0.12 + 0.88 * a);
     }
     return score;
+  }
+
+  // ---- the way ahead ---------------------------------------------------------------------------
+
+  /** How far ahead it needs to see at this speed: a couple of seconds' worth, never less than 12 m. */
+  private lookahead(speed: number): number { return Math.max(12, speed * THREE.MathUtils.clamp(1.4 + speed / 25, 1.6, 3)); }
+
+  /** Where it'll be in t seconds, curving as it's turning (at most a quarter turn). */
+  private path(s: Subject, speed: number, t: number): THREE.Vector3 {
+    const w = this.turn, h0 = this.heading, sweep = THREE.MathUtils.clamp(w * t, -Math.PI / 2, Math.PI / 2);
+    if (Math.abs(w) < 0.02 || speed < 0.5) return new THREE.Vector3(s.x - Math.sin(h0) * speed * t, s.y, s.z - Math.cos(h0) * speed * t);
+    const r = speed / w;
+    return new THREE.Vector3(s.x + r * (Math.cos(h0 + sweep) - Math.cos(h0)), s.y, s.z - r * (Math.sin(h0 + sweep) - Math.sin(h0)));
+  }
+
+  /** How much of the way ahead (from t seconds on) a camera at c looking at look with this lens can
+   *  see, 0 to 1: three points along it, each in the picture and not hidden behind something. */
+  private seesAhead(c: THREE.Vector3, look: THREE.Vector3, fov: number, s: Subject, speed: number, t: number): number {
+    if (speed < 1) return 1;
+    const T = this.lookahead(speed) / speed, f = _w.copy(look).sub(c);
+    if (f.lengthSq() < 1e-4) return 0;
+    f.normalize();
+    const right = new THREE.Vector3().crossVectors(f, UP), up = new THREE.Vector3();
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+    right.normalize();
+    up.crossVectors(right, f);
+    const tv = Math.tan((fov * Math.PI) / 360) * 0.85, th = tv * this.aspect;
+    let seen = 0;
+    for (const k of [0.35, 0.7, 1]) {
+      const p = this.path(s, speed, t + T * k);
+      p.y = this.lowest(p.x, p.z, s) + 0.8;
+      const d = p.sub(c), z = d.dot(f);
+      if (z < 1 || Math.abs(d.dot(right) / z) > th || Math.abs(d.dot(up) / z) > tv) continue;
+      const dist = d.length();
+      d.divideScalar(dist);
+      const hit = this.map.raycast(c.x, c.y, c.z, d.x, d.y, d.z, dist - 0.5);
+      if (!hit || hit.mover) seen++;
+    }
+    return seen / 3;
+  }
+
+  /** Seconds till it hits something on its path (Infinity: nothing in the way): the traffic and
+   *  anything else game.ts says is about, and a wall, building, fence or tree where the road bends. */
+  private lookOut(s: Subject, speed: number): number {
+    if (speed < 3) return Infinity;
+    const T = this.lookahead(speed) / speed * 1.2, steps = 8, reach = s.wid + 1.2;
+    let first = Infinity, prev = new THREE.Vector3(s.x, s.y, s.z);
+    const near = this.obstacles?.(s.x, s.z, this.lookahead(speed) * 1.3 + s.len) ?? [];
+    for (let i = 1; i <= steps && first === Infinity; i++) {
+      const t = (T * i) / steps, p = this.path(s, speed, t);
+      // anything standing on the path here
+      for (const o of near) if (Math.hypot(o.x - p.x, o.z - p.z) < reach + 1) { first = Math.min(first, t); break; }
+      // and anything solid across it between here and the last point, at bumper height
+      const y = s.y + 0.8, dx = p.x - prev.x, dz = p.z - prev.z, dl = Math.hypot(dx, dz);
+      if (first === Infinity && dl > 0.1) {
+        const hit = this.map.raycast(prev.x, y, prev.z, dx / dl, 0, dz / dl, dl);
+        if (hit && hit.kind !== "ground") first = t;
+      }
+      prev = p;
+    }
+    return first;
   }
 
   // ---- where things are ------------------------------------------------------------------------

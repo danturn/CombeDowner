@@ -463,9 +463,13 @@ is GTA V's: it cuts every few seconds between shots a film crew would set up, lo
 sweep past, up on a crane or a rooftop, tracking alongside, out in front looking back, down by the back
 wheel, from a helicopter, from a hillside across the valley on a long lens, and lined up with a
 landmark behind you (the Abbey, Pulteney Bridge, Sham Castle...). It's meant to be hard to drive by,
-but not too hard: most shots, and at least every other one, look the way you're going (low behind you
-down the road ahead, a drone following above, a helicopter high and wide), the others are short, and a
-camera you've driven past cuts away. It never sits inside a building, and cuts away if anything gets
+but not too hard: it works out where you're heading (round the bend too, if you're turning) and how
+much road you need to see at your speed, and the faster you go the more the shots show that stretch of
+road (low behind you, a drone or helicopter above, a crane, from the side with the road opening up
+beyond), with the odd one for the drama, like the car coming at you head on. After one of those the
+next always shows the way ahead, a shot that's lost sight of it cuts away sooner the faster you're
+going, and if there's something coming up you might hit (traffic, a parked car, someone in the road, a
+wall where the road bends) it cuts at once to a shot that shows it. It never sits inside a building, and cuts away if anything gets
 between it and you. From the driver's seat you look out over
 a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
 and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
