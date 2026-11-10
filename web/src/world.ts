@@ -2605,7 +2605,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", floor = big ? 3.5 : 2.9;
     // a church's lancets are all one size, bigger on a bigger church, with plenty of wall between
-    const lancet = Math.min(1.5, Math.max(0.8, b.h / 6.5)), bay = church ? 4.2 * lancet : big ? 4.6 : 3.4;
+    const lancet = Math.min(1.5, Math.max(0.7, (b.h - (b.dz ?? 0)) / 6.5)), bay = church ? 4.2 * lancet : big ? 4.6 : 3.4;
     const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
     // windows sit at the same height on every storey, the top row just under the eaves. On a
     // slope the walls start from the lowest ground, but storeys are counted from the ground
@@ -2667,17 +2667,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }
         const top = Math.min(eave, org + sto);
         if (church && n > 0) {
-          // one row of lancets along the wall, sills well up from the highest ground under the church
-          // (none buried on a slope) and clear of the eaves; a tall, long wall has a second, smaller
+          // one row of lancets along the wall, sills well up from the highest ground along it (none
+          // buried on a slope) and clear of the eaves; a tall, long wall has a second, smaller
           // row high up, as a clerestory, and a tower one window near the top. Each row's quad maps a
           // lancet's slot (stainedglass.ts: the glass from a tenth to nine tenths of it) on to just the
           // band it sits in, and a wall too low for a whole window has none
-          const LH = 3.2 * lancet, gap = 0.6 * lancet, low = ground + (b.dz ?? 0) + 1.2 * lancet, H = eave - ground - (b.dz ?? 0);
+          let foot = ground;
+          for (const f of [0, 0.5, 1]) { const g = drawnGround(a[0] + ex * f, -(a[1] + ey * f)); if (Number.isFinite(g)) foot = Math.max(foot, g); }
+          const LH = 3.2 * lancet, gap = 0.6 * lancet, low = foot + 1.2 * lancet, H = eave - foot;
           const tower = len < 8 && H > 10;
           const bands: [number, number, number][] = [];   // bottom and top of a row's glass, and its scale across
+          // (a wall a little short for the church's lancets has them a little shorter, not none)
+          const fit = Math.min(LH, eave - gap - low);
           if (tower) bands.push([eave - gap - LH, eave - gap, 1]);
-          else if (low + LH <= eave - gap) {
-            bands.push([low, low + LH, 1]);
+          else if (fit >= 0.75 * LH) {
+            bands.push([low, low + fit, 1]);
             if (H >= 11 && len >= 10 && low + LH + gap + 0.7 * LH <= eave - gap) bands.push([eave - gap - 0.7 * LH, eave - gap, 1 / 0.7]);
           }
           const doors = blank.sort((x, y) => x[0] - y[0]);
@@ -2688,7 +2692,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const s = (g1 - g0) / 0.8, o = g0 - 0.1 * s, ha = cuts[k], hb = cuts[k + 1];
             const piece = (g: Geo, ua: number, ub: number) => facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out,
               [ua * wide, (ha - o) / s], [ub * wide, (ha - o) / s], [ub * wide, (hb - o) / s], [ua * wide, (hb - o) / s], wallCol);
-            if (!bands.length) { piece(plain, u0, u1); continue; }
+            if (!bands.length) { quad(plain, u0, u1, base, eave, v0, v1); continue; }
             let u = u0;
             for (const [ua, ub] of k === 0 ? doors : []) {
               if (ua > u) piece(walls, u, ua);
