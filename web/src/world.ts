@@ -33,6 +33,7 @@ import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
+import { wallRuns } from "./wallruns";
 import { buildSheetGen, buildSheetCdtGen, sheetFacesGen, carved, coveredCells, fillAt, nearFaces, openSeams, type Sheet } from "./sheet";
 
 /** The ground drawn as one sheet with the faces (the Settings page's choice, cd-ground), unless
@@ -2575,10 +2576,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       let area = 0;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], q = ring[(i + 1) % ring.length]; area += a[0] * q[1] - q[0] * a[1]; }
       const sign = (area > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], q = ring[(i + 1) % ring.length];
+      for (const [s0, k] of wallRuns(ring)) {
+        const a = ring[s0], q = ring[(s0 + k) % ring.length];
         const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
-        if (len < 0.05) continue;
+        if (len < 1e-3) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
         // windows in equal bays centred on the wall, one in each (window k at u = k + 0.5); the
         // spacing stretches a little to fit, and a wall too short for one has none
@@ -2598,14 +2599,28 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
           blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
         }
-        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
-        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
-        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
-        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
+        // under a roof from the lidar the wall rises to the roof over it: windows up to the lowest
+        // point of that along the run and the eaves, plain wall above (a gable, or the higher house
+        // in a stepped row), in one piece for each of the run's edges
+        const tops: number[][] = [];
+        for (let j = 0; j < k; j++) {
+          const i = (s0 + j) % ring.length;
+          const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
+          if (za === undefined || zb === undefined) { tops.length = 0; break; }
+          tops.push([i, za, zb]);
+        }
+        const roofLow = tops.length ? Math.min(...tops.map((t) => Math.min(t[1], t[2]))) : undefined;
+        const roofHigh = tops.length ? Math.max(...tops.map((t) => Math.max(t[1], t[2]))) : undefined;
+        const eave = roofLow !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, roofLow - Z0)) : eaveAll;
         const v1 = (eave - ground - lift) / storey;
-        if (za !== undefined && zb !== undefined && Math.max(za, zb) - Z0 > eave + 0.02) {
+        if (roofHigh !== undefined && roofHigh - Z0 > eave + 0.02) {
           const vt = (h: number) => (h - ground - lift) / storey;
-          facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
+          const along = (p: number[]) => u0 + ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / len / sp;
+          for (const [i, za, zb] of tops) {
+            const ua = along(ring[i]), ub = along(ring[(i + 1) % ring.length]);
+            if (ub - ua < 1e-4) continue;
+            facing(plain, P(ua, eave), P(ub, eave), P(ub, zb - Z0), P(ua, za - Z0), out, [ua, v1], [ub, v1], [ub, vt(zb - Z0)], [ua, vt(za - Z0)], wallCol);
+          }
         }
         const top = Math.min(eave, ground + lift + storey);
         if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
@@ -2621,7 +2636,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (u < u1) quad(walls, u, u1, base, top, v0, 1);
           if (top < eave) quad(walls, u0, u1, top, eave, 1, v1);
         }
-        if (b.pp && ri === 0 && (za === undefined || zb === undefined || Math.abs(za - zb) < 0.3)) {
+        if (b.pp && ri === 0 && (roofLow === undefined || roofHigh! - roofLow < 0.3)) {
           // a parapet: the wall carries on past the eaves, seen from both sides
           const top = eave + b.pp, vp = stories + b.pp / storey, back = out.map((k) => -k);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);

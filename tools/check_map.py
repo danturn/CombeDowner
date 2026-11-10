@@ -43,9 +43,9 @@ case by case:
 11. Roofs are whole, as the game draws them (web/src/world.ts, roofFaces and addBuilding): no
     open edge left between a lidar roof's faces or between a face and its wall top once the game
     has closed the seams (map.ts roofSeams, mirrored here), no part of a footprint left bare, no
-    wall drawn facing indoors, no roof reaching well past its walls, no ridge more than 15 m over
-    the eaves, no roof below its ground or not a number, no faces of one roof lying over each
-    other, no two buildings standing in each other, and no footprint too small to draw. The roofs the
+    wall drawn facing indoors or left open (web/src/wallruns.ts), no roof reaching well past its
+    walls, no ridge more than 15 m over the eaves, no roof below its ground or not a number, no
+    faces of one roof lying over each other, no two buildings standing in each other, and no footprint too small to draw. The roofs the
     game lays from roofsFit, and the roofs it lays over a whole outline (map.ts hipWhole, checked as
     the lidar's are), are looked at too (tools/roofs_drawn.ts runs map.ts on the square): no
     pitched roof leaving much of its building under a flat cap, no roofs over one building that
@@ -946,6 +946,9 @@ def roofs_whole(m, tag, note):
     for bi, (b, P) in enumerate(zip(bl, polys)):
         if drawn is not None and not b.get("rm") and drawn[bi].get("rm"):
             b = dict(b, r=drawn[bi]["r"], rm=drawn[bi]["rm"])     # a roof the game lays over the whole outline
+        if drawn is not None and drawn[bi].get("o", 0) > 0.01:
+            o = drawn[bi]["o"]
+            note("11 wall left open", o, (tag, round(b["r"][0][0][0]), round(b["r"][0][0][1])), f"{o:.2f} m")
         if P is None or P.is_empty or P.area < 1:
             note("11 footprint too small to draw", 1, (tag, round(b["r"][0][0][0]), round(b["r"][0][0][1])), "")
             continue
