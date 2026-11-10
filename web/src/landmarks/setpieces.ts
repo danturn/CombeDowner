@@ -827,6 +827,10 @@ function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [numb
       }
     }
   }
+  // (a point a sink lowers over the street's own pavement no longer meets that pavement: the sheet's
+  // carving up to it would stand it back up through the set piece's paving)
+  const carve = new Map<number, number>();
+  if (d.gs && rects.some((r) => r.over)) for (let n = 0; n < d.gs.h.length; n++) carve.set(d.gs.h[n], n);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const k = j * T.nx + i, x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, street = pinned.get(k);
     const [lx, lz] = local(x, y);
@@ -835,8 +839,9 @@ function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [numb
     if (!inside(x, y)) continue;
     for (const r of rects) {
       if (r.fill || (street !== undefined && !r.street && !r.over)) continue;
-      if (lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)
-        T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, r.over ? -Infinity : street ?? -Infinity) - T.z0) * 10));
+      if (!(lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)) continue;
+      T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, r.over ? -Infinity : street ?? -Infinity) - T.z0) * 10));
+      if (r.over && carve.has(k)) (d.gs!.hz as number[])[carve.get(k)!] = 0;
     }
   }
 }
