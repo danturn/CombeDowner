@@ -642,8 +642,8 @@ allows (nothing about who they are). If something goes wrong in the game (an err
 out, a part of the map that won't load) it sends what went wrong and where in the game's code, once
 each. Once per version of each map, a computer also sends the game's own picture of the whole map
 (nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
-never sends chat or voice. The server works out a coarse location (your country, region and town)
-from your connection and keeps only that, never your internet address. Add `?telemetry=0` to the
+never sends chat or voice. The server records your connection's IP address with the session, along
+with a coarse location (your country, region and town) worked out from it. Add `?telemetry=0` to the
 address to turn all of it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
 nothing at all.
 

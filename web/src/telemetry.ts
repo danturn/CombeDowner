@@ -16,8 +16,9 @@
 // they had to ease back.
 // The start also says the browser's time zone and language, the site that linked to the game (its
 // host only, and nothing when it is this site), a coarse screen size and whether the player is on a
-// keyboard and mouse, a touch screen or a controller. The server works out a coarse location
-// (country, region and town) from the connection and keeps only that, never the address.
+// keyboard and mouse, a touch screen or a controller. The server records the connection's IP
+// address with the session, along with a coarse location (country, region and town) worked out
+// from it. ?telemetry=0 turns all of it off.
 // In a multiplayer room it also says how the network treated the player (netcheck.ts): whether
 // the relays that find other players answered, who was found, and what routes a link could take.
 // Positions are only a coarse square (50 m) on the map, every half
