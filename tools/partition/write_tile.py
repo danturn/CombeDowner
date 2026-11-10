@@ -4490,6 +4490,13 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # carriageway the partition laid where no vehicle street runs is a square's paving, not a road
     own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
+    # (a road shut to traffic by day is a shopping street too: its pavements run to the shop fronts)
+    shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing)
+    if not shut.is_empty:
+        shut = shut.intersection(square).difference(unary_union([road, plaza, path_faces]))
+        if T is not None:
+            shut = shut.difference(unpaved_ground(shut, T, green if green is not None else Polygon()))
+        pave = pave.union(shut)
     buildings = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
     flights = unary_union([LineString([q[:2] for q in r["p"]]).buffer(way_width(r) * 0.95 / 2, cap_style="flat")
                            for r in rd if _drawn_flight(r, ground)] or [Polygon()])
