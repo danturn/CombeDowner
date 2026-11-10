@@ -30,6 +30,11 @@ the game locally, without the sound" in `CLAUDE.md`.
   eight next squares' prep files and assembled faces, and the heights of every street it fits). If
   road markings go missing at a square's side, that is this branch's.
 
+- **Spotted faults, second set (branch `claude/spots-2`, off `claude/spotted-faults`):** Orange
+  Grove's road edges over the sky, Westgate Street's shops in a pit, road patches in Milsom and New
+  Bond Streets, Walcot Street's façade slits and grass fronts, the wall before Saracen Street's pub,
+  George Street's pavement. Touches `tools/partition/` and `tools/check_map.py`; not the squares'
+  sides (`claude/square-edges-c`) or the slice keys (`claude/slice-keys`).
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for Dan):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's

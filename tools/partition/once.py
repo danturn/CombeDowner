@@ -470,7 +470,8 @@ def pass_structures(out, raw, terrain, log=print):
                              for f in sorted(os.listdir(terrain)) if f.startswith("15_") and f.endswith(".png")],
                             156543.03 * math.cos(math.radians(LAT0)) / 2 ** 15)
     log(f"  structures: {len(edges)} edges in {len(pending)} through-roads walked in {time.time() - t:.0f}s")
-    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb), detail)
+    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb), detail,
+          [g for g, _p in D.polys_near(bb, "building")])
     rows = {}
     for r in pending:
         rows.update(split_back(r))

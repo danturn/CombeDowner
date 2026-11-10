@@ -35,6 +35,7 @@ import { buildBackdrop } from "./backdrop";
 import { LIGHT_LEVELS, NIGHT_FAR, SIMPLER_FAR, lampLightsFor, lightLevel, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
+import { wallRuns } from "./wallruns";
 import { buildSheetGen, buildSheetCdtGen, sheetFacesGen, carved, coveredCells, fillAt, nearFaces, openSeams, type Sheet } from "./sheet";
 
 /** The ground drawn as one sheet with the faces (the Settings page's choice, cd-ground), unless
@@ -2221,20 +2222,39 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let i = 0; i < NP; i++) { const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
     const key = (a: number, b: number) => spot[a] * NP + spot[b];
     const roof = boreRoof(map);
+    // An outline's edge is drawn at the lift of the face along it, not of the outline's kind: a
+    // pedestrian street cut from a carriageway's piece is paving inside a road outline, and its kerb
+    // drawn at the road's lift stood level with the plaza beside it, leaving its edge open to the sky
+    // (as sheet.ts meets it).
+    // (pieces share their corners, so an edge between two is in a triangle of each: the one on the
+    // outline's own side, its left, is the one with the edge running anticlockwise round it)
+    const faceKind = new Map<number, string>();
+    if (sf.l) for (const kind of ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const) {
+      const T = sf[kind] ?? [];
+      for (let k = 0; k + 2 < T.length; k += 3) {
+        if (k % 3000 === 2997) yield;
+        const [i, j, l] = [T[k], T[k + 1], T[k + 2]];
+        const turn = (V[3 * j] - V[3 * i]) * (V[3 * l + 1] - V[3 * i + 1]) - (V[3 * j + 1] - V[3 * i + 1]) * (V[3 * l] - V[3 * i]);
+        const t = turn > 0 ? [i, j, l] : [i, l, j];
+        for (let m = 0; m < 3; m++) faceKind.set(t[m] * NP + t[(m + 1) % 3], kind);
+      }
+    }
+    const edgeKind = (a: number, b: number, kind: string) => (kind === "bed" ? kind : faceKind.get(a * NP + b) ?? kind);
     const owner = new Map<number, { kind: string; a: number; b: number }>();
     for (const [n, e] of sf.e.entries()) {
       if (n % 400 === 399) yield;
       const kind = e.c in LIFT ? e.c : "road";
-      for (let k = 0; k + 1 < e.i.length; k++) owner.set(key(e.i[k], e.i[k + 1]), { kind, a: e.i[k], b: e.i[k + 1] });
+      for (let k = 0; k + 1 < e.i.length; k++) owner.set(key(e.i[k], e.i[k + 1]), { kind: edgeKind(e.i[k], e.i[k + 1], kind), a: e.i[k], b: e.i[k + 1] });
     }
     for (const [n, e] of sf.e.entries()) {
       if (n % 100 === 99) yield;
-      const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
+      const outlineKind = e.c in LIFT ? e.c : "road";
       // (round the railway's bed only a retaining wall the sheet stands at its edge, and without the
       // sheet nothing: the line's own ballast and banks are drawn instead, railway.ts)
-      if (kind === "bed" && !meet) continue;
+      if (outlineKind === "bed" && !meet) continue;
       let along = 0;
       for (let k = 0; k + 1 < e.i.length; k++) {
+        const kind = edgeKind(e.i[k], e.i[k + 1], outlineKind), lift = LIFT[kind];
         const a = at(e.i[k], kind), b = at(e.i[k + 1], kind);
         const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
@@ -2618,10 +2638,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       let area = 0;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], q = ring[(i + 1) % ring.length]; area += a[0] * q[1] - q[0] * a[1]; }
       const sign = (area > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], q = ring[(i + 1) % ring.length];
+      for (const [s0, k] of wallRuns(ring)) {
+        const a = ring[s0], q = ring[(s0 + k) % ring.length];
         const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
-        if (len < 0.05) continue;
+        if (len < 1e-3) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
         // windows in equal bays centred on the wall, one in each (window k at u = k + 0.5); the
         // spacing stretches a little to fit, and a wall too short for one has none
@@ -2630,10 +2650,19 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const n = door ? door.n : Math.round(len / bay);
         const sp = door ? len / n : n > 0 ? Math.min(1.25 * bay, Math.max(0.8 * bay, len / n)) : bay;
         const u0 = n / 2 - len / sp / 2, u1 = n / 2 + len / sp / 2;
-        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
-        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
-        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
-        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
+        // under a roof from the lidar the wall rises to the roof over it: windows up to the lowest
+        // point of that along the run and the eaves, plain wall above (a gable, or the higher house
+        // in a stepped row), in one piece for each of the run's edges
+        const tops: number[][] = [];
+        for (let j = 0; j < k; j++) {
+          const i = (s0 + j) % ring.length;
+          const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
+          if (za === undefined || zb === undefined) { tops.length = 0; break; }
+          tops.push([i, za, zb]);
+        }
+        const roofLow = tops.length ? Math.min(...tops.map((t) => Math.min(t[1], t[2]))) : undefined;
+        const roofHigh = tops.length ? Math.max(...tops.map((t) => Math.max(t[1], t[2]))) : undefined;
+        const eave = roofLow !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, roofLow - Z0)) : eaveAll;
         const org = ground + lift, sto = storey;
         const v0 = (base - org) / sto;
         const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
@@ -2647,23 +2676,29 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
         }
         const v1 = (eave - org) / sto;
-        if (za !== undefined && zb !== undefined && Math.max(za, zb) - Z0 > eave + 0.02) {
+        if (roofHigh !== undefined && roofHigh - Z0 > eave + 0.02) {
           const vt = (h: number) => (h - org) / sto;
-          const ha = za - Z0, hb = zb - Z0, rise = Math.max(ha, hb) - eave;
-          // half a church's gable, rising from the eaves to the ridge: a rose window centred on the
-          // ridge, so the two halves make one (sized in steps so a gable a little lopsided still meets)
-          const inR = rise * len / (len + Math.hypot(len, rise)), d = Math.round(Math.min(6, 1.7 * inR) * 2) / 2;
-          // (only where the wall runs on straight past the ridge and falls again: a real gable, not
-          // the side of a step up to a higher roof)
-          const j = ha > hb ? (i + ring.length - 1) % ring.length : (i + 1) % ring.length;
-          const n0 = ring[j], n1 = ring[(j + 1) % ring.length], nl = Math.hypot(n1[0] - n0[0], n1[1] - n0[1]);
-          const zj = b.rm!.z[ri]?.[2 * j + (ha > hb ? 0 : 1)];
-          const gable = nl > 1 && ((n1[0] - n0[0]) * ex + (n1[1] - n0[1]) * ey) / (nl * len) > 0.98 && zj !== undefined && zj - Z0 - eave < 0.6;
-          if (church && b.w && ri === 0 && gable && rise > 2.5 && Math.min(ha, hb) - eave < 0.6 && d >= 1.8) {
-            const ch = Math.round((eave + inR) * 4) / 4, sa = ha > hb ? 0 : -len, sb = sa + len;
-            const ruv = (s: number, h: number) => [s / d + 0.5, (h - ch) / d + 0.5];
-            facing(geoFor(cx, cy, surf + "o"), P(u0, eave), P(u1, eave), P(u1, hb), P(u0, ha), out, ruv(sa, eave), ruv(sb, eave), ruv(sb, hb), ruv(sa, ha), wallCol);
-          } else facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
+          const along = (p: number[]) => u0 + ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / len / sp;
+          for (const [i, za, zb] of tops) {
+            const ua = along(ring[i]), ub = along(ring[(i + 1) % ring.length]);
+            if (ub - ua < 1e-4) continue;
+            const el = (ub - ua) * sp;
+            const ha = za - Z0, hb = zb - Z0, rise = Math.max(ha, hb) - eave;
+            // half a church's gable, rising from the eaves to the ridge: a rose window centred on the
+            // ridge, so the two halves make one (sized in steps so a gable a little lopsided still meets)
+            const inR = rise * el / (el + Math.hypot(el, rise)), d = Math.round(Math.min(6, 1.7 * inR) * 2) / 2;
+            // (only where the wall runs on straight past the ridge and falls again: a real gable, not
+            // the side of a step up to a higher roof)
+            const j = ha > hb ? (i + ring.length - 1) % ring.length : (i + 1) % ring.length;
+            const n0 = ring[j], n1 = ring[(j + 1) % ring.length], nl = Math.hypot(n1[0] - n0[0], n1[1] - n0[1]);
+            const zj = b.rm!.z[ri]?.[2 * j + (ha > hb ? 0 : 1)];
+            const gable = nl > 1 && ((n1[0] - n0[0]) * ex + (n1[1] - n0[1]) * ey) / (nl * len) > 0.98 && zj !== undefined && zj - Z0 - eave < 0.6;
+            if (church && b.w && ri === 0 && gable && rise > 2.5 && Math.min(ha, hb) - eave < 0.6 && d >= 1.8) {
+              const ch = Math.round((eave + inR) * 4) / 4, sa = ha > hb ? 0 : -el, sb = sa + el;
+              const ruv = (s: number, h: number) => [s / d + 0.5, (h - ch) / d + 0.5];
+              facing(geoFor(cx, cy, surf + "o"), P(ua, eave), P(ub, eave), P(ub, hb), P(ua, ha), out, ruv(sa, eave), ruv(sb, eave), ruv(sb, hb), ruv(sa, ha), wallCol);
+            } else facing(plain, P(ua, eave), P(ub, eave), P(ub, hb), P(ua, ha), out, [ua, v1], [ub, v1], [ub, vt(hb)], [ua, vt(ha)], wallCol);
+          }
         }
         const top = Math.min(eave, org + sto);
         if (church && n > 0) {
@@ -2714,7 +2749,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (u < u1) quad(walls, u, u1, base, top, v0, 1);
           if (top < eave) quad(walls, u0, u1, top, eave, 1, v1);
         }
-        if (b.pp && ri === 0 && (za === undefined || zb === undefined || Math.abs(za - zb) < 0.3)) {
+        if (b.pp && ri === 0 && (roofLow === undefined || roofHigh! - roofLow < 0.3)) {
           // a parapet: the wall carries on past the eaves, seen from both sides
           const top = eave + b.pp, vp = stories + b.pp / storey, back = out.map((k) => -k);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);

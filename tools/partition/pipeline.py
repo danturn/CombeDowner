@@ -239,7 +239,7 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     # so they are worked out in a process of their own beside the pools
     maps = os.path.join(ROOT, "web", "public", "maps")
     skey = cache.key_of("structures", cache.code_key((ONCE, "pass_structures")), R.lib, graph_d,
-                        whole("water"), cache.file_digest(os.path.join(ROOT, "data", MAP, "terrain15.zip")),
+                        whole("water"), whole("building"), cache.file_digest(os.path.join(ROOT, "data", MAP, "terrain15.zip")),
                         *(cache.file_digest(os.path.join(maps, f"{MAP}-{k}.json")) for k in ("rail", "canal")))
     ts = time.time()
     s = R.store.get("structures", skey, once)

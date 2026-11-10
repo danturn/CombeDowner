@@ -113,6 +113,8 @@ class Evidence:
         self.listed = list(listed)
         self.listed_tree = STRtree([p for p, _ in self.listed]) if self.listed else None
         self.styled = []       # (line, game style) for the mapped barriers the map says the make of
+        self.heights = []      # (line, metres) for the mapped barriers the map says the height of
+        self.seating = []      # outdoor seating mapped as areas
 
     def listed_front(self, house, reach=LISTED_REACH):
         """The kind of a house's front boundary where Historic England lists railings or a wall
@@ -170,7 +172,7 @@ def load_evidence(sq, pad=50.0):
     x0, y0, x1, y1 = sq
     win = (x0 - pad, y0 - pad, x1 + pad, y1 + pad)
     D = Data(os.path.join(ROOT, "data", "raw", MAP, "wide"), win, log=lambda *_: None)
-    mapped, styled = [], []
+    mapped, styled, tall = [], [], []
     for g, p in D.near(win, "infrastructure"):
         if p.get("subtype") == "barrier" and p.get("class") in ("fence", "wall", "hedge", "retaining_wall"):
             style = mapped_style(p)
@@ -178,6 +180,8 @@ def load_evidence(sq, pad=50.0):
                 mapped.append((l, p["class"]))
                 if style:
                     styled.append((l, style))
+                if isinstance(p.get("height"), (int, float)) and 0.3 <= p["height"] <= 4.0:
+                    tall.append((l, float(p["height"])))
     # a crash barrier divides no garden: it is only built where it is mapped
     for g, p in D.near(win, "osm-detail"):
         if p.get("barrier") == "guard_rail":
@@ -185,6 +189,10 @@ def load_evidence(sq, pad=50.0):
     listed = [(g, p["kind"]) for g, p in D.near(win, "listed") if g.geom_type == "Point"]
     ev = Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
     ev.styled = [(l, s) for l, s in styled if not l.is_empty and l.length > 0]
+    ev.heights = [(l, h) for l, h in tall if not l.is_empty and l.length > 0]
+    # a pub's or a café's tables outside, mapped as an area: paved, not grass
+    ev.seating = [g.buffer(0) for g, p in D.near(win, "osm")
+                  if p.get("leisure") == "outdoor_seating" and g.geom_type in ("Polygon", "MultiPolygon")]
     ev.parcels = [g for g, _p in D.polys_near((x0 - pad - PARCEL_NEAR, y0 - pad - PARCEL_NEAR,
                                                x1 + pad + PARCEL_NEAR, y1 + pad + PARCEL_NEAR), "parcels")]
     return ev

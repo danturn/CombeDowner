@@ -97,7 +97,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
   shelters only at the stops that have one, and the
   stops on a street closed to traffic that buses still use (Milsom Street, the University's
-  Parade) at its kerb, with the bus you call driving along it; post
+  Parade) at its kerb, with the bus you call driving along it; a pub's or café's tables outside
+  stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
@@ -630,7 +631,9 @@ If whoever put the game online has switched it on, the game sends play counts so
 roughly how many people play, for how long, on which map and in which mini-games, and how big the
 rooms get. It sends the name you chose to play under, a random number kept in your browser, a random
 number for each tab, which copy of the game you are playing (its web address), whether you are on a
-phone, tablet or computer and the model of its graphics chip, the map, the game's version, when a
+phone, tablet or computer and the model of its graphics chip, your browser's time zone and language,
+a rough screen size, whether you play with a keyboard and mouse, touch or a controller, the website
+that linked you to the game (just its name), the map, the game's version, when a
 race, ball or the mines start and stop, and at the end how smoothly the game ran (frame rate and how
 much it drew each frame). Every half minute it notes which 50 m square of the map you are in, without your name. Your
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
@@ -640,8 +643,9 @@ allows (nothing about who they are). If something goes wrong in the game (an err
 out, a part of the map that won't load) it sends what went wrong and where in the game's code, once
 each. Once per version of each map, a computer also sends the game's own picture of the whole map
 (nothing about you) if the server hasn't got that version's yet, for the map of where people go. It
-never sends chat, voice or your address. Add `?telemetry=0` to the address to
-turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
+never sends chat or voice. The server records your connection's IP address with the session, along
+with a coarse location (your country, region and town) worked out from it. Add `?telemetry=0` to the
+address to turn all of it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send
 nothing at all.
 
 ## Rebuild a map
