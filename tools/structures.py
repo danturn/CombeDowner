@@ -508,7 +508,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
         return a, b, LineString([r["run"][i][:2] for i in range(a, b + 1)])
 
     # 1. paths along a road's marked span ride on its deck
-    decks = []
+    decks, was_span = [], {}
     for k, r in enumerate(pending):
         if (r["c"] in PATHS and r["c"] != "pedestrian") or not r["span"]:
             continue
@@ -536,6 +536,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
                     # height already: a path going down past the bridge's end doesn't ride it
                     if i not in r["span"] and abs(r["z"][i] - (zs[lo] + (zs[lo + 1] - zs[lo]) * f)) > 1.0:
                         continue
+                    was_span[id(r), i] = i in r["span"]
                     r["z"][i] = zs[lo] + (zs[lo + 1] - zs[lo]) * f
                     r["deck"].add(i)
                     r["span"].discard(i)
@@ -574,6 +575,18 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
             if real and solid:
                 r["solid"].update(st)
         r["span"] = keep
+
+    # 2b. a path down on the ground that rode a span that isn't a bridge (a building's passage beside
+    # a street) is on the ground: left riding, it was a deck the ground was dug out under. It keeps
+    # the height it took, the street's beside it, as the streets it meets are levelled to it
+    for r in pending:
+        for i, j in list(r["ride"].items()):
+            k, _, _, _, a, b = decks[j]
+            if any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i] \
+                    or abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5:
+                continue
+            r["deck"].discard(i)
+            del r["ride"][i]
 
     # 2'. a path running along beside a street goes where the street goes: where the street isn't on
     # a bridge, its pavement isn't one either

@@ -841,7 +841,7 @@ for k, r in enumerate(pending):
         reach = RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.5 + (4.0 if r["c"] == "pedestrian" else 0.0)
         decks.append((k, line.buffer(reach, cap_style=2), line, [r["z"][i] for i in range(a, b + 1)], a, b))
 deck_tree = shapely.STRtree([d[1] for d in decks])
-ridden = 0
+ridden, was_span = 0, {}
 NARROW = {"footway", "steps", "cycleway", "path"}     # a bridge's pavements are mapped as these; a pedestrian street is a street
 for r in pending:
     r["deck"] = set()
@@ -858,6 +858,7 @@ for r in pending:
             # (only where the data has the path on a bridge itself, or it's at the deck's height
             # already: a path going down past the bridge's end to the ground under it doesn't ride it)
             if i not in r["span"] and abs(r["z"][i] - (zs[lo] + (zs[lo + 1] - zs[lo]) * f)) > 1.0: continue
+            was_span[id(r), i] = i in r["span"]
             r["z"][i] = zs[lo] + (zs[lo + 1] - zs[lo]) * f
             r["deck"].add(i); r["span"].discard(i); ridden += 1
             r.setdefault("ride", {})[i] = int(j)
@@ -896,6 +897,15 @@ for k, r in enumerate(pending):
         if real and solid: r.setdefault("solid", set()).update(st)
     r["span"] = keep
 if kept or dropped: print(f"bridges: {kept} marked spans with something under them, {dropped} with nothing under them flattened as road")
+# 2b. a path down on the ground that rode a span that isn't a bridge (a building's passage beside a
+# street) is on the ground, at the height it took (as tools/structures.py): left riding, it was a
+# deck the ground was dug out under
+for r in pending:
+    for i, j in list(r.get("ride", {}).items()):
+        k, _, _, _, a, b = decks[j]
+        if any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i]: continue
+        if abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5: continue
+        r["deck"].discard(i); del r["ride"][i]
 # 2'. a path running along beside a street goes where the street goes: where the street isn't on a
 # bridge, its pavement isn't one either (Overture's pavements over Spring Gardens Road beside
 # Argyle Street were footbridges of their own, standing up out of the street's pavement)
