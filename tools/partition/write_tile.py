@@ -4298,16 +4298,22 @@ PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its s
 SEATING_LEVEL = 0.03    # the steepest ground outdoor tables are paved on (1 in 33, under rule 24's 2 degrees)
 
 
-def _level(area, ground):
-    """Whether the ground under `area` is about level: no steeper than SEATING_LEVEL across it."""
-    pts = shapely.get_coordinates(shapely.segmentize(area.boundary, 2.0))
-    zs = [(x, y, ground(x, y)) for x, y in pts]
-    zs = [q for q in zs if q[2] is not None]
-    if len(zs) < 3:
+def _level(area, ground, step=1.0):
+    """Whether the ground under `area` is about level: nowhere steeper than SEATING_LEVEL between
+    points a metre apart over it, its edge included (a terrace's retaining wall inside it is a step)."""
+    x0, y0, x1, y1 = area.bounds
+    xs, ys = np.arange(x0, x1 + step, step), np.arange(y0, y1 + step, step)
+    inside = shapely.contains_xy(area.buffer(step * 0.5), *np.meshgrid(xs, ys))
+    z = np.full(inside.shape, np.nan)
+    for (j, i) in zip(*np.nonzero(inside)):
+        g = ground(float(xs[i]), float(ys[j]))
+        if g is not None:
+            z[j, i] = g
+    if np.isnan(z).all():
         return False
-    lo, hi = min(zs, key=lambda q: q[2]), max(zs, key=lambda q: q[2])
-    run = math.hypot(hi[0] - lo[0], hi[1] - lo[1])
-    return hi[2] - lo[2] <= SEATING_LEVEL * max(run, 1.0)
+    with np.errstate(invalid="ignore"):
+        steep = max(np.nanmax(np.abs(np.diff(z, axis=0)), initial=0.0), np.nanmax(np.abs(np.diff(z, axis=1)), initial=0.0))
+    return steep <= SEATING_LEVEL * step
 
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
