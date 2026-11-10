@@ -13,6 +13,7 @@ import functools
 import json
 import os
 import subprocess
+import sys
 import tempfile
 
 from shapely.geometry import Polygon, box
@@ -50,7 +51,9 @@ def bundle():
                                "--format=esm", "--loader=ts", "--log-level=error",
                                "--banner:js=globalThis.location={search:''};globalThis.window=globalThis;"],
                               input=_ENTRY % WEB, capture_output=True, text=True, check=True).stdout
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError) as e:
+        # (said aloud: a square written without the cut looks right until the set piece is beside it)
+        print(f"setpiece_cuts: can't bundle the set pieces' table, so no square is cut for them ({e})", file=sys.stderr, flush=True)
         return None
 
 
