@@ -2609,8 +2609,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
     // floor, as a house built into a hill does, instead of every storey being stretched
     const lift = b.st ? 0 : (b.dz ?? 0) / 2;
-    // a church's lancets stay lancet-shaped however tall its walls: a tower gets a row of them a storey
-    const stories = church ? Math.max(1, Math.round((b.h - lift) / 6.5)) : b.st ?? Math.max(1, Math.round((b.h - lift) / floor)), storey = (b.h - lift) / stories;
+    const stories = b.st ?? Math.max(1, Math.round((b.h - lift) / floor)), storey = (b.h - lift) / stories;
 
     b.r.forEach((ring, ri) => {
       let area = 0;
@@ -2628,7 +2627,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const n = door ? door.n : Math.round(len / bay);
         const sp = door ? len / n : n > 0 ? Math.min(1.25 * bay, Math.max(0.8 * bay, len / n)) : bay;
         const u0 = n / 2 - len / sp / 2, u1 = n / 2 + len / sp / 2;
-        const v0 = (base - ground - lift) / storey;
+        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
+        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
+        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
+        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
+        // a church's lancets are fitted to each wall in whole rows, from the highest ground under the
+        // church (so none is buried on a slope) up to that wall's eaves: as many rows as fit, and none
+        // on a wall too low for one, rather than a row cut off
+        const sill = ground + (b.dz ?? 0), rows = church ? (eave - sill < 3 ? 0 : Math.max(1, Math.round((eave - sill) / 6.5))) : 1;
+        const org = church ? sill : ground + lift, sto = church && rows ? (eave - sill) / rows : storey;
+        const glazed = n > 0 && rows > 0;
+        const v0 = (base - org) / sto;
         const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
         const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
           facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out, [ua, va], [ub, va], [ub, vb], [ua, vb], wallCol);
@@ -2639,13 +2648,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
           blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
         }
-        // under a roof from the lidar the wall rises to the roof over it: windows up to the lower
-        // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
-        const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
-        const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
-        const v1 = (eave - ground - lift) / storey;
+        const v1 = (eave - org) / sto;
         if (za !== undefined && zb !== undefined && Math.max(za, zb) - Z0 > eave + 0.02) {
-          const vt = (h: number) => (h - ground - lift) / storey;
+          const vt = (h: number) => (h - org) / sto;
           const ha = za - Z0, hb = zb - Z0, rise = Math.max(ha, hb) - eave;
           // half a church's gable, rising from the eaves to the ridge: a rose window centred on the
           // ridge, so the two halves make one (sized in steps so a gable a little lopsided still meets)
@@ -2662,8 +2667,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             facing(geoFor(cx, cy, surf + "o"), P(u0, eave), P(u1, eave), P(u1, hb), P(u0, ha), out, ruv(sa, eave), ruv(sb, eave), ruv(sb, hb), ruv(sa, ha), wallCol);
           } else facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
         }
-        const top = Math.min(eave, ground + lift + storey);
-        if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
+        const top = Math.min(eave, org + sto);
+        if (!glazed) quad(plain, u0, u1, base, eave, v0, v1);
         else if (!blank.length || top <= base) quad(walls, u0, u1, base, eave, v0, v1);
         else {
           blank.sort((x, y) => x[0] - y[0]);
