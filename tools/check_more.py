@@ -79,7 +79,7 @@ from the packs alone, a few seconds a square:
     face's top meets another triangle, edge to edge or along a run of edges on its line, or has more
     ground or a face just across it; the rest are cracks the sky shows through, each scored by its
     length in metres. Edges along a square's own sides are left to rule 14. CD_SEAMS=0 leaves it out.
-39-46 are faults found by playing, from the packs alone (played below):
+39-47 are faults found by playing, from the packs alone (played below):
 39. Road markings lie on the carriageway, square across it, on the street that gives way and behind
     the other street's kerb line.
 40. A lane's or yard's carriageway (the service face, a lighter grey) stops at the kerbed street it
@@ -93,12 +93,14 @@ from the packs alone, a few seconds a square:
     piece takes out those it lays its own ground over; tools/ground_seams.mjs, with rule 38).
 46. A set piece's floor at the street's level runs on to what stands beyond its edge, with no gap to
     drop into between it and a wall or another floor (tools/ground_seams.mjs, with rule 38).
+47. No bare ground is left inside a street's width, between its faces (a junction's corner, or a strip
+    at a building's foot, left open).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
 loose enough that a hit is worth looking at.
 """
-import functools, json, math, os, subprocess, tempfile
+import collections, functools, json, math, os, subprocess, tempfile
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
@@ -2441,6 +2443,45 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
     for k, v in totals.items(): fig[f"flights {k}"] = fig.get(f"flights {k}", 0) + v
 
 
+STREET_HOLE = 1.0     # m2 of bare ground inside a street's width, between its faces, before it counts
+
+
+def street_holes(m, f, sheet, note, at, inner, fig):
+    """47. A street is drawn all over, out to its pavements' backs: no patch of bare ground (grass, or
+    the earth with its edge standing round it) left inside a street's carriageway and pavements where
+    no face, building or set piece covers it, as at a junction's corner the faces of the streets
+    meeting there leave open, or along a building's foot where the faces stop short of its wall.
+    Each place's score is its area in m2."""
+    if not sheet.ok: return
+    strips, ends = [], collections.defaultdict(list)
+    for r in m.get("rd") or []:
+        if len(r["p"]) < 2 or r["c"] not in VEHICLE | {"pedestrian"} or any(_flags(r)): continue
+        line = LineString([q[:2] for q in r["p"]])
+        half = _road_half(r["c"], r.get("w"))
+        pv = r.get("pv") or ([1.7, 1.7] if r["c"] in GAME_KERBED else [0, 0])
+        strips.append(line.buffer(half, cap_style="flat"))
+        for side, w in zip((1, -1), pv):
+            if w > 0.3: strips.append(line.buffer(side * (half + w), cap_style="flat", single_sided=True))
+        for q in (r["p"][0], r["p"][-1]): ends[(round(q[0]), round(q[1]))].append(half)
+    # (where three or more streets meet, the carriageway runs on round the junction's corners; a dead
+    # end's does not, and a corner with no pavement drawn on it is left to the verge)
+    strips += [Point(k).buffer(max(v)) for k, v in ends.items() if len(v) >= 3]
+    if not strips: return
+    covered = [sheet.union(FACE_KINDS)]
+    covered += [_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+    covered += [h for _, h in next_door(f, m)]
+    covered += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
+    if m.get("centre"): covered += set_piece_streets(tuple(m["centre"]))
+    holes = shapely.union_all(strips).difference(shapely.union_all(covered).buffer(0.05)).intersection(inner)
+    total = 0.0
+    for g in getattr(holes, "geoms", [holes]):
+        if g.geom_type != "Polygon" or g.area < STREET_HOLE or g.buffer(-0.3).is_empty: continue
+        total += g.area
+        c = g.representative_point()
+        note("47 bare ground inside a street", g.area, at(c.x, c.y), f"{g.area:.1f} m2 of the ground left open between the street's faces")
+    fig["street holes m2"] = fig.get("street holes m2", 0) + total
+
+
 def played(m, f, sheet, note, at, sq, inner, fig):
     """Rules 39 to 43, for one square. (Each looks at what lies within the square itself, so they run
     up to a metre from its sides rather than EDGE: what they measure is drawn there by this square.)"""
@@ -2450,6 +2491,7 @@ def played(m, f, sheet, note, at, sq, inner, fig):
     road_steps(m, sheet, note, at, inner, fig)
     square_joins(m, f, sheet, note, at, fig)
     flights_and_rails(m, sheet, note, at, inner, fig)
+    street_holes(m, f, sheet, note, at, inner, fig)
 
 
 @functools.lru_cache(maxsize=2)
