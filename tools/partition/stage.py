@@ -210,11 +210,11 @@ def main(argv):
                                          (os.path.join(HERE, "measured.py"), "missed")),
                           cache.file_digest(KEPT), cache.libraries())
     data = data_keys(map_id, src_dir, store, wanted)
-    # (and the squares round it: the writer reads their ground, houses and streets past its sides)
+    # (and the squares round it: the writer reads their ground, houses, streets and faces past its sides)
     prep_d = {t: cache.file_digest(os.path.join(base, name(t) + ".json")) for t in built}
     wkey = lambda t: digest([os.path.join(base, name(t) + ".json")],
                             (passes["partition"].get(name(t)), passes["upstream"], data[t], writer,
-                             [prep_d.get(n) for n in neighbours(*t) if n != t]))
+                             [(prep_d.get(n), passes["partition"].get(name(n))) for n in neighbours(*t) if n != t]))
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:
