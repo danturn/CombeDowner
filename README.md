@@ -25,7 +25,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
   and more. Every other church has its tower where it really has one, as tall as the lidar
   saw it, with battlements, and pinnacles and a spire where the lidar shows those too (St Stephen's
-  on Lansdown, St Mary's Bathwick, St Michael's on Broad Street, St John's on South Parade). Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
+  on Lansdown, St Mary's Bathwick, St Michael's on Broad Street, St John's on South Parade), and
+  every church on every map has stained glass in tall pointed windows, with a rose window in its
+  gable where there's room: cats as angels, haloed and winged with their paws together, glowing in
+  their colours after dark. Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
@@ -244,7 +247,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   happy, a walking stick for being hit by one, a thermos in a string bag for being hit by the lot),
   earmuffs for a clean touch on the bells, a beret when the critics call your show a triumph, a
   lock-keeper's cap for gold on the Lock Run, an L-plate for passing the driving test, dazzled eyes
-  for 60 km/h past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
+  for 40 mph past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
   shoot-out won, a froth moustache for ten different pubs, a monocle for a night out seen through,
   sunblock stripes for knocking over the stumps, climbing rope for topping the Climb with no lives
   lost, a balancing pole for the Tightrope, a miner's lamp for the bottom of the mines, a skateboard
