@@ -54,17 +54,29 @@ const edgeAt = (edge: number[], t: number) => {
 };
 const EDGE_REACH = 3;       // metres either side of EDGE that the square's carriageway is looked for
 
-/** Where the flags run out to, s at each of EDGE's t: the near side of the square's own carriageway
- *  (road(x, z) in the set piece's frame), so they meet its kerb however the map lays the street,
- *  with no verge or stray bit of pavement between; EDGE where there is no carriageway near. */
-export function crescentEdges(road: (x: number, z: number) => boolean): number[] {
-  const found = EDGE.map((e, i) => {
+/** The origin's height above sea level: the street's level in front of the middle. */
+export const CRESCENT_Y = 51.5;
+const KERB = 0.17;          // how far the map's pavement stands over the street as written (world.ts FACE_LIFT)
+
+/** Where the flags run out to, s at each of EDGE's t, and how high they stand there: to the near side
+ *  of the square's own carriageway (road(x, z) in the set piece's frame: its height above sea level
+ *  there, or null off it), so they meet its kerb however the map lays the street, with no verge or
+ *  stray bit of pavement between, and a kerb over it as the map's own pavements stand (the street
+ *  isn't level all the way round); EDGE and PAVE where there is no carriageway near. */
+export function crescentFit(road: (x: number, z: number) => number | null): { edge: number[]; top: number[] } {
+  const hits = EDGE.map((e, i): [number, number | null] => {
     const t = -0.2 + 0.05 * i;
-    for (let s = Math.min(RAIL - 1, e + EDGE_REACH); s >= e - EDGE_REACH; s -= 0.1) if (road(...at(t, s))) return +(s + 0.05).toFixed(2);
-    return e;
+    for (let s = Math.min(RAIL - 1, e + EDGE_REACH); s >= e - EDGE_REACH; s -= 0.1) {
+      const h = road(...at(t, s));
+      if (h !== null) return [s + 0.05, h];
+    }
+    return [e, null];
   });
+  const found = hits.map(([s]) => s);
   // (a lone stretch caught on a bit of carriageway poking in, at a corner, mustn't make a notch)
-  return found.map((e, i) => Math.min(e, Math.max(found[i - 1] ?? e, found[i + 1] ?? e)));
+  const edge = found.map((e, i) => +Math.min(e, Math.max(found[i - 1] ?? e, found[i + 1] ?? e)).toFixed(2));
+  const top = hits.map(([, h]) => (h === null ? PAVE : +Math.max(PAVE, h + KERB - CRESCENT_Y).toFixed(2)));
+  return { edge, top };
 }
 
 // heights above the street in front
@@ -182,7 +194,8 @@ const rect = (s0: number, s1: number, y0: number, y1: number): Prof => [[s0, y0]
 
 export function royalCrescent(args: (number | string)[] = []): THREE.Object3D {
   const k = new Kit();
-  const edge = args.length === EDGE.length ? args.map(Number) : EDGE;
+  const fit = args.length === 2 * EDGE.length ? args.map(Number) : null;
+  const edge = fit?.slice(0, EDGE.length) ?? EDGE, top = fit?.slice(EDGE.length) ?? EDGE.map(() => PAVE);
   const S = stone("#ecdcb5"), S2 = stone("#dac79e"), G = georgian("#d6c096"), roofs = slate();
   const sash = sashGlass(), arched = archedGlass(), bal = balusters();
   const door = plain("#2c302d"), pots = plain("#9a5a3c"), flags = stone("#c4bba8"), floor = stone("#9d9380");
@@ -211,7 +224,7 @@ export function royalCrescent(args: (number | string)[] = []): THREE.Object3D {
 
   // ---- the basement areas, and the flagged pavement out to the street ---------------------------
   sweep(k, floor, rect(RAIL, -0.05, AREA - 0.2, AREA), T0, T1, 2, null);
-  sweep(k, flags, (t) => rect(Math.min(RAIL - 1, edgeAt(edge, t) - 0.1), RAIL, AREA - 0.2, PAVE), T0, T1, 2);
+  sweep(k, flags, (t) => { const s0 = Math.min(RAIL - 1, edgeAt(edge, t) - 0.1); return [[s0, AREA - 0.2], [RAIL, AREA - 0.2], [RAIL, PAVE], [s0, edgeAt(top, t)]]; }, T0, T1, 2);
 
   // ---- the houses ------------------------------------------------------------------------------
   const middle = Math.PI / 2;
@@ -315,9 +328,8 @@ export const CRESCENT_SOLID: [number, number][][] = DEPTH.map((_, h) => {
 /** The ground it lowers: everywhere inside it to just under the street's level, under the
  *  pavement, and down to the floor of the basement areas along the front (rectangles in its frame,
  *  each round a short stretch of the areas). */
-export const CRESCENT_SINK: { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean }[] = (() => {
-  // (street: the ground the map's pavement held up comes down too, as the flags now lie over it)
-  const out: { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean }[] = [{ x0: -120, x1: 120, z0: -120, z1: 40, y: -0.05, street: true }];
+export const CRESCENT_SINK: { x0: number; x1: number; z0: number; z1: number; y: number; over?: boolean }[] = (() => {
+  const out: { x0: number; x1: number; z0: number; z1: number; y: number; over?: boolean }[] = [{ x0: -120, x1: 120, z0: -120, z1: 40, y: -0.05, over: true }];
   for (let t = T0; t < T1; t += 0.04) {
     const q = [at(t, RAIL), at(t, -0.1), at(Math.min(T1, t + 0.04), RAIL), at(Math.min(T1, t + 0.04), -0.1)];
     const xs = q.map((p) => p[0]), zs = q.map((p) => p[1]);

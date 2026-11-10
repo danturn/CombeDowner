@@ -56,7 +56,7 @@ import { BRIDGE, paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
-import { CRESCENT_OUTLINE, CRESCENT_SOLID, CRESCENT_SINK, crescentEdges, crescentOutline } from "./royalcrescent";
+import { CRESCENT_OUTLINE, CRESCENT_SOLID, CRESCENT_SINK, CRESCENT_Y, crescentFit, crescentOutline } from "./royalcrescent";
 import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
 import { BOA_COVERS } from "./bradford";
 import { CASTLE_Y, CASTLE_OUTLINE } from "./castle";
@@ -67,7 +67,7 @@ import { skylineArgs } from "./skylinegate";
 import { CLOCK_TOWER, CAPE_WHEEL, ZEITZ, ZEITZ_SINK, ALFRED_BOATS, FERRY_BOATS } from "./waterfront";
 
 type LonLat = [number, number];
-type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean; fill?: boolean };
+type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean; fill?: boolean; over?: boolean };
 
 /** What a set piece knows about where it stands, in the square being masked. Coordinates are in
  *  its own frame: x along it, z out of its front. */
@@ -117,7 +117,8 @@ export interface SetPiece {
    *  street's level (no lower) where a street's edge holds the ground up (see above); fill:
    *  instead raised to the street's level wherever a street is drawn over it, inside its
    *  outline or not (a street between the set piece's two sides, over the lidar's dips where
-   *  basements and the river bank show through). */
+   *  basements and the river bank show through); over: lowered even where a street's edge holds
+   *  the ground up, for a set piece paving over the street's own pavement out to its kerb. */
   sink?: Sink[];
   /** It's a pub, and hangs its own sign: the map's sign for it stays, marked as its own. */
   pub?: boolean;
@@ -134,10 +135,10 @@ export interface SetPiece {
   aqueduct?: boolean;
   /** It has a yard of its own: the service lanes inside it go with everything else. */
   yard?: boolean;
-  /** Its paving runs out to the street's kerb, wherever the square lays the street: given whether
-   *  the square draws a carriageway at x, z in its frame, the outline it stands in for (in place of
-   *  outline) and its builder's args. */
-  fit?: (road: (x: number, z: number) => boolean) => { outline: [number, number][]; args: (number | string)[] };
+  /** Its paving runs out to the street's kerb, wherever the square lays the street: given the
+   *  height of the square's carriageway at x, z in its frame (above sea level; null off it), the
+   *  outline it stands in for (in place of outline) and its builder's args. */
+  fit?: (road: (x: number, z: number) => number | null) => { outline: [number, number][]; args: (number | string)[] };
   /** It draws everything inside its outline, to the outline's edge: the map tools cut the square's
    *  street faces along it (filledOutlines), so the two meet edge to edge. */
   fills?: boolean;
@@ -227,9 +228,9 @@ export const SET_PIECES: SetPiece[] = [
     // looks south-south-west over the lawn. The outline takes in the houses to their backs and
     // everything in front of them out to the street's pavement, which it flags itself; the ground
     // there comes down to the pavement's level, and to the floor of the basement areas along the front.
-    name: "Royal Crescent", kind: "crescent", at: [-2.3683485, 51.3869059], bearing: 106.19, height: 51.5,
+    name: "Royal Crescent", kind: "crescent", at: [-2.3683485, 51.3869059], bearing: 106.19, height: CRESCENT_Y,
     outline: CRESCENT_OUTLINE, solid: CRESCENT_SOLID, sink: CRESCENT_SINK,
-    fit: (road) => { const edge = crescentEdges(road); return { outline: crescentOutline(edge), args: edge }; }, fills: true,
+    fit: (road) => { const { edge, top } = crescentFit(road); return { outline: crescentOutline(edge), args: [...edge, ...top] }; }, fills: true,
   },
   {
     // landmarks/shamcastle.ts. The origin: the middle of the wall, its front looking west to Bath.
@@ -633,7 +634,7 @@ export function filledOutlines(centre: [number, number], box: number[], road: (x
     const ring = (o: [number, number][]) => o.map(([lx, lz]) => at(lx, lz));
     const near = [sp.outline, ...sp.more ?? []].flat().map(([lx, lz]) => at(lx, lz));
     if (near.every((q) => q[0] < box[0]) || near.every((q) => q[0] > box[2]) || near.every((q) => q[1] < box[1]) || near.every((q) => q[1] > box[3])) continue;
-    const outline = sp.fit ? sp.fit((lx, lz) => road(...at(lx, lz))).outline : sp.outline;
+    const outline = sp.fit ? sp.fit((lx, lz) => (road(...at(lx, lz)) ? 0 : null)).outline : sp.outline;
     out.push(ring(outline), ...(sp.more ?? []).map(ring));
   }
   return out;
@@ -769,23 +770,26 @@ export function maskSetPieces(d: MapData) {
 
 const FIT_REACH = 20;        // metres round a set piece's outline that a square's carriageway is looked for
 
-/** Whether square d draws a carriageway at x, z in a set piece's frame (local() taking data x, y
- *  into it), for its road and lane faces near the box x0..x1, y0..y1. */
+/** The height square d draws a carriageway at x, z in a set piece's frame (local() taking data x, y
+ *  into it), above sea level as written, or null where it draws none: its road and lane faces near
+ *  the box x0..x1, y0..y1. */
 function carriageway(d: MapData, local: (x: number, y: number) => [number, number], x0: number, x1: number, y0: number, y1: number) {
   const V = d.sf!.v, tris: number[] = [];
   for (const I of [d.sf!.road, d.sf!.service]) for (let k = 0; k + 2 < I.length; k += 3) {
     const xs = [V[3 * I[k]], V[3 * I[k + 1]], V[3 * I[k + 2]]], ys = [V[3 * I[k] + 1], V[3 * I[k + 1] + 1], V[3 * I[k + 2] + 1]];
     if (Math.max(...xs) < x0 - FIT_REACH || Math.min(...xs) > x1 + FIT_REACH || Math.max(...ys) < y0 - FIT_REACH || Math.min(...ys) > y1 + FIT_REACH) continue;
-    tris.push(...[0, 1, 2].flatMap((n) => local(xs[n], ys[n])));
+    tris.push(...[0, 1, 2].flatMap((n) => [...local(xs[n], ys[n]), V[3 * I[k + n] + 2]]));
   }
   return (x: number, z: number) => {
-    for (let k = 0; k < tris.length; k += 6) {
-      const ax = tris[k], az = tris[k + 1], bx = tris[k + 2], bz = tris[k + 3], cx = tris[k + 4], cz = tris[k + 5];
+    for (let k = 0; k < tris.length; k += 9) {
+      const ax = tris[k], az = tris[k + 1], bx = tris[k + 3], bz = tris[k + 4], cx = tris[k + 6], cz = tris[k + 7];
       if ((x < ax && x < bx && x < cx) || (x > ax && x > bx && x > cx) || (z < az && z < bz && z < cz) || (z > az && z > bz && z > cz)) continue;
       const d1 = (bx - ax) * (z - az) - (bz - az) * (x - ax), d2 = (cx - bx) * (z - bz) - (cz - bz) * (x - bx), d3 = (ax - cx) * (z - cz) - (az - cz) * (x - cx);
-      if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0)) return true;
+      if (!((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))) continue;
+      const area = d1 + d2 + d3 || 1;
+      return (tris[k + 2] * d2 + tris[k + 5] * d3 + tris[k + 8] * d1) / area;
     }
-    return false;
+    return null;
   };
 }
 
@@ -830,9 +834,9 @@ function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [numb
       T.h[k] = Math.max(T.h[k], Math.round((street - T.z0) * 10));
     if (!inside(x, y)) continue;
     for (const r of rects) {
-      if (r.fill || (street !== undefined && !r.street)) continue;
+      if (r.fill || (street !== undefined && !r.street && !r.over)) continue;
       if (lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)
-        T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, street ?? -Infinity) - T.z0) * 10));
+        T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, r.over ? -Infinity : street ?? -Infinity) - T.z0) * 10));
     }
   }
 }
