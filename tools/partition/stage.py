@@ -15,9 +15,9 @@ blocks) and each square's assembly from them run into `<dir>/partition/once/` an
 what it reads (the stage before it, and the parts of the map's layers it looks at). A stage whose key
 was built before is taken from the store (`$CD_PARTITION_CACHE`, else `<dir>/partition/cache/`), so
 only what a change reaches is built again. A square is written (`write_tile.py`) again only when its
-own assembly, what the passes wrote, the map's data, the writer's own tools and kept lidar, or its
-`prep_map.py` square have changed, and a square written before under the same key comes from the
-store. `--only` divides and assembles only what those squares gather from, and writes only them. The
+own assembly, what the passes wrote near it, the map's data, the writer's own tools and kept lidar,
+or its own and its neighbours' `prep_map.py` squares have changed, and a square written before under
+the same key comes from the store. `--only` divides and assembles only what those squares gather from, and writes only them. The
 metrics, checks and city summary come last (`pipeline.py report`), off the map's own path: a change
 to them redoes only the reports.
 
@@ -200,8 +200,8 @@ def main(argv):
     print(f"partition: assembled in {time.time() - t0:.0f}s, stages run: {passes['ran'] or 'none'}"
           + (f"; {len(failed)} failed: {' '.join(map(name, sorted(failed)))}" if failed else ""), flush=True)
 
-    # a square is written again when its prep_map square, its own assembly, what the passes wrote,
-    # the map's data or the writer has changed
+    # a square is written again when its prep_map square, its own assembly, what the passes wrote
+    # near it, the map's data or the writer has changed
     tw = time.time()
     wt = os.path.join(HERE, "write_tile.py")
     writer = cache.key_of(cache.code_key((wt, "write_one"), (wt, "drop_edge_stubs"), (wt, "drop_edge_way_stubs"),
@@ -209,8 +209,15 @@ def main(argv):
                                          (os.path.join(HERE, "measured.py"), "missed")),
                           cache.file_digest(KEPT), cache.libraries())
     data = data_keys(map_id, src_dir, store, wanted)
-    wkey = lambda t: digest([os.path.join(base, name(t) + ".json")],
-                            (passes["partition"].get(name(t)), passes["upstream"], data[t], writer))
+    wkeys = {}
+
+    def wkey(t):
+        # the prep squares round it too: the writer reads their buildings by its edges
+        if t not in wkeys:
+            nbrs = [os.path.join(base, name((t[0] + di, t[1] + dj)) + ".json") for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+            wkeys[t] = digest([p for p in nbrs if os.path.exists(p)],
+                              (passes["partition"].get(name(t)), passes["upstream"].get(name(t)), data[t], writer))
+        return wkeys[t]
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:
