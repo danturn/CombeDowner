@@ -244,7 +244,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   happy, a walking stick for being hit by one, a thermos in a string bag for being hit by the lot),
   earmuffs for a clean touch on the bells, a beret when the critics call your show a triumph, a
   lock-keeper's cap for gold on the Lock Run, an L-plate for passing the driving test, dazzled eyes
-  for 60 km/h past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
+  for 40 mph past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
   shoot-out won, a froth moustache for ten different pubs, a monocle for a night out seen through,
   sunblock stripes for knocking over the stumps, climbing rope for topping the Climb with no lives
   lost, a balancing pole for the Tightrope, a miner's lamp for the bottom of the mines, a skateboard
