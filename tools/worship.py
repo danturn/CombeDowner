@@ -34,7 +34,7 @@ NOT_CHURCH_WORDS = {"row", "road", "street", "lane", "close", "court", "gardens"
                     "parish", "office", "car", "park", "garage", "shop", "cafe", "café", "restaurant", "stores",
                     "gate", "rd", "ln", "deli", "brewery", "ales", "towers", "tower", "mansions", "clinic", "villas", "buildings", "bridge", "works", "barn"}
 BATCH = 200
-AGENT = "CombeDowner-map-build/1.0 (https://github.com/spencereholtaway/CombeDowner)"
+AGENT = "CombeDowner-map-build/1.0 (https://combedowner.com)"
 
 
 def path(map_id):

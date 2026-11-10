@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
 KEYS = ("shop", "amenity", "office", "craft", "healthcare", "tourism", "leisure")
-UA = {"User-Agent": "CombeDowner map builder (github.com/danturn/CombeDowner)"}
+UA = {"User-Agent": "CombeDowner map builder (https://combedowner.com)"}
 TILE = 0.008     # degrees: a tile of the main API's map call
 
 
