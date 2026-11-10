@@ -212,9 +212,13 @@ def main(argv):
     data = data_keys(map_id, src_dir, store, wanted)
     # (and the squares round it: the writer reads their ground, houses, streets and faces past its sides)
     prep_d = {t: cache.file_digest(os.path.join(base, name(t) + ".json")) for t in built}
+    from partition import LON0, LAT0, setpiece_cuts
+    from partition.data import box_of
+    cuts = cache.file_digest(os.path.join(HERE, "setpiece_cuts.py"))
     wkey = lambda t: digest([os.path.join(base, name(t) + ".json")],
                             (passes["partition"].get(name(t)), passes["upstream"], data[t], writer,
-                             [(prep_d.get(n), passes.get("faces", passes["partition"]).get(name(n))) for n in neighbours(*t) if n != t]))
+                             [(prep_d.get(n), passes.get("faces", passes["partition"]).get(name(n))) for n in neighbours(*t) if n != t],
+                             *((cuts, k) if (k := setpiece_cuts.key((LON0, LAT0), box_of(*t))) else ())))
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:
