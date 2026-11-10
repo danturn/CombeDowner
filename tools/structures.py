@@ -398,8 +398,10 @@ def in_passage(buildings):
             return False
         p = Point(run[i][:2])
         line = LineString([q[:2] for q in run])
-        return any(inner[int(k)].distance(p) < 1.0 and inner[int(k)].intersection(line).length > PASSAGE
-                   for k in tree.query(p.buffer(1.0)))
+        # (as far out from the wall as a passage is long: the deck reaches the path's first point
+        # outside, and the path steps off it there rather than a stub short of the doorway)
+        return any(inner[int(k)].distance(p) < PASSAGE and inner[int(k)].intersection(line).length > PASSAGE
+                   for k in tree.query(p.buffer(PASSAGE)))
     return test
 
 

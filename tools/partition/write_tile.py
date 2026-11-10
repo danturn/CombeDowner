@@ -647,16 +647,21 @@ def verge_out_of_town(rd, houses):
     not pavements: walkers there have their own paths, mapped as such. Drawn with a pavement each
     side, the two carriageways and the slips between them were one sheet of paving and road. Each
     such record's `pv` becomes [0, 0]; one with buildings near much of it is a street in town, and
-    keeps its pavements (`street_surfaces` leaves the partition's pavement faces off the others)."""
+    keeps its pavements (`street_surfaces` leaves the partition's pavement faces off the others).
+    It is judged along the whole stretch it was fitted as, so the squares either side agree, and
+    along its own line too: a stretch running on out of town past the side doesn't take the
+    pavements off the part of it among the houses."""
     tree = STRtree(houses) if houses else None
+
+    def in_town(line):
+        pts = shapely.points(shapely.get_coordinates(line))
+        near = tree.query(pts, predicate="dwithin", distance=OUT_OF_TOWN)
+        return len(set(near[0].tolist())) > IN_TOWN * len(pts)
     for r in rd:
         if r["c"] not in VERGED or len(r["p"]) < 2 or not (r["c"].endswith("_link") or r.get("ow")):
             continue
-        if tree is not None:
-            pts = shapely.points(shapely.get_coordinates(judged_line(r)))
-            near = tree.query(pts, predicate="dwithin", distance=OUT_OF_TOWN)
-            if len(set(near[0].tolist())) > IN_TOWN * len(pts):
-                continue
+        if tree is not None and (in_town(judged_line(r)) or in_town(LineString([q[:2] for q in r["p"]]))):
+            continue
         r["pv"] = [0.0, 0.0]
 
 
@@ -8042,6 +8047,32 @@ def reroll_back_styles(part, parents, free=()):
         e["kind"] = pick(mixes[k], random.Random(str(keys[k])).random())
 
 
+SIDE_MEET = 1.0    # metres a wall's end at the square's side may move to where the measured wall crosses it
+
+
+def walls_meet_at_sides(br, base_br, sq):
+    """A wall cut at a side of the square ends where the measured wall (`base_br`, the square's
+    walls as it starts, cut at the same side) crosses it. Each square lays its walls to its own
+    pavements and plots, and two pieces of one wall ending a few tenths apart on the side left a
+    slit of sky between them; ended on the measured crossing, both squares' pieces meet."""
+    x0, y0, x1, y1 = sq
+    on_side = lambda q: min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) < 0.1
+    crossings = [q for b in base_br if len(b["p"]) > 1 for q in (b["p"][0], b["p"][-1]) if on_side(q)]
+    if not crossings:
+        return br
+    for b in br:
+        if len(b["p"]) < 2:
+            continue
+        for e in (0, -1):
+            q = b["p"][e]
+            if not on_side(q):
+                continue
+            best = min(crossings, key=lambda c: math.hypot(c[0] - q[0], c[1] - q[1]))
+            if 0 < math.hypot(best[0] - q[0], best[1] - q[1]) <= SIDE_MEET:
+                b["p"][e] = [best[0], best[1]] + list(q[2:])
+    return br
+
+
 def drop_walls_on_paving(part, T, base_br):
     """A wall, fence or hedge standing wholly on paving that main has none beside is a garden the
     partition made of a plaza's building (a ring of garden wall in Abbey Churchyard). It is left out."""
@@ -8071,6 +8102,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     old_rd = list(tile.get("rd") or [])
     part = read_partition(city, ti, tj)
     drop_walls_on_paving(part, tile["t"], tile.get("br") or [])
+    base_walls = [dict(b, p=[list(q) for q in b["p"]]) for b in tile.get("br") or []]
 
     from partition import Q
     size = Q.dx * Q.cells
@@ -8292,6 +8324,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
     br = smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"])
+    br = walls_meet_at_sides(br, base_walls, sq)
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt
