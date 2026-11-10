@@ -383,7 +383,27 @@ def by_a_lock(x, y, locks):
     return False
 
 
-def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
+PASSAGE = 2.0    # metres of a path inside a building that make it a passage through it (write_tile.INDOORS_FLOOR)
+
+
+def in_passage(buildings):
+    """(run, i) -> whether a path's point i is at a building it runs on through. Its deck carries
+    it through (write_tile.ways_out_of_buildings leaves a building by a deck to it): laid on the
+    ground, the building would cut it in two."""
+    inner = [g for g in (b.buffer(0).buffer(-0.3) for b in buildings) if not g.is_empty]
+    tree = STRtree(inner) if inner else None
+
+    def test(run, i):
+        if tree is None:
+            return False
+        p = Point(run[i][:2])
+        line = LineString([q[:2] for q in run])
+        return any(inner[int(k)].distance(p) < 1.0 and inner[int(k)].intersection(line).length > PASSAGE
+                   for k in tree.query(p.buffer(1.0)))
+    return test
+
+
+def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=()):
     """Decide the structures over a set of runs, changing their heights, `span` and `deck` in place.
 
     The rules are `prep_map.py`'s, in its order, with `tools/profiles.py` (shared with it) doing the
@@ -392,7 +412,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
     that cross at different heights, what dips under a bridge, the steepest each road may be, and
     paths afloat. Each run here is already a whole through-road, so `prep_map.py`'s `chains()` is each
     run in turn. `canal` is the canal file's contents (or None), `bm` the map's box, `detail` the
-    finest scale the terrain has detail at (grading.terrain_detail)."""
+    finest scale the terrain has detail at (grading.terrain_detail), `buildings` the footprints."""
     water_tree = STRtree(water_polys)
     rail_lines = [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1]
     rail_tracks = [t for t in rail_tracks if len(t["p"]) > 1]
@@ -579,12 +599,14 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
     # 2b. a path down on the ground that rode a pedestrian street's span that isn't a bridge (a
     # building's passage beside a square, which the pedestrian street's wide reach takes in) is on
     # the ground: left riding, it was a deck the ground was dug out under. It keeps the height it
-    # took, the street's beside it, as the streets it meets are levelled to it
+    # took, the street's beside it, as the streets it meets are levelled to it. One through a
+    # building rides on
+    passage = in_passage(buildings)
     for r in pending:
         for i, j in list(r["ride"].items()):
             k, _, _, _, a, b = decks[j]
             if pending[k]["c"] != "pedestrian" or any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i] \
-                    or abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5:
+                    or abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5 or passage(r["run"], i):
                 continue
             r["deck"].discard(i)
             del r["ride"][i]
