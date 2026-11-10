@@ -3126,7 +3126,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
   mark("grass-build");
   const grass: Grass = T.nx ? yield* buildGrass(scene, D, S.railBank ? (x: number, z: number) => Math.max(drawnGround(x, z), S.railBank(x, z)) : drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE, S.railTracks ?? [],
-    railMouthsIn(S, T).map((m) => [[0, -m.hw], [m.deep, -m.hw], [m.deep, m.hw], [0, m.hw]].map(([u, v]) => [m.x + m.ux * u - m.uy * v, m.y + m.uy * u + m.ux * v]))) : { update() {} };
+    railMouthsIn(S, T).map((m) => [[0, -m.hw], [m.deep, -m.hw], [m.deep, m.hw], [0, m.hw]].map(([u, v]) => [m.x + m.ux * u - m.uy * v, m.y + m.uy * u + m.ux * v])),
+    (x, y) => { const g = drawnGround(x, -y) + Z0; return map.setPieceSurface(x, y, g - 0.5, g + 2.5); }) : { update() {} };
   yield;
 
   mark("grass");
