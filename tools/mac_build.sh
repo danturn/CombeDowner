@@ -107,7 +107,21 @@ if [ -n "$do_map" ] && [ -z "$cold$verify" ] && [ -d "$done_mark" ]; then
   do_map=
   reused=1
 fi
+# the game's packages, shared between worktrees with the same package-lock.json: the screenshots need
+# them, the clash check, whose rules 19 on run the game's own code under Node, and the map build, which
+# reads the set pieces' outlines from the game's table (tools/partition/setpiece_cuts.py)
+nm=
+link_node_modules() {
+  [ -n "$nm" ] && return
+  nm=$CACHE/node_modules/$(hash16 < web/package-lock.json)
+  if [ ! -d "$nm/node_modules" ]; then
+    mkdir -p "$nm" && cp web/package.json web/package-lock.json "$nm/"
+    (cd "$nm" && npm ci --no-audit --no-fund --silent)
+  fi
+  ln -s "$nm/node_modules" web/node_modules
+}
 build_map() {    # <partition store> <log>
+  link_node_modules
   export CD_PARTITION_CACHE=$1
   {
     python3 -I tools/mapdata.py unpack $MAP
@@ -158,18 +172,6 @@ if [ -n "$do_map" ]; then
   git status --short web/public/maps > "$out/changed.txt"
   echo "$(wc -l < "$out/changed.txt" | tr -d ' ') map files changed"
 fi
-# the game's packages, shared between worktrees with the same package-lock.json: the screenshots need
-# them, and so does the clash check, whose rules 19 on run the game's own code under Node
-nm=
-link_node_modules() {
-  [ -n "$nm" ] && return
-  nm=$CACHE/node_modules/$(hash16 < web/package-lock.json)
-  if [ ! -d "$nm/node_modules" ]; then
-    mkdir -p "$nm" && cp web/package.json web/package-lock.json "$nm/"
-    (cd "$nm" && npm ci --no-audit --no-fund --silent)
-  fi
-  ln -s "$nm/node_modules" web/node_modules
-}
 if [ -n "$check" ]; then
   t=$(date +%s)
   link_node_modules

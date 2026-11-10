@@ -35,6 +35,11 @@
 // floor, where the lidar has it higher than the street. Such a point comes down too, but never
 // below the street's own level, so the pavement still has its ground under it.
 //
+// One thing the map tools do for them: a set piece that draws all of its outline to the edge
+// (`fills`: the Royal Crescent, its flags out to the kerb) has the square's street faces cut along
+// its outline as the square is written (tools/partition/setpiece_cuts.py, reading this table), so
+// the two meet edge to edge; a square written before that still has them taken out here.
+//
 // So a rebuilt map, or a new area, needs nothing doing here: a set piece's place is longitude,
 // latitude and a bearing, and its outline catches whatever the tools build there next time. A new
 // set piece is an entry in SET_PIECES and a builder in landmarks/ (its kind in SET_PIECE_KINDS in
@@ -51,7 +56,7 @@ import { BRIDGE, paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
-import { CRESCENT_OUTLINE, CRESCENT_SOLID, CRESCENT_SINK } from "./royalcrescent";
+import { CRESCENT_OUTLINE, CRESCENT_SOLID, CRESCENT_SINK, CRESCENT_Y, crescentFit, crescentOutline } from "./royalcrescent";
 import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
 import { BOA_COVERS } from "./bradford";
 import { CASTLE_Y, CASTLE_OUTLINE } from "./castle";
@@ -62,7 +67,7 @@ import { skylineArgs } from "./skylinegate";
 import { CLOCK_TOWER, CAPE_WHEEL, ZEITZ, ZEITZ_SINK, ALFRED_BOATS, FERRY_BOATS } from "./waterfront";
 
 type LonLat = [number, number];
-type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean; fill?: boolean };
+type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean; fill?: boolean; over?: boolean };
 
 /** What a set piece knows about where it stands, in the square being masked. Coordinates are in
  *  its own frame: x along it, z out of its front. */
@@ -112,7 +117,8 @@ export interface SetPiece {
    *  street's level (no lower) where a street's edge holds the ground up (see above); fill:
    *  instead raised to the street's level wherever a street is drawn over it, inside its
    *  outline or not (a street between the set piece's two sides, over the lidar's dips where
-   *  basements and the river bank show through). */
+   *  basements and the river bank show through); over: lowered even where a street's edge holds
+   *  the ground up, for a set piece paving over the street's own pavement out to its kerb. */
   sink?: Sink[];
   /** It's a pub, and hangs its own sign: the map's sign for it stays, marked as its own. */
   pub?: boolean;
@@ -129,6 +135,13 @@ export interface SetPiece {
   aqueduct?: boolean;
   /** It has a yard of its own: the service lanes inside it go with everything else. */
   yard?: boolean;
+  /** Its paving runs out to the street's kerb, wherever the square lays the street: given the
+   *  height of the square's carriageway at x, z in its frame (above sea level; null off it), the
+   *  outline it stands in for (in place of outline) and its builder's args. */
+  fit?: (road: (x: number, z: number) => number | null) => { outline: [number, number][]; args: (number | string)[] };
+  /** It draws everything inside its outline, to the outline's edge: the map tools cut the square's
+   *  street faces along it (filledOutlines), so the two meet edge to edge. */
+  fills?: boolean;
 }
 
 // ---- Bath's set pieces --------------------------------------------------------------------------
@@ -215,8 +228,9 @@ export const SET_PIECES: SetPiece[] = [
     // looks south-south-west over the lawn. The outline takes in the houses to their backs and
     // everything in front of them out to the street's pavement, which it flags itself; the ground
     // there comes down to the pavement's level, and to the floor of the basement areas along the front.
-    name: "Royal Crescent", kind: "crescent", at: [-2.3683485, 51.3869059], bearing: 106.19, height: 51.5,
+    name: "Royal Crescent", kind: "crescent", at: [-2.3683485, 51.3869059], bearing: 106.19, height: CRESCENT_Y,
     outline: CRESCENT_OUTLINE, solid: CRESCENT_SOLID, sink: CRESCENT_SINK,
+    fit: (road) => { const { edge, top } = crescentFit(road); return { outline: crescentOutline(edge), args: [...edge, ...top] }; }, fills: true,
   },
   {
     // landmarks/shamcastle.ts. The origin: the middle of the wall, its front looking west to Bath.
@@ -597,20 +611,45 @@ function runsOutside<T extends { p: number[][] }>(l: T, inside: (x: number, y: n
   return out;
 }
 
+/** A set piece's frame in a map centred at lon0, lat0: data x, y of its x, z, and its x, z of data x, y. */
+function frameOf(sp: SetPiece, lon0: number, lat0: number) {
+  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;     // as tools/prep_map.py
+  const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
+  const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+  const at = (lx: number, lz: number): [number, number] => [ox + ux * lx + uy * lz, oy + uy * lx - ux * lz];
+  const local = (x: number, y: number): [number, number] => [(x - ox) * ux + (y - oy) * uy, (x - ox) * uy - (y - oy) * ux];
+  return { ox, oy, a, at, local };
+}
+
+/** The outlines, in data metres, of the set pieces that fill them (`fills`) reaching the box
+ *  x0, y0, x1, y1 of a map centred at centre, each fitted to the carriageway (road at data x, y)
+ *  where it fits itself to the street. For the map tools (tools/partition/write_tile.py), which cut
+ *  the square's street faces along them so the set piece meets them edge to edge, as the game would
+ *  fit it to the faces they leave. */
+export function filledOutlines(centre: [number, number], box: number[], road: (x: number, y: number) => boolean): number[][][] {
+  const out: number[][][] = [];
+  for (const sp of SET_PIECES) {
+    if (!sp.fills) continue;
+    const { at } = frameOf(sp, centre[0], centre[1]);
+    const ring = (o: [number, number][]) => o.map(([lx, lz]) => at(lx, lz));
+    const near = [sp.outline, ...sp.more ?? []].flat().map(([lx, lz]) => at(lx, lz));
+    if (near.every((q) => q[0] < box[0]) || near.every((q) => q[0] > box[2]) || near.every((q) => q[1] < box[1]) || near.every((q) => q[1] > box[3])) continue;
+    const outline = sp.fit ? sp.fit((lx, lz) => (road(...at(lx, lz)) ? 0 : null)).outline : sp.outline;
+    out.push(ring(outline), ...(sp.more ?? []).map(ring));
+  }
+  return out;
+}
+
 /** Hide what the tools built under every set piece reaching into map d (the first area or a
  *  square of Bath, just loaded), and place the set pieces there. Changes d in place. */
 export function maskSetPieces(d: MapData) {
   if (!d.centre || !d.t || !d.b) return;
   const [lon0, lat0] = d.centre;
-  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;     // as tools/prep_map.py
   const T = d.t, gx1 = T.x0 + (T.nx - 1) * T.dx, gy1 = T.y0 + (T.ny - 1) * T.dy;
   const [bx0, by0, bx1, by1] = d.b;
   for (const sp of SET_PIECES) {
     // its frame: origin, along (ux, uy) and its front (uy, -ux), in data coordinates
-    const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
-    const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
-    const at = (lx: number, lz: number): [number, number] => [ox + ux * lx + uy * lz, oy + uy * lx - ux * lz];
-    const local = (x: number, y: number): [number, number] => [(x - ox) * ux + (y - oy) * uy, (x - ox) * uy - (y - oy) * ux];
+    const { ox, oy, a, at, local } = frameOf(sp, lon0, lat0);
     // the street it carries, laid as one street from end to end whatever pieces the map has it in
     if (sp.street) {
       layStreet(d, sp.street, local);
@@ -619,10 +658,16 @@ export function maskSetPieces(d: MapData) {
       const st = sp.street;
       if (d.sf && !("o" in d.sf)) cutFaces(d.sf, (x, y) => { const [lx, lz] = local(x, y); return lx >= st.x0 && lx <= st.x1 && Math.abs(lz) < st.zMax; });
     }
-    const rings = [sp.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
+    let rings = [sp.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
     const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
-    const mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);
+    let mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);
     if (mx1 < T.x0 || mx0 > gx1 || my1 < T.y0 || my0 > gy1) continue;
+    const fitted = sp.fit && d.sf ? sp.fit(carriageway(d, local, mx0, mx1, my0, my1)) : null;
+    if (fitted) {
+      rings = [fitted.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
+      const fx = rings.flat().map((q) => q[0]), fy = rings.flat().map((q) => q[1]);
+      mx0 = Math.min(...fx); mx1 = Math.max(...fx); my0 = Math.min(...fy); my1 = Math.max(...fy);
+    }
     const hide = (x: number, y: number) => x >= mx0 && x <= mx1 && y >= my0 && y <= my1 && rings.some((ring) => inRing(ring, x, y));
     const mid = (q: (number | string)[]) => hide((+q[0] + +q[2]) / 2, (+q[1] + +q[3]) / 2);
 
@@ -717,10 +762,35 @@ export function maskSetPieces(d: MapData) {
     if (sp.sink) lower(d, sp.sink.map((r) => ({ ...r, y: z + r.y })), local, hide, mx0, mx1, my0, my1);
 
     // and the set piece itself, solid in every square it reaches, drawn in the one its origin's in
-    const args = sp.args?.(ctx, z) ?? [];
+    const args = fitted?.args ?? sp.args?.(ctx, z) ?? [];
     const own = ox >= bx0 && ox < bx1 && oy >= by0 && oy < by1;
     (d.lm ??= []).push([sp.kind, +ox.toFixed(2), +oy.toFixed(2), +z.toFixed(2), +a.toFixed(4), own ? 1 : 0, ...args]);
   }
+}
+
+const FIT_REACH = 20;        // metres round a set piece's outline that a square's carriageway is looked for
+
+/** The height square d draws a carriageway at x, z in a set piece's frame (local() taking data x, y
+ *  into it), above sea level as written, or null where it draws none: its road and lane faces near
+ *  the box x0..x1, y0..y1. */
+function carriageway(d: MapData, local: (x: number, y: number) => [number, number], x0: number, x1: number, y0: number, y1: number) {
+  const V = d.sf!.v, tris: number[] = [];
+  for (const I of [d.sf!.road, d.sf!.service]) for (let k = 0; k + 2 < I.length; k += 3) {
+    const xs = [V[3 * I[k]], V[3 * I[k + 1]], V[3 * I[k + 2]]], ys = [V[3 * I[k] + 1], V[3 * I[k + 1] + 1], V[3 * I[k + 2] + 1]];
+    if (Math.max(...xs) < x0 - FIT_REACH || Math.min(...xs) > x1 + FIT_REACH || Math.max(...ys) < y0 - FIT_REACH || Math.min(...ys) > y1 + FIT_REACH) continue;
+    tris.push(...[0, 1, 2].flatMap((n) => [...local(xs[n], ys[n]), V[3 * I[k + n] + 2]]));
+  }
+  return (x: number, z: number) => {
+    for (let k = 0; k < tris.length; k += 9) {
+      const ax = tris[k], az = tris[k + 1], bx = tris[k + 3], bz = tris[k + 4], cx = tris[k + 6], cz = tris[k + 7];
+      if ((x < ax && x < bx && x < cx) || (x > ax && x > bx && x > cx) || (z < az && z < bz && z < cz) || (z > az && z > bz && z > cz)) continue;
+      const d1 = (bx - ax) * (z - az) - (bz - az) * (x - ax), d2 = (cx - bx) * (z - bz) - (cz - bz) * (x - bx), d3 = (ax - cx) * (z - cz) - (az - cz) * (x - cx);
+      if (!((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))) continue;
+      const area = d1 + d2 + d3 || 1;
+      return (tris[k + 2] * d2 + tris[k + 5] * d3 + tris[k + 8] * d1) / area;
+    }
+    return null;
+  };
 }
 
 /** Lower the terrain of map d inside rectangles (in a set piece's frame, local() taking data x, y
@@ -757,6 +827,10 @@ function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [numb
       }
     }
   }
+  // (a point a sink lowers over the street's own pavement no longer meets that pavement: the sheet's
+  // carving up to it would stand it back up through the set piece's paving)
+  const carve = new Map<number, number>();
+  if (d.gs && rects.some((r) => r.over)) for (let n = 0; n < d.gs.h.length; n++) carve.set(d.gs.h[n], n);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const k = j * T.nx + i, x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, street = pinned.get(k);
     const [lx, lz] = local(x, y);
@@ -764,9 +838,10 @@ function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [numb
       T.h[k] = Math.max(T.h[k], Math.round((street - T.z0) * 10));
     if (!inside(x, y)) continue;
     for (const r of rects) {
-      if (r.fill || (street !== undefined && !r.street)) continue;
-      if (lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)
-        T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, street ?? -Infinity) - T.z0) * 10));
+      if (r.fill || (street !== undefined && !r.street && !r.over)) continue;
+      if (!(lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)) continue;
+      T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, r.over ? -Infinity : street ?? -Infinity) - T.z0) * 10));
+      if (r.over && carve.has(k)) (d.gs!.hz as number[])[carve.get(k)!] = 0;
     }
   }
 }

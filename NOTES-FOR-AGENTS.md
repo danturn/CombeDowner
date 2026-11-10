@@ -26,6 +26,12 @@ the game locally, without the sound" in `CLAUDE.md`.
   Bond Streets, Walcot Street's façade slits and grass fronts, the wall before Saracen Street's pub,
   George Street's pavement. Touches `tools/partition/` and `tools/check_map.py`; not the squares'
   sides (`claude/square-edges-c`) or the slice keys (`claude/slice-keys`).
+- **Royal Crescent seam (branch `claude/crescent-seam`, waiting for Dan):** the Crescent's flags fit
+  themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
+  doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
+  street faces cut along their outline as it's written (`tools/partition/setpiece_cuts.py`,
+  `write_tile.street_surfaces`, keyed in `stage.py`). Proved on square 0,3 only.
+
 - **Spencer's main merged into Dan's fork (branch `claude/spencer-merge`):** the map rebuilt with
   his running tracks and pitches; `drapeBarriers` (`web/src/map.ts`) now leaves a stretch alone where
   the ground strays no more than the build's own limits (0.1 m below, 0.2 m above), so it no longer
