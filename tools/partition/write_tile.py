@@ -59,6 +59,7 @@ from shapely.strtree import STRtree
 
 from gardens import NEUTRAL as GARDEN_NEUTRAL, STYLE as GARDEN_STYLE, pick
 from partition import MAP, ROOT, face_shape, once, setpiece_cuts, zone_at
+from partition import flights as flight_pieces
 from partition.openings import EDGE_STUB
 from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
@@ -4010,6 +4011,7 @@ def steep_paths_as_steps(rd):
                 piece["w"] = max(r.get("w", 1.5), 1.8)
                 piece["_was"] = r
                 piece["_p"] = [list(q) for q in p[k:e + 2]]
+                piece["_made"] = True
             out.append(piece)
             k = e + 1
     return out
@@ -5154,9 +5156,13 @@ def flights_to_their_ends(rd, streets):
         line = LineString([q[:3] for q in p])
         r["p"] = [[round(x, 1), round(y, 1), round(z, 1)] for x, y, z in substring(line, s0, s1).coords]
         cut += 1
-    for r in rd:
-        if r["c"] == "steps" and len(r["p"]) >= 2 and not any(len(q) > 3 for q in r["p"]):
-            cut += _flight_to_landings(r, under)
+    steps = [r for r in rd if r["c"] == "steps" and len(r["p"]) >= 2 and not any(len(q) > 3 for q in r["p"])]
+    lines = [LineString([q[:2] for q in r["p"]]) for r in steps]
+    for r, line in zip(steps, lines):
+        # (an end on another flight is a landing the two share: run on to the path beyond, it turned
+        # back over the other's treads)
+        on = [e for e in (0, -1) if any(m is not line and m.distance(Point(line.coords[e])) < flight_pieces.SHARED_END for m in lines)]
+        cut += _flight_to_landings(r, under, skip=on)
     return cut
 
 
@@ -5164,12 +5170,14 @@ LANDING_REACH = 2.0     # metres: a flight ending this near a street or a path i
 LANDING_INTO = 0.1      # and this far onto it
 
 
-def _flight_to_landings(r, under):
+def _flight_to_landings(r, under, skip=()):
     """A flight ending just short of the street or path it climbs to (the map's line stops at a
     wall's foot, or the path was drawn a little off) is run on to meet it, so its end lands on
     something to walk on rather than on the bank. Returns 1 if it moved."""
     moved = 0
     for end in (0, -1):
+        if end in skip:
+            continue
         e = r["p"][end]
         pe = Point(e[:2])
         if under.contains(pe) or under.distance(pe) > LANDING_REACH:
@@ -8367,8 +8375,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # (the flights made just now from steep stretches, and the ways they meet as they are by now)
     flights_to_their_ends(rd, fitted[1] if fitted else None)
     steep_flights_that_fit(rd, ground)
+    rd, _ = flight_pieces.settle_overlaps(rd, GAME_PATHS, way_width)
     ways_meet_level(rd, sq, ground)
     abutments_on_the_ground(rd, sq, ground)
+    flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width))
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):

@@ -975,6 +975,7 @@ WALL_BESIDE = 0.4     # metres from a retaining wall that a tread's side counts 
 LANDING = (0.1, 0.05)   # metres off a walkable face, and up or down from it, that a flight's end may land
 STAIR_PITCH = 0.7       # furniture.ts: the steepest a flight's treads climb
 TREAD_DEPTH = 0.15      # furniture.ts: how far a tread's block goes on down under its step
+PATH_LIFT = 0.04        # world.ts: how far a path's face is drawn over its line, where a baked flight's treads stand
 LOCK_HALF, COPE, APRON, TAIL = 2.15, 1.2, 4.5, 2.2   # canal.ts
 LEVELS_AGREE = 0.03     # metres two touching waters may differ
 FENCE_IN = 0.3          # metres of a wall, fence or hedge inside water or a way before it counts
@@ -1690,8 +1691,9 @@ def _root_of(f):
     return root, map_id
 
 
-def _stair(p, ground):
-    """furniture.ts stairLayout: a flight's length, a point along it, and its treads' height there."""
+def _stair(p, ground, baked=False):
+    """furniture.ts stairLayout: a flight's length, a point along it, and its treads' height there
+    (on the heights the build laid into its points, where it did: `tb`)."""
     cum = np.concatenate([[0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:])])])
     L = cum[-1]
     if L < 1: return None
@@ -1700,8 +1702,14 @@ def _stair(p, ground):
     N = max(2, math.ceil(L / 0.25))
     s = L * np.arange(N + 1) / N
     x, y = along(s)
-    g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
-    hh = np.maximum(g0 + (g1 - g0) * s / L, ground(x, y))
+    if baked:
+        # (the build's shape, set on what is drawn at its two ends, and never under what is drawn)
+        hh = np.interp(s, cum, [q[2] for q in p]) + PATH_LIFT
+        g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
+        hh = np.maximum(hh + (g0 - hh[0]) * (1 - s / L) + (g1 - hh[-1]) * s / L, ground(x, y))
+    else:
+        g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
+        hh = np.maximum(g0 + (g1 - g0) * s / L, ground(x, y))
     most = STAIR_PITCH * L / N
     for i in range(N - 1, -1, -1): hh[i] = max(hh[i], hh[i + 1] - most)
     for i in range(1, N + 1): hh[i] = max(hh[i], hh[i - 1] - most)
@@ -1738,7 +1746,7 @@ def flights(m, sheet, walk, note, at, inner, fig):
     walled_at = lambda x, y: walls is not None and len(walls.query(Point(x, y), predicate="dwithin", distance=WALL_BESIDE)) > 0
     totals = dict(treads=0, buried=0, block=0, unwalkable=0, landings=0)
     for r in stepped:
-        lay = _stair(r["p"], walk)
+        lay = _stair(r["p"], walk, r.get("tb"))
         if not lay: continue
         L, along, height, rise = lay
         if not inner.contains(Point(r["p"][0][:2])): continue
@@ -2415,14 +2423,20 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
             o, ol, os_ = fl[int(j)]
             both = s.intersection(os_)
             # (one flight running on from another's end shares a landing with it, unless it turns
-            # straight back over the other's first treads)
+            # straight back over the other's first treads; where the build laid both, the landing is
+            # level as far out as their sides take to part: flights.py)
             back = False
             for e, f_ in ((l, 0), (l, -1)):
                 for g_, h_ in ((ol, 0), (ol, -1)):
                     if Point(e.coords[f_]).distance(Point(g_.coords[h_])) >= 1.0: continue
                     u, v = _leaving(e, f_), _leaving(g_, h_)
-                    back |= math.degrees(math.acos(max(-1.0, min(1.0, u[0] * v[0] + u[1] * v[1])))) < 40
-                    both = both.difference(Point(e.coords[f_]).buffer(0.9)).difference(Point(g_.coords[h_]).buffer(0.9))
+                    angle = math.degrees(math.acos(max(-1.0, min(1.0, u[0] * v[0] + u[1] * v[1]))))
+                    back |= angle < 40
+                    land = 0.9
+                    if r.get("tb") and o.get("tb"):
+                        w = max(r.get("w") or 1.8, o.get("w") or 1.8)
+                        land = max(land, min(w / 2 / max(math.sin(math.radians(max(angle, 1.0)) / 2), 0.2), 1.5 * w))
+                    both = both.difference(Point(e.coords[f_]).buffer(land)).difference(Point(g_.coords[h_]).buffer(land))
             if back: both = s.intersection(os_)
             if both.area < 0.3 or not inner.contains(both.representative_point()): continue
             totals["crossing"] += 1

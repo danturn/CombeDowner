@@ -108,7 +108,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   front garden, and a front door opens clear of any wall or fence, on a wall with open ground
   outside it (never a terrace's party wall or into a neighbour's extension); paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
   dog-leg between gardens goes round them rather than through them; flights of steps (and any footpath steeper than 1 in 4) are treads you climb one by one, sunk into the bank, between the ground at each
-  end, turning at their landings, with a stone cheek wall where the bank beside them falls away and handrails along them where the map has them; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
+  end, climbing with the hill rather than through it, level where they turn back on themselves or meet another flight, never lying over one another, with a stone cheek wall where the bank beside them falls away and handrails along them where the map has them; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.
