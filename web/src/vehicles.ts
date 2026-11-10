@@ -47,6 +47,7 @@ import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches"
 import { CHIP, CHIP_LAMPS, chipDecals, chipParts, MR_DS } from "./chipvan";
 import { onRoute } from "./busroutes";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
+import { tag } from "./kinds";
 
 /** The two ways of driving from inside rather than with the chase camera. */
 export type InsideView = "cockpit" | "bonnet";
@@ -665,7 +666,8 @@ function figure(colour: string): THREE.Group {
 
 /** How fast a car has to be going (m/s, about 18 mph) to smash through a hedge or a fence rather than bounce off it. */
 export const SMASH_SPEED = 8;
-const HELD = new THREE.Euler();   // (scratch, for the driver's steadied view)
+/** How far the driver's eyes rise and fall in the seat over the bumps, metres: little enough that they never reach the roof lining. */
+const EYE_GIVE = 0.03;
 
 // ---- one vehicle ----------------------------------------------------------------------------
 interface Snap { t: number; x: number; z: number; a: number; vx: number; vz: number; steer: number; tip: number; flags: number }
@@ -791,7 +793,27 @@ export class Vehicle implements Mover {
     const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
     const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
     return { kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
-      decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined };
+      decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined,
+      make: this.label, top: this.roofLine() };
+  }
+
+  /**
+   * How high the top of the body is all along its middle, in its own frame, measured off the body itself (the
+   * roof, and the glass where the windscreen and back window slope away): the cockpit fits its roof lining to it.
+   */
+  private roofLine(): (x: number) => number {
+    const S = this.spec, step = 0.04, x0 = -S.L / 2, tops: number[] = [], ray = new THREE.Raycaster();
+    const meshes = this.body.children.filter((o): o is THREE.Mesh => o instanceof THREE.Mesh && !this.wheels.includes(o));
+    const o = new THREE.Vector3(), down = new THREE.Vector3();
+    this.root.updateMatrixWorld(true);
+    for (let x = x0; x <= S.L / 2; x += step) {
+      o.set(x, S.H + 1, 0); this.body.localToWorld(o);
+      down.set(0, -1, 0).transformDirection(this.body.matrixWorld);
+      ray.set(o, down);
+      const hit = ray.intersectObjects(meshes, false)[0];
+      tops.push(hit ? this.body.worldToLocal(hit.point).y : 0);
+    }
+    return (x) => tops[Math.max(0, Math.min(tops.length - 1, Math.round((x - x0) / step)))];
   }
 
   /** The driver's own view from inside (game.ts), or null for none: from the seat the inside's drawn round them; either way their own figure's hidden. */
@@ -823,7 +845,7 @@ export class Vehicle implements Mover {
   doorway(b: THREE.Plane[] | null) {
     if (b && !this.ajar && !this.cockpit && !this.view) {
       const S = this.spec;
-      this.cockpit = new Cockpit({ kind: this.kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0], doorway: true });
+      this.cockpit = new Cockpit({ kind: this.kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0], doorway: true, top: this.roofLine() });
       this.body.add(this.cockpit.group);
       this.cutAway(b);
       this.ajar = true;
@@ -864,17 +886,19 @@ export class Vehicle implements Mover {
 
   /**
    * From inside: where the driver's eyes are in the world (into out). Keeps the wheel and dials going. held: the
-   * driver's head steadied against the bumps (game.ts), a pitch and roll that follow the body's gently, and how far
-   * it's lifted; without it the eyes go exactly with the body.
+   * driver's head steadied against the bumps (game.ts), a pitch and roll that follow the body's gently (they turn the
+   * view, not the eyes), and how far it's lifted, which raises the eyes a little; without it they go exactly with the body.
    */
   eyes(out: THREE.Vector3, held?: { pitch: number; roll: number; lift: number }) {
     this.cockpit?.update(this.steer, this.speed, this.rpm, this.signal);
     this.root.updateMatrixWorld(true);
     for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
     out.copy(this.view === "bonnet" && this.bonnet ? this.bonnet : this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
-    if (!held) { this.body.localToWorld(out); return; }
-    out.multiply(this.body.scale).applyEuler(HELD.set(held.roll, this.a, held.pitch, "YZX")).add(this.body.position).applyMatrix4(this.root.matrixWorld);
-    out.y += held.lift;
+    // the eyes stay where the seat puts them in the body, whatever the head's doing: placed by the steadied head's
+    // angles instead, a bump or a crest swung them a hand's width off the seat, out through the roof, a door or
+    // the floor. The steadied head turns only where you look (game.ts), and rises and falls a little in the seat.
+    this.body.localToWorld(out);
+    if (held) out.y += Math.max(-EYE_GIVE, Math.min(EYE_GIVE, held.lift));
   }
 
   /** How far down (a pitch) the driver's view from inside settles to. */
@@ -1345,12 +1369,22 @@ const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "
 /** Fox Hill: the estate, and what the lads there drive. */
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
+/** Where the police park up round town, and how many on each street: always a pair on Broad Street,
+ *  and one by the old police station on Manvers Street and on a few other streets in the middle of
+ *  Bath, in each square the street runs through. */
+const COPS: [string, number][] = [["Broad Street", 2], ["Manvers Street", 1], ["Walcot Street", 1], ["Monmouth Street", 1], ["Green Park Road", 1], ["Dorchester Street", 1], ["Bathwick Street", 1]];
+
+/** A police car going with its siren on: where it is and how fast it's going (scene coords). */
+export interface Siren { x: number; z: number; vx: number; vz: number }
+
 /** A bus stop: its flag, the way a bus stands at it, and its name (n). */
 export interface Stop { x: number; z: number; a: number; n?: string }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
 const ROLLER = 65000;
 /** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
 const START = 64000;
+/** Vehicles brought by /spawn (dev.ts) are numbered from here on: past every map's parked cars, and short of TILE_CAR. */
+const CONJURED = 2 ** 39;
 
 /** Is this vehicle number one of a square's start-up vehicles (the buses, and the cars with keys in)? */
 export function isStartup(i: number): boolean {
@@ -1380,7 +1414,7 @@ export class Vehicles {
       v.pose(1, 0);
       this.list.push(v);
       this.byI.set(i, v);
-      scene.add(v.root);
+      scene.add(tag(v.root, "vehicle"));
       map.movers.push(v);
       return v;
     };
@@ -1481,6 +1515,17 @@ export class Vehicles {
       placed.push(at);
       add(kind, at.x, at.z, at.a, true); stands++;
     }
+    // and the police, parked up nose to tail at the kerb where they always are (COPS): after
+    // everything else, so nothing else's number moves
+    const P = SPECS.police, free = (x: number, z: number) => !placed.some((p) => Math.hypot(p.x - x, p.z - z) < 9);
+    for (const [street, n] of COPS) {
+      for (let k = 0; k < n; k++) {
+        const at = this.kerbSpot(map, street, P, free);
+        if (!at) break;
+        placed.push(at);
+        add("police", at.x, at.z, at.a, true);
+      }
+    }
   }
 
   /** Where Mr D's chip van is parked: at the top of Old Bond Street, on its west side just south of
@@ -1500,7 +1545,7 @@ export class Vehicles {
   }
 
   /** Somewhere along the kerb of the street of that name in this square to park something of spec S, on the left as the traffic goes, or null if there's no room. */
-  private kerbSpot(map: GameMap, street: string, S: Spec): { x: number; z: number; a: number } | null {
+  private kerbSpot(map: GameMap, street: string, S: Spec, free: (x: number, z: number) => boolean = () => true): { x: number; z: number; a: number } | null {
     for (const r of map.d.rd) {
       if (r.n !== street || PATHS.has(r.c) || r.bridge) continue;
       const way = (r.ow ?? 1) < 0 ? -1 : 1, off = Math.max(0, roadHalf(r.c, r.w) - S.W / 2 - 0.15);
@@ -1512,7 +1557,7 @@ export class Vehicles {
         for (let s = S.L / 2 + 1; s <= len - S.L / 2 - 1; s += 3) {
           const along = way > 0 ? s : len - s, x = ax + ((bx - ax) / len) * along + nx * off, y = ay + ((by - ay) / len) * along + ny * off;
           const a = Math.atan2(uy, ux), c = Math.cos(a), sn = Math.sin(a), z = -y;
-          const ok = [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+          const ok = free(x, z) && [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
           if (ok) return { x, z, a };
         }
       }
@@ -1613,9 +1658,26 @@ export class Vehicles {
     return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
   }
 
+  /** Host: a vehicle brought by /spawn (dev.ts), in a paint of its kind's, numbered well clear of
+   *  every other range. It goes out to everyone like a square's start-up vehicle (its kind and
+   *  paint in the "vh" list), but with no square of its own it's never cleared away with one. */
+  conjure(kind: VKind, x: number, z: number, a: number): Vehicle | undefined {
+    const P = SPECS[kind]?.paint;
+    if (!P?.length) return undefined;
+    const i = CONJURED + Math.floor(Math.random() * 2 ** 30), paint = Math.floor(Math.random() * P.length);
+    this.started.set(i, { kind, paint, x: NaN, z: NaN });
+    return this.add(i, kind, P[paint], x, z, a);
+  }
+
   /** A vehicle of a job's own (a driving test's learner car), numbered the same on every screen, so the host's word on who sits in it reaches it. */
   own(i: number, kind: VKind, paint: string, x: number, z: number, a: number, label = ""): Vehicle {
     return this.byI.get(i) ?? this.add(i, kind, paint, x, z, a, label);
+  }
+
+  /** The police cars going with the siren on, for the naughty boys to scarper from and the traffic
+   *  to pull over for (the host runs both). */
+  sirens(): Siren[] {
+    return this.list.filter((v) => v.siren && v.spec.siren === "siren").map((v) => ({ x: v.x, z: v.z, vx: v.vx, vz: v.vz }));
   }
 
   /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */

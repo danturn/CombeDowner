@@ -3,6 +3,11 @@
 // samples) and synthesised with Web Audio so the game still ships no sound files. The tracks are
 // written out in src/tracks; within a track the arrangement picks the order of the riffs, their
 // key and the lead parts at random, so the music plays forever without looping exactly.
+//
+// Some tracks belong to a time of day (a track's `hour`). Whoever starts the music can say what the
+// time is (the `hour` option; audio.ts gives it the game's clock), and then each new track is drawn
+// with those near that time much the likeliest, the rest still turning up now and then. Each
+// player's music is their own: nothing about it goes over the network.
 
 import { TRACKS } from "./tracks";
 import type { Riff, Track } from "./tracks/notation";
@@ -72,6 +77,19 @@ export function trackTitle(name: string) {
   return t?.artist ? `${t.artist} - ${name}` : name;
 }
 
+/**
+ * How likely a track is to be picked at this hour of the day, against the others. One with an hour
+ * of its own is about eight times likelier at that hour than at the far side of the clock, and
+ * down to half its best three hours either side; one without is the same all day, and a bit less
+ * likely than a timed track a few hours off its hour.
+ */
+export function trackWeight(t: Track, hour: number | undefined) {
+  if (hour === undefined) return 1;
+  if (t.hour === undefined) return 0.3;
+  const d = Math.abs((((t.hour - hour) % 24) + 36) % 24 - 12);
+  return 0.15 + Math.exp(-((d / 3.6) ** 2));
+}
+
 export type SoundtrackOptions = {
   /** Track to start with (by name, or a track that isn't in the playlist); a random one if not given. */
   track?: string | Track;
@@ -79,6 +97,9 @@ export type SoundtrackOptions = {
   changeAfter?: number;
   /** Random seed, so a render is repeatable. */
   seed?: number;
+  /** The hour of the day now (0 to 24), asked each time a track is picked, so the tracks for that
+   *  time of day come up most. Without it every track is as likely as the next. */
+  hour?: () => number;
 };
 
 /** Endless procedural 16-bit metal. Call scheduleUntil(t) often enough to stay ahead of playback. */
@@ -100,6 +121,7 @@ export class Soundtrack {
   private changeAfter: number;
   private last = "";
   private seed: number;
+  private hour?: () => number;
   /** Called as each bar is scheduled, with the time it will start playing. */
   onBar?: (bar: BarInfo, time: number) => void;
   /** Called when a new track is scheduled, with the time it will start playing. */
@@ -109,8 +131,9 @@ export class Soundtrack {
     this.ctx = ctx;
     this.seed = opts.seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.changeAfter = opts.changeAfter ?? 150;
+    this.hour = opts.hour;
     this.track = typeof opts.track === "object" ? opts.track
-      : TRACKS.find((t) => t.name === opts.track) ?? TRACKS[Math.floor(this.rand() * TRACKS.length)];
+      : TRACKS.find((t) => t.name === opts.track) ?? this.pick(TRACKS);
     this.switchTo = this.track;
     // a 9-bit output stage, like the Mega Drive's FM chip, for a little grit
     const crush = ctx.createWaveShaper();
@@ -238,9 +261,18 @@ export class Soundtrack {
     return ((x ^ (x >>> 14)) >>> 0) / 2 ** 32;
   }
 
+  /** Draw one of these tracks, those that belong to this time of day likeliest. */
+  private pick(from: Track[]) {
+    const hour = this.hour?.();
+    const weights = from.map((t) => trackWeight(t, hour));
+    let r = this.rand() * weights.reduce((s, w) => s + w, 0);
+    for (let i = 0; i < from.length; i++) { r -= weights[i]; if (r < 0) return from[i]; }
+    return from[from.length - 1];
+  }
+
   private otherTrack(than = this.track) {
     const others = TRACKS.filter((t) => t !== than);
-    return others.length ? others[Math.floor(this.rand() * others.length)] : than;
+    return others.length ? this.pick(others) : than;
   }
 
   private phrase(track: Track, name: string, o: Partial<Bar>) {

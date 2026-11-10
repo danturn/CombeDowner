@@ -214,7 +214,7 @@ def main(argv):
     prep_d = {t: cache.file_digest(os.path.join(base, name(t) + ".json")) for t in built}
     wkey = lambda t: digest([os.path.join(base, name(t) + ".json")],
                             (passes["partition"].get(name(t)), passes["upstream"], data[t], writer,
-                             [(prep_d.get(n), passes["partition"].get(name(n))) for n in neighbours(*t) if n != t]))
+                             [(prep_d.get(n), passes.get("faces", passes["partition"]).get(name(n))) for n in neighbours(*t) if n != t]))
     out_of = lambda t: os.path.join(out_dir, name(t) + ".json")
     todo, copy = [], []
     for t in wanted:

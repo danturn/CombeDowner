@@ -82,6 +82,8 @@ work on it. Useful URL options:
   only far-off ones are; `web/src/trees.ts`).
 - `?nightout=1` makes every night a Friday night out, with the crowd at the top of Milsom Street
   (`nightOut` in `web/src/daylight.ts`, `naughtyboys.ts`).
+- `?lights=2` tries a Street lights level (0 Low to 4 Max) for one visit: how far off lit lamps
+  show after dark, and the lamps' painted pools of light (`web/src/lamppools.ts`).
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?squares=16` sets the most squares of Bath built in full at once (`SQUARES` in `web/src/view.ts`),
   the memory budget; `node tools/memory_probe.mjs` measures the memory along a fixed trip round Bath.
@@ -140,6 +142,14 @@ nine go together) and prints the two commands: rebuild just those squares
 (`tools/prep_tiles.py ... --only ti,tj ...`), then shoot the view. Rebuild the whole map, and
 run the clash check (`tools/check_map.py`), once the change is right.
 
+Spencer reports what's wrong with the map with the drone (`/drone` on the chat phone,
+`web/src/drone.ts`): he flies to it, shoots to snap, notes it, and pastes `/drone copy`'s text
+and contact sheet to you. Each `#n` line's `at=` is the camera (east, north, bearing, tilt, height
+off the ground), ready for `npm run shoot` and `square_at.py`; `aim=` is the point under the
+crosshair (east, north, height off the ground there, and how far); `square` is the square it's in;
+`hit` is what the game's solid ray met there (so "ground" under something that looks solid means
+it isn't in the collision). The sheet's pictures carry the same numbers, crosshair on the spot.
+
 On Dan's fork, Dan's agents run full map builds and screenshots on Dan's Mac, through the
 project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
 [--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a
@@ -187,9 +197,9 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
   placed by `tools/landmarks/bath.py`. Set pieces (Bath Abbey, Pulteney Bridge, the Roman Baths,
-  Argyle Street, Great Pulteney Street, Grand Parade, the Empire Hotel, the Holburne Museum, Sham
-  Castle, Prior Park, Kingswood School, the Bell Inn, Grenville's monument on Lansdown and Bath Spa
-  station:
+  Argyle Street, Great Pulteney Street, Grand Parade, the Empire Hotel, the Holburne Museum, the Royal Crescent, Sham
+  Castle, Prior Park, Kingswood School, the Bell Inn, Grenville's monument on Lansdown, the Skyline
+  gate above Prior Park and Bath Spa station:
   `src/landmarks/setpieces.ts`) are different: the game hides what the build put inside their
   outlines as each square loads and draws the hand-made model instead, so the map tools and files
   stay as they are. Rebuilding squares needs nothing doing for them.

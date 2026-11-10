@@ -1,4 +1,4 @@
-// The rugby and cricket teams (and the Flag Lads, and the naughty girls on a night out) don't just shout
+// The rugby and cricket teams (and the Flag Lads, the naughty girls on a night out and the Royal Crescent's residents) don't just shout
 // "Oi!": they speak in actual words, using the browser's own speech voice. We pick a British one if the
 // browser has one (a man's voice if we can find one, or a woman's for the girls) so they sound right. Their line also shows in a bubble over their head (see
 // naughtyboys.ts), so you still get it with the sound off or with no speech voice at all. When they've
@@ -44,10 +44,38 @@ const GIRLS = [
   "Don't you dare touch my hair!", "Do you know who my boyfriend is?", "Shazza! Get over here!", "Not in these heels!",
   "Are you starting?", "That's my kebab!", "Mind my nails!", "I'm not even drunk!",
 ];
+/** What a naughty girl says more than anything else. */
+const GIRLS_FAVOURITE = "Sorry love, washing me hair tonight!";
 
-/** Something for one of the posh lot (or the Flag Lads, or a naughty girl) to shout. kind 1 is rugby, 2 cricket, 3 a Flag Lad, 5 the Gaffer, 6 a naughty girl. */
-export function line(kind: number) {
-  if (kind === 6) return GIRLS[Math.floor(Math.random() * GIRLS.length)];
+/** The Royal Crescent's residents (naughtyboys.ts), seeing you off their private lawn. */
+const RESIDENTS = [
+  "Get off the lawn!", "Get off the lawn!", "This is a private lawn!", "Residents only!", "Do you live here? I think not!",
+  "I pay a service charge for this grass!", "Off the grass, you ghastly little man!", "Who on earth let you in?",
+  "This is a World Heritage Site, you know!", "I shall be writing to the Chronicle!", "I'm calling the Residents' Association!",
+  "Peregrine! Intruder on the lawn!", "Have you no breeding?", "Not on the lawn, you oik!", "Shoo! Go on, shoo!",
+  "Can't you read the sign?", "The park's that way, the public part!", "We've had Jane Austen on this lawn!",
+  "Fetch the groundsman!", "Do you know what this house is worth?",
+];
+/** And a guest from the hotel, in his bathrobe. */
+const GUESTS = [
+  "I'm paying five hundred a night for this view!", "Concierge! Concierge!", "I've come straight from the spa for this!",
+  "This lawn is for guests of the hotel!", "I'll be leaving a review!",
+];
+/** What one of the residents says once you're off the lawn and they've given up on you. */
+const STAY_OFF = [
+  "And stay off!", "And stay off the lawn!", "And don't come back!", "Ghastly person.", "Honestly, the people they let into Bath now.",
+  "Riff-raff!", "I'll be writing to the council!",
+];
+export const stayOff = () => STAY_OFF[Math.floor(Math.random() * STAY_OFF.length)];
+
+/** Something for one of the posh lot (or the Flag Lads, a naughty girl or a Crescent resident) to shout.
+ *  kind 1 is rugby, 2 cricket, 3 a Flag Lad, 5 the Gaffer, 6 a naughty girl, 7 a resident (kit 6 a hotel guest). */
+export function line(kind: number, kit = 0) {
+  if (kind === 7) {
+    const own = kit === 6 && Math.random() < 0.5 ? GUESTS : Math.random() < 0.85 ? RESIDENTS : ANYONE;
+    return own[Math.floor(Math.random() * own.length)];
+  }
+  if (kind === 6) return Math.random() < 0.2 ? GIRLS_FAVOURITE : GIRLS[Math.floor(Math.random() * GIRLS.length)];
   if (kind >= 3) { const own = kind === 5 ? CHAIR : SOCIETY; return own[Math.floor(Math.random() * own.length)]; }
   const own = kind === 1 ? RUGBY : CRICKET;
   const all = Math.random() < 0.3 ? own : ANYONE;
@@ -63,6 +91,7 @@ const LEG_IT = [
   ["I'm only the ladder man!", "Not the ladder!", "I'm on a day rate!"],
   ["You'll be hearing from my solicitor!", "Lads? Lads?!", "It's a strategic regroup!"],
   ["I've broke a heel!", "My nails!", "I'm telling Darren!", "Where's my bag?", "I'm getting a taxi!", "Ugh, you've ruined my night!"],
+  ["I'm telling the Residents' Association!", "Simply ghastly!", "My solicitor will hear of this!", "I need a gin!", "Call the police! And my agent!", "Mind my hat!"],
 ];
 export function legIt(kind: number) {
   const own = LEG_IT[kind] ?? LEG_IT[0];

@@ -62,6 +62,7 @@ from partition.openings import EDGE_STUB
 from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
+from partition.markings import road_markings
 from partition.sheet import ground_sheet
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts, unregistered
 from partition.standing import Standing
@@ -115,7 +116,6 @@ BARRIER_WIDTH = {
 DECOR_CLEAR = 0.5
 # Metres a lamp may stand inside the carriageway's edge: they are placed on the kerb line itself.
 KERB_LINE = 0.3
-MARK_SLACK = 0.2         # metres a road marking may stand beyond the carriageway's edge and be kept
 # Road classes the game draws as paths, with no carriageway (`PATHS` in `web/src/map.ts`).
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
 PEDESTRIAN_STREET_NEAR = 15.0  # metres: main draws a wide pedestrian street on its middle line, so a street's edge can lie this far off it
@@ -7373,17 +7373,43 @@ def parked_car_rows(rd, fx, br, gt, houses, ground, dv=(), no_parking=None):
     return rows, count
 
 
-def marks_on_carriageways(mk, rd):
-    """The road markings that still lie on a carriageway of the new `rd`. The old build's markings
-    were laid along its own streets; where a street has moved or narrowed they would be on the
-    pavement or a garden."""
-    strips = [LineString([q[:2] for q in r["p"]]).buffer(way_width(r) / 2.0 + MARK_SLACK, cap_style="flat")
-              for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
-    if not strips:
-        return []
-    road = unary_union(strips)
-    shapely.prepare(road)
-    return [m for m in mk if road.contains(Point(m[0], m[1])) and road.contains(Point(m[2], m[3]))]
+MARK_REACH = 60.0        # metres round a square whose streets' junctions may put a marking on its road
+
+
+def marked_streets(rows, rd, sq):
+    """The streets round the square, whole, for its road markings: the corridors (which run on over
+    the square's sides, so a junction just over one is seen as it is), each with its carriageway's half
+    width as this square's records have it, else as the corridor's cross-sections do."""
+    near = box(*sq).buffer(MARK_REACH)
+    mine = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    tree = STRtree([l for l, _ in mine]) if mine else None
+    out = []
+    for e, *_ in rows:
+        if e["path"] or e["cls"] in GAME_PATHS or not e["line"].intersects(near):
+            continue
+
+        def half(p, e=e):
+            if tree is not None:
+                own = [(mine[int(k)][0].distance(p), int(k)) for k in tree.query(p.buffer(3.0))
+                       if mine[int(k)][1]["c"] == e["cls"] and (mine[int(k)][1].get("n") or "") == (e["name"] or "")]
+                if own:
+                    return way_width(mine[min(own)[1]][1]) / 2.0
+            t = e["line"].project(p)
+            for t0, t1, vs in e["sections"]:
+                if t0 - 0.01 <= t <= t1 + 0.01:
+                    return vs[0] / 2.0
+            return RW.get(e["cls"], 4) / 2.0
+        out.append(dict(line=e["line"], cls=e["cls"], name=e["name"] or "", half=half))
+    return out
+
+
+def marked_road(sf, rd, sq):
+    """The square's road as the game draws it, for its markings: the carriageway's faces and the decks
+    of its bridges, which the game builds from the street's own record rather than from faces."""
+    parts = [drawn_carriageway(sf) or Polygon()]
+    parts += [s.buffer(way_width(r) / 2.0, cap_style="flat") for r in rd
+              if r["c"] not in GAME_PATHS and len(r["p"]) > 1 for s in deck_stretches(r) if s.length > 0]
+    return unary_union(parts).intersection(box(*sq))
 
 
 def blocked_ground(rd, tile, rail_tracks, canal, sq):
@@ -8142,7 +8168,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["gt"] = gt
     tile["fp"] = fp
     tile["dv"] = dv
-    tile["mk"] = marks_on_carriageways(tile.get("mk") or [], rd)
     tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
     moved = collections.Counter()
     gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked,
@@ -8163,6 +8188,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                       None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + [c[:3] + [round(street_ground(c[1], c[2]) + 0.07, 2)] + c[4:] for c in drive_cars]
     tile["cx"], cx_count = crossings(sq, rd, street_ground, points)
+    tile["mk"] = road_markings(marked_streets(rows, rd, sq), marked_road(tile["sf"], rd, sq), street_ground,
+                               [(q[0], q[1]) for q in tile["cx"]])
     gs = ground_sheet(tile, canal)
     if gs is not None:
         tile["gs"] = gs

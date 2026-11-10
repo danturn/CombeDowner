@@ -235,6 +235,7 @@
             <dt data-ctl="map"></dt><dd>Full map (tap it to put your marker on it)</dd>
             <dt data-ctl="mark"></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
             <dt data-ctl="music"></dt><dd>Previous and next music track</dd>
+            <dt data-ctl="chat"></dt><dd>The chat phone: text everyone in the game, or type a /command (/help)</dd>
             <dt data-ctl="pause"></dt><dd>Pause and invite link</dd>
             <dt>Controller</dt><dd id="padnote">Press a button on your controller to wake it up</dd>
           </dl>
@@ -301,8 +302,14 @@
           <label class="pick">Resolution <select id="set-res"></select></label>
           <p class="hint">Lower is faster, higher is sharper.</p>
           <label class="slider"><span>Field of view <span class="val" id="set-fov-val"></span></span><input id="set-fov" type="range" min="60" max="100" step="1" value="72"></label>
-          <label class="check"><input id="set-shadows" type="checkbox" checked> Shadows</label>
+          <label class="pick">Shadows <select id="set-shadows"></select></label>
+          <p class="hint" id="set-shadows-hint"></p>
+          <label class="pick">Scenery detail <select id="set-detail"></select></label>
+          <p class="hint" id="set-detail-hint"></p>
+          <label class="pick">Street lights <select id="set-lights"></select></label>
+          <p class="hint" id="set-lights-hint"></p>
           <label class="check"><input id="set-fx" type="checkbox" checked> Retro look (colour grade and dither)</label>
+          <label class="check"><input id="set-dof" type="checkbox"> Depth of field (the drone, [ and ]; and the cinematic camera)</label>
           <label class="check"><input id="set-debug" type="checkbox"> Debug info and frame rate (F3)</label>
           <label class="check"><input id="set-ground" type="checkbox" checked> New ground: meets the streets and paths (reloads where you stand)</label>
         </fieldset>

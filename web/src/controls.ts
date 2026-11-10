@@ -103,7 +103,12 @@ export const STREETS: Control[] = [
   { id: "mark", name: "Mark the spot", keys: ["KeyG"], mouse: 1, pad: B.right, where: "foot" },
   { id: "pause", name: "Pause", keys: ["Escape"], pad: B.options, touch: "II" },
   { id: "music", name: "Previous and next music track", keys: ["Comma", "Period"] },
+  { id: "drone", name: "Fly the drone, or land it", keys: ["KeyP"], say: { pad: "/drone on the chat phone", touch: "/drone on the chat phone" } },
+  { id: "chat", name: "Chat phone: text everyone, or a /command", keys: ["Backslash"], say: { pad: "the pause menu", touch: "the pause menu" }, live: true },
   // purposes that are another control's in their own place
+  { id: "droneview", name: "The drone's view of the scenery (/drone)", keys: ["KeyC"], via: "crouch", say: { touch: "the view's name" } },
+  { id: "dronezoom", name: "The drone's zoom, out and in (/drone)", keys: ["Comma", "Period"], say: { pad: "D-pad ← →", touch: "the zoom" } },
+  { id: "dronefocus", name: "The drone's depth of field, deeper and shallower (/drone, with it on in Settings)", keys: ["BracketLeft", "BracketRight"], say: { keys: "[ / ]", pad: "L3", touch: "Settings, Video" } },
   { id: "heave", name: "Heave (Push the Bus)", keys: ["Space"], via: "jump", say: { touch: "Heave" } },
   { id: "kick", name: "Kick or bowl, lined up at a ball", keys: ["Space"], via: "jump", say: { touch: "Fire" } },
   { id: "walkoff", name: "Walk off from a ball", keys: ["KeyE"], via: "use", say: { touch: "Jump" } },
@@ -121,7 +126,7 @@ export const STREETS: Control[] = [
   { id: "handbrake", name: "Handbrake", keys: ["Space"], via: "jump", say: { touch: "Jump" } },
   { id: "out", name: "Get out", keys: ["KeyE"], pad: B.triangle, touch: "Get out", where: "wheel" },
   { id: "horn", name: "Horn, bell, siren or chimes", keys: ["KeyH"], pad: B.r1, touch: "Fire", where: "wheel" },
-  { id: "view", name: "Chase, seat or bonnet camera", keys: ["KeyC"], pad: B.circle, touch: "View", where: "wheel" },
+  { id: "view", name: "Chase, seat, bonnet or cinematic camera", keys: ["KeyC"], pad: B.circle, touch: "View", where: "wheel" },
   { id: "left", name: "Indicate left", keys: ["ArrowLeft"], pad: B.left, touch: "◀", where: "wheel" },
   { id: "right", name: "Indicate right", keys: ["ArrowRight"], pad: B.right, touch: "▶", where: "wheel" },
   // in the back of the Driving Test's car, where the d-pad's uses on foot don't apply
@@ -214,7 +219,7 @@ export const PLACES: Record<string, Control[]> = {
 
 const KEY_NAME: Record<string, string> = {
   Space: "Space", Tab: "Tab", Escape: "Esc", ShiftLeft: "Shift", Enter: "Enter", Backspace: "Backspace", Wheel: "the mouse wheel",
-  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Comma: ",", Period: ".", Slash: "/", Backquote: "`",
+  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Comma: ",", Period: ".", Slash: "/", Backquote: "`", Backslash: "\\",
   Mouse0: "Left click", Mouse1: "Middle click", Mouse2: "Right click",
 };
 /** A key code as the keyboard prints it. */

@@ -83,6 +83,11 @@ Bath's great buildings are modelled by hand:
 - **The Holburne Museum** at its far end: the three-arched loggia you can walk up into, its
   portico and urns, and the glass extension in Sydney Gardens behind.
 - **Argyle Street**, from the bridge to Laura Place, a shopfront to every house.
+- **The Royal Crescent**: Wood the Younger's great half-ellipse of houses looking over its lawn,
+  one front of giant Ionic columns all the way round, the round-headed window in the very middle,
+  the balustrade, slate roofs and chimneys above, and every house a different depth behind ("Queen
+  Anne fronts and Mary Anne backs"). Walk the flagged pavement past the area railings, cross the
+  little bridges to the front doors, or get up on the roofs.
 - **Grand Parade** along the river: Davis's colonnade and river wall, with a balustrade, urns and
   cast-iron lamps that light up after dark.
 - **The Empire Hotel** on Orange Grove: its domed octagonal tower, and the roofline of a castle, a
@@ -91,7 +96,7 @@ Bath's great buildings are modelled by hand:
   the Avon on one great arch between paired Doric pilasters, with the railway through its smaller
   arch, a deep cornice at the towpaths and balustrades at the ends. Walk the towpaths across it.
 - **Sham Castle** on Bathampton Down: Ralph Allen's folly, all front, with an arch you can walk
-  through.
+  through. After dark it's floodlit gold from lamps on the grass in front, as it is for real.
 - **Prior Park** above Combe Down: Allen's Palladian mansion, its giant portico looking down the
   valley, the steps up from the lawn, and its wings stepping down the hill.
 - **Kingswood School** on Lansdown: Wilson's Tudor Gothic range with its tall entrance tower, and
@@ -105,6 +110,10 @@ Bath's great buildings are modelled by hand:
   lights, covered seating and the Back Bar with its own stage.
 - **Sir Bevil Grenville's monument**, out on Lansdown where the battle was fought in 1643: a stone
   pedestal on steps with the Grenvilles' griffin on top.
+- **The Skyline gate**, between Prior Park and Rainbow Wood, where the path out of the wood meets
+  the top of the fields and Bath opens out below: two old stone gate piers either side of the path,
+  one still holding its iron gate open, low estate railings along the field, a five-bar field gate,
+  a kissing gate with a waymarker beside it, and a stump and a fallen trunk out in the grass.
 
 ### Streets, walls and bridges
 
@@ -186,7 +195,22 @@ open it, and Back or Esc takes you back to the list:
 - Video: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
-  debug panel.
+  debug panel. Shadows go Off, Low, Medium, High or Ultra: how far from you they reach, as a share of
+  the draw distance (a tenth, a quarter, half, or all of it), never further than 3 km (1 km on a phone
+  or tablet), past which a house's shadow is smaller than a pixel. The page says how far that is at
+  your draw distance. Close by they stay as sharp at every level; further off they're coarser. Trees
+  cast them as far as they reach, even where they're drawn as flat pictures.
+  Scenery detail goes Low, Medium, High, Ultra or Max: how far round you the grass grows (26 m to
+  130 m) and how far off trees keep their full crowns (50 m to 250 m) and then their simpler ones
+  (140 m to 650 m) before they turn to flat pictures. It changes on the spot; a phone or tablet
+  starts on Low, a computer on Medium.
+  Street lights go Low, Medium, High, Ultra or Max: how far off a lit street lamp still shows after
+  dark, as a glow that's drawn bigger and brighter the higher you go so whole streets show from the
+  drone high over town, and how many lamps round you light the street (two fewer than normal to six
+  more). From Medium up, past those, every lamp's pool of light is painted onto the streets, gardens
+  and walls round it, out to 1 km (Medium) or 2 to 3 km (High to Max), a little brighter far off
+  than close to and showing through the night haze, so the town looks lit from the drone and from
+  the hills; roofs stay dark. It changes on the spot; everyone starts on Medium.
 - Controls: mouse sensitivity, and invert up and down and invert left and right for the mouse (which
   counts for a trackpad and the arrow keys too) and for touch. The mines' pause menu has the mouse ones.
 - Play: passive mode (also a tickbox on the main menu), where cats, naughty boys, the teams, the
@@ -265,7 +289,7 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | L2 | aim, held | brake and reverse |
 | Cross | jump (a ride's verb and trick) | handbrake |
 | Square | tap: reload (R); hold: use, get in or out (E), or a tap when there's something to use | get out (let go of a tiller) |
-| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | chase camera, driver's seat or bonnet camera |
+| Circle | tap: crouch; hold: lie down (mid-sprint, dive); either again to stand | chase camera, driver's seat, bonnet or cinematic camera (in a balloon: basket, chase or cinematic) |
 | Triangle | switch weapon | get out |
 | L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn (a narrowboat's bell at the helm) |
 | L3 | sprint while the stick's forward; aiming, shooting or reloading stops it, and sprinting again cuts a reload short (on a ride: grind or manual) | |
@@ -400,6 +424,11 @@ keep finding one in your way when you're driving one), and at any stop you can p
 you. Each cricket club has its heavy roller out. Mr D's chip van, red with yellow trim and the yellow
 "Mr.D's" oval, is parked at the top of Old Bond Street, where Milsom Street meets New Bond Street,
 with its hatch open, the awning up and Mr D in it with his arms folded; you can drive that off too.
+More Police Sierras are parked up round the middle of Bath: always two on Broad Street, one by the
+old police station on Manvers Street, and one each on Walcot Street, Monmouth Street, Green Park
+Road, Dorchester Street and Bathwick Street. Put the siren on and any naughty boys and girls within
+earshot drop what they're doing and scarper, one or two shouting a warning, and the traffic pulls in
+to the kerb and stops till you're past.
 Arleen's coaches, from Peasedown St John, are about too, in white with
 ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts and Van Hool
 Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
@@ -441,12 +470,34 @@ speed, until you lift off or brake and the nose tucks in. The left and right arr
 touch screen) work the indicators, which tick away and cancel themselves once you're round the
 corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
 sees them, the traffic's brake lights too. C (View on a touch screen) goes round
-the chase camera, the driver's seat and the bonnet camera. From the driver's seat you look out over
-a low dash: the speedo shows your speed, the wheel turns as you steer, and the buses have a cab of
-their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
+the chase camera, the driver's seat, the bonnet camera and the cinematic camera. The cinematic camera
+is GTA V's: it cuts every few seconds between shots a film crew would set up, low by the kerb as you
+sweep past, up on a crane or a rooftop, tracking alongside, out in front looking back, down by the back
+wheel, from a helicopter, from a hillside across the valley on a long lens, and lined up with a
+landmark behind you (the Abbey, Pulteney Bridge, Sham Castle...). It's meant to be hard to drive by,
+but not too hard: it works out where you're heading (round the bend too, if you're turning) and how
+much road you need to see at your speed, and the faster you go the more the shots show that stretch of
+road (low behind you, a drone or helicopter above, a crane, from the side with the road opening up
+beyond), mixed with drive-bys (a camera down by the kerb or a helicopter hovering over the road
+up ahead, that you sweep past, left to watch you go) and the odd one just for the drama, like the car
+coming at you head on. After one of those the
+next always shows the way ahead, a shot that's lost sight of it cuts away sooner the faster you're
+going, and if there's something coming up you might hit (traffic, a parked car, someone in the road, a
+wall where the road bends) it cuts at once to a shot that shows it. It never sits inside a building, and cuts away if anything gets
+between it and you. From the driver's seat you look out over
+a low dash: the speedo and rev counter read through the top of the wheel, the wheel turns as you steer,
+and the indicator stalk goes up or down as you signal. Each car is fitted out as the real one was: the
+XR3i's sports seats, three-spoke wheel and furry dice (they swing on their strings as you pull away, brake, corner and hit the bumps), the GTI's tartan seats and golf-ball gear knob,
+the Land Rover's painted metal, its dials in the middle of the dash and its three levers, the Robin's
+one big speedo, a van's bench seat and bulkhead, and a newer hatchback's airbag wheel, glowing radio
+and air freshener. Look round and it's all there: pedals, gear stick and handbrake, the radio and
+heater, the door handles and window winders, seatbelts, sun visors and a tax disc in the windscreen.
+At the longest draw distances the carpet, seats and roof lining show their weave and the windscreen
+its film of dust. The buses have a cab of their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
 racing game, sits just above the bonnet at the foot of the windscreen (on a bus or a coach, at the
 front of the cab) with nothing of the inside in the way. It remembers which you like. From either, your head rides the bumps as a driver's does:
-a rough road jostles the car round you, but the view tips with a hill only gently, a moment behind. Each engine has a voice of its own:
+a rough road jostles the car round you, but the view tips with a hill only gently, a moment behind, and
+you stay sat in your seat, so you never see out through the roof or the floor. Each engine has a voice of its own:
 it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
 the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
 The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit
@@ -537,8 +588,9 @@ at the stern to take the tiller: W and S set the throttle, A and D put the tille
 the boat's little bell (Fire on a touch screen), and ← and → wave to people on the bank with your
 left or right hand (◀ ▶ on a touch screen). It answers
 slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
-with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
-back deck for a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead. Any boat moored by the bank is yours too: press E at
+with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) goes from the
+back deck to a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead, and on
+to the cinematic camera (towpath shots, bridges, the hills either side). Any boat moored by the bank is yours too: press E at
 its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). At the
 tiller you're above it all: no naughty boy, team or Flag Lad will come for you or lay a finger on
 you. Every
@@ -596,8 +648,18 @@ the envelope, **S** opens the vent at the top to let it out, and **A** and **D**
 few seconds to tell, so burn in short blasts and wait: let it cool and you sink. The wind blows
 harder higher up and comes from a different way, so choosing your height is how you choose where
 you go. The panel shows how high you are over the ground, how fast you're climbing or sinking, and
-how hot the envelope is. You can't climb out till you're down again (anywhere: a field, a street, a
-roof); come down too hard and it hurts. A balloon left on its own comes down and is packed up where
+how hot the envelope is. C (View on a touch screen, Circle on a controller) goes from the basket to a
+chase camera well back, to see the whole balloon with you in the basket (the mouse swings it round),
+and on to the cinematic camera, which films you as the television does from a helicopter: long
+lenses from a long way off, circling slowly or flying alongside a little above you so Bath fills the
+picture behind, slow zooms in and out, and wide shots with the balloon small over the city. It tilts
+down from a set piece to you drifting past it, or frames the two of you together, picks out another
+balloon in the distance behind you, and at dawn and dusk puts the low sun behind you (by night, the
+moon). Taking off and coming in to land it's down on the ground: wide across the lawn past the other
+balloons standing ready, a camera rising on a crane beside you as you lift, the Royal Crescent behind.
+You can't climb out till you're down again (anywhere: a field, a street, a roof), but from 15 m up E
+jumps you over the side the way you're looking, in the wingsuit (a basket that high earns it, as any
+roof does, and it goes on your back if it was in your wardrobe): Space opens it as you fall. Come down too hard and it hurts. A balloon left on its own comes down and is packed up where
 it lands, and the crews have it back on the lawn before the next dawn. `?time=06:00` in the address
 stops the clock in the morning, to try it.
 
@@ -838,7 +900,9 @@ there hears the same bit at the same time.
 
 ### Ball games
 
-Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
+Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Running
+tracks (Kingswood's on Lansdown, the university's on Claverton Down) are red, with their lanes and
+the finish line marked, and an infield with nothing else on it is a rugby pitch. Now and
 then a ball turns up on one (a white dot on the map): a penalty or a shot from the edge of the box,
 a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim (a tap for a
 fine nudge, hold to swing round quickly), W and S set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
@@ -987,6 +1051,71 @@ For real guns and blood, add `?gore=1` to the address (`?gore=0` to go back) or 
 while playing. The browser remembers it, and it's only what you see.
 Type `cheats` while playing for a page listing every cheat.
 
+Press `\` (or Chat and commands in the pause menu, on a touch screen) to get your phone out: an old
+Nokia's colour screen on the right, counting down the 160 letters a text can have. Type and press
+Enter, and it goes to everyone in the game, in any town; texts from the others come in with the old
+"SMS" beep, and the phone pops up to show them for a few seconds. Esc, Back or `\` put it away.
+A line starting with `/` is a command, for trying things out:
+
+- `/idkfa`: god mode. Nothing hurts you, and you've every weapon, never running dry. Again to stop.
+- `/sunrise`, `/day`, `/noon`, `/sunset`, `/night`, `/midnight`: move the clock on to six in the
+  morning, ten, twelve, quarter to eight in the evening, eleven at night and midnight, for everyone
+  in the game. The clock only goes forward, so `/noon` in the afternoon is tomorrow's.
+- `/fridaynight`: on to nine on the next Friday night, when the town's out.
+- `/time`: says the time and the day. `/time 21:30` (or `/time 9pm`) moves the clock on to then,
+  for everyone.
+- `/bonfire`: Get Wood's bonfire, and dark, as the debug panel's "Bonfire night" does.
+- `/pub`: a list of the pubs, nearest first, to go straight to one as from the big map. `/pub bell`
+  goes to the first pub with "bell" in its name.
+- `/goto 1275,2559`: straight to that spot (metres east and north, as the debug panel shows). Paste a
+  link `/where` or Shift+F3 copied after it to go back there, facing the same way.
+- `/where`: copies where you are, with a link back to the spot.
+- `/spawn`: a list on the phone of people (naughty boys, the teams, the Flag Lads), cats, every
+  vehicle and things to pick up. ↑ ↓ and Enter (or a tap) brings one 5 m in front of you, and typing
+  narrows the list down; `/spawn cat` or `/spawn 8` brings one straight off.
+- `/drone` (or P): up you go as a camera drone, to fly about Bath and look at it from the air, through
+  anything and unharmed; again lands you on whatever's below, roofs included. W A S D move
+  you level the way you're facing, the mouse looks, Space climbs, Shift sinks and the mouse wheel
+  (or Q) picks one of five speeds. On a touch screen the stick moves, Jump climbs, Crouch sinks (tap
+  again to stop) and Weapon changes speed. A controller flies it as real drones do ("Mode 2"): the
+  left stick climbs, sinks and turns, the right stick moves you about, the D-pad's up and down tilt
+  the camera, and L1 and R1 pick the speed. The view leans into turns, and the screen is a drone
+  camera's feed: a viewfinder with a cross in the middle, the compass heading on a tape across the
+  top, your height above the ground on a ladder down the left and your speed down the right, the
+  time, square, speed setting, zoom, camera tilt and climb in the top left, the latitude and
+  longitude, how far you are from where you took off, the range to what's under the cross and
+  your height above the sea in the top right, REC with the flight's time and the snaps you've
+  taken this flight over the frame, and the view and zoom under it. Nothing else of the HUD
+  shows while you fly (the full map and the scores still come up when you ask), and nobody goes
+  for you: the naughty boys, the teams, the cats and Bendy leave you be, and the people who chat
+  as you pass (and Jamie, with his ciggies) don't notice you.
+  C (Circle on a controller, or a tap on the view's name at the top) goes round the drone's views of
+  the scenery, each lit the same night or day: Normal; Clay, everything plain white so the shapes
+  show for themselves; Outlines, the clay with a dark line wherever a surface turns or one thing
+  stands in front of another; Blueprint, the same lines bright on dark shapes; and What's what, each kind
+  of thing in its own colour with a key under the bar (the lidar's ground, streets, the map build's
+  buildings, set pieces, landmarks, walls and fences, plants, water, the canal's works, the railway
+  and tunnels, street things, far-off scenery, vehicles, people). In What's what the thing under the
+  crosshair is named just below it, with its colour and how far off it is, and outlined in yellow: a
+  building from the map's own outline of it, ground to eaves, with its type and height; a tree, car,
+  person, bench or landmark in a box round it; a street or the ground just named. `,` and `.` zoom out and in, from
+  1x to 8x (the D-pad's left and right, or a tap on the zoom at the top). A snap says which view
+  it was in, and how far zoomed.
+  With Depth of field ticked in Settings (Video; it's off to start with), the drone's camera focuses
+  on whatever's under the crosshair, racking from one thing to the next, and blurs what's nearer and
+  further; `[` and `]` close the aperture down or open it up (F/16 to F/1, deeper or shallower; L3 on a
+  controller goes round them), and the screen shows the aperture and the focus distance. The
+  cinematic camera uses it too, focused on you.
+  Shoot to take a snap of something wrong with the map: the picture with the crosshair on it, where
+  you were and what the crosshair's on. Whatever you type on the phone while you're flying is a note
+  on your latest snap rather than a text. Every snap and note puts this flight's snaps on the
+  clipboard, for pasting to Claude Code: a contact sheet of the pictures, numbered, with every
+  snap's line of text printed under them, so one paste of the picture (Ctrl+V in Claude Code) is
+  all it takes; the text alone pastes as usual. Each flight starts a fresh batch. `/drone copy`
+  copies every snap since the page opened, by hand. `/drone pic 3` copies just snap 3's
+  picture, bigger, and `/drone clear` forgets them. Snaps stay until you close the page.
+- `/help` or `/?`: the list of these.
+
 Press Z (or tap Crouch twice) to lie on your front: you crawl, harder to hit, but to everyone else
 you're a baby doing tummy time on a play mat. Do it mid-sprint and you dive, as in Call of Duty: a
 low lunge two or three metres forward that lands you flat with a thud, and a moment to get your
@@ -1010,13 +1139,25 @@ pitch or cricket field (and another when a friend joins you there), then another
 five minutes while anyone's still on it. They're bigger and quicker than naughty boys, and they
 come looking for anyone near their pitch.
 
+The lawn in front of the Royal Crescent, inside the ha-ha, is private: it's for the people who live
+there and the guests of the hotel. Like the teams at their pitches, the residents are out on it,
+standing about on the grass and on their doorsteps, whenever anyone's in sight of it: gentlemen in
+tweed, blazers and morning coats with their umbrellas, ladies in long dresses, big hats and pearls
+with their handbags, and now and then a hotel guest in his bathrobe and slippers. Step over the
+fence on to the lawn and they come for you. They're the posh lot's answer to naughty boys, and they
+tell you what they think of you all the way ("Get off the lawn!"). They only go for someone on the
+lawn or right by it, give up once you're well off it with a parting word ("And stay off!"), and go
+back to where they were standing. More come out every minute or so while anyone's still on it, and
+they go back indoors once there's nobody about.
+
 On Friday and Saturday nights (by your watch, from eight in the evening till three in the morning)
 there's a night out at the top of Milsom Street, where it meets George Street: a crowd of naughty
 boys and Naughty Girls (short skirts, going-out tops, heels and a handbag) stood about in twos and
 threes. Every so often two of them kick off with each other, sometimes with a mate piling in, till
 one has had enough and legs it. They leave you alone unless you get right in among them or shoot
 one, and then only the few nearest join in. The girls slap rather than punch, and tell you what
-they think of you. They come out of the pubs and restaurants round about (the restaurants till
+they think of you ("Sorry love, washing me hair tonight!" more than anything). A girl will slap a
+lad, but the lads never hit the girls: he just stands there and takes it. They come out of the pubs and restaurants round about (the restaurants till
 eleven, the pubs all night) to keep the numbers up, and turn up already stood about if you arrive in
 the middle of the night (by train, or straight into a pub). After midnight half of them drift down to
 Mr D's chip van at the top of Old Bond Street and hang about there, and at three they all head back
@@ -1111,7 +1252,12 @@ A modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in t
 swaying trees that become flat pictures facing you further off, Duke Nukem style, tufts of grass
 with buttercups and daisies, and a punchy colour grade with a fine dither, drawn at about 540 lines
 and scaled up in crisp square pixels. The sound effects and the soundtrack (procedural 90s-shooter
-metal) are synthesised in the browser, so the game ships no audio files. Under it all is the sound of
+metal) are synthesised in the browser, so the game ships no audio files. The soundtrack follows the
+game's clock: besides the theme there is a track for each part of the day, from First Light on
+Solsbury Hill at dawn through School Run Stampede, Elevenses at the Deli, High Noon on North Road,
+Three O'Clock Lull, Golden Hour, Rainbow Wood, The Lamps Come On and Last Orders to Witching Hour
+on the Skyline and Foxes at Four, and each is much the likeliest to come on round its own hour (the
+others still turn up now and then, and you can skip to another whenever you like). Under it all is the sound of
 where you are, anywhere in Bath: a far-off murmur of traffic in town, birdsong in the woods and gardens
 (sparrows, a blackbird, wood pigeons, crows), the wind gusting across open ground and up on the roofs,
 a skylark over the fields, and by night a quieter town and the odd owl. It goes muffled indoors and in a car.

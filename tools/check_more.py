@@ -79,9 +79,9 @@ from the packs alone, a few seconds a square:
     face's top meets another triangle, edge to edge or along a run of edges on its line, or has more
     ground or a face just across it; the rest are cracks the sky shows through, each scored by its
     length in metres. Edges along a square's own sides are left to rule 14. CD_SEAMS=0 leaves it out.
-39-45 are faults found by playing, from the packs alone (played below):
-39. Road markings lie on the carriageway, square across it, on the street that gives way and out
-    past the other street's kerb line.
+39-46 are faults found by playing, from the packs alone (played below):
+39. Road markings lie on the carriageway, square across it, on the street that gives way and behind
+    the other street's kerb line.
 40. A lane's or yard's carriageway (the service face, a lighter grey) stops at the kerbed street it
     meets, not reaching into it as a wedge, a point or a row of thin triangles.
 41. No step in the carriageway: no road or lane triangle climbs steeper than 1 in 2.
@@ -91,6 +91,8 @@ from the packs alone, a few seconds a square:
     through beneath it (tools/ground_seams.mjs, with rule 38; CD_SEAMS=0 leaves it out).
 45. No street face of the map's is left inside a set piece's outline, as the game leaves them (the set
     piece takes out those it lays its own ground over; tools/ground_seams.mjs, with rule 38).
+46. A set piece's floor at the street's level runs on to what stands beyond its edge, with no gap to
+    drop into between it and a wall or another floor (tools/ground_seams.mjs, with rule 38).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -2105,9 +2107,9 @@ def markings(m, f, sheet, note, at, sq, fig):
     (a) none lies off the carriageway by more than MARK_OFF; (b) a give-way line and a crossing's stop
     line lie square across their street, within SQUARE_TO; (c) a give-way line is on the street that
     gives way: not across one running straight on with no side road, or past only lesser ones, nor
-    where no street meets it at all; (d) and it stands
-    out past the other street's pavement, not back in line with it, where it runs across the mouth of
-    the junction between the kerb corners."""
+    where no street meets it at all, there being no end of its street within reach where it meets
+    one it gives way to; (d) and it stands behind the line of the other street's kerb (its carriageway's
+    edge, run on across the mouth of the junction), not out in that street's carriageway."""
     if not sheet.ok: return
     cars = sheet.union(("road", "service"))
     if cars.is_empty: return
@@ -2166,46 +2168,71 @@ def markings(m, f, sheet, note, at, sq, fig):
             if off > SQUARE_TO:
                 totals["crooked"] += 1
                 note("39 give-way or stop line not square to its street", off, at(c.x, c.y), f"give-way line on {name!r} {off:.0f} degrees off square")
-            # the junction it gives way at: the nearer end of its street
-            s = l.project(c)
-            end = Point(l.coords[0]) if s < l.length - s else Point(l.coords[-1])
-            if end.distance(c) > 15: continue
-            ux, uy = end.x - c.x, end.y - c.y
-            ul = math.hypot(ux, uy) or 1.0
-            ux, uy = ux / ul, uy / ul
-            ahead, side = [], []
-            for k in stree.query(end.buffer(1.0)):
-                o, ol = streets[int(k)]
-                if o is r or ol.distance(end) > 1.0: continue
-                so = ol.project(end)
-                for t in (so + 3.0, so - 3.0):
-                    if not 0 <= t <= ol.length: continue
-                    p = ol.interpolate(t)
-                    vx, vy = p.x - end.x, p.y - end.y
-                    vl = math.hypot(vx, vy)
-                    if vl < 1.0: continue
-                    turn = math.degrees(math.acos(max(-1.0, min(1.0, (vx * ux + vy * uy) / vl))))
-                    (ahead if turn < STRAIGHT_ON else side).append((o, ol))
-            if not ahead and not side:
+            # the junction it gives way at: an end of its street within reach where it meets a street
+            # it gives way to (the map splits a street wherever its width changes or a lane joins, and
+            # the nearer end may be only that)
+            line = shapely.union_all(mine)
+            meets = first = None
+            same = lambda o: o.get("n") == r.get("n") and o["c"] == r["c"]
+            todo = [(Point(l.coords[0]), r), (Point(l.coords[-1]), r)]
+            looked = 0
+            while todo and looked < 8:
+                todo.sort(key=lambda e: e[0].distance(c))
+                end, mine_r = todo.pop(0)
+                looked += 1
+                if end.distance(c) > 20: break
+                # which way the street runs out of the junction, read along it rather than from the
+                # line's middle, which may lie right at a split in the street
+                ux, uy = end.x - c.x, end.y - c.y
+                ul = math.hypot(ux, uy) or 1.0
+                ux, uy = ux / ul, uy / ul
+                ahead, side, runs = [], [], []
+                for k in stree.query(end.buffer(1.0)):
+                    o, ol = streets[int(k)]
+                    if o is r or o is mine_r or ol.distance(end) > 1.0: continue
+                    so = ol.project(end)
+                    if same(o) and (so < 1.0 or so > ol.length - 1.0):
+                        runs.append((o, ol, Point(ol.coords[-1] if so < 1.0 else ol.coords[0])))
+                    for t in (so + 3.0, so - 3.0):
+                        if not 0 <= t <= ol.length: continue
+                        p = ol.interpolate(t)
+                        vx, vy = p.x - end.x, p.y - end.y
+                        vl = math.hypot(vx, vy)
+                        if vl < 1.0: continue
+                        turn = math.degrees(math.acos(max(-1.0, min(1.0, (vx * ux + vy * uy) / vl))))
+                        (ahead if turn < STRAIGHT_ON else side).append((o, ol))
+                if len(runs) == 1 and len(ahead) + len(side) == 1:
+                    # only the street itself running on: no junction here, so on along it
+                    todo.append((runs[0][2], runs[0][0]))
+                    continue
+                gives_way = (ahead or side) and not (ahead and all(RANK.get(o["c"], 0) < RANK.get(r["c"], 0) for o, _ in side))
+                if gives_way:
+                    meets = (end, ahead, side)
+                    break
+                if first is None and end.distance(c) <= 15: first = (ahead, side)
+                if len(runs) == 1: todo.append((runs[0][2], runs[0][0]))
+            if meets is None:
+                if first is None: continue
+                ahead, side = first
                 totals["through"] += 1
-                note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y), f"across {name!r}, where no street meets it")
+                if not ahead and not side:
+                    note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y), f"across {name!r}, where no street meets it")
+                else:
+                    runs = ", ".join(sorted({o.get("n") or o["c"] for o, _ in ahead}))
+                    note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y),
+                         f"across {name!r}, which runs on as {runs!r}" + (f" past {', '.join(sorted({o.get('n') or o['c'] for o, _ in side}))!r}" if side else ""))
                 continue
-            if ahead and all(RANK.get(o["c"], 0) < RANK.get(r["c"], 0) for o, _ in side):
-                totals["through"] += 1
-                runs = ", ".join(sorted({o.get("n") or o["c"] for o, _ in ahead}))
-                note("39 give-way line across a street with right of way", RANK.get(r["c"], 0), at(c.x, c.y),
-                     f"across {name!r}, which runs on as {runs!r}" + (f" past {', '.join(sorted({o.get('n') or o['c'] for o, _ in side}))!r}" if side else ""))
-                continue
-            # the street it meets: how far its pavement reaches out from its middle
+            end, ahead, side = meets
+            # the street it gives way to (not its own run on across the junction): the line stands
+            # behind the line of that street's kerb, not out in its carriageway (where the lesser
+            # street's mouth crosses the other's pavement it is road)
             back = 0.0
-            for o, ol in side + ahead:
+            for o, ol in side + [(o, ol) for o, ol in ahead if RANK.get(o["c"], 0) > RANK.get(r["c"], 0)]:
                 if o["c"] not in GAME_KERBED: continue
-                pv = max(o.get("pv") or [1.7, 1.7])
-                reach = _road_half(o["c"], o.get("w")) + pv
-                back = max(back, reach - ol.distance(c))
+                back = max(back, _road_half(o["c"], o.get("w")) - ol.distance(line))
             if back > 0.3:
                 totals["back"] += 1
-                note("39 give-way line short of the other street's kerb line", back, at(c.x, c.y), f"on {name!r}, {back:.1f} m back inside the other street's carriageway or pavement")
+                note("39 give-way line short of the other street's kerb line", back, at(c.x, c.y), f"on {name!r}, {back:.1f} m out in the other street's carriageway")
     # crossings and lights: their stop lines, studs and stripes as furniture.ts lays them
     for x, y, z, a, kind, w in ((*q[:6],) for q in m.get("cx") or []):
         c = Point(x, y)

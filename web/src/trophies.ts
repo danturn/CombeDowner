@@ -75,6 +75,7 @@ const LM_TEXT: Record<string, [string, string]> = {
   "Empire Hotel": ["Any rooms going?", "Pop by the Empire Hotel"],
   "Sham Castle": ["Fake it till you make it", "Visit Sham Castle (it isn't a real one)"],
   "Holburne Museum": ["Museum piece", "Visit the Holburne Museum"],
+  "Royal Crescent": ["Half moon", "Stroll round the Royal Crescent"],
   "Prior Park": ["Prior engagement", "Get yourself to Prior Park"],
   "Kingswood School": ["School's out", "Visit Kingswood School"],
   "The Bell Inn": ["For whom the Bell tolls", "Find the Bell Inn"],

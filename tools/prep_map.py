@@ -3138,9 +3138,11 @@ for style, line, _ in front + side:
 
 gate_list = [[r1(x0), r1(y0), r1(x1), r1(y1), r1(gelev((x0 + x1) / 2, (y0 + y1) / 2)), st] for x0, y0, x1, y1, st in gates]
 
-# ---- sports pitches: football and rugby pitches and cricket fields ----------------------
-from pitches import pitches
+# ---- sports pitches: football and rugby pitches and cricket fields, and running tracks ----
+from pitches import pitches, tracks, off_track, track_surface
 pitch_list = pitches(L("land_use"), polys if TILE is None else whole_polys)   # a tile's whole, by their middle
+track_list = tracks(L("land_use"), polys if TILE is None else whole_polys)
+# (a running track is hard ground: no tree stands and no shrub grows on its lanes, below)
 
 # ---- named places, for telling players where they are off the streets ------------------------
 WIDE = {"protected_landscape_seascape", "wilderness_area", "species_management_area"}
@@ -3230,6 +3232,7 @@ if canopy is not None:
             side = 1 if (x - c.x) * -ey + (y - c.y) * ex >= 0 else -1
             x, y = c.x - ey / l * (w + 0.8) * side, c.y + ex / l * (w + 0.8) * side
             break
+        x, y = off_track(track_list, x, y)     # and one over a running track stands just outside it
         if len(houses.query(shapely.Point(x, y), predicate="intersects")): continue
         if any(street_lines[int(k)][2] != "pedestrian" for k in street_tree.query(shapely.Point(x, y), predicate="intersects")): continue   # moved onto another street
         # the tree model is about 7.5 x its scale tall
@@ -3940,7 +3943,7 @@ bays = []
 doors = front_doors(as_built, info, roads, gelev, rnd, bays, keys, mapped=_mapped,
                     walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
-shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
+shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods, hard=[track_surface(t) for t in track_list])
 ctx.water = water_all
 ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
@@ -4147,6 +4150,7 @@ out = dict(
     bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, rk=boulder_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
     **({"lx": level_crossings} if level_crossings else {}),
     **({"wf": weir_faces} if weir_faces else {}),
+    **({"rt": track_list} if track_list else {}),     # running tracks (pitches.py; older pages pass them by)
 )
 if TILE is not None:
     # ---- a tile keeps only what is its own -------------------------------------------------
@@ -4213,9 +4217,9 @@ if TILE is not None:
         # them the same from both sides; it takes them out again)
         drn=[q for q in doors if not own(q[0], q[1]) and TX0 - 6 <= q[0] <= TX1 + 6 and TY0 - 6 <= q[1] <= TY1 + 6],
         by=[q for q in bays if own(q[0], q[1])], pi=[q for q in pitch_list if own(q[1], q[2])],
-        cn=canopy_grid, pl=places,
+        cn=canopy_grid, pl=places, rt=[q for q in track_list if own(q[0], q[1])],
     )
-    for k in ("wf", "lx"):
+    for k in ("wf", "lx", "rt"):
         if not out[k]: del out[k]
     roads, wl, barriers, signs, doors, shrub_list, marks, trees, fx = (out[k] for k in ("rd", "wl", "br", "sh", "dr", "sb", "mk", "tr", "fx"))
     # (nx and ny stay the working grid's: gelev reads them, and the walls are set on the ground

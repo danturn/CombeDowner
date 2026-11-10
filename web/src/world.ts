@@ -5,7 +5,8 @@
 // cuts each grid cell along them instead); ?ground=old draws the
 // grid let down under the faces instead, to compare.
 import * as THREE from "three";
-import { darkable } from "./unlit";
+import { darkable, undarkable } from "./unlit";
+import { LAMP_COLOUR, LAMP_DECAY, LAMP_POWER, LampPools, lampLit } from "./lamppools";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
 import { breakable, holed } from "./gaps";
@@ -30,7 +31,7 @@ import { aqueductSetPieceAt, clearSetPieceGround, setPieceAt } from "./landmarks
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
-import { NIGHT_FAR, SIMPLER_FAR, lampLightsFor, view } from "./view";
+import { LIGHT_LEVELS, NIGHT_FAR, SIMPLER_FAR, lampLightsFor, lightLevel, view } from "./view";
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
 import { buildSheetGen, buildSheetCdtGen, sheetFacesGen, carved, coveredCells, fillAt, nearFaces, openSeams, type Sheet } from "./sheet";
@@ -50,6 +51,8 @@ export function groundSheet(): boolean {
 export function groundCdt(): boolean {
   return typeof location === "undefined" || new URLSearchParams(location.search).get("ground") !== "sheet";
 }
+import { SunShadows } from "./shadows";
+import { tag, tagSince } from "./kinds";
 
 const CHUNK = 320;
 
@@ -370,7 +373,7 @@ function railMasonry(map: GameMap): Masonry {
       seen.set(key, k);
       return k;
     },
-    material: (k) => (MASON_MATS[k] ??= new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide })),
+    material: (k) => (MASON_MATS[k] ??= lampLit(new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide }))),
   };
 }
 
@@ -407,7 +410,7 @@ function anyWalls(kind: TX.WallKind) {
       .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(");
   };
   mat.customProgramCacheKey = () => "anyWalls";
-  return mat;
+  return lampLit(mat);
 }
 
 /** The sky, light and fog. */
@@ -422,11 +425,9 @@ function makeShell(scene: THREE.Scene) {
   scene.add(hemi);
   const sun = new THREE.DirectionalLight("#fff0d8", 2.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(shadowSize, shadowSize);
-  Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
-  sun.shadow.bias = -0.0006;
-  sun.shadow.normalBias = 0.04;
-  scene.add(sun, sun.target);
+  // its shadows reach as far as Settings say, in squares round you (shadows.ts)
+  const shadows = new SunShadows(sun, shadowSize);
+  scene.add(shadows.group);
 
   // ---- sky dome -----------------------------------------------------------------
   const sky = new THREE.Mesh(
@@ -477,8 +478,8 @@ function makeShell(scene: THREE.Scene) {
     }),
   );
   sky.renderOrder = -1;
-  scene.add(sky);
-  return { tunnelDark, hemi, sun, sky };
+  scene.add(tag(sky, "sky"));
+  return { tunnelDark, hemi, sun, shadows, sky };
 }
 
 /**
@@ -1141,6 +1142,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // reuse the first square's (it goes by the code above, the same for all), and a square with
   // fewer mouths would leave gaps in the list and stop the drawing
   if (ownTerr) terrMat.customProgramCacheKey = () => `terrain:${mouth.a.length}:${works ? 1 : 0}`;
+  lampLit(terrMat);   // (after dark, the far-off lamps' pools of light: lamppools.ts)
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped: a square of Bath is three by three of them (each one costs
   // the computer a little to draw however small, and Bath has a lot of squares in sight).
@@ -1166,7 +1168,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, (lo + hi) / 2, cz), half);
     const tile = new THREE.Mesh(g, terrMat);
     tile.receiveShadow = true;
-    scene.add(tile);
+    scene.add(tag(tile, "ground"));
     fineTerr.push(tile);
     if (++tfin % 4 === 3) yield;
   }
@@ -1180,11 +1182,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     };
     const g = works.geometry(map.z0, (x, y) => drawnBare(x, -y) + map.z0, colour);
     if (g) {
-      const m = new THREE.Mesh(g, S.worksMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide }));
+      const m = new THREE.Mesh(g, S.worksMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide })));
       m.receiveShadow = true;
       freeOnUpload(g);
       g.computeBoundingSphere();
-      scene.add(m);
+      scene.add(tag(m, "canal"));
       fineTerr.push(m);
     }
     yield;
@@ -1239,7 +1241,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     farTerr = new THREE.Mesh(g, terrMat);
     farTerr.receiveShadow = true;
     farTerr.visible = false;
-    scene.add(farTerr);
+    scene.add(tag(farTerr, "ground"));
   }
   yield;
 
@@ -1256,7 +1258,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   sheet.holes.push(new THREE.Path([[T.x0, T.y0], [T.x0, y1], [x1, y1], [x1, T.y0]].map(([x, y]) => new THREE.Vector2(x, y))));
   const outer = new THREE.Mesh(new THREE.ShapeGeometry(sheet).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: "#66774a" }));
   outer.position.y = Math.min(60, edgeH[edgeH.length >> 1]);
-  scene.add(outer);
+  scene.add(tag(outer, "ground"));
   const skirt: number[] = [];
   const edgeLine = (pts: [number, number][]) => {
     for (let k = 0; k < pts.length - 1; k++) {
@@ -1271,7 +1273,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const skirtGeo = new THREE.BufferGeometry();
   skirtGeo.setAttribute("position", new THREE.Float32BufferAttribute(skirt, 3));
   skirtGeo.computeVertexNormals();
-  scene.add(new THREE.Mesh(skirtGeo, new THREE.MeshLambertMaterial({ color: "#5d6b3f", side: THREE.DoubleSide })));
+  scene.add(tag(new THREE.Mesh(skirtGeo, new THREE.MeshLambertMaterial({ color: "#5d6b3f", side: THREE.DoubleSide })), "ground"));
   }
 
   mark("ground");
@@ -1391,12 +1393,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // a plain colour, with a texture where one is given (a stream has none): three.js warns about a
   // material whose "map" is undefined, so it's left out entirely rather than passed as undefined
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
-    new THREE.MeshLambertMaterial({ color, ...(map ? { map } : {}), polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
+    lampLit(new THREE.MeshLambertMaterial({ color, ...(map ? { map } : {}), polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 }));
   const asphalt: THREE.Texture = S.asphalt ??= TX.asphalt();
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material, thin = false) => {
     if (!g) return;
-    const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(mesh);
+    const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(tag(mesh, "street"));
     if (thin) mesh.userData.thin = true;
   };
   // street centrelines in a grid, so pavements can stop where they meet another street
@@ -1982,8 +1984,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     mat.customProgramCacheKey = () => id;
     return (S[id] = mat);
   };
-  const bridgeMat: THREE.Material = S.bridgeMat ??= new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true });
-  const steelMat: THREE.Material = S.steelMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+  const bridgeMat: THREE.Material = S.bridgeMat ??= lampLit(new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }));
+  const steelMat: THREE.Material = S.steelMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
    *  own picks out roads that carry their own heights (bridges). */
@@ -2250,7 +2252,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core && map.canalData) {
     if (map.canal instanceof Canal) for (const m of map.canal.moored) { const k = map.movers.indexOf(m); if (k >= 0) map.movers.splice(k, 1); }
     const centre = map.d.centre as [number, number] | undefined;
+    const k0 = scene.children.length;
     const canal = new Canal(map.canalData, scene as THREE.Scene, Z0, centre ? (x, y) => aqueductSetPieceAt(centre, x, y) : undefined);
+    tagSince(scene, k0, "canal");
     map.canal = canal;
     map.movers.push(...canal.moored);
   }
@@ -2263,18 +2267,23 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
   const railCentre = map.d.centre as [number, number] | undefined;
+  const k1 = scene.children.length;
   const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, underRail(map.railData), S.groundTex ??= TX.groundDetail(),
     railCentre ? (x, y) => setPieceAt(railCentre, x, y) : undefined, railMasonry(map)) : null;
+  tagSince(scene, k1, "railway");
   if (railway) S.railBank = (x: number, z: number) => railway.bankAt(x, z);
   if (railway) { map.floors.push((x, z, y) => railway.floor(x, z, y)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
+  tagSince(scene, k1, "railway");
+  const k2 = scene.children.length;
   const backdrop = core ? buildBackdrop(map, scene as THREE.Scene, GROUND, earth, shell!.sun, shell!.hemi) : null;
+  tagSince(scene, k2, "far");
   const streams = outsideBores(map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl, boreRoof(map));
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false));
   S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
   map.clearArches();
-  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(m);
+  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(tag(m, "street"));
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   // (a faced square written before the front paths and drives had faces of their own still has the strips)
   if (!faced || !D.sf!.front) {
@@ -2324,7 +2333,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (ponds.length) {
     const pondsMesh = new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat);
     pondsMesh.userData.water = true;   // (for the debug panel's counts by kind: debug.ts)
-    scene.add(pondsMesh);
+    scene.add(tag(pondsMesh, "water"));
     if (ponds.length > 1) for (const g of ponds) g.dispose();
   }
   // a tank's, a pool's or a reservoir's concrete walls, wherever its water stands above the ground
@@ -2413,7 +2422,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const m = new THREE.Mesh(geo, S.weirMat);
       m.receiveShadow = true;
       m.userData.water = true;
-      scene.add(m);
+      scene.add(tag(m, "water"));
     }
   }
   yield;
@@ -2713,7 +2722,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const [key, g] of buildingModels(c)) {
       const m = new THREE.Mesh(g, wallMats[key]);
       m.castShadow = m.receiveShadow = true;
-      scene.add(m);
+      scene.add(tag(m, "building"));
       yield;
     }
   }
@@ -2844,6 +2853,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),
     steel: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
   };
+  for (const m of Object.values(barMats)) lampLit(m);
   for (const [k, geo] of barGeos) {
     const g = geo.build();
     if (!g) continue;
@@ -2851,7 +2861,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const m = new THREE.Mesh(g, smash ? smash.m : mat);
     if (smash) m.customDepthMaterial = smash.depth;
     m.castShadow = m.receiveShadow = true;
-    scene.add(m);
+    scene.add(tag(m, "boundary"));
     culler.add(m, 230);
     yield;
   }
@@ -2941,7 +2951,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (!built) continue;
       const m = new THREE.Mesh(built, canopyMat);
       m.castShadow = true; m.receiveShadow = true;
-      scene.add(m);
+      scene.add(tag(m, "plant"));
       culler.add(m, () => view.sceneryFar);
     }
   }
@@ -2984,7 +2994,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         m.setMatrixAt(k, m4);
         m.setColorAt(k, DOOR[d[4] % DOOR.length]);
       });
-      m.computeBoundingSphere(); scene.add(m); culler.add(m, 150);
+      m.computeBoundingSphere(); scene.add(tag(m, "building")); culler.add(m, 150);
       if (++dk % 6 === 5) yield;
     }
     // porch canopies over about half the front doors
@@ -2994,7 +3004,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (hooded.length) {
       const hm = new THREE.InstancedMesh(hoodGeo, hoodMat, hooded.length);
       hooded.forEach((d, k) => { qq.setFromAxisAngle(up, d[3]); m4.compose(pp.set(d[0], d[2] - Z0, -d[1]), qq, one); hm.setMatrixAt(k, m4); });
-      hm.castShadow = true; hm.computeBoundingSphere(); scene.add(hm); culler.add(hm, 150);
+      hm.castShadow = true; hm.computeBoundingSphere(); scene.add(tag(hm, "building")); culler.add(hm, 150);
     }
     // bay windows, with a small hipped roof on top
     const BAY_TEX: Record<string, "stone" | "brick" | "render"> = { s: "stone", b: "brick", r: "render" };
@@ -3016,7 +3026,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         m4.compose(pp.set(b[0] as number, (b[2] as number) - Z0, -(b[1] as number)), qq, new THREE.Vector3(w, 1, 1));
         bm.setMatrixAt(k, m4); rm.setMatrixAt(k, m4);
       });
-      for (const m of [bm, rm]) { m.castShadow = m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); culler.add(m, 170); }
+      for (const m of [bm, rm]) { m.castShadow = m.receiveShadow = true; m.computeBoundingSphere(); scene.add(tag(m, "building")); culler.add(m, 170); }
     }
   }
 
@@ -3153,7 +3163,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const STILL = new Set(["ground", "buildings", "walls-fences", "trees", "woods", "doors-bays", "landmarks-tunnels", "furniture", "shops", "pitches"]);
   stayPut(scene, scene.children.filter((c) => STILL.has(c.name)));
 
-  const { tunnelDark, hemi, sun, sky } = shell!;
+  const { tunnelDark, hemi, sun, shadows, sky } = shell!;
   const murk = new THREE.Color();
   const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
 
@@ -3165,15 +3175,28 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // that moves to another lamp fades out first and back in there, so pools of light don't jump.
   // How many there are follows how far you see (view.ts) when the map's built, since every light
   // costs every lit pixel something: a phone keeps to four, a desktop seeing further lights more of
-  // the street round it. On the move, the lamps ahead of you are lit before those behind, and sooner.
-  const LAMP_LIGHTS = lampLightsFor(view.fogFar), LAMP_REACH = LAMP_LIGHTS > 4 ? 28 : 22, LAMP_LOOK = 60 + LAMP_LIGHTS * 12;
-  const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
-    const l = new THREE.PointLight("#ffc77a", 0, LAMP_REACH, 1.4);
-    l.userData = { on: false, k: 0, to: new THREE.Vector3() };
-    scene.add(l);
-    darkable(scene, l);
-    return l;
-  });
+  // the street round it. The Street lights setting (view.ts) adds some or takes some away, on the
+  // spot. On the move, the lamps ahead of you are lit before those behind, and sooner.
+  const LAMP_NORMAL = lampLightsFor(view.fogFar), LAMP_REACH = LAMP_NORMAL > 4 ? 28 : 22;
+  const lampLights: THREE.PointLight[] = [];
+  let lampCount = 0, lampLook = 60;
+  /** Light as many lamps as the Street lights setting asks for now. */
+  const countLamps = () => {
+    const n = Math.max(2, LAMP_NORMAL + LIGHT_LEVELS[lightLevel].lit);
+    if (n === lampCount) return;
+    while (lampLights.length < n) {
+      const l = new THREE.PointLight(LAMP_COLOUR, 0, LAMP_REACH, LAMP_DECAY);
+      l.userData = { on: false, k: 0, to: new THREE.Vector3() };
+      scene.add(l);
+      darkable(scene, l);
+      lampLights.push(l);
+    }
+    const gone = lampLights.splice(n);
+    for (const l of gone) { scene.remove(l); l.dispose(); }
+    if (gone.length) undarkable(scene, ...gone);
+    lampCount = n; lampLook = 60 + n * 12;
+    lampT = 0;
+  };
   const lampHeads = new WeakMap<GameMap, Float32Array>();
   /** Where the glass of every lamp on a map (village or square) is, in scene coordinates. */
   const headsOf = (m: GameMap) => {
@@ -3192,17 +3215,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return h;
   };
   let lampT = 0, lastX = NaN, lastZ = NaN, goX = 0, goZ = 0;   // (goX, goZ: which way you're going, m/s, smoothed)
+  countLamps();
   const near: [number, number, number, number][] = [];
   const lampDay = new THREE.Color("#d8d4c2"), lampNight = new THREE.Color("#fff3c8").multiplyScalar(1.6);
   const placeLamps = (px: number, pz: number) => {
     near.length = 0;
     const sp = Math.hypot(goX, goZ), ux = sp > 3 ? goX / sp : 0, uz = sp > 3 ? goZ / sp : 0;
-    for (const m of [map, ...map.tilesNear(px, pz, LAMP_LOOK)]) {
+    for (const m of [map, ...map.tilesNear(px, pz, lampLook)]) {
       const h = headsOf(m);
       // the street lamps, and those on landmarks: the station platforms' (landmarks/index.ts)
       for (const l of [h, landmarkLamps(m)]) for (let i = 0; i < l.length; i += 3) {
         const dx = l[i] - px, dz = l[i + 2] - pz, d2 = dx * dx + dz * dz;
-        if (d2 >= LAMP_LOOK * LAMP_LOOK) continue;
+        if (d2 >= lampLook * lampLook) continue;
         // one behind you counts as further off than it is, the more so the further behind
         const behind = d2 > 1 ? Math.max(0, -(dx * ux + dz * uz) / Math.sqrt(d2)) : 0;
         near.push([d2 * (1 + 3 * behind), l[i], l[i + 1], l[i + 2]]);
@@ -3210,7 +3234,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     near.sort((a, b) => a[0] - b[0]);
     // a light already at one of the nearest lamps stays there; the rest go to the others
-    const wanted = near.slice(0, LAMP_LIGHTS), free: THREE.PointLight[] = [];
+    const wanted = near.slice(0, lampCount), free: THREE.PointLight[] = [];
     for (const l of lampLights) {
       const k = wanted.findIndex((n) => n[1] === l.userData.to.x && n[3] === l.userData.to.z);
       if (k >= 0 && l.userData.on) wanted.splice(k, 1); else free.push(l);
@@ -3220,7 +3244,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (n) l.userData.to.set(n[1], n[2], n[3]);
       l.userData.on = !!n;
     });
+    litTo = 0;
+    for (const l of lampLights) if (l.userData.on) litTo = Math.max(litTo, Math.hypot(l.userData.to.x - px, l.userData.to.z - pz));
   };
+  // Past the lamps really lit, every lamp's pool of light painted on the ground, roads and walls
+  // (lamppools.ts), fading in just beyond the furthest one lit, so lit streets show right across town.
+  let litTo = 60, litReach = 60;
+  const squareIds = new WeakMap<GameMap, number>();
+  let squareN = 0;
+  const squareId = (m: GameMap) => { let k = squareIds.get(m); if (k === undefined) squareIds.set(m, (k = ++squareN)); return k; };
+  const pools = new LampPools(
+    (x, z, r) => [map, ...map.tilesNear(x, z, r)].flatMap((m) => [headsOf(m), landmarkLamps(m)]),
+    (x, z, r) => map.tilesNear(x, z, r).map(squareId).join());
   /** Fade each light towards its lamp: out, across, and in again. */
   const fadeLamps = (dt: number, quick: boolean) => {
     const rate = quick ? 6 : 3;
@@ -3273,7 +3308,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   wallGeo.setIndex(wallIdx);
   const fieldMesh = new THREE.Mesh(wallGeo, fieldMat);
   fieldMesh.renderOrder = 5;
-  scene.add(fieldMesh);
+  scene.add(tag(fieldMesh, "field"));
   const clock = new THREE.Clock();
 
   mark("field");
@@ -3350,15 +3385,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       lastX = px; lastZ = pz;
       const quick = Math.hypot(goX, goZ) > 8;
+      countLamps();
       if ((lampT -= dt) <= 0) { lampT = quick ? 0.2 : 0.4; placeLamps(px, pz); }
       fadeLamps(dt, quick);
       if (W) W.skies += performance.now() - W0;
       let b4 = performance.now();
-      for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
+      for (const l of lampLights) l.intensity = l.userData.k * night * LAMP_POWER * (1 - dark);
+      litReach += (litTo - litReach) * Math.min(1, dt * 2);
+      pools.update(night * (1 - dark), px, pz, litReach, dt);
       if (W) W.lamps += performance.now() - b4;
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
       SIGNAL_TIME.value = signalClock();   // the traffic lights' lamps (signals.ts)
       LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
+      const shine = LIGHT_LEVELS[lightLevel];
+      LAMP_GLOW.uniforms.size.value = shine.size; LAMP_GLOW.uniforms.least.value = shine.least; LAMP_GLOW.uniforms.bright.value = shine.bright;
       b4 = performance.now();
       vegetation.update(px, pz, dt);
       if (W) W.veg += performance.now() - b4;
@@ -3374,11 +3414,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);
       sky.position.set(px, py, pz);
-      // keep the shadow camera on the player, snapped to texels so shadows don't shimmer
-      const snap = 140 / 2048;
-      const cx = Math.round(px / snap) * snap, cz = Math.round(pz / snap) * snap;
-      sun.target.position.set(cx, py, cz);
-      sun.position.set(cx + sk.light.x * 200, py + sk.light.y * 200, cz + sk.light.z * 200);
+      // keep the shadows' squares round the player (shadows.ts)
+      shadows.follow(px, py, pz, sk.light);
     },
     dispose() {
       tiles?.dispose();
@@ -3394,7 +3431,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }
       });
       textures.forEach((t) => t.dispose());
-      sun.dispose();
+      sun.dispose(); shadows.dispose();
     },
   } satisfies World;
 }
