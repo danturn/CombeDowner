@@ -2929,6 +2929,84 @@ def _ground_triangles(poly, T):
     return out
 
 
+NEEDLE = 0.05       # metres across the base of a face's corner thinner than that, a needle rather than a corner
+NEEDLE_ANGLE = 20   # degrees: a corner sharper than this, with such a base, is a needle
+
+
+def needles_off(pieces, walls=None, street=None):
+    """The faces (a coverage: no two overlap, neighbours share their corners) with each needle taken
+    off: a corner a few centimetres across at its base and sharp as a pin, standing out of a face as
+    a spike or cut into it as a slit. A slit in a pavement showed the ground in a hairline, and its
+    two sides read as a pavement ending twice. The pin's corner is dropped from every face that has
+    it, so a spike of one face into a slit of its neighbour goes to the neighbour and the two still
+    meet; one that a third face shares as an ordinary corner, or that a wall, fence or hedge stands
+    in (`walls`: a slit cut round its end), is left alone. Only street faces (`street`, a flag for each
+    piece: carriageways and pavements) are trimmed: a path's sharp corners are where it meets a flight
+    of steps, and its treads are laid to them."""
+    key = lambda p: (round(p[0], 6), round(p[1], 6))
+    rings = []      # [piece, part, ring number, coords without the closing repeat]
+    for n, g in enumerate(pieces):
+        for m, poly in enumerate(getattr(g, "geoms", [g])):
+            if poly.geom_type != "Polygon" or poly.is_empty:
+                continue
+            for r, ring in enumerate([poly.exterior, *poly.interiors]):
+                rings.append([n, m, r, list(ring.coords)[:-1]])
+    changed = set()
+    for _ in range(4):
+        users = collections.defaultdict(list)
+        for k, (_, _, _, c) in enumerate(rings):
+            for i, p in enumerate(c):
+                users[key(p)].append((k, i))
+
+        def pin(k, i):
+            if street is not None and not street[rings[k][0]]:
+                return None
+            c = rings[k][3]
+            if len(c) < 4:
+                return None
+            a, t, b = c[i - 1], c[i], c[(i + 1) % len(c)]
+            base, ta, tb = math.dist(a, b), math.dist(t, a), math.dist(t, b)
+            if base >= NEEDLE or min(ta, tb) <= base:
+                return None
+            cos = ((a[0] - t[0]) * (b[0] - t[0]) + (a[1] - t[1]) * (b[1] - t[1])) / (ta * tb)
+            if cos <= math.cos(math.radians(NEEDLE_ANGLE)):
+                return None
+            if walls is not None and walls.intersects(Polygon([a, t, b]).buffer(NEEDLE)):
+                return None
+            return key(a), key(b)
+        drop = collections.defaultdict(set)
+        for k, (_, _, _, c) in enumerate(rings):
+            for i, t in enumerate(c):
+                ends = pin(k, i)
+                if ends is None:
+                    continue
+                share = users[key(t)]
+                if all(pin(k2, i2) is not None and set(pin(k2, i2)) == set(ends) for k2, i2 in share):
+                    for k2, i2 in share:
+                        drop[k2].add(i2)
+        if not drop:
+            break
+        for k, idx in drop.items():
+            c = [p for i, p in enumerate(rings[k][3]) if i not in idx]
+            if len(c) >= 3:
+                rings[k][3] = c
+                changed.add(rings[k][0])
+    if not changed:
+        return pieces
+    out = list(pieces)
+    for n in changed:
+        parts = []
+        for m, poly in enumerate(getattr(pieces[n], "geoms", [pieces[n]])):
+            mine = sorted((r, c) for n2, m2, r, c in rings if n2 == n and m2 == m)
+            if not mine:
+                parts.append(poly)
+                continue
+            new = Polygon(mine[0][1], [c for _, c in mine[1:]])
+            parts.append(new if new.is_valid and new.area > 0 else poly)
+        out[n] = parts[0] if len(parts) == 1 else shapely.MultiPolygon(parts)
+    return out
+
+
 MEND = 0.015    # metres: a corner this near another face's edge, both rounded to the centimetre, is on it
 
 
@@ -4307,11 +4385,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         one, not a pedestrian street (whose paving was taken out of the carriageway already) whose line
         runs nearer. Across a junction the triangles of a carriageway fan out from the corner where a
         pedestrian street meets it, and each one that was nearer that street's line was paved, in a
-        point or a bow tie of paving across the road."""
+        point or a bow tie of paving across the road. Likewise a lane's: a triangle inside a kerbed
+        street's carriageway is that street's, though a lane's line runs nearer, or it shows as a
+        wedge or a row of teeth of the lane's lighter grey in the road."""
         k = nearest(x, y)
-        if k is None or streets[k]["c"] != "pedestrian":
+        if k is None:
             return k
         p = Point(x, y)
+        if streets[k]["c"] not in KERBED and streets[k]["c"] != "pedestrian":
+            inside = sorted((lines[int(j)].distance(p), int(j)) for j in tree.query(p.buffer(20))
+                            if streets[int(j)]["c"] in KERBED and lines[int(j)].distance(p) <= way_width(streets[int(j)]) / 2)
+            return inside[0][1] if inside else k
+        if streets[k]["c"] != "pedestrian":
+            return k
         near = sorted((lines[int(j)].distance(p), int(j)) for j in tree.query(p.buffer(40)) if streets[int(j)]["c"] != "pedestrian")
         return near[0][1] if near and near[0][0] <= reach_of[near[0][1]] else k
 
@@ -4502,7 +4588,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                    if q.geom_type == "Polygon" and q.area > 0.05]
     if not pieces:
         return None
-    simple = shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)
+    barriers = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    barriers = unary_union(barriers) if barriers else None
+    if barriers is not None:
+        shapely.prepare(barriers)
+    simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)), barriers,
+                         [cls in ("carriageway", "pavement") for cls, _ in pieces])
     # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
     # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
     # street that steepens, with a gap under its edge and parked cars sunk into it)
@@ -7470,6 +7561,68 @@ def _drawn_ground(T, x, y):
     return h(i + 1, j + 1) + (h(i, j + 1) - h(i + 1, j + 1)) * (1 - u) + (h(i + 1, j) - h(i + 1, j + 1)) * (1 - v)
 
 
+# metres the ground may fall below, or rise over, a wall's straight line between two of its points:
+# the game sets the foot 0.1 m under the ground at each point, so a smaller dip is hidden, and a
+# rise only buries the foot a little
+WALL_DIP, WALL_RISE = 0.1, 0.2
+
+
+def _folds(T, a, b):
+    """Where the line a-b crosses the grid's cell sides and the cells' diagonals, as fractions of
+    the way along it: the drawn ground is flat between them."""
+    fa = ((a[0] - T["x0"]) / T["dx"], (a[1] - T["y0"]) / T["dy"])
+    fb = ((b[0] - T["x0"]) / T["dx"], (b[1] - T["y0"]) / T["dy"])
+    out = set()
+    for ua, ub in ((fa[0], fb[0]), (fa[1], fb[1]), (fa[0] + fa[1], fb[0] + fb[1])):
+        if abs(ub - ua) < 1e-9:
+            continue
+        lo, hi = sorted((ua, ub))
+        for k in range(math.floor(lo) + 1, math.ceil(hi)):
+            t = (k - ua) / (ub - ua)
+            if 1e-6 < t < 1 - 1e-6:
+                out.add(t)
+    return sorted(out)
+
+
+def walls_follow_the_ground(br, T):
+    """The game stands a wall's foot on the ground only at its points and runs it straight between
+    them, so a wall whose points are far apart hangs in the air where the ground dips between them
+    (a 140 m lawn wall with no point in between). A point is put in at each fold of the ground that
+    strays further than WALL_DIP or WALL_RISE off the straight line, so the wall follows the ground,
+    and a run on level or evenly sloping ground keeps only the points it has."""
+    out = []
+    for b in br:
+        p = b["p"]
+        if len(p) < 2 or any(len(q) < 3 for q in p):
+            out.append(b)
+            continue
+        new = [p[0]]
+        for a, q in zip(p, p[1:]):
+            ts = [0.0] + _folds(T, a, q) + [1.0]
+            g = [_drawn_ground(T, a[0] + (q[0] - a[0]) * t, a[1] + (q[1] - a[1]) * t) for t in ts]
+            keep = set()
+
+            def split(i, j):
+                if j - i < 2:
+                    return
+                def over(m):
+                    d = g[m] - (g[i] + (g[j] - g[i]) * (ts[m] - ts[i]) / (ts[j] - ts[i]))
+                    return max(-d - WALL_DIP, d - WALL_RISE)
+                worst, k = max((over(m), m) for m in range(i + 1, j))
+                if worst > 0:
+                    keep.add(k)
+                    split(i, k)
+                    split(k, j)
+
+            split(0, len(ts) - 1)
+            for m in sorted(keep):
+                # (to the centimetre: a point rounded to 0.1 m stood a wall along a path's edge in the path)
+                new.append([round(a[0] + (q[0] - a[0]) * ts[m], 2), round(a[1] + (q[1] - a[1]) * ts[m], 2), round(g[m], 1)])
+            new.append(q)
+        out.append(dict(b, p=new) if len(new) > len(p) else b)
+    return out
+
+
 WALL_EASE = 6.0     # metres either way along a wall that its height at a point is evened out over
 WALL_EASE_MOST = 0.2    # metres at most that evening out moves a point off the ground as it's drawn
 
@@ -7930,7 +8083,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
-    br = smooth_wall_tops(br, tile["t"])
+    br = smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"])
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt

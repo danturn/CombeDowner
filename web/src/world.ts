@@ -26,7 +26,7 @@ import { ROCK, WILD_CHANNEL } from "./groundkinds";
 import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
-import { aqueductSetPieceAt, setPieceAt } from "./landmarks/setpieces";
+import { aqueductSetPieceAt, clearSetPieceGround, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
@@ -503,6 +503,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core) S.railMouths = map.railData ? railMouths(map.railData) : [];
   const D = map.d, T = D.t, Z0 = map.z0;
   if (core) setLatitude(D.centre?.[1] ?? 51);
+  clearSetPieceGround(D, (x, y, lo, hi) => map.setPieceSurface(x, y, lo, hi));
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
   // the scene itself never moves, so it needn't make everything in it work out its place afresh each frame (stayPut)

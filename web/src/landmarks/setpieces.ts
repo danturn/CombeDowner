@@ -12,7 +12,8 @@
 // anything from it, everything the tools put inside a set piece's outline is left out of the
 // game's copy: buildings, trees, shrubs, walls, fences and hedges, gates, street furniture, doors,
 // bay windows, shop signs, garden paths, footpaths, ponds, overhead wires, the woods' canopy and
-// the map's own hand-made landmarks.
+// the map's own hand-made landmarks; and, once its shape is known as the square is built, the street
+// faces it lays its own floor, deck or paving over (clearSetPieceGround).
 // The set piece is then added to the landmarks (map.d.lm) for world.ts to draw (landmarks/index.ts,
 // in the square its origin is in) and map.ts to make solid (in every square it reaches into, so
 // you bump into it from whichever square you're standing in). Streets and pedestrian streets are
@@ -417,6 +418,123 @@ function cutFaces(sf: NonNullable<MapData["sf"]>, inside: (x: number, y: number)
   });
 }
 
+const OUTLINE_OF: Record<string, string> = { road: "road", service: "road", pave: "pave", path: "path", grass: "path", dirt: "path", gravel: "path", front: "front", drive: "drive", bed: "bed" };
+
+/** Take a square's faces out where cut(x, y) at a triangle's middle, as the ground sheet will meet
+ *  what is left: the faces left standing get an outline where they now end, so the ground meets
+ *  them there with their edge drawn, and the grid's cells no face covers any more get their ground
+ *  back (gs.c), or the set piece's floor would stand over a hole to the sky. */
+function clearFaces(d: MapData, cut: (x: number, y: number, a: number, b: number, c: number) => boolean) {
+  const sf = d.sf!, V = sf.v, NP = V.length / 3;
+  const gone = new Set<number>(), kept = new Set<number>();
+  const keptTris: number[] = [], goneTris: number[] = [], fresh: { c: string; i: Int32Array }[] = [];
+  // each triangle's sides, anticlockwise, so its face is on the left of each (as the outlines run)
+  const sides = (a: number, b: number, c: number) => {
+    const turn = (V[3 * b] - V[3 * a]) * (V[3 * c + 1] - V[3 * a + 1]) - (V[3 * b + 1] - V[3 * a + 1]) * (V[3 * c] - V[3 * a]);
+    return turn >= 0 ? [[a, b], [b, c], [c, a]] : [[a, c], [c, b], [b, a]];
+  };
+  const cuts: [(typeof FACE_LISTS)[number], number[]][] = [];
+  for (const kind of FACE_LISTS) {
+    const I = sf[kind];
+    if (!I) continue;
+    const keep: number[] = [];
+    for (let k = 0; k + 2 < I.length; k += 3) {
+      const a = I[k], b = I[k + 1], c = I[k + 2];
+      const out = cut((V[3 * a] + V[3 * b] + V[3 * c]) / 3, (V[3 * a + 1] + V[3 * b + 1] + V[3 * c + 1]) / 3, a, b, c);
+      for (const [p, q] of sides(a, b, c)) (out ? gone : kept).add(p * NP + q);
+      (out ? goneTris : keptTris).push(a, b, c);
+      if (!out) keep.push(a, b, c);
+    }
+    if (keep.length < I.length) cuts.push([kind, keep]);
+  }
+  if (!goneTris.length) return;
+  for (const [kind, keep] of cuts) sf[kind] = Int32Array.from(keep);
+  // a side of a face left standing that a face taken out shared is now its edge
+  for (const kind of [...FACE_LISTS, "bed"] as const) {
+    const I = sf[kind];
+    if (!I) continue;
+    for (let k = 0; k + 2 < I.length; k += 3)
+      for (const [p, q] of sides(I[k], I[k + 1], I[k + 2]))
+        if (gone.has(q * NP + p) && !kept.has(q * NP + p)) fresh.push({ c: OUTLINE_OF[kind], i: Int32Array.from([p, q]) });
+  }
+  sf.e = sf.e.flatMap((e) => {
+    const out: { c: string; i: Int32Array }[] = [];
+    let run: number[] = [e.i[0]];
+    for (let k = 1; k < e.i.length; k++) {
+      const p = e.i[k - 1], q = e.i[k];
+      if (gone.has(p * NP + q) && !kept.has(p * NP + q)) { if (run.length > 1) out.push({ c: e.c, i: Int32Array.from(run) }); run = [q]; }
+      else run.push(q);
+    }
+    if (run.length > 1) out.push({ c: e.c, i: Int32Array.from(run) });
+    return out;
+  }).concat(fresh);
+  const gs = d.gs, T = d.t;
+  if (!gs) return;
+  const cw = T.nx - 1, ch = T.ny - 1, cells = cw * ch;
+  const covered = new Uint8Array(cells);
+  let at = 0, on = false;
+  for (let k = 0; k < gs.c.length; k++) { if (on) covered.fill(1, at, Math.min(cells, at + gs.c[k])); at += gs.c[k]; on = !on; }
+  // each cell with the triangles over it, by their extents
+  const over = (tris: number[]) => {
+    const by = new Map<number, number[]>();
+    for (let k = 0; k + 2 < tris.length; k += 3) {
+      const xs = [V[3 * tris[k]], V[3 * tris[k + 1]], V[3 * tris[k + 2]]], ys = [V[3 * tris[k] + 1], V[3 * tris[k + 1] + 1], V[3 * tris[k + 2] + 1]];
+      const i0 = Math.max(0, Math.floor((Math.min(...xs) - T.x0) / T.dx)), i1 = Math.min(cw - 1, Math.floor((Math.max(...xs) - T.x0) / T.dx));
+      const j0 = Math.max(0, Math.floor((Math.min(...ys) - T.y0) / T.dy)), j1 = Math.min(ch - 1, Math.floor((Math.max(...ys) - T.y0) / T.dy));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) (by.get(j * cw + i) ?? by.set(j * cw + i, []).get(j * cw + i)!).push(k);
+    }
+    return by;
+  };
+  const keptOver = over(keptTris), goneOver = over(goneTris);
+  const inTri = (k: number, x: number, y: number) => {
+    const a = 3 * keptTris[k], b = 3 * keptTris[k + 1], c = 3 * keptTris[k + 2];
+    const d1 = (V[b] - V[a]) * (y - V[a + 1]) - (V[b + 1] - V[a + 1]) * (x - V[a]);
+    const d2 = (V[c] - V[b]) * (y - V[b + 1]) - (V[c + 1] - V[b + 1]) * (x - V[b]);
+    const d3 = (V[a] - V[c]) * (y - V[c + 1]) - (V[a + 1] - V[c + 1]) * (x - V[c]);
+    return (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
+  };
+  let changed = false;
+  for (const c of goneOver.keys()) {
+    if (!covered[c]) continue;
+    // (still under faces only if what is left covers it all over: the middle and in from each corner)
+    const i = c % cw, j = (c - i) / cw, x0 = T.x0 + i * T.dx, y0 = T.y0 + j * T.dy, list = keptOver.get(c) ?? [];
+    const spots = [[0.5, 0.5], [0.05, 0.05], [0.95, 0.05], [0.05, 0.95], [0.95, 0.95]];
+    if (spots.every(([u, v]) => list.some((k) => inTri(k, x0 + u * T.dx, y0 + v * T.dy)))) continue;
+    covered[c] = 0;
+    changed = true;
+  }
+  if (!changed) return;
+  const runs: number[] = [];
+  let run = 0, state = 0;
+  for (let c = 0; c < cells; c++) { if (covered[c] !== state) { runs.push(run); run = 0; state = covered[c]; } run++; }
+  runs.push(run);
+  gs.c = Int32Array.from(runs);
+}
+
+const OWN_GROUND = [-0.5, 1.0];   // metres below and above a face that a set piece's own floor lays its ground over it
+
+/** Take out the street faces inside a set piece's outline that it lays its own ground over (the map
+ *  GameMap's set piece shapes tell where it draws a floor, a deck or paving to stand on, and how
+ *  high: `surface`), so its stone deck isn't drawn through with the map's paving (Grand Parade's on
+ *  its river wall). A face it draws nothing over stays: a side street between its terraces, a
+ *  pavement in front of them, a path in its garden. Called as the square's world is built, once
+ *  the set pieces' shapes are known; nothing to do on a square no set piece reaches. */
+export function clearSetPieceGround(d: MapData, surface: (x: number, y: number, lo: number, hi: number) => boolean) {
+  if (!d.sf || !d.so?.length) return;
+  const rings = d.so;
+  const V = d.sf.v;
+  const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  // (all over it, the middle and in from each corner: a face only partly under its floor, at the
+  // floor's edge, stays, or the ground showed in the part of it left uncovered)
+  const under = (x: number, y: number, z: number) => surface(x, y, z + OWN_GROUND[0], z + OWN_GROUND[1]);
+  clearFaces(d, (x, y, a, b, c) => {
+    if (x < x0 || x > x1 || y < y0 || y > y1 || !rings.some((r) => inRing(r, x, y))) return false;
+    const z = (V[3 * a + 2] + V[3 * b + 2] + V[3 * c + 2]) / 3;
+    return under(x, y, z) && [a, b, c].every((k) => under(V[3 * k] + (x - V[3 * k]) * 0.15, V[3 * k + 1] + (y - V[3 * k + 1]) * 0.15, V[3 * k + 2] + (z - V[3 * k + 2]) * 0.15));
+  });
+}
+
 const FOOTPATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track"]);
 
 const GONE_REACH = 0.6;     // metres out from a wall that its door, bay window or sign stands
@@ -527,6 +645,8 @@ export function maskSetPieces(d: MapData) {
       if (r.p.some((q) => q[3] === 1 && hide(q[0], q[1]))) { r.held = true; if (!FOOTPATHS.has(r.c)) held.push(r); }
       return FOOTPATHS.has(r.c) || (sp.yard && r.c === "service") ? runsOutside(r, hide) : [r];
     });
+    // (the street faces it lays its own ground over go once its shape is known: clearSetPieceGround)
+    (d.so ??= []).push(...rings);
     // the canopy over woods
     if (d.cn) {
       const C = d.cn, raw = atob(C.h), H = new Uint8Array(raw.length);

@@ -14,7 +14,7 @@ import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
-import { type Shape, standOn } from "./landmarks/shape";
+import { type Shape, standOn, surfaceBetween } from "./landmarks/shape";
 import { breakable, inGap, leafy } from "./gaps";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
@@ -101,6 +101,7 @@ export interface MapData {
   tn?: Tunnel[];                                  // tunnels you can walk through
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
+  so?: number[][][];                              // set pieces' outlines (landmarks/setpieces.ts), for the faces they lay their own ground over
   // crossings and traffic lights: x, y, ground, the street's direction, kind (z a zebra, p a crossing with lights, s lights at a
   // junction), the carriageway's width (furniture.ts draws them; the driving examiner can ask whether you stopped)
   cx?: (number | string)[][];
@@ -911,6 +912,16 @@ export class GameMap {
     let extra = -Infinity;
     for (const f of this.floors) { const h = f(x, z, y); if (h !== null && h <= y + 0.6 && h > extra) extra = h; }
     return Math.max(g, extra);
+  }
+
+  /** Whether a set piece standing here draws a surface to stand on at data x, y between lo and hi
+   *  (heights above sea level, as the map's faces are written). */
+  setPieceSurface(x: number, y: number, lo: number, hi: number): boolean {
+    for (const k of this.pieceCells.get(key(Math.floor(x / CELL), Math.floor(-y / CELL))) ?? []) {
+      const p = this.pieces[k], dx = x - p.x, dy = y - p.y;
+      if (surfaceBetween(p.sh, dx * p.c + dy * p.s, dx * p.s - dy * p.c, p.y0, lo - this.z0, hi - this.z0)) return true;
+    }
+    return false;
   }
 
   private floorHere(x: number, z: number, y: number): number {
