@@ -10,8 +10,9 @@ import { LAMP_COLOUR, LAMP_DECAY, LAMP_POWER, LampPools, lampLit } from "./lampp
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, railNeed } from "./railbridge";
 import { breakable, holed } from "./gaps";
-import { type BarMat, BRIDGE_DECK, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeKind, bridgeSpans, deckLift, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags } from "./map";
+import { type BarMat, BRIDGE_DECK, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, RIM_HALF, RIM_UP, Road, bridgeKind, bridgeSpans, deckLift, deckSides, deckTop, roofMeshAt, roofSeams, roofsFit, spanFlags, isChurch } from "./map";
 import * as TX from "./textures";
+import { LANCETS, churchGlass } from "./stainedglass";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops, stepsDetail } from "./furniture";
 import { setLatitude, sky as skyNow } from "./daylight";
 import { buildLandmarks, landmarkLamps } from "./landmarks";
@@ -58,6 +59,9 @@ const CHUNK = 320;
 
 /** Accumulates non-indexed triangles with normals, UVs and colours, straight into the typed arrays
  *  the graphics card takes (growing as it goes), so a square of Bath builds without stalling. */
+/** What Geo.windowed marks each wall face with (out of 255), and anyWalls' shader reads back. */
+const WIN_MARK = { win: 255, glass: 128, rose: 40 };
+
 export class Geo {
   private n = 0;   // vertices so far
   private P = new Float32Array(3 * 1024); private N = new Int8Array(3 * 1024);
@@ -94,10 +98,11 @@ export class Geo {
     g.computeBoundingSphere();
     return freeOnUpload(g);
   }
-  /** Walls with windows and plain walls as one model (drawn in one go by litWindows' material),
-   *  each vertex marked 1 if its face has windows, 0 if plain. */
-  static windowed(win: Geo | undefined, plain: Geo | undefined): THREE.BufferGeometry | null {
-    const parts = [win, plain].filter((q): q is Geo => !!q && q.n > 0);
+  /** Walls with windows and plain walls as one model (drawn in one go by anyWalls' material),
+   *  each vertex marked by its face: WIN_MARK.win with windows, .glass with a church's stained glass,
+   *  .rose with a rose window, 0 if plain. */
+  static windowed(win: Geo | undefined, plain: Geo | undefined, glass?: Geo, rose?: Geo): THREE.BufferGeometry | null {
+    const parts = [win, plain, glass, rose].filter((q): q is Geo => !!q && q.n > 0);
     const n = parts.reduce((a, q) => a + q.n, 0);
     if (!n) return null;
     const P = new Float32Array(3 * n), N = new Int8Array(3 * n), U = new Float32Array(2 * n), C = new Uint8ClampedArray(3 * n), W = new Uint8Array(n);
@@ -105,7 +110,8 @@ export class Geo {
     for (const q of parts) {
       P.set(q.P.subarray(0, 3 * q.n), 3 * at); N.set(q.N.subarray(0, 3 * q.n), 3 * at);
       U.set(q.U.subarray(0, 2 * q.n), 2 * at); C.set(q.C.subarray(0, 3 * q.n), 3 * at);
-      if (q === win) W.fill(255, at, at + q.n);
+      const mark = q === win ? WIN_MARK.win : q === glass ? WIN_MARK.glass : q === rose ? WIN_MARK.rose : 0;
+      if (mark) W.fill(mark, at, at + q.n);
       at += q.n;
     }
     const g = new THREE.BufferGeometry();
@@ -338,7 +344,7 @@ function placeShown(o: THREE.Object3D, force: boolean, all = force) {
 function buildingModels(c: Map<string, Geo>): [string, THREE.BufferGeometry][] {
   const out: [string, THREE.BufferGeometry][] = [];
   for (const key of new Set([...c.keys()].map((k) => (k === "roof" ? k : k[0])))) {
-    const g = key === "roof" ? c.get(key)!.build() : Geo.windowed(c.get(key + "w"), c.get(key + "p"));
+    const g = key === "roof" ? c.get(key)!.build() : Geo.windowed(c.get(key + "w"), c.get(key + "p"), c.get(key + "g"), c.get(key + "o"));
     if (g) out.push([key, g]);
   }
   return out;
@@ -394,20 +400,44 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: TX.WallKind) {
   return mat;
 }
 
-/** One material for a kind of wall, windowed and plain alike (Geo.windowed marks which faces have
- *  windows), so a square's walls of that kind are drawn in one go instead of two. */
+/** One material for a kind of wall, windowed, plain and a church's alike (Geo.windowed marks which
+ *  faces have which), so a square's walls of that kind are drawn in one go. A church's glass is in its
+ *  own colours, not the wall's, and every pane of it lights up after dark. */
 function anyWalls(kind: TX.WallKind) {
   const mat = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
   const plainMap = TX.wall(kind, false), lit = mat.onBeforeCompile;
+  const slots = (LANCETS + 1).toFixed(1), lancets = LANCETS.toFixed(1);
   mat.onBeforeCompile = (sh, r) => {
     lit(sh, r);
     sh.uniforms.plainMap = { value: plainMap };
+    sh.uniforms.glassMap = { value: churchGlass() };
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float win;\nvarying float vWin;")
       .replace("#include <uv_vertex>", "#include <uv_vertex>\nvWin = win;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D plainMap;\nvarying float vWin;")
-      .replace("#include <map_fragment>", `float isWin = step(0.5, vWin);
-      diffuseColor *= mix(texture2D(plainMap, vMapUv), texture2D(map, vMapUv), isWin);`)
-      .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D plainMap;\nuniform sampler2D glassMap;\nvarying float vWin;")
+      .replace("#include <map_fragment>", `float isWin = step(0.75, vWin);
+      vec4 wallTex = mix(texture2D(plainMap, vMapUv), texture2D(map, vMapUv), isWin);
+      vec4 glass = vec4(0.0);
+      // (the gradients of the unbroken uv, so the jump from one window's slot to the next doesn't
+      // drop to the smallest mipmap along every bay's edge)
+      vec2 gdx = dFdx(vMapUv) * vec2(1.0 / ${slots}, 1.0), gdy = dFdy(vMapUv) * vec2(1.0 / ${slots}, 1.0);
+      if (vWin > 0.08 && vWin < 0.75) {
+        if (vWin > 0.33) {
+          // each bay and row its own lancet, so a row of windows isn't all the one picture
+          vec2 cell = floor(vMapUv);
+          float pickL = mod(cell.x + 3.0 * cell.y, ${lancets});
+          glass = textureGrad(glassMap, vec2((pickL + fract(vMapUv.x)) / ${slots}, fract(vMapUv.y)), gdx, gdy);
+        } else {
+          vec2 ru = clamp(vMapUv, 0.0, 1.0);
+          glass = textureGrad(glassMap, vec2((${lancets} + ru.x) / ${slots}, ru.y), gdx, gdy);
+          glass.a *= step(abs(vMapUv.x - 0.5), 0.5) * step(abs(vMapUv.y - 0.5), 0.5);
+        }
+      }
+      float surround = smoothstep(0.2, 0.45, glass.a), glassA = smoothstep(0.6, 0.85, glass.a);
+      wallTex.rgb = mix(wallTex.rgb, glass.rgb, surround);
+      diffuseColor *= wallTex;`)
+      .replace("#include <color_fragment>", "#include <color_fragment>\n      diffuseColor.rgb = mix(diffuseColor.rgb, glass.rgb, glassA);")
+      .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(")
+      .replace("#include <lights_fragment_begin>", "totalEmissiveRadiance += glassA * emissive * glass.rgb * vec3(1.3, 1.1, 0.85);\n#include <lights_fragment_begin>");
   };
   mat.customProgramCacheKey = () => "anyWalls";
   return lampLit(mat);
@@ -2564,7 +2594,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const [x, y] of outerRing) { cx += x; cy += y; }
     cx /= outerRing.length; cy /= outerRing.length;
     const surf = ((b.m as Surf) in WALL_TINTS ? b.m : WALL_USUAL) as Surf;
-    const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
+    const church = isChurch(b);
+    const walls = geoFor(cx, cy, surf + (b.w ? (church ? "g" : "w") : "p"));
     const plain = geoFor(cx, cy, surf + "p");
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eaveAll = ground + b.h, base = ground - 0.6;
@@ -2578,7 +2609,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
     // floor, as a house built into a hill does, instead of every storey being stretched
     const lift = b.st ? 0 : (b.dz ?? 0) / 2;
-    const stories = b.st ?? Math.max(1, Math.round((b.h - lift) / floor)), storey = (b.h - lift) / stories;
+    // a church's lancets stay lancet-shaped however tall its walls: a tower gets a row of them a storey
+    const stories = church ? Math.max(1, Math.round((b.h - lift) / 6.5)) : b.st ?? Math.max(1, Math.round((b.h - lift) / floor)), storey = (b.h - lift) / stories;
 
     b.r.forEach((ring, ri) => {
       let area = 0;
@@ -2614,7 +2646,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const v1 = (eave - ground - lift) / storey;
         if (za !== undefined && zb !== undefined && Math.max(za, zb) - Z0 > eave + 0.02) {
           const vt = (h: number) => (h - ground - lift) / storey;
-          facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
+          const ha = za - Z0, hb = zb - Z0, rise = Math.max(ha, hb) - eave;
+          // half a church's gable, rising from the eaves to the ridge: a rose window centred on the
+          // ridge, so the two halves make one (sized in steps so a gable a little lopsided still meets)
+          const inR = rise * len / (len + Math.hypot(len, rise)), d = Math.round(Math.min(6, 1.7 * inR) * 2) / 2;
+          // (only where the wall runs on straight past the ridge and falls again: a real gable, not
+          // the side of a step up to a higher roof)
+          const j = ha > hb ? (i + ring.length - 1) % ring.length : (i + 1) % ring.length;
+          const n0 = ring[j], n1 = ring[(j + 1) % ring.length], nl = Math.hypot(n1[0] - n0[0], n1[1] - n0[1]);
+          const zj = b.rm!.z[ri]?.[2 * j + (ha > hb ? 0 : 1)];
+          const gable = nl > 1 && ((n1[0] - n0[0]) * ex + (n1[1] - n0[1]) * ey) / (nl * len) > 0.98 && zj !== undefined && zj - Z0 - eave < 0.6;
+          if (church && b.w && ri === 0 && gable && rise > 2.5 && Math.min(ha, hb) - eave < 0.6 && d >= 1.8) {
+            const ch = Math.round((eave + inR) * 4) / 4, sa = ha > hb ? 0 : -len, sb = sa + len;
+            const ruv = (s: number, h: number) => [s / d + 0.5, (h - ch) / d + 0.5];
+            facing(geoFor(cx, cy, surf + "o"), P(u0, eave), P(u1, eave), P(u1, hb), P(u0, ha), out, ruv(sa, eave), ruv(sb, eave), ruv(sb, hb), ruv(sa, ha), wallCol);
+          } else facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
         }
         const top = Math.min(eave, ground + lift + storey);
         if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
@@ -2674,7 +2720,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + rp / storey], wallCol);
+          const outward = [u[0] * end, 0, -u[1] * end];
+          // a church's gable has a rose window, as big as fits in it with a margin of wall round it
+          const inR = (Wd * rp / 2) / ((Wd + 2 * Math.hypot(Wd / 2, rp)) / 2), d = Math.min(6, 1.7 * inR);
+          if (church && b.w && d >= 1.8) {
+            const ch = eave + inR, ruv = (s: number, h: number) => [s / d + 0.5, (h - ch) / d + 0.5];
+            facingTri(geoFor(cx, cy, surf + "o"), g0, g1, top, outward, ruv(-Wd / 2, eave), ruv(Wd / 2, eave), ruv(0, ridge), wallCol);
+          } else facingTri(plain, g0, g1, top, outward, [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + rp / storey], wallCol);
         }
       }
       // chimney stacks on the ridge, each with two pots
