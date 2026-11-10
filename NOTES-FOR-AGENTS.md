@@ -21,6 +21,14 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Three map branches merged, waiting for Dan (branch `claude/map-merge`):** `claude/map-fixes`
+  (checks rules 39-45, walls follow the ground, hairline needles off pavements and streets, set
+  pieces clear the map's paving), `claude/stable-ids` (edges named from their own geometry,
+  `once.edge_id`; blocks joined 250 m at a time in one settled form; `grading.TIE`) and
+  `claude/construction-roads` (`graph.as_built`: ways still being built drawn as what they will be).
+  Touches `tools/partition/`, `tools/check_map.py`, `check_more.py`, `ground_seams.mjs`, `grading.py`, `osm.py`,
+  `web/src/map.ts`, `world.ts`, `landmarks/setpieces.ts` + `shape.ts`, and rebuilds every square.
+
 - **The ground triangulated round the faces, now the default (branch `claude/ground-cdt`, waiting for Dan):**
   the sheet's open ground is one constrained triangulation (`web/src/sheet.ts` `buildSheetCdtGen`,
   built a few milliseconds at a time, Delaunator in a worker: `delaunay.ts`; npm `delaunator`,
