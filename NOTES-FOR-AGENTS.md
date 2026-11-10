@@ -32,7 +32,7 @@ the game locally, without the sound" in `CLAUDE.md`.
 - **Map rebuilds rewrite only the squares a change reaches (branch `claude/slice-keys`):** each
   square's write and division are keyed on their own slice of the passes' city-wide files
   (`pipeline.Slices`: corridors, road heights, footprints, parent blocks near the square), not the
-  whole files. Keying only: touches `tools/partition/pipeline.py` and `stage.py`.
+  whole files. Keying only: touches `tools/partition/pipeline.py`.
 
 - **The ground triangulated round the faces, now the default (branch `claude/ground-cdt`, waiting for Dan):**
   the sheet's open ground is one constrained triangulation (`web/src/sheet.ts` `buildSheetCdtGen`,
