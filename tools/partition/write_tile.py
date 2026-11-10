@@ -4295,6 +4295,21 @@ PATH_FACE = {"g": "grass", "d": "dirt", "v": "gravel"}
 PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its surface
 
 
+SEATING_LEVEL = 0.03    # the steepest ground outdoor tables are paved on (1 in 33, under rule 24's 2 degrees)
+
+
+def _level(area, ground):
+    """Whether the ground under `area` is about level: no steeper than SEATING_LEVEL across it."""
+    pts = shapely.get_coordinates(shapely.segmentize(area.boundary, 2.0))
+    zs = [(x, y, ground(x, y)) for x, y in pts]
+    zs = [q for q in zs if q[2] is not None]
+    if len(zs) < 3:
+        return False
+    lo, hi = min(zs, key=lambda q: q[2]), max(zs, key=lambda q: q[2])
+    run = math.hypot(hi[0] - lo[0], hi[1] - lo[1])
+    return hi[2] - lo[2] <= SEATING_LEVEL * max(run, 1.0)
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
                     standing=None, filled=None, tunnels=(), rail=None, seating=(), plants=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
@@ -4451,7 +4466,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
                                    standing)
     here = [g.intersection(square) for g in seating if g.intersects(square)]
-    here = [g for g in here if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0.5]
+    # (tables on a slope stand on a lawn or a terrace the map doesn't have: only level ones are paved)
+    here = [g for g in here if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0.5 and _level(g, ground)]
     if here:
         # (a tree or shrub among the tables stands in its own bed)
         beds = [Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants]
