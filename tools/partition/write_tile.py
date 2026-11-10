@@ -5208,7 +5208,7 @@ def carry_pedestrian(rd, old):
     return n
 
 
-CARRIED = {"bu": ("pedestrian", "service"), "pr": tuple(GAME_PATHS)}
+CARRIED = {"bu": ("pedestrian", "service"), "pr": tuple(GAME_PATHS), "tc": tuple(KERBED) + ("service",)}
 
 
 def carry_flags(rd, old):
@@ -5216,10 +5216,12 @@ def carry_flags(rd, old):
     old records each stretch lies along (most of its length within PEDESTRIAN_NEAR of them), as
     one-way streets take their way: `bu`, a street closed to traffic that buses may use (its bus
     stops are on a road, and the buses called to them drive along it); `pr`, a path along a mapped
-    pier or pontoon (its end out over the water is the jetty's end). Returns how many took each."""
+    pier or pontoon (its end out over the water is the jetty's end); `tc`, the hours a road is shut
+    to traffic (Milsom Street's "10:00-18:00"). Returns how many took each."""
     n = collections.Counter()
     for flag, kinds in CARRIED.items():
-        ways = [LineString([q[:2] for q in r["p"]]) for r in old if r.get(flag) and len(r["p"]) > 1]
+        held = [r for r in old if r.get(flag) and len(r["p"]) > 1]
+        ways = [LineString([q[:2] for q in r["p"]]) for r in held]
         if not ways:
             continue
         tree = STRtree(ways)
@@ -5229,9 +5231,10 @@ def carry_flags(rd, old):
             line = LineString([q[:2] for q in r["p"]])
             if line.length < 1:
                 continue
-            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+            hits = [int(k) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))]
+            near = unary_union([ways[k].buffer(PEDESTRIAN_NEAR) for k in hits])
             if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
-                r[flag] = 1
+                r[flag] = held[max(hits, key=lambda k: line.intersection(ways[k].buffer(PEDESTRIAN_NEAR)).length)][flag]
                 n[flag] += 1
     return n
 

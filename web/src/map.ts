@@ -58,7 +58,9 @@ export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; m
 /** What a street or path's ways say beyond its class (tools/osm.py's osm-detail): su, a path's surface (g grass, d dirt, v gravel; paved if left out);
  *  sv, a service road's kind (d a drive, l an alley, a a car park's aisle, p private); and for steps sc, how many treads, hr, its handrails
  *  (1 on the left looking along its points, 2 on the right, 4 down the middle), up, 1 where its points run uphill and -1 downhill. */
-export interface Road { su?: string; sv?: string; sc?: number; hr?: number; up?: number }
+export interface Road { su?: string; sv?: string; sc?: number; hr?: number; up?: number;
+  /** The hours a road is shut to traffic ("10:00-18:00"): a road the rest of the time (traffic.ts). */
+  tc?: string }
 export interface Pond { r: number[][][]; z: number; c?: string; k?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels); k: "t" a tank, a pool or a reservoir, in its own walls (world.ts)
 /** How far a tank's walls stand over its water, and how thick they are. */
 export const RIM_UP = 0.3, RIM_HALF = 0.15;
