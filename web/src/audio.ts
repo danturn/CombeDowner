@@ -1,6 +1,7 @@
 // Synthesised sound effects and music (Web Audio), so the game ships no sound files.
 // The context can only start after a click, so call unlock() from one.
 import { gore } from "./gore";
+import { timeOfDay } from "./daylight";
 import { Soundtrack, TRACK_NAMES } from "./music";
 import { latencyHint } from "./voicelink";
 
@@ -206,7 +207,8 @@ export function unlock() {
   analyser.fftSize = 256;
   analyser.smoothingTimeConstant = 0.6;
   pre.connect(analyser);
-  const st = soundtrack = new Soundtrack(ctx, pre);
+  // the game's clock picks the music: dawn's track round dawn, the pub's at closing time
+  const st = soundtrack = new Soundtrack(ctx, pre, { hour: () => timeOfDay() * 24 });
   const c = ctx;
   // report a new track when it actually starts playing, not when it is scheduled
   st.onTrack = (name, time) => setTimeout(() => {
