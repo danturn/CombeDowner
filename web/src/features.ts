@@ -4,7 +4,7 @@
 // file). The code is the same on both sites; these switches say which of the three are on.
 //
 // Which copy of the game this is goes by the page's address, the same way the play counts tell
-// them apart (telemetry.ts): on for danturn.github.io and for a copy run on this computer, off
+// them apart (telemetry.ts): on for the test copies and for a copy run on this computer, off
 // anywhere else, Spencer's site included. The Progression tickbox in Settings (settings.ts) switches
 // all three on or off and is kept in this browser; ?progression=1|0 does the same for one visit. They
 // hang together, as the challenges bring the objects and the objects open the zones.
@@ -27,7 +27,9 @@ function local(): boolean {
 }
 
 /** Whether this copy of the game has them on unless you choose otherwise. */
-export const progressionDefault = location.hostname === "danturn.github.io" || local();
+/** The test copies: the fork's GitHub Pages site and the test copy on Cloudflare (test.combedowner.pages.dev). */
+const testCopy = () => location.hostname.endsWith(".github.io") || location.hostname.startsWith("test.");
+export const progressionDefault = testCopy() || local();
 
 function chosen(): boolean | null {
   try { const s = localStorage.getItem("cd-progression"); return s === "1" ? true : s === "0" ? false : null; } catch { return null; }
