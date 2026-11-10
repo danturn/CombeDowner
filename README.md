@@ -96,8 +96,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
   shelters only at the stops that have one, and the
-  stops on a street closed to traffic that buses still use (Milsom Street, the University's
-  Parade) at its kerb, with the bus you call driving along it; a pub's or café's tables outside
+  stops on a street closed to traffic that buses still use (the University's Parade) at its
+  kerb, with the bus you call driving along it; a street shut to traffic only in the daytime
+  (Milsom Street, New Bond Street) is a road with its kerbs, empty of traffic in those hours on
+  the game's clock; a pub's or café's tables outside
   stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
