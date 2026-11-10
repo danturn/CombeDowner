@@ -23,7 +23,7 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 - **Stained glass in churches (branch `claude/stained-glass`, waiting for Dan):** cat angels in
   every map church's windows and a rose in its gable (`web/src/stainedglass.ts`, `world.ts` `anyWalls`,
-  `map.ts` `isChurch`, `catcoats.ts`). The Abbey's own glass is on `claude/stained-glass-abbey`, to choose.
+  `map.ts` `isChurch`, `catcoats.ts`). The Abbey keeps its own glass.
 
 - **Spencer's main merged into Dan's fork (branch `claude/spencer-merge`):** the map rebuilt with
   his running tracks and pitches; `drapeBarriers` (`web/src/map.ts`) now leaves a stretch alone where
