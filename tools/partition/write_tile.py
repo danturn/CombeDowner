@@ -579,10 +579,10 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     return out
 
 
-def _cut_at_sides(p, sq, nudge=0.01):
+def _cut_at_sides(p, sq):
     """A record's points cut where they cross the square's sides: (the runs inside, the runs
-    outside). Each run starts or ends where it crosses, a centimetre to its own side of the line, at
-    the height between the points either side."""
+    outside). Each run starts or ends on the side itself, at the height between the points either
+    side, so the two squares' pieces share that point and join up."""
     x0, y0, x1, y1 = sq
 
     def out(q):
@@ -598,12 +598,8 @@ def _cut_at_sides(p, sq, nudge=0.01):
                 hi = mid
         t = (lo + hi) / 2
         x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
-        for v, lo_, hi_ in ((0, x0, x1), (1, y0, y1)):
-            c = (x, y)[v]
-            near = lo_ if abs(c - lo_) < abs(c - hi_) else hi_
-            if abs(c - near) < 1e-3:
-                c = near + (nudge if (near == lo_) != outside else -nudge)
-                x, y = (c, y) if v == 0 else (x, c)
+        x = min((x0, x1), key=lambda e: abs(e - x)) if min(abs(x - x0), abs(x - x1)) < 1e-3 else x
+        y = min((y0, y1), key=lambda e: abs(e - y)) if min(abs(y - y0), abs(y - y1)) < 1e-3 else y
         q = b if out(b) == outside else a
         return [round(x, 2), round(y, 2), round(a[2] + (b[2] - a[2]) * t, 2)] + list(q[3:])
     ins, outs = [], []
