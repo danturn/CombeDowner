@@ -46,7 +46,7 @@ import type { MapData, Road } from "../map";
 import { KERBED, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
 import { terraceArgs } from "./terraces";
-import { paradeArgs } from "./grandparade";
+import { BRIDGE, paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
@@ -193,7 +193,7 @@ export const SET_PIECES: SetPiece[] = [
     // at its level there. The outline is the strip along the river's edge and its pavement (the
     // set piece lays its own), not the street.
     name: "Grand Parade", kind: "colonnade", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
-    outline: [[5, -16], [104, -16], [104, -6.5], [5, -6.5]],
+    outline: [[BRIDGE, -16], [104, -16], [104, -6.5], [BRIDGE, -6.5]],
     args: paradeArgs,
   },
   {

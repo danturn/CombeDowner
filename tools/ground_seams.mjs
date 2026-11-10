@@ -15,7 +15,8 @@
 // kerb or a wall still closes an edge it shares).
 //
 // With --rules it also gives rule 44's walls standing over the ground (wallFeet below; --feet works them out
-// without --rules), and rule 45's street faces left inside a set piece (setPieceFaces).
+// without --rules), rule 45's street faces left inside a set piece (setPieceFaces), and rule 46's set
+// pieces' floors stopping short of what stands beyond them (floorGaps; --gaps prints them without --rules).
 //
 //   node tools/ground_seams.mjs [--map combe-down] [--squares "0,3 -1,2"] [--json out.json] [--most n] [--rules] [--query ground=cdt] [--heights] [--slices]
 //
@@ -28,8 +29,8 @@ import { fakeBrowser, bundleGame } from "./node_game.mjs";
 
 const here = path.dirname(new URL(import.meta.url).pathname), web = path.join(here, "..", "web");
 const argv = process.argv.slice(2);
-const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", slices: "", feet: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
-for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--feet" || argv[i] === "--heights" || argv[i] === "--slices" ? "1" : argv[++i];
+const opt = { map: "combe-down", squares: "", json: "", most: "0", rules: "", query: "", heights: "", slices: "", feet: "", gaps: "", maps: path.join(web, "public", "maps"), src: path.join(web, "src") };
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[i] === "--rules" || argv[i] === "--feet" || argv[i] === "--gaps" || argv[i] === "--heights" || argv[i] === "--slices" ? "1" : argv[++i];
 // (with --rules the findings are the output, for tools/check_more.py rule 38, and the rest goes to stderr)
 if (opt.rules) console.log = console.error;
 const say = (...a) => console.log(...a);
@@ -89,7 +90,7 @@ async function square(ti, tj) {
   } while (!r.done);
   const ms = performance.now() - t0;
   group.updateMatrixWorld(true);
-  const out = { d, group, ms, slices, done: () => { r.value.dispose?.(); core.dropTile(k); } };
+  const out = { d, m, group, ms, slices, done: () => { r.value.dispose?.(); core.dropTile(k); } };
   return out;
 }
 
@@ -376,6 +377,67 @@ function setPieceFaces(d) {
   return out;
 }
 
+// Rule 46: a set piece's floor at the street's level (a pavement on a river wall, a deck, a terrace)
+// runs on to what stands beyond its edge, not stopping short of it with a hole between. From each edge
+// of its surfaces (a half-metre square of its grid with none of its surface at that level next to
+// it), walk straight out at the floor's level as the game would let you (map.ts collide): where the
+// floor falls away more than a metre and then, within GAP_REACH, a wall stops you or a floor comes
+// back up to the level, there is a gap you could drop into between the two. A balustrade along the
+// edge stops you before the drop, and an edge with nothing near beyond it is meant. Each place's
+// score is the gap's width in metres.
+const GAP_REACH = 4.5, GAP_STEP = 0.25, GAP_FALL = 1.0, GAP_LEVEL = 1.5, GAP_STEP_UP = 0.6;
+function floorGaps(d, m) {
+  const out = [], [bx0, by0, bx1, by1] = d.b;
+  const SUB = 4, STEP = 0.5, OFF = 32768, TOPN = 6;
+  for (const p of m.pieces ?? []) {
+    const { sh, c, s, y0 } = p;
+    const at = (lx, lz) => [p.x + c * lx + s * lz, p.y + s * lx - c * lz];
+    const levels = (i, j) => {
+      const L = sh.tops.get(i + OFF + (j + OFF) * 65536);
+      const hs = [];
+      if (L) for (let n = 0; n < L.length; n += TOPN) hs.push(y0 + L[n]);
+      return hs;
+    };
+    for (const [key, L] of sh.tops) {
+      const i = (key % 65536) - OFF, j = Math.floor(key / 65536) - OFF;
+      const [x, y] = at((i + 0.5) * STEP, (j + 0.5) * STEP);
+      if (x < bx0 || x >= bx1 || y < by0 || y >= by1) continue;
+      for (let n = 0; n < L.length; n += TOPN) {
+        if (L[n + 1] !== (1 << (SUB * SUB)) - 1) continue;
+        const h = y0 + L[n];
+        // (only a floor at the level of the ground or the street beside it: not a roof)
+        if (Math.abs(h - core.ground(x, -y)) > GAP_LEVEL && Math.abs(h - m.ground(x, -y)) > GAP_LEVEL) continue;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (levels(i + di, j + dj).some((q) => Math.abs(q - h) < GAP_STEP_UP)) continue;
+          const [ex, ey] = at((i + 0.5 + di) * STEP, (j + 0.5 + dj) * STEP);
+          const ux = (ex - x) / STEP, uy = (ey - y) / STEP;
+          const pos = { x, z: -y };
+          let fell = -1, gap = 0;
+          for (let t = GAP_STEP; t <= GAP_REACH + 1e-6; t += GAP_STEP) {
+            const want = { x: x + ux * t, z: -(y + uy * t) };
+            core.sweep({ x: pos.x, z: pos.z }, want, h, 0.2);
+            const moved = Math.hypot(want.x - (x + ux * t), want.z + (y + uy * t));
+            pos.x = want.x; pos.z = want.z;
+            if (moved > 0.05) { if (fell >= 0) gap = t - GAP_STEP - fell; break; }
+            const f = core.floor(pos.x, pos.z, h + 0.3);
+            if (fell < 0 && f < h - GAP_FALL) fell = t;
+            else if (fell >= 0 && f >= h - GAP_STEP_UP) { gap = t - fell; break; }
+          }
+          if (gap >= 0.25) out.push([(x + ex) / 2, (y + ey) / 2, gap]);
+        }
+      }
+    }
+  }
+  // each run of edges along one gap a place
+  const places = [];
+  for (const [x, y, g] of out.sort((a, b) => a[0] - b[0])) {
+    const q = places.find((q) => Math.hypot(q[0] - x, q[1] - y) < 1.5);
+    if (q) { q[0] = x; q[1] = y; q[2] = Math.max(q[2], g); q[3]++; }
+    else places.push([x, y, g, 1]);
+  }
+  return places;
+}
+
 // --heights: does the height you stand at (the map's ground) match the drawn ground, at the middle of
 // each ground triangle? Counts those where you'd stand more than a centimetre below it (sunk in), and
 // the worst, and those more than a centimetre above it (on a face or a deck over it, or out).
@@ -424,9 +486,12 @@ for (const [ti, tj] of squares) {
   if (opt.heights) Object.assign(r, heights(s.group));
   const feet = opt.rules || opt.feet ? wallFeet(s.group) : [];
   const inPieces = opt.rules ? setPieceFaces(s.d) : [];
+  const floorHoles = opt.rules || opt.gaps ? floorGaps(s.d, s.m) : [];
   s.done();
   for (const k of Object.keys(total)) total[k] += r[k];
   if (r.gap) bad++;
+  for (const [x, y, g, n] of floorHoles) findings.push({ rule: "46 set piece's floor stops short of what stands beyond it", score: +g.toFixed(2), x, y, what: `a gap ${g.toFixed(1)} m wide to drop into, along ${(n * 0.5).toFixed(1)} m of its edge` });
+  if (opt.gaps) for (const [x, y, g, n] of floorHoles) say(`    floor gap ${g.toFixed(2)} m along ${n} edges at ${x.toFixed(1)},${y.toFixed(1)}`);
   for (const [x, y, a, what] of inPieces) findings.push({ rule: "45 street faces inside a set piece", score: +a.toFixed(1), x, y, what });
   for (const [x, y, l, gap] of feet) if (l >= 0.5) findings.push({ rule: "44 wall's foot over the ground", score: +l.toFixed(1), x, y, what: `${l.toFixed(1)} m of a wall, fence or hedge standing up to ${gap.toFixed(2)} m over what is drawn under it: the sky shows through` });
   for (const [x, y, l] of opt.rules ? r.gaps : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
