@@ -1410,7 +1410,11 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
     stops += [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     # (a deck is drawn by the bridge, not as faces: a pavement running on to one has something there)
     decks = [LineString([q[:2] for q in r["p"]]).buffer(max(_deck_sides(r)) + 1) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
-    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks)
+    # (nor is a set piece that paves its outline to the edge, where the square's faces were cut for it)
+    from partition import setpiece_cuts
+    filled = setpiece_cuts.holes(m.get("centre"), m["b"], sheet.union(("road", "service")))
+    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks
+                                + ([filled.buffer(0.3)] if filled is not None else []))
     kerbed = [LineString([q[:2] for q in r["p"]]) for r in m.get("rd") or [] if r["c"] in GAME_KERBED and len(r["p"]) > 1]
     if not kerbed: return
     ktree = shapely.STRtree(kerbed)
