@@ -656,6 +656,82 @@ def verge_out_of_town(rd, houses):
         r["pv"] = [0.0, 0.0]
 
 
+LOOK_PAST = 40.0     # metres past the square's sides that its streets are looked at but not written
+
+
+def ground_past(T, tiles):
+    """The ground at a point: this square's grid, else the next square's as it starts."""
+    grids = [T] + [t["t"] for t in tiles if t.get("t")]
+
+    def at(x, y):
+        for G in grids:
+            z = ground_at(G, x, y, split=False)
+            if z is not None:
+                return z
+        return None
+    return at
+
+
+def _outside_square(p, sq):
+    """The runs of a record's points outside the square, each from where it crosses the side."""
+    x0, y0, x1, y1 = sq
+
+    def out(q):
+        return not (x0 < q[0] < x1 and y0 < q[1] < y1)
+
+    def cross(a, b):
+        lo, hi = 0.0, 1.0
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            if out([a[0] + (b[0] - a[0]) * mid, a[1] + (b[1] - a[1]) * mid]) == out(a):
+                lo = mid
+            else:
+                hi = mid
+        q = b if out(b) else a
+        return [round(a[k] + (b[k] - a[k]) * hi, 2) for k in range(3)] + list(q[3:])
+    runs, run = [], []
+    for i, q in enumerate(p):
+        if out(q):
+            if not run and i:
+                run.append(cross(p[i - 1], q))
+            elif run and not out(mid := [(a + b) / 2 for a, b in zip(run[-1][:3], q[:3])]):
+                # (across a corner of the square: out, in for a moment, and out again)
+                runs.append(run + [cross(run[-1], mid)])
+                run = [cross(q, mid)]
+            run.append(q)
+        elif run:
+            run.append(cross(p[i - 1], q))
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    return [r for r in runs if len(r) > 1]
+
+
+def streets_past_the_sides(rows, sq, ground, houses=(), profiles=None, old=()):
+    """The streets within LOOK_PAST of the square but outside it, as records the square's faces are
+    told by and never written: a carriageway reaching over the side belongs to the street beyond it,
+    which the next square draws. Their heights are the road profile's where there is one, else the
+    ground, as the next square's are."""
+    x0, y0, x1, y1 = sq
+    window = (x0 - LOOK_PAST, y0 - LOOK_PAST, x1 + LOOK_PAST, y1 + LOOK_PAST)
+    frame = box(*window)
+    near = [r for r in rows if (r["cls"] not in GAME_PATHS or r["cls"] == "pedestrian")
+            and LineString(r["line"]).intersects(frame)]
+    rd = roads_from_corridors(near, window, ground, None, houses, profiles)
+    carry_one_way(rd, old)
+    verge_out_of_town(rd, houses)
+    carry_pedestrian(rd, old)
+    demote_pedestrian(rd, old)
+    out = []
+    for r in rd:
+        if r["c"] in GAME_PATHS and r["c"] != "pedestrian":
+            continue
+        for run in _outside_square(r["p"], sq):
+            out.append(dict(r, p=run))
+    return out
+
+
 def hold_steep_streets(rd, T, edge=8.0, tol=0.05):
     """A street held to the tile's ground where that makes it steeper than its kind may be keeps its
     own fitted levels there instead, and the ground is laid to it (lay_ground). The tile's ground was
@@ -4296,7 +4372,7 @@ PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its s
 
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
-                    standing=None, filled=None, tunnels=(), rail=None):
+                    standing=None, filled=None, tunnels=(), rail=None, past=(), far=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -4318,10 +4394,22 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     few centimetres, which took a square's file from 3.4 to 8.7 MB; simplified apart, a carriageway
     and its pavement would no longer share their edge."""
     square = box(*sq)
-    streets = [r for r in rd if (r["c"] not in GAME_PATHS or r["c"] == "pedestrian") and len(r["p"]) > 1]
+    streets = [r for r in list(rd) + list(past) if (r["c"] not in GAME_PATHS or r["c"] == "pedestrian") and len(r["p"]) > 1]
     lines = [LineString([q[:2] for q in r["p"]]) for r in streets]
     heights = [LineString([q[:3] for q in r["p"]]) for r in streets]
     tree = STRtree(lines) if lines else None
+    x0, y0, x1, y1 = sq
+
+    def line_ground(x, y):
+        # (past the side this square's grid stops: a street there is levelled by the next square's)
+        if far is not None and not (x0 - 0.5 <= x <= x1 + 0.5 and y0 - 0.5 <= y <= y1 + 0.5):
+            z = far(x, y)
+            if z is not None:
+                return z
+        return ground(x, y)
+
+    def level(k, x, y):
+        return _level_at(heights[k], x, y, line_ground, square)
     planes = portal_planes(tunnels, lines, heights)
     deck, path_under = bridge_decks(rd, ground, under=True)
     over = bridge_decks(rd)
@@ -4371,7 +4459,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         # (where streets at different levels both reach it, as at the foot of a bridge's approach over
         # a cutting, it is the one whose level is the ground's here)
         z = ground(x, y)
-        levels = [(_level_at(heights[k], x, y, ground, square), k) for k in reached[:3]]
+        levels = [(level(k, x, y), k) for k in reached[:3]]
         levels = [(h, k) for h, k in levels if h is not None]
         if z is None or len(levels) < 2 or max(h for h, _ in levels) - min(h for h, _ in levels) < 1.5:
             return reached[0]
@@ -4475,7 +4563,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     def off_level(seam):
         for x, y in shapely.get_coordinates(shapely.segmentize(seam, 2.0)):
             k, z = nearest(x, y), ground(x, y)
-            lv = None if k is None or z is None else _level_at(heights[k], x, y, ground, square)
+            lv = None if k is None or z is None else level(k, x, y)
             if lv is not None and abs(z - lv) > ALONG_STEP + PAVE_FALL:
                 return True
         return False
@@ -4543,7 +4631,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
     surface = unary_union([road, pave])
-    cut = level_cuts(lines, reach_of, lambda k, x, y: _level_at(heights[k], x, y, ground, square)
+    cut = level_cuts(lines, reach_of, lambda k, x, y: level(k, x, y)
                      if _portal_owner(planes, k, x, y) else None, surface)
     cut += [f.intersection(surface.buffer(0.5)) for f, *_ in planes] if planes else []
     cut = [g for g in cut if not g.is_empty]
@@ -4684,7 +4772,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         k = None if on_ground else nearest(x, y)
         if k is not None and lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
             k = None
-        return ground(x, y) if k is None else _level_at(heights[k], x, y, ground, square)
+        return ground(x, y) if k is None else level(k, x, y)
 
     # (every face's edges are offered points at one spacing, and a point either face along an edge
     # keeps the other keeps too: thinned on their own, a road and the paving beside it kept different
@@ -4737,7 +4825,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)
             else:
-                z = _level_at(heights[k], x, y, ground, square)
+                z = level(k, x, y)
             if z is None:
                 return None
             at[key] = len(v) // 3
@@ -5048,11 +5136,9 @@ def _flight_off_the_street(r, rd, streets):
 INDOORS_FLOOR = 2.0     # metres of a way inside a building before it is stopped at the wall: less is a corner clipped
 
 
-def buildings_next_door(ti, tj, base, sq, reach=40.0):
-    """The footprints the squares round this one hold that reach within `reach` of it: a path by the
-    edge can run into a building the next square has. Taken from the next square's own starting
-    point beside `base`, else from the game's copy of it."""
-    near, out = box(*sq).buffer(reach), []
+def next_door(ti, tj, base):
+    """The squares round this one, as they start (beside `base`), else as the game has them."""
+    out = []
     for di in (-1, 0, 1):
         for dj in (-1, 0, 1):
             if not (di or dj):
@@ -5061,14 +5147,22 @@ def buildings_next_door(ti, tj, base, sq, reach=40.0):
             path = os.path.join(os.path.dirname(os.path.abspath(base)), name)
             if not os.path.exists(path):
                 path = os.path.join(os.path.dirname(tile_base(ti, tj)[0]), name)
-            if not os.path.exists(path):
-                continue
-            for b in json.load(open(path)).get("bl") or []:
-                rings = b.get("r") or []
-                if len(rings) and len(rings[0]) >= 3:
-                    g = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3]).buffer(0)
-                    if g.intersects(near):
-                        out.append(g)
+            if os.path.exists(path):
+                out.append(json.load(open(path)))
+    return out
+
+
+def buildings_next_door(ti, tj, base, sq, reach=40.0, tiles=None):
+    """The footprints the squares round this one hold that reach within `reach` of it: a path by the
+    edge can run into a building the next square has."""
+    near, out = box(*sq).buffer(reach), []
+    for tile in next_door(ti, tj, base) if tiles is None else tiles:
+        for b in tile.get("bl") or []:
+            rings = b.get("r") or []
+            if len(rings) and len(rings[0]) >= 3:
+                g = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3]).buffer(0)
+                if g.intersects(near):
+                    out.append(g)
     return out
 
 
@@ -7883,6 +7977,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     if not os.path.exists(base):
         raise SystemExit(f"no existing tile at {base}: the writer starts from a copy of it")
     tile = json.load(open(base))
+    old_rd = tile.get("rd") or []
     part = read_partition(city, ti, tj)
     drop_walls_on_paving(part, tile["t"], tile.get("br") or [])
 
@@ -7970,7 +8065,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     carry_pedestrian(rd, tile.get("rd") or [])
     unpaved = demote_pedestrian(rd, tile.get("rd") or [])
     carry_flags(rd, tile.get("rd") or [])
-    rd, _ = ways_out_of_buildings(rd, houses + buildings_next_door(ti, tj, base, sq))
+    tiles = next_door(ti, tj, base)
+    houses_near = houses + buildings_next_door(ti, tj, base, sq, tiles=tiles)
+    rd, _ = ways_out_of_buildings(rd, houses_near)
     rd, _ = drop_paths_along_streets(rd)
     flights_to_their_ends(rd, fitted[1] if fitted else None)
     whole_spans(rd, sq, road_ground, wet)
@@ -8070,9 +8167,14 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         return ground(x, y)
 
     filled = []
+    far = ground_past(T, tiles)
+    past = streets_past_the_sides([dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=e["path"], line=e["line"],
+                                        sections=e["sections"], obs=e.get("obs") or ()) for e, *_ in rows],
+                                  sq, far, houses_near, profiles,
+                                  old_rd + [r for t in tiles for r in t.get("rd") or []])
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
                                                canal_bores(canal), standing, filled, tile.get("tn"),
-                                               json.load(open(rail)) if os.path.exists(rail) else None),
+                                               json.load(open(rail)) if os.path.exists(rail) else None, past, far),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None

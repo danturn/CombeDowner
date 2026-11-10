@@ -21,6 +21,14 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Squares agree where they meet (branch `claude/square-edges-c`, option (c) of
+  `docs/plans/square-edges.md`):** the writer looks at the streets up to 40 m past each side of its
+  square (`streets_past_the_sides`, read from the corridors and the next squares' prep files) and
+  chooses from them, but writes only its own part. Touches `tools/partition/write_tile.py`
+  (`street_surfaces`, `roads_from_corridors`, `carry_pedestrian`) and the writer's key in
+  `tools/partition/stage.py` (it takes in the eight next squares' prep files, which it reads). If
+  road markings go missing at a square's side, that is this branch's.
+
 - **Three map branches merged, waiting for Dan (branch `claude/map-merge`):** `claude/map-fixes`
   (checks rules 39-45, walls follow the ground, hairline needles off pavements and streets, set
   pieces clear the map's paving), `claude/stable-ids` (edges named from their own geometry,
