@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **A road change stays local (branch `claude/stable-ids`):** street graph edges are named from their
+  own geometry (`once.edge_id`), not their place in the list; the city's blocks are cut from the
+  corridors joined 250 m at a time and kept in one settled form (`once.worked_pieces`); and the road
+  grading breaks ties by place (`grading.TIE`). A square's corridors are keyed by its own edges.
+  Touches `tools/partition/once.py`, `pipeline.py`, `tools/grading.py`.
+
 - **The ground triangulated round the faces, now the default (branch `claude/ground-cdt`, waiting for Dan):**
   the sheet's open ground is one constrained triangulation (`web/src/sheet.ts` `buildSheetCdtGen`,
   built a few milliseconds at a time, Delaunator in a worker: `delaunay.ts`; npm `delaunator`,

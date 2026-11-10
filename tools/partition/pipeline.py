@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
 from partition import MAP, ROOT, cache, once as O               # noqa: E402
-from partition.data import neighbours, owner_of                  # noqa: E402
+from partition.data import neighbours                            # noqa: E402
 from partition.corridors import REACH                             # noqa: E402
 
 ONCE = os.path.join(HERE, "once.py")
@@ -139,17 +139,19 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     g = R.stage("graph", gkey, once, ["graph.json"], lambda: O.build_graph(once, raw, log=log))
     graph_d = g["graph.json"]
     edges = O.read_graph(once)
-    owned = collections.defaultdict(list)
-    for e in edges:
-        owned[owner_of(e["line"].bounds)].append(e["id"])
     bb = O.map_bbox()
-    tasks = [(ti, tj, sorted(ids), once, raw, bb) for (ti, tj), ids in sorted(owned.items())]
+    tasks = [(ti, tj, ids, once, raw, bb) for (ti, tj), ids in O.owned_edges(edges)]
     _clear_unowned(once, {(t[0], t[1]) for t in tasks}, ("corridors.json", "held-out.json"))
     code = cache.code_key((ONCE, "_fit_square_edges"))
+    by_id = {e["id"]: e for e in edges}
+    rows = {r["id"]: r for r in json.load(open(O.graph_path(once)))}
     keys = []
     for t in tasks:
-        win = O.edge_window([edges[i]["line"] for i in t[2]])
-        keys.append(cache.key_of("corridors", code, R.lib, graph_d, t[:3],
+        win = O.edge_window([by_id[i]["line"] for i in t[2]])
+        # keyed by the square's own edges as the graph file has them, not the whole graph: an edge
+        # changed elsewhere in the city leaves this square's fit as it was
+        mine = cache.sha(json.dumps([rows[i] for i in t[2]]))
+        keys.append(cache.key_of("corridors", code, R.lib, mine, t[:2],
                                  R.layers.digest("building", win, PAD),
                                  R.layers.digest("infrastructure", win, PAD), R.layers.ridges(win, PAD)))
     R.weight = {(t[0], t[1]): len(t[2]) for t in tasks}
