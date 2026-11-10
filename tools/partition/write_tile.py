@@ -39,6 +39,7 @@ What is *not* done here, and is listed as findings instead: decoration that now 
 barrier, in a new carriageway, or across a gate. That is reported, not fixed.
 """
 import collections
+import functools
 import itertools
 import json
 import math
@@ -366,9 +367,11 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area, houses=None, tall=None, known
             merged.append(r)
     out = []
     for i0, i1, _ in merged:
-        w = min(width[i0:i1 + 1])
-        pl = min(p[0] for p in pave[i0:i1 + 1])
-        pr = min(p[1] for p in pave[i0:i1 + 1])
+        # (the point a run hands over at carries the next run's figures, not this one's)
+        own = slice(i0, i1 + 1 if i1 == n - 1 else i1)
+        w = min(width[own])
+        pl = min(p[0] for p in pave[own])
+        pr = min(p[1] for p in pave[own])
         out.append((moved[i0:i1 + 1], round(w, 2), [round(pl, 2), round(pr, 2)]))
     return out
 
@@ -663,6 +666,12 @@ def verge_out_of_town(rd, houses):
         if tree is not None and (in_town(judged_line(r)) or in_town(LineString([q[:2] for q in r["p"]]))):
             continue
         r["pv"] = [0.0, 0.0]
+
+
+def _reaches_side(r, sq, tol=0.1):
+    """Does record `r` end on a side of the square `sq` (x0, y0, x1, y1)?"""
+    x0, y0, x1, y1 = sq
+    return any(min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) < tol for q in (r["p"][0], r["p"][-1]))
 
 
 LOOK_PAST = 40.0     # metres past the square's sides that its streets are looked at but not written
@@ -3151,6 +3160,7 @@ SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, f
 PEDESTRIAN_FRONTAGE = 9.0  # metres from a pedestrian street's line: ground wholly within it fronts the street
 PEDESTRIAN_HALF = 6.0      # metres either side of its line that a pedestrian street is paved across open ground
 WALLED_FRONT = 0.3         # share of a frontage's edge with a wall, fence or hedge along it that makes it a yard
+SHOPFRONT_REACH = 12.0     # metres from a shopping street's line that the building fronts facing it may stand
 
 
 PEDESTRIAN_EDGE = 1.5      # metres past a pedestrian street's paving that its edge may lie, as the partition fits it
@@ -3175,8 +3185,9 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
 
     A plot or open face wholly within `PEDESTRIAN_FRONTAGE` of the street is paved whole. One reaching
     further back (a yard behind a row, a square, a plot running back past its house) is paved only to
-    `PEDESTRIAN_HALF`, the width of a shopping street: with nothing standing along its front, the
-    ground before the house is the street's. A face walled, fenced or hedged off from the street is
+    `PEDESTRIAN_HALF`, the width of a shopping street, and out to the fronts of the buildings it
+    faces (`_before_houses`): with nothing standing along its front, the ground before the house is
+    the street's. A face walled, fenced or hedged off from the street is
     left whole, and so is one reaching back whose front the lidar (`standing`) sees something stand
     along: a hedge or wall nobody mapped round a real front garden."""
     if not peds:
@@ -3187,7 +3198,7 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
     shapely.prepare(reach)
     walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
     wall_tree = STRtree(walls) if walls else None
-    out = []
+    out, houses, house_tree = [], None, None
     for f in part["faces"]:
         if f["cls"] not in ("open", "plot") or len(f["xy"]) < 3:
             continue
@@ -3207,8 +3218,43 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
             if standing is not None and f["cls"] == "plot" and _seen_along(front, standing) > WALLED_FRONT:
                 continue
             near_edge = edge.buffer(0.1)
-            out += [q for q in getattr(g.intersection(band), "geoms", [g.intersection(band)])
-                    if q.geom_type == "Polygon" and q.intersects(near_edge)]
+            if houses is None:
+                houses = [g_ for g_ in (face_shape(h).buffer(0) for h in part["faces"]
+                                        if h["cls"] == "building" and len(h["xy"]) > 2) if not g_.is_empty]
+                house_tree = STRtree(houses) if houses else None
+            laid = g.intersection(band.union(_before_houses(g, [l for l, _ in peds], houses, house_tree)))
+            out += [q for q in getattr(laid, "geoms", [laid]) if q.geom_type == "Polygon" and q.intersects(near_edge)]
+    return unary_union(out) if out else Polygon()
+
+
+def _before_houses(g, lines, houses, tree):
+    """The ground of face `g` between the street and the walls of the buildings it fronts, where they
+    stand within SHOPFRONT_REACH of the street's line: a shopping street wider than PEDESTRIAN_HALF is
+    paved to its shop fronts, not to a line short of them."""
+    if tree is None:
+        return Polygon()
+    rim = g.boundary
+    inner = None
+    out = []
+    for k in tree.query(g.buffer(0.3)):
+        shared = rim.intersection(houses[int(k)].buffer(0.3))
+        for piece in getattr(shared, "geoms", [shared]):
+            if piece.geom_type != "LineString" or piece.length < 0.5:
+                continue
+            for a, b in zip(piece.coords, piece.coords[1:]):
+                mid = Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+                l = min(lines, key=lambda l: l.distance(mid))
+                if max(l.distance(Point(a)), l.distance(Point(b))) > SHOPFRONT_REACH:
+                    continue
+                pa, pb = l.interpolate(l.project(Point(a))), l.interpolate(l.project(Point(b)))
+                if inner is None:
+                    inner = unary_union([houses[int(j)].buffer(-0.3) for j in tree.query(g.buffer(SHOPFRONT_REACH))] or [Polygon()])
+                # (a back wall seen through its own building fronts a yard, not the street)
+                if LineString([mid, l.interpolate(l.project(mid))]).intersects(inner):
+                    continue
+                quad = Polygon([a, b, (pb.x, pb.y), (pa.x, pa.y)]).buffer(0)
+                if not quad.is_empty:
+                    out.append(quad)
     return unary_union(out) if out else Polygon()
 
 
@@ -4473,6 +4519,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         levels = [(level(k, x, y), k) for k in reached[:3]]
         levels = [(h, k) for h, k in levels if h is not None]
         if z is None or len(levels) < 2 or max(h for h, _ in levels) - min(h for h, _ in levels) < 1.5:
+            # (what a kerbed street reaches is levelled by it, though a pedestrian street's line runs
+            # nearer: where a street shut to traffic ran on into a pedestrian one, its corner took the
+            # paving's level and the road stood up a step at its end; the paving meets it at its kerb
+            # line instead, as a pedestrian street meets any kerbed one)
+            if streets[reached[0]]["c"] in SHARED_STREETS:
+                own = [k for k in reached if streets[k]["c"] in KERBED]
+                if own:
+                    return own[0]
             return reached[0]
         if over is not None and over.contains(p):
             # (under a deck it is the road below, not one up on the bank beside it)
@@ -4537,21 +4591,21 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                              for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
     plaza = pave.difference(kerbed.difference(walked.difference(on_street)))
     pave = pave.difference(plaza)
+    # (a tree or shrub in paving laid over open ground, among tables or out to the buildings, stands in its own bed)
+    plant_beds = functools.lru_cache(None)(lambda: unary_union([Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants] or [Polygon()]))
     frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
                                    standing)
     here = [g.intersection(square) for g in seating if g.intersects(square)]
     # (tables on a slope stand on a lawn or a terrace the map doesn't have: only level ones are paved)
     here = [g for g in here if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0.5 and _level(g, ground)]
     if here:
-        # (a tree or shrub among the tables stands in its own bed)
-        beds = [Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants]
-        tables = unary_union(here).difference(unary_union([road, pave, path_faces, *beds]))
+        tables = unary_union(here).difference(unary_union([road, pave, path_faces, plant_beds()]))
         tables = tables.difference(unary_union([face_shape(f).buffer(0) for f in part["faces"]
                                                 if f["cls"] == "building" and len(f["xy"]) > 2] or [Polygon()]))
         if tables.area > 0.5:
             plaza = plaza.union(tables)
     if not frontage.is_empty:
-        frontage = frontage.intersection(square).difference(unary_union([road, pave]))
+        frontage = frontage.intersection(square).difference(unary_union([road, pave, plant_beds()]))
         if T is not None:
             frontage = frontage.difference(unpaved_ground(frontage, T, green if green is not None else Polygon()))
         plaza = plaza.union(frontage)
@@ -4561,7 +4615,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (a road shut to traffic by day is a shopping street too: its pavements run to the shop fronts)
     shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing)
     if not shut.is_empty:
-        shut = shut.intersection(square).difference(unary_union([road, plaza, path_faces]))
+        shut = shut.intersection(square).difference(unary_union([road, plaza, path_faces, plant_beds()]))
         if T is not None:
             shut = shut.difference(unpaved_ground(shut, T, green if green is not None else Polygon()))
         pave = pave.union(shut)
@@ -5377,12 +5431,17 @@ def carry_missing_paths(rd, old, pavements=None, near=4.0, floor=6.0):
     return len(added)
 
 
-def demote_pedestrian(rd, old):
+def demote_pedestrian(rd, old, sq=None):
     """The partition reads OpenStreetMap, where a plaza's edge or a link across a green is often a
     `pedestrian` way; main's streets call only the ones closed to traffic pedestrian, and the rest
     footways. A `pedestrian` record that lies along none of main's becomes a footway, so it is not
     paved eight metres wide round an island that main leaves as ground. Returns the ground its
-    corridor took (a line and a half-width each), which the surfaces leave unpaved."""
+    corridor took (a line and a half-width each), which the surfaces leave unpaved.
+
+    A record reaching a side of the square `sq` is judged along the whole stretch it was fitted as,
+    so the squares either side agree; one that stays inside has no piece next door to agree with,
+    and is judged along its own line: judged along a stretch running on into the next square, a
+    plaza's paved street was taken for a link across a green."""
     ways = [LineString([q[:2] for q in r["p"]]) for r in old if r["c"] == "pedestrian" and len(r["p"]) > 1]
     tree = STRtree(ways) if ways else None
     cleared, gone = [], []
@@ -5391,7 +5450,7 @@ def demote_pedestrian(rd, old):
     for r in rd:
         if r["c"] != "pedestrian" or len(r["p"]) < 2:
             continue
-        line = judged_line(r)
+        line = judged_line(r) if sq is None or _reaches_side(r, sq) else LineString([q[:2] for q in r["p"]])
         if tree is not None and line.length >= 1:
             near = unary_union([ways[int(k)].buffer(PEDESTRIAN_STREET_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_STREET_NEAR))])
             if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
@@ -8212,8 +8271,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         carry_one_way(ways, old_rd)
         verge_out_of_town(ways, houses_near)
         carry_pedestrian(ways, old_rd)
-    demote_pedestrian(past, old_rd)
-    unpaved = demote_pedestrian(rd, old_rd)
+    demote_pedestrian(past, old_rd, sq)
+    unpaved = demote_pedestrian(rd, old_rd, sq)
     carry_flags(rd, old_rd)
     for r in rd:
         r.pop("_whole", None)

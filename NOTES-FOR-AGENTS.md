@@ -25,7 +25,8 @@ the game locally, without the sound" in `CLAUDE.md`.
   (squares fit their streets past their sides and agree where they meet) and `claude/spots-2` (the
   second set of spotted faults) merged, with the leftovers tidied (walls cut at a square's side
   meet the next square's piece, verged trunk roads among houses keep their pavements, a path
-  through a passage stays on its deck to its first point outside). Later stages of the agreed
+  through a passage stays on its deck to its first point outside), then `claude/timed-closure-roads`
+  (streets shut to traffic by day are roads, `tc`, paved to their shop fronts). Later stages of the agreed
   ground work go on top. Touches `tools/partition/` (mostly `write_tile.py`, `pipeline.py`,
   `stage.py`), `tools/structures.py`, `tools/prep_map.py`, `tools/check_map.py`, `check_more.py`,
   and rebuilds every square. If road markings go missing at a square's side, that is this branch's.
