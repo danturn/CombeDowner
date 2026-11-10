@@ -26,7 +26,8 @@ the game locally, without the sound" in `CLAUDE.md`.
   square (`streets_past_the_sides`, read from the corridors and the next squares' prep files) and
   chooses from them, but writes only its own part. Touches `tools/partition/write_tile.py`
   (`street_surfaces`, `roads_from_corridors`, `carry_pedestrian`) and the writer's key in
-  `tools/partition/stage.py` (it takes in the eight next squares' prep files, which it reads). If
+  `tools/partition/stage.py` and `Slices.write` in `tools/partition/pipeline.py` (it takes in the
+  eight next squares' prep files and assembled faces, and the heights of every street it fits). If
   road markings go missing at a square's side, that is this branch's.
 
 - **Spencer's main merged into Dan's fork (branch `claude/spencer-merge`):** the map rebuilt with
