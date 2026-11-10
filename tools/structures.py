@@ -576,13 +576,14 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
                 r["solid"].update(st)
         r["span"] = keep
 
-    # 2b. a path down on the ground that rode a span that isn't a bridge (a building's passage beside
-    # a street) is on the ground: left riding, it was a deck the ground was dug out under. It keeps
-    # the height it took, the street's beside it, as the streets it meets are levelled to it
+    # 2b. a path down on the ground that rode a pedestrian street's span that isn't a bridge (a
+    # building's passage beside a square, which the pedestrian street's wide reach takes in) is on
+    # the ground: left riding, it was a deck the ground was dug out under. It keeps the height it
+    # took, the street's beside it, as the streets it meets are levelled to it
     for r in pending:
         for i, j in list(r["ride"].items()):
             k, _, _, _, a, b = decks[j]
-            if any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i] \
+            if pending[k]["c"] != "pedestrian" or any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i] \
                     or abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5:
                 continue
             r["deck"].discard(i)

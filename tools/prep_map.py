@@ -897,13 +897,13 @@ for k, r in enumerate(pending):
         if real and solid: r.setdefault("solid", set()).update(st)
     r["span"] = keep
 if kept or dropped: print(f"bridges: {kept} marked spans with something under them, {dropped} with nothing under them flattened as road")
-# 2b. a path down on the ground that rode a span that isn't a bridge (a building's passage beside a
-# street) is on the ground, at the height it took (as tools/structures.py): left riding, it was a
+# 2b. a path down on the ground that rode a pedestrian street's span that isn't a bridge (a
+# building's passage beside a square) is on the ground, at the height it took (as tools/structures.py): left riding, it was a
 # deck the ground was dug out under
 for r in pending:
     for i, j in list(r.get("ride", {}).items()):
         k, _, _, _, a, b = decks[j]
-        if any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i]: continue
+        if pending[k]["c"] != "pedestrian" or any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i]: continue
         if abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5: continue
         r["deck"].discard(i); del r["ride"][i]
 # 2'. a path running along beside a street goes where the street goes: where the street isn't on a
