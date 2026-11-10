@@ -196,7 +196,8 @@ class Slices:
 
 def build(raw, once, city, store, jobs, wanted=None, log=print):
     """Every stage up to the squares' assembly. Returns what `stage.py` needs to write the squares:
-    the squares assembled, those that failed, and the digests a square's writing is keyed by."""
+    the squares assembled, those that failed, and the digests a square's writing is keyed by (its
+    assembly with its own slice of what the passes wrote)."""
     R = Run(raw, once, city, store, jobs, log)
     os.makedirs(once, exist_ok=True)
     os.makedirs(city, exist_ok=True)
@@ -314,8 +315,10 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     R.store.prune()
     R.write_tally(os.path.dirname(os.path.abspath(once)))
     return dict(assembled=[list(t) for t in sorted(done)], failed=[list(t) for t in sorted(bad)],
-                partition={name(t): done[t].get(f"{name(t)}/partition.json") for t in done},
-                upstream=upstream, ran=dict(R.ran))
+                partition={name(t): cache.sha(done[t].get(f"{name(t)}/partition.json", "") + upstream[name(t)])
+                           for t in done},
+                # (nothing the passes wrote is read whole by the writer any more: its share is in `partition`)
+                upstream="", ran=dict(R.ran))
 
 
 def structures_one(once, raw):
