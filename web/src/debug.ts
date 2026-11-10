@@ -44,6 +44,38 @@ export function urlSpot(at = new URLSearchParams(location.search).get("at") ?? "
   return { x: east, z: -north, yaw: -bearing * Math.PI / 180, pitch: tilt * Math.PI / 180, h };
 }
 
+/** A spot typed in: east,north[,bearing,tilt], or a link with ?at= in it as Shift+F3 copies. Null if
+ *  it isn't one. (Go to, here, and /goto on the chat phone, dev.ts.) */
+export function spotFrom(text: string): ReturnType<typeof urlSpot> {
+  const raw = /[?&;]at=([^&#\s]+)/.exec(text)?.[1] ?? text.replace(/\s+/g, "");
+  try { return urlSpot(decodeURIComponent(raw)); } catch { return null; }
+}
+
+/** Your position in the game g, as text to paste: the real place (latitude and longitude, and the
+ *  OS grid reference), then the game's coordinates and a link back to the spot, facing the same way. */
+export function whereText(g: Game): string {
+  const p = g.player.pos, centre = g.debugInfo().map.d.centre;
+  const [lat, lon] = toLatLon(centre, p.x, -p.z);
+  const deg = (r: number) => Math.round(r * 180 / Math.PI);
+  const url = new URL(location.href);
+  url.searchParams.set("at", `${p.x.toFixed(1)},${(-p.z).toFixed(1)},${(deg(-g.player.yaw) % 360 + 360) % 360},${deg(g.player.pitch)}`);
+  return `${lat.toFixed(6)}, ${lon.toFixed(6)} (${osGrid(lat, lon).ref}) game ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} ${url}`;
+}
+
+/** Put text on the clipboard. Returns whether it went. */
+export async function copyText(text: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {
+    // older browsers, or no permission: the old way
+    const t = document.createElement("textarea");
+    t.value = text; document.body.append(t); t.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { /* no */ }
+    t.remove();
+    return ok;
+  }
+}
+
 const KM_LAT = 110574;                       // metres in a degree of latitude, as the map tools use (tools/prep_map.py)
 
 /** Data coordinates (metres east and north of the map's centre) back to latitude and longitude. */
@@ -275,30 +307,16 @@ export class DebugPanel {
     if ((this.drawT -= raw) <= 0) { this.drawT = 0.25; this.draw(); }
   }
 
-  /** Your position, as text to paste: the real place, then the game's coordinates. */
+  /** Your position, as text to paste (whereText). */
   where(): string | null {
     const g = this.game();
-    if (!g) return null;
-    const p = g.player.pos, centre = g.debugInfo().map.d.centre;
-    const [lat, lon] = toLatLon(centre, p.x, -p.z);
-    const deg = (r: number) => Math.round(r * 180 / Math.PI);
-    const url = new URL(location.href);
-    url.searchParams.set("at", `${p.x.toFixed(1)},${(-p.z).toFixed(1)},${(deg(-g.player.yaw) % 360 + 360) % 360},${deg(g.player.pitch)}`);
-    return `${lat.toFixed(6)}, ${lon.toFixed(6)} (${osGrid(lat, lon).ref}) game ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} ${url}`;
+    return g ? whereText(g) : null;
   }
 
   private async copy() {
     const text = this.where();
     if (!text) return;
-    let ok = true;
-    try { await navigator.clipboard.writeText(text); }
-    catch {
-      // older browsers, or no permission: the old way
-      const t = document.createElement("textarea");
-      t.value = text; document.body.append(t); t.select();
-      try { ok = document.execCommand("copy"); } catch { ok = false; }
-      t.remove();
-    }
+    const ok = await copyText(text);
     this.copyBtn.textContent = ok ? "Copied" : "Couldn't copy";
     this.game()?.news(ok ? `Copied: ${text}` : text);
     setTimeout(() => (this.copyBtn.textContent = "Copy position (Shift+F3)"), 1500);
@@ -312,9 +330,7 @@ export class DebugPanel {
     const p = g.player.pos;
     const text = prompt("Go to: east, north (metres), and if you like which way to face (degrees from north)", `${p.x.toFixed(0)},${(-p.z).toFixed(0)}`)?.trim();
     if (!text) return;
-    const raw = /[?&;]at=([^&#\s]+)/.exec(text)?.[1] ?? text.replace(/\s+/g, "");
-    let at = null;
-    try { at = urlSpot(decodeURIComponent(raw)); } catch { /* not a spot */ }
+    const at = spotFrom(text);
     if (!at) { g.news("That isn't a spot: type east,north, such as 1275,2559"); return; }
     g.goToSpot(at);
   }

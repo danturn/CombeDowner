@@ -26,6 +26,10 @@ the game locally, without the sound" in `CLAUDE.md`.
   Bond Streets, Walcot Street's façade slits and grass fronts, the wall before Saracen Street's pub,
   George Street's pavement. Touches `tools/partition/` and `tools/check_map.py`; not the squares'
   sides (`claude/square-edges-c`) or the slice keys (`claude/slice-keys`).
+- **Spencer's main merged into Dan's fork (branch `claude/spencer-merge`):** the map rebuilt with
+  his running tracks and pitches; `drapeBarriers` (`web/src/map.ts`) now leaves a stretch alone where
+  the ground strays no more than the build's own limits (0.1 m below, 0.2 m above), so it no longer
+  re-cuts the walls `tools/partition/write_tile.py` already laid on the ground. Removed once on main.
 
 - **Three map branches merged, waiting for Dan (branch `claude/map-merge`):** `claude/map-fixes`
   (checks rules 39-45, walls follow the ground, hairline needles off pavements and streets, set
@@ -34,6 +38,11 @@ the game locally, without the sound" in `CLAUDE.md`.
   `claude/construction-roads` (`graph.as_built`: ways still being built drawn as what they will be).
   Touches `tools/partition/`, `tools/check_map.py`, `check_more.py`, `ground_seams.mjs`, `grading.py`, `osm.py`,
   `web/src/map.ts`, `world.ts`, `landmarks/setpieces.ts` + `shape.ts`, and rebuilds every square.
+
+- **Map rebuilds rewrite only the squares a change reaches (branch `claude/slice-keys`):** each
+  square's write and division are keyed on their own slice of the passes' city-wide files
+  (`pipeline.Slices`: corridors, road heights, footprints, parent blocks near the square), not the
+  whole files. Keying only: touches `tools/partition/pipeline.py`.
 
 - **The ground triangulated round the faces, now the default (branch `claude/ground-cdt`, waiting for Dan):**
   the sheet's open ground is one constrained triangulation (`web/src/sheet.ts` `buildSheetCdtGen`,

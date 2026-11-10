@@ -52,6 +52,9 @@ export type TrackSource = {
   key?: number;
   /** The riff the track opens with; it plays once on its own before the drums come in. */
   intro: string;
+  /** The hour of the game's day the track belongs to (0 to 24, so 18.5 is half past six in the
+   *  evening): it comes up most often round then (music.ts). Without one it's as likely all day. */
+  hour?: number;
   tone?: Tone;
   riffs: Record<string, RiffSource>;
   /** Play the song in this order (riff names), instead of picking riffs at random. ~name plays a riff without its lead. */
@@ -60,7 +63,7 @@ export type TrackSource = {
 
 export type Riff = { len: 12 | 16; guitar: Hit[][]; lead?: Note[][]; bass?: Hit[][]; drums: Groove[]; shift: number; weight: number };
 export type Track = {
-  name: string; artist?: string; bpm: number; key: number; intro: string; tone: Required<Tone>;
+  name: string; artist?: string; bpm: number; key: number; intro: string; hour?: number; tone: Required<Tone>;
   riffs: Record<string, Riff>; form?: string[];
 };
 
@@ -137,6 +140,7 @@ export function defineTrack(src: TrackSource): Track {
   const key = src.key ?? 0;
   if (key < -5 || key > 7) throw new Error(`${src.name}: key must be -5 to 7`);
   if (src.bpm < 70 || src.bpm > 220) throw new Error(`${src.name}: bpm must be 70 to 220`);
+  if (src.hour !== undefined && !(src.hour >= 0 && src.hour <= 24)) throw new Error(`${src.name}: hour must be 0 to 24`);
   if (!(src.intro in src.riffs)) throw new Error(`${src.name}: intro riff "${src.intro}" doesn't exist`);
   for (const f of src.form ?? []) if (!(f.replace(/^~/, "") in src.riffs)) throw new Error(`${src.name}: form names riff "${f}", which doesn't exist`);
   const riffs: Record<string, Riff> = {};
@@ -165,7 +169,7 @@ export function defineTrack(src: TrackSource): Track {
     };
   }
   return {
-    name: src.name, artist: src.artist, bpm: src.bpm, key, intro: src.intro, riffs, form: src.form,
+    name: src.name, artist: src.artist, bpm: src.bpm, key, intro: src.intro, hour: src.hour, riffs, form: src.form,
     tone: { bright: 1, lead: "brass", bass: "slap", ...src.tone },
   };
 }

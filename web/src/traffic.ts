@@ -19,6 +19,10 @@
 // blocked) it doesn't go round and round trying, it does a turn in the road, back on the opposite lock
 // and forward again, a few metres at a time, till it's facing its way, reversing lights on as it backs.
 //
+// Hear a police car coming with its siren going (behind, or coming the other way) and they pull in to
+// the kerb and stop to let it by, staying put where something's parked in the way, and carry on
+// once it's gone past and away.
+//
 // Who decides what: the host drives them all, spawning them on roads a little way off from the
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
 // second. Everyone else draws them a moment behind, smoothed between updates, as for the naughty boys.
@@ -33,9 +37,10 @@ import { COACH, COACH_LAMPS, coachDecals, coachSteerable } from "./coaches";
 import { charred, glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { CAR_LAMPS, contact, twist } from "./vehicles";
+import { CAR_LAMPS, contact, type Siren, twist } from "./vehicles";
 import { AMBER, GREEN, type Signal, lightAt, signalClock, signalsOf } from "./signals";
 import { timeOfDay, watchDay } from "./daylight";
+import { tag } from "./kinds";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
@@ -43,6 +48,7 @@ export const TRAFFIC_ID = 100000;
 export const PARKED = 2 ** 45;
 /** A road's traffic, vehicles a day, where the DfT haven't counted it: by the kind of road it is. */
 const FLOW: Record<string, number> = { trunk: 20000, primary: 14000, secondary: 8000, tertiary: 4000, unclassified: 700, residential: 400, living_street: 150 };
+const SIREN_HEARD = 70;              // a siren this near (m) and it pulls over
 const COUNTED = 35;                  // a count point this near a road (m) is that road's
 const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
 const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
@@ -250,7 +256,9 @@ export class Traffic {
       this.roads.push({ c: r.c, n: r.n ?? "", p: r.p, flow });
       const lane = Math.min(2, Math.max(1.2, (WIDTH[r.c] ?? 6) / 4));
       // how far it can pull out from its lane: up to the far kerb, and a wheel on the pavement
-      const room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
+      let room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
+      // (on a bridge, no further than the middle of the other lane: past that it'd be through the parapet, or off the deck)
+      if (r.bridge) room = Math.min(room, 2 * lane);
       // and how far in toward the kerb, to let someone by
       const kerb = Math.max(0, (WIDTH[r.c] ?? 6) / 2 - lane - HW + 0.3);
       // a one-way street only goes its way (ow: 1 with the points, -1 against them)
@@ -265,26 +273,42 @@ export class Traffic {
         else { there.back = back; A.out.push(there); B.out.push(back); this.edges.push(there, back); }
       }
     }
+    // the dead ends: points only one other point is joined to, whichever way. (On a one-way street
+    // every point has just the one way out, so counting ways out would take the whole street for
+    // dead ends and join its points up both ways, a stretch you could drive the wrong way.)
+    const into: Edge[][] = this.nodes.map(() => []);
+    for (const e of this.edges) into[e.b].push(e);
+    const near = this.nodes.map((n, i) => new Set([...n.out.map((e) => e.b), ...into[i].map((e) => e.a)]));
+    // whether traffic can come in to a point, and go on out of it, before any joins: a join goes only
+    // the way its roads let traffic through (off the end of a one-way street, on to the start of one)
+    const comes = into.map((es) => es.length > 0), goes = this.nodes.map((n) => n.out.length > 0);
+    const ends = this.nodes.map((_, i) => i).filter((i) => near[i].size === 1);
+    const joined = new Set<number>();
+    const join = (i: number, j: number, d: number) => {
+      const A = this.nodes[i], B = this.nodes[j], e = A.out[0] ?? into[i][0], len = Math.max(0.1, d);
+      const fwd = comes[i] && goes[j], rev = comes[j] && goes[i];
+      if (!fwd && !rev) return false;
+      const there: Edge = { a: i, b: j, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
+      const back: Edge = { ...there, a: j, b: i, dx: -there.dx, dz: -there.dz };
+      if (fwd && rev) { there.back = back; back.back = there; }
+      if (fwd) { A.out.push(there); this.edges.push(there); }
+      if (rev) { B.out.push(back); this.edges.push(back); }
+      near[i].add(j); near[j].add(i);
+      return true;
+    };
     // dead ends right by another dead end (where the two maps meet): joined
-    const ends = this.nodes.map((_, i) => i).filter((i) => this.nodes[i].out.length === 1);
     const endCells = new Map<string, number[]>();
     for (const i of ends) { const k = `${Math.floor(this.nodes[i].x / 4)},${Math.floor(this.nodes[i].z / 4)}`; (endCells.get(k) ?? endCells.set(k, []).get(k)!).push(i); }
     for (const i of ends) {
       const A = this.nodes[i];
-      if (A.out.length !== 1) continue;
+      if (joined.has(i)) continue;
       let best = -1, bd = 2.5;
       for (let ci = Math.floor(A.x / 4) - 1; ci <= Math.floor(A.x / 4) + 1; ci++) for (let cj = Math.floor(A.z / 4) - 1; cj <= Math.floor(A.z / 4) + 1; cj++)
         for (const j of endCells.get(`${ci},${cj}`) ?? []) {
           const d = Math.hypot(this.nodes[j].x - A.x, this.nodes[j].z - A.z);
-          if (j !== i && this.nodes[j].out.length === 1 && d < bd) { bd = d; best = j; }
+          if (j !== i && !joined.has(j) && !near[i].has(j) && d < bd && ((comes[i] && goes[j]) || (comes[j] && goes[i]))) { bd = d; best = j; }
         }
-      if (best < 0) continue;
-      const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
-      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
-      const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
-      there.back = back;
-      A.out.push(there); B.out.push(back);
-      this.edges.push(there, back);
+      if (best >= 0 && join(i, best, bd)) { joined.add(i); joined.add(best); }
     }
     // and a dead end that stops just short of a point on another road (the top of Prior Park Road,
     // where Ralph Allen Drive comes in a hand's width off it): joined on to it
@@ -292,20 +316,14 @@ export class Traffic {
     this.nodes.forEach((n, i) => { const k = `${Math.floor(n.x / 4)},${Math.floor(n.z / 4)}`; (all.get(k) ?? all.set(k, []).get(k)!).push(i); });
     for (const i of ends) {
       const A = this.nodes[i];
-      if (A.out.length !== 1) continue;
+      if (joined.has(i)) continue;
       let best = -1, bd = 1.2;
       for (let ci = Math.floor(A.x / 4) - 1; ci <= Math.floor(A.x / 4) + 1; ci++) for (let cj = Math.floor(A.z / 4) - 1; cj <= Math.floor(A.z / 4) + 1; cj++)
         for (const j of all.get(`${ci},${cj}`) ?? []) {
           const d = Math.hypot(this.nodes[j].x - A.x, this.nodes[j].z - A.z);
-          if (j !== i && d < bd && !A.out.some((e) => e.b === j)) { bd = d; best = j; }
+          if (j !== i && d < bd && !near[i].has(j) && ((comes[i] && goes[j]) || (comes[j] && goes[i]))) { bd = d; best = j; }
         }
-      if (best < 0) continue;
-      const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
-      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz, road: e.road, flow: e.flow };
-      const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
-      there.back = back;
-      A.out.push(there); B.out.push(back);
-      this.edges.push(there, back);
+      if (best >= 0 && join(i, best, bd)) { joined.add(i); joined.add(best); }
     }
     // filed by the square each stretch's middle is in
     for (const e of this.edges) {
@@ -336,7 +354,8 @@ export class Traffic {
         // turns off the other way; the map's coarse curves can wiggle a little the wrong way, which is allowed)
         const ring = [e];
         let at = e, len = e.len, turned = 0, closed = false;
-        while (ring.length < 40 && len < 230) {
+        // (by length, not stretches: a big one like the Globe on the Bristol Road is drawn in forty-odd short ones)
+        while (ring.length < 200 && len < 230) {
           const on = this.nodes[at.b].out.filter((o) => o.b !== at.a && !o.dead && turnOf(at, o) * way > -0.25 && turnOf(at, o) * way < 2.8);
           if (!on.length) break;
           const next = on.reduce((b, o) => (turnOf(at, o) * way > turnOf(at, b) * way ? o : b));
@@ -423,6 +442,8 @@ export class Traffic {
   onSmoke?: (x: number, y: number, z: number, alight: boolean) => void;
   /** Everyone but the host: parked car i (a vehicle number) has been knocked into the road, so it's to come out of the street furniture. */
   onUnpark?: (i: number) => void;
+  /** Host: the police cars going with their sirens on (game.ts sets them each frame). */
+  sirens: Siren[] = [];
   /** The make of parked car i (a vehicle number), for one knocked into the road (makes.ts). */
   parkedMake: (i: number) => number = () => 0;
 
@@ -537,6 +558,14 @@ export class Traffic {
       if (c.lost && !c.leg) want = Math.min(want, 2);
       dodge = Math.max(0, committed, Math.min(dodge, room));
       if (squeeze && !dodge) dodge = -e.kerb;
+      // a siren coming: in to the kerb and stop (not on a roundabout, nor in the middle of a turn in
+      // the road), or just stop where it is if there's something parked alongside
+      if (!c.leg && !e.ring && this.pullOver(c)) {
+        const beside = seen.some(([u, w, o]) => o.parked && u > -c.hl - o.r - 1 && u < c.hl + o.r + 4 && w > -0.6);
+        dodge = beside || committed ? committed : -e.kerb;
+        want = Math.min(want, beside || c.dodge < dodge + 0.3 ? 0 : 4);
+        held = true;
+      }
       c.dodge += Math.max(-1.5 * dt, Math.min(1.5 * dt, dodge - c.dodge));
       c.blockT = blocked ? c.blockT + dt : 0;
       // (not while it waits at the lights, or in the queue behind a car going its way, or turns in the road)
@@ -577,6 +606,19 @@ export class Traffic {
         }
       }
     }
+  }
+
+  /** Should it pull over for a siren: one near that's behind it, or coming at it, or right alongside,
+   *  rather than gone past and on its way? */
+  private pullOver(c: Car): boolean {
+    const hx = Math.cos(c.a), hz = -Math.sin(c.a);
+    for (const s of this.sirens) {
+      const dx = s.x - c.x, dz = s.z - c.z, d = Math.hypot(dx, dz);
+      if (d > SIREN_HEARD) continue;
+      const u = dx * hx + dz * hz, closing = -(s.vx * dx + s.vz * dz) / (d || 1);   // how fast it's coming this way
+      if (closing > 1 || d < 12 || (u < c.hl && closing > -1)) return true;
+    }
+    return false;
   }
 
   // ---- wrecks ----------------------------------------------------------------------------------
@@ -874,6 +916,53 @@ export class Traffic {
     if (off > 40) this.place(c);
   }
 
+  /**
+   * The height to start a car at that's only just turned up (spawned, or first heard of from the
+   * host), found the way it would have got there: coming back to it along its road from 60 m on, a
+   * metre at a time. So one that turns up out over the river is on the bridge's deck, not down on the
+   * river bed (where, keeping to whatever it was on a moment ago, it would then drive the whole way
+   * across under the bridge). Undefined for one that isn't on a road: it sits on the ground.
+   */
+  private arriving(c: Car): number | undefined {
+    if (c.wreck || c.n >= PARKED) return undefined;
+    let e: Edge | undefined = c.e;
+    if (!e) {
+      // (not the host's: the nearest stretch of road going its way)
+      let best = 6;
+      const hx = Math.cos(c.a), hz = -Math.sin(c.a), ci = Math.floor(c.x / CELL), cj = Math.floor(c.z / CELL);
+      for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 1; j <= cj + 1; j++)
+        for (const o of this.cells.get(this.cell(i * CELL, j * CELL)) ?? []) {
+          if (o.dead || o.dx * hx + o.dz * hz < 0.5) continue;
+          const A = this.nodes[o.a], along = (c.x - A.x) * o.dx + (c.z - A.z) * o.dz;
+          if (along < -1 || along > o.len + 1) continue;
+          const off = Math.abs((c.z - A.z) * o.dx - (c.x - A.x) * o.dz);
+          if (off < best) { best = off; e = o; }
+        }
+      if (!e) return undefined;
+    }
+    // where it is against its stretch of road: how far along, and how far out to the side of the middle
+    const A = this.nodes[e.a];
+    let s = (c.x - A.x) * e.dx + (c.z - A.z) * e.dz;
+    const side = (c.z - A.z) * e.dx - (c.x - A.x) * e.dz;
+    const pts = [[c.x, c.z]];
+    for (let k = 0; k < 60; k++) {
+      s += 1;
+      while (s > e.len) {
+        // on along the road, the straightest way
+        const outs: Edge[] = this.nodes[e.b].out.filter((o: Edge) => !o.dead && o.b !== e!.a);
+        if (!outs.length) break;
+        s -= e.len;
+        e = outs.reduce((m, o) => (o.dx * e!.dx + o.dz * e!.dz > m.dx * e!.dx + m.dz * e!.dz ? o : m));
+      }
+      if (s > e.len) break;
+      const from = this.nodes[e.a];
+      pts.push([from.x + e.dx * s - e.dz * side, from.z + e.dz * s + e.dx * side]);
+    }
+    let y = this.ground(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    for (let k = pts.length - 2; k >= 0; k--) y = this.ground(pts[k][0], pts[k][1], y);
+    return y;
+  }
+
   /** Where it is on its road: in the left-hand lane, turning smoothly from one stretch to the next. */
   private place(c: Car) {
     const e = c.e, A = this.nodes[e.a];
@@ -889,7 +978,7 @@ export class Traffic {
 
   private add(c: Car) {
     this.cars.set(c.n, c);
-    this.scene.add(c.root);
+    this.scene.add(tag(c.root, "vehicle"));
     this.map.movers.push(c);
   }
 
@@ -1014,8 +1103,9 @@ export class Traffic {
       for (const w of c.wheels) { w.rotation.y = c.steer; w.rotation.z = -c.rolled; }
       // sat on the ground, tilted with the slope
       const cs = Math.cos(c.a), sn = Math.sin(c.a), half = c.coach ? (COACH.front - COACH.rear) / 2 : 1.3;
-      // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed)
-      const was = c.top ? c.y : undefined;
+      // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed;
+      // one that's only just turned up has none yet, and finds its height from along its road)
+      const was = c.top ? c.y : this.arriving(c);
       const hF = this.ground(c.x + cs * half, c.z - sn * half, was), hR = this.ground(c.x - cs * half, c.z + sn * half, was);
       c.y = (hF + hR) / 2;
       // rolled over about its middle, its lowest corner on the ground (or above it, in the air)

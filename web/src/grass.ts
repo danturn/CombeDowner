@@ -1,6 +1,7 @@
 // Grass: tufts of blades on the lawns, verges, pitches and meadows around the player, and low
 // flowering shrubs on heath and scrub, swaying in the wind and shrinking into the ground towards
-// the edge of a circle that follows the player. The ground is split into cells; cells that come
+// the edge of a circle that follows the player, as wide as the scenery detail in Settings says (view.ts),
+// which can change on the spot. The ground is split into cells; cells that come
 // into range are filled, cells left behind are reused. A coarse mask keeps grass off buildings,
 // roads, paths, driveways and water. What the heath grows (its greens, how much of it is in flower
 // and the flowers' colours), how far a dry summer browns the grass and what flowers in the meadows
@@ -9,6 +10,7 @@
 import * as THREE from "three";
 import { boreHalf, type MapData } from "./map";
 import { region } from "./region";
+import { GRASS } from "./view";
 
 function hash2(i: number, j: number, k: number) {
   let x = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(k + 0x1b873593, 0x27d4eb2f);
@@ -145,7 +147,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   rail: number[][][] = [], bare: number[][][] = []): Generator<void, Grass> {
   const T = D.t;
   const touch = navigator.maxTouchPoints > 1;
-  const RADIUS = touch ? 26 : 42, CELL = 8, STEP = touch ? 0.62 : 0.5;   // STEP: spacing between tufts
+  const CELL = 8, STEP = touch ? 0.62 : 0.5;   // STEP: spacing between tufts (the circle's size: GRASS.reach)
 
   // ---- where grass may grow: a 1 m mask over the map, drawn with canvas paths ----------------
   const W = Math.ceil((T.nx - 1) * T.dx) + 1, H = Math.ceil((T.ny - 1) * T.dy) + 1;
@@ -243,13 +245,15 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   const shapes = { grass: tuftGeo(true, false), bush: tuftGeo(false, true), both: tuftGeo(true, true) };
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const uPlayer = { value: new THREE.Vector3() };
+  const uFade = { value: new THREE.Vector2() };   // where the tufts start to shrink away, and where they're gone
   // the flowers' colours are written into the shader, so two maps' palettes mustn't share one program
   mat.customProgramCacheKey = () => [...heath.bloom, ...wild.flowers].join();
   // aFlower: for a grass tuft 0 (none), 1 (buttercup) or 2 (daisy), or whatever the meadows grow; for a shrub 10 + its bloom (0 none)
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
     shader.uniforms.uPlayer = uPlayer;
-    shader.vertexShader = `uniform float uTime; uniform vec3 uPlayer; attribute float aPart; attribute float aFlower;\n` + shader.vertexShader
+    shader.uniforms.uFade = uFade;
+    shader.vertexShader = `uniform float uTime; uniform vec3 uPlayer; uniform vec2 uFade; attribute float aPart; attribute float aFlower;\n` + shader.vertexShader
       .replace("#include <color_vertex>", `#include <color_vertex>
         float bush = step(9.5, aFlower), fl = aFlower - 10.0 * bush;
         vec3 bloom = vec3(1.0);
@@ -260,7 +264,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         vec3 iPos = instanceMatrix[3].xyz;
         // shrink into the ground towards the edge of the circle, so there's no hard border
-        float fade = 1.0 - smoothstep(${(RADIUS * 0.6).toFixed(1)}, ${(RADIUS - 2).toFixed(1)}, distance(iPos.xz, uPlayer.xz));
+        float fade = 1.0 - smoothstep(uFade.x, uFade.y, distance(iPos.xz, uPlayer.xz));
         transformed.y *= fade;
         // only this instance's own parts (a grass tuft or a shrub), and flowers only where it flowers
         float isBush = step(9.5, aFlower), flw = step(0.5, aFlower - 10.0 * isBush);
@@ -357,13 +361,15 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
     return cell;
   };
 
-  let ci = NaN, cj = NaN;
+  let ci = NaN, cj = NaN, cr = NaN;
   return {
     update(px, pz) {
       uPlayer.value.set(px, 0, pz);
+      const RADIUS = GRASS.reach;
+      uFade.value.set(RADIUS * 0.6, RADIUS - 2);
       const i0 = Math.floor(px / CELL), j0 = Math.floor(pz / CELL);
-      if (i0 === ci && j0 === cj) return;
-      ci = i0; cj = j0;
+      if (i0 === ci && j0 === cj && RADIUS === cr) return;
+      ci = i0; cj = j0; cr = RADIUS;
       const reach = Math.ceil(RADIUS / CELL);
       // only over this map's own ground: each square of Bath grows its own
       const ours = (i: number, j: number) => (i + 1) * CELL > T.x0 && i * CELL < T.x0 + W && -j * CELL > T.y0 && -(j + 1) * CELL < T.y0 + H;

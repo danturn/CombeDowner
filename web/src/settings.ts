@@ -9,9 +9,10 @@
 // Passive mode also has a tickbox of its own on the main menu, under the game name, kept in step with this one.
 // Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
-// Video: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
-// used by game.ts), shadows, the debug panel (debug.ts, also F3), and the new ground (world.ts; changing it in a game reloads the page where you stand). Choosing a distance, resolution or
-// shadows yourself turns automatic off. Controls: mouse sensitivity, turning the look round for the mouse and
+// Video: automatic (quality.ts), draw distance (view.ts), resolution, the retro look and depth of field (post.ts), field of view (view.ts,
+// used by game.ts), how far the shadows reach (Off to Ultra, a share of the draw distance: shadows.ts), and
+// how much scenery is drawn in full round you (grass and trees, Low to Max: view.ts), how far off lit street lamps show after dark and how many light the street (Low to Max: view.ts, world.ts), the debug panel (debug.ts, also F3), and the new ground (world.ts; changing it in a game reloads the page where you stand). Choosing a distance, resolution or shadows yourself turns automatic off.
+// Controls: mouse sensitivity, turning the look round for the mouse and
 // for touch (invert.ts), and once a controller's been seen, its own look speeds, invert, dead zone, turn boost and
 // rumble (gamepad.ts keeps those).
 // Sound: music, sound effects, background (traffic, birds, wind) and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
@@ -26,9 +27,10 @@ import { mine, progressionDefault, setProgression } from "./features";
 import { resetPadSettings } from "./gamepad";
 import { invertSettings, resetInvert } from "./invert";
 import { closeButton } from "./modal";
-import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
+import { RES_DEFAULT, RES_STEPS, depthOfField, setDepthOfField, type Post } from "./post";
 import { quality } from "./quality";
-import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
+import { SHADOW_DEFAULT, SHADOW_LEVELS, SHADOW_OFF, setShadowLevel, shadowLevel, shadowLevelName, shadowReach } from "./shadows";
+import { DETAIL_DEFAULT, DETAIL_LEVELS, FOV_DEFAULT, LIGHT_DEFAULT, LIGHT_LEVELS, lightLevel, setLights, VIEW_DEFAULT, VIEW_STEPS, detailLevel, setDetail, setFov, setView, view } from "./view";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -56,9 +58,11 @@ SFX.setSfxVolume(load("cd-sfx", SFX_VOL));
 SFX.setBackgroundVolume(load("cd-bg", BACKGROUND));
 SFX.setVoiceVolume(load("cd-voice", VOICE));
 
-/** Shadows on or off, kept on this computer. Call before the first frame. */
+/** How far the shadows reach (shadows.ts), kept on this computer: 0 is off, and 1, what "on" was before
+ *  there were levels, is Low. Call before the first frame. */
 export function initShadows(renderer: THREE.WebGLRenderer) {
-  renderer.shadowMap.enabled = load("cd-shadows", 1) !== 0;
+  setShadowLevel(load("cd-shadows", SHADOW_DEFAULT));
+  renderer.shadowMap.enabled = shadowLevel > SHADOW_OFF;
 }
 
 interface Hooks {
@@ -79,8 +83,10 @@ export function settingsPage(h: Hooks) {
   const viewSel = $<HTMLSelectElement>("set-view"), resSel = $<HTMLSelectElement>("set-res");
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const auto = $<HTMLInputElement>("set-auto");
-  const shadows = $<HTMLInputElement>("set-shadows"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
   const ground = $<HTMLInputElement>("set-ground");
+  const detail = $<HTMLSelectElement>("set-detail"), detailHint = $("set-detail-hint");
+  const lights = $<HTMLSelectElement>("set-lights"), lightsHint = $("set-lights-hint");
+  const shadows = $<HTMLSelectElement>("set-shadows"), shadowsHint = $("set-shadows-hint"), fx = $<HTMLInputElement>("set-fx"), dof = $<HTMLInputElement>("set-dof"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
 
@@ -90,6 +96,23 @@ export function settingsPage(h: Hooks) {
   // the draw distances, with this device's own default (and whatever ?view= asked for) among them
   const dists = [...new Set([...VIEW_STEPS, VIEW_DEFAULT, view.fogFar])].sort((a, b) => a - b);
   for (const m of dists) option(viewSel, String(m), `${m >= 1000 ? `${m / 1000} km` : `${m} m`}${m === VIEW_DEFAULT ? " (normal)" : ""}`);
+  SHADOW_LEVELS.forEach((_, i) => option(shadows, String(i), shadowLevelName(i)));
+  /** How far the shadows reach at the draw distance in force. */
+  const showReach = () => {
+    const m = shadowReach();
+    shadowsHint.textContent = m ? `At this draw distance they reach ${m >= 1000 ? `${+(m / 1000).toFixed(1)} km` : `${m} m`}. Further is slower.` : "No shadows: the quickest.";
+  };
+  DETAIL_LEVELS.forEach((l, i) => option(detail, String(i), `${l.name}${i === DETAIL_DEFAULT ? " (normal)" : ""}`));
+  const showDetail = () => {
+    const l = DETAIL_LEVELS[detailLevel];
+    detailHint.textContent = `Grass to ${l.grass} m round you, trees in full to ${l.trees[0]} m and simpler to ${l.trees[1]} m. More is slower.`;
+  };
+  LIGHT_LEVELS.forEach((l, i) => option(lights, String(i), `${l.name}${i === LIGHT_DEFAULT ? " (normal)" : ""}`));
+  const showLights = () => {
+    const l = LIGHT_LEVELS[lightLevel], p = l.lit;
+    const far = l.pools * l.step / 2, reach = far >= 1000 ? `${+(far / 1000).toFixed(1)} km` : `${far} m`;
+    lightsHint.textContent = `How far off lit street lamps show after dark (from the drone too): ${p === 0 ? "the usual number" : p > 0 ? `${p} more` : `${-p} fewer`} light the street round you${l.pools ? `, and their pools of light show on the streets to ${reach}` : ""}. More is slower.`;
+  };
   RES_STEPS.forEach((r, i) => option(resSel, String(i), r.lines ? `${r.name} (${r.lines} lines)` : `${r.name} (your screen's own)`));
 
   /** Show what's in force now. */
@@ -99,8 +122,11 @@ export function settingsPage(h: Hooks) {
     viewSel.value = String(view.fogFar);
     resSel.value = String(h.post.resolution);
     fov.value = String(view.fov); fovVal.textContent = `${view.fov}°`;
-    shadows.checked = h.renderer.shadowMap.enabled;
+    shadows.value = String(shadowLevel); showReach();
+    detail.value = String(detailLevel); showDetail();
+    lights.value = String(lightLevel); showLights();
     fx.checked = h.post.retroLook;
+    dof.checked = depthOfField;
     dbg.checked = h.debug.open;
     ground.checked = load("cd-ground", 1) !== 0;
     calm.checked = passive;
@@ -111,10 +137,13 @@ export function settingsPage(h: Hooks) {
     voice.value = String(load("cd-voice", VOICE));
   };
 
-  const setShadows = (on: boolean, remember = true) => {
+  const setShadows = (level: number, remember = true) => {
+    setShadowLevel(level);
+    if (remember) keep("cd-shadows", shadowLevel);
+    showReach();
+    const on = shadowLevel > SHADOW_OFF;
     if (h.renderer.shadowMap.enabled === on) return;
     h.renderer.shadowMap.enabled = on;
-    if (remember) keep("cd-shadows", on);
     // materials are built for shadows or not, so each has to be put together again
     h.scene().traverse((o) => {
       const m = (o as THREE.Mesh).material;
@@ -136,11 +165,14 @@ export function settingsPage(h: Hooks) {
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
   auto.onchange = () => { if (auto.checked) quality.automatic(); else quality.manual(); show(); };
-  viewSel.onchange = () => { quality.manual(); setView(Number(viewSel.value), true); h.debug.showView(); };
+  viewSel.onchange = () => { quality.manual(); setView(Number(viewSel.value), true); h.debug.showView(); showReach(); };
   resSel.onchange = () => { quality.manual(); h.post.setResolution(Number(resSel.value)); };
   fov.oninput = () => { setFov(Number(fov.value)); fovVal.textContent = `${view.fov}°`; };
-  shadows.onchange = () => { quality.manual(); setShadows(shadows.checked); };
+  shadows.onchange = () => { quality.manual(); setShadows(Number(shadows.value)); };
+  detail.onchange = () => { setDetail(Number(detail.value), true); showDetail(); };
+  lights.onchange = () => { setLights(Number(lights.value), true); showLights(); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
+  dof.onchange = () => setDepthOfField(dof.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
   // squares already built keep the ground they were built with, so this takes from the next game
   ground.onchange = () => {
@@ -160,7 +192,7 @@ export function settingsPage(h: Hooks) {
     setView(VIEW_DEFAULT, true); h.debug.showView();
     h.post.setResolution(RES_DEFAULT);
     setFov(FOV_DEFAULT);
-    setShadows(true);
+    setShadows(SHADOW_DEFAULT);
     quality.automatic();
     h.post.setRetroLook(true);
     h.debug.toggle(false);
@@ -217,9 +249,9 @@ export function settingsPage(h: Hooks) {
   }, true);
   return {
     setRes: (i: number) => h.post.setResolution(i, false),
-    setShadows: (on: boolean) => setShadows(on, false),
+    setShadows: (level: number) => setShadows(level, false),
     resolution: () => h.post.resolution,
-    shadows: () => h.renderer.shadowMap.enabled,
+    shadows: () => shadowLevel,
     shown: () => { if (!el.hidden) show(); h.debug.showView(); },
   };
 }

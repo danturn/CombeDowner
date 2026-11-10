@@ -38,6 +38,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { model, Part } from "./furniture";
 import type { Mover } from "./map";
 import { clockAt, gameWait } from "./daylight";
+import { tag } from "./kinds";
 
 export interface RailData {
   tracks: { n: string; p: number[][] }[];
@@ -1408,7 +1409,7 @@ export class Railway {
       tr.group.add(mesh);
     }
     this.trains.set(key, tr);
-    this.scene.add(tr.group);
+    this.scene.add(tag(tr.group, "vehicle"));
     return tr;
   }
 

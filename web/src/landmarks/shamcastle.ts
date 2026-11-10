@@ -5,10 +5,12 @@
 // battlemented screen wall of coursed rubble with a pointed arch in the middle, flanked by two
 // round turrets three storeys high, running out to a square tower of two storeys at each end,
 // with blocked lancet windows and a plaque in the middle. Behind, it's plain wall.
+// After dark it's floodlit, as it is from the city: the whole of its stone glows gold, lit by a
+// row of lamps on the grass in front, so it stands out on the skyline above Bath.
 // You can walk through the arch. Its frame: x along the wall (south-south-west), z out of its
 // front towards Bath, y up from the ground at its middle. Solid as it's drawn (landmarks/shape.ts).
 import * as THREE from "three";
-import { Kit, stone, plain, pointedArch } from "./kit";
+import { Kit, stone, plain, pointedArch, glow } from "./kit";
 
 const L = 12.3, T = 1.0;              // half the wall's length, and its thickness
 const ARCH = 1.6;                     // half the archway's width
@@ -18,7 +20,14 @@ const WALL = 6.6, MID = 8.4;          // the curtain walls' height, and the midd
 
 export function shamCastle(): THREE.Object3D {
   const k = new Kit();
-  const S = stone("#cbbb97"), S2 = stone("#b1a07d"), slit = plain("#3a3530");
+  // the stone glows with its own texture after dark (the floodlights), not at all by day
+  const lit = (tint: string) => {
+    const m = stone(tint);
+    m.emissiveMap = m.map; m.emissive.set("#ffcf8a"); m.emissiveIntensity = 0;
+    return m;
+  };
+  const S = lit("#cbbb97"), S2 = lit("#b1a07d"), slit = plain("#3a3530");
+  const housing = plain("#2e3a2c"), lens = plain("#fff4d6", { emissive: "#ffe2a8", emissiveIntensity: 0 });
   const merlons = (x0: number, x1: number, y: number, z: number) => {
     for (let x = x0 + 0.1; x < x1 - 0.3; x += 1.25) k.slab(S, x, Math.min(x1, x + 0.65), y, y + 0.85, z - T / 2, z + T / 2, 1);
   };
@@ -59,6 +68,14 @@ export function shamCastle(): THREE.Object3D {
     for (const z of [-END.w / 2 + 0.6, END.w / 2 - 0.2]) merlons(Math.min(e0, e1), Math.max(e0, e1), END.h, z);
     for (const y of [2.2, 6.0]) lancet((e0 + e1) / 2, y, END.w / 2 + 0.22);
   }
-  return k.build();
+  // the floodlights, low on the grass in front, tipped up at the wall
+  for (const x of [-7.5, -2.5, 2.5, 7.5]) {
+    k.box(housing, x, -0.3, 3.1, 0.7, 0.75, 0.5, 0, 0);
+    k.quad(lens, x, 0.2, 2.84, 0.55, 0.4, Math.PI, 0, 0, 1, 1);
+  }
+  const grp = k.build();
+  for (const m of [S, S2]) glow(grp, m, 0, 0.85);
+  glow(grp, lens, 0, 1.6);
+  return grp;
 }
 

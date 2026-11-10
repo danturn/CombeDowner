@@ -54,9 +54,14 @@ export function watchDay(): number {
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** The day of the week on the watch, 0 Sunday to 6 Saturday. */
+export function weekday(): number {
+  return new Date(watchDay() * 86400000).getUTCDay();
+}
+
 /** The day of the week on the watch, as "Friday". */
 export function dayText(): string {
-  return DAY_NAMES[new Date(watchDay() * 86400000).getUTCDay()];
+  return DAY_NAMES[weekday()];
 }
 
 /** A fraction of the day as "21:30". */
@@ -90,7 +95,7 @@ const ALWAYS_OUT = q.get("nightout") === "1";
  *  night's). Like the watch, it moves on with the clock when the debug panel moves it. */
 export function nightOut(): boolean {
   if (ALWAYS_OUT) return true;
-  const day = new Date(watchDay() * 86400000).getUTCDay(), hour = timeOfDay() * 24;
+  const day = weekday(), hour = timeOfDay() * 24;
   return hour >= 20 ? day === 5 || day === 6 : hour < 3 && (day === 6 || day === 0);
 }
 

@@ -133,8 +133,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs, and ten to fifteen flags go up
   on its street and the streets running into it; shoot a lad off a ladder and it drops back. You
   can't pick a pub that's being taken over on the big map and go straight there: get there yourself. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
-  400 m for a bonus, or he's tomorrow's Wanted poster. Win the pub back and any lads still standing,
-  his right-hand man too, leg it.
+  400 m for a bonus, or he's tomorrow's Wanted poster; once he's cuffed his bar goes. Every lad the
+  call-out counts is at the pub: one who wanders off is called back at a run, and if he can't get back
+  in 25 seconds he gives up and legs it. Win the pub back and any lads still standing, his right-hand
+  man (the big one all in black) too, leg it. The kill feed names the Gaffer, his right-hand man and
+  his cousin each for who they are.
 - **Wanted: catch him and cuff him.** One man, marked on everyone's map and compass, doing his round
   of a pub, a park and a bus stop with a few mates who'll have a go at you. Get close and he legs it, quicker than
   you can sprint, but he's out of puff every few seconds (his puff is the bar across the top of the
@@ -242,7 +245,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   happy, a walking stick for being hit by one, a thermos in a string bag for being hit by the lot),
   earmuffs for a clean touch on the bells, a beret when the critics call your show a triumph, a
   lock-keeper's cap for gold on the Lock Run, an L-plate for passing the driving test, dazzled eyes
-  for 60 km/h past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
+  for 40 mph past a speed trap, goggles for ending up in the water ten times, a mouth guard for a
   shoot-out won, a froth moustache for ten different pubs, a monocle for a night out seen through,
   sunblock stripes for knocking over the stumps, climbing rope for topping the Climb with no lives
   lost, a balancing pole for the Tightrope, a miner's lamp for the bottom of the mines, a skateboard
@@ -588,9 +591,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   address tries another number.
 - **Smooth on any machine**: the game picks how far you see, the resolution and shadows for your
   device (a quick check of its processor and graphics chip as it loads, then the menu's backdrop),
-  and if frames get slow for a few seconds it eases back gently: shadows redrawn less often, then a
-  few fewer lines, then a shorter view (never under 500 m), then no shadows. It steps back up when
-  there's room, and never thins out trees, buildings or grass. Choosing a draw distance, resolution
+  and if frames get slow for a few seconds it eases back gently: far-reaching shadows back to Low,
+  shadows redrawn less often, then a few fewer lines, then a shorter view (never under 500 m), then
+  no shadows. It steps back up when there's room, and never thins out trees, buildings or grass. Choosing a draw distance, resolution
   or shadows yourself (or L in the debug panel) turns this off; tick Automatic in Settings to turn
   it back on.
 - **If your phone crashes starting a game**: the next time you open the page it starts in safe

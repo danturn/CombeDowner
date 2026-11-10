@@ -715,6 +715,9 @@ export class Weapon {
     if (this.hasSniper) { this.sniperAmmo = GUNS.sniper.mag; this.sniperReserve = SNIPER_MAX_RESERVE; }
   }
 
+  /** God mode (/idkfa on the chat phone, dev.ts): the sniper rifle as well, and everything full. */
+  armAll() { this.hasSniper = true; this.fillUp(); }
+
   /** Pick up the sniper rifle. If you've already got it, its magazine goes in your spare rounds. */
   giveSniper() {
     if (this.hasSniper) { this.sniperReserve = Math.min(SNIPER_MAX_RESERVE, this.sniperReserve + GUNS.sniper.mag); return; }

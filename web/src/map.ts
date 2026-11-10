@@ -96,6 +96,7 @@ export interface MapData {
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   pi?: Pitch[];                 // sports pitches: football and rugby pitches and cricket fields
+  rt?: number[][];              // running tracks (tools/pitches.py tracks): x, y, angle, straight, bend radius, lanes, lane width
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
   tn?: Tunnel[];                                  // tunnels you can walk through
@@ -155,6 +156,52 @@ export function gateShape(gt: (number | string)[], z0: number) {
 
 /** How tall a wall, fence, hedge or railing stands: its measured height, else its kind's. */
 export function barrierHeight(l: Line): number { return l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5; }
+/** A long straight stretch of wall, fence or hedge follows the ground between its ends. The map
+ *  can have one as just its two ends (the Royal Crescent's ha-ha is 139 m in one go), and a stretch
+ *  is drawn and made solid straight from one point's height to the next's, so over a dip or a rise
+ *  in between it floated over the grass or sank into it. A stretch longer than STRETCH whose ends
+ *  stand on the ground is cut every few metres, each new point as high over the ground there as its
+ *  ends are over theirs. A stretch whose ground strays no more than DIP below or RISE above the
+ *  straight line between its ends is left as it is: the map tools already put a point in at each
+ *  fold of the ground that strays further (tools/partition/write_tile.py, walls_follow_the_ground,
+ *  with the same two limits), so their squares' walls aren't cut again for nothing. Done to each
+ *  square as it loads (tiles.ts) and to the first area (loadMap), before the game builds anything
+ *  from it; nothing goes over the network. */
+export function drapeBarriers(d: MapData) {
+  const T = d.t;
+  if (!T?.h?.length) return;
+  const STRETCH = 6, STEP = 3, ON = 0.6, DIP = 0.1, RISE = 0.2;
+  const ground = (x: number, y: number) => {
+    const fi = (x - T.x0) / T.dx, fj = (y - T.y0) / T.dy;
+    if (!(fi >= 0 && fj >= 0 && fi <= T.nx - 1 && fj <= T.ny - 1)) return NaN;
+    const i = Math.min(T.nx - 2, Math.floor(fi)), j = Math.min(T.ny - 2, Math.floor(fj)), u = fi - i, v = fj - j;
+    const h = (a: number, b: number) => T.h[b * T.nx + a] / 10 + T.z0;
+    return (h(i, j) * (1 - u) + h(i + 1, j) * u) * (1 - v) + (h(i, j + 1) * (1 - u) + h(i + 1, j + 1) * u) * v;
+  };
+  for (const l of d.br ?? []) {
+    let out: number[][] | null = null;
+    for (let i = 0; i < l.p.length - 1; i++) {
+      const a = l.p[i], b = l.p[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len > STRETCH) {
+        const ga = ground(a[0], a[1]), gb = ground(b[0], b[1]);
+        if (Math.abs(a[2] - ga) < ON && Math.abs(b[2] - gb) < ON) {
+          const n = Math.ceil(len / STEP), cut: number[][] = [];
+          let strays = false;
+          for (let k = 1; k < n; k++) {
+            const f = k / n, x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, g = ground(x, y);
+            const off = Number.isFinite(g) ? g - (ga + (gb - ga) * f) : 0;
+            if (off < -DIP || off > RISE) strays = true;
+            cut.push([x, y, +(a[2] + (b[2] - a[2]) * f + off).toFixed(2)]);
+          }
+          if (strays) (out ??= l.p.slice(0, i + 1)).push(...cut);
+        }
+      }
+      out?.push(b);
+    }
+    if (out) l.p = out;
+  }
+}
+
 /** The top of barrier l at its point i (scene Y, the map's base height z0): it runs straight from
  *  one point's top to the next's. world.ts draws it so and the walls you hit are built from it. */
 export function barrierTop(l: Line, i: number, z0: number): number { return l.p[i][2] - z0 + barrierHeight(l); }
@@ -2391,7 +2438,7 @@ export function inlineMapId(): string | null {
 export async function loadMap(url: string, wideUrl?: string, tilesDir?: string): Promise<GameMap> {
   // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
-  if (inline?.textContent) { const d = JSON.parse(inline.textContent); unpackSurfaces(d); maskSetPieces(d); return new GameMap(d); }
+  if (inline?.textContent) { const d = JSON.parse(inline.textContent); unpackSurfaces(d); maskSetPieces(d); drapeBarriers(d); return new GameMap(d); }
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -2402,6 +2449,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const d = await res.json();
   unpackSurfaces(d);
   maskSetPieces(d);
+  drapeBarriers(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }
   return map;
