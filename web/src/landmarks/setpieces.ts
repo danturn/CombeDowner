@@ -35,6 +35,11 @@
 // floor, where the lidar has it higher than the street. Such a point comes down too, but never
 // below the street's own level, so the pavement still has its ground under it.
 //
+// One thing the map tools do for them: a set piece that draws all of its outline to the edge
+// (`fills`: the Royal Crescent, its flags out to the kerb) has the square's street faces cut along
+// its outline as the square is written (tools/partition/setpiece_cuts.py, reading this table), so
+// the two meet edge to edge; a square written before that still has them taken out here.
+//
 // So a rebuilt map, or a new area, needs nothing doing here: a set piece's place is longitude,
 // latitude and a bearing, and its outline catches whatever the tools build there next time. A new
 // set piece is an entry in SET_PIECES and a builder in landmarks/ (its kind in SET_PIECE_KINDS in

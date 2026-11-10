@@ -57,7 +57,7 @@ from shapely.ops import nearest_points, substring, unary_union
 from shapely.strtree import STRtree
 
 from gardens import NEUTRAL as GARDEN_NEUTRAL, STYLE as GARDEN_STYLE, pick
-from partition import MAP, ROOT, face_shape, once, zone_at
+from partition import MAP, ROOT, face_shape, once, setpiece_cuts, zone_at
 from partition.openings import EDGE_STUB
 from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
@@ -4296,7 +4296,7 @@ PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its s
 
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
-                    standing=None, filled=None, tunnels=(), rail=None):
+                    standing=None, filled=None, tunnels=(), rail=None, centre=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -4594,6 +4594,17 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         shapely.prepare(barriers)
     simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)), barriers,
                          [cls in ("carriageway", "pavement") for cls, _ in pieces])
+    # (a set piece that draws all of its outline meets the faces along its edge: setpiece_cuts.py)
+    cut = setpiece_cuts.holes(centre, sq, road) if centre else None
+    if cut is not None:
+        shapely.prepare(cut)
+        left = []
+        for (cls, _), q in zip(pieces, simple):
+            q = q.difference(cut) if cut.intersects(q) else q
+            left += [(cls, g) for g in getattr(q, "geoms", [q]) if g.geom_type == "Polygon" and g.area > 0.05]
+        if not left:
+            return None
+        pieces, simple = left, [g for _, g in left]
     # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
     # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
     # street that steepens, with a gap under its edge and parked cars sunk into it)
@@ -8098,7 +8109,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     filled = []
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
                                                canal_bores(canal), standing, filled, tile.get("tn"),
-                                               json.load(open(rail)) if os.path.exists(rail) else None),
+                                               json.load(open(rail)) if os.path.exists(rail) else None, tile.get("centre")),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
