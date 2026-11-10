@@ -21,6 +21,11 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Spencer's main merged into Dan's fork (branch `claude/spencer-merge`):** the map rebuilt with
+  his running tracks and pitches; `drapeBarriers` (`web/src/map.ts`) now leaves a stretch alone where
+  the ground strays no more than the build's own limits (0.1 m below, 0.2 m above), so it no longer
+  re-cuts the walls `tools/partition/write_tile.py` already laid on the ground. Removed once on main.
+
 - **Three map branches merged, waiting for Dan (branch `claude/map-merge`):** `claude/map-fixes`
   (checks rules 39-45, walls follow the ground, hairline needles off pavements and streets, set
   pieces clear the map's paving), `claude/stable-ids` (edges named from their own geometry,

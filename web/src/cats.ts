@@ -28,6 +28,7 @@ import { GameMap } from "./map";
 import { nightNow } from "./daylight";
 import { type Follow, follow } from "./weapon";
 import { bake, dropBaked } from "./bake";
+import { tag } from "./kinds";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -294,7 +295,7 @@ export class Cats {
     for (let i = 0; i < MAX; i++) {
       const c = new Cat(i);
       this.list.push(c);
-      scene.add(c.fig.root);
+      scene.add(tag(c.fig.root, "people"));
     }
   }
 
@@ -487,6 +488,22 @@ export class Cats {
       x: at.x, z: at.z, y: this.map.ground(at.x, at.z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
       deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0, fleeT: 0,
       fromX: this.fury.get(after)?.x ?? NaN, fromZ: this.fury.get(after)?.z ?? NaN,
+    });
+    c.fig.dress(look, c.gen);
+    return true;
+  }
+
+  /** Host: a cat brought by /spawn (dev.ts), sitting calmly at (x, z) or the nearest clear spot.
+   *  Returns false if every cat's already out. */
+  bring(x: number, z: number): boolean {
+    const c = this.list.find((o) => o.state === GONE);
+    const at = clearSpot(this.map, x, z, 4);
+    if (!c || !at) return false;
+    const look = randomLook();
+    Object.assign(c, {
+      state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: HP, target: "", look,
+      x: at[0], z: at[1], y: this.map.ground(at[0], at[1]), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
+      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0, fleeT: 0, fromX: NaN, fromZ: NaN,
     });
     c.fig.dress(look, c.gen);
     return true;

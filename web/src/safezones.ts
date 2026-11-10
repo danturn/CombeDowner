@@ -3,7 +3,9 @@
 // ladder lad, no Wanted man or his crew. Nor does anything to pick up apart from rides and ladders:
 // no markers, rounds, pints, fizz or Lucozade, whether scattered about, dropped or won as a prize.
 // The point is to give nobody a reason to go there. What happens mid-chase is left alone: a gang
-// that chases you in still chases you, and a Wanted man on the run can still call his mates.
+// that chases you in still chases you, and a Wanted man on the run can still call his mates. The
+// Royal Crescent's residents are the exception: they live there, and come out to see you off their
+// lawn even though St Andrew's school is just behind the Crescent.
 //
 // The schools come from the map's named areas (map.d.pl, the city-wide map.wide.d.pl, and each square
 // of Bath's own, which has a few near the edge of the map that the city-wide list leaves out), picked

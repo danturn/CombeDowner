@@ -6,7 +6,8 @@
 // watches real frames, the menu's backdrop included, so it has usually settled before you play: after
 // a few slow seconds it takes one step down, in the order that loses least: shadows redrawn less often,
 // then the resolution a notch (only when the graphics chip is the one struggling: the retro look hides
-// it), then the draw distance a step (never below FLOOR), then shadows off. It steps back up after a
+// it), then the draw distance a step (never below FLOOR), then shadows off. Before all of those, shadows
+// reaching further than Low (shadows.ts) come back to Low a level at a time. It steps back up after a
 // run of easy seconds, waiting longer each time a step has failed before, so it doesn't flicker. It
 // never touches how much is drawn close by (trees, buildings, grass). Where it settled is kept on this
 // computer, and the guess is made afresh when the game or the graphics chip changes.
@@ -35,14 +36,15 @@ if (chosenBefore) put(KEY, "0");
 const VIEWS = [500, 600, 750, 900, 1200, 1500, 2000];
 const FLOOR = 500;
 
-export interface Look { view: number; res: number; shadows: boolean; every: number }
-type Step = "every" | "res" | "view" | "shadows" | "res2";
+/** shadows: how far they reach, 0 (off) to 4 (Ultra), as shadows.ts numbers them. */
+export interface Look { view: number; res: number; shadows: number; every: number }
+type Step = "reach" | "every" | "res" | "view" | "shadows" | "res2";
 
 export interface Hooks {
   setRes: (i: number) => void;
-  setShadows: (on: boolean) => void;
+  setShadows: (level: number) => void;
   resolution: () => number;
-  shadows: () => boolean;
+  shadows: () => number;
   /** The settings' tickbox and lists show what's in force. */
   shown: () => void;
 }
@@ -115,7 +117,9 @@ export function bench(): number {
  *  corrects it on the device. */
 function predict(l: Look, speed: number, gf: number, px: number) {
   const v = VIEWS.reduce((p, x) => (Math.abs(x - l.view) < Math.abs(p - l.view) ? x : p));
-  const cpu = (HOST_CPU[v] - HOST_SHADOW / 2 + (l.shadows ? HOST_SHADOW / l.every : 0)) / speed;
+  // shadows reaching further than Low draw bigger squares too, less often: a guess, not yet measured
+  const far = l.shadows ? 1 + 0.4 * (l.shadows - 1) : 0;
+  const cpu = (HOST_CPU[v] - HOST_SHADOW / 2 + HOST_SHADOW * far / l.every) / speed;
   const gap = HOST_GFLOPS / gf, pixels = px * (LINES[l.res] / 540) ** 2 / 1e6;
   const gpu = HOST_GPU.fixed * (l.view / 900) ** 0.3 * (l.shadows ? 1 : 0.8) * Math.sqrt(gap) + HOST_GPU.perMpx * pixels * gap;
   return { cpu, gpu };
@@ -126,20 +130,23 @@ export interface Machine { gpu: string; mobile: boolean; risky: boolean; crashed
 /** The best this machine is allowed: the governor never goes above it. */
 function cap(m: Machine): Look {
   const crashed = m.crashed || get("cd-crashed") !== null;
-  if (crashed) return { view: 400, res: 1, shadows: false, every: 2 };
+  if (crashed) return { view: 400, res: 1, shadows: 0, every: 2 };
   // memory: iPads' tabs are killed well before 2 GB
   // (a 900 m view keeps about 0.8 GB, 1.5 km 1.8 GB, 3 km 2.9 GB; chips built into the processor share its memory)
   const view = m.mobile ? (m.memGB && m.memGB < 4 ? 750 : 900) : m.memGB && m.memGB < 8 ? 1200 : gflops(m.gpu, false) < 2000 ? 1500 : 2000;
-  return { view, res: 2, shadows: !m.risky, every: 2 };
+  // shadows to a quarter of the view on a computer with a strong graphics chip, a tenth elsewhere
+  const shadows = m.risky ? 0 : !m.mobile && gflops(m.gpu, false) >= 3000 ? 2 : 1;
+  return { view, res: 2, shadows, every: 2 };
 }
 
 /** One step down from l, or null at the bottom. cpuBound: a lower resolution wouldn't help. */
 function down(l: Look, floor: number, cpuBound: boolean): [Look, Step] | null {
+  if (l.shadows > 1) return [{ ...l, shadows: l.shadows - 1 }, "reach"];
   if (l.shadows && l.every < 4) return [{ ...l, every: l.every + 1 }, "every"];
   if (!cpuBound && l.res > 1) return [{ ...l, res: l.res - 1 }, "res"];
   const lower = [...VIEWS].reverse().find((v) => v < l.view);
   if (l.view > floor && lower) return [{ ...l, view: Math.max(floor, lower) }, "view"];
-  if (l.shadows) return [{ ...l, shadows: false }, "shadows"];
+  if (l.shadows) return [{ ...l, shadows: 0 }, "shadows"];
   if (l.res > 0) return [{ ...l, res: l.res - 1 }, "res2"];
   return null;
 }
@@ -226,7 +233,7 @@ class Quality {
     // what automatic had chosen stays, now as the player's own
     const h = this.hooks;
     if (!this.fixedView) put("cd-view", String(view.fogFar));
-    if (h) { put("cd-res", String(RES_STEPS[h.resolution()].lines)); put("cd-shadows", h.shadows() ? "1" : "0"); }
+    if (h) { put("cd-res", String(RES_STEPS[h.resolution()].lines)); put("cd-shadows", String(h.shadows())); }
     this.hooks?.shown();
   }
 

@@ -1,6 +1,7 @@
 // Synthesised sound effects and music (Web Audio), so the game ships no sound files.
 // The context can only start after a click, so call unlock() from one.
 import { gore } from "./gore";
+import { timeOfDay } from "./daylight";
 import { Soundtrack, TRACK_NAMES } from "./music";
 import { latencyHint } from "./voicelink";
 
@@ -206,7 +207,8 @@ export function unlock() {
   analyser.fftSize = 256;
   analyser.smoothingTimeConstant = 0.6;
   pre.connect(analyser);
-  const st = soundtrack = new Soundtrack(ctx, pre);
+  // the game's clock picks the music: dawn's track round dawn, the pub's at closing time
+  const st = soundtrack = new Soundtrack(ctx, pre, { hour: () => timeOfDay() * 24 });
   const c = ctx;
   // report a new track when it actually starts playing, not when it is scheduled
   st.onTrack = (name, time) => setTimeout(() => {
@@ -641,6 +643,19 @@ export function bolt() {
   casing(out(0.25, 0.4, 0, 0.05), t + 0.95, 0.14);
   slide(d, t + 0.72, 0.1, 0.45, 2700, 1700); clack(d, t + 0.82, 0.35, 1300);    // forward, round chambered
   clink(d, t + 0.95, 0.4, 2800); clack(d, t + 0.96, 0.3, 900);             // down and locked
+}
+
+/** A text message coming in on the chat phone (chat.ts): "SMS" in Morse, short short short, long
+ *  long, short short short, in the thin square beep of an old mobile's speaker. */
+export function textIn() {
+  if (!ctx) return;
+  const d = out(0.16, 0, 0, 0.02);
+  let t = now();
+  for (const len of [1, 1, 1, 0, 3, 3, 0, 1, 1, 1]) {
+    if (!len) { t += 0.13; continue; }   // the gap between letters
+    tone(d, t, 0.065 * len, 0.5, 1760, 1760, "square", 0.003);
+    t += 0.065 * len + 0.065;
+  }
 }
 
 /** The rifle's bolt locking back on the last round. */

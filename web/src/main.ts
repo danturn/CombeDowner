@@ -38,6 +38,7 @@ import { mine } from "./features";
 import { openLink } from "./link";
 import { easelUp, onEaselRelock } from "./easel";
 import { closeButton, closeModals, modalUp, onModal, onModalRelock } from "./modal";
+import { openChat } from "./chat";
 import { Unlit } from "./unlit";
 import { Trackpad } from "./trackpad";
 import { gamesUnlocked, openGames, useGames, whenGames } from "./gameslist";
@@ -531,8 +532,9 @@ addEventListener("keydown", (e) => {
   }
   // playing without the mouse captured yet: Esc still pauses
   else if (e.code === "Escape" && game?.active && document.pointerLockElement !== canvas) { $("clickhint").hidden = true; showPause(); }
-  // , and . step back and forward through the soundtrack, as in Winamp's playlist
-  if ((e.code === "Comma" || e.code === "Period") && !e.repeat && !(e.target instanceof HTMLInputElement)) {
+  // , and . step back and forward through the soundtrack, as in Winamp's playlist (flying the drone,
+  // they zoom instead: game.ts)
+  if ((e.code === "Comma" || e.code === "Period") && !e.repeat && !(e.target instanceof HTMLInputElement) && !game?.drone.on) {
     SFX.unlock();
     if (e.code === "Comma") SFX.previousTrack(); else SFX.nextTrack();
   }
@@ -764,6 +766,8 @@ function pauseButton(id: string, text: string, onclick: () => void) {
   $("trophybtn").after(b);
 }
 pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
+// the chat phone (chat.ts): \ on a keyboard, and here for a touch screen
+pauseButton("chatbtn", "Chat and commands", () => { if (!game) return; $("pause").hidden = true; game.active = true; openChat(); });
 // the games list (gameslist.ts), on the main menu and the pause menu once it's unlocked on this device;
 // from the main menu it starts a game on your own first
 {
@@ -859,7 +863,8 @@ const pad = new GamepadControls(() => game && {
   player: () => game!.player,
   look: (dx, dy) => game!.look(dx, dy),
   driving: () => game!.atWheel,
-  button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
+  button: (b, down) => { if (game?.drone.on && game.drone.padButton(b, down)) return; if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
+  fly: (lx, ly, rx, ry) => { if (!game?.drone.on) return false; game.drone.sticks(lx, ly, rx, ry); return true; },
 }, (text) => game?.news(text));
 const hold = (code: string) => (down: boolean) => key(code, down);
 // toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
@@ -879,6 +884,7 @@ padActions(STREETS, {
   crouch: (down) => {
     const p = game?.player;
     if (!down || !p || p.diveBusy) return;
+    if (game!.balloons.aboard >= 0) { game!.toggleView(); return; }   // in a balloon's basket: Circle goes round the views
     if (p.proneLatch || p.crouchLatch) p.proneLatch = p.crouchLatch = false;
     else p.crouchLatch = true;
   },
@@ -914,7 +920,7 @@ padActions(STREETS, {
 padSettings();
 
 let last = performance.now();
-let frames = 0, fpsT = 0, shadowTick = 0;
+let frames = 0, fpsT = 0;
 const told = new Set<string>();
 let inputWas = "";
 // ?frames=1: a recording tool (tools/flyover_video.mjs) holds the game still and moves it on a
@@ -965,11 +971,21 @@ function tick(now: number) {
   }
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   // shadows are drawn afresh every other frame (or less often, if the automatic settings ease back,
-  // quality.ts): they're a good share of a frame's work, and a moving shadow a frame behind can't be seen
+  // quality.ts), the far ones less often still: they're a good share of a frame's work, and a moving
+  // shadow a frame behind can't be seen. Each of the sun's lights says when it's due (shadows.ts).
   renderer.shadowMap.autoUpdate = false;
-  if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
+  renderer.shadowMap.needsUpdate = true;
   unlit.frame(current.world.scene, camera, dt, post.worldTarget);
-  post.render(current.world.scene, game ? game.weapon.scene : null);
+  // no gun in your hands while you fly the drone, and the drone's view of the scenery (looks.ts) is
+  // put on for this drawing only
+  // (always taken off again, even if the drawing goes wrong, so the game's own look comes back)
+  const looks = game?.drone.on ? game.drone.looks : null;
+  try {
+    looks?.before(current.world.scene);
+    post.render(current.world.scene, game && !game.drone.on ? game.weapon.scene : null, looks?.edges ?? null, game?.lens ?? null);
+  } finally { (looks ?? game?.drone.looks)?.after(current.world.scene); }
+  game?.drone.framed(renderer.domElement);   // a drone snap's picture, while this frame's still there to copy
+  game?.drone.peek(renderer);                // and in its "what's what" view, what's under the crosshair
   quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
   frames++; fpsT += raw;

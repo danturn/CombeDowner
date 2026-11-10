@@ -222,13 +222,13 @@ KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 PAVE = 1.7
 
 
-def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, reach=None):
+def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, reach=None, hard=()):
     """Woods are left out: their undergrowth is hidden under the trees anyway. Only within reach
     metres of the map's centre, if given (None: everywhere the data reaches). Nothing grows on a
     street's hard surface: the carriageway, and the pavements of a kerbed street (as drawn in
-    web/src/world.ts)."""
+    web/src/world.ts), nor on other hard ground given as polygons (a running track's lanes)."""
     if canopy is None: return []
-    solid = shapely.STRtree(list(woods) + [f.buffer(0.8) for f in footprints] +
+    solid = shapely.STRtree(list(woods) + list(hard) + [f.buffer(0.8) for f in footprints] +
                             [LineString([(a, b) for a, b, *_ in r["p"]]).buffer((r.get("w") or RW.get(r["c"], 3)) / 2 + (max(r.get("pv", [PAVE])) if r["c"] in KERBED else 0) + 0.6)
                              for r in roads if len(r["p"]) > 1])
     out = []

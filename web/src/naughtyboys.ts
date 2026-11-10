@@ -24,7 +24,7 @@
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
 // boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
 // bring a gang of their own anywhere, and a man a job runs can be made to give up with his hands in the air instead of going
-// down, to be cuffed and led off. A ringleader can also wear one loud thing (a
+// down, stood still to be cuffed and led off. A ringleader can also wear one loud thing (a
 // rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
 // run is drawn on a mobility scooter or in his van, which also rides on his look.
 //
@@ -32,10 +32,23 @@
 // Street, where it meets George Street: a crowd of naughty boys and naughty girls (in short skirts
 // and going-out tops, heels and a handbag, who slap rather than punch and say what they think of
 // you) stood about in twos and threes. Every so often two of them kick off with each other, a mate
-// sometimes piling in, till one's had enough and legs it, and the rest carry on. They don't come
+// sometimes piling in (a girl will slap a lad, but a lad never hits a girl back), till one's had enough and legs it, and the rest carry on. They don't come
 // for you unless you get right in among them or shoot one, and only the few nearest join in. More
 // wander in up the streets round about to keep the numbers up, and at three in the morning they
 // all drift off home.
+//
+// And on the Royal Crescent there are the residents: the lawn in front of it, inside the ha-ha, is
+// private, for the people who live there and the guests of the hotel. Like the teams at their pitch,
+// they're out on it, standing about taking the air, whenever anyone's in sight of it (gentlemen in
+// tweed, blazers and morning coats, ladies in long dresses, big hats and pearls, and the odd hotel
+// guest in his bathrobe and slippers). Step on to it and they come for you, swinging umbrellas and
+// handbags and telling you exactly what they think of you, posh. They only go for someone on the lawn
+// or right by it, see you off it, tell you to stay off, and go back to where they were standing. More
+// come out every minute or so while anyone's on it, and they go back indoors once nobody's about.
+//
+// Hear a police car coming with its siren going and the naughty boys and girls scarper: whatever
+// they were up to, they drop it and run from it, one or two shouting a warning, and drift back to
+// their spot once it's gone by. The posh lot and the Flag Lads stand their ground.
 //
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
@@ -47,12 +60,15 @@ import { GameMap } from "./map";
 import { inSafeZone } from "./safezones";
 import { nightOut, timeOfDay } from "./daylight";
 import { MR_DS } from "./chipvan";
-import { legIt, line } from "./posh";
+import { legIt, line, stayOff } from "./posh";
 import { type Follow, follow } from "./weapon";
+import { tag } from "./kinds";
+import type { Siren } from "./vehicles";
 
 /** The kinds of gang: three that hang about, the Flag Lads' three (invasion.ts), who only come when it
- *  brings them, and the naughty girls, who only come out on a Friday or Saturday night. */
-export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5, GIRL = 6;
+ *  brings them, the naughty girls, who only come out on a Friday or Saturday night, and the Royal
+ *  Crescent's residents, who only come out to see you off their lawn. */
+export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5, GIRL = 6, RESIDENT = 7;
 /** Added to a look's kit: the gang's ringleader, a size bigger. */
 export const BOSS = 8;
 /**
@@ -67,6 +83,7 @@ const TEAM = [
   { hp: 40, run: 5.2, hit: 0, reach: 0, spot: 22, lose: 0 },      // a ladder crew: runs from anyone this close
   { hp: 400, run: 5.0, hit: 18, reach: 1.7, spot: 55, lose: 90 },
   { hp: 45, run: 5.3, hit: 8, reach: 1.25, spot: 32, lose: 45 },   // in heels, but they'll have you
+  { hp: 50, run: 5.5, hit: 8, reach: 1.5, spot: 60, lose: 90 },    // the Crescent's residents: umbrellas and handbags
 ];
 const PROWL = 150;                         // the teams come looking for anyone this close to their pitch
 const MAX = 18;                            // the gangs that turn up by themselves
@@ -76,6 +93,17 @@ const HOME_RANGE = 5;                      // how far they drift from their spot
 const LIKES: Record<Haunt["kind"], number> = { corner: 0.3, alley: 1, bus: 2.5, shop: 0, pub: 0 };
 const likes = (h: Haunt) => LIKES[h.kind] * (h.foxhill ? 3 : 1);
 const PITCH_NEAR = 200;                    // the pitches looked at round each player
+const SIREN_HEARD = 60;                     // a siren this near (m) and they scarper
+const SIREN_CALM = 5;                       // and they don't come looking for a fight for this long after it's gone
+/** Which of them scarper from a siren: the naughty boys and girls, not the posh lot or the Flag Lads. */
+const SCARPERS = new Set([NAUGHTY, GIRL]);
+/** What gets shouted on hearing it (the lads', then the girls'). */
+const FEDS = [
+  ["Feds! Leg it!", "It's the Old Bill!", "Five-oh! Scatter!", "Coppers! Run!", "I ain't done nothing!", "Pigs! Split up!"],
+  ["Oh my God, it's the police!", "Run, babe, it's the Old Bill!", "Darren, it's the feds!", "I'm not getting nicked in these shoes!"],
+];
+/** Who he's after, as everyone's told, while he's scarpering from a siren (no player's called that). */
+const SCARPER = "!";
 const TEAM_AGAIN = [180, 300];             // while anyone's on a pitch, another team turns out every 3 to 5 minutes
 const TEAM_BACK = 120;                     // off the pitch this long and walking back on counts as arriving again
 const TEAM_CLEAR = 35;                     // a team turns out at least this far from everyone
@@ -91,6 +119,24 @@ const OUT_SECS = OFF_SECS + FLEE_SECS;     // when he's gone
 export const FLEE = 9.5;                   // you sprint at 7.4, so you'll not catch him
 const THROWN = 6;                          // how hard a car sends him sprawling sideways
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
+// The Royal Crescent's private lawn (data metres): its wire fence round from the ha-ha's west end, by
+// the Crescent's front, to the ha-ha's east end; the ha-ha closes it. And the residents' doorsteps,
+// on the flagged pavement in front of every third house, where a few of them stand.
+const LAWN = {
+  map: "combe-down",
+  ring: [[-1685.7, 2705.4], [-1679.8, 2707.9], [-1676.3, 2710.5], [-1673.7, 2714.1], [-1670.5, 2726.5], [-1666.4, 2734.4],
+    [-1662.1, 2739.1], [-1656.6, 2743.6], [-1650.4, 2746.6], [-1643.8, 2748.2], [-1635.6, 2749.5], [-1623.2, 2750.1],
+    [-1608.8, 2748.7], [-1599.7, 2746.5], [-1592.2, 2743.9], [-1584.2, 2740.2], [-1575.8, 2735.2], [-1566.7, 2728.3],
+    [-1558.6, 2720.3], [-1556.1, 2716.1], [-1554.4, 2711.5], [-1552.7, 2703.2], [-1553.1, 2696.3], [-1554.0, 2691.8],
+    [-1555.5, 2685.8], [-1556.4, 2677.9], [-1555.6, 2673.4], [-1551.5, 2667.2]],
+  doors: [[-1535.8, 2692.3], [-1536.6, 2712.4], [-1546.2, 2731.1], [-1561.2, 2746.0], [-1580.1, 2757.4],
+    [-1603.6, 2765.3], [-1626.9, 2767.8], [-1648.0, 2765.2], [-1667.7, 2756.8], [-1681.9, 2742.5]],
+};
+const LAWN_NEAR = 3;                       // the residents only go for someone on the lawn or this close to it
+const LAWN_LEASH = 18;                     // and give up once they're this far off it
+const LAWN_AGAIN = [45, 75];               // while anyone's on it, more come out every 45 to 75 seconds
+const LAWN_SEEN = 150;                     // they're out on the lawn while anyone's this close to it
+const LAWN_MOST = 9;                       // and no more than this many out at once
 // The night out: where the crowd stands (data metres), the top of Milsom Street, where it meets George
 // Street, and which way Milsom Street runs from there (south); where more of them walk in from (along
 // George Street both ways and up Milsom Street); and how many.
@@ -109,7 +155,7 @@ const GONE = 0, ALIVE = 1, DEAD = 2;
 /** A rugby pitch or cricket field: where its team can turn out (scene x, z), whether scene (x, z) is
  *  on it, when each player was last seen on it (by the host's clock), whether a team is owed for
  *  someone arriving, and when the next one turns out anyway. */
-interface Ground { kind: number; spots: { x: number; z: number }[]; on: (x: number, z: number) => boolean; met: Map<string, number>; owed: boolean; next: number }
+interface Ground { kind: number; spots: { x: number; z: number }[]; on: (x: number, z: number) => boolean; met: Map<string, number>; owed: boolean; next: number; again?: number[] }
 /** A player the naughty boys might go for. */
 /** passive: they've passive mode on (settings.ts), or they're at a narrowboat's tiller or driving a bus or coach, so nobody here goes for them. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
@@ -128,6 +174,12 @@ const featBits = (lk: number) => Math.max(0, Math.round(((lk % 1) - wearing(lk) 
 /** The Gaffer on the run: how he's travelling (0 on foot, 1 a mobility scooter, 2 his van), carried in his look. */
 export const MOUNTS = ["on foot", "on a mobility scooter", "in his van"] as const;
 export const mountOf = (lk: number) => (lk >> 4 === CHAIR ? featBits(lk) & 3 : 0);
+/** Whether someone in this look is a woman (a naughty girl, or one of the Crescent's ladies), for her voice. */
+export const isWoman = (lk: number) => lk >> 4 === GIRL || (lk >> 4 === RESIDENT && (lk & 7) >= 3 && (lk & 7) <= 5);
+/** On a night out, whether one of the crowd will hit another: the girls slap anyone, lads included,
+ *  but a lad never hits a girl. */
+const mayHit = (c: { kind: number }, o: { kind: number }) => c.kind === GIRL || o.kind !== GIRL;
+
 /** How much bigger than a naughty boy someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : lk >> 4 === GIRL ? 0.95 : 1);
 const STRIDE = 9;                          // numbers per naughty boy in a snapshot
@@ -207,6 +259,19 @@ const GEO = {
   arm: box(0.09, 0.56, 0.1).translate(0, -0.28, 0),
   locks: box(0.3, 0.42, 0.08),
   bag: box(0.07, 0.15, 0.2).translate(0, -0.42, 0),
+  // the Crescent's residents: a shirt front and tie, a furled umbrella, hats (a topper, a panama, a
+  // lady's big hat), a long skirt, pearls and a bun; and a hotel guest's bathrobe
+  bib: box(0.13, 0.22, 0.012),
+  tie: box(0.05, 0.26, 0.014),
+  brolly: box(0.05, 0.82, 0.05).translate(0, -1.0, 0),
+  topper: new THREE.CylinderGeometry(0.13, 0.13, 0.26, 14).translate(0, 0.13, 0),
+  topperBrim: new THREE.CylinderGeometry(0.2, 0.2, 0.02, 16),
+  hatCrown: new THREE.CylinderGeometry(0.14, 0.16, 0.12, 14).translate(0, 0.06, 0),
+  longSkirt: box(0.46, 0.66, 0.32),
+  pearls: new THREE.TorusGeometry(0.095, 0.016, 6, 18),
+  bun: new THREE.SphereGeometry(0.08, 10, 8),
+  robe: box(0.5, 0.95, 0.3),
+  belt: box(0.52, 0.05, 0.32),
   // the Gaffer on the run: a mobility scooter, or his van
   scooterBase: box(0.55, 0.12, 1.25),
   scooterSeat: box(0.4, 0.1, 0.4),
@@ -261,8 +326,19 @@ const GIRL_KITS = [
 ];
 const GIRL_HAIR = ["#f0dc9a", "#e8d08a", "#2a1c14", "#5a3a22", "#a0522d", "#1d1d20"].map(lambert);
 const TAN = ["#e8a878", "#dca07a", "#c98a62", "#b57d5c"].map(lambert);
+/**
+ * The Crescent's residents: three gentlemen (a tweed jacket, cords and a flat cap; a navy blazer, cream
+ * trousers and a panama; a morning coat, grey trousers and a topper), three ladies (a long dress and
+ * a big hat) and a guest from the hotel in his bathrobe. Coat or dress, trousers or cardigan, hat.
+ */
+const RESIDENT_KITS = [
+  ["#6e5c44", "#8a6d3b", "#6e5c44"], ["#1f2a48", "#e8e0c8", "#e6d8a8"], ["#1d1d20", "#6a6a70", "#1d1d20"],
+  ["#3a5a8a", "#f4f4f2", "#f4f4f2"], ["#7a1f3b", "#e8d6c0", "#7a1f3b"], ["#2f5a3a", "#c9b48a", "#c9a45c"],
+  ["#f4f4f2", "#f4f4f2", "#f4f4f2"],
+];
+const GREY_HAIR = ["#b9b6b0", "#8a857c", "#d8d4cc", "#6b4a2b"].map(lambert);
 /** How many kits each kind has (the characters page steps through them). */
-export const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1, GIRL_KITS.length];
+export const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1, GIRL_KITS.length, RESIDENT_KITS.length];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 /** Whether data point (x, y) is inside a ring of points. */
@@ -357,7 +433,7 @@ export class Figure {
     const mesh = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => {
       const o = new THREE.Mesh(g, m); o.position.set(x, y, z);
       o.castShadow = g === GEO.leg || g === GEO.torso || g === GEO.sleeve || g === GEO.head || g === GEO.jersey || g === GEO.sock
-        || g === GEO.bossLeg || g === GEO.bossSleeve || g === GEO.jacket || g === GEO.bareLeg || g === GEO.top;
+        || g === GEO.bossLeg || g === GEO.bossSleeve || g === GEO.jacket || g === GEO.bareLeg || g === GEO.top || g === GEO.longSkirt || g === GEO.robe;
       return o;
     };
     const limbs = (leg: (side: number) => THREE.Object3D[], arm: (side: number) => THREE.Object3D[]) => {
@@ -385,6 +461,39 @@ export class Figure {
         mesh(GEO.strap, top, -0.12, 1.48, 0), mesh(GEO.strap, top, 0.12, 1.48, 0),
         mesh(GEO.cap, hair, 0, 1.61, 0.01), mesh(GEO.locks, hair, 0, 1.43, 0.11));
       this.body.scale.setScalar(sizeOf(look));
+      return;
+    }
+    if (kind === RESIDENT) {
+      // one of the Royal Crescent's residents, out to see you off the lawn
+      const [coat, under, hat] = (RESIDENT_KITS[kit & 7] ?? RESIDENT_KITS[0]).map(lambert), hair = pick(GREY_HAIR);
+      if (kit >= 3 && kit <= 5) {
+        // a lady: a long dress, stockings and court shoes, pearls, her hair up under a big hat, and a handbag to swing
+        limbs(
+          () => [mesh(GEO.bareLeg, skin), mesh(GEO.heel, BLACK)],
+          (side) => [mesh(GEO.sleeve, under), mesh(GEO.hand, skin), ...(side > 0 ? [mesh(GEO.bag, BLACK, 0, -0.2, 0)] : [])]);
+        // her dress showing down the front of an open cardigan (or jacket)
+        this.body.add(mesh(GEO.torso, under, 0, 1.16, 0), mesh(GEO.shirtFront, coat, 0, 1.16, -0.128), mesh(GEO.longSkirt, coat, 0, 0.55, 0),
+          mesh(GEO.pearls, WHITE, 0, 1.38, -0.135), mesh(GEO.cap, hair, 0, 1.62, 0.01), mesh(GEO.bun, hair, 0, 1.62, 0.15),
+          mesh(GEO.bigBrim, hat, 0, 1.73, 0), mesh(GEO.hatCrown, hat, 0, 1.73, 0));
+        return;
+      }
+      if (kit === 6) {
+        // a guest from the hotel, straight out of the spa: a white bathrobe and slippers
+        limbs(
+          () => [mesh(GEO.bareLeg, skin), mesh(GEO.shoe, WHITE)],
+          () => [mesh(GEO.sleeve, coat), mesh(GEO.hand, skin)]);
+        this.body.add(mesh(GEO.robe, coat, 0, 1.0, 0), mesh(GEO.belt, CREAM, 0, 0.98, 0), mesh(GEO.cap, hair, 0, 1.62, 0));
+        return;
+      }
+      // a gentleman: his coat, a shirt and tie, polished shoes, a furled umbrella, and his hat
+      limbs(
+        () => [mesh(GEO.leg, under), mesh(GEO.shoe, kit === 0 ? lambert("#4a2e1c") : BLACK)],
+        (side) => [mesh(GEO.sleeve, coat), mesh(GEO.hand, skin), ...(side > 0 ? [mesh(GEO.brolly, BLACK)] : [])]);
+      this.body.add(mesh(GEO.torso, coat, 0, 1.16, 0), mesh(GEO.bib, WHITE, 0, 1.35, -0.128),
+        mesh(GEO.tie, kit === 2 ? lambert("#8a8d93") : lambert("#7a1f2b"), 0, 1.3, -0.136), mesh(GEO.cap, hair, 0, 1.62, 0));
+      if (kit === 0) this.body.add(mesh(GEO.cap, hat, 0, 1.65, 0.01), mesh(GEO.brim, hat, 0, 1.69, -0.14));
+      else if (kit === 1) this.body.add(mesh(GEO.hatCrown, hat, 0, 1.7, 0), mesh(GEO.bucketBrim, hat, 0, 1.71, 0), mesh(GEO.bucketBand, BLACK, 0, 1.73, 0));
+      else this.body.add(mesh(GEO.topper, hat, 0, 1.7, 0), mesh(GEO.topperBrim, hat, 0, 1.71, 0));
       return;
     }
     if (kind === CHAIR) {
@@ -564,8 +673,8 @@ export class Figure {
     this.legL.rotation.x = this.mount === 1 ? -1.2 : swing; this.legR.rotation.x = this.mount === 1 ? -1.2 : -swing;
     this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
     this.armR.rotation.z = 0;
-    if (this.kind === CRICKET || this.kind === CHAIR) {
-      // carrying the bat: it swings less, held a little out to the side
+    if (this.kind === CRICKET || this.kind === CHAIR || this.kind === RESIDENT) {
+      // carrying the bat (or an umbrella, or a handbag): it swings less, held a little out to the side
       this.armR.rotation.x = swing * 0.3 + 0.15;
       this.armR.rotation.z = 0.12;
       // a swing of the bat: up high and down across
@@ -617,12 +726,14 @@ class NaughtyBoy {
   crowd = false;                               // host: one of the night out's crowd
   leaving = false;                             // host: and off home at the end of the night
   foe = -1;                                    // host: which of the others he's fighting, or -1
+  scarper: Siren | null = null;                // host: the siren he's running from
   fightT = 0;                                  // host: how long he's been at it
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
   seenTarget = "";                             // who he was after when last drawn, to hear him shout
   shoutT = 0;                                  // seconds till he shouts again mid-chase
   hopping = false;                             // in the air, as drawn
+  fled = false;                                // scarpering from a siren, as last drawn
 
   constructor(readonly i: number) {}
   /** Who's bleeding, for the blood trails. */
@@ -638,12 +749,15 @@ export class NaughtyBoys {
   private pitches = new WeakMap<GameMap, Ground[]>();
   private spawnT = 5;
   private fieldT = 1;
+  /** Host: the police cars going with their sirens on (game.ts sets them each frame). */
+  sirens: Siren[] = [];
   private clock = 0;
   // Called on every client, to play sounds. voice is a number to give each naughty boy his own voice.
   /** A naughty boy throws a punch. */
   onSwing: (x: number, y: number, z: number, voice: number) => void = () => {};
-  /** A naughty boy spots someone and shouts. kind is NAUGHTY, RUGBY or CRICKET; the posh ones say line. */
-  onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string, scared?: boolean) => void = () => {};
+  /** A naughty boy spots someone and shouts. kind is NAUGHTY, RUGBY or CRICKET; the posh ones say line.
+   *  woman: in a woman's voice (a naughty girl, or one of the Crescent's ladies). */
+  onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string, scared?: boolean, woman?: boolean) => void = () => {};
   /** A naughty boy's foot comes down (speed in m/s). */
   onStep: (x: number, y: number, z: number, speed: number) => void = () => {};
   /**
@@ -656,7 +770,7 @@ export class NaughtyBoys {
     for (let i = 0; i < SLOTS; i++) {
       const c = new NaughtyBoy(i);
       this.list.push(c);
-      scene.add(c.fig.root);
+      scene.add(tag(c.fig.root, "people"));
     }
   }
 
@@ -683,11 +797,24 @@ export class NaughtyBoys {
         continue;
       }
       if (c.state !== ALIVE) continue;
-      this.think(c, dt, prey);
+      // a siren coming: drop everything and scarper; otherwise about their business
+      c.scarper = this.heard(c);
+      if (c.scarper) { c.target = ""; c.foe = -1; c.rush = false; c.calmT = Math.max(c.calmT, SIREN_CALM); }
+      else this.think(c, dt, prey);
+      // one of the Crescent's residents, back where he was standing with nobody about: back indoors
+      if (c.kind === RESIDENT && !c.keep && !c.target && !this.lawnBusy && Math.hypot(c.x - c.baseX, c.z - c.baseZ) < 2.5) { c.state = GONE; continue; }
       // wander off the map's edge of interest: too far from anyone to matter
       if (!c.keep && !c.target && c.foe < 0 && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
       this.move(c, i, dt, prey, punch);
     }
+  }
+
+  /** The nearest siren he can hear, if he's one to run from it. */
+  private heard(c: NaughtyBoy): Siren | null {
+    if (!this.sirens.length || !SCARPERS.has(c.kind) || c.meek || c.bolt) return null;
+    let best: Siren | null = null, bd = SIREN_HEARD;
+    for (const s of this.sirens) { const d = Math.hypot(s.x - c.x, s.z - c.z); if (d < bd) { bd = d; best = s; } }
+    return best;
   }
 
   private sees(c: NaughtyBoy, t: Target, dist: number) {
@@ -716,6 +843,8 @@ export class NaughtyBoys {
       const t = alive.find((p) => p.id === c.target);
       const dist = t ? Math.hypot(t.x - c.x, t.z - c.z) : Infinity;
       if (!t || dist > c.team.lose || (c.chaseT > TIRED_SECS && dist > 12)) { c.target = ""; c.calmT = CALM_SECS; return; }
+      // the Crescent's residents see you off their lawn, and no further
+      if (c.kind === RESIDENT && this.offLawn(t.x, t.z) > LAWN_LEASH) { c.target = ""; c.calmT = 4; return; }
       if (this.sees(c, t, dist)) { c.blindT = 0; c.lastX = t.x; c.lastZ = t.z; }
       else if ((c.blindT += every) > BLIND_SECS) { c.target = ""; c.calmT = CALM_SECS; }
       return;
@@ -724,10 +853,13 @@ export class NaughtyBoys {
     let best: Target | null = null, bd = c.crowd ? CROWD_SPOT : c.team.spot;
     for (const t of alive) {
       const d = Math.hypot(t.x - c.x, t.z - c.z);
+      if (c.kind === RESIDENT && (d >= bd || this.offLawn(t.x, t.z) > LAWN_NEAR)) continue;   // only trespassers
       if (d < bd && this.sees(c, t, d)) { bd = d; best = t; }
     }
     if (!best) {
       if (c.keep) return;
+      // the residents go back to their front doors
+      if (c.kind === RESIDENT) { c.homeX = c.baseX; c.homeZ = c.baseZ; return; }
       // the teams don't wait to be found: they wander over to whoever's nearest their pitch, and
       // go back to it when there's no one about
       if (c.kind !== NAUGHTY) {
@@ -754,6 +886,13 @@ export class NaughtyBoys {
     if (scared) {
       const ax = c.x - scared.x, az = c.z - scared.z, al = Math.hypot(ax, az) || 1;
       dirX = ax / al; dirZ = az / al; spd = c.team.run;
+    } else if (c.scarper) {
+      // away from the police car, and off to the side of the way it's going, out of its road
+      const s = c.scarper, ax = c.x - s.x, az = c.z - s.z, al = Math.hypot(ax, az) || 1, sv = Math.hypot(s.vx, s.vz);
+      let ux = ax / al, uz = az / al;
+      if (sv > 2) { const side = (ax * s.vz - az * s.vx) > 0 ? 1 : -1; ux += (s.vz / sv) * side * 0.6; uz -= (s.vx / sv) * side * 0.6; }
+      const ul = Math.hypot(ux, uz) || 1;
+      dirX = ux / ul; dirZ = uz / ul; spd = c.team.run * 1.1;
     } else if (t) {
       const dx = t.x - c.x, dz = t.z - c.z, dist = Math.hypot(dx, dz);
       if (dist < c.team.reach && Math.abs(t.y - c.y) < 1.4 && c.blindT === 0) {
@@ -767,7 +906,7 @@ export class NaughtyBoys {
         const gx = c.lastX - c.x, gz = c.lastZ - c.z, gl = Math.hypot(gx, gz);
         if (gl > 0.6) { dirX = gx / gl; dirZ = gz / gl; spd = c.team.run; }
       }
-    } else if (c.foe >= 0 && this.list[c.foe]?.state === ALIVE) {
+    } else if (c.foe >= 0 && this.list[c.foe]?.state === ALIVE && mayHit(c, this.list[c.foe])) {
       // going for one of the others: square up, then lay into them
       const o = this.list[c.foe], dx = o.x - c.x, dz = o.z - c.z, dist = Math.hypot(dx, dz);
       if (dist < c.team.reach && Math.abs(o.y - c.y) < 1.4) {
@@ -783,7 +922,7 @@ export class NaughtyBoys {
       const hx = c.homeX - c.x, hz = c.homeZ - c.z, hd = Math.hypot(hx, hz);
       if (c.rush && hd < 2) c.rush = false;
       if (hd > (c.kind === LADDER || c.rush ? 0.8 : c.crowd ? 2 : HOME_RANGE)) { dirX = hx / hd; dirZ = hz / hd; spd = c.rush ? c.team.run * c.pace : STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
-      else if (c.kind === LADDER) { /* up the ladder */ }
+      else if (c.kind === LADDER || c.meek) { /* up the ladder, or stood with his hands up where he can be cuffed */ }
       else {
         if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < (c.crowd ? 0.12 : 0.35); c.wanderYaw = Math.random() * Math.PI * 2; }
         if (c.wanderGo) { dirX = -Math.sin(c.wanderYaw); dirZ = -Math.cos(c.wanderYaw); spd = STROLL; }
@@ -916,12 +1055,50 @@ export class NaughtyBoys {
     return out;
   }
 
-  /** The teams turn out at a pitch when someone walks on to it, and every few minutes while anyone's still there. */
+  // ---- host: the Royal Crescent's lawn -------------------------------------------------------
+
+  private lawn: Ground | null = null;
+  /** Whether anyone's near the lawn just now (looked at once a second). */
+  private lawnBusy = false;
+
+  /** How far scene (x, z) is off the Crescent's lawn: 0 on it (and everywhere, on another map). */
+  private offLawn(x: number, z: number) {
+    if (this.map.d.id !== LAWN.map) return 0;
+    const y = -z, r = LAWN.ring;
+    if (inRing(r, x, y)) return 0;
+    let best = Infinity;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [ax, ay] = r[j], [bx, by] = r[i], dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+      const f = l ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l)) : 0;
+      best = Math.min(best, Math.hypot(ax + dx * f - x, ay + dy * f - y));
+    }
+    return best;
+  }
+
+  /** The lawn, as a ground the residents turn out to, once someone's in sight of it (so the squares
+   *  round it are in, for their spots to be found): all over the lawn, and on their doorsteps. Null on
+   *  another map, or till then. */
+  private lawnGround(alive: Target[]): Ground | null {
+    if (this.lawn || this.map.d.id !== LAWN.map) return this.lawn;
+    if (!alive.some((t) => this.offLawn(t.x, t.z) < LAWN_SEEN)) return null;
+    // across the lawn: partway out from its middle towards every few points of its fence
+    const r = LAWN.ring, mx = r.reduce((a, p) => a + p[0], 0) / r.length, my = r.reduce((a, p) => a + p[1], 0) / r.length;
+    const across = [[mx, my], ...r.filter((_, i) => i % 3 === 0).flatMap(([x, y]) => [0.45, 0.8].map((f) => [mx + (x - mx) * f, my + (y - my) * f]))]
+      .filter(([x, y]) => inRing(r, x, y));
+    const spots = [...across, ...LAWN.doors].flatMap(([x, y]) => { const s = clearSpot(this.map, x, -y, 4); return s ? [{ x: s[0], z: s[1] }] : []; });
+    if (!spots.length) return null;
+    return this.lawn = { kind: RESIDENT, spots, on: (x, z) => this.offLawn(x, z) < LAWN_SEEN, met: new Map(), owed: false, next: 0, again: LAWN_AGAIN };
+  }
+
+  /** The teams turn out at a pitch when someone walks on to it, and every few minutes while anyone's
+   *  still there; and the Crescent's residents are out on their lawn while anyone's in sight of it,
+   *  more of them every minute or so while someone's on it. */
   private turnOut(everyone: Target[], alive: Target[]) {
     const busy = new Set<Ground>();
+    const lawn = this.lawnGround(alive);
     for (const t of alive) {
       for (const area of [this.map, ...this.map.tilesNear(t.x, t.z, PITCH_NEAR)]) {
-        for (const g of this.pitchesIn(area)) {
+        for (const g of area === this.map && lawn ? [...this.pitchesIn(area), lawn] : this.pitchesIn(area)) {
           if (!g.on(t.x, t.z)) continue;
           const last = g.met.get(t.id);
           if (last === undefined || this.clock - last > TEAM_BACK) g.owed = true;   // just arrived
@@ -930,16 +1107,26 @@ export class NaughtyBoys {
         }
       }
     }
+    this.lawnBusy = !!lawn && busy.has(lawn);
+    const trespass = !!lawn && alive.some((t) => this.offLawn(t.x, t.z) === 0);
     for (const g of busy) {
       if (!g.owed && this.clock < g.next) continue;
       const free = this.list.filter((c) => c.state === GONE).length - 6;   // leave a few for the jobs
       const taken = this.list.filter((c) => c.state === ALIVE);
-      const near = g.spots.filter((s) => !everyone.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < TEAM_CLEAR)
-        && !taken.some((c) => Math.hypot(c.baseX - s.x, c.baseZ - s.z) < 12));
+      const residents = g.kind === RESIDENT;
+      const out = residents ? taken.filter((c) => c.kind === RESIDENT).length : 0;
+      // the residents: the first few are out while anyone's about, and only someone on the lawn brings more
+      if (residents && (out >= LAWN_MOST || (out && !trespass))) continue;
+      const near = g.spots.filter((s) => !everyone.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < (residents ? 15 : TEAM_CLEAR))
+        && (residents || !taken.some((c) => Math.hypot(c.baseX - s.x, c.baseZ - s.z) < 12)));
       if (free <= 0 || !near.length) continue;    // no room just now: try again in a moment
       g.owed = false;
-      g.next = this.clock + TEAM_AGAIN[0] + Math.random() * (TEAM_AGAIN[1] - TEAM_AGAIN[0]);
-      this.gather(pick(near), g.kind, Math.min(free, 3 + Math.floor(Math.random() * 3)));
+      const again = g.again ?? TEAM_AGAIN;
+      g.next = this.clock + again[0] + Math.random() * (again[1] - again[0]);
+      const size = Math.min(free, 3 + Math.floor(Math.random() * 3), residents ? LAWN_MOST - out : 99);
+      // the residents each stand in a spot of their own, each dressed their own way
+      if (residents) for (let k = 0; k < size; k++) this.gather(pick(near), g.kind, 1);
+      else this.gather(pick(near), g.kind, size);
     }
   }
 
@@ -1038,8 +1225,10 @@ export class NaughtyBoys {
     const a = idle.length > 1 ? pick(idle) : null;
     const b = a && idle.filter((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 12).sort((p, q) => Math.hypot(p.x - a.x, p.z - a.z) - Math.hypot(q.x - a.x, q.z - a.z))[0];
     if (!a || !b) { this.fightT = 3; return; }
-    a.foe = b.i; b.foe = a.i; a.fightT = b.fightT = 0;
-    const mate = Math.random() < 0.35 ? idle.find((o) => o !== a && o !== b && Math.hypot(o.x - b.x, o.z - b.z) < 8) : undefined;
+    // a girl will lay into a lad, but a lad never lifts a hand to a girl: he just stands there and takes it
+    if (mayHit(a, b)) { a.foe = b.i; a.fightT = 0; }
+    if (mayHit(b, a)) { b.foe = a.i; b.fightT = 0; }
+    const mate = Math.random() < 0.35 ? idle.find((o) => o !== a && o !== b && mayHit(o, a) && Math.hypot(o.x - b.x, o.z - b.z) < 8) : undefined;
     if (mate) { mate.foe = a.i; mate.fightT = 0; }
   }
 
@@ -1064,7 +1253,7 @@ export class NaughtyBoys {
 
   /** Host: one of the crowd lands one on another, who has a go back if they weren't already. */
   private brawlHit(c: NaughtyBoy, o: NaughtyBoy) {
-    if (o.foe < 0 && !o.target) { o.foe = c.i; o.fightT = 0; }
+    if (o.foe < 0 && !o.target && mayHit(o, c)) { o.foe = c.i; o.fightT = 0; }
     this.damage(o.i, o.gen, c.team.hit, { x: c.x, z: c.z });
   }
 
@@ -1105,7 +1294,9 @@ export class NaughtyBoys {
   }
 
   private gather(spot: { x: number; z: number }, kind: number, size: number) {
-    if (inSafeZone(this.map, spot.x, spot.z)) return;
+    // the Crescent's residents live there, so a school's safe zone (St Andrew's is just behind the
+    // Crescent, and takes in every front door) doesn't keep them indoors
+    if (kind !== RESIDENT && inSafeZone(this.map, spot.x, spot.z)) return;
     const gang = look(kind, Math.floor(Math.random() * KITS[kind]));
     for (let n = 0; n < size; n++) {
       const c = this.list.find((o) => o.state === GONE);
@@ -1287,7 +1478,7 @@ export class NaughtyBoys {
   /** Who he's after, as everyone else is told: a player's id, or "@" and the number of whichever of
    *  the others he's fighting (an older page just finds no player by that name). */
   private aim(c: NaughtyBoy) {
-    return c.target || (c.foe >= 0 ? `@${c.foe}` : "");
+    return c.scarper ? SCARPER : c.target || (c.foe >= 0 ? `@${c.foe}` : "");
   }
 
   // ---- everyone else: the host's updates ------------------------------------------------------
@@ -1346,16 +1537,33 @@ export class NaughtyBoys {
         if (c.punches > c.seenPunches && c.state === ALIVE) { c.punchAnim = 1; this.onSwing(c.dx, c.dy, c.dz, c.voice); }
         c.seenPunches = c.punches;
       }
-      const after = c.state === ALIVE ? (host ? this.aim(c) : c.target) : "";
+      let after = c.state === ALIVE ? (host ? this.aim(c) : c.target) : "";
+      // scarpering from a siren: one in three shouts a warning as they go, high and scared
+      const fled = after === SCARPER;
+      if (fled) {
+        if (!c.fled && c.i % 3 === 0) {
+          const own = FEDS[c.kind === GIRL ? 1 : 0], said = own[Math.floor(Math.random() * own.length)];
+          c.fig.say(said);
+          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, true, isWoman(c.look));
+        }
+        after = "";
+      }
+      c.fled = fled;
       // he shouts when he spots you, and keeps shouting all the way through the chase. The posh ones
       // say whole sentences, so they take turns and leave longer between them.
       const posh = c.kind !== NAUGHTY;
       if (after && posh && !c.seenTarget) c.shoutT = Math.random() * 1.5;
       if (after && (!c.seenTarget && !posh || (c.shoutT -= dt) <= 0)) {
-        const said = posh ? line(c.kind) : "";
+        const said = posh ? line(c.kind, c.look & 7) : "";
         if (said) c.fig.say(said);
-        this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said);
+        this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, false, isWoman(c.look));
         c.shoutT = posh ? 3.5 + Math.random() * 4 : 1.8 + Math.random() * 2.5;
+      }
+      // one of the Crescent's residents, done seeing you off: a parting word
+      if (!after && c.seenTarget && c.state === ALIVE && c.kind === RESIDENT) {
+        const said = stayOff();
+        c.fig.say(said);
+        this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, false, isWoman(c.look));
       }
       c.seenTarget = after;
       c.punchAnim = Math.max(0, c.punchAnim - dt / 0.3);
@@ -1369,7 +1577,7 @@ export class NaughtyBoys {
         if (c.state === DEAD && was <= OFF_SECS && fleeing) {
           const said = legIt(c.kind);
           fig.say(said);
-          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, true);
+          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said, true, isWoman(c.look));
         }
         const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, going ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
         fig.fade(c.state === DEAD ? (OUT_SECS - c.deadAnim) / FADE_SECS : 1);
