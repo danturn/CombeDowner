@@ -135,6 +135,8 @@ def main():
     jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
+        # (the children read it too, so a narrow run stays narrow all the way down)
+        os.environ["CD_JOBS"] = str(jobs)
     shard = None        # k/n: build only the k-th of n shares of the squares, for several machines at once
     if "--shard" in args:
         k = args.index("--shard"); shard = tuple(int(v) for v in args[k + 1].split("/")); del args[k:k + 2]

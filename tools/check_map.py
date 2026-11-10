@@ -1,6 +1,6 @@
 """Check a built map (and the squares round it) against the scenery rules, and say where it breaks them.
 
-Usage: python3 -I tools/check_map.py <map> [web/public/maps] [--tiles ti,tj ...] [--all]
+Usage: python3 -I tools/check_map.py <map> [web/public/maps] [--tiles ti,tj ...] [--all] [--jobs n]
 
 The rules it checks, each with the worst places listed (data coordinates, metres east and north of
 the map centre), so a rule that fails can be looked at in the game and fixed in the tools, not
@@ -81,7 +81,11 @@ VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "l
 
 
 def main():
+    global JOBS
     args = sys.argv[1:]
+    JOBS = int(os.environ.get("CD_JOBS") or 0) or os.cpu_count() or 1
+    if "--jobs" in args:
+        k = args.index("--jobs"); JOBS = int(args[k + 1]); del args[k:k + 2]
     map_id = args[0]
     root = args[1] if len(args) > 1 and not args[1].startswith("--") else "web/public/maps"
     files = [os.path.join(root, f"{map_id}.json")]
@@ -397,7 +401,7 @@ def main():
     # the files are checked a few at once (each on its own), and their failures gathered in order
     global _check
     _check = check
-    with multiprocessing.get_context("fork").Pool(min(len(files), os.cpu_count() or 1)) as pool:
+    with multiprocessing.get_context("fork").Pool(min(len(files), JOBS)) as pool:
         for found in pool.imap(_check_one, files):
             for rule, score, where, what in found:
                 totals[rule] += 1

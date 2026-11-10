@@ -210,7 +210,7 @@ def each(fn, items):
     already build several at once). Each item is worked out on its own, so it comes out the same."""
     global _job
     items = list(items)
-    cores = os.cpu_count() or 1
+    cores = int(os.environ.get("CD_JOBS") or 0) or os.cpu_count() or 1
     if TILE is not None or cores < 2 or len(items) < 200: return [fn(x) for x in items]
     _job = lambda i: fn(items[i])
     with multiprocessing.get_context("fork").Pool(cores) as pool:
@@ -2403,7 +2403,7 @@ if KEEP:
     kept_tree = shapely.STRtree(kept_polys)
 if lidar is not None and TILE is None:
     lidar.preload(A.bbox)
-    lidar.workers = os.cpu_count() or 1
+    lidar.workers = int(os.environ.get("CD_JOBS") or 0) or os.cpu_count() or 1
 if STORE is not None and not STORE.record:
     roof_levels = [STORE.get_roofs(poly) if poly.area > 80 else None for poly, p in cand]
 else:
