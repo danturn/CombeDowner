@@ -4450,10 +4450,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     pave = pave.difference(plaza)
     frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
                                    standing)
-    if seating:
+    here = [g.intersection(square) for g in seating if g.intersects(square)]
+    here = [g for g in here if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0.5]
+    if here:
         # (a tree or shrub among the tables stands in its own bed)
         beds = [Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants]
-        tables = unary_union(seating).intersection(square).difference(unary_union([road, pave, path_faces, *beds]))
+        tables = unary_union(here).difference(unary_union([road, pave, path_faces, *beds]))
         tables = tables.difference(unary_union([face_shape(f).buffer(0) for f in part["faces"]
                                                 if f["cls"] == "building" and len(f["xy"]) > 2] or [Polygon()]))
         if tables.area > 0.5:
