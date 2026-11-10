@@ -5,12 +5,12 @@ across inside a force field, built from real open data: Overture Maps buildings,
 woods and water on Environment Agency lidar terrain. It starts in Combe Down, round the Hadley
 Arms, and everything you can do there you can do anywhere in Bath.
 
-**Play:** https://spencereholtaway.github.io/CombeDowner/
+**Play:** https://combedowner.com/
 
-**Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html, everyone you meet on
+**Who's who:** https://combedowner.com/characters.html, everyone you meet on
 the streets and down the mines, and every car, bus, train, balloon, boat and ride in their colours, on a turntable.
 
-**What's what:** https://spencereholtaway.github.io/CombeDowner/whatswhat.html, the set pieces,
+**What's what:** https://combedowner.com/whatswhat.html, the set pieces,
 landmarks and vehicles, in full, without textures or as wireframes, and in AR on an iPhone or iPad.
 
 It's paintball by default, peer to peer with no game server, and ships no images or sound files:
@@ -278,8 +278,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Still being tried out**: the strange objects, the zones and the team challenges below are switched
   off on this site for now, so here the whole map is open, every way to get about runs from the start,
   and none of the three shows anywhere. Tick Progression in Settings (Play) to try them, and it's kept
-  for next time; in a game with others, the host's say counts for the room. They're on to start with at
-  danturn.github.io/CombeDowner and on a copy run locally. `?progression=1` or `0` in the address
+  for next time; in a game with others, the host's say counts for the room. They're on to start with on
+  the test copies and on a copy run locally. `?progression=1` or `0` in the address
   switches them for one visit.
 - **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
@@ -534,7 +534,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Map markers**: click the big map or press G (or the middle mouse button) at something to put your marker there; everyone sees
   it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
   checkpoint, a minigame, a strange structure, a bus stop or a cable car station, and the
-  marker goes exactly on it and says what it is ("Dan marked Push the Bus"); a pub opens its card,
+  marker goes exactly on it and says what it is ("Ada marked Push the Bus"); a pub opens its card,
   with Mark it on it; clicking a bunch of jobs
   zooms in on them. In the street a marker on something is a ring of light that fits round that
   thing, so you can see what was picked when you get there. Each player's markers and arrow are in
