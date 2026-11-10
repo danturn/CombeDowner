@@ -174,16 +174,17 @@ export const LANCETS = 4;
 let atlas: THREE.DataTexture | null = null;
 /**
  * The churches' windows, one slot each across the texture: LANCETS tall pointed lancets in their
- * stone surrounds, each slot one bay of wall and one row of windows (world.ts), then a rose window
- * filling its slot. Alpha says what each texel is: 0 the wall round the window, a half the dressed
+ * stone surrounds, the glass from a tenth to nine tenths of the slot's height and a little over a
+ * quarter of its width (world.ts maps a slot to one bay of wall and the band its row of windows sits
+ * in), then a rose window filling its slot. Alpha says what each texel is: 0 the wall round the window, a half the dressed
  * stone of its surround (tinted like the wall), whole the glass (in its own colours, lit after dark).
  */
 export function churchGlass(): THREE.DataTexture {
   if (atlas) return atlas;
-  const SW = 256, SH = 512, slots = LANCETS + 1, [c, g] = TX.canvas(SW * slots, SH);
+  const SW = 512, SH = 512, slots = LANCETS + 1, [c, g] = TX.canvas(SW * slots, SH);
   const STONE = "rgba(240,232,214,0.5)";
   for (let k = 0; k < LANCETS; k++) {
-    const x0 = k * SW + SW * 0.27, x1 = k * SW + SW * 0.73, w = x1 - x0, foot = SH * 0.88, spring = SH * 0.3, apex = SH * 0.1;
+    const x0 = k * SW + SW * 0.36, x1 = k * SW + SW * 0.64, w = x1 - x0, foot = SH * 0.9, apex = SH * 0.1, spring = apex + w * 0.9;
     const arch = (i: number) => {
       g.beginPath();
       g.moveTo(x0 - i, foot); g.lineTo(x0 - i, spring);
@@ -192,16 +193,14 @@ export function churchGlass(): THREE.DataTexture {
       g.lineTo(x1 + i, foot); g.closePath();
     };
     g.fillStyle = STONE;
-    arch(14); g.fill();
-    g.fillRect(x0 - 26, foot, w + 52, 16);   // the sill
+    arch(12); g.fill();
+    g.fillRect(x0 - 22, foot, w + 44, 14);   // the sill
     g.save(); arch(0); g.clip(); g.clearRect(k * SW, 0, SW, SH);
     paintLight(g, x0, apex, w, foot - apex, k + 1);
     g.restore();
   }
-  // the rose: drawn in a circle, squashed to the slot's shape (a slot is twice as tall as wide, and
-  // world.ts maps the rose to it square)
   g.save();
-  g.translate(LANCETS * SW + SW / 2, SH / 2); g.scale(1, 2);
+  g.translate(LANCETS * SW + SW / 2, SH / 2);
   g.fillStyle = STONE; g.beginPath(); g.arc(0, 0, SW * 0.5, 0, Math.PI * 2); g.fill();
   g.beginPath(); g.arc(0, 0, SW * 0.44, 0, Math.PI * 2); g.clip(); g.clearRect(-SW, -SH, 2 * SW, 2 * SH);
   paintRose(g, 0, 0, SW * 0.44);

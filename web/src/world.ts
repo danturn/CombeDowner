@@ -422,10 +422,11 @@ function anyWalls(kind: TX.WallKind) {
       vec2 gdx = dFdx(vMapUv) * vec2(1.0 / ${slots}, 1.0), gdy = dFdy(vMapUv) * vec2(1.0 / ${slots}, 1.0);
       if (vWin > 0.08 && vWin < 0.75) {
         if (vWin > 0.33) {
-          // each bay and row its own lancet, so a row of windows isn't all the one picture
-          vec2 cell = floor(vMapUv);
-          float pickL = mod(cell.x + 3.0 * cell.y, ${lancets});
+          // each bay its own lancet, so a row of windows isn't all the one picture
+          float pickL = mod(floor(vMapUv.x), ${lancets});
           glass = textureGrad(glassMap, vec2((pickL + fract(vMapUv.x)) / ${slots}, fract(vMapUv.y)), gdx, gdy);
+          // (a row's own band only: above and below it is plain wall)
+          glass.a *= step(0.0, vMapUv.y) * step(vMapUv.y, 1.0);
         } else {
           vec2 ru = clamp(vMapUv, 0.0, 1.0);
           glass = textureGrad(glassMap, vec2((${lancets} + ru.x) / ${slots}, ru.y), gdx, gdy);
@@ -2602,7 +2603,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // (stock brick's texture has its colour already: mappers' "brown" for it would turn it to mud)
     const wallCol = tinted(pick(WALL_TINTS[surf], hash(bi * 3 + 1)), b.wc, surf === "y" ? 0.25 : 0.5);
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
-    const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
+    const big = b.c === "institution" || b.c === "flats", floor = big ? 3.5 : 2.9;
+    // a church's lancets are all one size, bigger on a bigger church, with plenty of wall between
+    const lancet = Math.min(1.5, Math.max(0.8, b.h / 6.5)), bay = church ? 4.2 * lancet : big ? 4.6 : 3.4;
     const roofCol = tinted(pick(ROOF_TINTS[b.rc ?? ROOF_USUAL] ?? ROOF_TINTS[ROOF_USUAL], hash(bi * 5 + 2)), b.rk);
     // windows sit at the same height on every storey, the top row just under the eaves. On a
     // slope the walls start from the lowest ground, but storeys are counted from the ground
@@ -2631,12 +2634,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         // of that and the eaves, plain wall above (a gable, or the higher house in a stepped row)
         const za = b.rm ? b.rm.z[ri]?.[2 * i] : undefined, zb = b.rm ? b.rm.z[ri]?.[2 * i + 1] : undefined;
         const eave = za !== undefined && zb !== undefined ? Math.max(base + 0.5, Math.min(eaveAll, za - Z0, zb - Z0)) : eaveAll;
-        // a church's lancets are fitted to each wall in whole rows, from the highest ground under the
-        // church (so none is buried on a slope) up to that wall's eaves: as many rows as fit, and none
-        // on a wall too low for one, rather than a row cut off
-        const sill = ground + (b.dz ?? 0), rows = church ? (eave - sill < 3 ? 0 : Math.max(1, Math.round((eave - sill) / 6.5))) : 1;
-        const org = church ? sill : ground + lift, sto = church && rows ? (eave - sill) / rows : storey;
-        const glazed = n > 0 && rows > 0;
+        const org = ground + lift, sto = storey;
         const v0 = (base - org) / sto;
         const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
         const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
@@ -2668,7 +2666,38 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           } else facing(plain, P(u0, eave), P(u1, eave), P(u1, zb - Z0), P(u0, za - Z0), out, [u0, v1], [u1, v1], [u1, vt(zb - Z0)], [u0, vt(za - Z0)], wallCol);
         }
         const top = Math.min(eave, org + sto);
-        if (!glazed) quad(plain, u0, u1, base, eave, v0, v1);
+        if (church && n > 0) {
+          // one row of lancets along the wall, sills well up from the highest ground under the church
+          // (none buried on a slope) and clear of the eaves; a tall, long wall has a second, smaller
+          // row high up, as a clerestory, and a tower one window near the top. Each row's quad maps a
+          // lancet's slot (stainedglass.ts: the glass from a tenth to nine tenths of it) on to just the
+          // band it sits in, and a wall too low for a whole window has none
+          const LH = 3.2 * lancet, gap = 0.6 * lancet, low = ground + (b.dz ?? 0) + 1.2 * lancet, H = eave - ground - (b.dz ?? 0);
+          const tower = len < 8 && H > 10;
+          const bands: [number, number, number][] = [];   // bottom and top of a row's glass, and its scale across
+          if (tower) bands.push([eave - gap - LH, eave - gap, 1]);
+          else if (low + LH <= eave - gap) {
+            bands.push([low, low + LH, 1]);
+            if (H >= 11 && len >= 10 && low + LH + gap + 0.7 * LH <= eave - gap) bands.push([eave - gap - 0.7 * LH, eave - gap, 1 / 0.7]);
+          }
+          const doors = blank.sort((x, y) => x[0] - y[0]);
+          // the wall split at heights between the rows, each piece mapped to its own row
+          const cuts = [base, ...bands.slice(1).map((r, k) => (bands[k][1] + r[0]) / 2), eave];
+          for (let k = 0; k < cuts.length - 1; k++) {
+            const [g0, g1, wide] = bands[k] ?? [0, 1, 1];
+            const s = (g1 - g0) / 0.8, o = g0 - 0.1 * s, ha = cuts[k], hb = cuts[k + 1];
+            const piece = (g: Geo, ua: number, ub: number) => facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out,
+              [ua * wide, (ha - o) / s], [ub * wide, (ha - o) / s], [ub * wide, (hb - o) / s], [ua * wide, (hb - o) / s], wallCol);
+            if (!bands.length) { piece(plain, u0, u1); continue; }
+            let u = u0;
+            for (const [ua, ub] of k === 0 ? doors : []) {
+              if (ua > u) piece(walls, u, ua);
+              if (ub > Math.max(u, ua)) piece(plain, Math.max(u, ua), ub);
+              u = Math.max(u, ub);
+            }
+            if (u < u1) piece(walls, u, u1);
+          }
+        } else if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
         else if (!blank.length || top <= base) quad(walls, u0, u1, base, eave, v0, v1);
         else {
           blank.sort((x, y) => x[0] - y[0]);
