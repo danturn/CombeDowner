@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **Spotted faults, second set (branch `claude/spots-2`, off `claude/spotted-faults`):** Orange
+  Grove's road edges over the sky, Westgate Street's shops in a pit, road patches in Milsom and New
+  Bond Streets, Walcot Street's façade slits and grass fronts, the wall before Saracen Street's pub,
+  George Street's pavement. Touches `tools/partition/` and `tools/check_map.py`; not the squares'
+  sides (`claude/square-edges-c`) or the slice keys (`claude/slice-keys`).
+
 - **Three map branches merged, waiting for Dan (branch `claude/map-merge`):** `claude/map-fixes`
   (checks rules 39-45, walls follow the ground, hairline needles off pavements and streets, set
   pieces clear the map's paving), `claude/stable-ids` (edges named from their own geometry,
