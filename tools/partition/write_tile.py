@@ -4558,6 +4558,13 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # carriageway the partition laid where no vehicle street runs is a square's paving, not a road
     own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
+    # (a road shut to traffic by day is a shopping street too: its pavements run to the shop fronts)
+    shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing)
+    if not shut.is_empty:
+        shut = shut.intersection(square).difference(unary_union([road, plaza, path_faces]))
+        if T is not None:
+            shut = shut.difference(unpaved_ground(shut, T, green if green is not None else Polygon()))
+        pave = pave.union(shut)
     buildings = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
     flights = unary_union([LineString([q[:2] for q in r["p"]]).buffer(way_width(r) * 0.95 / 2, cap_style="flat")
                            for r in rd if _drawn_flight(r, ground)] or [Polygon()])
@@ -5308,7 +5315,7 @@ def carry_pedestrian(rd, old):
     return n
 
 
-CARRIED = {"bu": ("pedestrian", "service"), "pr": tuple(GAME_PATHS)}
+CARRIED = {"bu": ("pedestrian", "service"), "pr": tuple(GAME_PATHS), "tc": tuple(KERBED) + ("service",)}
 
 
 def carry_flags(rd, old):
@@ -5316,10 +5323,12 @@ def carry_flags(rd, old):
     old records each stretch lies along (most of its length within PEDESTRIAN_NEAR of them), as
     one-way streets take their way: `bu`, a street closed to traffic that buses may use (its bus
     stops are on a road, and the buses called to them drive along it); `pr`, a path along a mapped
-    pier or pontoon (its end out over the water is the jetty's end). Returns how many took each."""
+    pier or pontoon (its end out over the water is the jetty's end); `tc`, the hours a road is shut
+    to traffic (Milsom Street's "10:00-18:00"). Returns how many took each."""
     n = collections.Counter()
     for flag, kinds in CARRIED.items():
-        ways = [LineString([q[:2] for q in r["p"]]) for r in old if r.get(flag) and len(r["p"]) > 1]
+        held = [r for r in old if r.get(flag) and len(r["p"]) > 1]
+        ways = [LineString([q[:2] for q in r["p"]]) for r in held]
         if not ways:
             continue
         tree = STRtree(ways)
@@ -5329,9 +5338,10 @@ def carry_flags(rd, old):
             line = judged_line(r)
             if line.length < 1:
                 continue
-            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+            hits = [int(k) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))]
+            near = unary_union([ways[k].buffer(PEDESTRIAN_NEAR) for k in hits])
             if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
-                r[flag] = 1
+                r[flag] = held[max(hits, key=lambda k: line.intersection(ways[k].buffer(PEDESTRIAN_NEAR)).length)][flag]
                 n[flag] += 1
     return n
 

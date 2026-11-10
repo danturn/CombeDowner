@@ -551,8 +551,10 @@ for g, p in L("segment"):
     # Broad Street, Northgate Street, High Street, Manvers Street), still a road with buses on it
     # and its bus stops at the kerb, not a paved square. A street closed to traffic that lets buses
     # through (Milsom Street, the University's Parade, a bus station's lanes) says so (bu), so its
-    # bus stops are on a road and the buses called to them drive along it
-    one_way = 0
+    # bus stops are on a road and the buses called to them drive along it. A street closed only at
+    # certain hours (Milsom Street, 10:00-18:00) is a road, with the hours it is shut (tc), which
+    # the traffic keeps out of on the game's clock
+    one_way, shut = 0, []
     buses = any(ar.get("access_type") == "allowed" and "bus" in ((ar.get("when") or {}).get("mode") or ())
                 for ar in p.get("access_restrictions") or [])
     for ar in p.get("access_restrictions") or []:
@@ -561,7 +563,8 @@ for g, p in L("segment"):
         if w.get("heading") == "backward" and not w.get("mode"): one_way = 1
         elif w.get("heading") == "forward" and not w.get("mode"): one_way = -1
         elif not w.get("heading") and not w.get("using") and not w.get("recognized") and not w.get("vehicle") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS and p.get("class") not in MAIN:
-            c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
+            if w.get("during"): shut.append(w["during"])
+            else: c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
@@ -588,7 +591,7 @@ for g, p in L("segment"):
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
                 bored = TN.bores(run, z, tr, elev, c)
-                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service")))
+                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service"), tc=shut[0] if shut and c != "pedestrian" else None))
 TN.rebore(pending, elev)
 def chains():
     """The roads in pending joined up where one ends where another of the same kind begins, as
@@ -1587,7 +1590,7 @@ for r in pending:
     # a deck beside a road's span (a path along a bridge), at the road's height, with nothing built
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
     for i0, i1 in TN.split(run, bored):
-        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {}),
+        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {}), **({"tc": r["tc"]} if r.get("tc") else {}),
                           **({"pr": 1} if c in PATHS and on_pier(pts[i0:i1 + 1]) else {})))
     for (i0, i1), (head, tail) in zip(bored, TN.faces(run, z, bored, elev, c)):
         tp = pts[i0:i1 + 1]
