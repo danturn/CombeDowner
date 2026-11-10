@@ -8047,14 +8047,15 @@ def reroll_back_styles(part, parents, free=()):
         e["kind"] = pick(mixes[k], random.Random(str(keys[k])).random())
 
 
-SIDE_MEET = 1.0    # metres a wall's end at the square's side may move to where the measured wall crosses it
+SIDE_MEET = 0.5    # metres a wall's end at the square's side may move to where the measured wall crosses it
 
 
 def walls_meet_at_sides(br, base_br, sq):
     """A wall cut at a side of the square ends where the measured wall (`base_br`, the square's
     walls as it starts, cut at the same side) crosses it. Each square lays its walls to its own
     pavements and plots, and two pieces of one wall ending a few tenths apart on the side left a
-    slit of sky between them; ended on the measured crossing, both squares' pieces meet."""
+    slit of sky between them; ended on the measured crossing, both squares' pieces meet. An end
+    further off than SIDE_MEET was moved there for a reason (off a pavement, along a plot) and stays."""
     x0, y0, x1, y1 = sq
     on_side = lambda q: min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) < 0.1
     crossings = [q for b in base_br if len(b["p"]) > 1 for q in (b["p"][0], b["p"][-1]) if on_side(q)]
@@ -8323,8 +8324,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, pb, pb_count = path_barriers(sq, rd, br, wall_ground, points, gt)
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
-    br = smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"])
     br = walls_meet_at_sides(br, base_walls, sq)
+    br = smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"])
     tile["br"] = br
     tile["pb"] = pb
     tile["gt"] = gt
