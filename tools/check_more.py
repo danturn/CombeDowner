@@ -1857,7 +1857,7 @@ def canal_pieces(root, map_id):
 
 
 def locks(cp, note, at, sq, fig):
-    """34. A lock's edges (canal.ts, works.ts; Spencer's, measured only): (a) no pound's water lies
+    """34. A lock's edges (canal.ts, works.ts; the maintainer's, measured only): (a) no pound's water lies
     outside the lock's walls, over its coping and paving (the strips floating beside the wing walls);
     (b) no gap is left between the lock's water and its gates, with the chamber's floor showing;
     (c) no works bank lies over the lock's paving, two surfaces a few centimetres apart. Open edges

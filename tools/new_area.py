@@ -34,7 +34,7 @@ ROOT = os.path.dirname(TOOLS)
 AREA_PY = os.path.join(TOOLS, "area.py")
 MAPS_TS = os.path.join(ROOT, "web", "src", "maps.ts")
 HALF = 1565          # metres from the middle to the edge of the detailed box: the standard square grid
-UA = {"User-Agent": "CombeDowner map builder (github.com/danturn/CombeDowner)"}
+UA = {"User-Agent": "CombeDowner map builder (https://combedowner.com)"}
 PACKAGES = (("numpy", "numpy"), ("shapely", "shapely"), ("PIL", "pillow"), ("scipy", "scipy"),
             ("skimage", "scikit-image"), ("rasterio", "rasterio"), ("overturemaps", "overturemaps"), ("pyproj", "pyproj"))
 PYTHONS = (os.path.expanduser("~/.venvs/combedowner/bin/python3"), os.path.join(ROOT, ".venv", "bin", "python3"))

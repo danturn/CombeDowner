@@ -1,11 +1,11 @@
-// Three parts of the game that are played on Dan's copy of the site and held back on Spencer's for
+// Three parts of the game that are played on the test copies of the site and held back on the live one for
 // now: the zones (the map opening a part at a time, zones.ts), the strange objects and their
 // structures (oddments.ts, reveal.ts) and the team challenges (challenges.ts and each challenge's
 // file). The code is the same on both sites; these switches say which of the three are on.
 //
 // Which copy of the game this is goes by the page's address, the same way the play counts tell
 // them apart (telemetry.ts): on for the test copies and for a copy run on this computer, off
-// anywhere else, Spencer's site included. The Progression tickbox in Settings (settings.ts) switches
+// anywhere else, the live site included. The Progression tickbox in Settings (settings.ts) switches
 // all three on or off and is kept in this browser; ?progression=1|0 does the same for one visit. They
 // hang together, as the challenges bring the objects and the objects open the zones.
 //

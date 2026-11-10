@@ -4,10 +4,10 @@ Usage: python3 -I tools/partition/write_tile.py <ti> <tj> <out.json> [--once dir
                                                    [--base tile.json]
 
 This is the first cut of stage 4's writer, and it is deliberately narrow: **one square, loaded in the
-game, walked around**. The city-wide writer and the polish come after Dan has seen it.
+game, walked around**. The city-wide writer and the polish come after the co-developer has seen it.
 
 It starts from a copy of the existing tile for the same square (`--base`) and replaces only the fields
-the partition owns, so the only difference Dan sees is the partition's:
+the partition owns, so the only difference the co-developer sees is the partition's:
 
   - `rd`: one record per corridor stretch, from the corridors pass 1 fitted - so a street's width can
     change along it, and roads and pavements match the corridors the plots were cut against;
