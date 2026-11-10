@@ -94,7 +94,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
   shelters only at the stops that have one, and the
   stops on a street closed to traffic that buses still use (Milsom Street, the University's
-  Parade) at its kerb, with the bus you call driving along it; post
+  Parade) at its kerb, with the bus you call driving along it; a pub's or café's tables outside
+  stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no

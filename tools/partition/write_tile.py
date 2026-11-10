@@ -4296,7 +4296,7 @@ PATH_FACE_REACH = 4.0    # metres from a path's line its faces are told by its s
 
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
-                    standing=None, filled=None, tunnels=(), rail=None):
+                    standing=None, filled=None, tunnels=(), rail=None, seating=(), plants=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -4450,6 +4450,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     pave = pave.difference(plaza)
     frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
                                    standing)
+    if seating:
+        # (a tree or shrub among the tables stands in its own bed)
+        beds = [Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants]
+        tables = unary_union(seating).intersection(square).difference(unary_union([road, pave, path_faces, *beds]))
+        tables = tables.difference(unary_union([face_shape(f).buffer(0) for f in part["faces"]
+                                                if f["cls"] == "building" and len(f["xy"]) > 2] or [Polygon()]))
+        if tables.area > 0.5:
+            plaza = plaza.union(tables)
     if not frontage.is_empty:
         frontage = frontage.intersection(square).difference(unary_union([road, pave]))
         if T is not None:
@@ -5829,6 +5837,26 @@ def take_mapped_styles(runs, styled):
             if b.get("h") == HEIGHT.get(b["c"]):
                 b["h"] = HEIGHT[best[1]]
             b["c"] = best[1]
+    return runs
+
+
+def take_mapped_heights(runs, heights):
+    """Each run lying along a mapped wall or fence whose height the map gives stands that high."""
+    if not heights:
+        return runs
+    tree = STRtree([l for l, _ in heights])
+    for b in runs:
+        if len(b["p"]) < 2:
+            continue
+        ln = LineString([q[:2] for q in b["p"]])
+        best = None
+        for k in tree.query(ln.buffer(OPEN_CLEAR)):
+            l, h = heights[int(k)]
+            share = ln.intersection(l.buffer(OPEN_CLEAR)).length / max(ln.length, 1e-6)
+            if share >= STYLE_ALONG and (best is None or share > best[0]):
+                best = (share, h)
+        if best:
+            b["h"] = round(best[1], 2)
     return runs
 
 
@@ -8077,6 +8105,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                          guess_blocked=abutments, free=free)
 
     br = take_mapped_styles(br, evidence.styled)
+    br = take_mapped_heights(br, evidence.heights)
     fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
@@ -8098,7 +8127,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     filled = []
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
                                                canal_bores(canal), standing, filled, tile.get("tn"),
-                                               json.load(open(rail)) if os.path.exists(rail) else None),
+                                               json.load(open(rail)) if os.path.exists(rail) else None,
+                                               evidence.seating,
+                                               [q[:2] for k in ("tr", "sb") for q in tile.get(k) or []]),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
