@@ -2189,20 +2189,39 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let i = 0; i < NP; i++) { const k = `${V[3 * i]},${V[3 * i + 1]}`, s = spots.get(k); if (s === undefined) spots.set(k, spot[i] = i); else spot[i] = s; }
     const key = (a: number, b: number) => spot[a] * NP + spot[b];
     const roof = boreRoof(map);
+    // An outline's edge is drawn at the lift of the face along it, not of the outline's kind: a
+    // pedestrian street cut from a carriageway's piece is paving inside a road outline, and its kerb
+    // drawn at the road's lift stood level with the plaza beside it, leaving its edge open to the sky
+    // (as sheet.ts meets it).
+    // (pieces share their corners, so an edge between two is in a triangle of each: the one on the
+    // outline's own side, its left, is the one with the edge running anticlockwise round it)
+    const faceKind = new Map<number, string>();
+    if (sf.l) for (const kind of ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const) {
+      const T = sf[kind] ?? [];
+      for (let k = 0; k + 2 < T.length; k += 3) {
+        if (k % 3000 === 2997) yield;
+        const [i, j, l] = [T[k], T[k + 1], T[k + 2]];
+        const turn = (V[3 * j] - V[3 * i]) * (V[3 * l + 1] - V[3 * i + 1]) - (V[3 * j + 1] - V[3 * i + 1]) * (V[3 * l] - V[3 * i]);
+        const t = turn > 0 ? [i, j, l] : [i, l, j];
+        for (let m = 0; m < 3; m++) faceKind.set(t[m] * NP + t[(m + 1) % 3], kind);
+      }
+    }
+    const edgeKind = (a: number, b: number, kind: string) => (kind === "bed" ? kind : faceKind.get(a * NP + b) ?? kind);
     const owner = new Map<number, { kind: string; a: number; b: number }>();
     for (const [n, e] of sf.e.entries()) {
       if (n % 400 === 399) yield;
       const kind = e.c in LIFT ? e.c : "road";
-      for (let k = 0; k + 1 < e.i.length; k++) owner.set(key(e.i[k], e.i[k + 1]), { kind, a: e.i[k], b: e.i[k + 1] });
+      for (let k = 0; k + 1 < e.i.length; k++) owner.set(key(e.i[k], e.i[k + 1]), { kind: edgeKind(e.i[k], e.i[k + 1], kind), a: e.i[k], b: e.i[k + 1] });
     }
     for (const [n, e] of sf.e.entries()) {
       if (n % 100 === 99) yield;
-      const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
+      const outlineKind = e.c in LIFT ? e.c : "road";
       // (round the railway's bed only a retaining wall the sheet stands at its edge, and without the
       // sheet nothing: the line's own ballast and banks are drawn instead, railway.ts)
-      if (kind === "bed" && !meet) continue;
+      if (outlineKind === "bed" && !meet) continue;
       let along = 0;
       for (let k = 0; k + 1 < e.i.length; k++) {
+        const kind = edgeKind(e.i[k], e.i[k + 1], outlineKind), lift = LIFT[kind];
         const a = at(e.i[k], kind), b = at(e.i[k + 1], kind);
         const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
