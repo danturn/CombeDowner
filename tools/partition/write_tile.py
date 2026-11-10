@@ -7977,8 +7977,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     far = ground_past(T, tiles)
     old_rd += [r for t in tiles for r in t.get("rd") or []]
     ring_car, ring_walk = faces_next_door(city, ti, tj, rows)
-    fit_faces = (unary_union(car_faces + ring_car), unary_union(car_faces + walk_faces + ring_car + ring_walk)) \
-        if car_faces or ring_car else None
+    fit_faces = (unary_union([car_area, *ring_car]), unary_union([fitted[1], *ring_car, *ring_walk])) \
+        if car_faces else None
     window = box(sq[0] - LOOK_PAST, sq[1] - LOOK_PAST, sq[2] + LOOK_PAST, sq[3] + LOOK_PAST)
     near_roads = [dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=e["path"], line=e["line"],
                        sections=e["sections"], obs=e.get("obs") or (),
@@ -8022,7 +8022,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         carry_one_way(ways, old_rd)
         verge_out_of_town(ways, houses_near)
         carry_pedestrian(ways, old_rd)
-        unpaved = demote_pedestrian(ways, old_rd)
+    demote_pedestrian(past, old_rd)
+    unpaved = demote_pedestrian(rd, old_rd)
     carry_flags(rd, old_rd)
     for r in rd:
         r.pop("_whole", None)
