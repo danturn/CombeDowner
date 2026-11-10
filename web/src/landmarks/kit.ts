@@ -340,9 +340,9 @@ export const plain = (color: string, extra: THREE.MeshLambertMaterialParameters 
 export function slate() { return lam({ map: once("slate", () => TX.roofTiles()), color: "#6a6f78" }); }
 
 /** Gothic tracery windows: outside (dark glass with stone mullions, lit warm after dark) and
- *  inside (stained glass, glowing with the day). square: square-headed, like the Abbey's east window.
- *  stained: a church's, seen from outside: cat angels in each light (stainedglass.ts), glowing in
- *  their own colours after dark. */
+ *  inside (stained glass, cat angels in each light from stainedglass.ts, glowing with the day).
+ *  square: square-headed, like the Abbey's east window. stained: a church's, seen from outside: the
+ *  same glass, darker by day and glowing in its own colours after dark. */
 export function gothicGlass(inside: boolean, square = false, lights = 5, stained = false) {
   const k = `${inside ? "in" : stained ? "sg" : "out"}${square ? "sq" : "pt"}${lights}`;
   const map = once(k, () => gothicTex(inside, square, lights, false, stained));
@@ -368,46 +368,23 @@ function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolea
     g.lineTo(x1, H);
     g.closePath();
   };
-  const sill = H;
   // the stone surround
   outline(0);
   g.fillStyle = lit ? "#000" : "#cdb688"; g.fill();
   // the glass
   outline(9);
-  if (stained) {
+  if (stained || inside) {
     // drawn big, so the cats survive the shrink to the game's texels
     const S = 4, [bc, bg] = TX.canvas(W * S, H * S);
     bg.scale(S, S);
     for (let k = 0; k < lights; k++) paintLight(bg, 9 + ((W - 18) * k) / lights, 0, (W - 18) / lights, H, k + lights);
     g.save(); g.clip(); g.drawImage(bc, 0, 0, W, H);
-    if (!lit) { g.fillStyle = "rgba(20,24,40,0.25)"; g.fillRect(0, 0, W, H); }
+    if (!lit && !inside) { g.fillStyle = "rgba(20,24,40,0.25)"; g.fillRect(0, 0, W, H); }
     g.restore();
   } else if (lit) {
     const grd = g.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, inside ? "#fff" : "#ffd79a"); grd.addColorStop(1, inside ? "#fff" : "#e09a4a");
+    grd.addColorStop(0, "#ffd79a"); grd.addColorStop(1, "#e09a4a");
     g.fillStyle = grd; g.fill();
-    if (inside) {
-      g.save(); g.clip();
-      // the stained glass glows in its own colours
-      for (let y = 0; y < sill; y += 10) for (let x = 0; x < W; x += 10) {
-        const hue = [210, 0, 45, 120, 280, 30][Math.floor(r() * 6)];
-        g.fillStyle = `hsl(${hue},75%,${45 + r() * 25}%)`; g.fillRect(x, y, 10, 10);
-      }
-      g.restore();
-    }
-  } else if (inside) {
-    g.save(); g.clip();
-    // stained glass: little panes of colour, with figures in the middle band
-    for (let y = 0; y < sill; y += 8) for (let x = 0; x < W; x += 8) {
-      const hue = [215, 0, 45, 130, 275, 25][Math.floor(r() * 6)];
-      g.fillStyle = `hsl(${hue},65%,${30 + r() * 30}%)`; g.fillRect(x, y, 8, 8);
-    }
-    for (let k = 0; k < lights; k++) {
-      const cx = 9 + ((W - 18) * (k + 0.5)) / lights;
-      g.fillStyle = "rgba(255,235,200,0.55)";
-      g.fillRect(cx - 4, H * 0.55, 8, 26); g.beginPath(); g.arc(cx, H * 0.55 - 4, 4, 0, Math.PI * 2); g.fill();
-    }
-    g.restore();
   } else {
     const grd = g.createLinearGradient(0, 0, W, H);
     grd.addColorStop(0, "#4a5866"); grd.addColorStop(0.5, "#27333d"); grd.addColorStop(1, "#56677a");
@@ -419,7 +396,7 @@ function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolea
   g.fillStyle = lit ? "#000" : inside ? "#3b3326" : "#c9b285";
   const top = square ? 9 : W * 0.7;
   for (let k = 1; k < lights; k++) g.fillRect(9 + ((W - 18) * k) / lights - 2, top - (square ? 0 : W * 0.35), 4, H);
-  if (!stained) for (const f of [0.55, 0.78]) g.fillRect(0, H * f, W, 4);
+  if (!stained && !inside) for (const f of [0.55, 0.78]) g.fillRect(0, H * f, W, 4);
   if (!square) {
     // tracery: the mullions curve up into the head, and a row of little cusped heads under it
     g.lineWidth = 4; g.strokeStyle = g.fillStyle;
@@ -434,7 +411,7 @@ function gothicTex(inside: boolean, square: boolean, lights: number, lit: boolea
     g.beginPath(); g.arc((x0 + x1) / 2, 30, (x1 - x0) / 2, Math.PI, 0); g.stroke();
   }
   g.restore();
-  const t = stained ? TX.pixelTex(c, W, H, 32, 31, true) : TX.pixelTex(c, 64, 128, inside && !lit ? 40 : 24, 31, true);
+  const t = stained || inside ? TX.pixelTex(c, W, H, 32, 31, true) : TX.pixelTex(c, 64, 128, inside && !lit ? 40 : 24, 31, true);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
 }

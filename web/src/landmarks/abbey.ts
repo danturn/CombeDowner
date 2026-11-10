@@ -117,9 +117,9 @@ export function abbey(): THREE.Object3D {
   const stepStone = stone("#cdb88c"), ledgeStone = stone("#cdb88c");
   const S = stone(), S2 = stone("#cdb88c"), lead = plain("#727a82"), wood = plain("#5b3d25"), gold = plain("#c49a3c");
   const cloth = plain("#7c1f26"), fig = plain("#efe3c4");
-  const out5 = gothicGlass(false, false, 5), in5 = gothicGlass(true, false, 5);
-  const out7 = gothicGlass(false, false, 7), in7 = gothicGlass(true, false, 7);
-  const outSq = gothicGlass(false, true, 7), inSq = gothicGlass(true, true, 7);
+  const out5 = gothicGlass(false, false, 5, true), in5 = gothicGlass(true, false, 5);
+  const out7 = gothicGlass(false, false, 7, true), in7 = gothicGlass(true, false, 7);
+  const outSq = gothicGlass(false, true, 7, true), inSq = gothicGlass(true, true, 7);
   const vault = fanVault(); vault.side = THREE.DoubleSide;
   const floorMat = flags(), lace = openwork();
   // the ladders of angels are left out of what's solid: you climb them, not bump into them (landmarks/shape.ts)
