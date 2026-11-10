@@ -21,20 +21,15 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
-- **Squares agree where they meet (branch `claude/square-edges-c`, option (c) of
-  `docs/plans/square-edges.md`):** the writer looks at the streets up to 40 m past each side of its
-  square (`streets_past_the_sides`, read from the corridors and the next squares' prep files) and
-  chooses from them, but writes only its own part. Touches `tools/partition/write_tile.py`
-  (`street_surfaces`, `roads_from_corridors`, `carry_pedestrian`) and the writer's key in
-  `tools/partition/stage.py` and `Slices.write` in `tools/partition/pipeline.py` (it takes in the
-  eight next squares' prep files and assembled faces, and the heights of every street it fits). If
-  road markings go missing at a square's side, that is this branch's.
+- **Map ground work stacked on one branch (branch `claude/ground-all`):** `claude/square-edges-c`
+  (squares fit their streets past their sides and agree where they meet) and `claude/spots-2` (the
+  second set of spotted faults) merged, with the leftovers tidied (walls cut at a square's side
+  meet the next square's piece, verged trunk roads among houses keep their pavements, a path
+  through a passage stays on its deck to its first point outside). Later stages of the agreed
+  ground work go on top. Touches `tools/partition/` (mostly `write_tile.py`, `pipeline.py`,
+  `stage.py`), `tools/structures.py`, `tools/prep_map.py`, `tools/check_map.py`, `check_more.py`,
+  and rebuilds every square. If road markings go missing at a square's side, that is this branch's.
 
-- **Spotted faults, second set (branch `claude/spots-2`, off `claude/spotted-faults`):** Orange
-  Grove's road edges over the sky, Westgate Street's shops in a pit, road patches in Milsom and New
-  Bond Streets, Walcot Street's façade slits and grass fronts, the wall before Saracen Street's pub,
-  George Street's pavement. Touches `tools/partition/` and `tools/check_map.py`; not the squares'
-  sides (`claude/square-edges-c`) or the slice keys (`claude/slice-keys`).
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for Dan):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
