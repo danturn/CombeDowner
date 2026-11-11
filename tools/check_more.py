@@ -88,7 +88,8 @@ from the packs alone, a few seconds a square:
 42. The faces meet the next square's: the same kind at the same height either side of a square's side.
 43. Flights of steps don't lie over each other, and no handrail stands on a pavement or the road.
 44. No wall, fence or hedge stands with its foot over what is drawn under it, the sky showing
-    through beneath it (tools/ground_seams.mjs, with rule 38; CD_SEAMS=0 leaves it out).
+    through beneath it (a gate's leaf, hung clear of the ground, aside; tools/ground_seams.mjs, with
+    rule 38; CD_SEAMS=0 leaves it out).
 45. No street face of the map's is left inside a set piece's outline, as the game leaves them (the set
     piece takes out those it lays its own ground over; tools/ground_seams.mjs, with rule 38).
 46. A set piece's floor at the street's level runs on to what stands beyond its edge, with no gap to

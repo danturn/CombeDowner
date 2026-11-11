@@ -74,6 +74,7 @@ FOOT_WAYS = {"footway", "path", "cycleway", "steps", "bridleway"}
 FOOT_DEPTH = 0.4      # metres under a building's ground height the ground beside it may be cut to (its walls go 0.6 down)
 NARROW = 0.5          # metres: ground narrower than this between two faces' edges is the lower one's level
 SUNK_MOST = 1.2       # metres of hill a flight's retaining wall holds beside it
+BANK_OUT = 0.4        # metres out from a flight's edge that the hill beside it is read
 BETWEEN = 1.0         # metres: ground this near faces of two kinds is between them
 BATTER_MOST = 3.0     # metres: the widest bank beside a face; past that a retaining wall takes the rest
 WALLS = ("wall", "retaining_wall", "stone_wall", "garden_wall", "brick_wall", "brick_wall_low", "dry_stone",
@@ -411,15 +412,29 @@ def ground_sheet(tile, canal=None):
             np.maximum.at(need, si_, want)
             meet = np.maximum(meet, np.where(need > top, need, -np.inf))
     # A flight of steps is sunk into the hill: the hill beside it stays as it is, up to SUNK_MOST over
-    # the flight's edge, held by a retaining wall, rather than cut down to meet the treads.
-    flights = [shapely.LineString([q[:2] for q in r["p"]]).buffer((r.get("w") or 1.8) / 2 + 0.3, cap_style="flat")
-               for r in tile.get("rd") or [] if r.get("c") == "steps" and len(r["p"]) > 1
-               and not any(len(q) > 3 and q[3] for q in r["p"])]
-    if flights:
+    # the flight's edge, held by a retaining wall, rather than cut down to meet the treads. The hill is
+    # read a little out from the edge, where the treads' ends meet it: read at the edge's own corner
+    # on a 4 m grid, a bank rising just past it was carved to a slope that stood over the treads.
+    lines = [shapely.LineString([q[:2] for q in r["p"]]) for r in tile.get("rd") or []
+             if r.get("c") == "steps" and len(r["p"]) > 1 and not any(len(q) > 3 and q[3] for q in r["p"])]
+    widths = [(r.get("w") or 1.8) / 2 for r in tile.get("rd") or []
+              if r.get("c") == "steps" and len(r["p"]) > 1 and not any(len(q) > 3 and q[3] for q in r["p"])]
+    if lines:
+        flights = [l.buffer(w + 0.3, cap_style="flat") for l, w in zip(lines, widths)]
+        pts = shapely.points(F.V[spots, :2])
+        si_, fl_ = shapely.STRtree(flights).query(pts, predicate="intersects")
         on = np.zeros(len(spots), bool)
-        on[shapely.STRtree(flights).query(shapely.points(F.V[spots, :2]), predicate="intersects")[0]] = True
-        sunk = on & (g > top)
-        meet[sunk] = np.maximum(np.minimum(g[sunk], top[sunk] + SUNK_MOST), meet[sunk])
+        on[si_] = True
+        foot = shapely.line_interpolate_point(np.asarray(lines, object)[fl_], shapely.line_locate_point(np.asarray(lines, object)[fl_], pts[si_]))
+        dx, dy = F.V[spots[si_], 0] - shapely.get_x(foot), F.V[spots[si_], 1] - shapely.get_y(foot)
+        d = np.hypot(dx, dy)
+        out = d > 0.05
+        bank = np.full(len(spots), -np.inf)
+        np.maximum.at(bank, si_[out], on_grid(H, T, F.V[spots[si_[out]], 0] + dx[out] / d[out] * BANK_OUT,
+                                              F.V[spots[si_[out]], 1] + dy[out] / d[out] * BANK_OUT))
+        hill = np.maximum(g, bank)
+        sunk = on & (hill > top)
+        meet[sunk] = np.maximum(np.minimum(hill[sunk], top[sunk] + SUNK_MOST), meet[sunk])
     # A bridge's abutment: where a face ends under a deck's end, the ground beside it is dug to the
     # room under the deck and a wall holds the face's edge, as an abutment stands at a bridge's end.
     for (ax_, ay_), (bx_, by_), za, zb, half, _ in deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y))):
