@@ -1144,9 +1144,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
 
 UNDER_CROWN = TN.UNDER_CROWN    # metres from a short path tunnel's floor to its arch, under a street at grade
 UNDER_COVER = 0.4    # metres of street and fill over that arch
-UNDER_RAMP = 0.5     # the steepest a path's approach falls to such an arch as a ramp
-UNDER_STAIR = 0.7    # and as a flight of steps, where a ramp has no room (flights.STAIR_PITCH)
-UNDER_KERB = 0.3     # metres past a street's carriageway that a low arch's mouth may stand, where there's no room further out
+UNDER_RAMP = 0.25    # the steepest a path's approach falls to such an arch, walked as a slope (write_tile.STEEPEST_WALK)
+UNDER_STAIR = 0.7    # and down a flight, only where the data maps the approach as steps (flights.STAIR_PITCH)
 
 
 def finer_runs(pending):
@@ -1180,14 +1179,13 @@ def finer_runs(pending):
 
 def low_bores(pending, road_lines, road_tree):
     """A path the data has in a tunnel under a street, too short or too shallow to bore through a hill
-    (`tunnels.bores`), at the street's level: it passes under the street through a low arch in the
-    bank, the street carried over it as it is. The path falls to the arch's floor UNDER_CROWN and
-    UNDER_COVER under the street, from the nearest ways meeting it either side: as a ramp no steeper
-    than UNDER_RAMP where there is room for one, else as a flight of steps no steeper than UNDER_STAIR
-    (the writer makes the steep stretch a flight, write_tile.steep_paths_as_steps); only where there
-    isn't room even for steps is the path left at the street's level, and the writer stops it at the
-    kerb either side (write_tile.paths_under_streets). The arch runs as far as the data has the path
-    in its tunnel and across the street's width, never on under another way meeting the path. Each such bore is listed in its
+    (`tunnels.bores`), at the street's level: it passes under the street through a low arch, the
+    street carried over it as it is. The arch is the data's tunnel, its mouths at the stretch's ends,
+    its floor UNDER_CROWN and UNDER_COVER under the street. The path falls to the floor outside the
+    mouths, from the nearest ways meeting it either side: as a slope no steeper than UNDER_RAMP, the
+    ground cut to it, or, only where the data maps the way as steps, as a flight no steeper than
+    UNDER_STAIR; never inside the arch. Where either side has no room for that there is no arch: the path stays at the street's level and the writer
+    stops it at the kerb either side (write_tile.paths_under_streets). Each such bore is listed in its
     run's `low` (the game draws its arch UNDER_CROWN high), its approaches as dipped (the writer
     holds them there and lays the ground to them)."""
     points = collections.defaultdict(list)
@@ -1236,49 +1234,24 @@ def low_bores(pending, road_lines, road_tree):
             floor = o["z"][m_] - UNDER_CROWN - UNDER_COVER
             # (the bore runs under the street's whole width, kerb to kerb and its pavements; where the
             # fall to it has no room past the pavements its class may have, its mouth stands at the kerb)
-            ends = []
-            for reach, whole in ((RW.get(o["c"], 4) / 2 + (1.7 if o["c"] in KERBED_RD else 0.5), True),
-                                 (RW.get(o["c"], 4) / 2 + UNDER_KERB, False)):
-                covered = [i for i in range(n) if road_lines[j].distance(Point(run[i][:2])) < reach
-                           and math.dist(run[i][:2], (x.x, x.y)) < reach + 2 * STEP]
-                if not covered:
-                    ends.append(None)
-                    continue
-                if not whole:
-                    # (at the kerb: under the street only, within what the data has in its tunnel)
-                    i0, i1 = max(min(covered), st[0] - 1), min(max(covered), st[-1] + 1)
-                    ends.append((i0, i1) if i0 < i1 else None)
-                    continue
-                # (as far as the data has the path in its tunnel, and a point past the street's pavements,
-                # but not on to where another way meets the path or crosses it: that one isn't over the arch)
-                i0, i1 = min(covered + [st[0]]), max(covered + [st[-1]])
-                if i0 > 0 and not joined(k, i0 - 1) and not crosses(k, i0 - 1, i0):
-                    i0 -= 1
-                if i1 < n - 1 and not joined(k, i1 + 1) and not crosses(k, i1, i1 + 1):
-                    i1 += 1
-                ends.append((i0, i1))
+            # (the arch is the data's tunnel and no more: its mouths at the stretch's ends, and the fall
+            # from the ground to its floor laid outside them, along the way either side)
             ramps = []
-            for side, step in ((0, -1), (1, 1)):
-                # out to where the fall to the arch fits as a ramp; else, as a flight of steps, before
-                # the next way meeting the path, or its end; else the same from the kerb
+            for e, step in ((st[0], -1), (st[-1], 1)):
+                # out to where the fall fits as a slope you can walk, or as a flight where the data maps
+                # steps, before the next way meeting the path or its end; where neither fits there is no arch
                 got = None
-                for mouth in ends:
-                    if mouth is None:
-                        continue
-                    e = mouth[side]
-                    for pitch in (UNDER_RAMP, UNDER_STAIR):
-                        d, at, ok = 0.0, e, True
-                        while z[at] - floor > d * pitch:
-                            nxt = at + step
-                            if not 0 <= nxt < n or joined(k, at) or nxt in r["span"] | r["deck"] or crosses(k, at, nxt):
-                                ok = False
-                                break
-                            d += math.dist(run[at][:2], run[nxt][:2])
-                            at = nxt
-                        if ok:
-                            got = (e, at, step, d)
+                for pitch in (UNDER_RAMP,) + ((UNDER_STAIR,) if r["c"] == "steps" else ()):
+                    d, at, ok = 0.0, e, True
+                    while z[at] - floor > d * pitch:
+                        nxt = at + step
+                        if not 0 <= nxt < n or joined(k, at) or nxt in r["span"] | r["deck"] or crosses(k, at, nxt):
+                            ok = False
                             break
-                    if got:
+                        d += math.dist(run[at][:2], run[nxt][:2])
+                        at = nxt
+                    if ok:
+                        got = (e, at, step, d)
                         break
                 if not got:
                     break

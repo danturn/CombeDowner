@@ -739,7 +739,9 @@ def paths_under_streets(rd, carriageway):
             out.append(r)
             continue
         near = (LineString(stretch) if len(stretch) > 1 else Point(stretch[0])).buffer(UNDER_REACH)
-        zone = carriageway.intersection(near)
+        # (to the kerb as the street is drawn, its record's width, where that's wider than the carriageway's face)
+        drawn = [sl.buffer(way_width(sr) / 2, cap_style="flat") for sl, sr in (streets[int(k)] for k in stree.query(near))]
+        zone = unary_union([carriageway] + drawn).intersection(near)
         if zone.is_empty or not line.intersects(zone):
             out.append(r)
             continue
@@ -760,8 +762,10 @@ def paths_under_streets(rd, carriageway):
             out.append(r)
             continue
         # (a sliver of another street's carriageway the stretch's reach takes in is crossed as it is)
+        # (nor a lane the path only ends on, which it meets rather than passes under)
+        tips = [Point(p[0][:2]), Point(p[-1][:2])]
         across = [g for g in getattr(line.intersection(zone), "geoms", [line.intersection(zone)])
-                  if not g.is_empty and g.length >= UNDER_SLIVER]
+                  if not g.is_empty and g.length >= UNDER_SLIVER and min(g.distance(t) for t in tips) > 0.05]
         if not across:
             out.append(r)
             continue
@@ -4410,14 +4414,6 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
         if a is not b and math.dist(a[:2], b[:2]) <= 1.0 and abs(a[2] - b[2]) > 0.01:
             a[2] = b[2] = round((a[2] + b[2]) / 2, 2)
             moved += 1
-    # (a way from a low arch's portal up to the street beside it, too short and steep to walk, is a
-    # flight: the city could find no longer way down to the arch)
-    for r in walks:
-        p = r["p"]
-        L = sum(math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:]))
-        if (r["c"] in ("footway", "path") and (at_portal(p[0]) or at_portal(p[-1]))
-                and abs(p[-1][2] - p[0][2]) > STEEPEST_WALK * L and L > 1.0):
-            r["c"], r["w"] = "steps", max(r.get("w", 1.5), 1.8)
     for r in walks:
         p = r["p"]
         if r["c"] == "steps":
@@ -4499,6 +4495,32 @@ def steep_flights_that_fit(rd, ground):
         out.append((r, of if r["c"] != "steps" else None))
     rd[:] = [r for r, _ in out]
     return back
+
+
+def unreached_low_arches(tile, rd, sq, reach=1.0, rise=0.5):
+    """A path's low arch under a street that no way walks into at both mouths is left out, with its
+    portals: the ways either side were left at the street's level or taken out, and it stood under the
+    road as a hole leading nowhere. Returns how many went."""
+    x0, y0, x1, y1 = sq
+    inside = lambda q: min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) > 0.5
+    pts = [q for r in rd for q in r["p"]]
+    tree = STRtree([Point(q[:2]) for q in pts]) if pts else None
+
+    def reached(m):
+        return tree is not None and any(abs(pts[int(k)][2] - m[2]) <= rise
+                                        for k in tree.query(Point(m[:2]), predicate="dwithin", distance=reach))
+    gone, kept = [], []
+    for t in tile.get("tn") or []:
+        p = t.get("p") or []
+        mouths = [q for q in (p[0], p[-1]) if inside(q)] if len(p) > 1 else []
+        if (t.get("cr") or 99) <= TN.UNDER_CROWN + 0.01 and not all(reached(m) for m in mouths):
+            gone += mouths
+            continue
+        kept.append(t)
+    if gone:
+        tile["tn"] = kept
+        tile["se"] = [e for e in tile.get("se") or [] if not (e[0] == "portal" and any(math.dist(e[1:3], m[:2]) < 0.5 for m in gone))]
+    return len(gone)
 
 
 def end_at_portals(rd, tunnels):
@@ -5337,7 +5359,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     return out if any(out.get(k) for k in SF_LISTS) else None
 
 
-FLIGHT_FIT = 0.3        # metres a pavement may stand over a flight's treads beside it and be laid down to them
+FLIGHT_FIT = 0.45       # metres a pavement may stand over a flight's treads beside it and be laid down to them
 FLIGHT_REACH = 0.6      # metres out past a flight's treads that the faces beside it meet them
 FLIGHT_LANDING = 0.3    # metres from a flight's ends within which the faces are left as they are
 RAIL_ON_WALL = 0.05     # metres in from a wall's face that a railing on its top stands
@@ -8773,6 +8795,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     abutments_on_the_ground(rd, sq, ground)
     flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width))
     tile["se"] = structure_ends.settle(rd, structure_ends.city_ends(profiles, [r["id"] for r in near_roads]), sq)
+    unreached_low_arches(tile, rd, sq)
     # (a flight climbing to an abutment raised to its deck is laid again to its new end)
     rebake = {id(r) for r in rd if r.pop("_rebake", None)}
     if rebake:

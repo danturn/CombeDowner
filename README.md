@@ -73,9 +73,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
   Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. A footpath the
   map data takes under a street goes through a low arch under 2 m high in the bank, the street
-  carried over it, its mouth at the kerb where there's no room further out: down a ramp where there's room for one, else down a short flight of steps
-  where the next path or lane is close; only where there isn't room even for steps does the path
-  stop at the kerb either side rather than being drawn across the road. Each bore is as wide as the road or path going in, wall
+  carried over it and the arch only as long as the mapped tunnel. Outside each mouth the path slopes
+  down to it in a sunken approach, or goes down steps where the map has steps there; where there
+  isn't room for that the path stops at the kerb either side rather than being drawn across the road. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
   opening along a cutting dug to its floor, with wing walls holding up its sides where the hill
   beside it stands high or rises steeply, their copings sloping down the bank, with no tree or
