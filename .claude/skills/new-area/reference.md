@@ -11,7 +11,7 @@ from the railway step to the end.
 
 | Step | Tool | Where | Notes |
 |---|---|---|---|
-| download | `tools/fetch.py <id> data/raw/<id>/wide --only ...` | all | Overture's 8 layers, the canopy tile, OpenStreetMap (businesses, roads, detail, rail); in England also the lidar, census and conservation areas; in the UK the hygiene ratings. Never the energy certificates or parcels. |
+| download | `tools/fetch.py <id> data/raw/<id>/wide --only ...` | all | Overture's 8 layers, the canopy tile, OpenStreetMap (businesses, roads, detail, rail); in England also the lidar, census and conservation areas; in the UK the hygiene ratings; in England and Wales the energy certificates when the user has their own token (`tools/epc_fetch.py`). Never the parcels. |
 | railway | `tools/railway.py` | all | before the squares, which cut the ground to the track; warns and carries on where there is none |
 | church towers | `tools/towers.py` | England | needs the lidar |
 | squares | `tools/prep_tiles.py ... --measure` | all | every full-detail square, one per core; writes `data/<id>/measured/` |
@@ -29,7 +29,7 @@ downloads into the map's layers (`tools/mapdata.py pack`) first, which the parti
 
 ## Not automated, by design
 
-- Energy certificates and OS Open UPRN (England and Wales): `docs/new-area.md`, "Energy certificates".
+- Energy certificates without the user's own token (England and Wales): `docs/new-area.md`, "Energy certificates".
 - HM Land Registry parcels: only the partition reads them.
 - A canal (`tools/canal.py` needs a pack per map), moorings (`tools/moorings.py`), a cable car (`tools/cableway.py`).
 - Zones, landmarks and set pieces: `docs/new-area.md` section 4.

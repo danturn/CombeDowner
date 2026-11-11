@@ -44,7 +44,7 @@ are kept, and squares already built are not built again.
 | `WARN step pubs failed` | Fine: the pause menu's "Go to a pub" lists only the pubs signed in the squares. Report it. |
 | `WARN step district names failed` (often `HTTP Error 502` or `504` from Overpass) | Fine: the game names places after parks instead. Once Step 7 is done, rerun `build` once (about a minute: nothing is downloaded or built again); if it fails again, report it. |
 | `WARN step church towers failed` | Fine: churches have no measured towers. Report it. |
-| `epc: download the energy certificates ... by hand` | Not an error. Ignore it. Energy certificates are by hand only; mention them in "What it lacks". |
+| `energy certificates: no token, so download them by hand ...` | Not an error. Ignore it. The user has no token saved; mention the certificates in "What it lacks". |
 | `no lidar data`, `no EPC data` | Not an error outside England. In England, report it. |
 
 ## verify

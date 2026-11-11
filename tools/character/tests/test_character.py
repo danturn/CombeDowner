@@ -109,30 +109,29 @@ class BathTest(unittest.TestCase):
 
     def test_valley_view_road(self):
         rec, thing, got = at("way/124194673")          # 1_5, near (-134, 4351): sixteen steps up a bank
-        self.assertEqual(rec["form"], "terrace")
-        self.assertIsNone(rec["built"])
+        self.assertEqual((rec["form"], rec["built"], rec["built_from"]), ("terrace", [1967, 1975], "epc"))
         self.assertGreater(thing["front_gap"], 4)
         self.assertEqual(got["railings"], "none")
 
     def test_catherine_way(self):
         rec, thing, got = at("way/1533733011")         # 3_6, near (1887, 5345)
-        self.assertEqual(rec["form"], "end-terrace")
-        self.assertIsNone(rec["built"])
+        self.assertEqual((rec["form"], rec["built"], rec["built_from"]), ("end-terrace", [1950, 1966], "epc"))
         self.assertEqual(got["railings"], "none")
 
     def test_new_king_street_opposite_terrace(self):
-        """Nos. 1-19 across the street: listed, one outline holding the row, a town house."""
+        """Nos. 1-19 across the street: listed, one outline holding the row, its homes' certificates
+        say mid-terrace, before 1900, with basement flats: a town house."""
         s = Survey("combe-down", (-1520, 2170, -1420, 2240))
         rec, gap = s.near(Point(-1469, 2203), reach=0.5)       # Historic England's point for Nos. 10 and 11
-        self.assertEqual((rec["form"], rec["listed"], rec["built_from"]), ("terrace", "II*", "listed"))
+        self.assertEqual((rec["form"], rec["built"], rec["basement"], rec["listed"]), ("terrace", [0, 1899], True, "II*"))
         self.assertEqual(decide("area_railings", {"front_gap": 2.0}, {"building": rec})["railings"], "area")
 
     @unittest.expectedFailure
     def test_new_king_street(self):
         """0_3, near (-1448, 2212). The flight is beside OpenStreetMap's way/90942479, a building
-        with a floor below ground that stands on its own in the outlines and that nothing dates, so
-        the rule cannot yet say it is an old town house. Kept failing until the data dates it (the
-        certificates' age bands, or a start_date in OpenStreetMap)."""
+        with a floor below ground that stands on its own in the outlines, holds no home with a
+        certificate and that nothing else dates, so the rule cannot say it is an old town house.
+        Kept failing until the data dates it (a start_date in OpenStreetMap) and joins it to a row."""
         rec, thing, got = at("way/1338872706")
         self.assertEqual(got["railings"], "area")
 

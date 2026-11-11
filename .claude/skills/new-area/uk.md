@@ -10,7 +10,7 @@ and which credits it needs.
 
 | region | What the build downloads (on top of the worldwide sources in non-uk.md) | What the map lacks |
 |---|---|---|
-| `GB-ENG` (England) | Environment Agency lidar (real roofs, eaves, garden walls, church towers, the true ground), 2021 Census house types, conservation areas, food hygiene ratings | energy certificates and Land Registry parcels (both by hand only; see "Never by this skill" below) |
+| `GB-ENG` (England) | Environment Agency lidar (real roofs, eaves, garden walls, church towers, the true ground), 2021 Census house types, conservation areas, food hygiene ratings | Land Registry parcels (by hand only; see "Never by this skill" below); energy certificates unless the user has their own token (below) |
 | `GB-WLS` (Wales) | the Welsh Government's 1 m lidar (DTM and DSM, 2020-23, from DataMapWales: real roofs, heights, church towers, the true ground), 2021 Census house types, food hygiene ratings | the lidar's last returns (so trees over roofs are judged from the canopy map alone), conservation areas, energy certificates, parcels |
 | `GB-SCT` (Scotland) | food hygiene ratings | lidar, census, conservation areas, energy certificates, parcels |
 | `GB-NIR` (Northern Ireland) | food hygiene ratings | lidar, census, conservation areas, energy certificates, parcels |
@@ -32,9 +32,12 @@ counts, and their roofs are guessed. That is expected, not a fault.
 
 ## Never by this skill (if the user asks for one: STOP and tell them it needs a person)
 
-- **Energy certificates** (wall materials, bungalows; England and Wales): need an account at
-  get-energy-performance-data.communities.gov.uk and a manual download. `docs/new-area.md`,
-  "Energy certificates".
+- **Energy certificates** (wall materials, bungalows, ages and built forms; England and Wales):
+  the download step fetches them only if the user has saved their own token from
+  get-energy-performance-data.communities.gov.uk (`EPC_TOKEN` or `~/.config/combedowner/epc-token`).
+  The first fetch takes an hour or two for a city; if it stops, run the download step again.
+  Never ask for the token, read it, print it or write it anywhere: if there is none, say the map
+  is built without them and point the user at `docs/new-area.md`, "Energy certificates".
 - **HM Land Registry parcels** (INSPIRE): the partition reads them where a map has them; `build`
   does not fetch them for a new map. Do not add them by hand.
 - **A canal with locks**: needs a hand-written pack in `tools/canal.py`.

@@ -8,7 +8,7 @@ A record, None wherever the data says nothing:
   OpenStreetMap's terraced tags, then how many houses share its walls, or how many houses' addresses
   one footprint holds (a row of houses the map draws as one outline);
 - built: (earliest, latest) years it was built: from OpenStreetMap's start_date or style, the
-  certificates' age band, its being listed, then the zone of area.py (rules.json's "evidence"
+  age band most of its homes' certificates give, its being listed, then the zone of area.py (rules.json's "evidence"
   sets the order); built_from names which;
 - basement: True or False: OpenStreetMap's floors underground, Overture's, or a certificate for a
   basement flat in it;
@@ -79,6 +79,8 @@ class Survey:
         """bbox: the map metres (x0, y0, x1, y1) to measure in, None for the whole map; pad: how
         far round it the neighbours sharing a wall are looked for."""
         self.A = area(map_id)
+        # the certificates are cut to the whole map: the detailed box alone is only the middle squares
+        self.box = area(map_id, wide=True).bbox if getattr(self.A, "squares", None) else self.A.bbox
         self.map_id = map_id
         self.raw = raw or os.path.join(ROOT, "data", "raw", map_id, "wide")
         lon0, lat0 = self.A.centre
@@ -122,7 +124,7 @@ class Survey:
         certs, uprns = self._csv("certificates"), self._csv("uprn")
         if certs is None or uprns is None: return []
         rows = csv.DictReader(certs)
-        W, S, E, N = self.window or self.A.bbox
+        W, S, E, N = self.window or self.box
         where = {}
         for r in csv.DictReader(uprns):
             lon, lat = float(r["LONGITUDE"]), float(r["LATITUDE"])
@@ -225,7 +227,8 @@ class Survey:
         bands = [b for b in bands if b]
         dated = {
             "osm": years(rec["start_date"]) or years(rec["architecture"], self.styles),
-            "epc": (min(b[0] for b in bands), max(b[1] for b in bands)) if bands else None,
+            # the band most of its homes give: one flat's certificate dated by its conversion is not the building's age
+            "epc": min(set(bands), key=lambda b: (-bands.count(b), b)) if bands else None,
             "listed": (0, self.evidence.get("listed_before", 1914)) if rec["listed"] else None,
             "zone": tuple(self.styles[rec["zone"]]) if rec["zone"] in self.styles else None,
         }

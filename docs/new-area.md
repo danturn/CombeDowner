@@ -151,6 +151,28 @@ in `data/combe-down/README.md`.
 
 ### Energy certificates (England and Wales)
 
+With your own token for the register, `tools/fetch.py $MAP --only epc` (or `build`) does all of
+this by itself (`tools/epc_fetch.py`): it cuts OS Open UPRN to the map's box (no account needed),
+searches the register for every certificate in the councils the box lies in, and fetches the
+latest one of each home in the box whole, about ten a second, keeping only the columns the build
+reads. The first run for a city takes an hour or two and can be stopped and run again to carry on;
+later runs only ask for what is new, removed or moved since (`data/raw/$MAP/wide/epc/cache/`).
+`--bulk` fetches the register's bulk zip of all England and Wales instead (about 8 GB). To set it
+up once:
+
+1. Sign in at https://get-energy-performance-data.communities.gov.uk with GOV.UK One Login and
+   copy the bearer token from your "My account" page.
+2. Save it where only you can read it, and never commit it or paste it into a command line others
+   can see:
+
+   ```sh
+   mkdir -p ~/.config/combedowner
+   (umask 077; pbpaste > ~/.config/combedowner/epc-token)     # or: export EPC_TOKEN=...
+   ```
+
+The token is yours: it is sent only to the register's own API, never stored in the map data or
+shown. Without one the fetch says so and goes on, and you can download by hand instead:
+
 1. Sign up at https://get-energy-performance-data.communities.gov.uk and download the
    **Domestic** certificates for the local authority as CSV. Save it as
    `data/raw/my-place/epc/certificates.csv`.
@@ -166,6 +188,10 @@ in `data/combe-down/README.md`.
 
    For shop signs, also download the **Non-domestic** certificates for the same authority and
    save them as `data/raw/my-place/epc/non-domestic.csv`.
+
+   `python3 -I tools/epc_fetch.py $MAP --from <the domestic CSV>` does steps 2 and the cutting for
+   you: it fetches OS Open UPRN, cuts it to the map's box and keeps the certificates at those
+   addresses.
 
 ### The census's house types and the conservation areas (England and Wales)
 

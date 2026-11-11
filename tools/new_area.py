@@ -79,7 +79,7 @@ def ensure_python():
 # sources that cover only part of the world, by Nominatim's ISO 3166-2 region: what each gives the map
 ENGLISH = {
     "lidar": "real roof shapes, eaves heights, garden walls, church towers and true ground (lidar: the Environment Agency's in England, the Welsh Government's in Wales)",
-    "epc": "wall materials and bungalows (energy certificates, England and Wales, manual download)",
+    "epc": "wall materials, bungalows, ages and built forms (energy certificates, England and Wales: your own token or a download by hand)",
     "parcels": "the Land Registry's garden plots (England and Wales; only Bath's partition build reads them)",
     "listed": "listed railings and walls (Historic England; only Bath's partition build reads them)",
     "fsa": "pubs and cafes OpenStreetMap is missing, and pub hygiene ratings (food hygiene ratings, UK)",
@@ -106,7 +106,7 @@ def region_of(lon, lat):
     return addr.get("ISO3166-2-lvl4") or addr.get("country_code", "").upper()
 
 
-MANUAL = {"epc", "parcels"}     # never fetched by build: they need a hand download (and the parcels only serve Bath's partition)
+MANUAL = {"parcels"}     # never fetched by build: they need a hand download (and only serve Bath's partition)
 
 
 def warn_missing(region):
@@ -306,7 +306,7 @@ def build(args):
     have = COVERS.get(region, set()) if region is not None else set(ENGLISH)
     print(f"BRANCH: {branch(region)}   region: {region or '?'}")
     if region is not None: warn_missing(region)
-    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation", "heritage") if s in have]
+    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation", "heritage", "epc") if s in have]
     t0 = time.time()
     run_steps([("download", [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)], True)], dry)
     t_dl = time.time() - t0

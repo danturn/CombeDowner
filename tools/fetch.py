@@ -3,7 +3,7 @@ sources, into the raw dir the builds read: the start of rebuilding the repositor
 map data from scratch (tools/mapdata.py). For an ordinary rebuild none of this is needed:
 tools/mapdata.py unpack gives the same data from the repository.
 
-Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,heritage,city,footprints]
+Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,heritage,epc,city,footprints]
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
@@ -32,9 +32,12 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
 The HM Land Registry parcels (INSPIRE Index Polygons) have to be fetched by hand, one zip per local
 authority: `tools/parcels.py` converts the download to `parcels.geojson` in the wide dir (see
 docs/new-area.md). They are optional: without them the partition build divides blocks by rule.
+- epc (England and Wales): OS Open UPRN's address points in the map's box, and the energy
+  certificates at them from the register's API (tools/epc_fetch.py). The certificates need
+  the user's own token (EPC_TOKEN, or ~/.config/combedowner/epc-token); without one they have to be
+  downloaded by hand (docs/new-area.md) into <raw dir>/epc/, and nothing fails.
 Files already there are left alone. The Mapzen terrain tiles are fetched by the builds as they
-need them, and the energy certificates have to be downloaded by hand (it needs an account): see
-docs/new-area.md, and put them in <raw dir>/epc/.
+need them.
 
 Then, to measure and pack it all (tools/mapdata.py):
   python3 -I tools/canal.py <map> <raw dir> web/public/maps/<map>-canal.json   (and railway.py)
@@ -229,8 +232,8 @@ def main():
         if "google" in getattr(A, "footprints", ()):
             subprocess.run([sys.executable, os.path.join(TOOLS, "footprints.py"), map_id, "fetch", raw], check=True)
         subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "footprints.py"), map_id, "merge", raw], check=True)
-    if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
-        print(f"epc: download the energy certificates and OS Open UPRN by hand into {os.path.join(raw, 'epc')} (see docs/new-area.md)")
+    if want("epc") and region in ("GB-ENG", "GB-WLS") and not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
+        subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "epc_fetch.py"), map_id, raw], check=True)
 
 
 if __name__ == "__main__":
