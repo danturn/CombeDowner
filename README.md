@@ -73,8 +73,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
   Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. A footpath the
   map data takes under a street goes through a low arch about 2 m high in the bank, the street
-  carried over it, where there's room for the path to come down to it; where there isn't, the path
-  stops at the kerb either side rather than being drawn across the road. Each bore is as wide as the road or path going in, wall
+  carried over it: down a ramp where there's room for one, else down a short flight of steps
+  where the next path or lane is close; only where there isn't room even for steps does the path
+  stop at the kerb either side rather than being drawn across the road. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
   opening along a cutting dug to its floor, with wing walls holding up its sides where the hill
   beside it stands high or rises steeply, their copings sloping down the bank, with no tree or
@@ -108,11 +109,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
-  pavement or parked cars; in front of a shop the pavement runs on up to its front, with no
+  pavement or parked cars; where a building stands nearer the kerb than the rest of the street's
+  pavement, the pavement narrows to it there, or stops, rather than running through its wall; in front of a shop the pavement runs on up to its front, with no
   front garden, and a front door opens clear of any wall or fence, on a wall with open ground
   outside it (never a terrace's party wall or into a neighbour's extension); paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
   dog-leg between gardens goes round them rather than through them; flights of steps (and any footpath steeper than 1 in 4) are treads you climb one by one, sunk into the bank, between the ground at each
-  end, climbing with the hill rather than through it, level where they turn back on themselves or meet another flight, never lying over one another, with a stone cheek wall where the bank beside them falls away and handrails along them where the map has them, and the bare earth or paving beside them laid to their treads rather than over them; where streets meet, the junction is one smooth surface between them rather than stepping from one street's level to the other's, and walls, fences and hedges stand down on the ground as it is drawn, with no daylight under their feet; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
+  end, climbing with the hill rather than through it, level where they turn back on themselves or meet another flight, never lying over one another, with a stone cheek wall where the bank beside them falls away and a low retaining wall where it stands above them, the ground beside them otherwise meeting their treads at their own height and handrails along them where the map has them, and the bare earth or paving beside them laid to their treads rather than over them; where streets meet, the junction is one smooth surface between them rather than stepping from one street's level to the other's, and walls, fences and hedges stand down on the ground as it is drawn, with no daylight under their feet; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.

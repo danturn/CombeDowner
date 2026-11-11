@@ -27,6 +27,127 @@ CAR_COLOURS = 10   # the renderer picks from this many paints
 # Royal Mail's boxes as the game draws them: a pillar box (and any the map doesn't say), a box set in
 # a wall, and a small box on a post
 POST_BOX = {"wall": 1, "lamp": 2}
+def pv_at(r, s):
+    """A street's pavements [left, right] at `s` metres along its points. `pv` is the widest they get
+    and holds wherever `pw` says nothing: `pw` lists [s, left, right] where the room between the kerb
+    and a building is less, the width running straight from one to the next (web/src/map.ts pvAt)."""
+    pv = r.get("pv") or [PAVE, PAVE]
+    pw = r.get("pw")
+    if not pw or s < pw[0][0] or s > pw[-1][0]:
+        return list(pv)
+    for a, b in zip(pw, pw[1:]):
+        if a[0] <= s <= b[0]:
+            f = (s - a[0]) / ((b[0] - a[0]) or 1)
+            return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]
+    return [pw[-1][1], pw[-1][2]]
+
+
+def pave_band(r, i, w, line=None):
+    """The pavement on side `i` (0 left, 1 right, looking along the points) of a street `w` wide, as
+    the strip between its kerb and its edge, narrowed where its `pw` says."""
+    pv = (r.get("pv") or [PAVE, PAVE])[i]
+    if pv <= 0:
+        return None
+    L = line if line is not None else LineString([q[:2] for q in r["p"]])
+    side = (1, -1)[i]
+    band = L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2))
+    pw = r.get("pw")
+    if not pw:
+        return band
+    cuts = []
+    for a, b in zip(pw, pw[1:]):
+        if a[1 + i] >= pv - 1e-6 and b[1 + i] >= pv - 1e-6:
+            continue
+        n = max(2, int((b[0] - a[0]) / 0.25) + 1)
+        inner, outer = [], []
+        for k in range(n + 1):
+            s = a[0] + (b[0] - a[0]) * k / n
+            c, d0, d1 = L.interpolate(s), L.interpolate(max(0.0, s - 0.3)), L.interpolate(min(L.length, s + 0.3))
+            dl = math.hypot(d1.x - d0.x, d1.y - d0.y) or 1.0
+            nx, ny = -(d1.y - d0.y) / dl * side, (d1.x - d0.x) / dl * side
+            v = pv_at(r, s)[i]
+            inner.append((c.x + nx * (w / 2 + v), c.y + ny * (w / 2 + v)))
+            outer.append((c.x + nx * (w / 2 + pv + 1.0), c.y + ny * (w / 2 + pv + 1.0)))
+        cut = shapely.Polygon(inner + outer[::-1]).buffer(0)
+        if not cut.is_empty:
+            cuts.append(cut)
+    return band.difference(shapely.union_all(cuts)) if cuts else band
+
+
+ROOM_STEP = 0.5      # metres between the points a pavement's room is measured at
+ROOM_SPARE = 0.1     # metres kept between a pavement's edge and the building it stops at
+ROOM_GIVE = 0.1      # metres narrower than `pv` before a stretch is written into `pw`
+
+
+def pavement_room(rd, houses, width_of, kerbed=KERBED):
+    """Each kerbed street's pavements narrowed, stretch by stretch, to the room between its kerb and
+    the buildings beside it, down to nothing where a building stands at the kerb: written as the
+    street's `pw`. The carriageway keeps its width and the buildings stay where they were measured;
+    the pavement gives way. A street with room all along keeps only its `pv`."""
+    houses = [h for h in houses if not h.is_empty]
+    if not houses:
+        return 0
+    tree = shapely.STRtree(houses)
+    count = 0
+    for r in rd:
+        r.pop("pw", None)
+        pv = r.get("pv")
+        # (a bridge's deck is drawn to its own sides, which nothing stands on)
+        if r["c"] not in kerbed or len(r["p"]) < 2 or not pv or max(pv) <= 0 or any(len(q) > 3 and q[3] for q in r["p"]):
+            continue
+        L = LineString([q[:2] for q in r["p"]])
+        if L.length < 0.5:
+            continue
+        w = width_of(r)
+        near = tree.query(L.buffer(w / 2 + max(pv) + 0.5))
+        if not len(near):
+            continue
+        near = [houses[int(k)] for k in near]
+        n = max(2, int(math.ceil(L.length / ROOM_STEP)))
+        at = [L.length * k / n for k in range(n + 1)]
+        rows = []
+        for s in at:
+            c, d0, d1 = L.interpolate(s), L.interpolate(max(0.0, s - 0.3)), L.interpolate(min(L.length, s + 0.3))
+            dl = math.hypot(d1.x - d0.x, d1.y - d0.y) or 1.0
+            nx, ny = -(d1.y - d0.y) / dl, (d1.x - d0.x) / dl
+            row = []
+            for i, side in enumerate((1, -1)):
+                if pv[i] <= 0:
+                    row.append(0.0)
+                    continue
+                kerb = Point(c.x + nx * side * w / 2, c.y + ny * side * w / 2)
+                ray = LineString([kerb.coords[0], (c.x + nx * side * (w / 2 + pv[i] + 0.3), c.y + ny * side * (w / 2 + pv[i] + 0.3))])
+                room = pv[i]
+                for h in near:
+                    if h.contains(kerb):
+                        room = 0.0
+                        break
+                    if h.intersects(ray):
+                        room = min(room, kerb.distance(h.intersection(ray)) - ROOM_SPARE)
+                row.append(max(0.0, min(pv[i], room)))
+            rows.append(row)
+        # (between two points, the narrower of them: a corner standing between them is still seen)
+        rows = [[min(rows[j][i] for j in range(max(0, k - 1), min(len(rows), k + 2))) for i in (0, 1)] for k in range(len(rows))]
+        tight = [any(pv[i] - row[i] > ROOM_GIVE for i in (0, 1)) for row in rows]
+        if not any(tight):
+            continue
+        keep = sorted({j for k, t in enumerate(tight) if t for j in (k - 1, k, k + 1) if 0 <= j < len(rows)})
+        pts = [[round(at[k], 2)] + [round(pv[i] if pv[i] - rows[k][i] <= ROOM_GIVE else rows[k][i], 2) for i in (0, 1)] for k in keep]
+        # (a point the straight run between its neighbours gives anyway is left out)
+        out = [pts[0]]
+        for k in range(1, len(pts) - 1):
+            a, b, c = out[-1], pts[k], pts[k + 1]
+            f = (b[0] - a[0]) / ((c[0] - a[0]) or 1)
+            if all(abs(a[i] + (c[i] - a[i]) * f - b[i]) < 0.05 for i in (1, 2)):
+                continue
+            out.append(b)
+        if len(pts) > 1:
+            out.append(pts[-1])
+        r["pw"] = out
+        count += 1
+    return count
+
+
 # The red kiosks; the modern KX booths aren't drawn
 RED_BOOTHS = ("K2", "K6", "K8")
 

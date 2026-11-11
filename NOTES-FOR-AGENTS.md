@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Ground stage 7 (branch `claude/ground-7`):** pavements that narrow along a street (`pw` on street
+  records, `streets.pv_at`/`pave_band`, `map.ts` `pvAt`), the ground meeting flights' sides at tread
+  height (`partition/sheet.py` `beside_treads`), paths under streets down steps to their arch where a ramp
+  won't fit (`structures.low_bores`), tunnel cuttings held out to the ground (`write_tile` `MOUTH_REACH`),
+  decks' room taken from `dk` (`bridge_decks`), check rule 3 reading held abutments. Rebuilds every square.
+
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's

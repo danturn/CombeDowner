@@ -72,7 +72,7 @@ from partition.settle import drop_unstood, house_kinds, load_evidence, owners_ne
 from partition.standing import Standing
 from partition.straighten import straighten
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
-from streets import KERBED, parked_cars
+from streets import KERBED, parked_cars, pave_band, pavement_room, pv_at
 from landscape import string_wires
 import tunnels as TN
 from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
@@ -896,6 +896,8 @@ def _opened(pts):
 APPROACH = 9
 ROAD_RAMP = 0.15
 MOUTH_HOLD = 3       # points (4 m apart) out from a tunnel's portal that a way keeps the city's heights for
+MOUTH_REACH = 10     # and further, up to this many, till the city's floor comes back up to the ground
+MOUTH_MEETS = 0.3    # metres off the ground the city's floor is back on it
 MOUTH_DEPTH = 6.0    # metres: further than this under the ground, a way's point by a bore's end is inside the hill
 
 
@@ -931,7 +933,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     steps = len(prof["z"]) - 1
     under = set(prof.get("dip") or ())
     towpath = set(prof.get("tow") or ())
-    under_data, beneath, mouth = set(prof.get("under") or ()), set(), set()
+    under_data, beneath, mouth, mouth_out = set(prof.get("under") or ()), set(), set(), {}
     for i, (x, y) in enumerate(seg):
         f = whole.project(Point(x, y)) / (whole.length or 1) * steps
         lo = max(0, min(steps - 1, int(f)))
@@ -949,8 +951,19 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
             deep.add(i)
         if near in under_data:
             beneath.add(i)
-        if any(i0 - MOUTH_HOLD <= near < i0 or i1 < near <= i1 + MOUTH_HOLD for i0, i1 in prof["bored"]):
+        for i0, i1 in prof["bored"]:
+            if i0 - MOUTH_REACH <= near < i0:
+                mouth_out[i] = ((i0, i1, -1), i0 - near)
+            elif i1 < near <= i1 + MOUTH_REACH:
+                mouth_out[i] = ((i0, i1, 1), near - i1)
+    # (a cutting out to a tunnel's mouth runs on till its floor comes back up to the ground: held only
+    # MOUTH_HOLD points, an approach still well down in the cutting met the ground in a bank)
+    for side in {key for key, _ in mouth_out.values()}:
+        out = sorted((o, i) for i, (key, o) in mouth_out.items() if key == side)
+        for o, i in out:
             mouth.add(i)
+            if o >= MOUTH_HOLD and (gs[i] is None or abs(zs[i] - gs[i]) <= MOUTH_MEETS):
+                break
     # (and a stretch inside the game's tunnel, whose bore can start a little further out than ours)
     tubed = {i for i, (x, y) in enumerate(seg) if roof[1](x, y, zs[i])} if roof and roof[1] else set()
     deep |= tubed
@@ -2821,8 +2834,14 @@ def bridge_decks(rd, ground=None, under=False):
     end): off it, a street or a path is faces like any other, so what meets or crosses it at grade
     meets its faces rather than stopping short at room left for parapets that aren't there. With
     `under`, also what of the paths passing under a deck is theirs to draw there."""
-    decks = [line.buffer(way_width(r) / 2 + (0.5 if r["c"] in GAME_PATHS else max(r.get("pv") or [0]) + 0.5), cap_style="flat")
-             for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
+    # (out to the deck's own sides where the record gives them: out to its pavements' width instead,
+    # a slip road's deck beside a main road's took the main road's surface past its abutment)
+    def reach(r):
+        dk = r.get("dk")
+        if dk:
+            return max(dk) if isinstance(dk, list) else dk
+        return way_width(r) / 2 + (0 if r["c"] in GAME_PATHS else max(r.get("pv") or [0]))
+    decks = [line.buffer(reach(r) + 0.5, cap_style="flat") for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
     if not decks:
         return (None, None) if under else None
     deck = unary_union(decks)
@@ -6782,10 +6801,11 @@ def ends_off_pavements(br, rd):
         if r["c"] not in KERBED or len(r["p"]) < 2:
             continue
         L, w = LineString([q[:2] for q in r["p"]]), r.get("w", RW.get(r["c"], 4))
-        for side, pv in zip((1, -1), r.get("pv") or (0, 0)):
+        for i, pv in enumerate(r.get("pv") or (0, 0)):
             if pv > 0:
-                bands.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True)
-                             .difference(L.buffer(w / 2, cap_style=2)).buffer(-0.25))
+                band = pave_band(r, i, w, L).buffer(-0.25)
+                if not band.is_empty:
+                    bands.append(band)
     if not bands:
         return br, 0
     tree = STRtree(bands)
@@ -7441,7 +7461,7 @@ def reseat_on_pavement(kind, x, y, rd):
     dx, dy = dx / n, dy / n
     c = line.interpolate(s)
     side = 1 if (x - c.x) * -dy + (y - c.y) * dx > 0 else -1
-    pave = (r.get("pv") or [PAVE, PAVE])[0 if side > 0 else 1]
+    pave = pv_at(r, s)[0 if side > 0 else 1]
     if pave < RESEAT_MIN_PAVEMENT:
         return None
     if kind == "bus":
@@ -8662,6 +8682,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
     rd = widen_to_paving(rd, filled[0][0] if filled else None, paving, br, houses)
+    # (where a building stands nearer the kerb than that, the pavement narrows to it there)
+    pavement_room(rd, houses_near, way_width, KERBED)
     tile["rd"] = rd
     br, _ = ends_off_pavements(br, rd)
     points = mapped_points(sq)

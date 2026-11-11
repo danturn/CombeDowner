@@ -425,6 +425,65 @@ def runs(mask):
     return out
 
 
+TREAD_LIFT = 0.04     # metres a flight's treads stand over its baked line (check_more.PATH_LIFT, furniture.ts)
+TREAD_RISE = 0.16     # metres a tread climbs, where the map gives no count
+TREAD_CLEAR = 0.05    # metres the ground beside a tread may stand over it before it buries the tread
+HILL_OUT = (0.4, 1.0, 2.0)   # metres out from a flight's side that the hill beside it is read
+
+
+def treads(r):
+    """A flight's line, and the top of its treads at a distance along it, as the game lays them on
+    its baked heights (furniture.ts stairLayout): each tread as high as the higher of its two ends."""
+    p = r["p"]
+    line = shapely.LineString([q[:2] for q in p])
+    cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:])])])
+    z = np.asarray([q[2] for q in p], float) + TREAD_LIFT
+    L = float(cum[-1])
+    rise = abs(z[-1] - z[0])
+    count = min(r.get("sc") or (round(rise / TREAD_RISE) if rise > 0.3 else 0), 240, int(L // 0.2))
+
+    def top(s):
+        s = np.clip(np.asarray(s, float), 0, L)
+        if count < 1:
+            return np.interp(s, cum, z)
+        k = np.minimum(np.floor(s / L * count), count - 1)
+        return np.maximum(np.interp(L * k / count, cum, z), np.interp(L * (k + 1) / count, cum, z))
+    return line, L, top
+
+
+def beside_treads(rd, F, spots, top, meet, H, T):
+    """The ground where it meets a flight's sides, at its treads' height: a bank higher than the treads
+    beside them is held by a retaining wall, at least a hand's breadth high, all along it; else the
+    ground comes down to the treads, so the 4 m grid's slope never buries one."""
+    flights = [r for r in rd if r.get("c") == "steps" and r.get("tb") and len(r["p"]) > 1
+               and not any(len(q) > 3 and q[3] for q in r["p"])]
+    if not flights or not len(spots):
+        return meet
+    laid = [treads(r) for r in flights]
+    half = [(r.get("w") or 1.8) / 2 for r in flights]
+    pts = shapely.points(F.V[spots, :2])
+    si_, fl_ = shapely.STRtree([l.buffer(h + 0.3, cap_style="flat") for (l, _, _), h in zip(laid, half)]).query(pts, predicate="intersects")
+    out = meet.copy()
+    for i, k in zip(si_.tolist(), fl_.tolist()):
+        line, L, at = laid[k]
+        pt = pts[i]
+        s = line.project(pt)
+        if s <= 0.05 or s >= L - 0.05:
+            continue
+        foot = line.interpolate(s)
+        dx, dy = F.V[spots[i], 0] - foot.x, F.V[spots[i], 1] - foot.y
+        d = math.hypot(dx, dy)
+        if d < half[k] * 0.5:
+            continue
+        tread = float(at(s))
+        hill = max(float(on_grid(H, T, foot.x + dx / d * (half[k] + o), foot.y + dy / d * (half[k] + o))) for o in HILL_OUT)
+        if hill > tread + TREAD_CLEAR:
+            out[i] = max(out[i], min(hill, tread + SUNK_MOST), top[i] + 2 * TREAD_CLEAR)
+        elif out[i] > tread + TREAD_CLEAR / 2:
+            out[i] = tread
+    return out
+
+
 def ground_sheet(tile, canal=None):
     """`gs` for a square as written (its `sf`, `t`, `bl`, `wp` and `br`), or None if it has no faces.
     canal: the map's canal, whose tunnels' hills the game raises over the grid before the sheet's
@@ -497,6 +556,7 @@ def ground_sheet(tile, canal=None):
         hill = np.maximum(g, bank)
         sunk = on & (hill > top)
         meet[sunk] = np.maximum(np.minimum(hill[sunk], top[sunk] + SUNK_MOST), meet[sunk])
+        meet = beside_treads(tile.get("rd") or [], F, spots, top, meet, H, T)
     # A bridge's abutment: where a face ends under a deck's end, the ground beside it is dug to the
     # room under the deck and a wall holds the face's edge, as an abutment stands at a bridge's end.
     for (ax_, ay_), (bx_, by_), za, zb, half, _ in deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y)), tile.get("se")):

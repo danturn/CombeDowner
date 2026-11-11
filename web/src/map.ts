@@ -54,7 +54,7 @@ export interface RoofMesh { v: number[]; t: number[]; w?: number[]; z: number[][
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean; piece?: boolean; bt?: string; uo?: number[][]; ms?: number }   // ms: its speed limit in mph (tools/maxspeed.py); bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; piece: a set piece's own street (SetPiece.street), drawn as it lays it rather than as the square's faces; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; pw?: number[][]; dk?: number | number[]; held?: boolean; piece?: boolean; bt?: string; uo?: number[][]; ms?: number }   // ms: its speed limit in mph (tools/maxspeed.py); bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; piece: a set piece's own street (SetPiece.street), drawn as it lays it rather than as the square's faces; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE), the widest they get along it; pw: where a building stands nearer the kerb than that, [metres along, left, right] (pvAt)
 /** What a street or path's ways say beyond its class (tools/osm.py's osm-detail): su, a path's surface (g grass, d dirt, v gravel; paved if left out);
  *  sv, a service road's kind (d a drive, l an alley, a a car park's aisle, p private); and for steps sc, how many treads, hr, its handrails
  *  (1 on the left looking along its points, 2 on the right, 4 down the middle), up, 1 where its points run uphill and -1 downhill,
@@ -2217,6 +2217,18 @@ function deckDrop(r: { bt?: string; c: string }): number { return BRIDGE_DECK[br
 /** Streets with kerbs and a pavement each side, and how wide the pavement is. */
 export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 export const PAVE = 1.7;
+/** A street's pavements [left, right] at `s` metres along its points: `pv`, narrowed where `pw` says
+ *  (tools/streets.py pv_at), running straight from one of its points to the next. */
+export function pvAt(r: { pv?: number[]; pw?: number[][] }, s: number): [number, number] {
+  const pv = r.pv ?? [PAVE, PAVE], pw = r.pw;
+  if (!pw?.length || s < pw[0][0] || s > pw[pw.length - 1][0]) return [pv[0], pv[1]];
+  for (let k = 0; k < pw.length - 1; k++) {
+    const a = pw[k], b = pw[k + 1];
+    if (s <= b[0]) { const f = (s - a[0]) / (b[0] - a[0] || 1); return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]; }
+  }
+  const e = pw[pw.length - 1];
+  return [e[1], e[2]];
+}
 /** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its
  *  pavements as they're drawn (its own width and pavements where the map gives them), or a path
  *  and its verge. The deck is built, drawn and stood on out to here, to its parapets, so no part
