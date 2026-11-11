@@ -19,8 +19,13 @@ export function watchLoading(canvas: HTMLCanvasElement) {
   canvas.addEventListener("webglcontextrestored", () => { lost = false; });
 
   let pending = -1, since = performance.now(), shown = since, wasShown = true;
+  // squares are built in the render loop, which stops while the tab is hidden or the phone is locked,
+  // so time away doesn't count as waiting
+  const restartClock = () => { since = shown = performance.now(); };
+  document.addEventListener("visibilitychange", restartClock);
   setInterval(() => {
     const now = performance.now();
+    if (document.hidden) { restartClock(); return; }
     const loading = (globalThis as any).__tilesPending as number | undefined;
     const p = loading === undefined ? undefined : loading + tileTrouble.missing;
     const menuLoading = !document.getElementById("loading")?.hidden;
