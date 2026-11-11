@@ -1653,7 +1653,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         let s = s0;
         for (let i = from; i !== to; i += dir) {
           const A = r.p[i], B = r.p[i + dir], len = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(1, Math.ceil(len / 2));
-          const ta = deckTop(A, flags[i], ground, Z0), tb = deckTop(B, flags[i + dir], ground, Z0);
+          const ta = deckTop(A, flags[i], ground, Z0, map.d.se), tb = deckTop(B, flags[i + dir], ground, Z0, map.d.se);
           for (let k = 0; k < n; k++) {
             const f = k / n, x = A[0] + (B[0] - A[0]) * f, y = A[1] + (B[1] - A[1]) * f;
             out.push({ x, y, s: s + len * f, top: ta + (tb - ta) * f + lift, g: ground(x, -y), nx: 0, ny: 0, ...reach(i, i + dir, f) });
@@ -1661,7 +1661,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           s += len;
         }
         const E = r.p[to];
-        out.push({ x: E[0], y: E[1], s, top: deckTop(E, flags[to], ground, Z0) + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0, ...reach(to, to, 0) });
+        out.push({ x: E[0], y: E[1], s, top: deckTop(E, flags[to], ground, Z0, map.d.se) + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0, ...reach(to, to, 0) });
         for (let i = 0; i < out.length; i++) {
           const A = out[Math.max(0, i - 1)], B = out[Math.min(out.length - 1, i + 1)], dx = (B.x - A.x) * dir, dy = (B.y - A.y) * dir, l = Math.hypot(dx, dy) || 1;
           out[i].nx = -dy / l; out[i].ny = dx / l;
@@ -1680,7 +1680,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }
         return out;
       };
-      const height = (i: number) => deckTop(r.p[i], flags[i], ground, Z0);
+      const height = (i: number) => deckTop(r.p[i], flags[i], ground, Z0, map.d.se);
       const falls = (i: number, j: number) => flags[j] !== 1 && offTheEnd(height(i), height(j), Math.hypot(r.p[j][0] - r.p[i][0], r.p[j][1] - r.p[i][1]));
       for (const [a0, b0] of bridgeSpans(r, flags, true)) {
         const hangA = a0 + 1 < b0 && falls(a0 + 1, a0), hangB = b0 - 1 > a0 && falls(b0 - 1, b0);
@@ -1717,7 +1717,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }));
         const joint = (i: number) => flags[i] === 1 && ((decked.get(spot(r.p[i])) ?? []).some((w) => !r.p.includes(w.p.find((q) => spot(q) === spot(r.p[i]))!)) || onDeck(r.p[i]));
         const inAir = (q: Pt) => (q === P[0] && (hangA || joint(a))) || (q === P[P.length - 1] && (hangB || joint(b)));
-        const supports = [...(seam(P[0]) || inAir(P[0]) ? [] : [0]), ...(seam(P[P.length - 1]) || inAir(P[P.length - 1]) ? [] : [s])];
+        // (a square that has its structures' ends says which end stands on the bank, so a bridge whose
+        // abutment is right on the square's edge keeps it, and one running on into the next has none)
+        const endAt = (q: Pt) => map.d.se?.find((e) => e[0] !== "portal" && Math.hypot(e[1] - q.x, e[2] - q.y) < 1.0);
+        const stands = (q: Pt, hang: boolean) => {
+          if (!map.d.se) return !(seam(q) || inAir(q));
+          const e = endAt(q);
+          return !hang && (e ? e[0] === "abutment" || e[0] === "open" : !(seam(q) || inAir(q)));
+        };
+        const supports = [...(stands(P[0], hangA) ? [0] : []), ...(stands(P[P.length - 1], hangB) ? [s] : [])];
         // where it crosses the canal: the water and the towpath stay open under it all the way
         // across the deck (a skew bridge's too), with no pier in them and no wall down to the
         // water, and an arch springing from the banks over them

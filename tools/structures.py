@@ -1328,3 +1328,82 @@ def drop_empty_spans(roads, ground, water, rails, reach=2.5):
                 dropped += 1
             k = e + 1
     return dropped
+
+
+# ---- each structure's ends, decided once for the whole map ---------------------------------------
+
+JOINT = 1.0       # metres: a deck's end this close to another's deck, and this near its height, runs on into it
+
+
+def end_id(kind, x, y):
+    """A stable name for an end, from what it is and where (to half a metre), as `edge_id` is."""
+    import hashlib
+    return hashlib.sha1(f"{kind} {round(x * 2)} {round(y * 2)}".encode()).hexdigest()[:10]
+
+
+def structure_ends(pending):
+    """Every bridge's and tunnel's ends, from the whole of each structure (a span crossing a square's
+    edge has one pair): [(run index, point index, kind, x, y, z, half width, id)].
+
+    A bridge's ends are the points just off its span at each end, as the game builds them
+    (map.ts bridgeSpans). An `abutment` stands on the bank there; a `joint` is where it runs on into
+    another deck in the air, and stands on nothing; an `open` end is one whose span runs to the end
+    of its way with nothing going on there. A bored tunnel's are its two `portal`s."""
+    decks = collections.defaultdict(list)
+    for k, r in enumerate(pending):
+        for i in r["span"] | r["deck"]:
+            decks[(round(r["run"][i][0]), round(r["run"][i][1]))].append((k, i))
+
+    def on_deck(k, i):
+        r_xy = pending[k]["run"][i][:2]
+        x, y = r_xy
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for k2, i2 in decks.get((round(x) + dx, round(y) + dy), ()):
+                    if k2 != k and math.dist(pending[k2]["run"][i2][:2], r_xy) < JOINT \
+                            and abs(pending[k2]["z"][i2] - pending[k]["z"][i]) < JOINT:
+                        return True
+        return False
+
+    points = collections.defaultdict(list)
+    for k, r in enumerate(pending):
+        for i, q in enumerate(r["run"]):
+            points[(round(q[0]), round(q[1]))].append((k, i))
+
+    def met(k, i):
+        """Whether another way comes to the point at its height, which the deck's end then lands on
+        (one well under it passes beneath)."""
+        x, y = pending[k]["run"][i][:2]
+        return any(k2 != k and math.dist(pending[k2]["run"][i2][:2], (x, y)) < 1.5 and abs(pending[k2]["z"][i2] - pending[k]["z"][i]) < JOINT
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1) for k2, i2 in points.get((round(x) + dx, round(y) + dy), ()))
+
+    out = []
+    for k, r in enumerate(pending):
+        run, z, n = r["run"], r["z"], len(r["run"])
+        half = RW.get(r["c"], 4) / 2
+        for st in stretches(r["span"]):
+            for i, inner in ((st[0] - 1, st[0]), (st[-1] + 1, st[-1])):
+                if 0 <= i < n:
+                    kind = "joint" if on_deck(k, i) else "abutment"
+                else:
+                    i = inner
+                    kind = "joint" if on_deck(k, i) else "abutment" if met(k, i) else "open"
+                x, y = run[i][:2]
+                out.append((k, i, kind, x, y, z[i], half, end_id(kind, x, y)))
+        for i0, i1 in r.get("bored") or ():
+            for i in (i0, i1):
+                if 0 <= i < n:
+                    x, y = run[i][:2]
+                    out.append((k, i, "portal", x, y, z[i], half, end_id("portal", x, y)))
+    return out
+
+
+def ends_by_edge(pending, ends):
+    """{edge id: [[kind, x, y, z, half width, id], ...]}: each end filed under the edge it lies on."""
+    out = collections.defaultdict(list)
+    for k, i, kind, x, y, z, half, eid in ends:
+        for edge, _rev, s, e in pending[k]["parts"]:
+            if s <= i <= e:
+                out[edge].append([kind, round(x, 2), round(y, 2), round(z, 2), round(half, 2), eid])
+                break
+    return out

@@ -60,6 +60,7 @@ from shapely.strtree import STRtree
 from gardens import NEUTRAL as GARDEN_NEUTRAL, STYLE as GARDEN_STYLE, pick
 from partition import MAP, ROOT, face_shape, once, setpiece_cuts, zone_at
 from partition import flights as flight_pieces
+from partition import ends as structure_ends
 from partition import wall_feet
 from partition.openings import EDGE_STUB
 from railway import open_runs
@@ -8460,6 +8461,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     ways_meet_level(rd, sq, ground)
     abutments_on_the_ground(rd, sq, ground)
     flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width))
+    tile["se"] = structure_ends.settle(rd, structure_ends.city_ends(profiles, [r["id"] for r in near_roads]), sq)
     tile["rd"] = rd
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):

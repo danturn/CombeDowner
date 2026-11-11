@@ -136,8 +136,10 @@ def bake(path):
             def z_at(k):
                 need = min(float(under[k]) for _, under in sides) + FOOT_DEEP - FOOT_AIM
                 x, y = a[0] + (q[0] - a[0]) * t[k], a[1] + (q[1] - a[1]) * t[k]
-                # (and no further over the survey's grid than a point may stand)
-                return round(min(float(zs[k]), max(need, floor(x, y, float(zs[k]))), float(grid(x, y)) + OFF_GRID), 2)
+                # (and no further off the survey's grid than a point may stand: the line between two
+                # lowered points can pass under a hump of ground between them)
+                g = float(grid(x, y))
+                return round(min(max(min(float(zs[k]), max(need, floor(x, y, float(zs[k])))), g - OFF_GRID), g + OFF_GRID), 2)
             added[(w, i)] = [[round(a[0] + (q[0] - a[0]) * t[k], 2), round(a[1] + (q[1] - a[1]) * t[k], 2), z_at(k)]
                              for k in sorted(keep)]
     if not added and not lower:

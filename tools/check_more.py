@@ -63,7 +63,7 @@ from the packs alone, a few seconds a square:
 29. No parapet gap where three or more pieces of a bridge meet on its deck.
 30. No ground stands up through a deck.
 31. Room under a bridge: the ground half a metre under its underside, and headroom for a way or the
-    canal's towpath under the game's ceiling there.
+    canal's towpath under the game's ceiling there (and the railway's room: rule 51).
 32. Tunnels as the game builds them (tools/tunnel_mesh.ts runs web/src/tunnels.ts): tubes meet where
     pieces meet and go on over a square's edge; walls and floor are solid where they're drawn.
 33. Flights of steps land on something to walk on, and their treads are neither buried (unless a
@@ -100,6 +100,7 @@ from the packs alone, a few seconds a square:
 49. A road meets a pedestrian street at its paving: it neither runs on into the paving nor bulges
     into the mouth of one stopping short of it.
 50. The line between a pavement and the paving beside it has no short sideways jogs.
+51. A bridge over the railway leaves a train room under its deck (the railway's own bridges aside).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -147,6 +148,12 @@ def _whole(root, map_id):
     src = wide if wide and "field" in wide else head or {}
     return {"canal": load("-canal"), "pubs": (load("-pubs") or {}).get("pb") or [],
             "field": src.get("field"), "fc": src.get("fc") or [0, 0]}
+
+
+@functools.lru_cache(maxsize=2)
+def _rail(root, map_id):
+    p = os.path.join(root, f"{map_id}-rail.json")
+    return json.load(open(p)) if os.path.exists(p) else None
 
 
 @functools.lru_cache(maxsize=4)
@@ -969,6 +976,7 @@ LUMP = 0.05          # metres the grass may be raised under a path beside a stre
 DECK_END = 0.1       # metres between a deck's end and the street it lands on
 DECK_CLEAR = 0.5     # metres under a deck with nothing passing
 HEAD = 1.9           # metres a walker needs under a ceiling (player.ts EYE 1.65, and the head over it)
+RAIL_HEAD = 4.3      # metres from a track's line to a deck's underside: a train's roof (tools/trackclear.ts 3.8) and room over it
 KINDS = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck depth
 FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
 GAME_KERBED = KERBED | {"living_street"}
@@ -1527,7 +1535,7 @@ def join_spans(roads):
 
 
 def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
-    """28-31. Bridges, joined as the game joins them (world.ts joinSpans), with each kind's deck
+    """28-31 and 51. Bridges, joined as the game joins them (world.ts joinSpans), with each kind's deck
     (world.ts KINDS) under its top:
     28. a deck's end lands on the street it meets: it doesn't stop in the air (falling off its last
         point, world.ts offTheEnd, or ending on its span with nothing going on, here or in the next
@@ -1571,6 +1579,9 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     ttree = shapely.STRtree([t[0] for t in tow]) if tow else None
     ways = [(LineString([q[:2] for q in r["p"]]), r) for r in roads]
     wtree = shapely.STRtree([w[0] for w in ways])
+    rails = [(LineString([q[:2] for q in t["p"]]), t["p"]) for t in (_rail(*_root_of(f)) or {}).get("tracks", []) if len(t["p"]) > 1]
+    rails = [t for t in rails if t[0].intersects(box(*m["b"]).buffer(50))]
+    rtree = shapely.STRtree([t[0] for t in rails]) if rails else None
     # (under a deck over water, or over the canal's works and locks, the ground is hidden or dug: the
     # water's surface or the canal's own bed is what's there)
     near = box(*m["b"]).buffer(50)
@@ -1581,6 +1592,12 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     hidden = shapely.union_all([g for g in hidden if g.intersects(near)] or [Polygon()])
     shapely.prepare(hidden)
     clear_low, through = 0.0, 0.0
+    abutments = [e for e in m.get("se") or [] if e[0] == "abutment" and len(e) > 6 and e[6]]
+
+    def _landing(q, g):
+        """map.ts deckTop: a deck lands at the height its square holds the abutment at, where it does."""
+        e = next((e for e in abutments if math.dist(e[1:3], q[:2]) < 0.3), None)
+        return e[3] if e is not None and abs(e[3] - g) < 1 else g
     for r in chains:
         p, flags = r["p"], _flags(r)
         if any(held(q[0], q[1]) for q in p if len(q) > 3): continue
@@ -1588,7 +1605,7 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
         deck = KINDS[kind]
         lift = 0.2 if r["c"] in GAME_KERBED else 0.1
         hl, hr = _deck_sides(r)
-        h = lambda i: p[i][2] if flags[i] else float(ground(p[i][0], p[i][1]))
+        h = lambda i: p[i][2] if flags[i] else _landing(p[i], float(ground(p[i][0], p[i][1])))
         falls = lambda i, j: flags[j] != 1 and abs(h(i) - h(j)) > max(2, math.dist(p[i][:2], p[j][:2]))
         name = f"{r['c']} {r.get('n') or ''!r}"
         for a0, b0 in _spans(flags):
@@ -1681,6 +1698,21 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
                 if room < HEAD and top - wz > 1.0:
                     note("31 no room under a bridge", HEAD - room, at(x.x, x.y), f"{w['c']} {w['n']!r} under {name}: {room:.1f} m to the ceiling")
                     fig["ways without room"] = fig.get("ways without room", 0) + 1
+            # the railway passing under: a train's roof and a little over it under the deck's underside
+            for k in (rtree.query(foot) if rtree else []):
+                tl, tp = rails[int(k)]
+                if not tl.crosses(line): continue
+                x = tl.intersection(line)
+                x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type != "Point": continue
+                i = min(range(len(tp)), key=lambda i: math.dist(tp[i][:2], (x.x, x.y)))
+                top = float(np.interp(line.project(x), cum, [h(i) for i in range(a, b + 1)])) + lift
+                room = top - deck - tp[i][2]
+                # (a track well over the deck is a railway bridge over the road, not under it)
+                if -2 < room < RAIL_HEAD and sq.contains(x):
+                    note("51 no headroom over the railway", RAIL_HEAD - room, at(x.x, x.y),
+                         f"{name} {kind}, {room:.1f} m over the track's line")
+                    fig["bridges low over the railway"] = fig.get("bridges low over the railway", 0) + 1
     fig["deck underside in ground m2"] = fig.get("deck underside in ground m2", 0) + through
     fig["under decks within clear m2"] = fig.get("under decks within clear m2", 0) + clear_low
 

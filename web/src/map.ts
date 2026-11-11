@@ -107,6 +107,8 @@ export interface MapData {
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
   tn?: Tunnel[];                                  // tunnels you can walk through
+  // bridges' and tunnels' ends (tools/partition/ends.py): kind, x, y, height, half width, id, held
+  se?: [string, number, number, number, number, string, number?][];
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
   so?: number[][][];                              // set pieces' outlines (landmarks/setpieces.ts), for the faces they lay their own ground over
@@ -565,7 +567,7 @@ export class GameMap {
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
       const sides = deckSides(r);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
-        const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
+        const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0, d.se));
         for (const side of [1, -1]) {
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
           // (down only to the deck's underside, so a road or path passing under has no wall across it)
@@ -582,7 +584,7 @@ export class GameMap {
       // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
       // (out to its parapets, each side its own: a side with no pavement stops at its kerb)
       const k = this.decks.length, half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), seen = new Set<number>(), flags = spanFlags(r, g, this.z0);
-      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -2260,9 +2262,15 @@ export function spanFlags(r: Road, ground: (x: number, z: number) => number, z0:
   }
   return out;
 }
-/** The height (scene Y) a road is walked and drawn at, at point i: its own on a bridge, the ground elsewhere. */
-export function deckTop(q: number[], flag: number, ground: (x: number, z: number) => number, z0: number): number {
-  return flag ? q[2] - z0 : ground(q[0], -q[1]);
+/** The height (scene Y) a road is walked and drawn at, at point i: its own on a bridge, the ground
+ *  elsewhere, except at an abutment the square holds at a flight's height (tools/partition/ends.py),
+ *  where the deck lands at the one height every way meeting it shares. */
+export function deckTop(q: number[], flag: number, ground: (x: number, z: number) => number, z0: number, ends?: MapData["se"]): number {
+  if (flag) return q[2] - z0;
+  const g = ground(q[0], -q[1]);
+  const e = ends?.find((e) => e[0] === "abutment" && e[6] && Math.hypot(e[1] - q[0], e[2] - q[1]) < 0.3);
+  // (one a metre off the ground there is not where the survey and the ways agree: the ground wins)
+  return e && Math.abs(e[3] - z0 - g) < 1 ? e[3] - z0 : g;
 }
 /**
  * The spans of a bridge: ranges [a, b] of the road's point indexes, each from the abutment at one
