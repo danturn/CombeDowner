@@ -69,7 +69,8 @@ export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's 
 export interface Place { n: string; r: number[][] }
 /** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z];
  *  hw: half the bore's width at each point, as wide as its way going in; pv: the pavement each side at each point, where it has one. */
-export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv?: number[] }
+/** cr: floor to arch, where it isn't its way's usual (a path's low arch under a street) */
+export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv?: number[]; cr?: number }
 /** A football pitch ["f", x, y, length, width, angle], a rugby pitch ["r", x, y, length, width, angle],
  *  or a cricket field ["c", x, y, angle, boundary rope ring, sightscreens [[x, y], ...]]. The angle
  *  is the long axis (the wicket, for cricket). */
@@ -326,7 +327,7 @@ const RAIL = new Set(["rail", "railway", "standard_gauge", "narrow_gauge", "ligh
 export const carriesTraffic = (t: Tunnel) => MOTOR.has(t.c.replace(/_link$/, ""));
 /** Floor to the top of a bore: a lorry's headroom under a road, a train's under a railway, and a
  *  walker's or a cyclist's under a path, so a footway isn't a tall narrow slot. */
-export const boreCrown = (t: Tunnel) => (carriesTraffic(t) ? TUNNEL.crown : RAIL.has(t.c) ? TUNNEL.rail : TUNNEL.path);
+export const boreCrown = (t: Tunnel) => t.cr ?? (carriesTraffic(t) ? TUNNEL.crown : RAIL.has(t.c) ? TUNNEL.rail : TUNNEL.path);
 
 /** mover: the vehicle it hit, if it was one. */
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
@@ -2263,13 +2264,15 @@ export function spanFlags(r: Road, ground: (x: number, z: number) => number, z0:
   return out;
 }
 /** The height (scene Y) a road is walked and drawn at, at point i: its own on a bridge, the ground
- *  elsewhere, except at an abutment the square holds at a flight's height (tools/partition/ends.py),
- *  where the deck lands at the one height every way meeting it shares. */
+ *  elsewhere, except at an abutment the square holds (tools/partition/ends.py): at a flight's height,
+ *  where every way meeting it shares one (1), or at its way's own height, where the street beyond is
+ *  drawn (2). Squares written before hold only the flights' and land the rest on the ground. */
 export function deckTop(q: number[], flag: number, ground: (x: number, z: number) => number, z0: number, ends?: MapData["se"]): number {
   if (flag) return q[2] - z0;
   const g = ground(q[0], -q[1]);
   const e = ends?.find((e) => e[0] === "abutment" && e[6] && Math.hypot(e[1] - q[0], e[2] - q[1]) < 0.3);
-  // (one a metre off the ground there is not where the survey and the ways agree: the ground wins)
+  if (e?.[6] === 2) return e[3] - z0;
+  // (a flight's end a metre off the ground there is not where the survey and the ways agree: the ground wins)
   return e && Math.abs(e[3] - z0 - g) < 1 ? e[3] - z0 : g;
 }
 /**

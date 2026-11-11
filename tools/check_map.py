@@ -15,7 +15,8 @@ case by case:
  3. A bridge's span stands clear of the ground under it, its deck meets the road at each end
     within a step, and it has something to cross: water, the railway, a road, or a drop. A span
     starts and ends on the ground inside its street's record, not at the record's own end (unless
-    it is a mapped pier's or pontoon's, pr, ending out over the water with no way going on from it).
+    it is a mapped pier's or pontoon's, pr, ending out over the water with no way going on from it,
+    or one the data ends against a building's wall, within ON_WALL of its outline).
  4. Nothing runs through the water: a road or path in a river or pond is on a span, and the
     water's bed is below its surface.
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
@@ -77,6 +78,7 @@ PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "tra
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 PIER_CLEAR = 6.0    # metres round a deck's end over the water with no other way in them: a jetty's end
+ON_WALL = 1.0       # metres from a building's outline that a span's end is on it, ending against its wall
 VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown"}
 
 
@@ -223,6 +225,10 @@ def main():
         pieces = set_pieces_near(m)
         # (a span in a set piece's outline is the set piece's, which builds what holds it up: held)
         held = {id(r) for r, mk in zip(roads, marks) if pieces and any(f == 1 and any(pc.contains(Point(q[:2])) for pc in pieces) for q, f in zip(r["p"], mk))}
+        # (a span the data ends against a building's wall ends on that building, not in the air)
+        walls = [Polygon(b["r"][0]).buffer(0) for b in m["bl"] if len(b["r"][0]) >= 3]
+        wall_tree = shapely.STRtree(walls) if walls else None
+        on_wall = lambda q: wall_tree is not None and len(wall_tree.query(Point(q[:2]), predicate="dwithin", distance=ON_WALL)) > 0
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
             p = r["p"]
@@ -244,7 +250,8 @@ def main():
                 for end in (k, e):
                     if mk[end] == 1 and end in (0, len(p) - 1) and (id(r), end == 0) not in joints and id(r) not in held and not (
                             min(p[end][0] - T["x0"], T["x0"] + (T["nx"] - 1) * T["dx"] - p[end][0],
-                                p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3) and not pier_end(r, p[end]):
+                                p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3) and not pier_end(r, p[end]) \
+                            and not on_wall(p[end]):
                         note("3 span ends where its record does", 1, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # meets the road at each end
                 for end in (a, b):

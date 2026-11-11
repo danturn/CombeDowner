@@ -32,7 +32,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
-  saw it. Underneath, your head meets the bridge where it's drawn: a footbridge's thin deck, a
+  saw it. A bridge over the railway clears a train with room to spare, its steps or paths climbing
+  to it, and every bridge's deck meets the street or ground beyond its end at the same height. Underneath, your head meets the bridge where it's drawn: a footbridge's thin deck, a
   concrete beam's deeper one, or a stone arch's barrel, which over the canal's towpath can be low
   enough to make you crouch. Every deck is solid from parapet to parapet, however narrow the path along it, and the
   parapets run unbroken round its bends and where its pieces join, stopping only where another
@@ -70,7 +71,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   concrete box, with square openings under a flat lintel, a pier between the bores and concrete
   wing walls, lorry-high inside, and nothing on the hill over it gets in the way of the traffic: the A46 runs under Bailbrook Lane through the Bailbrook Underpass.
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
-  Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. Each bore is as wide as the road or path going in, wall
+  Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. A footpath the
+  map data takes under a street goes through a low arch about 2 m high in the bank, the street
+  carried over it, where there's room for the path to come down to it; where there isn't, the path
+  stops at the kerb either side rather than being drawn across the road. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
   opening along a cutting dug to its floor, with wing walls holding up its sides where the hill
   beside it stands high or rises steeply, their copings sloping down the bank, with no tree or
