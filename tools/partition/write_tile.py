@@ -896,6 +896,7 @@ def _opened(pts):
 APPROACH = 9
 ROAD_RAMP = 0.15
 MOUTH_HOLD = 3       # points (4 m apart) out from a tunnel's portal that a way keeps the city's heights for
+MOUTH_DEPTH = 6.0    # metres: further than this under the ground, a way's point by a bore's end is inside the hill
 
 
 def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=None, carried=None, roof=None, portals=None):
@@ -989,6 +990,8 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     roofed |= beside_mouth
     # (and the way into a tunnel's mouth keeps the city's floor there, the ground laid to it as a cutting)
     mouth -= deep
+    # (a bore's end under the hill, where the city joins two of a tunnel's bores, isn't a mouth)
+    mouth = {i for i in mouth if gs[i] is None or abs(zs[i] - gs[i]) <= MOUTH_DEPTH}
     held = decks | tow | approach | roofed | tubed | mouth | (dipped - beside if others is not None else set())
     # (a deck's last points may come down to the ground, except at an end whose approach keeps its height)
     ends = {i for i in deck_ends(spans | decks) if not any(abs(i - j) <= 4 for j in approach)}

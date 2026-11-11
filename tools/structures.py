@@ -539,6 +539,12 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
         a, b = max(0, st[0] - 1), min(len(r["run"]) - 1, st[-1] + 1)
         return a, b, LineString([r["run"][i][:2] for i in range(a, b + 1)])
 
+    # (a stretch the data has both in a tunnel and on a bridge is in the tunnel: carried as a span, it
+    # stood over the street on the hill above and pushed it down under itself)
+    for r in pending:
+        if r["tunnel_ranges"] and r["span"]:
+            r["span"] -= tunnel_inside(in_ranges(r["run"], r["tunnel_ranges"]))
+
     # 1. paths along a road's marked span ride on its deck
     decks, was_span = [], {}
     for k, r in enumerate(pending):
