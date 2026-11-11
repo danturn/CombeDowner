@@ -68,6 +68,7 @@ from shapely.geometry import LineString, Point, Polygon, box
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_more   # rules 12 on (tools/check_more.py)
 from railway import open_runs
+from streets import pave_band
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -229,6 +230,11 @@ def main():
         walls = [Polygon(b["r"][0]).buffer(0) for b in m["bl"] if len(b["r"][0]) >= 3]
         wall_tree = shapely.STRtree(walls) if walls else None
         on_wall = lambda q: wall_tree is not None and len(wall_tree.query(Point(q[:2]), predicate="dwithin", distance=ON_WALL)) > 0
+        abutments = [e for e in m.get("se") or [] if e[0] == "abutment" and len(e) > 6 and e[6]]
+
+        def landing(q, g):
+            e = next((e for e in abutments if math.dist(e[1:3], q[:2]) < 0.3), None)
+            return e[3] if e is not None and (e[6] == 2 or abs(e[3] - g) < 1) else g
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
             p = r["p"]
@@ -253,10 +259,12 @@ def main():
                                 p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3) and not pier_end(r, p[end]) \
                             and not on_wall(p[end]):
                         note("3 span ends where its record does", 1, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
-                # meets the road at each end
+                # meets the road at each end: the ground there, or the abutment the square holds
+                # raised to the deck (se, as rule 28 and map.ts deckTop read it)
                 for end in (a, b):
-                    if not mk[end] and abs(p[end][2] - ground(p[end][0], p[end][1])) > 0.6:
-                        note("3 deck end off the road", abs(p[end][2] - ground(p[end][0], p[end][1])), (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
+                    off = abs(p[end][2] - landing(p[end], ground(p[end][0], p[end][1])))
+                    if not mk[end] and off > 0.6:
+                        note("3 deck end off the road", off, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # something to cross
                 under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg)) \
                     or any(canal_segs[int(c)][0].intersects(seg) for c in canal_tree.query(seg))
@@ -802,9 +810,10 @@ def fit_together(m, tag, note, f=None):
     for r in m["rd"]:
         if r["c"] not in KERBED or len(r["p"]) < 2: continue
         L, w = line(r["p"]), r.get("w", RW.get(r["c"], 4))
-        for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
-            if pv > 0:
-                paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
+        for i in (0, 1):
+            band = pave_band(r, i, w, L)
+            if band is not None and not band.is_empty:
+                paves.append(band)
                 pave_line.append(L)
     ptree = shapely.STRtree(paves)
     pave_in, pave_out = shapely.buffer(paves, -0.25, quad_segs=16), shapely.buffer(paves, 1.0, quad_segs=16)

@@ -1141,16 +1141,20 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
 
 UNDER_CROWN = TN.UNDER_CROWN    # metres from a short path tunnel's floor to its arch, under a street at grade
 UNDER_COVER = 0.6    # metres of street and fill over that arch
-UNDER_RAMP = 0.5     # the steepest a path's approach falls to such an arch (a flight's pitch)
+UNDER_RAMP = 0.5     # the steepest a path's approach falls to such an arch as a ramp
+UNDER_STAIR = 0.7    # and as a flight of steps, where a ramp has no room (flights.STAIR_PITCH)
 
 
 def low_bores(pending, road_lines, road_tree):
     """A path the data has in a tunnel under a street, too short or too shallow to bore through a hill
     (`tunnels.bores`), at the street's level: it passes under the street through a low arch in the
     bank, the street carried over it as it is. The path falls to the arch's floor UNDER_CROWN and
-    UNDER_COVER under the street, from the nearest ways meeting it either side, no steeper than
-    UNDER_RAMP; where there isn't that much room the path is left at the street's level, and the writer
-    stops it at the kerb either side (write_tile.paths_under_streets). Each such bore is listed in its
+    UNDER_COVER under the street, from the nearest ways meeting it either side: as a ramp no steeper
+    than UNDER_RAMP where there is room for one, else as a flight of steps no steeper than UNDER_STAIR
+    (the writer makes the steep stretch a flight, write_tile.steep_paths_as_steps); only where there
+    isn't room even for steps is the path left at the street's level, and the writer stops it at the
+    kerb either side (write_tile.paths_under_streets). The arch runs as far as the data has the path
+    in its tunnel and across the street's width, never on under another way meeting the path. Each such bore is listed in its
     run's `low` (the game draws its arch UNDER_CROWN high), its approaches as dipped (the writer
     holds them there and lays the ground to them)."""
     points = collections.defaultdict(list)
@@ -1203,22 +1207,32 @@ def low_bores(pending, road_lines, road_tree):
                        and math.dist(run[i][:2], (x.x, x.y)) < reach + 2 * STEP]
             if not covered:
                 continue
-            i0, i1 = max(0, min(covered) - 1), min(n - 1, max(covered) + 1)
-            ramps, ok = [], True
+            # (as far as the data has the path in its tunnel, and a point past the street's pavements,
+            # but not on to where another way meets the path or crosses it: that one isn't over the arch)
+            i0, i1 = min(covered + [st[0]]), max(covered + [st[-1]])
+            if i0 > 0 and not joined(k, i0 - 1) and not crosses(k, i0 - 1, i0):
+                i0 -= 1
+            if i1 < n - 1 and not joined(k, i1 + 1) and not crosses(k, i1, i1 + 1):
+                i1 += 1
+            ramps = []
             for e, step in ((i0, -1), (i1, 1)):
-                # (out to where the fall to the arch fits, or to the next way meeting the path, or its end)
-                d, at = 0.0, e
-                while z[at] - floor > d * UNDER_RAMP:
-                    nxt = at + step
-                    if not 0 <= nxt < n or joined(k, at) or nxt in r["span"] | r["deck"] or crosses(k, at, nxt):
-                        ok = False
+                # out to where the fall to the arch fits as a ramp; else, as a flight of steps, before
+                # the next way meeting the path, or its end
+                for pitch in (UNDER_RAMP, UNDER_STAIR):
+                    d, at, ok = 0.0, e, True
+                    while z[at] - floor > d * pitch:
+                        nxt = at + step
+                        if not 0 <= nxt < n or joined(k, at) or nxt in r["span"] | r["deck"] or crosses(k, at, nxt):
+                            ok = False
+                            break
+                        d += math.dist(run[at][:2], run[nxt][:2])
+                        at = nxt
+                    if ok:
                         break
-                    d += math.dist(run[at][:2], run[nxt][:2])
-                    at = nxt
                 if not ok:
                     break
                 ramps.append((e, at, step, d))
-            if not ok or i1 - i0 < 2:
+            if len(ramps) < 2 or i1 - i0 < 2:
                 continue
             for i in range(i0, i1 + 1):
                 z[i] = floor

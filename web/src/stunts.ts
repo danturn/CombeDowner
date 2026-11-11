@@ -13,7 +13,7 @@ import type { JobSpot } from "./minimap";
 import { note } from "./daily";
 import { earn } from "./wardrobe";
 import { type QuestWorld, registerFree } from "./quests";
-import { roadHalf, PAVE, PATHS, type Road } from "./map";
+import { roadHalf, PATHS, pvAt, type Road } from "./map";
 
 const COLOUR = "#f5c400";
 const KEY = "cd-stunt-";
@@ -96,7 +96,7 @@ function roadside(r: Road, i: number, ends: number[][]): { x: number; z: number;
     if (t >= 0 && t <= len && clear(t)) { s = t; break; }
   }
   const q = point(s);
-  const [left, right] = r.pv ?? [PAVE, PAVE];
+  const [left, right] = pvAt(r, s);
   const side = left >= right ? 1 : -1, pave = Math.max(left, right);
   const half = roadHalf(r.c, r.w), off = half + (pave > 0.6 ? 0.4 : 0.6);
   return { x: q.x - q.uy * off * side, z: -(q.y + q.ux * off * side), ux: q.ux, uz: -q.uy,
