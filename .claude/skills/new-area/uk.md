@@ -71,13 +71,14 @@ UK additions, all Open Government Licence v3:
 Scotland, all Open Government Licence v3 (each source's own wording; put the year of the download
 where it says <year>):
 
-- Scottish Public Sector LiDAR, one line for each phase the map's tiles came from (the build prints
-  none of this: the phases over a place are on remotesensingdata.gov.scot): phase 1 "Crown
+- Scottish Public Sector LiDAR, one line for each phase the map's tiles came from (the download prints them:
+  `lidar: survey phases (for the credits): phase-5 dsm 49 km2; ...`, kept in
+  `data/raw/<id>/wide/lidar/.scotland`): phase 1 "Crown
   copyright Scottish Government, SEPA and Scottish Water (2012)"; phase 2 "Copyright Scottish
   Government and SEPA (2014)"; phase 3 "Crown copyright Scottish Government, SEPA and Fugro (2020)";
   phase 4 "Crown copyright Scottish Government and Fugro (2020)"; phase 5 "Crown copyright Scottish
   Government and Fugro (2021)" for the DTM and "(2020)" for the DSM; phase 6 "Crown copyright
-  Scottish Government and Fugro (2022)". Edinburgh's middle is phase 5.
+  Scottish Government and Fugro (2022)". Edinburgh's two kilometres round Waverley are all phase 5.
 - Domestic Energy Performance Certificates (Scottish Government, data.gov.scot): "Contains public
   sector information licensed under the Open Government Licence v3.0", the address fields left out
   (they come under Royal Mail's terms, and the build never reads them). OS Open UPRN: "Contains OS

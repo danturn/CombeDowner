@@ -5,6 +5,8 @@ Usage:
   python3 -I tools/new_area.py find "<place name>"      the five best matches, each with its lat/lon and BRANCH
   python3 -I tools/new_area.py add "<place name>" --lat N --lon N [--id slug] [--radius 1500] [--zone suburb] [--in-menu]
   python3 -I tools/new_area.py build <id> [--dry-run]   download and build, in order
+  python3 -I tools/new_area.py build <id> --trial       download, then build only the centre's, the steepest and
+                                                        the most bridged square, to find a place's failures quickly
   python3 -I tools/new_area.py verify <id>              the files, the clash check, sizes and what git sees
   python3 -I tools/new_area.py shoot <id>               screenshots at four views chosen from the map, and the frame rate
   python3 -I tools/new_area.py remove <id>              undo add and build for a map that was never committed
@@ -42,7 +44,7 @@ PYTHONS = (os.path.expanduser("~/.venvs/combedowner/bin/python3"), os.path.join(
 LOCK = os.path.expanduser("~/.combedowner-build.lock")
 SUFFIXES = ("wide", "ground", "pubs", "districts", "rail", "canal", "cable")     # web/public/maps/<id>-<suffix>.json
 # the maps already in the repository: remove refuses them
-KEPT = {"combe-down", "victoria-park", "pembury", "cape-town", "bradford-on-avon"}
+KEPT = {"combe-down", "victoria-park", "pembury", "cape-town", "bradford-on-avon", "edinburgh"}
 
 
 def option(args, name, default=None):
@@ -127,18 +129,25 @@ def warn_missing(region):
         print("Buildings are guessed from Overture's and OpenStreetMap's heights and floor counts and the area's zones instead.")
 
 
+_terrain = {}
+
+
 def ground_height(lon, lat, z=12):
     """Metres above sea level at a spot, from the Mapzen terrain tiles the builds read (0 if they can't be reached)."""
     import io
     from PIL import Image
     n = 2 ** z
     fx, fy = (lon + 180) / 360 * n, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n
-    try:
-        url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{int(fx)}/{int(fy)}.png"
-        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-            px = Image.open(io.BytesIO(r.read())).convert("RGB").getpixel((int(fx % 1 * 256), int(fy % 1 * 256)))
-    except OSError:
-        return 0
+    key = (z, int(fx), int(fy))
+    if key not in _terrain:
+        try:
+            url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{int(fx)}/{int(fy)}.png"
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+                _terrain[key] = Image.open(io.BytesIO(r.read())).convert("RGB")
+        except OSError:
+            _terrain[key] = None
+    if _terrain[key] is None: return 0
+    px = _terrain[key].getpixel((int(fx % 1 * 256), int(fy % 1 * 256)))
     return max(0, round(px[0] * 256 + px[1] + px[2] / 256 - 32768))
 
 
@@ -301,8 +310,43 @@ def run_steps(steps, dry, lock=None):
             print(f"WARN step {name} failed; the map builds without it")
 
 
+def trial_squares(A, raw):
+    """The squares most likely to show a new place's failures, for a trial build: the centre's, the
+    one whose ground climbs most, and the one with the most metres of bridge."""
+    from shapely.geometry import LineString, Point, box, shape
+    G = A.squares
+    size = G.cells * G.dx
+    (fcx, fcy), R = A.field_centre, A.half
+    circle = Point(fcx, fcy).buffer(R, 256)
+    sq = lambda ti, tj: box(G.x0 + ti * size, G.y0 + tj * size, G.x0 + (ti + 1) * size, G.y0 + (tj + 1) * size)
+    tiles = [(ti, tj) for ti in range(math.floor((fcx - R - G.x0) / size), math.floor((fcx + R - G.x0) / size) + 1)
+             for tj in range(math.floor((fcy - R - G.y0) / size), math.floor((fcy + R - G.y0) / size) + 1)
+             if sq(ti, tj).intersects(circle)]
+    lon0, lat0 = A.centre
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
+    centre = (math.floor(-G.x0 / size), math.floor(-G.y0 / size))
+    def climb(t):
+        b = sq(*t).bounds
+        hs = [ground_height(lon0 + (b[0] + (b[2] - b[0]) * i / 4) / kx, lat0 + (b[1] + (b[3] - b[1]) * j / 4) / ky)
+              for i in range(5) for j in range(5)]
+        return max(hs) - min(hs)
+    steep = max(tiles, key=climb)
+    bridged = {t: 0.0 for t in tiles}
+    for layer in ("osm-roads", "osm-rail"):
+        path = os.path.join(ROOT, raw, f"{layer}.geojson")
+        if not os.path.exists(path): continue
+        for f in json.load(open(path))["features"]:
+            if (f["properties"].get("bridge") or "no") == "no" or f["geometry"]["type"] != "LineString": continue
+            line = LineString([((x - lon0) * kx, (y - lat0) * ky) for x, y in f["geometry"]["coordinates"]])
+            for t in tiles:
+                bridged[t] += line.intersection(sq(*t)).length
+    most = max(tiles, key=lambda t: bridged[t])
+    return list(dict.fromkeys([centre, steep, most]))
+
+
 def build(args):
     dry = flag(args, "--dry-run")
+    trial = flag(args, "--trial")
     if not args: raise SystemExit(__doc__)
     map_id = args[0]
     miss = missing_packages()
@@ -346,11 +390,19 @@ def build(args):
         ("district names", [*py, "tools/districts.py", map_id], False),
         ("region look", [*py, "tools/region.py", map_id], False),
     ]
+    if trial:
+        picked = trial_squares(A, raw)
+        print("trial squares: " + " ".join(f"{a},{b}" for a, b in picked) + " (the centre, the steepest, the most bridged)")
+        steps = steps[:steps.index(squares)] + [("trial squares", squares[1] + ["--only", *(f"{a},{b}" for a, b in picked)], True)]
     t1 = time.time()
     if dry: run_steps(steps, dry)
     else:
         with BuildLock() as lock: run_steps(steps, dry, lock)
     print(f"\nTIMES download {t_dl:.0f}s, build {time.time() - t1:.0f}s, on {os.cpu_count()} cores")
+    if trial:
+        print(f"TRIAL OK {map_id}" if not dry else "DRY RUN: nothing was run")
+        print(f"next: python3 -I tools/new_area.py build {map_id}")
+        return
     print(f"BUILD OK {map_id}" if not dry else "DRY RUN: nothing was run")
     print(f"next: python3 -I tools/new_area.py verify {map_id}")
 

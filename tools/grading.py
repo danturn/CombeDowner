@@ -204,8 +204,15 @@ def grade(chains, xy, target, fixed, steepest, scale, half=None, exact=None, joi
     base = float(np.nanmin(tz))
     b_eq = tz - base
     bounds[:nn] -= base
-    res = linprog(c, A_ub=A_ub, b_ub=np.array(rhs), A_eq=A_eq, b_eq=b_eq,
-                  bounds=[(None if np.isinf(a) else a, None if np.isinf(b) else b) for a, b in bounds], method="highs")
+    problem = dict(A_ub=A_ub, b_ub=np.array(rhs), A_eq=A_eq, b_eq=b_eq,
+                   bounds=[(None if np.isinf(a) else a, None if np.isinf(b) else b) for a, b in bounds], method="highs")
+    res = linprog(c, **problem)
+    for more in (10, 100):
+        if res.status != 4: break
+        # On a big city's network the tie-breaking costs can sit close enough to HiGHS's own
+        # tolerance for its simplex to give up (a "solve error"). The same costs scaled up have
+        # the same cheapest grading, which it then finds.
+        res = linprog(c * more, **problem)
     if res.status != 0:
         raise RuntimeError(f"grading the roads failed: {res.message}")
     z = res.x[:nn] + base

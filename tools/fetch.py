@@ -48,7 +48,7 @@ Then, to measure and pack it all (tools/mapdata.py):
   python3 -I tools/prep_wide.py <map> <raw dir> web/public/maps/<map>-wide.json --measure
   python3 -I tools/mapdata.py pack <map> <raw dir>
 """
-import json, math, os, subprocess, sys, time, urllib.error, urllib.request, zipfile
+import collections, json, math, os, subprocess, sys, threading, time, urllib.error, urllib.request, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
@@ -193,6 +193,7 @@ def scotland_lidar(A, raw):
     name = lambda e, n: "scotland-{}{:02d}{:02d}.tif".format(os_square(e * 1000, n * 1000)[:2], e % 100, n % 100)
     done = os.path.join(raw, "lidar", ".scotland")
     if os.path.exists(done):
+        if open(done).read(): print(f"lidar: survey phases (for the credits): {open(done).read()}")
         return sum(os.path.exists(os.path.join(folders["dsm"], name(e, n))) for e, n in cells)
     squares = sorted({grid_square(e * 1000 + 500, n * 1000 + 500) for e, n in cells})
     tiles = {k: [] for k in folders}      # kind -> [(rank, box, url)], newest survey first
@@ -205,12 +206,15 @@ def scotland_lidar(A, raw):
     if not tiles["dsm"] or not tiles["dtm"]: return 0
     print(f"lidar: {len(tiles['dsm'])} Scottish surface and {len(tiles['dtm'])} ground tiles over the box")
 
+    # the credit a map needs depends on which phases its kilometres came from
+    phases, lock = collections.defaultdict(set), threading.Lock()
+
     def merged(kind, e, n):
         """The kilometre's heights from every survey over it, newest first, and its pixel size."""
         x0, y0 = e * 1000, n * 1000
         over = sorted(t for t in tiles[kind] if t[1][0] < x0 + 1000 and t[1][2] > x0 and t[1][1] < y0 + 1000 and t[1][3] > y0)
         out, px = None, None
-        for _rank, _box, url in over:
+        for rank, _box, url in over:
             with rasterio.open(url) as src:
                 if px is None:
                     px = abs(src.transform.a)
@@ -222,6 +226,8 @@ def scotland_lidar(A, raw):
                              resampling=Resampling.nearest).astype(np.float32)
             a[(a < -100) | (a > 2000)] = np.nan
             gap = np.isnan(out)
+            if (gap & ~np.isnan(a)).any():
+                with lock: phases[(SCOTTISH_PHASES[rank], kind)].add((e, n))
             out[gap] = a[gap]
         return out, px
 
@@ -253,8 +259,10 @@ def scotland_lidar(A, raw):
                                compress="deflate", predictor=3, tiled=True) as dst:
                 dst.write(np.where(np.isnan(a), -9999, a).astype(np.float32), 1)
             os.replace(path + ".part", path)
-    open(done, "w").close()
+    said = "; ".join(f"{p} {k} {len(c)} km2" for (p, k), c in sorted(phases.items()))
+    open(done, "w").write(said)
     print(f"lidar: {surveyed} of {len(cells)} Scottish kilometre squares surveyed")
+    print(f"lidar: survey phases (for the credits): {said or 'none new this run'}")
     return surveyed
 
 
@@ -327,12 +335,13 @@ def main():
                         open(done, "w").close()
                         continue
                 with zipfile.ZipFile(z) as f:
-                    for n in f.namelist():
-                        if n.lower().endswith(".tif"):
-                            with open(os.path.join(folder, os.path.basename(n)), "wb") as out: out.write(f.read(n))
+                    tifs = [n for n in f.namelist() if n.lower().endswith(".tif")]
+                    for n in tifs:
+                        with open(os.path.join(folder, os.path.basename(n)), "wb") as out: out.write(f.read(n))
                 os.remove(z)
                 open(done, "w").close()
-                print(f"lidar: {sq} {kind}")
+                # north of the border the EA's service answers with an empty zip rather than "not found"
+                print(f"lidar: {sq} {kind}" if tifs else f"lidar: {sq} {kind} is not in the EA's survey (an empty zip)")
     if want("canopy"):
         # every zoom-9 tile the map's box reaches into, not just the centre's (about 49 km across at 51°N)
         W, S, E, N = A.bbox

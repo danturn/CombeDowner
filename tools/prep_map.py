@@ -3758,7 +3758,8 @@ def _straighten(barriers):
                 if joined(pts[j - 1]): break
                 seg = shapely.LineString([pts[i][:2], pts[j][:2]])
                 if any(seg.distance(shapely.Point(q[:2])) > WAVE for q in pts[i + 1:j]): break
-                if clear(pts[i], pts[j]): far = j
+                # a small closed run comes back to where it started: straight across it would leave nothing
+                if seg.length > 0.05 and clear(pts[i], pts[j]): far = j
             out.append(pts[far]); i = far
         if len(out) < len(pts):
             # tried out first: the straightened run, and the fences moved to meet it, must not come

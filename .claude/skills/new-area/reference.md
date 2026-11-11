@@ -74,8 +74,9 @@ Where today's tools fall short of it (2 November 2026):
   tuned on the EA's 1 m. They read any grid, but a Scottish map's roofs want looking at by eye.
 - `tools/districts.py` reads OpenStreetMap live and is not packed, so district names need the
   network to rebuild.
-- `new_area.py` does not pack (`mapdata.py pack` is a separate, publishing-time step), and nothing
-  yet checks that a pack rebuilds offline to the same files.
+- `new_area.py build` packs the layers before the squares are built, so the terrain tiles (with
+  the lidar's ground) are not in that pack: publishing packs again after the build (below). Nothing yet checks that a pack rebuilds offline
+  to the same files.
 
 ## Open country (moorland, forest, reservoirs)
 
@@ -133,9 +134,25 @@ the command to rebuild just those. Shoot one view with
 
 On the build Mac, full builds can go through `tools/mac_build.sh <commit> --map --map-id <id> --check`.
 
+## When a new place breaks a shared tool (people and stronger agents only)
+
+- Run `build <id> --trial` first: the downloads, then only the centre's, the steepest and the most
+  bridged square (`new_area.trial_squares`). Fix what fails there, then build the whole map.
+- Reuse the downloads: rerun `build`, never a fresh raw folder. A map's raw downloads can also seed
+  another map's over the same ground (the Scottish lidar's kilometre tiles and the canopy tile are
+  kept by name and not fetched again).
+- A fix in a shared tool must leave every other map as it was or better: run `tools/check_map.py` on
+  Bath's affected squares before and after, and the counts must not go up. A fallback that only
+  runs where the tool used to raise (as each of Edinburgh's fixes in `troubleshooting.md` does)
+  cannot change a map that builds; say so in the commit.
+- One heavy job at a time on a machine (a build, a clash check, a `shoot`, `npm run build`): they
+  share the cores, and `npm run build` rewrites `web/dist` under a running check.
+
 ## Publishing a map (only with the repository owner's say-so)
 
 1. `python3 -I tools/mapdata.py pack <id> data/raw/<id>/wide` writes the compact copy to `data/<id>/`.
+   Run it after the build has finished, even though `build` packed once at its start: only now are
+   the terrain tiles (with the lidar's ground) there to pack.
 2. Write `data/<id>/README.md` with each source and licence: copy `data/bradford-on-avon/README.md`
    (England) or `data/cape-town/README.md` (outside the UK) and change the names and dates.
 3. Commit `tools/area.py`, `web/src/maps.ts`, `data/<id>/` and `web/public/maps/<id>*`, never `data/raw/`.
@@ -168,6 +185,13 @@ estimated 5 to 8 minutes on a 4-core laptop); published about 17 MB (3 MB gzippe
 a town; raw downloads 1.5 to 2.5 GB in England, under 1 GB elsewhere. Bigger radii grow with the
 area: 3000 m is 45 squares. The first Frome build (900 m, 2026-10) took 25 minutes, nearly all
 downloads, on a slower day for the servers.
+
+A Scottish city (Edinburgh, radius 2000 m, 21 squares, 14-core Mac, 11 November 2026): download 20
+minutes (the national certificate, UPRN and census files were already in `data/raw/`; Overture 4
+minutes, OpenStreetMap a minute, the lidar for 49 km2 at 50 cm, 840 MB); the build 53 minutes
+(squares 23 minutes each pass, twice, at about 11,000 cpu-seconds a pass; partition included);
+published 66 MB (18.7 MB gzipped); `data/edinburgh` 37 MB; raw 4.1 GB. Clash check 11,309 failures,
+539 per square: a dense old city of tenements, closes and steps is far over the 150 a town gives.
 
 A Welsh map's lidar (tested at Grwyne Fawr, radius 600 m, download only): 49 Welsh 1 km tiles plus
 the EA's border squares that reach into the box, 395 MB, 2 minutes.
