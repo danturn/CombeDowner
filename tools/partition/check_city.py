@@ -83,7 +83,7 @@ def main(argv):
     tiles = argv[0]
     city = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))), "out", "city-tile")
-    jobs = os.cpu_count() or 4
+    jobs = int(os.environ.get("CD_JOBS") or 0) or os.cpu_count() or 4
     for flag in ("--city", "--jobs"):
         if flag in argv:
             v = argv[argv.index(flag) + 1]

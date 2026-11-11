@@ -210,7 +210,7 @@ def each(fn, items):
     already build several at once). Each item is worked out on its own, so it comes out the same."""
     global _job
     items = list(items)
-    cores = os.cpu_count() or 1
+    cores = int(os.environ.get("CD_JOBS") or 0) or os.cpu_count() or 1
     if TILE is not None or cores < 2 or len(items) < 200: return [fn(x) for x in items]
     _job = lambda i: fn(items[i])
     with multiprocessing.get_context("fork").Pool(cores) as pool:
@@ -551,8 +551,10 @@ for g, p in L("segment"):
     # Broad Street, Northgate Street, High Street, Manvers Street), still a road with buses on it
     # and its bus stops at the kerb, not a paved square. A street closed to traffic that lets buses
     # through (Milsom Street, the University's Parade, a bus station's lanes) says so (bu), so its
-    # bus stops are on a road and the buses called to them drive along it
-    one_way = 0
+    # bus stops are on a road and the buses called to them drive along it. A street closed only at
+    # certain hours (Milsom Street, 10:00-18:00) is a road, with the hours it is shut (tc), which
+    # the traffic keeps out of on the game's clock
+    one_way, shut = 0, []
     buses = any(ar.get("access_type") == "allowed" and "bus" in ((ar.get("when") or {}).get("mode") or ())
                 for ar in p.get("access_restrictions") or [])
     for ar in p.get("access_restrictions") or []:
@@ -561,7 +563,8 @@ for g, p in L("segment"):
         if w.get("heading") == "backward" and not w.get("mode"): one_way = 1
         elif w.get("heading") == "forward" and not w.get("mode"): one_way = -1
         elif not w.get("heading") and not w.get("using") and not w.get("recognized") and not w.get("vehicle") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS and p.get("class") not in MAIN:
-            c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
+            if w.get("during"): shut.append(w["during"])
+            else: c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
@@ -588,7 +591,7 @@ for g, p in L("segment"):
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
                 bored = TN.bores(run, z, tr, elev, c)
-                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service")))
+                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service"), tc=shut[0] if shut and c != "pedestrian" else None))
 TN.rebore(pending, elev)
 def chains():
     """The roads in pending joined up where one ends where another of the same kind begins, as
@@ -841,7 +844,7 @@ for k, r in enumerate(pending):
         reach = RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.5 + (4.0 if r["c"] == "pedestrian" else 0.0)
         decks.append((k, line.buffer(reach, cap_style=2), line, [r["z"][i] for i in range(a, b + 1)], a, b))
 deck_tree = shapely.STRtree([d[1] for d in decks])
-ridden = 0
+ridden, was_span = 0, {}
 NARROW = {"footway", "steps", "cycleway", "path"}     # a bridge's pavements are mapped as these; a pedestrian street is a street
 for r in pending:
     r["deck"] = set()
@@ -858,6 +861,7 @@ for r in pending:
             # (only where the data has the path on a bridge itself, or it's at the deck's height
             # already: a path going down past the bridge's end to the ground under it doesn't ride it)
             if i not in r["span"] and abs(r["z"][i] - (zs[lo] + (zs[lo + 1] - zs[lo]) * f)) > 1.0: continue
+            was_span[id(r), i] = i in r["span"]
             r["z"][i] = zs[lo] + (zs[lo + 1] - zs[lo]) * f
             r["deck"].add(i); r["span"].discard(i); ridden += 1
             r.setdefault("ride", {})[i] = int(j)
@@ -896,6 +900,17 @@ for k, r in enumerate(pending):
         if real and solid: r.setdefault("solid", set()).update(st)
     r["span"] = keep
 if kept or dropped: print(f"bridges: {kept} marked spans with something under them, {dropped} with nothing under them flattened as road")
+# 2b. a path down on the ground that rode a pedestrian street's span that isn't a bridge (a
+# building's passage beside a square) is on the ground, at the height it took (as tools/structures.py): left riding, it was a
+# deck the ground was dug out under. One through a building rides on
+from structures import in_passage
+passage = in_passage([bp for g, _p in L("building") for bp in whole_polys(g)])
+for r in pending:
+    for i, j in list(r.get("ride", {}).items()):
+        k, _, _, _, a, b = decks[j]
+        if pending[k]["c"] != "pedestrian" or any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i]: continue
+        if abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5 or passage(r["run"], i): continue
+        r["deck"].discard(i); del r["ride"][i]
 # 2'. a path running along beside a street goes where the street goes: where the street isn't on a
 # bridge, its pavement isn't one either (Overture's pavements over Spring Gardens Road beside
 # Argyle Street were footbridges of their own, standing up out of the street's pavement)
@@ -1575,7 +1590,7 @@ for r in pending:
     # a deck beside a road's span (a path along a bridge), at the road's height, with nothing built
     pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else [2] if i in deck else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
     for i0, i1 in TN.split(run, bored):
-        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {}),
+        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1], **({"ow": r["ow"]} if r["ow"] else {}), **({"bu": 1} if r.get("bu") else {}), **({"tc": r["tc"]} if r.get("tc") else {}),
                           **({"pr": 1} if c in PATHS and on_pier(pts[i0:i1 + 1]) else {})))
     for (i0, i1), (head, tail) in zip(bored, TN.faces(run, z, bored, elev, c)):
         tp = pts[i0:i1 + 1]
@@ -2391,7 +2406,7 @@ if KEEP:
     kept_tree = shapely.STRtree(kept_polys)
 if lidar is not None and TILE is None:
     lidar.preload(A.bbox)
-    lidar.workers = os.cpu_count() or 1
+    lidar.workers = int(os.environ.get("CD_JOBS") or 0) or os.cpu_count() or 1
 if STORE is not None and not STORE.record:
     roof_levels = [STORE.get_roofs(poly) if poly.area > 80 else None for poly, p in cand]
 else:

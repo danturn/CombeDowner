@@ -451,7 +451,7 @@ def pass_structures(out, raw, terrain, log=print):
     from PIL import Image
     from . import LAT0, MAP, ROOT, Terrain
     from grading import terrain_detail
-    from structures import chain_edges, make_run, solve, split_back
+    from structures import chain_edges, ends_by_edge, make_run, solve, split_back, structure_ends
     edges = read_graph(out)
     bb = map_bbox()
     D = Data(raw, bb, log=lambda *_: None)
@@ -470,14 +470,19 @@ def pass_structures(out, raw, terrain, log=print):
                              for f in sorted(os.listdir(terrain)) if f.startswith("15_") and f.endswith(".png")],
                             156543.03 * math.cos(math.radians(LAT0)) / 2 ** 15)
     log(f"  structures: {len(edges)} edges in {len(pending)} through-roads walked in {time.time() - t:.0f}s")
-    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb), detail)
+    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb), detail,
+          [g for g, _p in D.polys_near(bb, "building")])
     rows = {}
     for r in pending:
         rows.update(split_back(r))
+    ends = structure_ends(pending)
+    for edge, got in ends_by_edge(pending, ends).items():
+        rows[edge]["ends"] = got
     json.dump(rows, open(structures_path(out), "w"))
     log(f"  structures: {sum(1 for v in rows.values() if v['span'])} edges with a span, "
         f"{sum(1 for v in rows.values() if v['deck'])} with a deck, "
-        f"{sum(1 for v in rows.values() if v['bored'])} bored, {time.time() - t:.0f}s")
+        f"{sum(1 for v in rows.values() if v['bored'])} bored, "
+        f"ends {dict(collections.Counter(e[2] for e in ends))}, {time.time() - t:.0f}s")
     return rows
 
 

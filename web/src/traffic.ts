@@ -13,7 +13,8 @@
 // They keep to the roads people really drive on: each road's share of the traffic comes from the
 // Department for Transport's counts (tools/traffic_counts.py; side streets nobody's counted go by the
 // kind of road they are), so new cars turn up mostly on the busy roads and keep to them at junctions,
-// only now and then turning off into a side street. They stop at red traffic lights (signals.ts), and
+// only now and then turning off into a side street. A street shut to traffic in the daytime (Milsom
+// Street, 10:00 to 18:00) they keep out of in those hours of the game's clock. They stop at red traffic lights (signals.ts), and
 // at amber if they can stop in time, and wait through red and amber. A car can only turn so tightly:
 // where its way on is sharper than that (a hairpin, a dead end, turning round in a street that's
 // blocked) it doesn't go round and round trying, it does a turn in the road, back on the opposite lock
@@ -229,13 +230,19 @@ function flames(): THREE.Group {
   return g;
 }
 
+/** "10:00-18:00" as hours of the day [10, 18]; undefined if it isn't hours (shut all day, or not at all). */
+function shutHours(tc?: string): [number, number] | undefined {
+  const m = tc?.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+  return m ? [+m[1] + +m[2] / 60, +m[3] + +m[4] / 60] : undefined;
+}
+
 export class Traffic {
   private nodes: Node[] = [];
   private edges: Edge[] = [];
   private cars = new Map<number, Car>();
   private cells = new Map<number, Edge[]>();
   /** Every road the traffic uses (as the map has it), its kind and name, and the traffic it carries once the counts are in. */
-  private roads: { c: string; n: string; p: number[][]; flow: number }[] = [];
+  private roads: { c: string; n: string; p: number[][]; flow: number; shut?: [number, number] }[] = [];
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;   // a new host's numbers don't clash with the last one's
 
   constructor(private map: GameMap, private scene: THREE.Scene, private ground: (x: number, z: number, y?: number) => number) {
@@ -253,7 +260,7 @@ export class Traffic {
       const v = SPEED[r.c];
       if (!v || r.p.length < 2) continue;
       const road = this.roads.length, flow = FLOW[r.c] ?? 400;
-      this.roads.push({ c: r.c, n: r.n ?? "", p: r.p, flow });
+      this.roads.push({ c: r.c, n: r.n ?? "", p: r.p, flow, shut: shutHours(r.tc) });
       const lane = Math.min(2, Math.max(1.2, (WIDTH[r.c] ?? 6) / 4));
       // how far it can pull out from its lane: up to the far kerb, and a wheel on the pavement
       let room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
@@ -763,7 +770,7 @@ export class Traffic {
   private spawn(p: { x: number; z: number }, nearest: (x: number, z: number) => number) {
     const near: Edge[] = [];
     for (let i = Math.floor((p.x - FAR) / CELL); i <= Math.floor((p.x + FAR) / CELL); i++)
-      for (let j = Math.floor((p.z - FAR) / CELL); j <= Math.floor((p.z + FAR) / CELL); j++) near.push(...(this.cells.get(this.cell(i * CELL, j * CELL)) ?? []).filter((e) => !e.dead));
+      for (let j = Math.floor((p.z - FAR) / CELL); j <= Math.floor((p.z + FAR) / CELL); j++) near.push(...(this.cells.get(this.cell(i * CELL, j * CELL)) ?? []).filter((e) => !e.dead && !this.shut(e)));
     // most of them on the busy roads: picked in proportion to (the root of) the traffic each carries
     const weight = near.map((e) => Math.sqrt(e.flow)), total = weight.reduce((s, w) => s + w, 0);
     const pickOne = () => { let r = Math.random() * total; for (let k = 0; k < near.length; k++) if ((r -= weight[k]) <= 0) return near[k]; return near[near.length - 1]; };
@@ -830,9 +837,19 @@ export class Traffic {
     return pts;
   }
 
-  /** Which way next at the end of e: any road but back the way it came, unless it's a dead end. */
+  /** Whether e's road is shut to traffic at this hour of the game's clock (a street closed in the daytime). */
+  private shut(e: Edge): boolean {
+    const h = this.roads[e.road]?.shut;
+    if (!h) return false;
+    const t = timeOfDay() * 24;
+    return h[0] <= h[1] ? t >= h[0] && t < h[1] : t >= h[0] || t < h[1];
+  }
+
+  /** Which way next at the end of e: any road but back the way it came, unless it's a dead end, and
+   *  not into a street shut at this hour (a car already in one drives on out of it). */
   private choose(e: Edge, c?: Car): Edge {
-    const outs = this.nodes[e.b].out.filter((o) => o.b !== e.a);
+    const all = this.nodes[e.b].out.filter((o) => o.b !== e.a), open = all.filter((o) => !this.shut(o) || this.shut(e));
+    const outs = open.length ? open : all;
     if (!outs.length) return e.back ?? e;
     // going round a roundabout: off at an exit more often than not, and off for certain once it's back where it came on
     if (e.ring) {

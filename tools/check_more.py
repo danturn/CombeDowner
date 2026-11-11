@@ -63,7 +63,7 @@ from the packs alone, a few seconds a square:
 29. No parapet gap where three or more pieces of a bridge meet on its deck.
 30. No ground stands up through a deck.
 31. Room under a bridge: the ground half a metre under its underside, and headroom for a way or the
-    canal's towpath under the game's ceiling there.
+    canal's towpath under the game's ceiling there (and the railway's room: rule 51).
 32. Tunnels as the game builds them (tools/tunnel_mesh.ts runs web/src/tunnels.ts): tubes meet where
     pieces meet and go on over a square's edge; walls and floor are solid where they're drawn.
 33. Flights of steps land on something to walk on, and their treads are neither buried (unless a
@@ -79,7 +79,7 @@ from the packs alone, a few seconds a square:
     face's top meets another triangle, edge to edge or along a run of edges on its line, or has more
     ground or a face just across it; the rest are cracks the sky shows through, each scored by its
     length in metres. Edges along a square's own sides are left to rule 14. CD_SEAMS=0 leaves it out.
-39-46 are faults found by playing, from the packs alone (played below):
+39-50 are faults found by playing, from the packs alone (played below; 44-46 with rule 38):
 39. Road markings lie on the carriageway, square across it, on the street that gives way and behind
     the other street's kerb line.
 40. A lane's or yard's carriageway (the service face, a lighter grey) stops at the kerbed street it
@@ -88,11 +88,19 @@ from the packs alone, a few seconds a square:
 42. The faces meet the next square's: the same kind at the same height either side of a square's side.
 43. Flights of steps don't lie over each other, and no handrail stands on a pavement or the road.
 44. No wall, fence or hedge stands with its foot over what is drawn under it, the sky showing
-    through beneath it (tools/ground_seams.mjs, with rule 38; CD_SEAMS=0 leaves it out).
+    through beneath it (a gate's leaf, hung clear of the ground, aside; tools/ground_seams.mjs, with
+    rule 38; CD_SEAMS=0 leaves it out).
 45. No street face of the map's is left inside a set piece's outline, as the game leaves them (the set
     piece takes out those it lays its own ground over; tools/ground_seams.mjs, with rule 38).
 46. A set piece's floor at the street's level runs on to what stands beyond its edge, with no gap to
     drop into between it and a wall or another floor (tools/ground_seams.mjs, with rule 38).
+47. No building stands in a pit of ground carved down beside it, and no path rides a bridge that
+    isn't there.
+48. A shop's front meets its pavement, with no strip of open ground between.
+49. A road meets a pedestrian street at its paving: it neither runs on into the paving nor bulges
+    into the mouth of one stopping short of it.
+50. The line between a pavement and the paving beside it has no short sideways jogs.
+51. A bridge over the railway leaves a train room under its deck (the railway's own bridges aside).
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -140,6 +148,12 @@ def _whole(root, map_id):
     src = wide if wide and "field" in wide else head or {}
     return {"canal": load("-canal"), "pubs": (load("-pubs") or {}).get("pb") or [],
             "field": src.get("field"), "fc": src.get("fc") or [0, 0]}
+
+
+@functools.lru_cache(maxsize=2)
+def _rail(root, map_id):
+    p = os.path.join(root, f"{map_id}-rail.json")
+    return json.load(open(p)) if os.path.exists(p) else None
 
 
 @functools.lru_cache(maxsize=4)
@@ -962,6 +976,7 @@ LUMP = 0.05          # metres the grass may be raised under a path beside a stre
 DECK_END = 0.1       # metres between a deck's end and the street it lands on
 DECK_CLEAR = 0.5     # metres under a deck with nothing passing
 HEAD = 1.9           # metres a walker needs under a ceiling (player.ts EYE 1.65, and the head over it)
+RAIL_HEAD = 4.3      # metres from a track's line to a deck's underside: a train's roof (tools/trackclear.ts 3.8) and room over it
 KINDS = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck depth
 FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
 GAME_KERBED = KERBED | {"living_street"}
@@ -969,6 +984,7 @@ WALL_BESIDE = 0.4     # metres from a retaining wall that a tread's side counts 
 LANDING = (0.1, 0.05)   # metres off a walkable face, and up or down from it, that a flight's end may land
 STAIR_PITCH = 0.7       # furniture.ts: the steepest a flight's treads climb
 TREAD_DEPTH = 0.15      # furniture.ts: how far a tread's block goes on down under its step
+PATH_LIFT = 0.04        # world.ts: how far a path's face is drawn over its line, where a baked flight's treads stand
 LOCK_HALF, COPE, APRON, TAIL = 2.15, 1.2, 4.5, 2.2   # canal.ts
 LEVELS_AGREE = 0.03     # metres two touching waters may differ
 FENCE_IN = 0.3          # metres of a wall, fence or hedge inside water or a way before it counts
@@ -1519,7 +1535,7 @@ def join_spans(roads):
 
 
 def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
-    """28-31. Bridges, joined as the game joins them (world.ts joinSpans), with each kind's deck
+    """28-31 and 51. Bridges, joined as the game joins them (world.ts joinSpans), with each kind's deck
     (world.ts KINDS) under its top:
     28. a deck's end lands on the street it meets: it doesn't stop in the air (falling off its last
         point, world.ts offTheEnd, or ending on its span with nothing going on, here or in the next
@@ -1563,6 +1579,9 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     ttree = shapely.STRtree([t[0] for t in tow]) if tow else None
     ways = [(LineString([q[:2] for q in r["p"]]), r) for r in roads]
     wtree = shapely.STRtree([w[0] for w in ways])
+    rails = [(LineString([q[:2] for q in t["p"]]), t["p"]) for t in (_rail(*_root_of(f)) or {}).get("tracks", []) if len(t["p"]) > 1]
+    rails = [t for t in rails if t[0].intersects(box(*m["b"]).buffer(50))]
+    rtree = shapely.STRtree([t[0] for t in rails]) if rails else None
     # (under a deck over water, or over the canal's works and locks, the ground is hidden or dug: the
     # water's surface or the canal's own bed is what's there)
     near = box(*m["b"]).buffer(50)
@@ -1573,6 +1592,12 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     hidden = shapely.union_all([g for g in hidden if g.intersects(near)] or [Polygon()])
     shapely.prepare(hidden)
     clear_low, through = 0.0, 0.0
+    abutments = [e for e in m.get("se") or [] if e[0] == "abutment" and len(e) > 6 and e[6]]
+
+    def _landing(q, g):
+        """map.ts deckTop: a deck lands at the height its square holds the abutment at, where it does."""
+        e = next((e for e in abutments if math.dist(e[1:3], q[:2]) < 0.3), None)
+        return e[3] if e is not None and abs(e[3] - g) < 1 else g
     for r in chains:
         p, flags = r["p"], _flags(r)
         if any(held(q[0], q[1]) for q in p if len(q) > 3): continue
@@ -1580,7 +1605,7 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
         deck = KINDS[kind]
         lift = 0.2 if r["c"] in GAME_KERBED else 0.1
         hl, hr = _deck_sides(r)
-        h = lambda i: p[i][2] if flags[i] else float(ground(p[i][0], p[i][1]))
+        h = lambda i: p[i][2] if flags[i] else _landing(p[i], float(ground(p[i][0], p[i][1])))
         falls = lambda i, j: flags[j] != 1 and abs(h(i) - h(j)) > max(2, math.dist(p[i][:2], p[j][:2]))
         name = f"{r['c']} {r.get('n') or ''!r}"
         for a0, b0 in _spans(flags):
@@ -1673,6 +1698,21 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
                 if room < HEAD and top - wz > 1.0:
                     note("31 no room under a bridge", HEAD - room, at(x.x, x.y), f"{w['c']} {w['n']!r} under {name}: {room:.1f} m to the ceiling")
                     fig["ways without room"] = fig.get("ways without room", 0) + 1
+            # the railway passing under: a train's roof and a little over it under the deck's underside
+            for k in (rtree.query(foot) if rtree else []):
+                tl, tp = rails[int(k)]
+                if not tl.crosses(line): continue
+                x = tl.intersection(line)
+                x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type != "Point": continue
+                i = min(range(len(tp)), key=lambda i: math.dist(tp[i][:2], (x.x, x.y)))
+                top = float(np.interp(line.project(x), cum, [h(i) for i in range(a, b + 1)])) + lift
+                room = top - deck - tp[i][2]
+                # (a track well over the deck is a railway bridge over the road, not under it)
+                if -2 < room < RAIL_HEAD and sq.contains(x):
+                    note("51 no headroom over the railway", RAIL_HEAD - room, at(x.x, x.y),
+                         f"{name} {kind}, {room:.1f} m over the track's line")
+                    fig["bridges low over the railway"] = fig.get("bridges low over the railway", 0) + 1
     fig["deck underside in ground m2"] = fig.get("deck underside in ground m2", 0) + through
     fig["under decks within clear m2"] = fig.get("under decks within clear m2", 0) + clear_low
 
@@ -1684,8 +1724,9 @@ def _root_of(f):
     return root, map_id
 
 
-def _stair(p, ground):
-    """furniture.ts stairLayout: a flight's length, a point along it, and its treads' height there."""
+def _stair(p, ground, baked=False):
+    """furniture.ts stairLayout: a flight's length, a point along it, and its treads' height there
+    (on the heights the build laid into its points, where it did: `tb`)."""
     cum = np.concatenate([[0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(p, p[1:])])])
     L = cum[-1]
     if L < 1: return None
@@ -1694,8 +1735,14 @@ def _stair(p, ground):
     N = max(2, math.ceil(L / 0.25))
     s = L * np.arange(N + 1) / N
     x, y = along(s)
-    g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
-    hh = np.maximum(g0 + (g1 - g0) * s / L, ground(x, y))
+    if baked:
+        # (the build's shape, set on what is drawn at its two ends, and never under what is drawn)
+        hh = np.interp(s, cum, [q[2] for q in p]) + PATH_LIFT
+        g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
+        hh = np.maximum(hh + (g0 - hh[0]) * (1 - s / L) + (g1 - hh[-1]) * s / L, ground(x, y))
+    else:
+        g0, g1 = float(ground(np.array([xs[0]]), np.array([ys[0]]))[0]), float(ground(np.array([xs[-1]]), np.array([ys[-1]]))[0])
+        hh = np.maximum(g0 + (g1 - g0) * s / L, ground(x, y))
     most = STAIR_PITCH * L / N
     for i in range(N - 1, -1, -1): hh[i] = max(hh[i], hh[i + 1] - most)
     for i in range(1, N + 1): hh[i] = max(hh[i], hh[i - 1] - most)
@@ -1732,7 +1779,7 @@ def flights(m, sheet, walk, note, at, inner, fig):
     walled_at = lambda x, y: walls is not None and len(walls.query(Point(x, y), predicate="dwithin", distance=WALL_BESIDE)) > 0
     totals = dict(treads=0, buried=0, block=0, unwalkable=0, landings=0)
     for r in stepped:
-        lay = _stair(r["p"], walk)
+        lay = _stair(r["p"], walk, r.get("tb"))
         if not lay: continue
         L, along, height, rise = lay
         if not inner.contains(Point(r["p"][0][:2])): continue
@@ -2409,14 +2456,20 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
             o, ol, os_ = fl[int(j)]
             both = s.intersection(os_)
             # (one flight running on from another's end shares a landing with it, unless it turns
-            # straight back over the other's first treads)
+            # straight back over the other's first treads; where the build laid both, the landing is
+            # level as far out as their sides take to part: flights.py)
             back = False
             for e, f_ in ((l, 0), (l, -1)):
                 for g_, h_ in ((ol, 0), (ol, -1)):
                     if Point(e.coords[f_]).distance(Point(g_.coords[h_])) >= 1.0: continue
                     u, v = _leaving(e, f_), _leaving(g_, h_)
-                    back |= math.degrees(math.acos(max(-1.0, min(1.0, u[0] * v[0] + u[1] * v[1])))) < 40
-                    both = both.difference(Point(e.coords[f_]).buffer(0.9)).difference(Point(g_.coords[h_]).buffer(0.9))
+                    angle = math.degrees(math.acos(max(-1.0, min(1.0, u[0] * v[0] + u[1] * v[1]))))
+                    back |= angle < 40
+                    land = 0.9
+                    if r.get("tb") and o.get("tb"):
+                        w = max(r.get("w") or 1.8, o.get("w") or 1.8)
+                        land = max(land, min(w / 2 / max(math.sin(math.radians(max(angle, 1.0)) / 2), 0.2), 1.5 * w))
+                    both = both.difference(Point(e.coords[f_]).buffer(land)).difference(Point(g_.coords[h_]).buffer(land))
             if back: both = s.intersection(os_)
             if both.area < 0.3 or not inner.contains(both.representative_point()): continue
             totals["crossing"] += 1
@@ -2446,7 +2499,7 @@ def flights_and_rails(m, sheet, note, at, inner, fig):
 
 
 def played(m, f, sheet, note, at, sq, inner, fig):
-    """Rules 39 to 43, for one square. (Each looks at what lies within the square itself, so they run
+    """Rules 39 to 43 and 47 to 50, for one square. (Each looks at what lies within the square itself, so they run
     up to a metre from its sides rather than EDGE: what they measure is drawn there by this square.)"""
     inner = sq.buffer(-1.0)
     markings(m, f, sheet, note, at, sq, fig)
@@ -2454,6 +2507,170 @@ def played(m, f, sheet, note, at, sq, inner, fig):
     road_steps(m, sheet, note, at, inner, fig)
     square_joins(m, f, sheet, note, at, fig)
     flights_and_rails(m, sheet, note, at, inner, fig)
+    buildings_in_pits(m, note, at, inner, fig)
+    shopfronts_on_grass(m, sheet, note, at, inner, fig)
+    roads_into_paving(m, sheet, note, at, inner, fig)
+    kerb_jogs(m, sheet, note, at, inner, fig)
+
+
+PIT_DEPTH = 0.3       # metres the sheet may carve the ground beside a building before it is a pit...
+PIT_BELOW = 0.1       # ...when it also ends this far under the foot of its walls (sheet.FOOT_DEPTH)
+RIDE_SPAN = 15.0      # metres: a path riding a bridge's deck has one of the bridge's span points this near
+
+
+def buildings_in_pits(m, note, at, inner, fig):
+    """47. No building stands in a pit: the ground beside its walls is not carved down more than
+    PIT_DEPTH and below its walls' foot. And no path rides the deck of a bridge that isn't there (a
+    point marked as riding beside a span with no span point within RIDE_SPAN): the sheet dug the
+    ground out under that deck. Scored by the deepest point, and by the riding points."""
+    T = m["t"]
+    if m.get("gs"):
+        nx, ny = T["nx"], T["ny"]
+        H = gsheet.read(m["gs"], T)[1]
+        H0 = np.asarray(T["h"], float).reshape(ny, nx) / 10 + T["z0"]
+        GX, GY = np.meshgrid(T["x0"] + np.arange(nx) * T["dx"], T["y0"] + np.arange(ny) * T["dy"])
+        cut = np.nonzero((H0 - H).ravel() > PIT_DEPTH)[0]
+        bl = [(Polygon(b["r"][0]).buffer(0), b) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+        if len(cut) and bl:
+            pts = shapely.points(GX.ravel()[cut], GY.ravel()[cut])
+            pi, bi = shapely.STRtree([p for p, _ in bl]).query(pts, predicate="dwithin", distance=T["dx"])
+            worst = {}
+            for p, b in zip(pi.tolist(), bi.tolist()):
+                poly, rec = bl[b]
+                z = float(H.ravel()[cut[p]])
+                if poly.contains(pts[p]) or z >= rec["g"] - gsheet.FOOT_DEPTH - PIT_BELOW:
+                    continue
+                worst[b] = max(worst.get(b, 0.0), rec["g"] - z)
+            for b, depth in worst.items():
+                c = bl[b][0].representative_point()
+                if not inner.contains(c): continue
+                note("47 building standing in a pit", depth, at(c.x, c.y), f"{bl[b][1].get('n') or bl[b][1].get('c')!r}: the ground beside it {depth:.1f} m under its floor")
+                fig["buildings in pits"] = fig.get("buildings in pits", 0) + 1
+    spans = [q[:2] for r in m.get("rd") or [] for q in r["p"] if len(q) > 3 and q[3] == 1]
+    tree = shapely.STRtree(shapely.points(spans)) if spans else None
+    for r in m.get("rd") or []:
+        lone = [q for q in r["p"] if len(q) > 3 and q[3] == 2
+                and (tree is None or not len(tree.query(Point(q[:2]), predicate="dwithin", distance=RIDE_SPAN)))]
+        if lone and inner.contains(Point(lone[0][:2])):
+            note("47 path riding a bridge that isn't there", len(lone), at(*lone[0][:2]), f"{r.get('n') or r['c']!r}: {len(lone)} points")
+
+
+SHOP_SIGN = 4.0       # metres from a shop sign to the building it hangs on (settle.SHOP_REACH)
+SHOP_LOOK = 7.0       # metres out from a shopfront to look for its pavement
+SHOP_OPEN = 0.5       # metres of ground with no face before a shopfront that is a strip of grass
+
+
+def shopfronts_on_grass(m, sheet, note, at, inner, fig):
+    """48. A shop's front meets its pavement: out from a shopfront (a building with a shop sign),
+    no more than SHOP_OPEN of bare ground before the first pavement within SHOP_LOOK. Scored by the
+    metres of the building's walls that have more."""
+    if not sheet.ok or not m.get("sh"): return
+    shops = shapely.points([(float(q[0]), float(q[1])) for q in m["sh"]])
+    stree = shapely.STRtree(shops)
+    pave = sheet.union(("pave",))
+    faces = shapely.union_all(shapely.make_valid(sheet.polys[shapely.area(sheet.polys) > 1e-9]))
+    if pave.is_empty: return
+    shapely.prepare(pave); shapely.prepare(faces)
+    bl = [(Polygon(b["r"][0]).buffer(0), b) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+    btree = shapely.STRtree([p for p, _ in bl])
+    for poly, b in bl:
+        c = poly.representative_point()
+        if not inner.contains(c) or not len(stree.query(poly, predicate="dwithin", distance=SHOP_SIGN)): continue
+        if poly.distance(pave) > SHOP_LOOK: continue
+        ring = poly.exterior
+        L, bare = ring.length, 0.0
+        for d in np.arange(0.25, L, 0.5):
+            p, a, q = ring.interpolate(d), ring.interpolate(max(0, d - 0.2)), ring.interpolate(min(L, d + 0.2))
+            n = math.hypot(q.x - a.x, q.y - a.y) or 1
+            for sgn in (1, -1):
+                ox, oy = sgn * (q.y - a.y) / n, -sgn * (q.x - a.x) / n
+                if poly.contains(Point(p.x + ox * 0.3, p.y + oy * 0.3)): continue
+                ray = LineString([(p.x + ox * 0.05, p.y + oy * 0.05), (p.x + ox * SHOP_LOOK, p.y + oy * SHOP_LOOK)])
+                hit = ray.intersection(pave)
+                if hit.is_empty: break
+                gap = LineString([ray.coords[0], (p.x + ox * p.distance(hit), p.y + oy * p.distance(hit))])
+                if any(bl[int(k)][0] is not poly for k in btree.query(gap, predicate="intersects")): break
+                if gap.difference(faces).length > SHOP_OPEN: bare += 0.5
+                break
+        if bare >= 2.0:
+            note("48 shopfront behind a strip of open ground", bare, at(c.x, c.y), f"{b.get('n') or b.get('c')!r}: {bare:.0f} m of its front")
+            fig["shopfronts on grass"] = fig.get("shopfronts on grass", 0) + 1
+
+
+KERBED_ROADS = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+
+
+def roads_into_paving(m, sheet, note, at, inner, fig):
+    """49. A road meets a pedestrian street square across, at its paving: no kerbed road's face runs
+    on past the pedestrian street's edge to end in its paving with no road beyond, and no road face
+    bulges into the mouth of a pedestrian street that stops short of the road (more than 2 m2 past
+    the road's own kerb line)."""
+    if not sheet.ok: return
+    rd = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
+    lines = [LineString([q[:2] for q in r["p"]]) for r in rd]
+    if not lines: return
+    tree = shapely.STRtree(lines)
+    vehicle = KERBED_ROADS | {"service", "trunk_link", "primary_link", "secondary_link"}
+    paved = sheet.union(("drive", "pave"))
+    road = sheet.union(("road",))
+    for i, r in enumerate(rd):
+        l = lines[i]
+        if r["c"] in KERBED_ROADS:
+            for e, b in ((0, 1), (-1, -2)):
+                p, q = Point(l.coords[e]), Point(l.coords[b])
+                if not inner.contains(p): continue
+                near = [int(k) for k in tree.query(p, predicate="dwithin", distance=1.0) if int(k) != i]
+                if any(rd[k]["c"] in vehicle for k in near): continue
+                if not any(rd[k]["c"] == "pedestrian" for k in near): continue
+                n = p.distance(q) or 1
+                ux, uy = (p.x - q.x) / n, (p.y - q.y) / n
+                box_ = LineString([(p.x + ux * 0.5, p.y + uy * 0.5), (p.x + ux * 2.5, p.y + uy * 2.5)]).buffer(r.get("w", 5) / 2, cap_style="flat")
+                if box_.intersection(paved).area >= 0.6 * box_.area:
+                    note("49 road running on into a pedestrian street's paving", 1, at(p.x, p.y), f"{r.get('n') or r['c']!r} ends in the paving of {sorted({rd[k].get('n') or 'a pedestrian street' for k in near if rd[k]['c'] == 'pedestrian'})}")
+        elif r["c"] == "pedestrian":
+            for e in (0, -1):
+                p = Point(l.coords[e])
+                if not inner.contains(p): continue
+                ks = [int(k) for k in tree.query(p, predicate="dwithin", distance=8.0) if rd[int(k)]["c"] in KERBED_ROADS]
+                if not ks: continue
+                k = min(ks, key=lambda k: lines[k].distance(p))
+                d, half = lines[k].distance(p), rd[k].get("w", 5) / 2
+                if d < half + 0.5: continue
+                to = lines[k].interpolate(lines[k].project(p))
+                ux, uy = (to.x - p.x) / d, (to.y - p.y) / d
+                mouth = LineString([(p.x, p.y), (to.x - ux * (half + 0.3), to.y - uy * (half + 0.3))]).buffer(r.get("w", 4) / 2, cap_style="flat")
+                lobe = mouth.intersection(road).area
+                if lobe > 2.0:
+                    note("49 road bulging into a pedestrian street's mouth", lobe, at(p.x, p.y), f"{r.get('n') or 'pedestrian'!r} off {rd[k].get('n')!r}: {lobe:.1f} m2")
+
+
+JOG_MOST = 1.0        # metres: a sideways step this short in the line between pavement and paving is a jog
+
+
+def kerb_jogs(m, sheet, note, at, inner, fig):
+    """50. The line between a pavement and the paving beside it runs on without jogs: no step of
+    under JOG_MOST across it between two stretches running on parallel, which stands a kerb's end
+    in the paving."""
+    if not sheet.ok: return
+    V = sheet.V
+    drive = set()
+    for k, idx in sheet.edges:
+        if k == "drive":
+            drive.update((round(V[v][0], 2), round(V[v][1], 2)) for v in idx.tolist())
+    cos = lambda x, y: abs(float(np.dot(x, y))) / (np.hypot(*x) * np.hypot(*y))
+    for k, idx in sheet.edges:
+        if k != "pave": continue
+        P = V[idx][:, :2]
+        for i in range(1, len(P) - 2):
+            a, b, c, d = P[i - 1], P[i], P[i + 1], P[i + 2]
+            s = c - b
+            L = float(np.hypot(*s))
+            if not 0.05 < L < JOG_MOST: continue
+            if not all((round(x[0], 2), round(x[1], 2)) in drive for x in (b, c)): continue
+            u, w = b - a, d - c
+            if np.hypot(*u) < 0.5 or np.hypot(*w) < 0.5: continue
+            if cos(u, w) > 0.95 and cos(u, s) < 0.6 and inner.contains(Point(*b)):
+                note("50 kerb jogging sideways in the paving", L, at(b[0], b[1]), f"{L:.2f} m")
 
 
 @functools.lru_cache(maxsize=2)

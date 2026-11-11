@@ -39,7 +39,7 @@ fakeBrowser(opt.maps);
 // (--query is more of the address, as the game would have it: ground=cdt for the triangulated ground)
 if (opt.query) globalThis.location.search = "?" + opt.query;
 const G = await bundleGame(`
-export { GameMap, loadMap, tileKey } from "./map";
+export { GameMap, loadMap, tileKey, gateShape } from "./map";
 export { readSquare } from "./sfpack";
 export { maskSetPieces } from "./landmarks/setpieces";
 export { clearCourt } from "./bonfire";
@@ -229,10 +229,24 @@ function seams(d, group) {
 // their sides (an edge of an upright triangle lying below its third corner) is looked at every 0.25 m
 // along: the highest top of the ground or a face under that point (no higher than a metre over the
 // foot, so a deck overhead isn't taken for it) is found, and where the foot stands more than FOOT_GAP
-// over it, the sky shows through under the wall. Each place is a run of such points, scored by its
+// over it, the sky shows through under the wall. A gate's leaf is hung clear of the ground on purpose
+// (map.ts gateShape), so its foot is left out. Each place is a run of such points, scored by its
 // length in metres.
 const FOOT_GAP = 0.05;
-function wallFeet(group) {
+function gateLeaves(d) {
+  const out = [];
+  for (const gt of d.gt ?? []) {
+    const g = G.gateShape(gt, 0);
+    if (g) out.push(g.leaf);
+  }
+  return out;
+}
+const onLeaf = (leaves, x, y) => leaves.some((f) => {
+  const ex = f.x1 - f.x0, ey = f.y1 - f.y0, l2 = ex * ex + ey * ey;
+  const t = l2 > 1e-12 ? ((x - f.x0) * ex + (y - f.y0) * ey) / l2 : 0;
+  return t > -0.05 && t < 1.05 && Math.abs((x - f.x0) * ey - (y - f.y0) * ex) / Math.sqrt(l2 || 1) < f.half + 0.05;
+});
+function wallFeet(group, leaves = []) {
   const CELL = 2, tops = [], cell = new Map(), v = new THREE.Vector3();
   const tri = (name, f) => group.traverse((o) => {
     let top = o;
@@ -314,7 +328,7 @@ function wallFeet(group) {
       for (let s = 0; s <= k; s++) {
         const t = s / k, x = p[0] + (q[0] - p[0]) * t, y = p[1] + (q[1] - p[1]) * t, foot = p[2] + (q[2] - p[2]) * t;
         const z = under(x, y, foot);
-        if (!(z > -Infinity) || foot - z <= FOOT_GAP || closed(x, y, z, foot)) continue;
+        if (!(z > -Infinity) || foot - z <= FOOT_GAP || closed(x, y, z, foot) || onLeaf(leaves, x, y)) continue;
         // (gathered in half-metre cells, each with its worst gap)
         const key = `${Math.round(x * 2)},${Math.round(y * 2)}`, o = gaps.get(key);
         if (!o || o[2] < foot - z) gaps.set(key, [x, y, foot - z]);
@@ -484,7 +498,7 @@ for (const [ti, tj] of squares) {
     tris[name] = (tris[name] ?? 0) + n / 3;
   });
   if (opt.heights) Object.assign(r, heights(s.group));
-  const feet = opt.rules || opt.feet ? wallFeet(s.group) : [];
+  const feet = opt.rules || opt.feet ? wallFeet(s.group, gateLeaves(s.d)) : [];
   const inPieces = opt.rules ? setPieceFaces(s.d) : [];
   const floorHoles = opt.rules || opt.gaps ? floorGaps(s.d, s.m) : [];
   s.done();

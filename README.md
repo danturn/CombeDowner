@@ -96,8 +96,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
   each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
   shelters only at the stops that have one, and the
-  stops on a street closed to traffic that buses still use (Milsom Street, the University's
-  Parade) at its kerb, with the bus you call driving along it; post
+  stops on a street closed to traffic that buses still use (the University's Parade) at its
+  kerb, with the bus you call driving along it; a street shut to traffic only in the daytime
+  (Milsom Street, New Bond Street) is a road with its kerbs, empty of traffic in those hours on
+  the game's clock; a pub's or café's tables outside
+  stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or
   gravel where the map says so, not paving; drives and alleys are a single narrow lane with no
@@ -105,7 +108,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   front garden, and a front door opens clear of any wall or fence, on a wall with open ground
   outside it (never a terrace's party wall or into a neighbour's extension); paths, twittens, towpaths and pedestrian streets turn at their real corners, so a
   dog-leg between gardens goes round them rather than through them; flights of steps (and any footpath steeper than 1 in 4) are treads you climb one by one, sunk into the bank, between the ground at each
-  end, turning at their landings, with a stone cheek wall where the bank beside them falls away and handrails along them where the map has them; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
+  end, climbing with the hill rather than through it, level where they turn back on themselves or meet another flight, never lying over one another, with a stone cheek wall where the bank beside them falls away and handrails along them where the map has them, and the bare earth or paving beside them laid to their treads rather than over them; where streets meet, the junction is one smooth surface between them rather than stepping from one street's level to the other's, and walls, fences and hedges stand down on the ground as it is drawn, with no daylight under their feet; you walk on footpaths where they're drawn, and a footpath, front path or drive lies level from side to side, cut into the hillside it crosses, following the slope only along its length. Mapped
   dry-stone walls, railings and wire fences are built as such, with crash barriers along the main
   roads, and where a footpath goes through a hedge, fence or wall you find its gate, stile or
   kissing gate (only where the boundary is really there), with cattle grids across the lanes.
