@@ -4070,7 +4070,7 @@ export class Game {
         if (!started) return;
         this.engines.set(c, (e = started));
       }
-      e.set(c.rpm, c.gas, c.horn, d, pan, false, Math.min(1, c.v / 14));
+      e.set(c.rpm, c.gas, c.horn, d, pan, false, Math.min(1, Math.abs(c.v) / 14));   // backing up in a turn in the road, its speed is negative
     });
     // narrowboats chugging along
     const canal = this.world.canal;
