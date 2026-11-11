@@ -742,13 +742,25 @@ async function play(code: string) {
   }
 }
 
+/** Everyone in a game is seen by name, so a game doesn't start until you've given one. */
+function named(): boolean {
+  const input = $<HTMLInputElement>("name");
+  if (input.value.trim()) return true;
+  $("menuerr").textContent = "Tell us your name first: other residents will see it.";
+  input.focus();
+  return false;
+}
+$<HTMLInputElement>("name").addEventListener("input", () => { if ($("menuerr").textContent.startsWith("Tell us your name")) $("menuerr").textContent = ""; });
+
 $("play").onclick = () => {
+  if (!named()) return;
   const code = cleanCode($<HTMLInputElement>("code").value) || newRoomCode();
   if (code.length < 4 || code === "SOLO") { $("menuerr").textContent = "Pick a game name of at least 4 letters or numbers (not SOLO)."; return; }
   $("menuerr").textContent = "";
   whenReady(() => play(code));
 };
 const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? "" : mapName(m)), async (r) => {
+  if (!named()) return;
   $("menuerr").textContent = "";
   $<HTMLInputElement>("code").value = r.code;
   if (valid(r.map)) {
@@ -763,7 +775,7 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
 }, (r) => Saves.progressText(Saves.progress(r.map, r.code), { zones: mine.zones, objects: mine.strange, challenges: mine.challenges }),
 () => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
-$("solo").onclick = () => whenReady(() => start("SOLO", true));
+$("solo").onclick = () => named() && whenReady(() => start("SOLO", true));
 $("linkbtn").onclick = () => openLink(() => location.reload());
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
@@ -795,7 +807,7 @@ pauseButton("chatbtn", "Chat and commands", () => { if (!game) return; $("pause"
   const fromMenu = document.createElement("button");
   fromMenu.type = "button"; fromMenu.id = "gamesbtn"; fromMenu.className = "settingsbtn"; fromMenu.textContent = "Games";
   fromMenu.dataset.page = "700";
-  fromMenu.onclick = () => { if (!game) start("SOLO", true); openGames(); };
+  fromMenu.onclick = () => { if (!game) { if (!named()) return; start("SOLO", true); } openGames(); };
   $("linkbtn").after(fromMenu);
   pauseButton("gamesbtn2", "Games", () => openGames());
   $("gamesbtn2").dataset.page = "700";
@@ -1037,7 +1049,7 @@ const joining = !!roomParam && roomParam !== "SOLO" && params.get("join") === "1
 const resuming = !joining && !!wasPlaying && !UP && (!roomParam || roomParam === wasPlaying.code);
 // index.html hid the menu on the guess that this was a refresh mid-game: show it again if not
 if (!resuming) document.documentElement.classList.remove("resuming");
-if (joining) whenReady(() => play(roomParam));
+if (joining && named()) whenReady(() => play(roomParam));
 else if (resuming && wasPlaying) {
   // no menu on the way back in, just a black screen saying so; the menu comes back if the game
   // can't be rejoined, or it wants to ask you something (they're down the mines, a new version)
