@@ -59,6 +59,7 @@ PREMISES = ("uprn", "lodgement_date", "address")
 CODES = ("property_type", "built_form", "construction_age_band", "flat_level")
 PACE = 0.1              # seconds between the register's requests: steady, never a burst
 WORKERS = 4            # answers waited on at once, so the pace holds while each takes its time
+FIRST_YEAR = 2008       # the register's first certificates
 PAGE = 5000             # the most a search page holds
 GRID = 7                # points along each side of the box asked which council they are in
 DELTA_DAYS = 7          # days of deltas asked for at a time (they are the whole of England and Wales)
@@ -205,16 +206,39 @@ class Register:
             raise SystemExit(f"energy certificates: the register answered {e.code} for the {kind} file") from None
         raise SystemExit(f"energy certificates: the register gave no {kind} file")
 
-    def search(self, kind, **query):
-        """Every certificate a search finds, page by page: (certificate, uprn, date, first address line)."""
-        out, page = [], 1
+    def search(self, kind, names, since=None, until=None):
+        """Every certificate of the councils registered between two days (all of them, without
+        since): (certificate, uprn, date, first address line). Asked a council and a year at a
+        time, each checked against the count the register gives, as a long run of pages has been
+        seen to stop short."""
+        until = datetime.date.fromisoformat(until)
+        start = datetime.date.fromisoformat(since) if since else datetime.date(FIRST_YEAR, 1, 1)
+        out = []
+        for name in names:
+            day = start
+            while day <= until:
+                to = min(until, datetime.date(day.year, 12, 31))
+                for tries in range(3):
+                    got, total = self._pages(kind, name, day.isoformat(), to.isoformat())
+                    if len(got) >= total: break
+                    print(f"energy certificates: {name} {day.year}: {len(got)} of {total}, asking again", flush=True)
+                else:
+                    raise SystemExit(f"energy certificates: the register kept stopping short on {name} {day.year}; run again")
+                out += got
+                day = to + datetime.timedelta(days=1)
+        return out
+
+    def _pages(self, kind, name, start, end):
+        out, page, total = [], 1, 0
         while page:
-            got = self.get(f"/api/{kind}/search", page_size=PAGE, current_page=page, **query)
+            got = self.get(f"/api/{kind}/search", page_size=PAGE, current_page=page,
+                           date_start=start, date_end=end, **{"council[]": name})
             if not got: break
+            total = (got.get("pagination") or {}).get("totalRecords") or total
             out += [(d["certificateNumber"], str(d.get("uprn") or ""), d.get("registrationDate") or "", d.get("addressLine1") or "")
                     for d in got.get("data", [])]
             page = (got.get("pagination") or {}).get("nextPage")
-        return out
+        return out, total
 
 
 def councils(reg, bbox):
@@ -362,9 +386,9 @@ def from_register(map_id, folder, uprns, tok):
     if since and since >= yesterday:
         pass
     else:
-        span = {"date_start": (datetime.date.fromisoformat(since) + datetime.timedelta(days=1)).isoformat(), "date_end": yesterday} if since else {}
+        after = (datetime.date.fromisoformat(since) + datetime.timedelta(days=1)).isoformat() if since else None
         for kind in ("domestic", "non-domestic"):
-            got = reg.search(kind, **{"council[]": names, **span})
+            got = reg.search(kind, names, after, yesterday)
             for cert, u, day, line in got: store.found[kind][cert] = [u, day, line] if kind == "non-domestic" else [u, day]
             print(f"energy certificates: {len(got)} {kind} certificates " + (f"since {since}" if since else "in all"), flush=True)
         if since:
