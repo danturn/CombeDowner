@@ -293,6 +293,12 @@ kbd {
 .card.tt button.warning, .card.tt button.warning:hover { background: #f00; color: #fff; }
 .card.tt .row button:not(.primary):not(.warning):nth-child(odd) { background: #ff0; color: #000; }
 .card.tt .row button:not(.primary):not(.warning):nth-child(even) { background: #0ff; color: #000; }
+/* not ready yet (main.ts): dimmed, like a page still coming in on the set */
+.card.tt .row button:is(:disabled, .waiting) { cursor: progress; outline: 0; }
+.card.tt .row button.primary:is(:disabled, .waiting) { background: #070; color: #000; }
+.card.tt .row button:not(.primary):not(.warning):nth-child(odd):is(:disabled, .waiting) { background: #770; }
+.card.tt .row button:not(.primary):not(.warning):nth-child(even):is(:disabled, .waiting) { background: #077; }
+.card.tt #menuwait { margin: 8px 0 0; color: #ff0; }
 .card.tt button:focus-visible, .card.tt button.padfocus { outline: 3px solid #fff; outline-offset: 3px; box-shadow: none; }
 .card.tt button:not(.primary):not(.warning):not(.wardtile):is(:focus-visible, .padfocus) { background: #ff0; color: #000; }
 /* links to other pages, as the index lists them: "Settings ........ 200" */
