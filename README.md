@@ -814,6 +814,14 @@ masonry walls between the plots, as Cape Town's do. Table Bay and the harbour ar
 `tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm,city,footprints` (or `mapdata.py unpack`),
 then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 
+Edinburgh (`?map=edinburgh`, not on the menu) is the first Scottish map, two kilometres round
+Waverley: the Castle on its rock, the Old Town and the Royal Mile, Princes Street and its gardens,
+the New Town's terraces and Calton Hill, out to Arthur's Seat. It was built with the new-area
+skill from Scotland's own open data: the Scottish lidar's roofs and ground (at 50 cm), the energy
+certificates' stone, the 2022 Census's tenement flats, the conservation areas, listed railings and
+walls, and the registered plots. It has no hand-made set pieces yet, so Waverley's glass roofs
+stand as solid blocks over the platforms and the Scott Monument is a plain tower.
+
 ## Play your own street
 
 Any place can be a map. `python3 -I tools/new_area.py find "Your Town"` finds it,

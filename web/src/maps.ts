@@ -9,6 +9,7 @@ export const MAPS: MapInfo[] = [
   { id: "pembury", name: "Hackney", blurb: "A test map outside Bath: a kilometre round the Pembury Tavern, with Hackney Downs and the Pembury Estate", wide: true, hidden: true },
   { id: "bradford-on-avon", name: "Bradford-on-Avon", blurb: "A town reached by train from Bath Spa: the Kennet and Avon, the Town Bridge and the Tithe Barn", wide: true, hidden: true },
   { id: "cape-town", name: "Cape Town", blurb: "The City Bowl under Table Mountain: the Bo-Kaap, the city centre, the V&A Waterfront and the mountain itself, and round the back of Devil's Peak to Observatory, UCT and Newlands", wide: true, hidden: true },
+  { id: "edinburgh", name: "Edinburgh", blurb: "Two kilometres round Waverley: the Castle, the Old Town and the Royal Mile, Princes Street and the New Town", wide: true, hidden: true },
 ];
 
 /** Games from before there was a choice of map don't say which map they're on: it was this one. */
