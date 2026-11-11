@@ -21,17 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
-- **Map ground work stacked on one branch (branch `claude/ground-all`):** `claude/square-edges-c`
-  (squares fit their streets past their sides and agree where they meet) and `claude/spots-2` (the
-  second set of spotted faults) merged, with the leftovers tidied (walls cut at a square's side
-  meet the next square's piece, verged trunk roads among houses keep their pavements, a path
-  through a passage stays on its deck to its first point outside), then `claude/timed-closure-roads`
-  (streets shut to traffic by day are roads, `tc`, paved to their shop fronts). Later stages of the agreed
-  ground work go on top (stage 4: junctions blended as one surface, flights' treads a face of their
-  own, walls' feet baked on the drawn ground in `tools/partition/wall_feet.py`). Touches `tools/partition/` (mostly `write_tile.py`, `pipeline.py`,
-  `stage.py`), `tools/structures.py`, `tools/prep_map.py`, `tools/check_map.py`, `check_more.py`,
-  and rebuilds every square. If road markings go missing at a square's side, that is this branch's.
-
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
