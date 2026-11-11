@@ -39,6 +39,10 @@ NARROW = {"footway", "steps", "cycleway", "path"}
 VIADUCT = 40
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0
 CANAL_HEAD = 2.8     # metres of air over the water under a canal bridge (and enough over the towpath beside it)
+RAIL_HEAD = 4.3      # metres from a track's line to a deck's underside: a train's roof and room over it (check_more.RAIL_HEAD)
+# metres from a deck's top to its underside, with the game's lift taken off and a little to spare: the
+# deepest a path's bridge or a road's is drawn (world.ts), as which kind it is is decided in the writer
+FOOT_DECK, ROAD_DECK = 0.95, 1.15
 LOCK_REACH, BESIDE = 15.0, 8.0
 TOW_UP = 0.4      # the canal's banks stand this far above the water
 TOW_REACH = 6.0   # metres out from the water's edge that the towpath may run
@@ -287,8 +291,9 @@ def make_run(chain, elev):
 
 
 def split_back(r):
-    """{edge id: dict(z, span, deck, bored, dip, tow, gone)} from a solved through-road, each in its
-    edge's own direction: `tow` the points on the canal's towpath, `gone` those in a canal tunnel."""
+    """{edge id: dict(z, span, deck, bored, dip, tow, gone, under)} from a solved through-road, each in its
+    edge's own direction: `tow` the points on the canal's towpath, `gone` those in a canal tunnel,
+    `under` those in a tunnel the data has that isn't bored (an underpass, or a path under a street)."""
     out = {}
     for eid, rev, s, e in r["parts"]:
         idx = list(range(s, e + 1))
@@ -296,7 +301,7 @@ def split_back(r):
             idx.reverse()
         pos = {i: n for n, i in enumerate(idx)}
         last = len(idx) - 1
-        bored = []
+        bored, low = [], []
         for i0, i1 in r["bored"]:
             lo, hi = max(i0, s), min(i1, e)
             if lo > hi:
@@ -305,12 +310,17 @@ def split_back(r):
             pb = pos[hi] + ((-1 if rev else 1) if i1 > e else 0)
             a, b = sorted((pa, pb))
             bored.append([a, b])
+            if (i0, i1) in r.get("low", ()):
+                low.append([a, b])
         out[eid] = dict(z=[round(r["z"][i], 2) for i in idx],
                         span=sorted(pos[i] for i in r["span"] if i in pos),
                         deck=sorted(pos[i] for i in r["deck"] if i in pos), bored=bored,
                         dip=sorted(pos[i] for i in r.get("dipped", ()) if i in pos),
                         tow=sorted(pos[i] for i in r["tow"] if i in pos) if r.get("tow") else [],
-                        gone=sorted(pos[i] for i in r.get("gone", ()) if i in pos))
+                        gone=sorted(pos[i] for i in r.get("gone", ()) if i in pos),
+                        under=sorted(pos[i] for i in in_ranges(r["run"], r["tunnel_ranges"])
+                                     if i in pos and not any(b0 <= i <= b1 for b0, b1 in r["bored"])),
+                        **({"low": low} if low else {}))
     return out
 
 
@@ -529,6 +539,12 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
         a, b = max(0, st[0] - 1), min(len(r["run"]) - 1, st[-1] + 1)
         return a, b, LineString([r["run"][i][:2] for i in range(a, b + 1)])
 
+    # (a stretch the data has both in a tunnel and on a bridge is in the tunnel: carried as a span, it
+    # stood over the street on the hill above and pushed it down under itself)
+    for r in pending:
+        if r["tunnel_ranges"] and r["span"]:
+            r["span"] -= tunnel_inside(in_ranges(r["run"], r["tunnel_ranges"]))
+
     # 1. paths along a road's marked span ride on its deck
     decks, was_span = [], {}
     for k, r in enumerate(pending):
@@ -544,12 +560,14 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
             if r["c"] not in NARROW:
                 continue
             pl = LineString([q[:2] for q in r["run"]])
+            # (where the data has the path in a tunnel it passes under, not over)
+            under = in_ranges(r["run"], r["tunnel_ranges"])
             for j in deck_tree.query(pl):
                 k, poly, line, zs, _, _ = decks[int(j)]
                 if pl.length > 6 and pl.intersection(poly).length < 0.6 * min(pl.length, line.length) and road_lines[k].crosses(pl):
                     continue
                 for i, q in enumerate(r["run"]):
-                    if i in r["tow"] or not poly.contains(Point(q[:2])):
+                    if i in r["tow"] or i in under or not poly.contains(Point(q[:2])):
                         continue
                     t = line.project(Point(q[:2])) / (line.length or 1) * (len(zs) - 1)
                     lo = min(len(zs) - 2, int(t))
@@ -815,6 +833,31 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
                 if any(canal_runs[int(c)][0].distance(pt) < half + TOW_REACH for c in canal_tree.query(pt.buffer(half + TOW_REACH))):
                     r["least"][i] = max(r["least"].get(i, -math.inf), lv + TOW_UP + CLEAR_PATH + 0.1)
 
+    # 2e. a deck over the railway clears a train with room over its roof: the crest eases out over its
+    # approaches (carry_profile), and the ways meeting its ends come up to them in the writer
+    for r in pending:
+        for st in stretches(set(r["span"])):
+            a, b, line = span_line(r, st)
+            for t in rail_tree.query(line):
+                rl = rail_lines[int(t)]
+                if not rl.crosses(line):
+                    continue
+                x = rl.intersection(line)
+                x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type != "Point":
+                    continue
+                tp = rail_tracks[int(t)]["p"]
+                cum = np.concatenate([[0], np.cumsum([math.dist(u[:2], v[:2]) for u, v in zip(tp, tp[1:])])])
+                track = float(np.interp(rl.project(x), cum, [q[2] for q in tp]))
+                zr = r["z"][min(range(a, b + 1), key=lambda i: math.dist(r["run"][i][:2], (x.x, x.y)))]
+                # (a track over the way is the railway's own bridge over it)
+                if zr < track + 1.0:
+                    continue
+                need = track + RAIL_HEAD + (FOOT_DECK if r["c"] in PATHS else ROAD_DECK)
+                for i in st:
+                    if rl.distance(Point(r["run"][i][:2])) < STEP:
+                        r["least"][i] = max(r["least"].get(i, -math.inf), need)
+
     def carry_spans(raise_only=False):
         """Carry every span straight (carry_profile) along whole roads; raise_only: a deck may come
         up but not down (once what passes under has been given headroom under it)."""
@@ -1039,6 +1082,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
         carry_spans(True)
 
     limit_grades(pending, chains, dips, detail)
+    low_bores(pending, road_lines, road_tree)
 
     # 4. a path through the water (the data has no bridge) is a footbridge: its points well
     # inside a pond or river are a span, just above the water
@@ -1093,6 +1137,101 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
             o = pending[k]
             r["z"][i] = o["z"][min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], r["run"][i][:2]))]
     return pending
+
+
+UNDER_CROWN = TN.UNDER_CROWN    # metres from a short path tunnel's floor to its arch, under a street at grade
+UNDER_COVER = 0.6    # metres of street and fill over that arch
+UNDER_RAMP = 0.5     # the steepest a path's approach falls to such an arch (a flight's pitch)
+
+
+def low_bores(pending, road_lines, road_tree):
+    """A path the data has in a tunnel under a street, too short or too shallow to bore through a hill
+    (`tunnels.bores`), at the street's level: it passes under the street through a low arch in the
+    bank, the street carried over it as it is. The path falls to the arch's floor UNDER_CROWN and
+    UNDER_COVER under the street, from the nearest ways meeting it either side, no steeper than
+    UNDER_RAMP; where there isn't that much room the path is left at the street's level, and the writer
+    stops it at the kerb either side (write_tile.paths_under_streets). Each such bore is listed in its
+    run's `low` (the game draws its arch UNDER_CROWN high), its approaches as dipped (the writer
+    holds them there and lays the ground to them)."""
+    points = collections.defaultdict(list)
+    for k, r in enumerate(pending):
+        for i, q in enumerate(r["run"]):
+            points[(round(q[0] / 2), round(q[1] / 2))].append((k, i))
+
+    def joined(k, i):
+        x, y = pending[k]["run"][i][:2]
+        return any(k2 != k and math.dist(pending[k2]["run"][i2][:2], (x, y)) < 1.5
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1) for k2, i2 in points.get((round(x / 2) + dx, round(y / 2) + dy), ()))
+    def crosses(k, a, b):
+        seg = LineString([pending[k]["run"][a][:2], pending[k]["run"][b][:2]])
+        return any(int(j) != k and road_lines[int(j)].intersects(seg) for j in road_tree.query(seg))
+    made = 0
+    for k, r in enumerate(pending):
+        if r["c"] not in PATHS or r["c"] == "pedestrian" or not r["tunnel_ranges"]:
+            continue
+        run, z, n = r["run"], r["z"], len(r["run"])
+        bored = {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
+        inside = in_ranges(run, r["tunnel_ranges"]) - bored - r["span"] - r["deck"]
+        for st in stretches(inside):
+            line = LineString([run[i][:2] for i in range(max(0, st[0] - 1), min(n - 1, st[-1] + 1) + 1)])
+            if line.length < 1:
+                continue
+            over = None
+            for j in road_tree.query(line):
+                j = int(j)
+                o = pending[j]
+                if o["c"] in PATHS or not road_lines[j].crosses(line):
+                    continue
+                x = road_lines[j].intersection(line)
+                x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type != "Point":
+                    continue
+                m_ = min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], (x.x, x.y)))
+                i_ = min(st, key=lambda i: math.dist(run[i][:2], (x.x, x.y)))
+                if m_ in o["span"] or abs(o["z"][m_] - z[i_]) > 1.5:
+                    continue
+                over = (j, m_, x)
+                break
+            if over is None:
+                continue
+            j, m_, x = over
+            o = pending[j]
+            floor = o["z"][m_] - UNDER_CROWN - UNDER_COVER
+            # (the bore runs under the street's whole width, kerb to kerb and its pavements)
+            reach = RW.get(o["c"], 4) / 2 + (1.7 if o["c"] in KERBED_RD else 0.5)
+            covered = [i for i in range(n) if road_lines[j].distance(Point(run[i][:2])) < reach
+                       and math.dist(run[i][:2], (x.x, x.y)) < reach + 2 * STEP]
+            if not covered:
+                continue
+            i0, i1 = max(0, min(covered) - 1), min(n - 1, max(covered) + 1)
+            ramps, ok = [], True
+            for e, step in ((i0, -1), (i1, 1)):
+                # (out to where the fall to the arch fits, or to the next way meeting the path, or its end)
+                d, at = 0.0, e
+                while z[at] - floor > d * UNDER_RAMP:
+                    nxt = at + step
+                    if not 0 <= nxt < n or joined(k, at) or nxt in r["span"] | r["deck"] or crosses(k, at, nxt):
+                        ok = False
+                        break
+                    d += math.dist(run[at][:2], run[nxt][:2])
+                    at = nxt
+                if not ok:
+                    break
+                ramps.append((e, at, step, d))
+            if not ok or i1 - i0 < 2:
+                continue
+            for i in range(i0, i1 + 1):
+                z[i] = floor
+            for e, end, step, d in ramps:
+                top, along = z[end], 0.0
+                for i in range(e + step, end, step):
+                    along += math.dist(run[i][:2], run[i - step][:2])
+                    z[i] = floor + (top - floor) * along / (d or 1)
+                    r.setdefault("dipped", set()).add(i)
+            r["bored"] = sorted(r["bored"] + [(i0, i1)])
+            r.setdefault("low", []).append((i0, i1))
+            made += 1
+    return made
 
 
 def _graded_roads(pending, chains):

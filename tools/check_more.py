@@ -101,6 +101,8 @@ from the packs alone, a few seconds a square:
     into the mouth of one stopping short of it.
 50. The line between a pavement and the paving beside it has no short sideways jogs.
 51. A bridge over the railway leaves a train room under its deck (the railway's own bridges aside).
+52. A path the data has in a tunnel under a street, stopped at its kerb (`tu`,
+    write_tile.paths_under_streets), isn't drawn on across that street's carriageway at its level.
 `python3 -I tools/check_more.py <map> [--tiles ti,tj ...]` runs 24 on alone, with each square's figures.
 
 (11 is the roofs' rule.) Only things a player would see as broken are counted, and each test is
@@ -976,6 +978,7 @@ LUMP = 0.05          # metres the grass may be raised under a path beside a stre
 DECK_END = 0.1       # metres between a deck's end and the street it lands on
 DECK_CLEAR = 0.5     # metres under a deck with nothing passing
 HEAD = 1.9           # metres a walker needs under a ceiling (player.ts EYE 1.65, and the head over it)
+ON_WALL = 1.0        # metres from a building's outline that a span's end is on it, ending against its wall (check_map.ON_WALL)
 RAIL_HEAD = 4.3      # metres from a track's line to a deck's underside: a train's roof (tools/trackclear.ts 3.8) and room over it
 KINDS = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck depth
 FOOT = {"footway", "path", "cycleway", "steps", "bridleway"}
@@ -1539,7 +1542,8 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     (world.ts KINDS) under its top:
     28. a deck's end lands on the street it meets: it doesn't stop in the air (falling off its last
         point, world.ts offTheEnd, or ending on its span with nothing going on, here or in the next
-        square), and where it lands its floor is within DECK_END of the face or ground there;
+        square, unless against a building's wall, within ON_WALL of its outline), and where it lands
+        its floor is within DECK_END of the face or ground there;
     29. where three or more pieces meet on a deck, only the straightest two are joined, and the
         parapets of the others stop there with a gap;
     30. no ground stands up through a deck's floor between its abutments (ground into the deck's
@@ -1593,10 +1597,14 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     shapely.prepare(hidden)
     clear_low, through = 0.0, 0.0
     abutments = [e for e in m.get("se") or [] if e[0] == "abutment" and len(e) > 6 and e[6]]
+    walls = [_poly(b["r"][0]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
+    wall_tree = shapely.STRtree(walls) if walls else None
 
     def _landing(q, g):
         """map.ts deckTop: a deck lands at the height its square holds the abutment at, where it does."""
         e = next((e for e in abutments if math.dist(e[1:3], q[:2]) < 0.3), None)
+        if e is not None and e[6] == 2:
+            return e[3]
         return e[3] if e is not None and abs(e[3] - g) < 1 else g
     for r in chains:
         p, flags = r["p"], _flags(r)
@@ -1636,6 +1644,9 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
                                 e = min(e if e is not None else 9, float(d.min()))
                         if e is not None and e < 1.0: continue
                     if any(rr is not r and any(math.dist(qq[:2], q[:2]) < 1.0 and len(qq) > 3 and qq[3] in (1, 2) for qq in rr["p"]) for rr in chains):
+                        continue
+                    # (one the data ends against a building's wall stands on that building)
+                    if wall_tree is not None and len(wall_tree.query(Point(q[:2]), predicate="dwithin", distance=ON_WALL)):
                         continue
                     drop = floor - float(ground(q[0], q[1]))
                     note("28 deck stops in the air", drop, at(q[0], q[1]), f"{name} {kind}, its end on the span {drop:.1f} m over the ground")
@@ -2508,6 +2519,7 @@ def played(m, f, sheet, note, at, sq, inner, fig):
     square_joins(m, f, sheet, note, at, fig)
     flights_and_rails(m, sheet, note, at, inner, fig)
     buildings_in_pits(m, note, at, inner, fig)
+    paths_across_streets(m, sheet, note, at, inner, fig)
     shopfronts_on_grass(m, sheet, note, at, inner, fig)
     roads_into_paving(m, sheet, note, at, inner, fig)
     kerb_jogs(m, sheet, note, at, inner, fig)
@@ -2553,6 +2565,27 @@ def buildings_in_pits(m, note, at, inner, fig):
                 and (tree is None or not len(tree.query(Point(q[:2]), predicate="dwithin", distance=RIDE_SPAN)))]
         if lone and inner.contains(Point(lone[0][:2])):
             note("47 path riding a bridge that isn't there", len(lone), at(*lone[0][:2]), f"{r.get('n') or r['c']!r}: {len(lone)} points")
+
+
+KERB_REACH = 1.0     # metres from where a path the data takes under a street stops that its carriageway is looked at
+
+
+def paths_across_streets(m, sheet, note, at, inner, fig):
+    """52. A path the data takes under a street isn't drawn across its carriageway: its pieces (`tu`)
+    stop at the kerb. Scored by the length on the carriageway."""
+    if not sheet.ok:
+        return
+    tu = [r for r in m.get("rd") or [] if r.get("tu") and len(r["p"]) > 1]
+    if not tu:
+        return
+    road = sheet.union(("road", "service"))
+    for r in tu:
+        line = LineString([q[:2] for q in r["p"]])
+        kerbs = shapely.union_all([Point(q).buffer(KERB_REACH) for q in r["tu"]]) if isinstance(r["tu"], list) else None
+        over = line.intersection(road if kerbs is None else road.intersection(kerbs)).length
+        if over > 0.5 and inner.contains(line.interpolate(0.5, normalized=True)):
+            note("52 path drawn across a street it passes under", over, at(*r["p"][0][:2]), f"{r.get('n') or r['c']!r}: {over:.1f} m")
+            fig["paths across streets"] = fig.get("paths across streets", 0) + 1
 
 
 SHOP_SIGN = 4.0       # metres from a shop sign to the building it hangs on (settle.SHOP_REACH)
