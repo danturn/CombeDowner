@@ -46,7 +46,7 @@ INTO = 5.0      # the cutting carries on this far into the bore, behind the port
 OVER = 5.0      # metres across from a tunnel's centre line that a way above it counts as passing over
 ABOVE = 2.5     # a bridge this far over the floor passes over it rather than meeting it: less than
                 # a deck's headroom, as a floor carried straight under a junction can sit metres high
-UNDER_CROWN = 2.0  # a path's low arch under a street at grade (structures.low_bores), floor to arch: tn `cr`
+UNDER_CROWN = 1.8  # a path's low arch under a street at grade (structures.low_bores), floor to arch: tn `cr`
 FILL = 1.0      # ground between two decks no more than this above them is the junction's own fill
 
 

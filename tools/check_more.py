@@ -1760,6 +1760,32 @@ def _stair(p, ground, baked=False):
     return L, along, lambda q: np.interp(q, s, hh), abs(g1 - g0)
 
 
+STEP_WALL = 0.3     # metres a face stands over the face beside it, sharing its edge, for the step between to be a wall
+
+
+def _steps_down(F):
+    """The edges a street's or a pavement's face shares with a lower path's face (world.ts draws the
+    step between as the higher face's side, a retaining wall where it's tall), more than STEP_WALL
+    down on average along them, as lines."""
+    lift = {"pave": 0.17, "road": 0.07, "service": 0.07}
+    own = {}
+    for c, idx in F.E:
+        for a, b in zip(idx[:-1].tolist(), idx[1:].tolist()):
+            own[(int(F.spot[a]), int(F.spot[b]))] = (c, a, b)
+    out = []
+    for (sa, sb), (c, a, b) in own.items():
+        if c not in lift:
+            continue
+        twin = own.get((sb, sa))
+        if twin is None or twin[0] in lift:
+            continue
+        lo = gsheet.OUTLINE_LIFT.get(twin[0], 0.04)
+        drop = (F.V[a, 2] + F.V[b, 2]) / 2 + lift[c] - (F.V[twin[1], 2] + F.V[twin[2], 2]) / 2 - lo
+        if drop > STEP_WALL:
+            out.append(LineString([F.V[a, :2], F.V[b, :2]]))
+    return out
+
+
 def flights(m, sheet, walk, note, at, inner, fig):
     """33. Flights of steps (furniture.ts stepsDetail), with the treads laid as the game lays them:
     (a) each end lands on something to walk on: a face, or another way's line, within LANDING[0], at
@@ -1784,9 +1810,12 @@ def flights(m, sheet, walk, note, at, inner, fig):
     if GROUND_SHEET and m.get("gs") and m.get("sf"):
         held = gsheet.read(m["gs"], m["t"])[2]
         F = gsheet.Faces(m["sf"], m["b"])
-        up = [(a, b) for a, b in F.free.tolist() if max(held.get(int(F.spot[a]), 0), held.get(int(F.spot[b]), 0)) > 0.05]
+        up = [LineString([F.V[a, :2], F.V[b, :2]]) for a, b in F.free.tolist() if max(held.get(int(F.spot[a]), 0), held.get(int(F.spot[b]), 0)) > 0.05]
+        # (and where a pavement or street stands over the flight's own face by more than a kerb: the
+        # game draws its edge down to it as a retaining wall)
+        up += _steps_down(F)
         if up:
-            walls = shapely.STRtree([LineString([F.V[a, :2], F.V[b, :2]]) for a, b in up])
+            walls = shapely.STRtree(up)
     walled_at = lambda x, y: walls is not None and len(walls.query(Point(x, y), predicate="dwithin", distance=WALL_BESIDE)) > 0
     totals = dict(treads=0, buried=0, block=0, unwalkable=0, landings=0)
     for r in stepped:
