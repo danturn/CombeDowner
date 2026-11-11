@@ -3,7 +3,7 @@ sources, into the raw dir the builds read: the start of rebuilding the repositor
 map data from scratch (tools/mapdata.py). For an ordinary rebuild none of this is needed:
 tools/mapdata.py unpack gives the same data from the repository.
 
-Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,city,footprints]
+Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,listed,parcels,epc,city,footprints]
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
@@ -12,14 +12,23 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
   unzipped into lidar/dtm/, lidar/dsm/ and lidar/last/; about 3 GB in all), and in Wales the Welsh
   Government's 1 m DTM and DSM (2020-23), 1 km tiles of about 3 MB each listed by DataMapWales's
   tile catalogue, into the same folders. A map on the border gets both; the EA has no Welsh squares
-  and Wales no last returns (they are optional);
+  and Wales no last returns (they are optional). In Scotland, the Scottish Public Sector LiDAR's
+  DTM and DSM (50 cm where phases 3 to 6 or the national programme have flown, 1 m from phases 1
+  and 2), read from the Scottish Remote Sensing Portal's open bucket over just the map's box and
+  saved as 1 km tiles (scotland_lidar), with no last returns either; much of Scotland has none;
 - canopy: the Meta / WRI canopy height tile over the map's centre (about 290 MB);
 - osm, fsa: OpenStreetMap's businesses (and its streets' widths and pavements) and the Food Standards Agency's hygiene ratings
   (tools/osm.py, tools/fsa.py). These are the live data, so they will have changed since the copy
   in the repository was made;
-- census, conservation (England and Wales, and England): the 2021 Census's accommodation types for
-  each output area, and the conservation areas (tools/census.py, tools/conservation.py), which say
-  what the houses are where the map data doesn't (buildings.priors). Both are open APIs;
+- census, conservation (Great Britain, and England and Scotland): the census's accommodation types
+  for each output area (2021 in England and Wales, 2022 in Scotland), and the conservation areas
+  (tools/census.py, tools/conservation.py), which say what the houses are where the map data
+  doesn't (buildings.priors). All open, no account;
+- listed, parcels, epc (Scotland only, where all three are open downloads): Historic Environment
+  Scotland's listed buildings that name railings or walls (tools/listed.py), Registers of
+  Scotland's cadastral parcels (tools/parcels.py ros) and the domestic energy certificates with OS
+  Open UPRN (tools/epc.py scotland). The national downloads behind the last two are kept once in
+  data/raw/ for every map;
 - city (a map inside the City of Cape Town): the City's 2 m contours, measured roof heights and
   tree crowns (tools/cct.py), turned into the heights layer and the crowns beside the canopy map.
   The contours' ground goes into the terrain tiles once a build has fetched them (cct.py ground);
@@ -30,8 +39,8 @@ The HM Land Registry parcels (INSPIRE Index Polygons) have to be fetched by hand
 authority: `tools/parcels.py` converts the download to `parcels.geojson` in the wide dir (see
 docs/new-area.md). They are optional: without them the partition build divides blocks by rule.
 Files already there are left alone. The Mapzen terrain tiles are fetched by the builds as they
-need them, and the energy certificates have to be downloaded by hand (it needs an account): see
-docs/new-area.md, and put them in <raw dir>/epc/.
+need them, and outside Scotland the energy certificates have to be downloaded by hand (it needs an
+account): see docs/new-area.md, and put them in <raw dir>/epc/.
 
 Then, to measure and pack it all (tools/mapdata.py):
   python3 -I tools/canal.py <map> <raw dir> web/public/maps/<map>-canal.json   (and railway.py)
@@ -50,7 +59,12 @@ KINDS = {"dtm": "lidar_composite_dtm", "dsm": "lidar_composite_first_return_dsm"
 WALES = ("https://datamap.gov.wales/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature"
          "&typeNames=geonode:welsh_government_lidar_tile_catalogue_2020_2023&outputFormat=application/json"
          "&count=10000&bbox={e0},{n0},{e1},{n1},urn:ogc:def:crs:EPSG::27700")
+SCOTLAND = "https://srsp-open-data.s3.eu-west-2.amazonaws.com"
+# the Scottish Public Sector LiDAR's surveys, newest first: where a newer one has a gap an older one fills it
+SCOTTISH_PHASES = ("national-lidar-programme", "phase-6", "phase-5", "phase-4", "phase-3", "phase-2", "phase-1")
 CANOPY = "https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/{q}.tif"
+SCOTLAND_SOUTH = 525000     # British National Grid northing: no part of Scotland lies south of it
+UA = {"User-Agent": "CombeDowner map builder (https://combedowner.com)"}
 REACH = 250         # metres past the full-detail squares that the lidar is fetched for (they measure 210 m past their edges)
 
 
@@ -113,6 +127,137 @@ def wales_lidar(A, raw):
     return len(tiles)
 
 
+def grid_square(e, n):
+    """The OS 10 km square holding (e, n), as its letters and the two digits of its south-west
+    corner (NT27): the start of every Scottish lidar tile's name."""
+    sq = os_square(e, n)
+    return sq[:2], int(e % 100000) // 10000, int(n % 100000) // 10000
+
+
+def scottish_tile_box(name):
+    """The British National Grid box a Scottish lidar tile's name says it covers: a 10 km square
+    (NT27_1M_DSM_PHASE1), a quarter of one (NT27SE_50CM_DSM_PHASE5) or 1 km (NT2573_50cm_DSM_...)."""
+    import re
+    m = re.match(r"([A-Z]{2})(\d)(\d)(NE|NW|SE|SW)?_", name) or re.match(r"([A-Z]{2})(\d\d)(\d\d)_", name)
+    if not m: return None
+    letters = m.group(1)
+    l1, l2 = (ord(c) - ord("A") - (1 if c > "I" else 0) for c in letters)
+    e100 = (l1 % 5) * 5 + l2 % 5 - 10
+    n100 = 19 - (l1 // 5) * 5 - l2 // 5
+    if len(m.group(2)) == 2:
+        e, n, size = e100 * 100000 + int(m.group(2)) * 1000, n100 * 100000 + int(m.group(3)) * 1000, 1000
+    else:
+        e, n, size = e100 * 100000 + int(m.group(2)) * 10000, n100 * 100000 + int(m.group(3)) * 10000, 10000
+        quarter = m.groups()[3] if len(m.groups()) > 3 else None
+        if quarter:
+            size = 5000
+            e += 5000 if quarter[1] == "E" else 0
+            n += 5000 if quarter[0] == "N" else 0
+    return e, n, e + size, n + size
+
+
+def s3_keys(prefix):
+    import re
+    keys, token = [], None
+    while True:
+        q = {"list-type": "2", "prefix": prefix, **({"continuation-token": token} if token else {})}
+        import urllib.parse
+        with urllib.request.urlopen(urllib.request.Request(SCOTLAND + "/?" + urllib.parse.urlencode(q), headers=UA), timeout=60) as r:
+            text = r.read().decode()
+        keys += re.findall(r"<Key>([^<]+)</Key>", text)
+        m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", text)
+        if not m: return keys
+        token = m.group(1)
+
+
+def scotland_lidar(A, raw):
+    """The Scottish Public Sector LiDAR's DTM and DSM over the lidar's box, into lidar/dtm/ and
+    lidar/dsm/ as one 1 km GeoTIFF per kind for each kilometre square, at the finest resolution
+    surveyed there (50 cm from phase 3 on, 1 m before). The surveys are cloud-optimised GeoTIFFs
+    on the Scottish Remote Sensing Portal's open bucket, so only the box is read from them, never
+    the 5 or 10 km tiles whole. Each kilometre takes the newest survey, and an older one fills its
+    gaps. Once any kilometre has a survey, every kilometre of the box gets a file (empty over the
+    sea or where no survey has flown), so the squares see the survey as fetched. Returns how many
+    kilometres have a survey (none for a map wholly outside Scotland's coverage)."""
+    import numpy as np
+    import rasterio
+    from rasterio.enums import Resampling
+    from rasterio.transform import from_origin
+    from rasterio.windows import from_bounds
+    from concurrent.futures import ThreadPoolExecutor
+    os.environ.update(GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR", CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
+                      GDAL_HTTP_USERAGENT=UA["User-Agent"], GDAL_HTTP_MAX_RETRY="4", GDAL_HTTP_RETRY_DELAY="5")
+    e0, n0, e1, n1 = lidar_box(A)
+    cells = [(e, n) for e in range(int(e0 // 1000), int(e1 // 1000) + 1) for n in range(int(n0 // 1000), int(n1 // 1000) + 1)]
+    folders = {k: os.path.join(raw, "lidar", k) for k in ("dtm", "dsm")}
+    name = lambda e, n: "scotland-{}{:02d}{:02d}.tif".format(os_square(e * 1000, n * 1000)[:2], e % 100, n % 100)
+    done = os.path.join(raw, "lidar", ".scotland")
+    if os.path.exists(done):
+        return sum(os.path.exists(os.path.join(folders["dsm"], name(e, n))) for e, n in cells)
+    squares = sorted({grid_square(e * 1000 + 500, n * 1000 + 500) for e, n in cells})
+    tiles = {k: [] for k in folders}      # kind -> [(rank, box, url)], newest survey first
+    for rank, phase in enumerate(SCOTTISH_PHASES):
+        for kind in folders:
+            for letters, de, dn in squares:
+                for key in s3_keys(f"lidar/{phase}/{kind}/27700/gridded/{letters}{de}{dn}"):
+                    b = scottish_tile_box(os.path.basename(key))
+                    if b and key.lower().endswith(".tif"): tiles[kind].append((rank, b, f"/vsicurl/{SCOTLAND}/{key}"))
+    if not tiles["dsm"] or not tiles["dtm"]: return 0
+    print(f"lidar: {len(tiles['dsm'])} Scottish surface and {len(tiles['dtm'])} ground tiles over the box")
+
+    def merged(kind, e, n):
+        """The kilometre's heights from every survey over it, newest first, and its pixel size."""
+        x0, y0 = e * 1000, n * 1000
+        over = sorted(t for t in tiles[kind] if t[1][0] < x0 + 1000 and t[1][2] > x0 and t[1][1] < y0 + 1000 and t[1][3] > y0)
+        out, px = None, None
+        for _rank, _box, url in over:
+            with rasterio.open(url) as src:
+                if px is None:
+                    px = abs(src.transform.a)
+                    side = int(round(1000 / px))
+                    out = np.full((side, side), np.nan, np.float32)
+                if not np.isnan(out).any(): break
+                a = src.read(1, window=from_bounds(x0, y0, x0 + 1000, y0 + 1000, src.transform), out_shape=out.shape,
+                             boundless=True, fill_value=src.nodata if src.nodata is not None else -9999,
+                             resampling=Resampling.nearest).astype(np.float32)
+            a[(a < -100) | (a > 2000)] = np.nan
+            gap = np.isnan(out)
+            out[gap] = a[gap]
+        return out, px
+
+    def one(cell):
+        e, n = cell
+        got = {}
+        for kind in folders:
+            path = os.path.join(folders[kind], name(e, n))
+            if os.path.exists(path): got[kind] = True; continue
+            a, px = merged(kind, e, n)
+            got[kind] = (a, px)
+        return cell, got
+
+    with ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(one, cells))
+    surveyed = sum(1 for _, got in results if any(v is True or (v[0] is not None and not np.isnan(v[0]).all()) for v in got.values()))
+    if not surveyed: return 0
+    for f in folders.values(): os.makedirs(f, exist_ok=True)
+    for (e, n), got in results:
+        for kind, v in got.items():
+            if v is True: continue
+            a, px = v
+            if a is None:
+                px = 1.0
+                a = np.full((1000, 1000), np.nan, np.float32)
+            path = os.path.join(folders[kind], name(e, n))
+            with rasterio.open(path + ".part", "w", driver="GTiff", width=a.shape[1], height=a.shape[0], count=1, dtype="float32",
+                               crs="EPSG:27700", transform=from_origin(e * 1000, n * 1000 + 1000, px, px), nodata=-9999,
+                               compress="deflate", predictor=3, tiled=True) as dst:
+                dst.write(np.where(np.isnan(a), -9999, a).astype(np.float32), 1)
+            os.replace(path + ".part", path)
+    open(done, "w").close()
+    print(f"lidar: {surveyed} of {len(cells)} Scottish kilometre squares surveyed")
+    return surveyed
+
+
 def quadkey(lon, lat, z=9):
     n = 2 ** z
     x = int((lon + 180) / 360 * n)
@@ -158,9 +303,11 @@ def main():
             path = os.path.join(raw, f"{t}.geojson")
             if not os.path.exists(path): run(os.path.join(TOOLS, "download.py"), map_id, t, path, "wide")
     region = getattr(A, "region", "GB-ENG")
-    if want("lidar") and region in ("GB-ENG", "GB-WLS"):
-        # the Welsh tiles first: in Wales the EA's squares are missing, so those are let go there
-        welsh = wales_lidar(A, raw)
+    if want("lidar") and region in ("GB-ENG", "GB-WLS", "GB-SCT"):
+        # the Welsh and Scottish tiles first: where the EA's squares are missing, those are let go
+        welsh = wales_lidar(A, raw) if region != "GB-SCT" else 0
+        welsh += scotland_lidar(A, raw) if region == "GB-SCT" or (region == "GB-ENG" and lidar_box(A)[3] > SCOTLAND_SOUTH) else 0
+        if region == "GB-SCT" and not welsh: print("lidar: no Scottish survey over the map")
         squares = lidar_squares(A)
         print(f"lidar: {len(squares)} squares: {' '.join(squares)}")
         for sq in squares:
@@ -173,10 +320,10 @@ def main():
                 if not os.path.exists(z):
                     try:
                         # in Wales a "not found" is a Welsh square, not the EA's service stumbling
-                        fetch(LIDAR.format(kind=name, square=sq), z, tries=1 if welsh else 4)
+                        fetch(LIDAR.format(kind=name, square=sq), z, tries=1 if welsh or region == "GB-SCT" else 4)
                     except urllib.error.HTTPError as e:
-                        if e.code != 404 or not welsh: raise
-                        print(f"lidar: {sq} {kind} is not in the EA's survey (in Wales: the Welsh tiles cover it)")
+                        if e.code != 404 or not (welsh or region == "GB-SCT"): raise
+                        print(f"lidar: {sq} {kind} is not in the EA's survey (in Wales or Scotland: their own tiles cover it)")
                         open(done, "w").close()
                         continue
                 with zipfile.ZipFile(z) as f:
@@ -206,10 +353,14 @@ def main():
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-rail.geojson"), "wide", "rail")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
-    # the census's output areas cover England and Wales, the conservation areas England
-    for name, regions in (("census", ("GB-ENG", "GB-WLS")), ("conservation", ("GB-ENG",))):
+    # the census's output areas cover Great Britain, the conservation areas England and Scotland, and
+    # Scotland's listed buildings and registered parcels are open downloads too (England's are by hand)
+    for name, regions in (("census", ("GB-ENG", "GB-WLS", "GB-SCT")), ("conservation", ("GB-ENG", "GB-SCT")),
+                          ("listed", ("GB-SCT",)), ("parcels", ("GB-SCT",))):
         if want(name) and region in regions and not os.path.exists(os.path.join(raw, f"{name}.geojson")):
-            run(os.path.join(TOOLS, f"{name}.py"), map_id, None, os.path.join(raw, f"{name}.geojson"), "wide")
+            run(os.path.join(TOOLS, f"{name}.py"), map_id, "ros" if name == "parcels" else None, os.path.join(raw, f"{name}.geojson"), "wide")
+    if want("epc") and region == "GB-SCT" and not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
+        subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "epc.py"), map_id, "scotland", raw], check=True)
     import cct
     if want("city") and cct.covers(A):
         cct.fetch(A, raw)
@@ -221,7 +372,7 @@ def main():
         if "google" in getattr(A, "footprints", ()):
             subprocess.run([sys.executable, os.path.join(TOOLS, "footprints.py"), map_id, "fetch", raw], check=True)
         subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "footprints.py"), map_id, "merge", raw], check=True)
-    if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
+    if region != "GB-SCT" and not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):
         print(f"epc: download the energy certificates and OS Open UPRN by hand into {os.path.join(raw, 'epc')} (see docs/new-area.md)")
 
 

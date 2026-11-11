@@ -11,12 +11,12 @@ from the railway step to the end.
 
 | Step | Tool | Where | Notes |
 |---|---|---|---|
-| download | `tools/fetch.py <id> data/raw/<id>/wide --only ...` | all | Overture's 8 layers, the canopy tile, OpenStreetMap (businesses, roads, detail, rail); in England also the lidar, census and conservation areas; in the UK the hygiene ratings. Never the energy certificates or parcels. |
+| download | `tools/fetch.py <id> data/raw/<id>/wide --only ...` | all | Overture's 8 layers, the canopy tile, OpenStreetMap (businesses, roads, detail, rail); in England also the lidar, census and conservation areas; in Wales the lidar and census; in Scotland the lidar (where flown), census, conservation areas, listed buildings, parcels and energy certificates; in the UK the hygiene ratings. Never England's or Wales's energy certificates or parcels. |
 | railway | `tools/railway.py` | all | before the squares, which cut the ground to the track; warns and carries on where there is none |
-| church towers | `tools/towers.py` | England | needs the lidar |
+| church towers | `tools/towers.py` | where the lidar was fetched | needs the lidar |
 | squares | `tools/prep_tiles.py ... --measure` | all | every full-detail square, one per core; writes `data/<id>/measured/` |
 | wide map | `tools/prep_wide.py ... --measure` | all | the lighter whole-map file |
-| lidar ground | `tools/lidar_ground.py` | England, once | the terrain tiles take the lidar's ground; then the railway, squares and wide map are built again. A marker, `data/raw/<id>/wide/terrain15/.lidar-ground`, stops it running twice |
+| lidar ground | `tools/lidar_ground.py` | where the lidar was fetched, once | the terrain tiles take the lidar's ground; then the railway, squares and wide map are built again. A marker, `data/raw/<id>/wide/terrain15/.lidar-ground`, stops it running twice |
 | minimap ground | `tools/ground_kinds.py` | all | |
 | pubs | `tools/pubs.py` | all | |
 | district names | `tools/districts.py` | all | |
@@ -30,7 +30,8 @@ downloads into the map's layers (`tools/mapdata.py pack`) first, which the parti
 ## Not automated, by design
 
 - Energy certificates and OS Open UPRN (England and Wales): `docs/new-area.md`, "Energy certificates".
-- HM Land Registry parcels: only the partition reads them.
+  Scotland's are fetched.
+- HM Land Registry parcels: only the partition reads them. Registers of Scotland's are fetched.
 - A canal (`tools/canal.py` needs a pack per map), moorings (`tools/moorings.py`), a cable car (`tools/cableway.py`).
 - Zones, landmarks and set pieces: `docs/new-area.md` section 4.
 - The sea level for a coastal map (`sea=` in `tools/area.py`, as Cape Town).
@@ -67,8 +68,10 @@ Where today's tools fall short of it (2 November 2026):
 - Some packed layers are UK formats, not common ones: `epc/` (energy certificate CSVs),
   `census.geojson` (TS044 counts), `conservation.geojson`, `parcels.geojson`, `listed.geojson`,
   `measured/towers.json` (lidar only), and `measured/partition.zip` (Bath only).
-- Wales's lidar has no last returns, so its `measured/` lacks what the EA's last-return model
-  gives; nothing fills that from a fallback.
+- Wales's and Scotland's lidar have no last returns, so their `measured/` lacks what the EA's
+  last-return model gives; nothing fills that from a fallback.
+- Scotland's lidar is 50 cm where it was flown from 2015 on; the roof and wall measurements were
+  tuned on the EA's 1 m. They read any grid, but a Scottish map's roofs want looking at by eye.
 - `tools/districts.py` reads OpenStreetMap live and is not packed, so district names need the
   network to rebuild.
 - `new_area.py` does not pack (`mapdata.py pack` is a separate, publishing-time step), and nothing
@@ -103,6 +106,23 @@ unchanged (any British National Grid GeoTIFF). The EA's squares are fetched as w
 both apply, and where two surveys overlap a gap in one keeps the other's height. In Wales the EA's
 "not found" for a square is taken as Welsh ground and passed over (in England it is still retried
 and fatal). Wales has no last-return model; the EA's squares near the border do.
+
+## Scotland's sources
+
+All are open with no account, and `build` fetches all of them. The big national files are kept
+once in `data/raw/` and shared by every Scottish map.
+
+| Layer | Source | How it is read |
+|---|---|---|
+| lidar (`lidar/dtm`, `lidar/dsm`) | Scottish Public Sector LiDAR, phases 1 to 6 and the national programme, on the Scottish Remote Sensing Portal's open bucket (`srsp-open-data.s3.eu-west-2.amazonaws.com/lidar/<phase>/<dsm or dtm>/27700/gridded/`) | `fetch.scotland_lidar`: cloud-optimised GeoTIFFs, read over HTTP for just the map's box into one 1 km tile per kind (`scotland-NT2573.tif`), the newest survey first and older ones filling its gaps; 50 cm from phase 3 on, 1 m before. Every kilometre of the box gets a file once any has a survey. No last returns |
+| energy certificates (`epc/certificates.csv`, `epc/uprn.csv`) | Scottish Government domestic EPC dataset (data.gov.scot, a 7z archive, about 200 MB), OS Open UPRN (OS Downloads API, about 600 MB) | `epc.py <id> scotland <raw>`: needs `bsdtar` (macOS has it), 7-Zip or `py7zr` for the 7z. Written in England's columns (`uprn`, `lodgement_date`, `walls_description` (the main wall), `property_type`, `built_form`, `construction_age_band`); the address fields are never read |
+| census | Scotland's Census 2022, table UV402 by output area (the census's bulk download, 74 MB), outlines from NRS's map service on maps.gov.scot | `census.py`, same file as England's: the eight counts in TS044's order; Scotland has no "converted other building" (always 0), and its flats include tenements |
+| conservation | Historic Environment Scotland's designations service (`inspire.hes.scot`, layer 2) | `conservation.py`; each area has `name` and HES's `reference` (`CA19`) where England's has `entity` |
+| listed | the same service, layer 0 (points) | `listed.py`; Scotland names railings and walls inside the building's own entry, which is kept |
+| parcels | Registers of Scotland's INSPIRE cadastral parcels (`ros-inspire.themapcloud.com`, one zip per registration county) | `parcels.py <id> ros <out> wide`: reads each county's bounds from its zip with ranged requests and fetches only those that reach the map. A third of Scotland's ground has no parcel |
+
+Edinburgh's middle (round Waverley) is phase 5 (flown 2020-21, 50 cm, DTM and DSM complete
+there); phases 3 and 1 cover parts round it.
 
 ## Looking at one place
 

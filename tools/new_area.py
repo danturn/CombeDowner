@@ -18,8 +18,9 @@ squares of the standard grid (half = 1565), with the field and the wide circle r
 map, played with ?map=<id>) unless --in-menu is given.
 
 Which data a place gets depends on its region (ISO 3166-2, from Nominatim): England has the most (the
-Environment Agency's lidar measures the real roofs, walls and church towers), Wales, Scotland and
-Northern Ireland a little, everywhere else only the worldwide sources. Each command prints the
+Environment Agency's lidar measures the real roofs, walls and church towers), Scotland nearly as
+much (its own lidar, certificates, census and designations), Wales a little less, Northern Ireland
+only the hygiene ratings, everywhere else only the worldwide sources. Each command prints the
 BRANCH: UK or NON-UK.
 
 Every command finds a Python with the packages the build needs (this one, then
@@ -27,7 +28,7 @@ Every command finds a Python with the packages the build needs (this one, then
 the shared build lock (~/.combedowner-build.lock, the one tools/mac_build.sh takes), so only one
 map build or set of screenshots runs on a machine at a time.
 """
-import importlib.util, json, math, os, re, resource, shutil, subprocess, sys, time, urllib.parse, urllib.request
+import glob, importlib.util, json, math, os, re, resource, shutil, subprocess, sys, time, urllib.parse, urllib.request
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TOOLS)
@@ -78,15 +79,15 @@ def ensure_python():
 
 # sources that cover only part of the world, by Nominatim's ISO 3166-2 region: what each gives the map
 ENGLISH = {
-    "lidar": "real roof shapes, eaves heights, garden walls, church towers and true ground (lidar: the Environment Agency's in England, the Welsh Government's in Wales)",
-    "epc": "wall materials and bungalows (energy certificates, England and Wales, manual download)",
-    "parcels": "the Land Registry's garden plots (England and Wales; only Bath's partition build reads them)",
-    "listed": "listed railings and walls (Historic England; only Bath's partition build reads them)",
+    "lidar": "real roof shapes, eaves heights, garden walls, church towers and true ground (lidar: the Environment Agency's in England, the Welsh Government's in Wales, the Scottish Public Sector LiDAR in Scotland)",
+    "epc": "wall materials and bungalows (energy certificates: England and Wales by hand, Scotland fetched)",
+    "parcels": "the registered garden plots (HM Land Registry in England and Wales, by hand; Registers of Scotland, fetched)",
+    "listed": "listed railings and walls (Historic England, only Bath's partition build reads them; Historic Environment Scotland, fetched)",
     "fsa": "pubs and cafes OpenStreetMap is missing, and pub hygiene ratings (food hygiene ratings, UK)",
-    "census": "the mix of flats, terraces, semis and detached houses in each street (2021 Census, England and Wales)",
-    "conservation": "the old core of the town, built of what its old buildings are (conservation areas, England)",
+    "census": "the mix of flats, terraces, semis and detached houses in each street (2021 Census, England and Wales; 2022 Census, Scotland)",
+    "conservation": "the old core of the town, built of what its old buildings are (conservation areas, England and Scotland)",
 }
-COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"lidar", "epc", "parcels", "fsa", "census"}, "GB-NIR": {"fsa"}, "GB-SCT": {"fsa"}}
+COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"lidar", "epc", "parcels", "fsa", "census"}, "GB-NIR": {"fsa"}, "GB-SCT": set(ENGLISH)}
 
 
 def branch(region):
@@ -105,14 +106,23 @@ def region_of(lon, lat):
     return addr.get("ISO3166-2-lvl4") or addr.get("country_code", "").upper()
 
 
-MANUAL = {"epc", "parcels"}     # never fetched by build: they need a hand download (and the parcels only serve Bath's partition)
+# never fetched by build in these regions: they need a hand download (England's certificates need an
+# account; the Land Registry's parcels are a download per council, and Historic England's listed
+# railings only serve Bath's partition). Scotland's are all fetched.
+MANUAL = {"GB-ENG": {"epc", "parcels", "listed"}, "GB-WLS": {"epc", "parcels"}}
+
+
+def fetched(region):
+    """The regional sources build downloads for a place in region."""
+    return COVERS.get(region, set()) - MANUAL.get(region, set())
 
 
 def warn_missing(region):
-    have = COVERS.get(region, set()) - MANUAL
+    have = fetched(region) | ({"listed"} if region == "GB-ENG" else set())
     print(f"The map will be built without:", flush=True)
     for src, why in ENGLISH.items():
-        if src not in have: print(f"  - {why}" + (" [by hand only]" if src in MANUAL and src in COVERS.get(region, set()) else ""))
+        if src not in have: print(f"  - {why}" + (" [by hand only]" if src in COVERS.get(region, set()) else ""))
+    if all(src in have for src in ENGLISH): print("  - none of the regional sources (the lidar only where it has been flown)")
     if "lidar" not in have:
         print("Buildings are guessed from Overture's and OpenStreetMap's heights and floor counts and the area's zones instead.")
 
@@ -302,14 +312,15 @@ def build(args):
     raw = f"data/raw/{map_id}/wide"
     maps = f"web/public/maps/{map_id}"
     region = getattr(A, "region", None)
-    have = COVERS.get(region, set()) if region is not None else set(ENGLISH)
     print(f"BRANCH: {branch(region)}   region: {region or '?'}")
     if region is not None: warn_missing(region)
-    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation") if s in have]
+    have = fetched(region) if region is not None else set(ENGLISH) - MANUAL["GB-ENG"]
+    only = ["overture", "canopy", "osm"] + sorted(have)
     t0 = time.time()
     run_steps([("download", [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)], True)], dry)
     t_dl = time.time() - t0
-    lidar = "lidar" in have
+    # a place the survey hasn't flown (much of Scotland) gets none of the lidar's steps
+    lidar = "lidar" in have and (dry or bool(glob.glob(os.path.join(ROOT, raw, "lidar", "dsm", "*.tif"))))
     squares = ("squares", [*py, "tools/prep_tiles.py", map_id, raw, maps, "--measure"], True)
     wide = ("wide map", [*py, "tools/prep_wide.py", map_id, raw, f"{maps}-wide.json", "--measure"], True)
     # the lidar's ground replaces the terrain tiles' once they are all fetched (the first build fetches

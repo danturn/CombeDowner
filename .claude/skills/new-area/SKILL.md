@@ -236,8 +236,10 @@ Play it: cd web && npm run dev, then open http://localhost:5173/?map=<id>
 
 What it has: <England: real roofs, heights, church towers and ground from the lidar, the census's
 house types, conservation areas, pubs with hygiene ratings. Wales: the same lidar from the Welsh
-Government, the census's house types, hygiene ratings. Elsewhere: buildings, roads, water, trees
-and terrain from worldwide open data>.
+Government, the census's house types, hygiene ratings. Scotland: real roofs, heights and ground from
+the Scottish Public Sector LiDAR where it has flown, wall materials from the energy certificates,
+the 2022 Census's house types, conservation areas, listed railings and walls, registered plots,
+hygiene ratings. Elsewhere: buildings, roads, water, trees and terrain from worldwide open data>.
 What it lacks: <copy the "will be built without" list that add printed, plus any WARN step>.
 Clash check: <total> rule failures over <N> squares (<per> per square).
 Frame rate in the screenshots: lowest <N> fps.

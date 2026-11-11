@@ -696,8 +696,8 @@ python3 -I tools/region.py $MAP                # heath, grass and trees, from da
 `prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
 ground of the whole map out as one partition (`tools/partition/stage.py`), for every map, not just
 Bath: every bit of ground is a street, a pavement, a garden plot, a path or open land, the streets
-are fitted once across the whole city, the plots follow the Land Registry's parcels where the map
-has them (England and Wales) and the blocks and the houses' fronts everywhere else, and every wall,
+are fitted once across the whole city, the plots follow the registered parcels where the map
+has them (the Land Registry's in England and Wales, Registers of Scotland's in Scotland) and the blocks and the houses' fronts everywhere else, and every wall,
 fence, hedge and gate stands on an edge between two of them. A map without the lidar's wall runs
 (outside England) has only its mapped walls and the guessed boundaries; one without the kept lidar
 (`partition.zip`, below) keeps every guess whether or not anything is seen standing there.
@@ -775,8 +775,8 @@ steps rather than through them, land on it however fast you fall, and stand on a
 reaches over from the square next door. Rule 22 (`tools/roof_probe.mjs`, the game's own code run
 without a browser) drops a player on every point of a sample of roofs in each square to check.
 
-In England and Wales the 2021 Census says how many homes in each street are flats, terraced,
-semi-detached or detached, and the build follows it wherever the map data doesn't say, so a street
+In England and Wales the 2021 Census (in Scotland, Scotland's Census 2022) says how many homes in
+each street are flats, terraced, semi-detached or detached, and the build follows it wherever the map data doesn't say, so a street
 of flats or of semis looks like one. A conservation area that no character area covers is the
 town's old core: its houses are built of what the old buildings round them are made of (Bath stone
 in Bath, stock brick in Hackney), each a shade of its own, with a painted front where the houses
@@ -820,8 +820,10 @@ Any place can be a map. `python3 -I tools/new_area.py find "Your Town"` finds it
 `python3 -I tools/new_area.py add "Your Town" --lat N --lon N --radius 1500` adds it as a test map
 (`--in-menu` puts it on the menu too), and `python3 -I tools/new_area.py build your-town` downloads
 the open map data and builds it, which takes a quarter of an hour or so on a laptop; `verify` and
-`shoot` check it. Then `cd web && npm run dev` and open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers, and
-elsewhere they are guessed from the open map data's heights and floor counts. Wherever the data
+`shoot` check it. Then `cd web && npm run dev` and open `?map=your-town`. It works anywhere: in England the lidar gives the real roofs, garden walls and church towers (in
+Wales and much of Scotland their own governments' lidar does the same, and a Scottish map also
+fetches its energy certificates, census, conservation areas, listed buildings and registered plots
+for itself), and elsewhere they are guessed from the open map data's heights and floor counts. Wherever the data
 has them, buildings take OpenStreetMap's floor counts, roof shapes, wall materials and colours, a
 house with no energy certificate is built of what its neighbours' certificates say, and mapped
 street lamps stand where they really are. Away from the lidar the terrain is a coarse survey from

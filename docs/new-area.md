@@ -8,13 +8,14 @@ terrain. Some data is optional. The map still builds without it, just with more 
 |---|---|---|---|
 | Overture Maps | footprints, roads, paths, walls, water, woods, rock, heath, sand and marsh, place names | yes | worldwide |
 | Mapzen terrain tiles | ground height | yes (downloaded by the build) | worldwide |
-| Environment Agency lidar (England), Welsh Government lidar (Wales, DataMapWales; no last returns) | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England and Wales |
+| Environment Agency lidar (England), Welsh Government lidar (Wales, DataMapWales; no last returns), Scottish Public Sector LiDAR (Scotland, where flown; no last returns) | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England, Wales, much of Scotland |
 | Meta / WRI canopy height | tree positions, hedges, shrubs | recommended | worldwide |
-| Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional | England and Wales |
+| Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional (fetched in Scotland, by hand elsewhere) | England, Wales and Scotland (homes only) |
 | OpenStreetMap | shops, pubs, cafés and offices, on the right building | recommended | worldwide |
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
-| 2021 Census, accommodation type (TS044) | how many homes in each street are flats, terraced, semi-detached or detached | recommended | England and Wales |
-| Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
+| 2021 Census, accommodation type (TS044); Scotland's Census 2022 (UV402) | how many homes in each street are flats, terraced, semi-detached or detached | recommended | Great Britain |
+| Conservation areas (planning.data.gov.uk; Historic Environment Scotland) | the old core of the town, built of what its old buildings are | recommended | England and Scotland |
+| Registered parcels (HM Land Registry; Registers of Scotland) and listed railings and walls (Historic England; Historic Environment Scotland) | real plot boundaries and listed fronts for the partition | optional (fetched in Scotland, by hand elsewhere) | England, Wales (parcels) and Scotland |
 | RESOLVE Ecoregions 2017 | the map's ecoregion and biome: what the heath and scrub grow, and whether the satellite's shrubland is wild heath there, how dry the grass gets, the trees' kinds and leaves | recommended (`tools/region.py`; without it, England's look) | worldwide |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
@@ -111,6 +112,38 @@ ST75NE, ST75NW, ST76NE, ST76NW, ST76SE, ST76SW, ST77SE, ST77SW, ST86NW and ST86S
 `data/raw/<map>/wide/lidar/dtm/`, `dsm/` and `last/` (a link to the detailed map's `lidar` folder will do).
 Each square reads only the lidar tiles it stands on.
 
+### Scotland's lidar, certificates, census and designations
+
+Everything Scotland has is fetched by `tools/fetch.py` (and so by the skill's `build`), with no
+account: `--only lidar,census,conservation,listed,parcels,epc`. In turn:
+
+- **Lidar**: the Scottish Public Sector LiDAR (phases 1 to 6, 2011-22, and the national programme
+  now under way), DTM and DSM, from the Scottish Remote Sensing Portal's open bucket. The tiles are
+  cloud-optimised, so only the map's box is read from them, into one 1 km GeoTIFF per kind
+  (`lidar/dtm/scotland-NT2573.tif`), the newest survey first with older ones filling its gaps, at
+  50 cm where phase 3 or later flew and 1 m before. There are no last returns. Coverage is patchy
+  outside the towns and the Central Belt: a map with no survey under it builds without the
+  lidar's steps (`lidar: no Scottish survey over the map`). Edinburgh's middle is phase 5 (2020-21).
+- **Energy certificates**: the Scottish Government's domestic EPC dataset (data.gov.scot, every
+  current certificate since 2016, a 200 MB 7z archive: `bsdtar`, 7-Zip or `py7zr` reads it) and OS
+  Open UPRN (OS Downloads API, 600 MB), both kept once in `data/raw/` for every map
+  (`python3 -I tools/epc.py $MAP scotland data/raw/$MAP/wide`). They are cut to the map's addresses
+  and written in England's columns: the main wall, property type, built form and age band.
+  Business premises' certificates are not fetched.
+- **Census**: Scotland's Census 2022, table UV402 (households by accommodation type) for each output
+  area, from the census's bulk download, with the outlines from National Records of Scotland's map
+  service. The same file as England's: a Scottish converted house is England's, there is no
+  "converted other building", and purpose-built flats take in the tenements (Edinburgh's middle is
+  nearly nine homes in ten flats).
+- **Conservation areas and listed buildings**: Historic Environment Scotland's designations service.
+  Scotland rarely lists railings apart from their building: a building's own entry names them
+  ("including railings and boundary walls"), and that entry is what is kept.
+- **Parcels**: Registers of Scotland's INSPIRE cadastral parcels, one zip per registration county
+  (Edinburgh is in Midlothian's); `tools/parcels.py $MAP ros ... wide` fetches only the counties whose
+  parcels reach the map, into `data/raw/scotland/ros/`. About a third of the ground has none.
+
+Each source's credit line is in `.claude/skills/new-area/uk.md`, "Credits".
+
 ### Meta / WRI tree canopy
 
 One zoom-9 tile covers the map. Work out its quadkey and download it:
@@ -129,7 +162,7 @@ curl -o data/raw/$MAP/canopy/<quadkey>.tif \
 With lidar present, tree heights come from the lidar and this tile only fills in low growth such
 as hedges and shrubs.
 
-### HM Land Registry parcels (optional)
+### HM Land Registry parcels (optional; Scotland's are fetched, see above)
 
 The registered freehold extents (INSPIRE Index Polygons) are what the partition build draws real
 plot boundaries from; without them it falls back to dividing blocks by rule, so this download is
@@ -148,7 +181,7 @@ its OSTN15 grid, which returns the 1 m transformation: run it once with the netw
 boundary will be about 0.4 m out. Licence: Open Government Licence v3, with the two attributions
 in `data/combe-down/README.md`.
 
-### Energy certificates (England and Wales)
+### Energy certificates (England and Wales; Scotland's are fetched, see above)
 
 1. Sign up at https://get-energy-performance-data.communities.gov.uk and download the
    **Domestic** certificates for the local authority as CSV. Save it as
@@ -166,7 +199,7 @@ in `data/combe-down/README.md`.
    For shop signs, also download the **Non-domestic** certificates for the same authority and
    save them as `data/raw/my-place/epc/non-domestic.csv`.
 
-### The census's house types and the conservation areas (England and Wales)
+### The census's house types and the conservation areas (Great Britain)
 
 Two open downloads, no account, a few seconds each (with `wide` on the end for a map with a wider
 circle, which every new map has):
@@ -176,8 +209,8 @@ python3 -I tools/census.py $MAP data/raw/$MAP/wide/census.geojson wide
 python3 -I tools/conservation.py $MAP data/raw/$MAP/wide/conservation.geojson wide
 ```
 
-`tools/fetch.py $MAP --only census,conservation` runs both (it skips them outside England and
-Wales, and the conservation areas outside England). `census.py` takes every 2021 output area (about
+`tools/fetch.py $MAP --only census,conservation` runs both (it skips them outside Great Britain,
+and the conservation areas in Wales). In Scotland both read Scotland's own sources (above). `census.py` takes every 2021 output area (about
 125 households each) the map's box touches, from the ONS's outlines, and how many of each one's
 households live in a detached, semi-detached or terraced house, a purpose-built block of flats, a
 converted house and so on, from Nomis (table TS044). It prints the mix over the whole map: Bath's
@@ -324,7 +357,7 @@ python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 
 That same command then lays the ground out as a partition (`tools/partition/stage.py`, "Rebuild a
 map" in the README), for every map. It uses whatever the map has: the Land Registry's parcels
-(below; England and Wales only) for where the plots' boundaries run, else the blocks and the houses'
+(below; England, Wales and Scotland) for where the plots' boundaries run, else the blocks and the houses'
 fronts; the lidar's wall runs (England) beside the mapped walls; and, once a build with the lidar
 has run `tools/mapdata.py pack`, what the partition reads from the lidar itself
 (`data/$MAP/measured/partition.zip`). None of them is needed. `--no-partition` builds the squares

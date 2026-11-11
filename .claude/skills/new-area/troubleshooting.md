@@ -44,8 +44,11 @@ are kept, and squares already built are not built again.
 | `WARN step pubs failed` | Fine: the pause menu's "Go to a pub" lists only the pubs signed in the squares. Report it. |
 | `WARN step district names failed` (often `HTTP Error 502` or `504` from Overpass) | Fine: the game names places after parks instead. Once Step 7 is done, rerun `build` once (about a minute: nothing is downloaded or built again); if it fails again, report it. |
 | `WARN step church towers failed` | Fine: churches have no measured towers. Report it. |
-| `epc: download the energy certificates ... by hand` | Not an error. Ignore it. Energy certificates are by hand only; mention them in "What it lacks". |
-| `no lidar data`, `no EPC data` | Not an error outside England. In England, report it. |
+| `epc: download the energy certificates ... by hand` | Not an error (England and Wales). Ignore it. Energy certificates are by hand only there; mention them in "What it lacks". |
+| `no lidar data`, `no EPC data` | Not an error outside England and Scotland. In England, report it. In Scotland, report it only if `lidar: N of M Scottish kilometre squares surveyed` was printed. |
+| `lidar: no Scottish survey over the map` | Not an error: the Scottish lidar has not been flown there. The map builds without it (no lidar steps run). Mention it in "What it lacks". |
+| `epc: the Scottish certificates are a 7z archive` | STOP: the user must install 7-Zip or libarchive (`bsdtar`), or `pip install py7zr` into the build's Python, then rerun `build`. |
+| `Historic Environment Scotland's service:` or `HTTP Error` for `inspire.hes.scot`, `maps.gov.scot`, `data.gov.scot`, `scotlandscensus.gov.uk`, `ros-inspire.themapcloud.com` or `api.os.uk` | A server stumbled. Wait two minutes and rerun `build` once. Still failing: STOP. |
 
 ## verify
 
