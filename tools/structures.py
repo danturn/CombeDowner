@@ -383,7 +383,29 @@ def by_a_lock(x, y, locks):
     return False
 
 
-def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
+PASSAGE = 2.0    # metres of a path inside a building that make it a passage through it (write_tile.INDOORS_FLOOR)
+
+
+def in_passage(buildings):
+    """(run, i) -> whether a path's point i is at a building it runs on through. Its deck carries
+    it through (write_tile.ways_out_of_buildings leaves a building by a deck to it): laid on the
+    ground, the building would cut it in two."""
+    inner = [g for g in (b.buffer(0).buffer(-0.3) for b in buildings) if not g.is_empty]
+    tree = STRtree(inner) if inner else None
+
+    def test(run, i):
+        if tree is None:
+            return False
+        p = Point(run[i][:2])
+        line = LineString([q[:2] for q in run])
+        # (as far out from the wall as a passage is long: the deck reaches the path's first point
+        # outside, and the path steps off it there rather than a stub short of the doorway)
+        return any(inner[int(k)].distance(p) < PASSAGE and inner[int(k)].intersection(line).length > PASSAGE
+                   for k in tree.query(p.buffer(PASSAGE)))
+    return test
+
+
+def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=()):
     """Decide the structures over a set of runs, changing their heights, `span` and `deck` in place.
 
     The rules are `prep_map.py`'s, in its order, with `tools/profiles.py` (shared with it) doing the
@@ -392,7 +414,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
     that cross at different heights, what dips under a bridge, the steepest each road may be, and
     paths afloat. Each run here is already a whole through-road, so `prep_map.py`'s `chains()` is each
     run in turn. `canal` is the canal file's contents (or None), `bm` the map's box, `detail` the
-    finest scale the terrain has detail at (grading.terrain_detail)."""
+    finest scale the terrain has detail at (grading.terrain_detail), `buildings` the footprints."""
     water_tree = STRtree(water_polys)
     rail_lines = [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1]
     rail_tracks = [t for t in rail_tracks if len(t["p"]) > 1]
@@ -508,7 +530,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
         return a, b, LineString([r["run"][i][:2] for i in range(a, b + 1)])
 
     # 1. paths along a road's marked span ride on its deck
-    decks = []
+    decks, was_span = [], {}
     for k, r in enumerate(pending):
         if (r["c"] in PATHS and r["c"] != "pedestrian") or not r["span"]:
             continue
@@ -536,6 +558,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
                     # height already: a path going down past the bridge's end doesn't ride it
                     if i not in r["span"] and abs(r["z"][i] - (zs[lo] + (zs[lo + 1] - zs[lo]) * f)) > 1.0:
                         continue
+                    was_span[id(r), i] = i in r["span"]
                     r["z"][i] = zs[lo] + (zs[lo + 1] - zs[lo]) * f
                     r["deck"].add(i)
                     r["span"].discard(i)
@@ -574,6 +597,21 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail):
             if real and solid:
                 r["solid"].update(st)
         r["span"] = keep
+
+    # 2b. a path down on the ground that rode a pedestrian street's span that isn't a bridge (a
+    # building's passage beside a square, which the pedestrian street's wide reach takes in) is on
+    # the ground: left riding, it was a deck the ground was dug out under. It keeps the height it
+    # took, the street's beside it, as the streets it meets are levelled to it. One through a
+    # building rides on
+    passage = in_passage(buildings)
+    for r in pending:
+        for i, j in list(r["ride"].items()):
+            k, _, _, _, a, b = decks[j]
+            if pending[k]["c"] != "pedestrian" or any(a <= m <= b for m in pending[k]["span"]) or was_span[id(r), i] \
+                    or abs(r["z"][i] - elev(*r["run"][i][:2])) > 0.5 or passage(r["run"], i):
+                continue
+            r["deck"].discard(i)
+            del r["ride"][i]
 
     # 2'. a path running along beside a street goes where the street goes: where the street isn't on
     # a bridge, its pavement isn't one either
@@ -1290,3 +1328,82 @@ def drop_empty_spans(roads, ground, water, rails, reach=2.5):
                 dropped += 1
             k = e + 1
     return dropped
+
+
+# ---- each structure's ends, decided once for the whole map ---------------------------------------
+
+JOINT = 1.0       # metres: a deck's end this close to another's deck, and this near its height, runs on into it
+
+
+def end_id(kind, x, y):
+    """A stable name for an end, from what it is and where (to half a metre), as `edge_id` is."""
+    import hashlib
+    return hashlib.sha1(f"{kind} {round(x * 2)} {round(y * 2)}".encode()).hexdigest()[:10]
+
+
+def structure_ends(pending):
+    """Every bridge's and tunnel's ends, from the whole of each structure (a span crossing a square's
+    edge has one pair): [(run index, point index, kind, x, y, z, half width, id)].
+
+    A bridge's ends are the points just off its span at each end, as the game builds them
+    (map.ts bridgeSpans). An `abutment` stands on the bank there; a `joint` is where it runs on into
+    another deck in the air, and stands on nothing; an `open` end is one whose span runs to the end
+    of its way with nothing going on there. A bored tunnel's are its two `portal`s."""
+    decks = collections.defaultdict(list)
+    for k, r in enumerate(pending):
+        for i in r["span"] | r["deck"]:
+            decks[(round(r["run"][i][0]), round(r["run"][i][1]))].append((k, i))
+
+    def on_deck(k, i):
+        r_xy = pending[k]["run"][i][:2]
+        x, y = r_xy
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for k2, i2 in decks.get((round(x) + dx, round(y) + dy), ()):
+                    if k2 != k and math.dist(pending[k2]["run"][i2][:2], r_xy) < JOINT \
+                            and abs(pending[k2]["z"][i2] - pending[k]["z"][i]) < JOINT:
+                        return True
+        return False
+
+    points = collections.defaultdict(list)
+    for k, r in enumerate(pending):
+        for i, q in enumerate(r["run"]):
+            points[(round(q[0]), round(q[1]))].append((k, i))
+
+    def met(k, i):
+        """Whether another way comes to the point at its height, which the deck's end then lands on
+        (one well under it passes beneath)."""
+        x, y = pending[k]["run"][i][:2]
+        return any(k2 != k and math.dist(pending[k2]["run"][i2][:2], (x, y)) < 1.5 and abs(pending[k2]["z"][i2] - pending[k]["z"][i]) < JOINT
+                   for dx in (-1, 0, 1) for dy in (-1, 0, 1) for k2, i2 in points.get((round(x) + dx, round(y) + dy), ()))
+
+    out = []
+    for k, r in enumerate(pending):
+        run, z, n = r["run"], r["z"], len(r["run"])
+        half = RW.get(r["c"], 4) / 2
+        for st in stretches(r["span"]):
+            for i, inner in ((st[0] - 1, st[0]), (st[-1] + 1, st[-1])):
+                if 0 <= i < n:
+                    kind = "joint" if on_deck(k, i) else "abutment"
+                else:
+                    i = inner
+                    kind = "joint" if on_deck(k, i) else "abutment" if met(k, i) else "open"
+                x, y = run[i][:2]
+                out.append((k, i, kind, x, y, z[i], half, end_id(kind, x, y)))
+        for i0, i1 in r.get("bored") or ():
+            for i in (i0, i1):
+                if 0 <= i < n:
+                    x, y = run[i][:2]
+                    out.append((k, i, "portal", x, y, z[i], half, end_id("portal", x, y)))
+    return out
+
+
+def ends_by_edge(pending, ends):
+    """{edge id: [[kind, x, y, z, half width, id], ...]}: each end filed under the edge it lies on."""
+    out = collections.defaultdict(list)
+    for k, i, kind, x, y, z, half, eid in ends:
+        for edge, _rev, s, e in pending[k]["parts"]:
+            if s <= i <= e:
+                out[edge].append([kind, round(x, 2), round(y, 2), round(z, 2), round(half, 2), eid])
+                break
+    return out

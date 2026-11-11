@@ -887,6 +887,8 @@ SIGNAL_LAMP.customProgramCacheKey = () => "signal-lamp";
 const TREAD_STONE = "#9b968b";
 /** Steepest a flight climbs (rise per metre along it), about a stair's usual pitch. */
 const STAIR_PITCH = 0.7;
+/** How far a path's face is drawn over its line's height (world.ts FACE_LIFT): a baked flight's treads stand on it. */
+const PATH_LIFT = 0.04;
 /** How far a handrail stands above the treads. */
 const RAIL_HEIGHT = 0.9;
 
@@ -900,8 +902,9 @@ const treadFloors = new WeakMap<GameMap, (x: number, z: number, y: number) => nu
 
 /**
  * Steps where the map says how they're built: treads level across (as many as it says, else one for
- * every 16 cm of rise) with a dark nosing, and handrails on posts along the sides it names. The flight
- * climbs evenly between what you walk on at its two ends, as it's drawn, but
+ * every 16 cm of rise) with a dark nosing, and handrails on posts along the sides it names. Where the
+ * build laid the flight's heights into its points (tb), with level landings at its turns, the treads
+ * stand on those; otherwise the flight climbs evenly between what you walk on at its two ends, as it's drawn, but
  * never dips into the ground on the way and never rises steeper than a stair, so where it meets a
  * retaining wall it starts climbing early to reach the top rather than leaving its rails hanging off
  * the wall. Each tread is a block down to the ground under the flight's line; where the ground beside
@@ -922,7 +925,7 @@ export function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler
     // a flight on a span is the bridge's to draw, with its parapets
     if (r.c !== "steps" || r.p.length < 2 || r.bridge) continue;
     if (++n % 20 === 0) yield;
-    const lay = stairLayout(r, ground);
+    const lay = stairLayout(r, ground, map.z0);
     if (!lay) continue;
     const { L, w, along, height } = lay;
     const treadCount = r.sc ?? (lay.rise > 0.3 ? Math.round(lay.rise / 0.16) : 0);
@@ -934,9 +937,9 @@ export function* stepsDetail(map: GameMap, scene: THREE.Object3D, culler: Culler
       const bottom = Math.min(ground(x, y), height(s0), height(s1)) - TREAD_DEPTH;
       const turn = Math.atan2(ux, -uy), depth = s1 - s0 + 0.02;
       parts.push([box(w * 0.95, top - bottom, depth).rotateY(turn), TREAD_STONE, x, (top + bottom) / 2, -y]);
-      // the nosing, on the tread's leading edge whichever way the flight climbs
+      // the nosing, on the tread's leading edge whichever way the flight climbs (none on a landing)
       const lead = height(s1) >= height(s0) ? s0 : s1, [ex, ey] = along(lead);
-      parts.push([box(w * 0.95, 0.05, 0.06).rotateY(turn), "#3f3d38", ex, top, -ey]);
+      if (Math.abs(height(s1) - height(s0)) > 0.01) parts.push([box(w * 0.95, 0.05, 0.06).rotateY(turn), "#3f3d38", ex, top, -ey]);
       for (const side of [1, -1]) {
         const beside = ground(x + nx * (1 + 0.1 / w) * side, y + ny * (1 + 0.1 / w) * side);
         cheeks.push({ s0, s1, top, foot: Math.min(beside, bottom) - TREAD_DEPTH, beside, need: top - beside > 0.3 || beside < bottom });
@@ -1043,7 +1046,7 @@ function cheekWall(by: Cheek[], along: (s: number) => [number, number, number, n
  * A flight's line and heights: `along(s)` the point and heading s metres along it, `height(s)` the
  * treads' level there, `inside(x, y, d)` whether a point is within d of the flight's own line.
  */
-function stairLayout(r: { p: number[][]; w?: number }, ground: (x: number, y: number) => number) {
+function stairLayout(r: { p: number[][]; w?: number; tb?: number }, ground: (x: number, y: number) => number, z0 = 0) {
   const pts = r.p, len: number[] = [0];
   for (let k = 1; k < pts.length; k++) len.push(len[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
   const L = len[len.length - 1];
@@ -1057,9 +1060,19 @@ function stairLayout(r: { p: number[][]; w?: number }, ground: (x: number, y: nu
   };
   const STEP = 0.25, N = Math.max(2, Math.ceil(L / STEP)), h: number[] = [];
   const g0 = ground(pts[0][0], pts[0][1]), g1 = ground(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+  // the line between its ends, or the build's own shape (tb: over the ground it climbs, level on its
+  // landings) set on what's drawn at its two ends; never under what's drawn
+  const baked = (s: number) => {
+    let k = 1;
+    while (k < len.length - 1 && len[k] < s) k++;
+    const f = Math.min(1, Math.max(0, (s - len[k - 1]) / ((len[k] - len[k - 1]) || 1)));
+    return pts[k - 1][2] + (pts[k][2] - pts[k - 1][2]) * f + PATH_LIFT - z0;
+  };
+  const b0 = r.tb ? baked(0) : 0, b1 = r.tb ? baked(L) : 0;
   for (let i = 0; i <= N; i++) {
     const s = L * i / N, [x, y] = along(s);
-    h.push(Math.max(g0 + (g1 - g0) * s / L, ground(x, y)));
+    const line = r.tb ? baked(s) + (g0 - b0) * (1 - s / L) + (g1 - b1) * s / L : g0 + (g1 - g0) * s / L;
+    h.push(Math.max(line, ground(x, y)));
   }
   // no steeper than a stair either way: a sudden rise (a wall's top under the line) is climbed to
   // over the treads before it

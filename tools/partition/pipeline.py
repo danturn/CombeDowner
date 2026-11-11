@@ -184,12 +184,13 @@ class Slices:
                                      [(i, d) for _b, d, i in cleaned], [d for _b, d, _i in self._in("corridors", reach)]]))
 
     def write(self, sq):
-        """What one square's writing reads: the corridors near it, the road heights of those crossing
-        it, and the footprints and parent blocks within WRITE_REACH."""
+        """What one square's writing reads: the corridors near it and their road heights (it fits and
+        profiles every street up to write_tile.LOOK_PAST past its sides, the same reach as FRONT_REACH),
+        and the footprints and parent blocks within WRITE_REACH."""
         near = self._in("corridors", _grow(sq, FRONT_REACH))
         heights = self._load("structures")
         wide = _grow(sq, WRITE_REACH)
-        return cache.sha(json.dumps([[d for _b, d, _i in near], [(i, heights.get(i)) for b, _d, i in near if _meets(b, sq)],
+        return cache.sha(json.dumps([[d for _b, d, _i in near], [(i, heights.get(i)) for _b, _d, i in near],
                                      [(i, d) for _b, d, i in self._in("cleaned", wide)],
                                      [d for _b, d, _i in self._in("parents", wide)]]))
 
@@ -238,7 +239,7 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     # so they are worked out in a process of their own beside the pools
     maps = os.path.join(ROOT, "web", "public", "maps")
     skey = cache.key_of("structures", cache.code_key((ONCE, "pass_structures")), R.lib, graph_d,
-                        whole("water"), cache.file_digest(os.path.join(ROOT, "data", MAP, "terrain15.zip")),
+                        whole("water"), whole("building"), cache.file_digest(os.path.join(ROOT, "data", MAP, "terrain15.zip")),
                         *(cache.file_digest(os.path.join(maps, f"{MAP}-{k}.json")) for k in ("rail", "canal")))
     ts = time.time()
     s = R.store.get("structures", skey, once)
@@ -317,6 +318,8 @@ def build(raw, once, city, store, jobs, wanted=None, log=print):
     return dict(assembled=[list(t) for t in sorted(done)], failed=[list(t) for t in sorted(bad)],
                 partition={name(t): cache.sha(done[t].get(f"{name(t)}/partition.json", "") + upstream[name(t)])
                            for t in done},
+                # the writer also reads the squares round it, but only their assembled faces
+                faces={name(t): done[t].get(f"{name(t)}/partition.json", "") for t in done},
                 # (nothing the passes wrote is read whole by the writer any more: its share is in `partition`)
                 upstream="", ran=dict(R.ran))
 
