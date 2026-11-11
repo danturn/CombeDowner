@@ -264,6 +264,7 @@ def odd_corners(F, odd, H, T, under=0.05, step=0.25):
     as the grid stays under every face in it: each corner only as far as the faces near it need, so a
     corner the low face doesn't reach (where a bridge's deck comes down to its abutment beside the
     path passing under it) keeps its height. As (grid point, height) pairs."""
+    from scipy.optimize import linprog
     nx, dx, dy = T["nx"], T["dx"], T["dy"]
     lift = np.asarray([LIFT[k] for k in FACE_KINDS])[F.K]
     ftree = shapely.STRtree(F.polys)
@@ -294,28 +295,28 @@ def odd_corners(F, odd, H, T, under=0.05, step=0.25):
             continue
         z = np.array([H[j, i], H[j, i + 1], H[j + 1, i], H[j + 1, i + 1]], float)
         ws, ts = w[hit], top[hit]
-        norm = (ws * ws).sum(1)
-        # (no corner lower than under the lowest face in the cell, which keeps every face clear)
-        floor = np.minimum(z, ts.min())
-        # (each sample over its face lets the corners under it down, the nearest most, till none is)
-        for _ in range(60):
-            over = ws @ z - ts
-            if over.max() <= 1e-3:
-                break
-            for q in np.nonzero(over > 0)[0].tolist():
-                e = ws[q] @ z - ts[q]
-                if e > 0:
-                    z = np.maximum(z - e * ws[q] / norm[q], floor)
         if (ws @ z - ts).max() > 1e-3:
-            z = floor
+            # (as little as every face in the cell allows, summed over its corners, so a corner no low
+            # face is near keeps its height: let down to the lowest face whole, a cell beside a
+            # house left it standing in a pit; and none lower than under the lowest face)
+            floor = np.minimum(z, ts.min())
+            got = linprog(-np.ones(4), A_ub=ws, b_ub=ts, bounds=list(zip(floor.tolist(), z.tolist())), method="highs")
+            z = got.x if got.success else floor
         for v, h in zip((j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1), z.tolist()):
             out.append((v, h - 1e-3))
     return out
 
 
-def deck_lines(rd, ground):
+def deck_lines(rd, ground, ends=()):
     """Each stretch of a way on a bridge's deck: its ends, its underside's height at each, how far
-    either side of its line the ground is kept under it, and whether each end is an abutment."""
+    either side of its line the ground is kept under it, and whether each end is an abutment.
+    `ends`: the square's `se`, where an abutment held at its way's height lands there, not on the ground."""
+    held = [e for e in ends or () if e[0] == "abutment" and len(e) > 6 and e[6] == 2]
+    landed = ground
+
+    def ground(x, y):
+        e = next((e for e in held if math.dist(e[1:3], (x, y)) < 0.3), None)
+        return e[3] if e is not None else landed(x, y)
     out = []
     for r in rd or []:
         p = r["p"]
@@ -337,6 +338,67 @@ def deck_lines(rd, ground):
                 zb = p[a + 1][2] if on[a + 1] else ground(*p[a + 1][:2])
                 out.append((p[a][:2], p[a + 1][:2], za + under, zb + under, half, (not on[a], not on[a + 1])))
     return out
+
+
+def held_ends(ends, rd):
+    """Each abutment its square holds at its way's height (`se`, held 2): where it is and how high, and
+    the way out from the deck there (a unit vector along the way, away from the span)."""
+    out = []
+    for e in ends or ():
+        if e[0] != "abutment" or len(e) < 7 or e[6] != 2:
+            continue
+        for r in rd or ():
+            p = r["p"]
+            for i, q in enumerate(p):
+                if math.dist(q[:2], e[1:3]) > 0.05 or (len(q) > 3 and q[3]):
+                    continue
+                inner = [p[j] for j in (i - 1, i + 1) if 0 <= j < len(p) and len(p[j]) > 3 and p[j][3]]
+                if inner:
+                    dx, dy = q[0] - inner[0][0], q[1] - inner[0][1]
+                    n = math.hypot(dx, dy) or 1.0
+                    out.append(((e[1], e[2], e[3]), (dx / n, dy / n)))
+                    break
+            else:
+                continue
+            break
+    return out
+
+
+def ends_on_faces(tile, out=0.5):
+    """Each abutment held at its way's height (`se`, held 2) lands at the face it meets instead, where
+    one is drawn just past the deck's end (its written height, as the deck's floor meets the street's):
+    the way's own line can stand a few centimetres off the face built round it. Changes `se` in place."""
+    sf = tile.get("sf")
+    if not sf or not sf.get("o"):
+        return 0
+    held = held_ends(tile.get("se"), tile.get("rd"))
+    if not held:
+        return 0
+    V, _, T, _, _ = unpack(sf)
+    if not len(T):
+        return 0
+    tris = shapely.polygons(V[T][:, :, :2])
+    tree = shapely.STRtree(tris)
+    moved = 0
+    for (x, y, z), (ox, oy) in held:
+        px, py = x + ox * out, y + oy * out
+        hit = tree.query(shapely.Point(px, py), predicate="intersects")
+        if not len(hit):
+            continue
+        a, b, c = V[T[int(hit[0])]]
+        det = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+        if abs(det) < 1e-12:
+            continue
+        la = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / det
+        lb = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / det
+        h = la * a[2] + lb * b[2] + (1 - la - lb) * c[2]
+        if abs(h - z) > 1.0:
+            continue
+        for e in tile["se"]:
+            if e[0] == "abutment" and len(e) > 6 and e[6] == 2 and math.dist(e[1:3], (x, y)) < 0.05:
+                e[3] = round(float(h), 2)
+                moved += 1
+    return moved
 
 
 def decks(rd, margin):
@@ -437,7 +499,7 @@ def ground_sheet(tile, canal=None):
         meet[sunk] = np.maximum(np.minimum(hill[sunk], top[sunk] + SUNK_MOST), meet[sunk])
     # A bridge's abutment: where a face ends under a deck's end, the ground beside it is dug to the
     # room under the deck and a wall holds the face's edge, as an abutment stands at a bridge's end.
-    for (ax_, ay_), (bx_, by_), za, zb, half, _ in deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y))):
+    for (ax_, ay_), (bx_, by_), za, zb, half, _ in deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y)), tile.get("se")):
         vx_, vy_ = bx_ - ax_, by_ - ay_
         l2 = vx_ * vx_ + vy_ * vy_
         if l2 < 1e-6:
@@ -540,7 +602,7 @@ def ground_sheet(tile, canal=None):
     # corner further out rises into it, the ground is kept DECK_UNDER under its underside; but not
     # within half a cell of an abutment, where the deck lands on the survey's ground)
     under_deck = np.full(n, np.inf)
-    lines = deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y)))
+    lines = deck_lines(tile.get("rd"), lambda x, y: float(on_grid(H, T, x, y)), tile.get("se"))
     abutments = [e for a, b, _, _, _, lands in lines for e, free in zip((a, b), lands) if free]
     for (ax_, ay_), (bx_, by_), za, zb, half, lands in lines:
         vx_, vy_ = bx_ - ax_, by_ - ay_
@@ -582,6 +644,21 @@ def ground_sheet(tile, canal=None):
     # there, and the house beside it on its own wall)
     high = np.minimum(high, under_deck)
     low = np.minimum(low, high)
+    # (a bridge's recorded end is an edge the ground meets: past an abutment held at its way's height,
+    # the open ground runs on from the deck's end at that height, banked away from it as beside a face,
+    # built up as an abutment's bank however far the survey's ground lies below)
+    banked = np.zeros(n, bool)
+    for (ex, ey, ez), (ox, oy) in held_ends(tile.get("se"), tile.get("rd")):
+        qx, qy = GX.ravel() - ex, GY.ravel() - ey
+        d = np.hypot(qx, qy)
+        k = np.nonzero((d < BATTER_MOST + T["dx"]) & (qx * ox + qy * oy >= -0.5) & ~blocked)[0]
+        if not len(k):
+            continue
+        pin = d[k] < T["dx"] * 0.75
+        low[k] = np.where(pin, ez, np.maximum(low[k], ez - d[k] / BATTER_FILL))
+        high[k] = np.where(pin, ez, np.minimum(high[k], ez + d[k] / BATTER_CUT))
+        low[k] = np.minimum(low[k], high[k])
+        banked[k] = True
     # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
     # the faces in it)
     odd, _ = overlaps(F, A, B, segs, GX, GY)
@@ -591,7 +668,7 @@ def ground_sheet(tile, canal=None):
     H0 = H.ravel()
     # (beside a face, a bank steeper than the batter is left rather than filling in what the survey
     # shows beside it, a cutting or a railway's bed)
-    low = np.minimum(low, H0 + FILL_MOST)
+    low = np.where(banked, low, np.minimum(low, H0 + FILL_MOST))
     H1 = np.clip(H0, low, high)
     # (rounded to the grid's decimetres away from the face, so a point let down under a face isn't
     # rounded back up over it)

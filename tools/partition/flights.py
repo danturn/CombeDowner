@@ -219,12 +219,13 @@ def _fit(g, z0, z1, step):
     return h if up else -h
 
 
-def bake(rd, ground, sq, width, ends=None):
+def bake(rd, ground, sq, width, ends=None, only=None):
     """Lay each flight's heights on the ground it climbs and write them into its points (`tb` 1).
     Its ends, any point another way shares and any point on the square's edge keep their heights;
     between them the line follows `ground`, as `_fit` allows. Landings at sharp turns and at ends
     shared with other flights (`ends`, from `shared_ends`) are level. A run too steep for a stair
-    stays straight. Returns how many flights were baked."""
+    stays straight. `only`: the ids of the flights to bake (all of them if None). Returns how many
+    flights were baked."""
     x0, y0, x1, y1 = sq
     on_edge = lambda q: min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1
     shared = {}
@@ -237,7 +238,7 @@ def bake(rd, ground, sq, width, ends=None):
     ends = ends or {}
     baked = 0
     for r in rd:
-        if not _is_flight(r):
+        if not _is_flight(r) or (only is not None and id(r) not in only):
             continue
         p = [list(q) for q in r["p"]]
         # (points a hair apart, left by cutting the line back to what it meets, are one point)

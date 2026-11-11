@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Ground stage 6 (branch `claude/ground-6`):** decks over the railway lifted for headroom
+  (`structures.py`), bridge ends held at their way's height and met by the sheet (`partition/ends.py`,
+  `sheet.py`, `map.ts deckTop`), the sheet's overlap cells let down corner by corner, tunnels (`tn`)
+  from the city's bores (`write_tile.city_tunnels`), paths under streets as low arches or stopped at
+  the kerb, and the checks for spans ending on buildings and rule 52. Rebuilds every square.
+
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
