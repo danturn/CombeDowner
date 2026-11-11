@@ -9,7 +9,8 @@
 // The two bores of a dual carriageway coming out side by side share one headwall, square to them.
 // Where the hill beside the cutting stands high, a wing wall holds it up, and the ground between
 // the wing walls is dug to the floor (world.ts, from cuttings()). A tunnel cut at its square's edge,
-// deep under the hill, has no portal there.
+// deep under the hill, has no portal there. A path's low arch just under a street has a face only
+// up to the street, and no wing walls or dug cutting: the map lays the steps or ramp down to it.
 //
 // ?portal=a or ?portal=b in the address draws tunnels the other way, to compare by eye (portalStyle).
 //
@@ -159,7 +160,9 @@ export function portalFaces(tn: Tunnel[], b?: Bounds): number[][] {
     for (const m of g) { dx += m.dx; dy += m.dy; }
     const l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, o = g[0], at0 = o.x * nx + o.y * ny;
     const open = g.map((m) => { const s = m.x * nx + m.y * ny - at0; return [s - m.h, s + m.h]; }).sort((p, q) => p[0] - q[0]);
-    const top = Math.max(...g.map((m) => m.z + boreCrown(m.t))) + 1.5;
+    const crown = Math.max(...g.map((m) => boreCrown(m.t)));
+    // (a low arch's face stops under the street over it, which is walked on)
+    const top = Math.max(...g.map((m) => m.z + boreCrown(m.t))) + (crown < LOW_ARCH ? 0.2 : 1.5);
     const solid = [[open[0][0] - TUNNEL.past, open[0][0]]];
     let reach = open[0][1];
     for (const [s0, s1] of open.slice(1)) { if (s0 > reach) solid.push([reach, s0]); reach = Math.max(reach, s1); }
@@ -461,6 +464,9 @@ const COPING = 0.3;
 /** The least a cutting is dug out in front of its face: over a grid square of the ground, which
  *  is made up behind the headwall, or a ramp of it came down from there onto the floor in front. */
 const REACH = 6;
+/** A bore lower than this, floor to crown, is a path's low arch just under a street: its face comes
+ *  up only to the street, with no wing walls, as the steps down to it are laid by the map. */
+export const LOW_ARCH = 2.0;
 const MIN_PAST = 1.8;    // metres of face each side of the openings however low the hill beside, so it reads as a headwall, not a pair of jambs
 const HIGH = 1.0;        // metres over the floor the hill beside the cutting must stand to want a wall
 const BANK = 6;          // metres back from a wing wall that a steep bank behind it counts
@@ -537,6 +543,15 @@ function walls(map: GameMap): Headwall[] {
     const wings: [number[][], number[][]] = [wing(left, -1), wing(right, 1)];
     const steep: [boolean, boolean] = [bank(left, -1, 0, 1.5) < HIGH, bank(right, 1, 0, 1.5) < HIGH];
     const reach = Math.max(REACH, ...wings.map((w) => (w.length ? w[w.length - 1][0] : 0)));
+    if (crown < LOW_ARCH) {
+      // (its coping just under the street's top, which runs on over it: a wall up to the arch's usual
+      // height stood across the pavement and out into the road)
+      let street = crown;
+      for (let s = sideL - F; s <= sideR + F; s += 1) street = Math.max(street, behind(s));
+      out.push({ g, dx, dy, nx, ny, cx, cy, z, at, mid, left: sideL - F, right: sideR + F, top: street - COPING - 0.15,
+        wings: [[], []], steep: [false, false], reach: 0, style: portalStyle(tn, g[0].t), crown });
+      continue;
+    }
     out.push({ g, dx, dy, nx, ny, cx, cy, z, at, mid, left, right, top, wings, steep, reach, style: portalStyle(tn, g[0].t), crown });
   }
   return out;
