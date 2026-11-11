@@ -200,7 +200,12 @@ export class Tiles {
     const fromOthers = (ti: number, tj: number) => others.reduce((m, o) => Math.min(m, far(ti, tj, o.x, o.z)), Infinity);
     // (a fly-over's squares the longest in view first, so a slow machine that can't wait for them
     // all is left missing only what it passes quickest)
-    const first = (t: Tile) => Math.min(t.d, t.od) - (this.also.get(tileKey(t.ti, t.tj)) ?? 0) * 1e6;
+    // A held square still to come in goes before everything: Play waits for it, and the menu's view
+    // (a ?at= link) may be on the far side of Bath from where everyone starts.
+    const first = (t: Tile) => {
+      const k = tileKey(t.ti, t.tj);
+      return Math.min(t.d, t.od) - (this.also.get(k) ?? 0) * 1e6 - (!t.ready && this.pinned.has(k) ? 1e9 : 0);
+    };
     this.wait -= dt;
     if (this.wait <= 0) {
       this.wait = 0.3;

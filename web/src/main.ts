@@ -176,7 +176,7 @@ const START_REACH = 150;
 let startWait: { id: string; ready: Promise<void> } | null = null;
 function startReady(): Promise<void> {
   if (startWait?.id === current.id) return startWait.ready;
-  setBusy(true);
+  setReadying(true);
   const ready = (async () => {
     try {
       for (;;) {
@@ -185,10 +185,30 @@ function startReady(): Promise<void> {
         if (world.hold(x, -y, START_REACH)) return;
         await new Promise((r) => setTimeout(r, 200));
       }
-    } finally { setBusy(false); }
+    } finally { setReadying(false); }
   })();
   startWait = { id: current.id, ready };
   return ready;
+}
+
+/** While the start's squares come in, Play and Practice solo look not ready and say so, but a click
+ *  on either is kept (the last one) and goes ahead once they're in, rather than lost. */
+let readying = 0, queued: (() => void) | null = null;
+function setReadying(on: boolean) {
+  readying += on ? 1 : -1;
+  const waiting = readying > 0;
+  for (const id of ["play", "solo"]) $(id).classList.toggle("waiting", waiting);
+  $("menuwait").hidden = !waiting;
+  if (waiting) return;
+  const go = queued;
+  queued = null;
+  $("menuwait").textContent = "Getting the streets ready…";
+  if (go && !game && $("lookup").hidden) go();
+}
+function whenReady(go: () => void) {
+  if (!readying) return go();
+  queued = go;
+  $("menuwait").textContent = "Getting the streets ready: your game starts as soon as they are…";
 }
 $("loading").hidden = true;
 $("menuform").hidden = false;
@@ -726,7 +746,7 @@ $("play").onclick = () => {
   const code = cleanCode($<HTMLInputElement>("code").value) || newRoomCode();
   if (code.length < 4 || code === "SOLO") { $("menuerr").textContent = "Pick a game name of at least 4 letters or numbers (not SOLO)."; return; }
   $("menuerr").textContent = "";
-  play(code);
+  whenReady(() => play(code));
 };
 const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? "" : mapName(m)), async (r) => {
   $("menuerr").textContent = "";
@@ -736,13 +756,14 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
     if (radio) radio.checked = true;
     try { if (!(await showMap(r.map))) return; }
     catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
+    void startReady();
   }
-  if (r.code === Saves.SOLO) { $<HTMLInputElement>("code").value = ""; start(Saves.SOLO, true); }
+  if (r.code === Saves.SOLO) { $<HTMLInputElement>("code").value = ""; whenReady(() => start(Saves.SOLO, true)); }
   else $("play").click();
 }, (r) => Saves.progressText(Saves.progress(r.map, r.code), { zones: mine.zones, objects: mine.strange, challenges: mine.challenges }),
 () => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
-$("solo").onclick = () => start("SOLO", true);
+$("solo").onclick = () => whenReady(() => start("SOLO", true));
 $("linkbtn").onclick = () => openLink(() => location.reload());
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
@@ -995,8 +1016,8 @@ requestAnimationFrame(frame);
 
 // climbing back up from the mines: straight back into the game you went down from (once the
 // squares round the start are in)
-void startReady().then(() => {
-  if (!UP) return;
+void startReady();
+if (UP) whenReady(() => {
   if (roomParam && roomParam !== "SOLO") $("play").click();
   else { start("SOLO", true); game!.news(UP_TOAST); }
 });
@@ -1016,7 +1037,7 @@ const joining = !!roomParam && roomParam !== "SOLO" && params.get("join") === "1
 const resuming = !joining && !!wasPlaying && !UP && (!roomParam || roomParam === wasPlaying.code);
 // index.html hid the menu on the guess that this was a refresh mid-game: show it again if not
 if (!resuming) document.documentElement.classList.remove("resuming");
-if (joining) void startReady().then(() => play(roomParam));
+if (joining) whenReady(() => play(roomParam));
 else if (resuming && wasPlaying) {
   // no menu on the way back in, just a black screen saying so; the menu comes back if the game
   // can't be rejoined, or it wants to ask you something (they're down the mines, a new version)
