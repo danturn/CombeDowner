@@ -85,6 +85,7 @@ ENGLISH = {
     "fsa": "pubs and cafes OpenStreetMap is missing, and pub hygiene ratings (food hygiene ratings, UK)",
     "census": "the mix of flats, terraces, semis and detached houses in each street (2021 Census, England and Wales)",
     "conservation": "the old core of the town, built of what its old buildings are (conservation areas, England)",
+    "heritage": "which buildings are listed, and so old, for the local habits round them (listed buildings, England)",
 }
 COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"lidar", "epc", "parcels", "fsa", "census"}, "GB-NIR": {"fsa"}, "GB-SCT": {"fsa"}}
 
@@ -305,7 +306,7 @@ def build(args):
     have = COVERS.get(region, set()) if region is not None else set(ENGLISH)
     print(f"BRANCH: {branch(region)}   region: {region or '?'}")
     if region is not None: warn_missing(region)
-    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation") if s in have]
+    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation", "heritage") if s in have]
     t0 = time.time()
     run_steps([("download", [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)], True)], dry)
     t_dl = time.time() - t0

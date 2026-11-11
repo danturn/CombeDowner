@@ -19,6 +19,10 @@ With "rail" it fetches the railway as OpenStreetMap maps it (osm-rail.geojson, r
 and the map builds): every way tagged railway (to tell a miniature or garden railway, a turntable or
 a disused line from the main line), with only the tags that say what kind it is, as lines, and every
 place a road or path crosses the line at grade (railway=level_crossing or crossing), as points.
+With "character" it fetches what the mappers say of buildings' age and build (osm-character.geojson,
+read by tools/character): every building tagged with what it is made of, its style, its heritage
+designation, when it was built, its floors below ground or that it is one of a terrace, with only
+those tags, each as a point at its middle.
 
 Keeps every node, way and multipolygon tagged shop, amenity, office, craft, healthcare, tourism or
 leisure, or a building with a name. Nodes become points, closed ways polygons; tags are kept as
@@ -57,9 +61,13 @@ RAIL_TAGS = ("railway", "service", "usage", "gauge", "tunnel", "bridge", "layer"
 CROSSINGS = ("level_crossing", "crossing")
 DETAIL = False
 RAIL = False
+CHARACTER_TAGS = ("building:material", "building:architecture", "heritage", "start_date", "building:levels:underground")
+TERRACED = (("building", "terrace"), ("house", "terraced"), ("house", "terrace"))
+CHARACTER = False
 
 
 def wanted(tags):
+    if CHARACTER: return "building" in tags and (any(k in tags for k in CHARACTER_TAGS) or any(tags.get(k) == v for k, v in TERRACED))
     if RAIL: return "railway" in tags
     if DETAIL: return tags.get("barrier") == "guard_rail" or ("highway" in tags and any(k in tags for k in DETAIL_TAGS[1:-1]))
     if ROADS: return "highway" in tags
@@ -68,6 +76,7 @@ def wanted(tags):
 
 
 def keep(tags):
+    if CHARACTER: return {k: v for k, v in tags.items() if k in CHARACTER_TAGS or (k, v) in TERRACED}
     if RAIL: return {k: v for k, v in tags.items() if k in RAIL_TAGS}
     if DETAIL: return {k: v for k, v in tags.items() if k in DETAIL_TAGS}
     if BRIDGES: return {k: v for k, v in tags.items() if k in BRIDGE_TAGS}
@@ -76,7 +85,8 @@ def keep(tags):
 
 def overpass(W, S, E, N):
     b = f"{S},{W},{N},{E}"
-    sel = f'way["railway"]({b});node["railway"~"^({"|".join(CROSSINGS)})$"]({b});' if RAIL else "".join(f'way["highway"]["{k}"]({b});' for k in DETAIL_TAGS[1:-1]) + f'way["barrier"="guard_rail"]({b});' if DETAIL else f'way["highway"]({b});' if ROADS else f'way["bridge"]["bridge"!="no"]({b});way["man_made"="bridge"]({b});' if BRIDGES else "".join(f'nwr["{k}"]({b});' for k in KEYS) + f'nwr["building"]["name"]({b});'
+    sel = "".join(f'nwr["building"]["{k}"]({b});' for k in CHARACTER_TAGS) + "".join(f'nwr["{k}"="{v}"]({b});' for k, v in TERRACED) if CHARACTER else \
+        f'way["railway"]({b});node["railway"~"^({"|".join(CROSSINGS)})$"]({b});' if RAIL else "".join(f'way["highway"]["{k}"]({b});' for k in DETAIL_TAGS[1:-1]) + f'way["barrier"="guard_rail"]({b});' if DETAIL else f'way["highway"]({b});' if ROADS else f'way["bridge"]["bridge"!="no"]({b});way["man_made"="bridge"]({b});' if BRIDGES else "".join(f'nwr["{k}"]({b});' for k in KEYS) + f'nwr["building"]["name"]({b});'
     q = f"[out:json][timeout:120];({sel});out geom tags;"
     js = json.loads(get("https://overpass-api.de/api/interpreter", urllib.parse.urlencode({"data": q}).encode()))
     feats = []
@@ -96,6 +106,7 @@ def overpass(W, S, E, N):
         else: continue
         if DETAIL and not wanted(tags): continue
         if e["type"] == "node" and RAIL and tags.get("railway") not in CROSSINGS: continue
+        if CHARACTER and not wanted(tags): continue
         if ROADS or DETAIL or (RAIL and e["type"] == "way") or (BRIDGES and tags.get("man_made") != "bridge"): geom = dict(geom, type="LineString", coordinates=[[p["lon"], p["lat"]] for p in e["geometry"]]) if e["type"] == "way" else None
         if geom: feats.append(dict(type="Feature", geometry=geom, properties={**keep(tags), "osm": f"{e['type']}/{e['id']}"}))
     return feats
@@ -148,7 +159,22 @@ def main_api(W, S, E, N):
     return out
 
 
+def middles(feats):
+    """Each feature as a point at the middle of its outline's corners: the build only needs to know
+    which footprint it is on, and a point is a twentieth of the size."""
+    out = []
+    for f in feats:
+        g = f["geometry"]
+        pts = [g["coordinates"]] if g["type"] == "Point" else g["coordinates"][0] if g["type"] == "Polygon" else \
+            g["coordinates"][0][0] if g["type"] == "MultiPolygon" else g["coordinates"]
+        pts = pts[:-1] if len(pts) > 1 and pts[0] == pts[-1] else pts
+        lon, lat = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        out.append(dict(f, geometry={"type": "Point", "coordinates": [round(lon, 7), round(lat, 7)]}))
+    return sorted(out, key=lambda f: f["properties"]["osm"])
+
+
 if __name__ == "__main__":
+    CHARACTER = "character" in sys.argv[3:]
     ROADS = "roads" in sys.argv[3:]
     BRIDGES = "bridges" in sys.argv[3:]
     DETAIL = "detail" in sys.argv[3:]
@@ -160,5 +186,6 @@ if __name__ == "__main__":
     except Exception as ex:
         print(f"Overpass unavailable ({ex}); using the main API")
         feats, via = main_api(*A.bbox), "the main API"
+    if CHARACTER: feats = middles(feats)
     json.dump({"type": "FeatureCollection", "features": feats}, open(out, "w"))
     print(f"osm: {len(feats)} features via {via} in {time.time() - t:.0f}s")

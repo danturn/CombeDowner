@@ -1,0 +1,43 @@
+{
+  "about": "Local building habits, as rules on what each building is. Read by tools/character (see the top of its __init__.py for how a rule is written). A map can add to or change these with tools/character/maps/<map>.json.",
+
+  "styles": {
+    "about": "The years a style name means, earliest and latest. They date a building that OpenStreetMap names a style (building:architecture) and, where the data says nothing of a building's age, the zones of tools/area.py that carry a style's name.",
+    "georgian": [1714, 1837],
+    "regency": [1811, 1837],
+    "victorian": [1837, 1901],
+    "edwardian": [1901, 1914],
+    "squares": [1714, 1837],
+    "interwar": [1919, 1939],
+    "postwar": [1945, 1979],
+    "modern": [1945, 2100],
+    "contemporary": [1990, 2100]
+  },
+
+  "evidence": {
+    "about": "How far each source is trusted to date a building, best first. A listed building is dated as built before listed_before: Historic England lists nearly everything standing from before 1840 and very little from after the First World War, so it is a fair guess where the certificates and the mappers say nothing.",
+    "built_from": ["osm", "epc", "listed", "zone"],
+    "listed_before": 1914
+  },
+
+  "decisions": {
+    "area_railings": {
+      "about": "Railings along the top of the retaining wall where steps drop beside the pavement into a sunken area in front of a house.",
+      "asks": "thing: the flight, with front_gap, the metres between the pavement's edge and the house's front wall. building: the nearest building's character.",
+      "rules": [
+        {
+          "name": "town house area",
+          "why": "The urban terraced town house, built from the late 1600s to about 1914 (Georgian, Regency and much of Victorian, in London, Bristol, Edinburgh, Dublin and Bath alike), has a basement or semi-basement and a raised ground floor, with an open area between it and the pavement fenced with iron railings. Small workers' cottages and later houses rarely do.",
+          "when": {
+            "building.form": ["terrace", "end-terrace"],
+            "building.built": {"before": 1914},
+            "building.basement": {"not": false},
+            "thing.front_gap": {"atmost": 4}
+          },
+          "then": {"railings": "area"}
+        }
+      ],
+      "otherwise": {"railings": "none"}
+    }
+  }
+}

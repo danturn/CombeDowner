@@ -15,6 +15,7 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
 | 2021 Census, accommodation type (TS044) | how many homes in each street are flats, terraced, semi-detached or detached | recommended | England and Wales |
 | Conservation areas (planning.data.gov.uk) | the old core of the town, built of what its old buildings are | recommended | England |
+| Listed buildings (Historic England) | which buildings are listed, and so old, for the local habits round them (`tools/character`) | recommended | England |
 | RESOLVE Ecoregions 2017 | the map's ecoregion and biome: what the heath and scrub grow, and whether the satellite's shrubland is wild heath there, how dry the grass gets, the trees' kinds and leaves | recommended (`tools/region.py`; without it, England's look) | worldwide |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
@@ -176,8 +177,16 @@ python3 -I tools/census.py $MAP data/raw/$MAP/wide/census.geojson wide
 python3 -I tools/conservation.py $MAP data/raw/$MAP/wide/conservation.geojson wide
 ```
 
-`tools/fetch.py $MAP --only census,conservation` runs both (it skips them outside England and
-Wales, and the conservation areas outside England). `census.py` takes every 2021 output area (about
+For England, Historic England's listed buildings too (`tools/character` reads them, with
+OpenStreetMap's buildings' dates, styles and basements, which `tools/fetch.py` fetches with the rest
+of OpenStreetMap as `osm-character.geojson`):
+
+```sh
+python3 -I tools/listed.py $MAP data/raw/$MAP/wide/heritage.geojson wide buildings
+```
+
+`tools/fetch.py $MAP --only census,conservation,heritage` runs all three (it skips them outside England and
+Wales, and the conservation areas and listed buildings outside England). `census.py` takes every 2021 output area (about
 125 households each) the map's box touches, from the ONS's outlines, and how many of each one's
 households live in a detached, semi-detached or terraced house, a purpose-built block of flats, a
 converted house and so on, from Nomis (table TS044). It prints the mix over the whole map: Bath's

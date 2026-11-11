@@ -784,6 +784,15 @@ round it are painted, and its tall terraces get parapets, tall sash windows and 
 stock brick has a look of its own: yellow to grey-brown bricks in pale mortar, sooty, with red
 brick arches over the windows and red bands at the floors.
 
+Each building's local character is measured from the data, the same way on every map
+(`tools/character`): whether it is detached, semi-detached, the end of a terrace or in one (the
+certificates, OpenStreetMap, or the houses sharing its walls), when it was built (OpenStreetMap's
+date or style, the certificates' age band, its being listed, or the character area it is in), whether
+it has a basement, its listed grade and its conservation area. What the town builds round each kind
+of building follows from a table of rules anyone can read and change
+(`tools/character/rules.json`, and a map's own in `tools/character/maps/`): the first, not yet built
+into the map, gives an old terraced town house by the pavement railings round its basement area.
+
 Each map's centre, size and character areas are in `tools/area.py`. To make a map of somewhere
 new, follow [docs/new-area.md](docs/new-area.md): every download (lidar and canopy included),
 where it goes, the build, and landmark packs. A map with no wide area is one file, built with
@@ -845,7 +854,7 @@ Agency (Open Government Licence). Plot boundaries in England from HM Land Regist
 Polygons: this information is subject to Crown copyright and database rights 2026 and is reproduced
 with the permission of HM Land Registry; the polygons (including the associated geometry, namely x, y
 co-ordinates) are subject to Crown copyright and database rights 2026 Ordnance Survey AC0000851063.
-Listed railings and walls contain Historic England data ©
+Listed buildings, railings and walls contain Historic England data ©
 Historic England 2026 (Open Government Licence). House types from the 2021 Census: source, Office
 for National Statistics, licensed under the Open Government Licence v3.0. Conservation areas from
 planning.data.gov.uk: © Historic England 2026 and the local planning authorities (Open Government

@@ -15,11 +15,14 @@ data/<map>/ (see the README there for where each comes from and its licence):
 - HM Land Registry's INSPIRE Index Polygons for the area (tools/parcels.py, from the one download
   that is a plain file rather than an API), which only the partition build reads;
 - Historic England's listed railings and walls (tools/listed.py), which only the partition build
-  reads;
+  reads, and its listed buildings' outlines with their grades (heritage, tools/listed.py), and what
+  OpenStreetMap's mappers say of buildings' age and build (osm-character, tools/osm.py), which
+  tools/character reads;
 - the 2021 Census's accommodation types for each output area (tools/census.py) and the
   conservation areas (tools/conservation.py), which buildings.priors reads;
 - the energy certificates without addresses: for each address point, its latest certificate's
-  property type and the wall material it names (domestic), or the words of the premises' name as
+  property type and the wall material it names, and its age band, built form and floor where the
+  download has them (domestic), or the words of the premises' name as
   hashes (non-domestic, see shops.py), and its OS Open UPRN position;
 - the Mapzen terrain tiles the builds read (zoom 15 for the squares, the canal and the railway,
   zoom 14 for the wide file), packed smaller;
@@ -49,15 +52,17 @@ import numpy as np
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 # OpenStreetMap (businesses; streets' widths; bridges' kinds; the railway's kinds and level crossings), the food hygiene ratings, the Land Registry
-# parcels, the listed railings and walls, the census's output areas, the conservation areas and the
+# parcels, the listed railings and walls and listed buildings, the buildings' age and build, the census's output areas, the conservation areas and the
 # surveyed roofs' heights (tools/cct.py) and the footprints the buildings layer lacks (tools/footprints.py), kept whole
-OTHER = ["osm", "osm-roads", "osm-bridges", "osm-detail", "osm-rail", "fsa", "parcels", "listed", "census", "conservation", "heights", "footprints"]
+OTHER = ["osm", "osm-roads", "osm-bridges", "osm-detail", "osm-rail", "fsa", "parcels", "listed", "census", "conservation", "heights", "footprints",
+         "heritage", "osm-character"]
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",
         "speed_limits", "road_surface", "prohibited_transitions", "destinations", "width_rules",
         "subclass_rules", "level_rules", "cartography"}
-TERRAIN = {15: "terrain15", 14: "terrain"}     # zoom -> the folder in the raw dir the builds keep them in
+TERRAIN = {15: "terrain15", 14: "terrain"}
+CHARACTER_COLUMNS = ("construction_age_band", "built_form", "floor_level")     # zoom -> the folder in the raw dir the builds keep them in
 
 
 def data_dir(map_id):
@@ -454,12 +459,15 @@ def pack_epc(raw, out):
     if os.path.exists(certs):
         # (epc.py keeps the first of two on the same day)
         homes = latest(certs, lambda old, r: old["lodgement_date"] < r["lodgement_date"])
+        # what tools/character reads, kept when the download has it (a copy packed before had not)
+        extra = [c for c in CHARACTER_COLUMNS if homes and c in next(iter(homes.values()))]
         lines = []
         for u, r in homes.items():
             desc = r["walls_description"].lower()
-            lines.append([u, r["lodgement_date"], next((k for k, _ in WALLS if k in desc), ""), r["property_type"]])
+            lines.append([u, r["lodgement_date"], next((k for k, _ in WALLS if k in desc), ""), r["property_type"]]
+                         + [r[c] for c in extra])
         used |= set(homes)
-        write("certificates", ["uprn", "lodgement_date", "walls_description", "property_type"], lines)
+        write("certificates", ["uprn", "lodgement_date", "walls_description", "property_type", *extra], lines)
         print(f"epc: {len(homes)} homes")
     # a copy unpacked from the repository has its words hashed already, and no addresses
     words = lambda r: r["words"] if "words" in r else " ".join(sorted(hashed_words(r["address"].split(",")[0])))

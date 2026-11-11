@@ -3,7 +3,7 @@ sources, into the raw dir the builds read: the start of rebuilding the repositor
 map data from scratch (tools/mapdata.py). For an ordinary rebuild none of this is needed:
 tools/mapdata.py unpack gives the same data from the repository.
 
-Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,city,footprints]
+Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy,osm,fsa,census,conservation,heritage,city,footprints]
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
@@ -20,6 +20,9 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
 - census, conservation (England and Wales, and England): the 2021 Census's accommodation types for
   each output area, and the conservation areas (tools/census.py, tools/conservation.py), which say
   what the houses are where the map data doesn't (buildings.priors). Both are open APIs;
+- heritage (England): Historic England's listed buildings, as outlines with their grades
+  (tools/listed.py ... buildings), which tools/character reads. Also an open API. OpenStreetMap's
+  own word on buildings' age and build (osm-character) comes with osm;
 - city (a map inside the City of Cape Town): the City's 2 m contours, measured roof heights and
   tree crowns (tools/cct.py), turned into the heights layer and the crowns beside the canopy map.
   The contours' ground goes into the terrain tiles once a build has fetched them (cct.py ground);
@@ -204,12 +207,17 @@ def main():
     if want("osm") and not os.path.exists(os.path.join(raw, "osm-rail.geojson")):
         # the railway's kinds (a miniature railway is left out) and its level crossings (tools/railway.py, prep_map.py)
         run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-rail.geojson"), "wide", "rail")
+    if want("osm") and not os.path.exists(os.path.join(raw, "osm-character.geojson")):
+        # buildings' materials, styles, dates, basements and terraces (tools/character)
+        run(os.path.join(TOOLS, "osm.py"), map_id, None, os.path.join(raw, "osm-character.geojson"), "wide", "character")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, None, os.path.join(raw, "fsa.geojson"), "wide")
     # the census's output areas cover England and Wales, the conservation areas England
     for name, regions in (("census", ("GB-ENG", "GB-WLS")), ("conservation", ("GB-ENG",))):
         if want(name) and region in regions and not os.path.exists(os.path.join(raw, f"{name}.geojson")):
             run(os.path.join(TOOLS, f"{name}.py"), map_id, None, os.path.join(raw, f"{name}.geojson"), "wide")
+    if want("heritage") and region == "GB-ENG" and not os.path.exists(os.path.join(raw, "heritage.geojson")):
+        run(os.path.join(TOOLS, "listed.py"), map_id, None, os.path.join(raw, "heritage.geojson"), "wide", "buildings")
     import cct
     if want("city") and cct.covers(A):
         cct.fetch(A, raw)

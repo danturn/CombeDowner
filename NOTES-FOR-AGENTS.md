@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Local character and its rules table (branch `claude/character`):** each building's form, age,
+  basement, listing and conservation area measured from open data (`tools/character/`), new kept
+  layers `heritage` and `osm-character` (`tools/listed.py`, `tools/osm.py`, `tools/mapdata.py`,
+  `tools/fetch.py`), and `character.decide(...)` over `tools/character/rules.json`. Not wired into the
+  build yet: the area-railings rule waits for the ground stage beside steps to call it.
+
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
