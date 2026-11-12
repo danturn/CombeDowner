@@ -683,6 +683,64 @@ def verge_out_of_town(rd, houses):
         r["pv"] = [0.0, 0.0]
 
 
+DUAL_STEP = 2.0     # metres between the points a pavement is tried at against the carriageway beside it
+DUAL_KERB = 1.0     # metres: a pavement narrower than this between two carriageways is none
+
+
+def dual_kerbs(rd):
+    """A pavement facing another carriageway close beside it (the other half of a dual carriageway,
+    the two one-way roads either side of a tram line, two arms of a fork) is only the strip between
+    them, shared half each, or none where that leaves less than `DUAL_KERB`: a full pavement either
+    side ran each over the other's road. Tried every `DUAL_STEP` along each side against kerbed
+    streets running the same way, and written as its `pw` (the pavements' widths along it), so a
+    fork's pavements narrow only where its arms are close."""
+    kerbed = [r for r in rd if r["c"] in KERBED and len(r["p"]) > 1]
+    if len(kerbed) < 2:
+        return
+    lines = [LineString([q[:2] for q in r["p"]]) for r in kerbed]
+    tree = STRtree(lines)
+    for k, (r, line) in enumerate(zip(kerbed, lines)):
+        half = way_width(r) / 2
+        widest = max(r.get("pv") or (PAVE_DRAWN, PAVE_DRAWN))
+        near = [int(j) for j in tree.query(line.buffer(half + widest + 6.0)) if int(j) != k]
+        if not near or line.length < DUAL_STEP:
+            continue
+        at_s = list(np.arange(0.0, line.length, DUAL_STEP)) + [line.length]
+        rows, narrowed = [], False
+        for t in at_s:
+            pv = pv_at(r, t)
+            p0, p1 = line.interpolate(max(t - 0.5, 0)), line.interpolate(min(t + 0.5, line.length))
+            dx, dy = p1.x - p0.x, p1.y - p0.y
+            m = math.hypot(dx, dy) or 1.0
+            dx, dy = dx / m, dy / m
+            at = line.interpolate(t)
+            for i, side in ((0, 1), (1, -1)):
+                far = half + pv[i] + 0.5
+                ray = LineString([(at.x, at.y), (at.x - dy * side * far, at.y + dx * side * far)])
+                for j in near:
+                    o, ol = kerbed[j], lines[j]
+                    if not ray.intersects(ol.buffer(way_width(o) / 2)):
+                        continue
+                    s_ = ol.project(at)
+                    foot = ol.interpolate(s_)
+                    fx, fy = foot.x - at.x, foot.y - at.y
+                    # (straight across, not the same street running on past a joint or a junction)
+                    if math.hypot(fx, fy) < half or abs(fx * dx + fy * dy) > 0.5 * math.hypot(fx, fy):
+                        continue
+                    q0, q1 = ol.interpolate(max(s_ - 0.5, 0)), ol.interpolate(min(s_ + 0.5, ol.length))
+                    ex, ey = q1.x - q0.x, q1.y - q0.y
+                    if abs(ex * dx + ey * dy) < 0.94 * (math.hypot(ex, ey) or 1.0):
+                        continue
+                    gap = at.distance(ray.intersection(ol.buffer(way_width(o) / 2))) - half
+                    if gap < pv[i] and pv[i] > 0:
+                        share = max(gap, 0.0) / 2
+                        pv[i] = round(share, 2) if share >= DUAL_KERB else 0.0
+                        narrowed = True
+            rows.append([round(float(t), 2), round(pv[0], 2), round(pv[1], 2)])
+        if narrowed:
+            r["pw"] = rows
+
+
 def _reaches_side(r, sq, tol=0.1):
     """Does record `r` end on a side of the square `sq` (x0, y0, x1, y1)?"""
     x0, y0, x1, y1 = sq
@@ -3380,6 +3438,10 @@ PEDESTRIAN_FRONTAGE = 9.0  # metres from a pedestrian street's line: ground whol
 PEDESTRIAN_HALF = 6.0      # metres either side of its line that a pedestrian street is paved across open ground
 WALLED_FRONT = 0.3         # share of a frontage's edge with a wall, fence or hedge along it that makes it a yard
 SHOPFRONT_REACH = 12.0     # metres from a shopping street's line that the building fronts facing it may stand
+SHOPFRONT_PAST = 7.0       # metres past a wide street's pavements that its building fronts may stand
+FRONT_GAP = 0.8            # metres past a street's pavements that the ground fronting it may start (its record and the faces differ that much)
+WIDE_STREET = 5.0          # metres from a street's line to its pavements' edge that make it wide: two lanes and full pavements
+ALONG_PATH = 4.0           # metres past a street's pavement that a path mapped along it (its pavement, mapped on its own) may lie
 
 
 PEDESTRIAN_EDGE = 1.5      # metres past a pedestrian street's paving that its edge may lie, as the partition fits it
@@ -3408,12 +3470,23 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
     faces (`_before_houses`): with nothing standing along its front, the ground before the house is
     the street's. A face walled, fenced or hedged off from the street is
     left whole, and so is one reaching back whose front the lidar (`standing`) sees something stand
-    along: a hedge or wall nobody mapped round a real front garden."""
+    along: a hedge or wall nobody mapped round a real front garden.
+
+    A wide street reaches further: its frontage, and the fronts it is paved to, are measured from
+    its pavements' edge as well as its line (Princes Street's shops stand 11 m from the line of one
+    carriageway). Along a street that wide, a path mapped beside it on its own (its pavement, drawn
+    apart) is the street's edge too, so the ground between it and the shops is paved."""
     if not peds:
         return Polygon()
-    reach = unary_union([l.buffer(PEDESTRIAN_FRONTAGE) for l, _ in peds])
+    reach = unary_union([l.buffer(max(PEDESTRIAN_FRONTAGE, half + PEDESTRIAN_FRONTAGE - PEDESTRIAN_HALF)) for l, half in peds])
     band = unary_union([l.buffer(max(half, PEDESTRIAN_HALF), cap_style="flat") for l, half in peds])
-    edge = unary_union([l.buffer(half + 0.5) for l, half in peds])
+    edge = unary_union([l.buffer(half + FRONT_GAP) for l, half in peds])
+    wide = [(l, half) for l, half in peds if half >= WIDE_STREET]
+    along = unary_union([l.buffer(half + ALONG_PATH) for l, half in wide] or [Polygon()])
+    beside = [g for g in (face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "path" and len(f["xy"]) > 2)
+              if g.intersects(edge) and g.intersects(along)] if wide else []
+    if beside:
+        edge = edge.union(unary_union(beside).intersection(along).buffer(0.5))
     shapely.prepare(reach)
     walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
     wall_tree = STRtree(walls) if walls else None
@@ -3441,15 +3514,16 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
                 houses = [g_ for g_ in (face_shape(h).buffer(0) for h in part["faces"]
                                         if h["cls"] == "building" and len(h["xy"]) > 2) if not g_.is_empty]
                 house_tree = STRtree(houses) if houses else None
-            laid = g.intersection(band.union(_before_houses(g, [l for l, _ in peds], houses, house_tree)))
+            laid = g.intersection(band.union(_before_houses(g, peds, houses, house_tree)))
             out += [q for q in getattr(laid, "geoms", [laid]) if q.geom_type == "Polygon" and q.intersects(near_edge)]
     return unary_union(out) if out else Polygon()
 
 
-def _before_houses(g, lines, houses, tree):
+def _before_houses(g, peds, houses, tree):
     """The ground of face `g` between the street and the walls of the buildings it fronts, where they
-    stand within SHOPFRONT_REACH of the street's line: a shopping street wider than PEDESTRIAN_HALF is
-    paved to its shop fronts, not to a line short of them."""
+    stand within SHOPFRONT_REACH of the street's line, or SHOPFRONT_PAST of its pavements' edge on a
+    wide street: a shopping street wider than PEDESTRIAN_HALF is paved to its shop fronts, not to a
+    line short of them. peds: [(line, half its width with its pavements)]."""
     if tree is None:
         return Polygon()
     rim = g.boundary
@@ -3462,12 +3536,12 @@ def _before_houses(g, lines, houses, tree):
                 continue
             for a, b in zip(piece.coords, piece.coords[1:]):
                 mid = Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-                l = min(lines, key=lambda l: l.distance(mid))
-                if max(l.distance(Point(a)), l.distance(Point(b))) > SHOPFRONT_REACH:
+                l, half = min(peds, key=lambda q: q[0].distance(mid))
+                if max(l.distance(Point(a)), l.distance(Point(b))) > max(SHOPFRONT_REACH, half + SHOPFRONT_PAST):
                     continue
                 pa, pb = l.interpolate(l.project(Point(a))), l.interpolate(l.project(Point(b)))
                 if inner is None:
-                    inner = unary_union([houses[int(j)].buffer(-0.3) for j in tree.query(g.buffer(SHOPFRONT_REACH))] or [Polygon()])
+                    inner = unary_union([houses[int(j)].buffer(-0.3) for j in tree.query(g.buffer(max(SHOPFRONT_REACH, half + SHOPFRONT_PAST)))] or [Polygon()])
                 # (a back wall seen through its own building fronts a yard, not the street)
                 if LineString([mid, l.interpolate(l.project(mid))]).intersects(inner):
                     continue
@@ -4906,7 +4980,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     pave = pave.difference(plaza)
     # (a tree or shrub in paving laid over open ground, among tables or out to the buildings, stands in its own bed)
     plant_beds = functools.lru_cache(None)(lambda: unary_union([Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants] or [Polygon()]))
-    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
+    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] in SHARED_STREETS], br,
                                    standing)
     here = [g.intersection(square) for g in seating if g.intersects(square)]
     # (tables on a slope stand on a lawn or a terrace the map doesn't have: only level ones are paved)
@@ -8915,6 +8989,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = widen_to_paving(rd, filled[0][0] if filled else None, paving, br, houses)
     # (where a building stands nearer the kerb than that, the pavement narrows to it there)
     pavement_room(rd, houses_near, way_width, KERBED)
+    dual_kerbs(rd)
     tile["rd"] = rd
     br, _ = ends_off_pavements(br, rd)
     points = mapped_points(sq)

@@ -25,7 +25,10 @@ the game locally, without the sound" in `CLAUDE.md`.
   only buses may use, or a pedestrian street open to traffic at some hours, is built as a road with
   pavements and shut hours (`streets.street_access`, read by `prep_map.py` and the partition's graph,
   `once.opened_pedestrian`); traffic lights' poles stand on the pavement, and lights mapped on a
-  junction go on each approach (`write_tile.crossings`). Trial on Bath 0,3 3,3 and Edinburgh 1,1.
+  junction go on each approach (`write_tile.crossings`). One open to cars at all hours is a living
+  street; a pavement facing another carriageway close beside it narrows (`write_tile.dual_kerbs`,
+  as `pw`); shop-front paving reaches further on wide streets and past a pavement mapped on its own
+  (`pedestrian_frontage`). Trial on Bath 0,3 3,3 and Edinburgh 1,0 1,1.
 
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass

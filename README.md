@@ -106,7 +106,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   buses drive along and the rest of the traffic keeps out of; a street shut to traffic only in the
   daytime (Milsom Street, New Bond Street), or a pedestrian street open to traffic in the evening
   (Edinburgh's Lawnmarket), is a road with its kerbs, empty of traffic in the hours it's shut on
-  the game's clock; a pub's or café's tables outside
+  the game's clock; a lane open to cars at all hours but mapped for walkers (Foundry Lane,
+  Edinburgh's Castlehill and Victoria Street) is a shared street, paved wall to wall, that cars
+  creep along; the pavements of a dual carriageway (Princes Street either side of its tram line)
+  don't run over each other's road; a pub's or café's tables outside
   stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or

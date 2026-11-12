@@ -55,8 +55,9 @@ def street_access(props, cls, main=False, trams=False):
     closed at certain hours is a road shut for those hours. A street mapped as pedestrian that lets
     motor vehicles along it at certain hours (a cobbled street open in the evening), or buses (a
     bridge for buses), has a carriageway too: a road, shut whenever traffic isn't let in. One open to
-    traffic at all hours is a shared surface, paved wall to wall as a pedestrian street is, and a
-    delivery-only allowance doesn't open one either. A weight or height limit is no closure, and a
+    traffic at all hours, if only to those going there or living on it, is a road with a shared
+    surface (a living street: paved wall to wall, flush, and driven along slowly). A delivery-only
+    allowance doesn't open one. A weight or height limit is no closure, and a
     main road (`main`) stays a road whatever's marked on it, as a bus gate leaves it."""
     rules = props.get("access_restrictions") or []
     mapped = any(_lets(r, {"bus"}) for r in rules)
@@ -76,6 +77,8 @@ def street_access(props, cls, main=False, trams=False):
         shut = [h for h in shut if h]
         if shut or mapped:
             return "unclassified", shut[0] if shut else ALL_DAY, buses
+        if any(_lets(r, MOTOR) and not (r.get("when") or {}).get("during") for r in rules):
+            return "living_street", None, buses
         return cls, None, buses
     return cls, shut[0] if shut else None, buses
 

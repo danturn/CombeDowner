@@ -333,21 +333,23 @@ OPENED_NEAR = 3.0       # metres: an OSM way this close to an Overture segment a
 
 def opened_pedestrian(roads, segments, log=print):
     """OpenStreetMap's `pedestrian` ways that Overture's access rules open to traffic or buses
-    (streets.street_access) are streets with a carriageway and pavements, as the old build makes of
-    the same segments: a way lying along such a segment for most of its length is taken as an
-    unclassified street. roads: [(LineString, tags)]."""
-    opened = [g for g, p in segments if p.get("subtype") == "road" and p.get("class") == "pedestrian"
-              and street_access(p, "pedestrian")[0] != "pedestrian"]
+    (streets.street_access) are streets, as the old build makes of the same segments: a way lying
+    along such a segment for most of its length takes the class street_access gives it (a road with
+    pavements, or a living street for one open at all hours). roads: [(LineString, tags)]."""
+    opened = [(g, street_access(p, "pedestrian")[0]) for g, p in segments
+              if p.get("subtype") == "road" and p.get("class") == "pedestrian"]
+    opened = [(g, c) for g, c in opened if c != "pedestrian"]
     if not opened:
         return roads
-    near = [g.buffer(OPENED_NEAR) for g in opened]
+    near = [g.buffer(OPENED_NEAR) for g, _ in opened]
     tree = STRtree(near)
     out, n = [], 0
     for line, tags in roads:
         if tags.get("highway") == "pedestrian":
-            hits = [near[int(k)] for k in tree.query(line)]
-            if hits and line.intersection(unary_union(hits)).length >= 0.7 * line.length:
-                tags, n = dict(tags, highway="unclassified"), n + 1
+            hits = [int(k) for k in tree.query(line)]
+            if hits and line.intersection(unary_union([near[k] for k in hits])).length >= 0.7 * line.length:
+                along = max(hits, key=lambda k: line.intersection(near[k]).length)
+                tags, n = dict(tags, highway=opened[along][1]), n + 1
         out.append((line, tags))
     log(f"  {n} pedestrian ways open to traffic or buses taken as streets")
     return out
