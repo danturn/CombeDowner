@@ -93,6 +93,11 @@ class Standing:
         out.dist = distance_transform_edt(~f)
         return out
 
+    @property
+    def surveyed(self):
+        """Whether the map has the survey to say what stands where."""
+        return self.dist is not None
+
     def near(self, p, reach):
         """Whether something stands within `reach` metres of point `p`; True where the lidar has
         nothing to say."""

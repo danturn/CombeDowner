@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import shapely
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import LineString, MultiPoint, Point, Polygon, box
 from shapely.geometry.polygon import orient
 from shapely.ops import nearest_points, substring, unary_union
 from shapely.strtree import STRtree
@@ -3458,7 +3458,7 @@ def pedestrian_ground(rd):
     return g
 
 
-def pedestrian_frontage(part, peds, br=(), standing=None):
+def pedestrian_frontage(part, peds, br=(), standing=None, shops=()):
     """Open ground and plots between a pedestrian street and its buildings, with nothing standing
     between them and the street: the street's own paving, laid to the building line as a shopping
     street is. The partition fits the street's corridor narrower than the gap between its buildings
@@ -3507,7 +3507,8 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
         if g.intersection(reach).area >= 0.95 * g.area:
             out.append(g)
         else:
-            if standing is not None and f["cls"] == "plot" and _seen_along(front, standing) > WALLED_FRONT:
+            if standing is not None and f["cls"] == "plot" and _seen_along(front, standing) > WALLED_FRONT \
+                    and not (not standing.surveyed and _before_shop(g, part, shops)):
                 continue
             near_edge = edge.buffer(0.1)
             if houses is None:
@@ -3549,6 +3550,24 @@ def _before_houses(g, peds, houses, tree):
                 if not quad.is_empty:
                     out.append(quad)
     return unary_union(out) if out else Polygon()
+
+
+SHOP_SIGN_ON = 1.5    # metres from a building's wall that a shop sign hanging on it stands
+
+
+def _before_shop(g, part, shops):
+    """Whether plot `g` lies against a building with a shop sign on it: ground before a shop, not a
+    house's front garden. Only asked where the map has no survey to say what stands there."""
+    if not shops:
+        return False
+    signs = MultiPoint(shops)
+    for f in part["faces"]:
+        if f["cls"] != "building" or len(f["xy"]) < 3:
+            continue
+        h = face_shape(f).buffer(0)
+        if h.distance(g) < 0.5 and h.distance(signs) < SHOP_SIGN_ON:
+            return True
+    return False
 
 
 def _seen_along(line, standing, step=0.5):
@@ -4749,7 +4768,7 @@ def _level(area, ground, step=1.0):
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
                     standing=None, filled=None, tunnels=(), rail=None, past=(), far=None, centre=None, walls_past=(),
-                    seating=(), plants=(), railings=None):
+                    seating=(), plants=(), railings=None, shops=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -4981,7 +5000,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (a tree or shrub in paving laid over open ground, among tables or out to the buildings, stands in its own bed)
     plant_beds = functools.lru_cache(None)(lambda: unary_union([Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants] or [Polygon()]))
     frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] in SHARED_STREETS], br,
-                                   standing)
+                                   standing, shops)
     here = [g.intersection(square) for g in seating if g.intersects(square)]
     # (tables on a slope stand on a lawn or a terrace the map doesn't have: only level ones are paved)
     here = [g for g in here if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0.5 and _level(g, ground)]
@@ -5000,7 +5019,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
     # (a road shut to traffic by day is a shopping street too: its pavements run to the shop fronts)
-    shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing)
+    shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing, shops)
     if not shut.is_empty:
         shut = shut.intersection(square).difference(unary_union([road, plaza, path_faces, plant_beds()]))
         if T is not None:
@@ -8985,7 +9004,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                                json.load(open(rail)) if os.path.exists(rail) else None, past, far, tile.get("centre"),
                                                [b for t in tiles for b in t.get("br") or []],
                                                evidence.seating,
-                                               [q[:2] for k in ("tr", "sb") for q in tile.get(k) or []], railings),
+                                               [q[:2] for k in ("tr", "sb") for q in tile.get(k) or []], railings,
+                                               [(float(q[0]), float(q[1])) for q in tile.get("sh") or []]),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
