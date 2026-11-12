@@ -134,19 +134,25 @@ def open_runs(p):
 # The tunnel mouths' faces, as web/src/railway.ts headwalls() groups them (the same numbers): mouths
 # facing the same way side by side open in one face, at the outermost of them.
 PORTAL_TURN, PORTAL_DEPTH, PORTAL_SIDE, PORTAL_STAGGER, PORTAL_R = 0.35, 2.5, 16, 9, 3.6
-PORTAL_LEAST, PORTAL_CROWN, BORE_LIT = 5, 7, 11
+PORTAL_LEAST, PORTAL_CROWN, PORTAL_TOP, PORTAL_WING, BORE_LIT = 5, 7, 9, 6.4, 11
+# Where the line runs up to a face in a cutting, the cutting's sides are walled and the ground beside
+# them held level at the cutting's top (prep_map.py lays it, partition/sheet.py builds the walls).
+CUT_REACH = 60.0    # metres out from a face that a cutting up to it is walled
+CUT_BAND = 10.0     # metres out from the line's bed that the cutting's top is looked for
+CUT_DEEP = 3.0      # metres the cutting's top stands over the rails for it to be walled
+BED_HALF = 2.3      # metres either side of a track that its bed reaches (partition/write_tile.py RAIL_BED)
+CUT_JOIN = 5.0      # metres: ground narrower than twice this between two tracks' beds is the cutting's floor
+WING_FALL = 2.0     # the ground beside a face falls from its top along the cutting, 1 in this
+LID_DEEP = 10.0     # metres back from a face that the hill over its bores is held level with its top
+LID_HILL = 2.5      # metres over the face's top the hill there may stand and still be laid level
 
 
 def portal_faces(portals):
     """Each face: the middle of its foot (x, y), the way in (ux, uy), the rails' height, its reach
-    across (the bores' outer edges) and the height of the bores' crown over the rails."""
-    groups = []
-    for m in portals:
-        for g in groups:
-            if any(_with(m, o) for o in g): g.append(m); break
-        else: groups.append([m])
+    across (the bores' outer edges), the height of the bores' crown over the rails and of the face's
+    top (the lid over the bores behind it)."""
     out = []
-    for g in groups:
+    for g in portal_groups(portals):
         ang = math.atan2(sum(math.sin(m[3]) for m in g), sum(math.cos(m[3]) for m in g))
         ux, uy = math.cos(ang), math.sin(ang)
         cx, cy = sum(m[0] for m in g) / len(g), sum(m[1] for m in g) / len(g)
@@ -155,10 +161,32 @@ def portal_faces(portals):
         base = min(m[2] for m in g)
         grounds = [m[4] for m in g if len(m) > 4]
         cover = sum(grounds) / len(grounds) - base if grounds else None
-        crown = min(PORTAL_CROWN, cover - 0.6) if cover is not None and cover >= PORTAL_LEAST + 0.6 else PORTAL_CROWN
+        fits = cover is not None and cover >= PORTAL_LEAST + 0.6
+        crown = min(PORTAL_CROWN, cover - 0.6) if fits else PORTAL_CROWN
+        top = min(PORTAL_TOP, max(crown + 0.8, cover)) if fits else PORTAL_TOP
         out.append(dict(x=cx + ux * min(along), y=cy + uy * min(along), ux=ux, uy=uy, z=base,
-                        v0=min(across) - PORTAL_R, v1=max(across) + PORTAL_R, crown=crown))
+                        v0=min(across) - PORTAL_R, v1=max(across) + PORTAL_R, crown=crown, top=top))
     return out
+
+
+def portal_groups(portals):
+    """The mouths that open in one face: any two that _with joins, and so on through them, whatever
+    order the data lists them in."""
+    up = list(range(len(portals)))
+
+    def root(i):
+        while up[i] != i:
+            up[i] = up[up[i]]
+            i = up[i]
+        return i
+    for i in range(len(portals)):
+        for j in range(i):
+            if _with(portals[i], portals[j]):
+                up[root(i)] = root(j)
+    groups = {}
+    for i in range(len(portals)):
+        groups.setdefault(root(i), []).append(portals[i])
+    return list(groups.values())
 
 
 def _with(m, o):

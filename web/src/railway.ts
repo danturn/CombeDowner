@@ -73,12 +73,14 @@ const BANK_REACH = 2.3 + BANK_DEPTH * BANK_SLOPE;
 const WALL_SKIRT = 3;                       // metres a solid bridge stretch's sides go below its recorded ground
 // A tunnel mouth's face: its arches' crown over the rails (no lower than a train needs), how high
 // it stands where the hill is deep, how far it runs on past its outer
-// arches into the cutting's sides, and the mouths that open in one face: two tracks side by side,
-// facing the same way, under one arch if theirs would meet, else each under its own.
+// arches into the cutting's sides, and the mouths that open in one face: tracks side by side,
+// facing the same way, two to an arch where theirs would meet, else each under its own.
 const PORTAL_CROWN = 7, PORTAL_LEAST = 5, PORTAL_TOP = 9, PORTAL_WING = 6.4, PORTAL_R = 3.6;
 const PORTAL_TURN = 0.35, PORTAL_DEPTH = 2.5, PORTAL_SIDE = 16, PORTAL_STAGGER = 9;
 const PORTAL_CLEAR = 2.2;    // metres a face's wing stops short of another track's middle
 const PORTAL_PAIR = 2.9;     // metres a bore over two tracks reaches past each one's middle: their ballast and a narrow cess
+const PORTAL_PIER = 1.0;     // metres of stone left between two arches side by side
+const PARAPET = 1.0, PARAPET_THICK = 0.45;   // a face's parapet, standing over the lid behind it
 // A platform up on a viaduct (more than ARCADE_LEAST over the ground) stands on arches along its
 // outer sides: one every ARCADE_BAY metres, its piers ARCADE_PIER wide, the dark under it ARCADE_DEEP in.
 export const ARCADE_LEAST = 4.5, ARCADE_BAY = 8, ARCADE_PIER = 1.6, ARCADE_DEEP = 1.0;
@@ -772,6 +774,12 @@ export class Railway {
         for (const u of [0, D]) stone(P(u, v, lo(v)), P(u, w, lo(w)), P(u, w, top), P(u, v, top), STONE);
         stone(P(0, v, top), P(0, w, top), P(D, w, top), P(D, v, top), CAP);
       }
+      // the parapet along its top, flush with its face, the lid's ground behind it
+      const T = PARAPET_THICK, H = top + PARAPET;
+      stone(P(0, v0, top), P(0, v1, top), P(0, v1, H), P(0, v0, H), STONE);
+      stone(P(T, v1, top), P(T, v0, top), P(T, v0, H), P(T, v1, H), STONE);
+      stone(P(0, v0, H), P(0, v1, H), P(T, v1, H), P(T, v0, H), CAP);
+      for (const [v, o] of [[v0, -1], [v1, 1]]) stone(P(o < 0 ? T : 0, v, top), P(o < 0 ? 0 : T, v, top), P(o < 0 ? 0 : T, v, H), P(o < 0 ? T : 0, v, H), STONE);
       const light = (u: number) => Math.max(0, 1 - Math.min(1, (u / deep) ** 0.7));
       const shade = (u: number, c: number[]) => lerp3(DARK, c, light(u));
       for (const a of arches) {
@@ -1521,34 +1529,62 @@ export function railMouths(d: RailData): { x: number; y: number; ux: number; uy:
 }
 
 function headwalls(portals: number[][]) {
-  const groups: number[][][] = [];
-  for (const m of portals) {
-    const g = groups.find((g) => g.some((o) => {
-      const turn = Math.abs(Math.atan2(Math.sin(m[3] - o[3]), Math.cos(m[3] - o[3])));
-      const dx = m[0] - o[0], dy = m[1] - o[1], ux = Math.cos(o[3]), uy = Math.sin(o[3]);
-      const along = Math.abs(dx * ux + dy * uy), side = Math.abs(dy * ux - dx * uy);
-      // (mouths too near side by side for a bore each go in one face however far apart the data puts them along)
-      return turn < PORTAL_TURN && side < PORTAL_SIDE && (along < PORTAL_DEPTH || (side < 2 * PORTAL_R + 1 && along < PORTAL_STAGGER));
-    }));
-    if (g) g.push(m); else groups.push([m]);
-  }
+  const groups = portalGroups(portals);
   return groups.map((g) => {
     const ang = Math.atan2(g.reduce((a, m) => a + Math.sin(m[3]), 0), g.reduce((a, m) => a + Math.cos(m[3]), 0));
     const ux = Math.cos(ang), uy = Math.sin(ang);
     const cx = g.reduce((a, m) => a + m[0], 0) / g.length, cy = g.reduce((a, m) => a + m[1], 0) / g.length;
-    const along = g.map((m) => (m[0] - cx) * ux + (m[1] - cy) * uy), across = g.map((m) => (m[1] - cy) * ux - (m[0] - cx) * uy).sort((a, b) => a - b);
-    const out = Math.min(...along), base = Math.min(...g.map((m) => m[2]));
-    const bores: number[][] = [];
-    let a = across[0], b = across[0];
-    const bore = (a: number, b: number) => [(a + b) / 2, (b - a) / 2 + (b > a ? PORTAL_PAIR : PORTAL_R)];
-    for (const v of across.slice(1)) {
-      if (v - b < 2 * PORTAL_R + 1) { b = v; continue; }
-      bores.push(bore(a, b)); a = b = v;
+    const at = g.map((m) => ({ u: (m[0] - cx) * ux + (m[1] - cy) * uy, v: (m[1] - cy) * ux - (m[0] - cx) * uy })).sort((a, b) => a.v - b.v);
+    const out = Math.min(...at.map((m) => m.u)), base = Math.min(...g.map((m) => m[2]));
+    // two tracks side by side share an arch, but no arch takes more than two: four tracks are two
+    // double-track tunnels side by side
+    const runs: { a: number; b: number; n: number }[] = [];
+    let run = { a: at[0].v, b: at[0].v, n: 1 };
+    for (let k = 1; k < at.length; k++) {
+      if (at[k].v - run.b < 2 * PORTAL_R + 1 && run.n < 2) { run.b = at[k].v; run.n++; continue; }
+      runs.push(run); run = { a: at[k].v, b: at[k].v, n: 1 };
     }
-    bores.push(bore(a, b));
+    runs.push(run);
+    const edges = runs.map(({ a, b }) => [a - (b > a ? PORTAL_PAIR : PORTAL_R), b + (b > a ? PORTAL_PAIR : PORTAL_R)]);
+    // (arches that would meet have a pier left between them, halfway between their tracks)
+    for (let k = 0; k + 1 < edges.length; k++) {
+      if (edges[k + 1][0] - edges[k][1] >= PORTAL_PIER) continue;
+      const mid = (runs[k].b + runs[k + 1].a) / 2;
+      edges[k][1] = Math.min(edges[k][1], mid - PORTAL_PIER / 2);
+      edges[k + 1][0] = Math.max(edges[k + 1][0], mid + PORTAL_PIER / 2);
+    }
+    const bores = edges.map(([l, r]) => [(l + r) / 2, (r - l) / 2]);
     const grounds = g.filter((m) => m[4] !== undefined).map((m) => m[4]);
     const cover = grounds.length ? grounds.reduce((s, h) => s + h, 0) / grounds.length - base : undefined;
-    return { x: cx + ux * out, y: cy + uy * out, ux, uy, base, bores, cover, depth: Math.max(...along) - out };
+    return { x: cx + ux * out, y: cy + uy * out, ux, uy, base, bores, cover, depth: Math.max(...at.map((m) => m.u)) - out };
+  });
+}
+
+/** The mouths that open in one face: any two near enough side by side, facing the same way, and so
+ *  on through them, whatever order the data lists them in (tools/railway.py portal_groups). */
+function portalGroups(portals: number[][]): number[][][] {
+  const up = portals.map((_, i) => i);
+  const root = (i: number): number => { while (up[i] !== i) { up[i] = up[up[i]]; i = up[i]; } return i; };
+  const joins = (m: number[], o: number[]) => {
+    const turn = Math.abs(Math.atan2(Math.sin(m[3] - o[3]), Math.cos(m[3] - o[3])));
+    const dx = m[0] - o[0], dy = m[1] - o[1], ux = Math.cos(o[3]), uy = Math.sin(o[3]);
+    const along = Math.abs(dx * ux + dy * uy), side = Math.abs(dy * ux - dx * uy);
+    // (mouths too near side by side for a bore each go in one face however far apart the data puts them along)
+    return turn < PORTAL_TURN && side < PORTAL_SIDE && (along < PORTAL_DEPTH || (side < 2 * PORTAL_R + 1 && along < PORTAL_STAGGER));
+  };
+  for (let i = 0; i < portals.length; i++) for (let j = 0; j < i; j++) if (joins(portals[i], portals[j])) up[root(i)] = root(j);
+  const groups = new Map<number, number[][]>();
+  portals.forEach((m, i) => { const r = root(i); if (!groups.has(r)) groups.set(r, []); groups.get(r)!.push(m); });
+  return [...groups.values()];
+}
+
+/** The parapet along the top of each tunnel face, for walking into (map.ts): [ax, ay, bx, by, its
+ *  foot, its top] in data coordinates, out to the face's wings. */
+export function railParapets(d: RailData): number[][] {
+  return headwalls(d.portals ?? []).map(({ x, y, ux, uy, base, bores, cover }) => {
+    const { top, arches } = boreShape(cover, 0, bores), nx = -uy, ny = ux;
+    const v0 = arches[0].c - arches[0].hw - PORTAL_WING, v1 = arches[arches.length - 1].c + arches[arches.length - 1].hw + PORTAL_WING;
+    return [x + nx * v0, y + ny * v0, x + nx * v1, y + ny * v1, base + top, base + top + PARAPET];
   });
 }
 

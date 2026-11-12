@@ -32,10 +32,20 @@ the game locally, without the sound" in `CLAUDE.md`.
   0.4 m under the drawn ground (`web/src/world.ts` `barrierRun`); check rule 9's "wall off its
   ground" allows that lift. Every square needs rebuilding.
 - **Ways held over tunnel mouths (branch `claude/edge-fixes`):** a mapped way that crosses a
-  railway or road tunnel's line within 15 m of its mouth is held on the tunnel's lid (its crown plus
-  0.6 m over the floor) and the ground laid to it, so it is never stepped down into the cutting
-  (`tools/partition/write_tile.py` `tunnel_lids`, `lid_over_tunnels`). Low arches are left alone.
-  Every square with a tunnel needs rebuilding.
+  railway or road tunnel's line within 15 m of its mouth is held on the tunnel's lid (a railway
+  face's top, a road bore's crown plus 0.6 m) and the ground laid to it, so it is never stepped
+  down into the cutting (`tools/partition/write_tile.py` `tunnel_lids`, `lid_over_tunnels`). Low
+  arches are left alone. Every square with a tunnel needs rebuilding.
+- **Railway tunnel faces as lids, walled cuttings (branch `claude/edge-fixes`):** mouths side by
+  side join into one face whatever order the data lists them (`railway.py` `portal_groups`,
+  `railway.ts` `portalGroups`), an arch for each pair of tracks with a pier between, and a parapet
+  along the top that you walk into (`map.ts`). `prep_map.py` holds the hill behind each face level
+  with its top (not under houses), and where the line runs up to a face in a cutting at least 3 m
+  deep, holds the ground beside it level at the cutting's top (not by houses, bridges or mapped
+  retaining walls); the sheet stands the cutting's wall at the bed's edge and builds the ground
+  behind it level (`partition/sheet.py` `rail_mouths_and_cuttings`), and the bed runs across the
+  arches in front of each face (`write_tile.py` `mouth_aprons`). Every square with a railway
+  tunnel needs rebuilding.
 
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass

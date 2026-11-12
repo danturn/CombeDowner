@@ -19,6 +19,7 @@ import { breakable, inGap, leafy } from "./gaps";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
 import { alignPortals, boreHeight, portalFaces } from "./tunnels";
+import { railParapets } from "./railway";
 import { straightSkeleton } from "./skeleton";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
@@ -669,6 +670,11 @@ export class GameMap {
     }
     // the portals' faces, either side of the openings
     for (const [ax, ay, bx, by, top] of portalFaces(d.tn ?? [], d.b)) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0);
+    // the railway's tunnel faces' parapets, along the lid over the bores (each square has the ones whose middle is in it)
+    for (const [ax, ay, bx, by, foot, top] of this.railData ? railParapets(this.railData) : []) {
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      if (mx >= d.b[0] && mx < d.b[2] && my >= d.b[1] && my < d.b[3]) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot - this.z0);
+    }
 
     yield;
     this.beginSlice();
