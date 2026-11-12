@@ -44,9 +44,11 @@ the game locally, without the sound" in `CLAUDE.md`.
   deep, holds the ground beside it level at the cutting's top (not by houses, bridges or mapped
   retaining walls); the sheet stands the cutting's wall at the bed's edge and builds the ground
   behind it level (`partition/sheet.py` `rail_mouths_and_cuttings`), and the bed runs across the
-  arches in front of each face (`write_tile.py` `mouth_aprons`). Every square with a railway
-  tunnel needs rebuilding.
-
+  arches in front of each face (`write_tile.py` `mouth_aprons`), and between tracks out along the
+  cutting (`cutting_floors`). A face's wings slope down to 1 m at their ends (`railway.ts` `wingTop`); the sheet
+  leaves the lid over the bores as laid; paths on the lid are held at its height and no wall, fence
+  or hedge stands on it (`lid_areas`); check rule 6 skips track points behind a face, in its bore.
+  Every square with a railway tunnel needs rebuilding. The terrain shader hides ground only under each arch's intrados (`world.ts`, crown passed negative), so the hill covers the bore behind the face.
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's

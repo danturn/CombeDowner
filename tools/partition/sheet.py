@@ -823,8 +823,16 @@ def ground_sheet(tile, canal=None, rail=None):
         high[k] = np.where(pin, ez, np.minimum(high[k], ez + d[k] / BATTER_CUT))
         low[k] = np.minimum(low[k], high[k])
         banked[k] = True
-    # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
-    # the faces in it)
+    # (behind a railway tunnel's face, over its bores, the lid is left as laid: cut down to the bed
+    # running on into a bore, it opened a hole in the lid behind the parapet)
+    if rail:
+        from railway import LID_DEEP, portal_faces
+        gx, gy = GX.ravel(), GY.ravel()
+        for fc in portal_faces(rail.get("portals") or []):
+            u = (gx - fc["x"]) * fc["ux"] + (gy - fc["y"]) * fc["uy"]
+            v = -(gx - fc["x"]) * fc["uy"] + (gy - fc["y"]) * fc["ux"]
+            lid = (u > 0.0) & (u < LID_DEEP) & (v > fc["v0"]) & (v < fc["v1"])
+            low[lid], high[lid] = -np.inf, np.inf
     odd, _ = overlaps(F, A, B, segs, GX, GY)
     for v, z in odd_corners(F, odd, H, T):
         high[v] = min(high[v], z)

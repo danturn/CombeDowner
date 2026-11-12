@@ -1122,10 +1122,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // and none inside the canal's tunnels, so you see through them from portal to portal
   const bores = canalBores(map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null), map.z0, T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy);
   mouth.a.push(...bores.a); mouth.b.push(...bores.b);
-  // and none inside a railway tunnel's lined mouth (the hill over it stays whole)
+  // and none inside a railway tunnel's lined mouth, under its arch only, so the hill's own ground
+  // runs on over the bore however low it lies over the crown (its crown given as less than nought)
   for (const m of railMouthsIn(S, T)) {
     mouth.a.push(new THREE.Vector4(m.x, -m.y, m.ux, -m.uy));
-    mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, m.crown + 0.6, m.hw, m.deep));
+    mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, -m.crown, m.hw, m.deep));
   }
   const ownTerr = !S.terrMat || mouth.a.length > 0 || !!works;
   const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
@@ -1167,7 +1168,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (int k = 0; k < ${N}; k++) {
         vec2 d = vTerr.xz - mouthA[k].xy;
         float along = dot(d, mouthA[k].zw), across = abs(d.x * mouthA[k].w - d.y * mouthA[k].z), up = vTerr.y - mouthB[k].x;
-        if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < mouthB[k].y) discard;
+        float roof = mouthB[k].y;
+        if (roof < 0.0) {
+          float spring = max(2.4, -roof - mouthB[k].z), f = min(across / mouthB[k].z, 1.0);
+          roof = 0.5 + spring + (-roof - spring) * sqrt(1.0 - f * f);
+        }
+        if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < roof) discard;
       }`);
   };
   // each square has its own number of tunnel mouths, so its own shader: without this three.js would

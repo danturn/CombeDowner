@@ -21,7 +21,7 @@ case by case:
     water's bed is below its surface.
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
     the data is checked for ones lying along a carriageway, which the game can't cut).
- 6. The railway: track on the ground sits on it; a road crossing the line is a bridge or an
+ 6. The railway: track on the ground sits on it (not behind a tunnel's face, in its bore); a road crossing the line is a bridge or an
     underpass, never at grade, except at a level crossing the data maps (the map's lx, which the
     game draws).
  7. The canal: every road or path crossing it (outside its tunnels) is a bridge with headroom for
@@ -67,7 +67,7 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_more   # rules 12 on (tools/check_more.py)
-from railway import open_runs
+from railway import LID_DEEP, open_runs, portal_faces
 from streets import pave_band
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
@@ -111,6 +111,11 @@ def main():
     canal_tree = shapely.STRtree([c[0] for c in canal_segs])
     rail_lines = [LineString([q[:2] for q in t["p"]]) for t in rail["tracks"] if len(t["p"]) > 1] if rail else []
     rail_pts = [t["p"] for t in rail["tracks"]] if rail else []
+    # (a track's points behind a tunnel's face are in its bore, whose lining hides the ground there)
+    in_bore = lambda q: any(0.0 < (q[0] - fc["x"]) * fc["ux"] + (q[1] - fc["y"]) * fc["uy"] < LID_DEEP
+                            and fc["v0"] <= -(q[0] - fc["x"]) * fc["uy"] + (q[1] - fc["y"]) * fc["ux"] <= fc["v1"]
+                            for fc in rail_faces)
+    rail_faces = portal_faces(rail.get("portals") or []) if rail else []
     rail_tree = shapely.STRtree(rail_lines)
     totals = collections.Counter()
     worst = collections.defaultdict(list)
@@ -309,7 +314,7 @@ def main():
         drawn = check_more.terrain(T)     # (the ground as the game draws it, which the track lies on)
         for pts in rail_pts:
             for q in pts:
-                if q[3] == 0 and b[0] <= q[0] <= b[2] and b[1] <= q[1] <= b[3]:
+                if q[3] == 0 and b[0] <= q[0] <= b[2] and b[1] <= q[1] <= b[3] and not in_bore(q):
                     dz = q[2] - float(drawn(q[0], q[1]))
                     if abs(dz) > 0.6: note("6 track off its ground", abs(dz), (tag, round(q[0]), round(q[1])), f"{dz:+.1f} m")
         for r, mk, ln in zip(roads, marks, lines):

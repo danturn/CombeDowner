@@ -1586,7 +1586,11 @@ if os.path.exists(rail_file):
     _open = [shapely.LineString([a_[:2], b_[:2]]) for a_, b_ in _segs]
     _open_z = [(a_[2] + b_[2]) / 2 for a_, b_ in _segs]
     # (the grid round each of the line's own points stays the line's: the ground under a train)
-    _own = [q[:2] for t in rail_tracks for q in t["p"] if q[3] == 0 and X0 - 60 <= q[0] <= X1 + 60 and Y0 - 60 <= q[1] <= Y1 + 60]
+    # (but not its points behind a tunnel's face, which are in the bore, under the lid)
+    _faces_all = portal_faces(json.load(open(rail_file)).get("portals") or [])
+    _in_bore = lambda q: any(0.0 < (q[0] - fc["x"]) * fc["ux"] + (q[1] - fc["y"]) * fc["uy"] < LID_DEEP
+                             and fc["v0"] <= -(q[0] - fc["x"]) * fc["uy"] + (q[1] - fc["y"]) * fc["ux"] <= fc["v1"] for fc in _faces_all)
+    _own = [q[:2] for t in rail_tracks for q in t["p"] if q[3] == 0 and X0 - 60 <= q[0] <= X1 + 60 and Y0 - 60 <= q[1] <= Y1 + 60 and not _in_bore(q)]
     _line_clear = shapely.MultiPoint(_own).buffer(dx * 1.5) if _own else None
     # (nor under or beside a way crossing over the cutting, whose bridge keeps the room under its deck)
     _near_line = unary_union(_open).buffer(CROSS_REACH) if _open else None
@@ -1598,7 +1602,7 @@ if os.path.exists(rail_file):
     _decks = shapely.STRtree(_decks) if _decks else None
     lids = cuts = 0
     # (a cutting between two tunnels stops at the next one's face: over its bore is that one's hill)
-    _faces = [fc for fc in portal_faces(json.load(open(rail_file)).get("portals") or [])
+    _faces = [fc for fc in _faces_all
               if X0 - CUT_REACH <= fc["x"] <= X1 + CUT_REACH and Y0 - CUT_REACH <= fc["y"] <= Y1 + CUT_REACH]
     _over_bores = unary_union([shapely.affinity.affine_transform(_box(0.0, fc["v0"] - PORTAL_WING, CUT_REACH, fc["v1"] + PORTAL_WING),
                                                                  [fc["ux"], -fc["uy"], fc["uy"], fc["ux"], fc["x"], fc["y"]]) for fc in _faces]) if _faces else None

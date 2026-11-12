@@ -80,11 +80,13 @@ const PORTAL_TURN = 0.35, PORTAL_DEPTH = 2.5, PORTAL_SIDE = 16, PORTAL_STAGGER =
 const PORTAL_CLEAR = 2.2;    // metres a face's wing stops short of another track's middle
 const PORTAL_PAIR = 2.9;     // metres a bore over two tracks reaches past each one's middle: their ballast and a narrow cess
 const PORTAL_PIER = 1.0;     // metres of stone left between two arches side by side
-const PARAPET = 1.0, PARAPET_THICK = 0.45;   // a face's parapet, standing over the lid behind it
+const PARAPET = 1.0, PARAPET_THICK = 0.45;   // a face's parapet over its arches, standing over the lid behind it
+const WING_FOOT = 1.0;       // metres over the rails that a face's wing comes down to at its end
 // A platform up on a viaduct (more than ARCADE_LEAST over the ground) stands on arches along its
 // outer sides: one every ARCADE_BAY metres, its piers ARCADE_PIER wide, the dark under it ARCADE_DEEP in.
 export const ARCADE_LEAST = 4.5, ARCADE_BAY = 8, ARCADE_PIER = 1.6, ARCADE_DEEP = 1.0;
-const BORE_LIT = 11;         // metres into a bore its stone lining is seen before it is dark (its track goes in about as far)
+const BORE_LIT = 11;         // metres into a bore its stone lining is drawn (its track goes in about as far)
+const BORE_FADE = 4;         // metres in that the daylight on the lining has died away, however deep it's drawn
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
 // reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
 // CANOPY_SHORT gets none; one LONG_PLATFORM or more gets two, at the 2nd and 4th of five parts.
@@ -763,6 +765,10 @@ export class Railway {
         else if (vc > right + 0.5) v1 = Math.min(v1, vc - PORTAL_CLEAR);
       }
       v0 = Math.min(v0, left - 0.8); v1 = Math.max(v1, right + 0.8);
+      // its wings, past the arches, slope down to WING_FOOT at their ends, as wing walls do down the
+      // bank beside a cutting, rather than standing their full height out over the slope as fins
+      const wingTop = (v: number) => v < left ? WING_FOOT + (top - WING_FOOT) * (v - v0) / (left - v0)
+        : v > right ? WING_FOOT + (top - WING_FOOT) * (v1 - v) / (v1 - right) : top;
       // every arch's edges are breaks, so its sides stand plumb
       const vs = new Set<number>([v0, v1]);
       for (let v = v0; v < v1; v += 0.5) vs.add(v);
@@ -771,16 +777,17 @@ export class Railway {
       for (let k = 0; k + 1 < cuts.length; k++) {
         const v = cuts[k], w = cuts[k + 1], m = (v + w) / 2, a = arches.find((q) => Math.abs(m - q.c) < q.hw);
         const lo = (q: number) => (a ? a.spring + a.rise * Math.sqrt(Math.max(0, 1 - ((q - a.c) / a.hw) ** 2)) : -1);
-        for (const u of [0, D]) stone(P(u, v, lo(v)), P(u, w, lo(w)), P(u, w, top), P(u, v, top), STONE);
-        stone(P(0, v, top), P(0, w, top), P(D, w, top), P(D, v, top), CAP);
+        for (const u of [0, D]) stone(P(u, v, lo(v)), P(u, w, lo(w)), P(u, w, wingTop(w)), P(u, v, wingTop(v)), STONE);
+        stone(P(0, v, wingTop(v)), P(0, w, wingTop(w)), P(D, w, wingTop(w)), P(D, v, wingTop(v)), CAP);
       }
-      // the parapet along its top, flush with its face, the lid's ground behind it
+      // the parapet along its top over the arches, flush with its face, the lid's ground behind it
       const T = PARAPET_THICK, H = top + PARAPET;
-      stone(P(0, v0, top), P(0, v1, top), P(0, v1, H), P(0, v0, H), STONE);
-      stone(P(T, v1, top), P(T, v0, top), P(T, v0, H), P(T, v1, H), STONE);
-      stone(P(0, v0, H), P(0, v1, H), P(T, v1, H), P(T, v0, H), CAP);
-      for (const [v, o] of [[v0, -1], [v1, 1]]) stone(P(o < 0 ? T : 0, v, top), P(o < 0 ? 0 : T, v, top), P(o < 0 ? 0 : T, v, H), P(o < 0 ? T : 0, v, H), STONE);
-      const light = (u: number) => Math.max(0, 1 - Math.min(1, (u / deep) ** 0.7));
+      stone(P(0, left, top), P(0, right, top), P(0, right, H), P(0, left, H), STONE);
+      stone(P(T, right, top), P(T, left, top), P(T, left, H), P(T, right, H), STONE);
+      stone(P(0, left, H), P(0, right, H), P(T, right, H), P(T, left, H), CAP);
+      for (const [v, o] of [[left, -1], [right, 1]]) stone(P(o < 0 ? T : 0, v, top), P(o < 0 ? 0 : T, v, top), P(o < 0 ? 0 : T, v, H), P(o < 0 ? T : 0, v, H), STONE);
+      // (dark soon past the face, so a mouth reads as open whatever angle it's seen from)
+      const light = (u: number) => Math.max(0, 1 - Math.min(1, (u / Math.min(deep, BORE_FADE)) ** 0.7));
       const shade = (u: number, c: number[]) => lerp3(DARK, c, light(u));
       for (const a of arches) {
         const at = (t: number, out: number) => [a.c + (a.hw + out) * Math.cos(t), a.spring + (a.rise + out) * Math.sin(t)];
@@ -1579,11 +1586,11 @@ function portalGroups(portals: number[][]): number[][][] {
 }
 
 /** The parapet along the top of each tunnel face, for walking into (map.ts): [ax, ay, bx, by, its
- *  foot, its top] in data coordinates, out to the face's wings. */
+ *  foot, its top] in data coordinates, across its arches. */
 export function railParapets(d: RailData): number[][] {
   return headwalls(d.portals ?? []).map(({ x, y, ux, uy, base, bores, cover }) => {
     const { top, arches } = boreShape(cover, 0, bores), nx = -uy, ny = ux;
-    const v0 = arches[0].c - arches[0].hw - PORTAL_WING, v1 = arches[arches.length - 1].c + arches[arches.length - 1].hw + PORTAL_WING;
+    const v0 = arches[0].c - arches[0].hw, v1 = arches[arches.length - 1].c + arches[arches.length - 1].hw;
     return [x + nx * v0, y + ny * v0, x + nx * v1, y + ny * v1, base + top, base + top + PARAPET];
   });
 }

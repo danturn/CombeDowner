@@ -51,9 +51,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   line with each other's, and a line that passes under another has the headroom for a train.
   A railway tunnel's mouth is one stone face for the tracks going in side by side, under an arch
   for each pair of them, and stands only as high as the hill it's cut into lets it, with a parapet
-  along its top and the ground behind it level with that, a lid over the bores that paths cross;
-  its bore is lined in stone, the track running in, until it fades to dark a few metres in. Where
-  the line runs up to it in a deep cutting, the cutting's sides are stone walls with the ground
+  along its top and the ground behind it level with that, a lid over the bores that paths cross
+  and steps come down off, with no hedge or fence on it; its wings slope down at their ends, as
+  wing walls do. Behind the face the hill's own ground runs on over the bores, so the face is the
+  only built thing you see. Its bore is lined in stone, the track running in, and goes dark a few metres in, so the
+  mouth reads as open from any side. Where the line runs up to it in a deep cutting, the cutting's
+  floor is ballast right across between the tracks and its sides are stone walls with the ground
   level at their tops. Walls the map draws
   across the cutting stop at the line, and no building, parked car, bench or path stands on a
   running line or inside a tunnel's mouth. A siding or a line the data ends stops at red buffers.
