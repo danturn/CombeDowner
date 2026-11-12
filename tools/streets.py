@@ -14,7 +14,7 @@ keyed (always set by tools/prep_map.py): the random choices along each street
 come from the street itself, not the order of the lists or Python's per-run string hashing, so two
 tiles that both build a street near their shared edge put the same things on it.
 """
-import math, random, zlib
+import math, random, re, zlib
 import shapely
 from shapely.geometry import LineString, Point
 
@@ -22,6 +22,62 @@ KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 RANK = {"primary": 5, "secondary": 4, "tertiary": 3, "unclassified": 2, "residential": 2, "living_street": 1}   # which gives way to which
 PAVE = 1.7
 CAR_COLOURS = 10   # the renderer picks from this many paints
+
+
+# ---- who a street is open to -------------------------------------------------------------------
+
+ALL_DAY = "00:00-24:00"     # the shut hours (tc) of a street the traffic keeps out of all day: buses only
+MOTOR = {"motor_vehicle", "car", "vehicle", "motorcycle"}
+WAYS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+
+
+def _lets(rule, modes):
+    w = rule.get("when") or {}
+    return rule.get("access_type") in ("allowed", "designated") and bool(modes & set(w.get("mode") or ())) \
+        and "to_deliver" not in (w.get("using") or ())
+
+
+def _other_hours(during):
+    """The hours outside `during` ("19:00-10:30" -> "10:30-19:00"), or None if it isn't plain hours."""
+    m = re.fullmatch(r"\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*", during or "")
+    return f"{m[2]}-{m[1]}" if m else None
+
+
+def street_access(props, cls, main=False, trams=False):
+    """What a street is, from Overture's access rules on it (`props`, an Overture segment's): its class,
+    the hours it is shut to traffic (tc, or None) and whether buses may use it. `trams`: a tram line
+    runs along it, which keeps a street closed to traffic a road as buses do (Overture's rules
+    don't name trams).
+
+    A street closed to motor vehicles is a pedestrian street, paved wall to wall. One closed to
+    traffic that lets buses through (a bus street, a bus station's lanes) is still a road, with its
+    carriageway, pavements and bus stops at the kerb, shut to the rest of the traffic all day. One
+    closed at certain hours is a road shut for those hours. A street mapped as pedestrian that lets
+    motor vehicles along it at certain hours (a cobbled street open in the evening), or buses (a
+    bridge for buses), has a carriageway too: a road, shut whenever traffic isn't let in. One open to
+    traffic at all hours is a shared surface, paved wall to wall as a pedestrian street is, and a
+    delivery-only allowance doesn't open one either. A weight or height limit is no closure, and a
+    main road (`main`) stays a road whatever's marked on it, as a bus gate leaves it."""
+    rules = props.get("access_restrictions") or []
+    mapped = any(_lets(r, {"bus"}) for r in rules)
+    buses = trams or mapped
+    shut = []
+    if cls not in WAYS and not main:
+        for r in rules:
+            w = r.get("when") or {}
+            if r.get("access_type") != "denied" or w.get("heading") or w.get("using") or w.get("recognized") \
+                    or w.get("vehicle") or (w.get("mode") is not None and "motor_vehicle" not in w["mode"]):
+                continue
+            if w.get("during"): shut.append(w["during"])
+            elif buses: shut.append(ALL_DAY)
+            else: return "pedestrian", None, buses
+    if cls == "pedestrian":
+        shut = [_other_hours((r.get("when") or {}).get("during")) for r in rules if _lets(r, MOTOR)]
+        shut = [h for h in shut if h]
+        if shut or mapped:
+            return "unclassified", shut[0] if shut else ALL_DAY, buses
+        return cls, None, buses
+    return cls, shut[0] if shut else None, buses
 
 
 # Royal Mail's boxes as the game draws them: a pillar box (and any the map doesn't say), a box set in
@@ -356,7 +412,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gates]
     stop_pts = [Point(s) for s in stops]
     for px, py, ang, colour in parked_cars(lines, vehicle, half, near_junction, gate_pts, stop_pts,
-                                           keyed, lambda r: "none" if 2 * half(r) < 5 else "one"):
+                                           keyed, lambda r: "none" if 2 * half(r) < 5 or r.get("tc") == ALL_DAY else "one"):
         add("car", px, py, ang, colour)
     return items, marks
 

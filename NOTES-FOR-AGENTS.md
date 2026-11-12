@@ -21,6 +21,12 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Bus streets and traffic lights (branch `claude/street-fixes`, code only, map not rebuilt):** a street
+  only buses may use, or a pedestrian street open to traffic at some hours, is built as a road with
+  pavements and shut hours (`streets.street_access`, read by `prep_map.py` and the partition's graph,
+  `once.opened_pedestrian`); traffic lights' poles stand on the pavement, and lights mapped on a
+  junction go on each approach (`write_tile.crossings`). Trial on Bath 0,3 3,3 and Edinburgh 1,1.
+
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's

@@ -72,7 +72,7 @@ from partition.settle import drop_unstood, house_kinds, load_evidence, owners_ne
 from partition.standing import Standing
 from partition.straighten import straighten
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
-from streets import KERBED, parked_cars, pave_band, pavement_room, pv_at
+from streets import ALL_DAY, KERBED, parked_cars, pave_band, pavement_room, pv_at
 from landscape import string_wires
 import tunnels as TN
 from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
@@ -7939,7 +7939,7 @@ def place_cars(rd, fx, gt, ground):
     gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt]
     stop_pts = [Point(f[1], f[2]) for f in fx if f[0] == "bus"]
     return parked_cars(lines, vehicle, lambda r: way_width(r) / 2, near_junction, gate_pts, stop_pts, True,
-                       lambda r: car_sides(way_width(r)))
+                       lambda r: "none" if r.get("tc") == ALL_DAY else car_sides(way_width(r)))
 
 
 def car_box(x, y, a):
@@ -8145,18 +8145,82 @@ def crossing_kind(cls, tags):
     return None
 
 
+JUNCTION_NEAR = 1.5      # metres: lights mapped this close to two streets meeting at an angle are the junction's
+POLE_OUT = 0.5           # metres past the carriageway's edge the game stands a crossing's poles (furniture.ts)
+SLIDE_STEP, SLIDE_MAX = 0.5, 15.0    # metres a crossing may be moved along its street to get its poles off another's
+OWN_LIGHTS = 25.0        # an approach with lights of its own mapped this near the junction needs none from it
+ARM_OFF = 4.0            # metres from an approach's middle line that its own lights may be mapped
+
+
 def crossings(sq, rd, ground, points):
     """`cx`: the crossings and traffic lights on the square's streets, each [x, y, ground, angle,
     kind, width]: the point on the street's middle line, the street's direction there (radians, as
     street items are turned), `crossing_kind`'s letter, and the carriageway's width. The game paints
     the stripes or studs across it and stands the beacons or lights at its kerbs, and the driving
-    examiner can ask whether you stopped at them."""
+    examiner can ask whether you stopped at them.
+
+    The poles must stand on the pavement, so a crossing whose poles would stand in another street's
+    carriageway (mapped just by a junction) is moved along its street until they are clear. Lights
+    mapped on the junction itself (where the streets' middle lines meet) control every way into it:
+    they are stood back along each approach, clear of the streets across it, except an approach that
+    traffic only leaves by (a one-way street) or that has lights of its own mapped near; a crossing
+    with lights mapped on a junction goes on one approach."""
     roads = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
     if not roads:
         return [], collections.Counter()
     tree = STRtree([l for l, _ in roads])
+    widest = max(way_width(r) for _, r in roads) / 2
     x0, y0, x1, y1 = sq
+    lights = [(x, y) for x, y, cls, tags in points if cls in ("crossing", "traffic_signals") and crossing_kind(cls, tags) in ("p", "s")]
     out, count, seen = [], collections.Counter(), []
+
+    def heading(line, t):
+        a, b = line.interpolate(max(0.0, t - 1)), line.interpolate(min(line.length, t + 1))
+        d = math.hypot(b.x - a.x, b.y - a.y) or 1
+        return (b.x - a.x) / d, (b.y - a.y) / d
+
+    def clear(k, t):
+        line, r = roads[k]
+        c, (ux, uy) = line.interpolate(t), heading(line, t)
+        off = way_width(r) / 2 + POLE_OUT
+        for side in (1, -1):
+            pole = Point(c.x - uy * off * side, c.y + ux * off * side)
+            for j in tree.query(pole.buffer(widest)):
+                l2, r2 = roads[int(j)]
+                if r2 is r:
+                    continue
+                # (the same street carrying on in another record is the pole's own street)
+                vx, vy = heading(l2, l2.project(c))
+                if l2.distance(c) < 1.0 and abs(ux * vy - uy * vx) < 0.3:
+                    continue
+                if l2.distance(pole) < way_width(r2) / 2:
+                    return False
+        return True
+
+    def slide(k, t, ways):
+        """The nearest place along road k from t, going `ways` (+1, -1 or both), where both poles are clear."""
+        length = roads[k][0].length
+        for n in range(int(SLIDE_MAX / SLIDE_STEP) + 1):
+            for w in ways:
+                u = t + w * n * SLIDE_STEP
+                if 0 <= u <= length and clear(k, u):
+                    return u, n > 0
+        return None, False
+
+    def put(k, t, kind):
+        line, r = roads[k]
+        c = line.interpolate(t)
+        ux, uy = heading(line, t)
+        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy in seen):
+            count["doubled"] += 1
+            return
+        z = ground(c.x, c.y)
+        if z is None:
+            return
+        seen.append((c.x, c.y))
+        out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(uy, ux), 3), kind, round(way_width(r), 1)])
+        count[kind] += 1
+
     for x, y, cls, tags in points:
         if cls not in ("crossing", "traffic_signals") or not (x0 <= x < x1 and y0 <= y < y1):
             continue
@@ -8165,24 +8229,51 @@ def crossings(sq, rd, ground, points):
             count["plain"] += 1
             continue
         p = Point(x, y)
-        near = [(roads[int(k)][0].distance(p), int(k)) for k in tree.query(p.buffer(CROSSING_REACH))]
+        near = sorted((roads[int(k)][0].distance(p), int(k)) for k in tree.query(p.buffer(CROSSING_REACH)))
         near = [n for n in near if n[0] <= CROSSING_REACH]
         if not near:
             count["no street"] += 1
             continue
-        line, r = roads[min(near)[1]]
-        t = line.project(p)
-        c = line.interpolate(t)
-        a, b = line.interpolate(max(0.0, t - 1)), line.interpolate(min(line.length, t + 1))
-        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy in seen):
-            count["doubled"] += 1
+        # the ways out of the point along the streets through it, one to a direction
+        arms = []
+        for d, k in near:
+            if d > JUNCTION_NEAR:
+                continue
+            line = roads[k][0]
+            t = line.project(p)
+            for w in (1, -1):
+                if (w > 0 and t < line.length - 1.0) or (w < 0 and t > 1.0):
+                    hx, hy = heading(line, t)
+                    h = (hx * w, hy * w)
+                    if not any(h[0] * g[0] + h[1] * g[1] > 0.9 for _, _, _, g in arms):
+                        arms.append((k, t, w, h))
+        junction = any(abs(a[3][0] * b[3][1] - a[3][1] * b[3][0]) > 0.5 for a in arms for b in arms)
+        if not junction:
+            k = near[0][1]
+            t = roads[k][0].project(p)
+            u, moved = slide(k, t, (1, -1))
+            count["moved off a street across"] += moved
+            put(k, t if u is None else u, kind)
             continue
-        z = ground(c.x, c.y)
-        if z is None:
-            continue
-        seen.append((c.x, c.y))
-        out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(b.y - a.y, b.x - a.x), 3), kind, round(way_width(r), 1)])
-        count[kind] += 1
+        count["on a junction"] += 1
+        placed = 0
+        for k, t, w, h in arms:
+            r = roads[k][1]
+            if (r.get("ow") or 0) * w > 0:
+                continue        # traffic only leaves the junction this way
+            line = roads[k][0]
+            if kind == "s" and any(0 < math.hypot(lx - x, ly - y) <= OWN_LIGHTS and line.distance(Point(lx, ly)) <= ARM_OFF
+                                   and (line.project(Point(lx, ly)) - t) * w > 0 for lx, ly in lights):
+                continue        # this approach's own lights are mapped
+            u, _ = slide(k, t + w * SLIDE_STEP, (w,))
+            if u is None:
+                continue
+            put(k, u, kind)
+            placed += 1
+            if kind != "s":
+                break
+        if not placed:
+            count["junction with no approach clear"] += 1
     return out, count
 
 

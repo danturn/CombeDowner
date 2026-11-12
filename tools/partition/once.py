@@ -51,6 +51,7 @@ from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import as_built, street_graph
 from structures import match_structures, osm_structures
 from maxspeed import resolve as speed_limits
+from streets import street_access
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
                     classify_edges, front_normals, join_evidence, make_plots)
 
@@ -327,6 +328,31 @@ def way_detail(D, bb):
     return out
 
 
+OPENED_NEAR = 3.0       # metres: an OSM way this close to an Overture segment along most of it is that street
+
+
+def opened_pedestrian(roads, segments, log=print):
+    """OpenStreetMap's `pedestrian` ways that Overture's access rules open to traffic or buses
+    (streets.street_access) are streets with a carriageway and pavements, as the old build makes of
+    the same segments: a way lying along such a segment for most of its length is taken as an
+    unclassified street. roads: [(LineString, tags)]."""
+    opened = [g for g, p in segments if p.get("subtype") == "road" and p.get("class") == "pedestrian"
+              and street_access(p, "pedestrian")[0] != "pedestrian"]
+    if not opened:
+        return roads
+    near = [g.buffer(OPENED_NEAR) for g in opened]
+    tree = STRtree(near)
+    out, n = [], 0
+    for line, tags in roads:
+        if tags.get("highway") == "pedestrian":
+            hits = [near[int(k)] for k in tree.query(line)]
+            if hits and line.intersection(unary_union(hits)).length >= 0.7 * line.length:
+                tags, n = dict(tags, highway="unclassified"), n + 1
+        out.append((line, tags))
+    log(f"  {n} pedestrian ways open to traffic or buses taken as streets")
+    return out
+
+
 def build_graph(out, raw, log=print):
     """The street graph, built once for the whole map and written to `<out>/graph.json`.
 
@@ -348,6 +374,7 @@ def build_graph(out, raw, log=print):
             if l.geom_type == "LineString" and l.length > 0.5:
                 roads.append((l, p))
     roads = as_built(roads)
+    roads = opened_pedestrian(roads, D.lines_near(bb, "segment"), log)
     log(f"  {len(roads)} road pieces over the whole map")
     # each way's speed limit rides along in its tags, as "_ms", to the squares' streets
     limits, _ = speed_limits(roads, log=log)
