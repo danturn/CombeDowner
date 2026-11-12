@@ -21,12 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
-- **Ground stage 8 (branch `claude/ground-8`):** pavements beside flights of steps laid down to their
-  treads or ended in a retaining wall (`write_tile.meet_flights`, check rule 33), a path's low arch only
-  as long as its mapped tunnel, sloping down outside its mouths or none (`structures.low_bores`,
-  `tunnels.ts` low face; none fits in Bath until road heights come from the surface model), kerb cuts
-  at the drawn kerb, and rule 23's rise since stage 7.
-
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
