@@ -2931,8 +2931,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
       const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];
       // the foot reaches down to the ground as it's drawn, which is pulled down beside a street, so a
-      // wall or hedge there doesn't hang above the grass with a gap under it
-      const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.1 : Infinity); });
+      // wall or hedge there doesn't hang above the grass with a gap under it; as far under it where the
+      // wall's evened-out top lifts it over a dip as where it stands on the ground, so the ground
+      // folding between two points doesn't show the sky under it
+      const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.4 : Infinity); });
       const tops = [barrierTop(l, i, Z0), barrierTop(l, i + 1, Z0)];
       const P = (k: number, top: boolean) => {
         const tp = tops[k === 0 || k === 3 ? 0 : 1];

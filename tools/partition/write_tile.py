@@ -8241,8 +8241,8 @@ def _drawn_ground(T, x, y):
 
 
 # metres the ground may fall below, or rise over, a wall's straight line between two of its points:
-# the game sets the foot 0.1 m under the ground at each point, so a smaller dip is hidden, and a
-# rise only buries the foot a little
+# the game sets the foot at least 0.4 m under the ground at each point, so a small dip is hidden, and
+# a rise only buries the foot a little
 WALL_DIP, WALL_RISE = 0.1, 0.2
 
 
@@ -8302,15 +8302,18 @@ def walls_follow_the_ground(br, T):
     return out
 
 
-WALL_EASE = 6.0     # metres either way along a wall that its height at a point is evened out over
-WALL_EASE_MOST = 0.2    # metres at most that evening out moves a point off the ground as it's drawn
+WALL_EASE = 12.0    # metres either way along a wall that its top is evened out over
+WALL_EASE_MOST = 0.2    # metres at most that evening out lets a point down into the ground as it's drawn
+WALL_LIFT_MOST = 0.6    # metres at most a wall stands taller than its own height, over a dip (tools/check_map.py)
+WALL_EASE_PASSES = 4
 
 
 def smooth_wall_tops(br, T):
-    """Each wall's points between its ends at the ground's height evened out along it, so its top runs
-    in a smooth line: taken at each point from a ground drawn in 4 m triangles, it went up in angled
-    steps where the wall crossed their folds. Its ends keep their own heights, where it meets another
-    wall or a gate."""
+    """Each wall's top evened out along it into a smooth line: taken at each point from a ground
+    drawn in 4 m triangles over a lumpy survey, it went up and down in angled steps and zigzags. The
+    line is fitted straight over WALL_EASE either way and never let down into the ground, so over a
+    dip the wall stands up to WALL_LIFT_MOST taller (its foot still goes down to the ground) and over
+    a hump it rises with it. Its ends keep their own heights, where it meets another wall or a gate."""
     out = []
     for b in br:
         p = b["p"]
@@ -8320,17 +8323,24 @@ def smooth_wall_tops(br, T):
         s = [0.0]
         for u, v in zip(p, p[1:]):
             s.append(s[-1] + math.dist(u[:2], v[:2]))
-        z = [q[2] for q in p]
-        drawn = [_drawn_ground(T, q[0], q[1]) for q in p]
-        eased = [list(q) for q in p]
-        for i in range(1, len(p) - 1):
-            w = [(max(0.0, 1 - abs(s[j] - s[i]) / WALL_EASE), z[j]) for j in range(len(p)) if abs(s[j] - s[i]) < WALL_EASE]
-            total = sum(a for a, _ in w)
-            if total > 0:
-                even = sum(a * h for a, h in w) / total
-                lo, hi = min(z[i], drawn[i] - WALL_EASE_MOST), max(z[i], drawn[i] + WALL_EASE_MOST)
-                eased[i][2] = round(min(max(even, lo), hi), 1)
-        out.append(dict(b, p=eased))
+        s = np.array(s)
+        z = np.array([q[2] for q in p], float)
+        drawn = np.array([_drawn_ground(T, q[0], q[1]) for q in p])
+        lo = np.minimum(z, drawn - WALL_EASE_MOST)
+        hi = np.maximum(z, drawn) + WALL_LIFT_MOST
+        near = np.abs(s[:, None] - s[None, :])
+        wt = np.clip(1 - near / WALL_EASE, 0.0, None)
+        h = z.copy()
+        for _ in range(WALL_EASE_PASSES):
+            # (a straight line fitted round each point, not an average, so an even slope stays even to
+            # the wall's ends)
+            sw, ss, sh = wt.sum(1), wt @ s, wt @ h
+            sss, ssh = wt @ (s * s), wt @ (s * h)
+            den = sw * sss - ss * ss
+            fit = np.where(np.abs(den) > 1e-9, (sh * sss - ss * ssh + s * (sw * ssh - ss * sh)) / np.where(np.abs(den) > 1e-9, den, 1), sh / sw)
+            h = np.minimum(np.maximum(fit, lo), hi)
+            h[0], h[-1] = z[0], z[-1]
+        out.append(dict(b, p=[q[:2] + [round(float(v), 2)] + q[3:] if 1 <= i < len(p) - 1 else list(q) for i, (q, v) in enumerate(zip(p, h))]))
     return out
 
 

@@ -79,6 +79,7 @@ PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "tra
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 PIER_CLEAR = 6.0    # metres round a deck's end over the water with no other way in them: a jetty's end
+WALL_LIFT_MOST = 0.6    # metres a wall may stand over its ground: tools/partition/write_tile.py
 ON_WALL = 1.0       # metres from a building's outline that a span's end is on it, ending against its wall
 VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown"}
 
@@ -736,7 +737,10 @@ def fit_together(m, tag, note, f=None):
             where = (tag, round(xy(q)[0]), round(xy(q)[1]))
             if n in inside: note(f"9 {kind} inside a building", 1, where, str(q[0]) if kind == "street item" else kind)
             elif near_bar(pt, 0.3 if kind == "tree" else 0.2): note(f"9 {kind} on a wall", 1, where, str(q[0]) if kind == "street item" else kind)
-    # walls on their ground (not lifted off it, as where a square's edge once confused the heights)
+    # walls on their ground: the game takes each one's foot down to the ground drawn under it, so a
+    # wall is off its ground where it sinks into it, or stands up more than its evened-out top may
+    # carry it over a dip (tools/partition/write_tile.py WALL_LIFT_MOST), as where a square's edge once
+    # confused the heights
     T = m["t"]; tnx, tny = T["nx"], T["ny"]
     TH = np.array(T["h"], dtype=float).reshape(tny, tnx) / 10 + T["z0"]
     def ground(x, y):
@@ -746,7 +750,7 @@ def fit_together(m, tag, note, f=None):
         if u + v <= 1: return TH[j, i] + (TH[j, i + 1] - TH[j, i]) * u + (TH[j + 1, i] - TH[j, i]) * v
         return TH[j + 1, i + 1] + (TH[j + 1, i] - TH[j + 1, i + 1]) * (1 - u) + (TH[j, i + 1] - TH[j + 1, i + 1]) * (1 - v)
     for b in bars:
-        dz = max(abs(q[2] - ground(q[0], q[1])) for q in b["p"])
+        dz = max(max(ground(q[0], q[1]) - q[2], q[2] - ground(q[0], q[1]) - WALL_LIFT_MOST) for q in b["p"])
         if dz > 0.35: note("9 wall off its ground", dz, (tag, round(b["p"][0][0]), round(b["p"][0][1])), f"{b['c']} {dz:.1f} m")
     # a stub of wall on its own, with nothing at either end
     gate_ends = [Point(g[0], g[1]) for g in m.get("gt") or []] + [Point(g[2], g[3]) for g in m.get("gt") or []]

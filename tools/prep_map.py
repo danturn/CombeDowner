@@ -153,6 +153,33 @@ DEM = np.vstack(rows)
 if getattr(A, "sea", None) is not None:
     DEM = np.maximum(DEM, A.sea - 20)     # the terrain tiles' seabed has the odd wild pixel, kilometres deep
 
+# The terrain tiles have the odd small pit or spike a few metres deep with sheer sides, where a
+# basement or a building was taken out of the survey: the ground, and every wall along it, dipped
+# into it. A hollow or knoll no bigger than PIT_AREA and at least PIT_DEPTH deep is filled to where
+# it spills over, or cut down to where it falls away; a real dell or hill is bigger than that.
+PIT_AREA = 600.0     # square metres
+PIT_DEPTH = 1.0      # metres
+
+
+def mend_pits(dem, px):
+    from scipy import ndimage
+    from skimage.morphology import reconstruction
+    def fill(a):
+        seed = a.copy()
+        seed[1:-1, 1:-1] = a.max()
+        filled = reconstruction(seed, a, method="erosion")
+        lab, n = ndimage.label(filled - a > 0.05)
+        if n == 0: return a
+        idx = np.arange(1, n + 1)
+        area = ndimage.sum(np.ones_like(a), lab, idx) * px * px
+        depth = ndimage.maximum(filled - a, lab, idx)
+        mend = np.concatenate([[False], (area <= PIT_AREA) & (depth >= PIT_DEPTH)])
+        return np.where(mend[lab], filled, a)
+    return -fill(-fill(dem))
+
+
+DEM = mend_pits(DEM, 40075016.7 * math.cos(math.radians(lat0)) / NPX)
+
 
 def elev(x, y):
     """Bilinear terrain height at model metres (x east, y north)."""

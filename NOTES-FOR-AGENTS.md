@@ -25,6 +25,12 @@ the game locally, without the sound" in `CLAUDE.md`.
   wall across a way's end at a tunnel's portal (`tools/partition/sheet.py` `in_portals`), and the
   ground at about the floor's level in front of a headwall is no longer hidden (`web/src/tunnels.ts`
   `mouths`, `AT_GRADE`). Proved on Edinburgh's squares 0,1 and 1,1; needs the squares rebuilt.
+- **Smooth wall tops and mended terrain pits (branch `claude/edge-fixes`):** small sheer pits and
+  spikes in the terrain tiles are filled or cut when a square is built (`tools/prep_map.py`
+  `mend_pits`); each wall's top is evened out along it and stands up to 0.6 m taller over a dip
+  (`tools/partition/write_tile.py` `smooth_wall_tops`, `wall_feet.py`); the game sets a wall's foot
+  0.4 m under the drawn ground (`web/src/world.ts` `barrierRun`); check rule 9's "wall off its
+  ground" allows that lift. Every square needs rebuilding.
 
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
