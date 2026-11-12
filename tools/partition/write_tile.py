@@ -6086,6 +6086,116 @@ def clear_passage_mouths(tile, clear=0.3):
     return gone
 
 
+def flights_across_streets(rd, width, level=1.0, stub=1.0):
+    """A flight the data runs across a street at the street's own height, joined to it at a point
+    of both, with nothing in the data carrying it over, stops at each side of the carriageway: the street is
+    walked across, and each piece of the flight climbs from the street's edge at the street's height.
+    Returns how many flights were cut."""
+    streets = [r for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    if not streets:
+        return rd, 0
+    lines = [LineString([q[:2] for q in r["p"]]) for r in streets]
+    tree = STRtree(lines)
+    out, cut = [], 0
+    for r in rd:
+        if not flight_pieces._is_flight(r):
+            out.append(r)
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], c[:2]) for a, c in zip(r["p"], r["p"][1:])])])
+        zs = [q[2] for q in r["p"]]
+        holes = []
+        for k in tree.query(line):
+            st, sl = streets[int(k)], lines[int(k)]
+            x = sl.intersection(line)
+            for q in getattr(x, "geoms", [x]):
+                # (only one crossing it, not a flight coming down to it and stopping)
+                if q.geom_type != "Point" or not width(st) / 2 + 0.5 < line.project(q) < line.length - width(st) / 2 - 0.5:
+                    continue
+                # (the data joins them there, a point of the flight on the street: one merely
+                # crossing its line may be under a bridge or over a tunnel)
+                if not any(math.dist(p[:2], (q.x, q.y)) < 0.3 for p in r["p"]):
+                    continue
+                zf = float(np.interp(line.project(q), cum, zs))
+                sc = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], c[:2]) for a, c in zip(st["p"], st["p"][1:])])])
+                zr = float(np.interp(sl.project(q), sc, [p[2] for p in st["p"]]))
+                if abs(zf - zr) <= level:
+                    holes.append((sl.buffer(width(st) / 2, cap_style=2), sl, sc, st))
+        if not holes:
+            out.append(r)
+            continue
+        cut += 1
+        rest = line.difference(unary_union([h[0] for h in holes]))
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type != "LineString" or piece.length < stub:
+                continue
+            s0, s1 = sorted(line.project(Point(c)) for c in (piece.coords[0], piece.coords[-1]))
+            pts = [[round(px, 1), round(py, 1), round(float(np.interp(line.project(Point(px, py)), cum, zs)), 2)]
+                   for px, py in substring(line, s0, s1).coords]
+            # (an end cut at a street's edge stands at the street's height there)
+            for q in (pts[0], pts[-1]):
+                for _, sl, sc, st in holes:
+                    if sl.distance(Point(q[:2])) <= width(st) / 2 + 0.05:
+                        q[2] = round(float(np.interp(sl.project(Point(q[:2])), sc, [p[2] for p in st["p"]])), 2)
+            # (the data's tread count is the whole flight's, not a piece's)
+            out.append({k: v for k, v in dict(r, p=pts).items() if k != "sc"})
+    return out, cut
+
+
+STUB_ALONE = 1.5    # metres: a piece of wall shorter than this, touching nothing, is a stub on its own
+
+
+def open_passage_mouths(tile, reach=1.5, stub=0.5):
+    """A wall, fence or railing laid across a passage's mouth, along the foot of the building's
+    wall, is opened as wide as the way for `reach` metres out from the mouth: the way runs on out
+    through it. Returns how many were cut."""
+    holes = []
+    for b in tile.get("bl") or []:
+        for ps in b.get("ps") or []:
+            pts = [ps[i:i + 2] for i in range(2, len(ps), 3)]
+            if len(pts) < 2:
+                continue
+            for end, inner in ((pts[0], pts[1]), (pts[-1], pts[-2])):
+                d = math.dist(end, inner)
+                if d < 1e-6:
+                    continue
+                ux, uy = (end[0] - inner[0]) / d, (end[1] - inner[1]) / d
+                holes.append(LineString([(end[0] - ux * 0.3, end[1] - uy * 0.3),
+                                         (end[0] + ux * reach, end[1] + uy * reach)]).buffer(ps[0] / 2, cap_style=2))
+    if not holes or not tile.get("br"):
+        return 0
+    hole = unary_union(holes)
+    lines = [LineString([q[:2] for q in b["p"]]) for b in tile["br"] if len(b["p"]) >= 2]
+    lines += [Polygon(b["r"][0]).exterior for b in tile.get("bl") or [] if len(b["r"][0]) >= 3]
+    tree = STRtree(lines)
+
+    def held(pt, own):
+        return any(lines[int(k)].distance(pt) < 0.3 and not lines[int(k)].equals(own) for k in tree.query(pt.buffer(0.3)))
+    out, cut = [], 0
+    for b in tile["br"]:
+        if len(b["p"]) < 2 or not hole.intersects(flat := LineString([q[:2] for q in b["p"]])):
+            out.append(b)
+            continue
+        cut += 1
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], c[:2]) for a, c in zip(b["p"], b["p"][1:])])])
+        rest = flat.difference(hole)
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type != "LineString" or piece.length < stub:
+                continue
+            # (a short piece left standing with neither end against anything is a stub, and goes)
+            if piece.length < STUB_ALONE and not any(held(Point(c), flat) for c in (piece.coords[0], piece.coords[-1])):
+                continue
+            s0, s1 = sorted(flat.project(Point(c)) for c in (piece.coords[0], piece.coords[-1]))
+            run = [list(c) for c in substring(flat, s0, s1).coords]
+            out.append(dict(b, p=[[round(x, 1), round(y, 1), round(float(np.interp(flat.project(Point(x, y)), cum, [q[2] for q in b["p"]])), 1)]
+                                  for x, y in run]))
+    tile["br"] = out
+    # (a gate in the opening opens too)
+    if cut and tile.get("gt"):
+        tile["gt"] = [g for g in tile["gt"] if not hole.intersects(LineString([g[0:2], g[2:4]]))]
+    return cut
+
+
 def _lay_passage(ps, lines, tree, eaves, ground):
     mid = LineString([ps[i:i + 2] for i in range(2, len(ps), 3)])
     near = [lines[int(k)] for k in tree.query(mid.buffer(1.0))] if tree is not None else []
@@ -9177,6 +9287,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     flights_to_their_ends(rd, fitted[1] if fitted else None)
     steep_flights_that_fit(rd, ground)
     rd, _ = flight_pieces.settle_overlaps(rd, GAME_PATHS, way_width)
+    rd, _ = flights_across_streets(rd, way_width)
     ways_meet_level(rd, sq, ground, tile.get("tn"))
     abutments_on_the_ground(rd, sq, ground)
     flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width))
@@ -9251,6 +9362,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     passage_floors_on_faces(tile)
     passage_ground(T, tile.get("bl") or [])
     clear_passage_mouths(tile)
+    open_passage_mouths(tile)
     ends_on_faces(tile)
     gs = ground_sheet(tile, canal)
     if gs is not None:

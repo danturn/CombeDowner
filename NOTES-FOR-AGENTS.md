@@ -28,8 +28,12 @@ the game locally, without the sound" in `CLAUDE.md`.
   as the way's own street face (`passage_faces`, before `street_surfaces`), and the game cuts the
   walls, draws the sides and ceiling and walks them through `web/src/passages.ts` (`map.ts`,
   `world.ts`). The grid under a passage is let down below its floor (`passage_ground`)
-  and doors and shopfronts in its mouths go (`clear_passage_mouths`). Rules 9, 13 and 20 leave
-  passages out. Trialled on Edinburgh 1,1 and Bath 0,3 only.
+  and doors and shopfronts in its mouths go (`clear_passage_mouths`), as do walls and railings
+  laid across them (`open_passage_mouths`). Rules 9, 13, 20 and 27a leave passages out. Mapped
+  steps are carried over a way only when OSM says so (a bridge, another layer, or the way in a
+  tunnel or under cover: `steps_over` in `tools/structures.py`); otherwise a flight crossing a
+  street at its height stops either side of it (`flights_across_streets`). Trialled on
+  Edinburgh 1,1 and Bath 0,3 only.
 
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass

@@ -1393,6 +1393,10 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
         # (the uncovered ground lying within 0.3 m of both, wider than GAP: a strip of grass between them)
         allf = sheet.union(FACE_KINDS)
         gaps = paths.buffer(0.15).intersection(streets.buffer(0.15)).difference(allf).intersection(inner)
+        # (behind a passage's side walls, in the building's solid ground floor, no ground is seen)
+        walled = [_open(_poly(b["r"][0], b["r"][1:]), b) for b in m.get("bl") or [] if b.get("ps") and len(b["r"][0]) >= 3]
+        if walled:
+            gaps = gaps.difference(unary_union(walled))
         by_street, by_path = streets.buffer(0.03), paths.buffer(0.03)
         shapely.prepare(by_street); shapely.prepare(by_path)
         tot = 0.0
