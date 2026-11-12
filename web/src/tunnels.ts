@@ -224,11 +224,12 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
   }
   // and none of the hill's slope standing in the cutting in front of a headwall, out to the end of
   // its floor, where the apron is the ground (the ground's grid is too coarse to rise straight up the
-  // wall)
+  // wall); but the ground at about the floor's level stays, where a way crosses in front at grade:
+  // the sheet meets that way's edges there, and cut away it left a hole down past the apron's side
   for (const w of walls(map)) {
     const c = (w.left + w.right) / 2, o = w.reach - 0.3, x = w.cx + w.nx * c - w.dx * o, y = w.cy + w.ny * c - w.dy * o;
     a.push(new THREE.Vector4(x, -y, w.dx, -w.dy));
-    b.push(new THREE.Vector4(w.z - map.z0, 60, (w.right - w.left) / 2, o + 0.3));
+    b.push(new THREE.Vector4(w.z - map.z0 + AT_GRADE, 60, (w.right - w.left) / 2, o + 0.3));
   }
   return { a, b };
 }
@@ -469,6 +470,8 @@ const REACH = 6;
 export const LOW_ARCH = 2.0;
 const MIN_PAST = 1.8;    // metres of face each side of the openings however low the hill beside, so it reads as a headwall, not a pair of jambs
 const HIGH = 1.0;        // metres over the floor the hill beside the cutting must stand to want a wall
+/** Metres over the floor in front of a headwall that the ground is still drawn: a way crossing there at grade. */
+const AT_GRADE = HIGH + 0.5;
 const BANK = 6;          // metres back from a wing wall that a steep bank behind it counts
 const RAKE = 1.0;        // the fall over each metre of the raked end of a wall holding a steep bank
 export const REPOSE = 0.7;      // the slope a grassed bank lies at by itself: anything steeper is held up by a wall

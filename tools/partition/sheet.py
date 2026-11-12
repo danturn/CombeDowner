@@ -414,6 +414,34 @@ def decks(rd, margin):
     return out
 
 
+PORTAL_OUT = 3.0     # metres out in front of a portal, where its headwall holds the hill, that a way's edge counts as going in
+PORTAL_IN = 8.0      # and in past it
+
+
+def in_portals(tn, bounds, x, y):
+    """Which of the points (x, y) lie in a tunnel's mouth: across its headwall, from just outside the
+    portal to a little way in. A tunnel cut at the square's edge has no portal there."""
+    from tunnels import FACE_PAST, half_at
+    out = np.zeros(len(x), bool)
+    w, s, e, n = bounds
+    for t in tn or []:
+        p = t.get("p") or []
+        if len(p) < 2:
+            continue
+        for k, k2 in ((0, 1), (len(p) - 1, len(p) - 2)):
+            (ax, ay), (bx, by) = p[k][:2], p[k2][:2]
+            if min(abs(ax - w), abs(ax - e), abs(ay - s), abs(ay - n)) < 0.5:
+                continue
+            l = math.hypot(bx - ax, by - ay)
+            if l < 1e-6:
+                continue
+            ux, uy = (bx - ax) / l, (by - ay) / l
+            along = (x - ax) * ux + (y - ay) * uy
+            across = np.abs((x - ax) * uy - (y - ay) * ux)
+            out |= (along > -PORTAL_OUT) & (along < PORTAL_IN) & (across < half_at(t, k) + FACE_PAST)
+    return out
+
+
 def runs(mask):
     """A row of 0s and 1s as run lengths, starting with a run of 0s."""
     out, at, n = [], 0, 0
@@ -591,6 +619,11 @@ def ground_sheet(tile, canal=None):
                 floor = np.full(len(spots), np.inf)
                 np.minimum.at(floor, si_[low], bz[low])
                 meet = np.minimum(meet, floor)
+    # A way going into a tunnel ends at its portal with the hill standing metres over it: the
+    # headwall holds that hill, and the game hides the ground in the bore's mouth, so the ground meets
+    # the way's end at its own height there. A retaining wall up to the hill stood across the opening.
+    at_portal = in_portals(tile.get("tn"), bounds, F.V[spots, 0], F.V[spots, 1])
+    meet[at_portal] = top[at_portal]
     meet = np.round(meet, 2)
     held = np.round((meet - top) * 100).astype(np.int64)
     hf = dict(zip(spots.tolist(), (top + held / 100).tolist()))

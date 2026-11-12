@@ -21,6 +21,11 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Tunnel portals and the ground sheet (branch `claude/edge-fixes`):** the sheet stands no retaining
+  wall across a way's end at a tunnel's portal (`tools/partition/sheet.py` `in_portals`), and the
+  ground at about the floor's level in front of a headwall is no longer hidden (`web/src/tunnels.ts`
+  `mouths`, `AT_GRADE`). Proved on Edinburgh's squares 0,1 and 1,1; needs the squares rebuilt.
+
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
