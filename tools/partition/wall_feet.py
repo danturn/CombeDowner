@@ -14,7 +14,7 @@ import json
 
 import numpy as np
 
-FOOT_UNDER = 0.1     # world.ts: a wall's foot stands this far under the drawn ground at its points
+FOOT_UNDER = 0.4     # world.ts: a wall's foot stands this far under the drawn ground at its points
 FOOT_DEEP = 0.4      # world.ts: and at least this far under its own point's height
 FOOT_AIM = 0.03      # metres the foot may stand over the ground between points (rule 44 counts 0.05)
 SIDE = 0.12          # metres either side of a wall's line its faces stand (about half the thickest wall)
@@ -22,6 +22,7 @@ SAMPLE = 0.25        # metres between the places the foot is measured along a st
 SHORTEST = 0.3       # metres: no piece of a stretch is cut shorter than this
 LOWER_MOST = 0.6     # metres a point is ever let down to bring its foot to what is drawn under it
 OFF_GRID = 0.33      # metres a point may stand off the survey's grid (tools/check_map.py: a wall off its ground)
+WALL_LIFT_MOST = 0.6     # write_tile.py: and how much higher a wall's evened-out top may carry it over a dip
 
 
 def _drawn(m, path):
@@ -84,18 +85,21 @@ def bake(path):
     # the bank) has its foot held at that ground: it comes down to the face, by as much as LOWER_MOST.
     import check_more as cm
     grid = cm.terrain(m["t"])
-    floor = lambda x, y, z: max(z - LOWER_MOST, float(grid(x, y)) - OFF_GRID)
+    # (a point its wall's evened-out top lifted over a dip is let down as if it stood on its ground)
+    unlifted = lambda x, y, z: min(z, float(grid(x, y)) + OFF_GRID)
+    floor = lambda x, y, z: max(unlifted(x, y, z) - LOWER_MOST, float(grid(x, y)) - OFF_GRID)
     lower = {}
     for w, i, t, L, first in stretches:
         p = br[w]["p"]
         for end, at in ((0, i), (-1, i + 1)):
             z = p[at][2]
+            zl = unlifted(p[at][0], p[at][1], z)
             for k in (first, first + 1):
                 g, u = G[offsets[k]:offsets[k + 1]][end], U[offsets[k]:offsets[k + 1]][end]
                 foot = min(z - FOOT_DEEP, g - FOOT_UNDER)
                 under = u if u <= foot + 1.0 else g
                 # (only a point's own height can bring its foot down: the ground's limit is the game's)
-                if foot - under > FOOT_AIM and g - FOOT_UNDER > z - FOOT_DEEP:
+                if foot - under > FOOT_AIM and g - FOOT_UNDER > zl - FOOT_DEEP:
                     want = max(under + FOOT_DEEP - FOOT_AIM, floor(p[at][0], p[at][1], z))
                     if want < z:
                         lower[(w, at)] = min(lower.get((w, at), z), want)
@@ -111,14 +115,14 @@ def bake(path):
         for k in (first, first + 1):
             g = G[offsets[k]:offsets[k + 1]]
             foot = np.minimum(zs - FOOT_DEEP, g - FOOT_UNDER)
-            sides.append((foot, under_of(k, foot)))
+            sides.append((foot, under_of(k, foot), g))
         keep = set()
 
         def split(i0, i1):
             if i1 - i0 < 2:
                 return
             worst, at = FOOT_AIM, None
-            for foot, under in sides:
+            for foot, under, _ in sides:
                 lin = foot[i0] + (foot[i1] - foot[i0]) * (t[i0 + 1:i1] - t[i0]) / (t[i1] - t[i0])
                 gap = lin - under[i0 + 1:i1]
                 ok = ((t[i0 + 1:i1] - t[i0]) * L >= SHORTEST) & ((t[i1] - t[i0 + 1:i1]) * L >= SHORTEST)
@@ -132,14 +136,19 @@ def bake(path):
                 split(at, i1)
         split(0, len(t) - 1)
         if keep:
-            # (the new point's height brings its foot down to what is drawn there, as LOWER_MOST allows)
+            # (the new point keeps the wall's top line where its foot reaches the ground by itself, the
+            # game standing it a little under the ground at each point; where a face is drawn lower than
+            # the ground, its height brings the foot down to the face, as LOWER_MOST allows)
             def z_at(k):
-                need = min(float(under[k]) for _, under in sides) + FOOT_DEEP - FOOT_AIM
-                x, y = a[0] + (q[0] - a[0]) * t[k], a[1] + (q[1] - a[1]) * t[k]
+                z = float(zs[k])
+                if any(float(g[k]) - FOOT_UNDER > float(under[k]) + FOOT_AIM for _, under, g in sides):
+                    need = min(float(under[k]) for _, under, _ in sides) + FOOT_DEEP - FOOT_AIM
+                    z = min(z, max(need, floor(*xy(k), z)))
                 # (and no further off the survey's grid than a point may stand: the line between two
                 # lowered points can pass under a hump of ground between them)
-                g = float(grid(x, y))
-                return round(min(max(min(float(zs[k]), max(need, floor(x, y, float(zs[k])))), g - OFF_GRID), g + OFF_GRID), 2)
+                g = float(grid(*xy(k)))
+                return round(min(max(z, g - OFF_GRID), g + OFF_GRID + WALL_LIFT_MOST), 2)
+            xy = lambda k: (a[0] + (q[0] - a[0]) * t[k], a[1] + (q[1] - a[1]) * t[k])
             added[(w, i)] = [[round(a[0] + (q[0] - a[0]) * t[k], 2), round(a[1] + (q[1] - a[1]) * t[k], 2), z_at(k)]
                              for k in sorted(keep)]
     if not added and not lower:

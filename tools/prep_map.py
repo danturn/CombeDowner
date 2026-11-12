@@ -153,6 +153,33 @@ DEM = np.vstack(rows)
 if getattr(A, "sea", None) is not None:
     DEM = np.maximum(DEM, A.sea - 20)     # the terrain tiles' seabed has the odd wild pixel, kilometres deep
 
+# The terrain tiles have the odd small pit or spike a few metres deep with sheer sides, where a
+# basement or a building was taken out of the survey: the ground, and every wall along it, dipped
+# into it. A hollow or knoll no bigger than PIT_AREA and at least PIT_DEPTH deep is filled to where
+# it spills over, or cut down to where it falls away; a real dell or hill is bigger than that.
+PIT_AREA = 600.0     # square metres
+PIT_DEPTH = 1.0      # metres
+
+
+def mend_pits(dem, px):
+    from scipy import ndimage
+    from skimage.morphology import reconstruction
+    def fill(a):
+        seed = a.copy()
+        seed[1:-1, 1:-1] = a.max()
+        filled = reconstruction(seed, a, method="erosion")
+        lab, n = ndimage.label(filled - a > 0.05)
+        if n == 0: return a
+        idx = np.arange(1, n + 1)
+        area = ndimage.sum(np.ones_like(a), lab, idx) * px * px
+        depth = ndimage.maximum(filled - a, lab, idx)
+        mend = np.concatenate([[False], (area <= PIT_AREA) & (depth >= PIT_DEPTH)])
+        return np.where(mend[lab], filled, a)
+    return -fill(-fill(dem))
+
+
+DEM = mend_pits(DEM, 40075016.7 * math.cos(math.radians(lat0)) / NPX)
+
 
 def elev(x, y):
     """Bilinear terrain height at model metres (x east, y north)."""
@@ -276,7 +303,7 @@ def flag_ranges(p, key):
 
 
 from profiles import APPROACH, carry_profile, ease_kinks
-from railway import open_runs, portal_faces, BORE_LIT
+from railway import open_runs, portal_faces, BORE_LIT, CUT_REACH, CUT_BAND, CUT_DEEP, LID_DEEP, LID_HILL, BED_HALF, PORTAL_WING, CUT_JOIN, WING_FALL
 from grading import COARSE, grade, terrain_detail
 
 
@@ -1486,6 +1513,7 @@ for r in pending:
 # runs on the ground, as under a road, so it sits in its cuttings and on its embankments rather
 # than through the hillside; not under its bridges and viaducts, nor over its tunnels
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
+ROAD_IN = flat_in.copy()               # (the streets' carriageways, before the railway's bed is laid)
 if os.path.exists(rail_file):
     rail_runs = 0
     for t in json.load(open(rail_file))["tracks"]:
@@ -1500,6 +1528,136 @@ if os.path.exists(rail_file):
                 rail_flush(); run, z = [], []
         rail_flush()
     if rail_runs: print(f"railway: the ground flattened under {rail_runs} stretches of track")
+
+
+def survey_at(x, y):
+    """The survey's ground (before anything is laid on it) at points x, y, bilinear on the grid."""
+    fi, fj = np.clip((x - X0) / dx, 0, nx - 1.001), np.clip((y - Y0) / dy, 0, ny - 1.001)
+    i, j = fi.astype(int), fj.astype(int)
+    u, v = fi - i, fj - j
+    return (SURVEY[j, i] * (1 - u) + SURVEY[j, i + 1] * u) * (1 - v) + (SURVEY[j + 1, i] * (1 - u) + SURVEY[j + 1, i + 1] * u) * v
+
+
+def hold(poly, z, ease=False, clear=None):
+    """The grid vertices in poly held at z (a number, or a function of x, y arrays), as a street's
+    carriageway is; with ease, the ground round it eased back to its own as beside a street. Not where
+    a street or a bridge's span already has the ground, nor within the area clear."""
+    far = EASE if ease else 0.0
+    win, inn = cover_xy(poly.buffer(far) if far else poly, edge=True)
+    gx, gy = GX[win][inn], GY[win][inn]
+    if not len(gx): return 0
+    d = shapely.distance(poly, shapely.points(gx, gy))
+    zz = np.full(len(gx), z, float) if np.isscalar(z) else z(gx, gy)
+    fw, fi, road = flat_w[win][inn], flat_in[win][inn], ROAD_IN[win][inn]
+    win_ = np.where(d <= 0, ~road, ~fi & (d < fw) & (d < far)) & ~np.isnan(zz)
+    if clear is not None: win_ &= ~shapely.intersects_xy(clear, gx, gy)
+    if PROTECT is not None: win_ &= ~PROTECT[win][inn]
+    for a, val in ((flat_w, d), (flat_z, zz), (flat_f, np.zeros(len(gx)))):
+        blk = a[win]; sub = blk[inn]; sub[win_] = val[win_]; blk[inn] = sub
+    blk = flat_in[win]; sub = blk[inn]; sub[win_ & (d <= 0)] = True; blk[inn] = sub
+    return int((win_ & (d <= 0)).sum())
+
+
+# A railway tunnel's face is the front of a lid: the hill over its bores, back from the face, is held
+# level with the face's top, so the face doesn't stand on a slope as a fin. (Not where the hill there
+# stands well over the face: the face holds it, as it is.) And where the line runs up to the face in
+# a cutting, the cutting's sides are walls: the ground beside the bed is held level at the cutting's
+# top, out to where the survey reaches it, and the sheet stands a retaining wall at the bed's edge
+# (partition/sheet.py). Not where a mapped retaining wall already holds the cutting's side.
+RAIL_CLEAR = 6.0       # metres from a track's middle that the grid stays the line's own (the sheet builds up the rest)
+HOUSE_CLEAR = 3.0      # metres from a building that the ground stays as it was
+CROSS_REACH = 15.0     # metres either side of the line that a way crossing it is taken to be on its bridge
+DECK_CLEAR = 8.0       # metres past such a way's side that the cutting's ground stays as it was
+if os.path.exists(rail_file):
+    import shapely.affinity
+    from shapely.geometry import box as _box
+    _retain = [transform(proj, g) for g, p_ in L("infrastructure") if p_.get("subtype") == "barrier" and p_.get("class") == "retaining_wall"]
+    _retain = unary_union(_retain) if _retain else None
+    # (a face under a street of houses, which stand on the ground as the survey has it, is left so)
+    _houses = shapely.STRtree([transform(proj, g) for g, _ in L("building") if g.geom_type in ("Polygon", "MultiPolygon")])
+    _segs = []
+    for t in rail_tracks:
+        for a_, b_ in zip(t["p"], t["p"][1:]):
+            if a_[3] == 2 and b_[3] == 2: continue
+            # (up to the mouth, halfway to the first point in the tunnel, as open_runs has it)
+            if a_[3] == 2: a_ = [(a_[i] + b_[i]) / 2 for i in range(3)]
+            if b_[3] == 2: b_ = [(a_[i] + b_[i]) / 2 for i in range(3)]
+            _segs.append((a_, b_))
+    _open = [shapely.LineString([a_[:2], b_[:2]]) for a_, b_ in _segs]
+    _open_z = [(a_[2] + b_[2]) / 2 for a_, b_ in _segs]
+    # (the grid round each of the line's own points stays the line's: the ground under a train)
+    # (but not its points behind a tunnel's face, which are in the bore, under the lid)
+    _faces_all = portal_faces(json.load(open(rail_file)).get("portals") or [])
+    _in_bore = lambda q: any(0.0 < (q[0] - fc["x"]) * fc["ux"] + (q[1] - fc["y"]) * fc["uy"] < LID_DEEP
+                             and fc["v0"] <= -(q[0] - fc["x"]) * fc["uy"] + (q[1] - fc["y"]) * fc["ux"] <= fc["v1"] for fc in _faces_all)
+    _own = [q[:2] for t in rail_tracks for q in t["p"] if q[3] == 0 and X0 - 60 <= q[0] <= X1 + 60 and Y0 - 60 <= q[1] <= Y1 + 60 and not _in_bore(q)]
+    _line_clear = shapely.MultiPoint(_own).buffer(dx * 1.5) if _own else None
+    # (nor under or beside a way crossing over the cutting, whose bridge keeps the room under its deck)
+    _near_line = unary_union(_open).buffer(CROSS_REACH) if _open else None
+    _decks = []
+    for r in pending if _near_line is not None else []:
+        ln = shapely.LineString([q[:2] for q in r["run"]]) if len(r["run"]) > 1 else None
+        if ln is None or not ln.intersects(_near_line): continue
+        _decks.append(ln.intersection(_near_line).buffer(RW.get(r["c"], 4) / 2 + DECK_CLEAR))
+    _decks = shapely.STRtree(_decks) if _decks else None
+    lids = cuts = 0
+    # (a cutting between two tunnels stops at the next one's face: over its bore is that one's hill)
+    _faces = [fc for fc in _faces_all
+              if X0 - CUT_REACH <= fc["x"] <= X1 + CUT_REACH and Y0 - CUT_REACH <= fc["y"] <= Y1 + CUT_REACH]
+    _over_bores = unary_union([shapely.affinity.affine_transform(_box(0.0, fc["v0"] - PORTAL_WING, CUT_REACH, fc["v1"] + PORTAL_WING),
+                                                                 [fc["ux"], -fc["uy"], fc["uy"], fc["ux"], fc["x"], fc["y"]]) for fc in _faces]) if _faces else None
+    for fc in _faces:
+        ux_, uy_, nx_, ny_ = fc["ux"], fc["uy"], -fc["uy"], fc["ux"]
+        frame = lambda u0, u1, v0, v1: shapely.affinity.affine_transform(_box(u0, v0, u1, v1), [ux_, nx_, uy_, ny_, fc["x"], fc["y"]])
+        lid_z = fc["z"] + fc["top"]
+        behind = frame(0.0, LID_DEEP, fc["v0"] - PORTAL_WING, fc["v1"] + PORTAL_WING)
+        lidded = not len(_houses.query(behind, predicate="intersects"))
+        if lidded:
+            # (where the hill stands well over the face's top, the face holds it as it is)
+            lids += hold(behind, lambda x_, y_, z_=lid_z: np.where(survey_at(x_, y_) <= z_ + LID_HILL, z_, np.nan),
+                         ease=True, clear=_line_clear) > 0
+        # the cutting in front of it: the bed of the open line within its reach, and either side of it
+        ahead = frame(-CUT_REACH, 0.0, fc["v0"] - CUT_BAND, fc["v1"] + CUT_BAND)
+        near = [k for k, l in enumerate(_open) if l.intersects(ahead)]
+        if not near: continue
+        bed = unary_union([_open[k].buffer(BED_HALF, cap_style=2) for k in near]).intersection(ahead)
+        # (the ground between tracks side by side is the cutting's floor, not its side)
+        bed = bed.buffer(CUT_JOIN).buffer(-CUT_JOIN)
+        band = bed.buffer(CUT_BAND).difference(bed).intersection(ahead)
+        win, inn = cover_xy(band)
+        gx, gy = GX[win][inn], GY[win][inn]
+        if not len(gx): continue
+        pts = shapely.points(gx, gy)
+        edge = shapely.shortest_line(bed.boundary, pts)
+        ex, ey = shapely.get_coordinates(shapely.get_point(edge, 0)).T
+        ox, oy = gx - ex, gy - ey
+        dist = np.hypot(ox, oy)
+        ox, oy = ox / np.maximum(dist, 1e-6), oy / np.maximum(dist, 1e-6)
+        steps = np.arange(0.0, CUT_BAND + 0.01, 1.0)
+        rays = survey_at((ex[:, None] + ox[:, None] * steps).ravel(), (ey[:, None] + oy[:, None] * steps).ravel()).reshape(len(gx), -1)
+        top_, at_ = rays.max(axis=1), steps[rays.argmax(axis=1)]
+        rail_z = np.asarray([_open_z[near[int(np.argmin([_open[k].distance(shapely.Point(x_, y_)) for k in near]))]] for x_, y_ in zip(ex, ey)])
+        keep = (top_ - rail_z >= CUT_DEEP) & (dist <= at_ + 0.5) & (dist > 0.05)
+        keep[np.unique(_houses.query(pts, predicate="dwithin", distance=HOUSE_CLEAR)[0])] = False
+        if _decks is not None: keep[np.unique(_decks.query(pts, predicate="intersects")[0])] = False
+        if _over_bores is not None: keep &= ~shapely.intersects_xy(_over_bores, gx, gy)
+        # (the ground under a train's sides stays the line's, as the line is laid on it)
+        keep &= shapely.distance(unary_union([_open[k] for k in near]), pts) > RAIL_CLEAR
+        if _retain is not None:
+            keep &= ~shapely.intersects(shapely.linestrings(np.stack([np.stack([ex, ey], 1), np.stack([gx, gy], 1)], 1)), _retain)
+        if not keep.any(): continue
+        zz = np.maximum(top_, survey_at(gx, gy))
+        if lidded:
+            # (beside the face the ground comes up to its top, as its wing walls hold it, and falls
+            # away from there along the cutting at 1 in WING_FALL)
+            u_ = (gx - fc["x"]) * ux_ + (gy - fc["y"]) * uy_
+            v_ = (gx - fc["x"]) * nx_ + (gy - fc["y"]) * ny_
+            wing = (v_ > fc["v0"] - PORTAL_WING) & (v_ < fc["v1"] + PORTAL_WING)
+            zz = np.where(wing, np.maximum(zz, lid_z + u_ / WING_FALL), zz)
+        zmap = dict(zip(zip(gx[keep].round(2), gy[keep].round(2)), zz[keep]))
+        held = shapely.MultiPoint(list(zip(gx[keep], gy[keep]))).buffer(0.05)
+        cuts += hold(held, lambda x_, y_: np.asarray([zmap.get((round(a_, 2), round(b_, 2)), np.nan) for a_, b_ in zip(x_, y_)])) > 0
+    if lids or cuts: print(f"railway: {lids} tunnel faces with a level lid behind them, {cuts} with a walled cutting in front")
 if tunnel_list:
     print("tunnels: " + ", ".join(f"{t['n'] or t['c']} {sum(math.dist(a[:2], b[:2]) for a, b in zip(t['p'], t['p'][1:])):.0f} m"
                                   for t in tunnel_list))

@@ -35,6 +35,34 @@ the game locally, without the sound" in `CLAUDE.md`.
   street at its height stops either side of it (`flights_across_streets`). Trialled on
   Edinburgh 1,1 and Bath 0,3 only.
 
+- **Tunnel portals and the ground sheet (branch `claude/edge-fixes`):** the sheet stands no retaining
+  wall across a way's end at a tunnel's portal (`tools/partition/sheet.py` `in_portals`), and the
+  ground at about the floor's level in front of a headwall is no longer hidden (`web/src/tunnels.ts`
+  `mouths`, `AT_GRADE`). Proved on Edinburgh's squares 0,1 and 1,1; needs the squares rebuilt.
+- **Smooth wall tops and mended terrain pits (branch `claude/edge-fixes`):** small sheer pits and
+  spikes in the terrain tiles are filled or cut when a square is built (`tools/prep_map.py`
+  `mend_pits`); each wall's top is evened out along it and stands up to 0.6 m taller over a dip
+  (`tools/partition/write_tile.py` `smooth_wall_tops`, `wall_feet.py`); the game sets a wall's foot
+  0.4 m under the drawn ground (`web/src/world.ts` `barrierRun`); check rule 9's "wall off its
+  ground" allows that lift. Every square needs rebuilding.
+- **Ways held over tunnel mouths (branch `claude/edge-fixes`):** a mapped way that crosses a
+  railway or road tunnel's line within 15 m of its mouth is held on the tunnel's lid (a railway
+  face's top, a road bore's crown plus 0.6 m) and the ground laid to it, so it is never stepped
+  down into the cutting (`tools/partition/write_tile.py` `tunnel_lids`, `lid_over_tunnels`). Low
+  arches are left alone. Every square with a tunnel needs rebuilding.
+- **Railway tunnel faces as lids, walled cuttings (branch `claude/edge-fixes`):** mouths side by
+  side join into one face whatever order the data lists them (`railway.py` `portal_groups`,
+  `railway.ts` `portalGroups`), an arch for each pair of tracks with a pier between, and a parapet
+  along the top that you walk into (`map.ts`). `prep_map.py` holds the hill behind each face level
+  with its top (not under houses), and where the line runs up to a face in a cutting at least 3 m
+  deep, holds the ground beside it level at the cutting's top (not by houses, bridges or mapped
+  retaining walls); the sheet stands the cutting's wall at the bed's edge and builds the ground
+  behind it level (`partition/sheet.py` `rail_mouths_and_cuttings`), and the bed runs across the
+  arches in front of each face (`write_tile.py` `mouth_aprons`), and between tracks out along the
+  cutting (`cutting_floors`). A face's wings slope down to 1 m at their ends (`railway.ts` `wingTop`); the sheet
+  leaves the lid over the bores as laid; paths on the lid are held at its height and no wall, fence
+  or hedge stands on it (`lid_areas`); check rule 6 skips track points behind a face, in its bore.
+  Every square with a railway tunnel needs rebuilding. The terrain shader hides ground only under each arch, inside the bore's lining (`world.ts`); the bore is a closed tube with an earth skin over its vault, and no retaining wall is drawn inside it. The face's top is at least `LID_OVER` (1.5 m) over the crown, the sheet holds the lid at least at the face's top right up to the face, the railway's bed stops just in under the face (`rail_beds`), and the ground meets it there at the lid's height (`sheet.py`). `ground_seams.mjs` (rule 38) leaves out cracks inside a bore, which the lining closes.
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's

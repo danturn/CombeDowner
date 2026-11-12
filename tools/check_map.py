@@ -21,7 +21,7 @@ case by case:
     water's bed is below its surface.
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
     the data is checked for ones lying along a carriageway, which the game can't cut).
- 6. The railway: track on the ground sits on it; a road crossing the line is a bridge or an
+ 6. The railway: track on the ground sits on it (not behind a tunnel's face, in its bore); a road crossing the line is a bridge or an
     underpass, never at grade, except at a level crossing the data maps (the map's lx, which the
     game draws).
  7. The canal: every road or path crossing it (outside its tunnels) is a bridge with headroom for
@@ -67,7 +67,7 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_more   # rules 12 on (tools/check_more.py)
-from railway import open_runs
+from railway import LID_DEEP, open_runs, portal_faces
 from streets import pave_band
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
@@ -79,6 +79,7 @@ PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "tra
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
             "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 PIER_CLEAR = 6.0    # metres round a deck's end over the water with no other way in them: a jetty's end
+WALL_LIFT_MOST = 0.6    # metres a wall may stand over its ground: tools/partition/write_tile.py
 ON_WALL = 1.0       # metres from a building's outline that a span's end is on it, ending against its wall
 VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown"}
 
@@ -110,6 +111,11 @@ def main():
     canal_tree = shapely.STRtree([c[0] for c in canal_segs])
     rail_lines = [LineString([q[:2] for q in t["p"]]) for t in rail["tracks"] if len(t["p"]) > 1] if rail else []
     rail_pts = [t["p"] for t in rail["tracks"]] if rail else []
+    # (a track's points behind a tunnel's face are in its bore, whose lining hides the ground there)
+    in_bore = lambda q: any(0.0 < (q[0] - fc["x"]) * fc["ux"] + (q[1] - fc["y"]) * fc["uy"] < LID_DEEP
+                            and fc["v0"] <= -(q[0] - fc["x"]) * fc["uy"] + (q[1] - fc["y"]) * fc["ux"] <= fc["v1"]
+                            for fc in rail_faces)
+    rail_faces = portal_faces(rail.get("portals") or []) if rail else []
     rail_tree = shapely.STRtree(rail_lines)
     totals = collections.Counter()
     worst = collections.defaultdict(list)
@@ -312,7 +318,7 @@ def main():
         drawn = check_more.terrain(T)     # (the ground as the game draws it, which the track lies on)
         for pts in rail_pts:
             for q in pts:
-                if q[3] == 0 and b[0] <= q[0] <= b[2] and b[1] <= q[1] <= b[3]:
+                if q[3] == 0 and b[0] <= q[0] <= b[2] and b[1] <= q[1] <= b[3] and not in_bore(q):
                     dz = q[2] - float(drawn(q[0], q[1]))
                     if abs(dz) > 0.6: note("6 track off its ground", abs(dz), (tag, round(q[0]), round(q[1])), f"{dz:+.1f} m")
         for r, mk, ln in zip(roads, marks, lines):
@@ -740,7 +746,10 @@ def fit_together(m, tag, note, f=None):
             where = (tag, round(xy(q)[0]), round(xy(q)[1]))
             if n in inside: note(f"9 {kind} inside a building", 1, where, str(q[0]) if kind == "street item" else kind)
             elif near_bar(pt, 0.3 if kind == "tree" else 0.2): note(f"9 {kind} on a wall", 1, where, str(q[0]) if kind == "street item" else kind)
-    # walls on their ground (not lifted off it, as where a square's edge once confused the heights)
+    # walls on their ground: the game takes each one's foot down to the ground drawn under it, so a
+    # wall is off its ground where it sinks into it, or stands up more than its evened-out top may
+    # carry it over a dip (tools/partition/write_tile.py WALL_LIFT_MOST), as where a square's edge once
+    # confused the heights
     T = m["t"]; tnx, tny = T["nx"], T["ny"]
     TH = np.array(T["h"], dtype=float).reshape(tny, tnx) / 10 + T["z0"]
     def ground(x, y):
@@ -750,7 +759,7 @@ def fit_together(m, tag, note, f=None):
         if u + v <= 1: return TH[j, i] + (TH[j, i + 1] - TH[j, i]) * u + (TH[j + 1, i] - TH[j, i]) * v
         return TH[j + 1, i + 1] + (TH[j + 1, i] - TH[j + 1, i + 1]) * (1 - u) + (TH[j, i + 1] - TH[j + 1, i + 1]) * (1 - v)
     for b in bars:
-        dz = max(abs(q[2] - ground(q[0], q[1])) for q in b["p"])
+        dz = max(max(ground(q[0], q[1]) - q[2], q[2] - ground(q[0], q[1]) - WALL_LIFT_MOST) for q in b["p"])
         if dz > 0.35: note("9 wall off its ground", dz, (tag, round(b["p"][0][0]), round(b["p"][0][1])), f"{b['c']} {dz:.1f} m")
     # a stub of wall on its own, with nothing at either end
     gate_ends = [Point(g[0], g[1]) for g in m.get("gt") or []] + [Point(g[2], g[3]) for g in m.get("gt") or []]

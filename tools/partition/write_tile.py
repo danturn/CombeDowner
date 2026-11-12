@@ -1877,6 +1877,184 @@ def over_roof(tunnels, inside=False):
     return test
 
 
+LID_REACH = 15.0     # metres into a tunnel from its mouth that a way crossing over it is held up to its lid
+LID_COVER = 0.6      # metres over the bore's crown that the lid stands: its lining and a little fill
+LID_BORE = 3.6       # metres either side of a track that a railway's bore reaches (railway.py PORTAL_R)
+LID_ACROSS = 30.0    # degrees off the tunnel's line a way must run to cross over it, not along it
+LID_PORTAL = 8.0     # metres past a track's last point in a tunnel that its mouth can stand
+
+
+def _out_to_portal(run, portals):
+    """A railway tunnel's points run out at each end to its mouth (the track's first point in the
+    tunnel can lie a few metres in from it)."""
+    def mouth(end, inner):
+        ux, uy = end[0] - inner[0], end[1] - inner[1]
+        best = None
+        for m in portals:
+            d = math.dist(m[:2], end[:2])
+            if d < LID_PORTAL and (m[0] - end[0]) * ux + (m[1] - end[1]) * uy > 0 and (best is None or d < best[0]):
+                best = (d, [m[0], m[1], end[2]])
+        return [best[1]] if best else []
+    return mouth(run[0], run[1])[::-1] + run + mouth(run[-1], run[-2])
+
+
+def tunnel_lids(rail_tracks, tunnels, sq, portals=()):
+    """The first metres of each tunnel in from its mouths, which a way crossing over must clear: each
+    (line, half width, the lid's height a distance along it). A railway's from its tracks in a tunnel
+    out to its mouths (a short one is a bridge over the line, with no mouths), a street's from the
+    square's bores. An end cut at the square's edge is no mouth."""
+    from railway import PORTAL_CROWN, SHORT_TUNNEL, portal_faces
+    w, s, e, n = sq
+    at_edge = lambda q: min(abs(q[0] - w), abs(q[0] - e), abs(q[1] - s), abs(q[1] - n)) < 0.5
+    faces = portal_faces(portals)
+    runs = []
+    for t in rail_tracks or []:
+        p = t["p"]
+        for st in stretches({i for i, q in enumerate(p) if len(q) > 3 and q[3] == 2}):
+            run = [p[i] for i in st]
+            if len(run) >= 2 and LineString([q[:2] for q in run]).length >= SHORT_TUNNEL:
+                run = _out_to_portal(run, portals)
+                runs.append((run, LID_BORE, [_face_lid(faces, run[0]), _face_lid(faces, run[-1])], PORTAL_CROWN + LID_COVER))
+    # (a low arch under a street at grade, `cr`, has the street as its lid already)
+    for t in tunnels or []:
+        p = t.get("p") or []
+        if len(p) >= 2 and not t.get("cr"):
+            runs.append((p, max(t.get("hw") or [TN.HALF]), [None, None], TN.CROWN + LID_COVER))
+    out = []
+    for run, half, at_face, lid in runs:
+        line = LineString([q[:2] for q in run])
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
+        floor = [q[2] for q in run]
+        for end, s0, s1, face in ((run[0], 0.0, min(LID_REACH, line.length), at_face[0]),
+                                  (run[-1], max(0.0, line.length - LID_REACH), line.length, at_face[1])):
+            if at_edge(end) or s1 - s0 < 0.5:
+                continue
+            piece = substring(line, s0, s1)
+            out.append((piece, half, (lambda x, y, z=face: z) if face is not None else functools.partial(_lid_at, line, cum, floor, lid)))
+    return out
+
+
+def _face_lid(faces, end):
+    """The height of the top of the tunnel face a railway tunnel's end opens in (the lid behind it,
+    prep_map.py holds the hill there level with it), or None if it opens in none."""
+    for fc in faces:
+        u = (end[0] - fc["x"]) * fc["ux"] + (end[1] - fc["y"]) * fc["uy"]
+        v = -(end[0] - fc["x"]) * fc["uy"] + (end[1] - fc["y"]) * fc["ux"]
+        if -1.0 < u < LID_PORTAL and fc["v0"] <= v <= fc["v1"]:
+            return fc["z"] + fc["top"]
+    return None
+
+
+def _lid_at(line, cum, floor, lid, x, y):
+    return float(np.interp(line.project(Point(x, y)), cum, floor)) + lid
+
+
+def _crossing(a, b, line):
+    """Where the stretch a-b crosses over `line` well off along it, as a point, else None."""
+    cut = LineString([a[:2], b[:2]]).intersection(line)
+    if cut.is_empty or cut.geom_type != "Point":
+        return None
+    s = line.project(cut)
+    u, v = line.interpolate(max(0.0, s - 0.5)), line.interpolate(min(line.length, s + 0.5))
+    tx, ty, ux, uy = v.x - u.x, v.y - u.y, b[0] - a[0], b[1] - a[1]
+    cos = abs(ux * tx + uy * ty) / ((math.hypot(ux, uy) * math.hypot(tx, ty)) or 1)
+    return cut if math.degrees(math.acos(min(1.0, cos))) > LID_ACROSS else None
+
+
+def lid_areas(portals, T, houses=()):
+    """The level lid behind each railway tunnel face that prep_map.py holds at the face's top (not
+    one with a house on it, nor where the hill stands well over it and is left as it is), as (area,
+    height)."""
+    from railway import LID_DEEP, LID_HILL, PORTAL_WING, portal_faces
+    out = []
+    for fc in portal_faces(portals):
+        area = face_box(fc, 0.0, LID_DEEP, fc["v0"] - PORTAL_WING, fc["v1"] + PORTAL_WING)
+        if any(h.intersects(area) for h in houses):
+            continue
+        top = fc["z"] + fc["top"]
+        x0, y0, x1, y1 = area.bounds
+        cells = [box(x - T["dx"] / 2, y - T["dy"] / 2, x + T["dx"] / 2, y + T["dy"] / 2)
+                 for x in np.arange(T["x0"] + math.floor((x0 - T["x0"]) / T["dx"]) * T["dx"], x1 + T["dx"], T["dx"])
+                 for y in np.arange(T["y0"] + math.floor((y0 - T["y0"]) / T["dy"]) * T["dy"], y1 + T["dy"], T["dy"])
+                 if (g := ground_at(T, x, y, split=False)) is not None and g <= top + LID_HILL]
+        held = unary_union(cells).intersection(area) if cells else None
+        if held is not None and not held.is_empty:
+            out.append((held, top))
+    return out
+
+
+def lid_over_tunnels(rd, lids, areas=()):
+    """A way crossing over a tunnel near its mouth is held up to the tunnel's lid, never down in the
+    cutting the survey has there, where a flight was made to take it down to the floor and up again
+    and the bore's arch stood through it; the ground is laid to it. A point is put in where it
+    crosses, and its points over the bore come up. So is a path on a railway face's level lid (`areas`,
+    lid_areas), from where it comes onto it: a flight down off the lid starts at its edge, not in a
+    slot cut through it. Returns how many ways were lifted."""
+    from railway import LID_HILL
+    lifted, up = 0, {}
+    for r in rd:
+        if r["c"] in ("rail", "railway") or len(r["p"]) < 2:
+            continue
+        hit = False
+        for line, half, lid_at in lids:
+            p = r["p"]
+            if not LineString([q[:2] for q in p]).intersects(line):
+                continue
+            new, crossed = [p[0]], False
+            for a, b in zip(p, p[1:]):
+                cut = None if (len(a) > 3 and a[3]) or (len(b) > 3 and b[3]) else _crossing(a, b, line)
+                if cut is not None:
+                    crossed = True
+                    if min(math.dist(cut.coords[0], a[:2]), math.dist(cut.coords[0], b[:2])) > 1.0:
+                        f = math.dist(a[:2], cut.coords[0]) / (math.dist(a[:2], b[:2]) or 1)
+                        new.append([round(cut.x, 1), round(cut.y, 1), round(a[2] + (b[2] - a[2]) * f, 2)])
+                new.append(b)
+            if not crossed:
+                continue
+            for q in new:
+                if (len(q) > 3 and q[3]) or line.distance(Point(q[0], q[1])) > half:
+                    continue
+                top = lid_at(q[0], q[1])
+                if q[2] < top:
+                    q[2] = round(top, 2)
+                    r.setdefault("_lay", set()).add(tuple(q[:2]))
+                    up[(round(q[0], 1), round(q[1], 1))] = q[2]
+                    hit = True
+            r["p"] = new
+        for area, top in areas:
+            p = r["p"]
+            # (a street over a tunnel is held to its bore's lid above, with its own grade on to it)
+            if r["c"] not in GAME_PATHS or not LineString([q[:2] for q in p]).intersects(area):
+                continue
+            new = [p[0]]
+            for a, b in zip(p, p[1:]):
+                if not ((len(a) > 3 and a[3]) or (len(b) > 3 and b[3])):
+                    seg = LineString([a[:2], b[:2]])
+                    cuts = shapely.get_coordinates(seg.intersection(area.boundary)).tolist()
+                    for x, y in sorted(cuts, key=lambda c: math.dist(c, a[:2])):
+                        if min(math.dist((x, y), a[:2]), math.dist((x, y), b[:2])) > 0.5:
+                            f = math.dist(a[:2], (x, y)) / (seg.length or 1)
+                            new.append([round(x, 1), round(y, 1), round(a[2] + (b[2] - a[2]) * f, 2)])
+                new.append(b)
+            for q in new:
+                if (len(q) > 3 and q[3]) or area.distance(Point(q[0], q[1])) > 0.1 or not (q[2] < top + LID_HILL) or q[2] == top:
+                    continue
+                q[2] = round(top, 2)
+                r.setdefault("_lay", set()).add(tuple(q[:2]))
+                up[(round(q[0], 1), round(q[1], 1))] = q[2]
+                hit = True
+            r["p"] = new
+        lifted += hit
+    # (another way meeting it at a point it was lifted at comes up with it, so they still meet)
+    for r in rd:
+        for q in r["p"]:
+            z = up.get((round(q[0], 1), round(q[1], 1)))
+            if z is not None and q[2] < z and not (len(q) > 3 and q[3]):
+                q[2] = z
+                r.setdefault("_lay", set()).add(tuple(q[:2]))
+    return lifted
+
+
 def along_mouths(tunnels, reach=40.0, beside=10.0):
     """A predicate (seg, i): does the way's point i lie beside a tunnel's road where it comes out
     of the hill (within `reach` out from a portal, `beside` across), running along it?"""
@@ -2068,7 +2246,7 @@ def _grid_points(T, ring, reach):
     return W, gx, gy
 
 
-def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
+def lay_ground(T, rd, houses=(), rails=(), tunnels=(), faces=()):
     """Lay the tile's ground to this build's own streets and paths where they meet their bridges,
     by the old build's rules (`prep_map.py`'s flatten, its protection of the ground under a span, cut
     0.6 m under the deck where it humps up and lifted along every way at grade, and its blend), on
@@ -2104,8 +2282,11 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=()):
     # ground the track reads between the grid's points is the bed's, and no further than its last
     # point on the ground (past it, a way passes under the railway's bridge).
     bed = RAIL_BED + T["dx"] / 2
+    # (not behind a tunnel's face, where the track is in the bore, under the lid laid to the ways over it)
+    in_bore = lambda q: any(0.0 < (q[0] - fc["x"]) * fc["ux"] + (q[1] - fc["y"]) * fc["uy"] < LID_REACH
+                            and fc["v0"] <= -(q[0] - fc["x"]) * fc["uy"] + (q[1] - fc["y"]) * fc["ux"] <= fc["v1"] for fc in faces)
     bed_runs = [[t["p"][i] for i in st] for t in rails
-                for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0}) if len(st) >= 2]
+                for st in stretches({i for i, q in enumerate(t["p"]) if len(q) > 3 and q[3] == 0 and not in_bore(q)}) if len(st) >= 2]
     bed_z = np.full(grid.shape, np.nan)
     for run in bed_runs:
         got = _grid_points(T, run, bed)
@@ -3027,6 +3208,45 @@ def noded(pieces):
 SF_LISTS = ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed")
 
 
+APRON_OUT = 5.0      # metres out from a tunnel's face that the bed runs right across its arches
+APRON_IN = 1.5       # and in under the face, past its thickness
+
+
+def face_box(fc, u0, u1, v0, v1):
+    """The box from u0 to u1 out along a tunnel face's way in (out from it, below nought) and v0 to v1
+    across it."""
+    ux, uy = fc["ux"], fc["uy"]
+    corner = lambda u, v: (fc["x"] + ux * u - uy * v, fc["y"] + uy * u + ux * v)
+    return Polygon([corner(u0, v0), corner(u1, v0), corner(u1, v1), corner(u0, v1)])
+
+
+def mouth_aprons(rail, near):
+    """The bed in front of each tunnel face, right across its arches, so the ground between two
+    tracks under one arch doesn't rise up the face into the opening."""
+    from railway import portal_faces
+    out = []
+    for fc in portal_faces(rail.get("portals") or []):
+        apron = face_box(fc, -APRON_OUT, APRON_IN, fc["v0"], fc["v1"])
+        if apron.intersects(near):
+            out.append(apron)
+    return out
+
+
+def cutting_floors(rail, bed):
+    """In a cutting up to a tunnel's face the ground between tracks side by side is its floor, all
+    bed (prep_map.py walls the cutting's sides from the same floor): a strip of grass left between
+    them ran up to the face."""
+    from railway import CUT_JOIN, CUT_REACH, portal_faces
+    out = []
+    for fc in portal_faces(rail.get("portals") or []):
+        ahead = face_box(fc, -CUT_REACH, APRON_IN, fc["v0"], fc["v1"])
+        if not ahead.intersects(bed):
+            continue
+        floor = bed.intersection(ahead).buffer(CUT_JOIN, join_style="mitre").buffer(-CUT_JOIN, join_style="mitre")
+        out.append(floor.intersection(ahead))
+    return out
+
+
 def rail_beds(rail, square):
     """The railway's bed in a square, where the track runs on the ground (not on its bridges or the
     stretch up to one, which the line's own bank carries, nor in its tunnels, up to whose mouths it runs): RAIL_BED either side, and the height of its face at a
@@ -3059,8 +3279,17 @@ def rail_beds(rail, square):
     if not segs:
         return None, None, None
     lines = [LineString([a[:2], b[:2]]) for a, b in segs]
-    bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines])
+    bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines] + mouth_aprons(rail, near))
+    bed = unary_union([bed] + cutting_floors(rail, bed))
     bed = bed.buffer(BED_JOIN / 2, join_style="mitre").buffer(-BED_JOIN / 2, join_style="mitre").intersection(square)
+    # (no further than in under a tunnel's face: past it the line is in its bore, under the hill's
+    # own ground, and the bed drawn there left the hill open over the bore)
+    from railway import LID_DEEP, portal_faces
+    bores = [face_box(fc, APRON_IN, 2 * LID_DEEP, fc["v0"], fc["v1"]) for fc in portal_faces(rail.get("portals") or [])]
+    if bores:
+        bed = bed.difference(unary_union(bores))
+    if bed.is_empty:
+        return None, None, None
     tree = STRtree(lines)
 
     def z_at(x, y):
@@ -8727,8 +8956,8 @@ def _drawn_ground(T, x, y):
 
 
 # metres the ground may fall below, or rise over, a wall's straight line between two of its points:
-# the game sets the foot 0.1 m under the ground at each point, so a smaller dip is hidden, and a
-# rise only buries the foot a little
+# the game sets the foot at least 0.4 m under the ground at each point, so a small dip is hidden, and
+# a rise only buries the foot a little
 WALL_DIP, WALL_RISE = 0.1, 0.2
 
 
@@ -8788,15 +9017,18 @@ def walls_follow_the_ground(br, T):
     return out
 
 
-WALL_EASE = 6.0     # metres either way along a wall that its height at a point is evened out over
-WALL_EASE_MOST = 0.2    # metres at most that evening out moves a point off the ground as it's drawn
+WALL_EASE = 12.0    # metres either way along a wall that its top is evened out over
+WALL_EASE_MOST = 0.2    # metres at most that evening out lets a point down into the ground as it's drawn
+WALL_LIFT_MOST = 0.6    # metres at most a wall stands taller than its own height, over a dip (tools/check_map.py)
+WALL_EASE_PASSES = 4
 
 
 def smooth_wall_tops(br, T):
-    """Each wall's points between its ends at the ground's height evened out along it, so its top runs
-    in a smooth line: taken at each point from a ground drawn in 4 m triangles, it went up in angled
-    steps where the wall crossed their folds. Its ends keep their own heights, where it meets another
-    wall or a gate."""
+    """Each wall's top evened out along it into a smooth line: taken at each point from a ground
+    drawn in 4 m triangles over a lumpy survey, it went up and down in angled steps and zigzags. The
+    line is fitted straight over WALL_EASE either way and never let down into the ground, so over a
+    dip the wall stands up to WALL_LIFT_MOST taller (its foot still goes down to the ground) and over
+    a hump it rises with it. Its ends keep their own heights, where it meets another wall or a gate."""
     out = []
     for b in br:
         p = b["p"]
@@ -8806,17 +9038,24 @@ def smooth_wall_tops(br, T):
         s = [0.0]
         for u, v in zip(p, p[1:]):
             s.append(s[-1] + math.dist(u[:2], v[:2]))
-        z = [q[2] for q in p]
-        drawn = [_drawn_ground(T, q[0], q[1]) for q in p]
-        eased = [list(q) for q in p]
-        for i in range(1, len(p) - 1):
-            w = [(max(0.0, 1 - abs(s[j] - s[i]) / WALL_EASE), z[j]) for j in range(len(p)) if abs(s[j] - s[i]) < WALL_EASE]
-            total = sum(a for a, _ in w)
-            if total > 0:
-                even = sum(a * h for a, h in w) / total
-                lo, hi = min(z[i], drawn[i] - WALL_EASE_MOST), max(z[i], drawn[i] + WALL_EASE_MOST)
-                eased[i][2] = round(min(max(even, lo), hi), 1)
-        out.append(dict(b, p=eased))
+        s = np.array(s)
+        z = np.array([q[2] for q in p], float)
+        drawn = np.array([_drawn_ground(T, q[0], q[1]) for q in p])
+        lo = np.minimum(z, drawn - WALL_EASE_MOST)
+        hi = np.maximum(z, drawn) + WALL_LIFT_MOST
+        near = np.abs(s[:, None] - s[None, :])
+        wt = np.clip(1 - near / WALL_EASE, 0.0, None)
+        h = z.copy()
+        for _ in range(WALL_EASE_PASSES):
+            # (a straight line fitted round each point, not an average, so an even slope stays even to
+            # the wall's ends)
+            sw, ss, sh = wt.sum(1), wt @ s, wt @ h
+            sss, ssh = wt @ (s * s), wt @ (s * h)
+            den = sw * sss - ss * ss
+            fit = np.where(np.abs(den) > 1e-9, (sh * sss - ss * ssh + s * (sw * ssh - ss * sh)) / np.where(np.abs(den) > 1e-9, den, 1), sh / sw)
+            h = np.minimum(np.maximum(fit, lo), hi)
+            h[0], h[-1] = z[0], z[-1]
+        out.append(dict(b, p=[q[:2] + [round(float(v), 2)] + q[3:] if 1 <= i < len(p) - 1 else list(q) for i, (q, v) in enumerate(zip(p, h))]))
     return out
 
 
@@ -9207,8 +9446,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
     bore_widths(tile.get("tn"), rd, roads)
+    rail_portals = json.load(open(rail)).get("portals") or [] if os.path.exists(rail) else []
+    lids = lid_areas(rail_portals, T, houses_near)
+    lid_over_tunnels(rd, tunnel_lids(rail_tracks, tile.get("tn"), sq, rail_portals), lids)
     # the ground is laid to these streets and paths before anything else stands on it
-    laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"))
+    from railway import portal_faces
+    laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"), portal_faces(rail_portals))
     settle_on_laid_ground(rd, laid, road_ground)
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
@@ -9248,7 +9491,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         wall_blocked = unary_union([g[0] for g in gaps] + deck_skirts(gaps) + ([wall_blocked] if wall_blocked is not None else []))
         abutments = unary_union(deck_ends_reach(gaps))
         shapely.prepare(wall_blocked)
+    if abutments is not None:
         shapely.prepare(abutments)
+    # (no wall, fence or hedge on a railway face's lid, which its parapet bounds)
+    if lids:
+        wall_blocked = unary_union([a for a, _ in lids] + ([wall_blocked] if wall_blocked is not None else []))
+        shapely.prepare(wall_blocked)
     doors_near = tile.pop("drn", None) or []
     door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq, doors_near,
                                              doors_of(free, owners, tile.get("dr") or []))
@@ -9364,7 +9612,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     clear_passage_mouths(tile)
     open_passage_mouths(tile)
     ends_on_faces(tile)
-    gs = ground_sheet(tile, canal)
+    gs = ground_sheet(tile, canal, json.load(open(rail)) if os.path.exists(rail) else None)
     if gs is not None:
         tile["gs"] = gs
     d = os.path.dirname(os.path.abspath(out))

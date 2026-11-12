@@ -45,6 +45,7 @@ export { maskSetPieces } from "./landmarks/setpieces";
 export { clearCourt } from "./bonfire";
 export { clearClimb } from "./theclimb";
 export { buildWorld } from "./world";
+export { railMouths } from "./railway";
 export { Tiles } from "./tiles";
 export * as THREE from "three";
 `, opt.src);
@@ -477,6 +478,13 @@ function heights(group) {
   return { sampled: n, standOff: off, standWorst: +worst.toFixed(3), standAbove: above, standAt: at };
 }
 
+// (a railway bore's lining closes it all round: where the ground meets the track's bed inside one, under
+// the hill, no sky shows; world.ts draws no wall there, the lining being its wall)
+const bores = core.railData ? G.railMouths(core.railData) : [];
+const inBore = (x, y) => bores.some((m) => {
+  const u = (x - m.x) * m.ux + (y - m.y) * m.uy, v = -(x - m.x) * m.uy + (y - m.y) * m.ux;
+  return u > -0.3 && u < m.deep && Math.abs(v) < m.hw + 0.3;
+});
 let squares = index.tiles.map(([i, j]) => [i, j]);
 if (opt.squares) squares = opt.squares.trim().split(/\s+/).map((s) => s.split(",").map(Number));
 const report = {}, most = Number(opt.most) || 0, t0 = Date.now();
@@ -508,7 +516,7 @@ for (const [ti, tj] of squares) {
   if (opt.gaps) for (const [x, y, g, n] of floorHoles) say(`    floor gap ${g.toFixed(2)} m along ${n} edges at ${x.toFixed(1)},${y.toFixed(1)}`);
   for (const [x, y, a, what] of inPieces) findings.push({ rule: "45 street faces inside a set piece", score: +a.toFixed(1), x, y, what });
   for (const [x, y, l, gap] of feet) if (l >= 0.5) findings.push({ rule: "44 wall's foot over the ground", score: +l.toFixed(1), x, y, what: `${l.toFixed(1)} m of a wall, fence or hedge standing up to ${gap.toFixed(2)} m over what is drawn under it: the sky shows through` });
-  for (const [x, y, l] of opt.rules ? r.gaps : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
+  for (const [x, y, l] of opt.rules ? r.gaps.filter(([x, y]) => !inBore(x, y)) : []) findings.push({ rule: "38 crack in the ground", score: +l.toFixed(3), x, y, what: `the ground and a face, or two faces, apart along an edge ${l.toFixed(2)} m long: the sky shows through` });
   report[`${ti},${tj}`] = { open: r.open, tee: r.tee, under: r.under, gap: r.gap, folds: r.folds, gaps: r.gaps.slice(0, 200).map(([x, y, l]) => [+x.toFixed(2), +y.toFixed(2), +l.toFixed(3)]) };
   const sheetMs = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.ms, 0), lost = (globalThis.__sheetMs ?? []).reduce((t, q) => t + q.lost, 0);
   if (opt.heights) say(`${ti},${tj}: ${r.standOff} of ${r.sampled} ground triangles' middles stood you sunk in, the worst ${r.standWorst} m; ${r.standAbove} over it`);
