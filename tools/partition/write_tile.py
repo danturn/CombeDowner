@@ -8897,6 +8897,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                      town_fronts(tile.get("bl") or [], evidence))
     footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
     standing = Standing(sq, footprints)
+    # (a lamp post, a shelter or a bin along a plot's front is no hedge: the paving runs past it)
+    items_off = standing.without([(float(f[1]), float(f[2])) for f in tile.get("fx") or [] if f[0] != "car"]
+                                 + [(float(c[0]), float(c[1])) for c in tile.get("cx") or []])
     settled["unstood"] = drop_unstood(part, evidence, standing)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
@@ -8978,7 +8981,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     filled, railings = [], []
     tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
-                                               canal_bores(canal), standing, filled, tile.get("tn"),
+                                               canal_bores(canal), items_off, filled, tile.get("tn"),
                                                json.load(open(rail)) if os.path.exists(rail) else None, past, far, tile.get("centre"),
                                                [b for t in tiles for b in t.get("br") or []],
                                                evidence.seating,

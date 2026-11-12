@@ -19,6 +19,7 @@ from . import KX, KY, LAT0, LON0, MAP, ROOT
 LIDAR = os.path.join(ROOT, "data", "raw", MAP, "wide", "lidar")
 FLOOR = 0.5         # metres: lower than this is ground, grass or a kerb
 PAD = 20.0
+ITEM_REACH = 1.0    # metres round a mapped street item that what the lidar sees standing is the item
 
 
 def ndsm(sq, pad=PAD, raw_only=False):
@@ -68,7 +69,29 @@ class Standing:
             f &= ~contains_xy(near, xs + self.x0 + 0.5, ys + self.y0 + 0.5)
         lab, _ = label(f)
         f &= np.bincount(lab.ravel())[lab] >= 3
+        self.f = f
         self.dist = distance_transform_edt(~f)
+
+    def without(self, points, reach=ITEM_REACH):
+        """The same, less what stands within `reach` of each of `points`: street items the map
+        already has (a lamp post, a shelter, a bin), which are no hedge round a garden."""
+        from scipy.ndimage import distance_transform_edt
+        out = Standing.__new__(Standing)
+        out.dist = self.dist
+        if self.dist is None or not len(points):
+            return out
+        out.x0, out.y0 = self.x0, self.y0
+        f = self.f.copy()
+        ys, xs = np.mgrid[0:f.shape[0], 0:f.shape[1]]
+        cx, cy = xs + self.x0 + 0.5, ys + self.y0 + 0.5
+        for x, y in points:
+            c, r = int(x - self.x0), int(y - self.y0)
+            k = int(reach) + 2
+            sl = (slice(max(0, r - k), r + k + 1), slice(max(0, c - k), c + k + 1))
+            f[sl] &= np.hypot(cx[sl] - x, cy[sl] - y) > reach
+        out.f = f
+        out.dist = distance_transform_edt(~f)
+        return out
 
     def near(self, p, reach):
         """Whether something stands within `reach` metres of point `p`; True where the lidar has

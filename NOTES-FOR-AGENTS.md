@@ -28,7 +28,8 @@ the game locally, without the sound" in `CLAUDE.md`.
   junction go on each approach (`write_tile.crossings`). One open to cars at all hours is a living
   street; a pavement facing another carriageway close beside it narrows (`write_tile.dual_kerbs`,
   as `pw`); shop-front paving reaches further on wide streets and past a pavement mapped on its own
-  (`pedestrian_frontage`). Trial on Bath 0,3 3,3 and Edinburgh 1,0 1,1.
+  (`pedestrian_frontage`); the lidar's "something stands along a plot's front" leaves out mapped
+  street items (`Standing.without`). Trial on Bath 0,3 1,1 3,3 and Edinburgh 1,0 1,1.
 
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
