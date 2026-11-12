@@ -21,13 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
-- **Scotland's open data for new maps (branch `claude/scotland-data`):** a `GB-SCT` map now fetches
-  the Scottish lidar (`fetch.scotland_lidar`), energy certificates and OS Open UPRN (`epc.py ...
-  scotland`), the 2022 Census (`census.py`), Historic Environment Scotland's conservation areas and
-  listed buildings (`conservation.py`, `listed.py`) and Registers of Scotland's parcels
-  (`parcels.py ... ros`), in England's formats. Touches `tools/new_area.py` (`COVERS`, `MANUAL`),
-  `fetch.py`, those five tools and the new-area skill's docs. No map added.
-
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
