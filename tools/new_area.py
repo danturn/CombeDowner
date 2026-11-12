@@ -5,6 +5,8 @@ Usage:
   python3 -I tools/new_area.py find "<place name>"      the five best matches, each with its lat/lon and BRANCH
   python3 -I tools/new_area.py add "<place name>" --lat N --lon N [--id slug] [--radius 1500] [--zone suburb] [--in-menu]
   python3 -I tools/new_area.py build <id> [--dry-run]   download and build, in order
+  python3 -I tools/new_area.py build <id> --trial       download, then build only the centre's, the steepest and
+                                                        the most bridged square, to find a place's failures quickly
   python3 -I tools/new_area.py verify <id>              the files, the clash check, sizes and what git sees
   python3 -I tools/new_area.py shoot <id>               screenshots at four views chosen from the map, and the frame rate
   python3 -I tools/new_area.py remove <id>              undo add and build for a map that was never committed
@@ -18,8 +20,9 @@ squares of the standard grid (half = 1565), with the field and the wide circle r
 map, played with ?map=<id>) unless --in-menu is given.
 
 Which data a place gets depends on its region (ISO 3166-2, from Nominatim): England has the most (the
-Environment Agency's lidar measures the real roofs, walls and church towers), Wales, Scotland and
-Northern Ireland a little, everywhere else only the worldwide sources. Each command prints the
+Environment Agency's lidar measures the real roofs, walls and church towers), Scotland nearly as
+much (its own lidar, certificates, census and designations), Wales a little less, Northern Ireland
+only the hygiene ratings, everywhere else only the worldwide sources. Each command prints the
 BRANCH: UK or NON-UK.
 
 Every command finds a Python with the packages the build needs (this one, then
@@ -27,7 +30,7 @@ Every command finds a Python with the packages the build needs (this one, then
 the shared build lock (~/.combedowner-build.lock, the one tools/mac_build.sh takes), so only one
 map build or set of screenshots runs on a machine at a time.
 """
-import importlib.util, json, math, os, re, resource, shutil, subprocess, sys, time, urllib.parse, urllib.request
+import glob, importlib.util, json, math, os, re, resource, shutil, subprocess, sys, time, urllib.parse, urllib.request
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TOOLS)
@@ -41,7 +44,7 @@ PYTHONS = (os.path.expanduser("~/.venvs/combedowner/bin/python3"), os.path.join(
 LOCK = os.path.expanduser("~/.combedowner-build.lock")
 SUFFIXES = ("wide", "ground", "pubs", "districts", "rail", "canal", "cable")     # web/public/maps/<id>-<suffix>.json
 # the maps already in the repository: remove refuses them
-KEPT = {"combe-down", "victoria-park", "pembury", "cape-town", "bradford-on-avon"}
+KEPT = {"combe-down", "victoria-park", "pembury", "cape-town", "bradford-on-avon", "edinburgh"}
 
 
 def option(args, name, default=None):
@@ -78,15 +81,15 @@ def ensure_python():
 
 # sources that cover only part of the world, by Nominatim's ISO 3166-2 region: what each gives the map
 ENGLISH = {
-    "lidar": "real roof shapes, eaves heights, garden walls, church towers and true ground (lidar: the Environment Agency's in England, the Welsh Government's in Wales)",
-    "epc": "wall materials and bungalows (energy certificates, England and Wales, manual download)",
-    "parcels": "the Land Registry's garden plots (England and Wales; only Bath's partition build reads them)",
-    "listed": "listed railings and walls (Historic England; only Bath's partition build reads them)",
+    "lidar": "real roof shapes, eaves heights, garden walls, church towers and true ground (lidar: the Environment Agency's in England, the Welsh Government's in Wales, the Scottish Public Sector LiDAR in Scotland)",
+    "epc": "wall materials and bungalows (energy certificates: England and Wales by hand, Scotland fetched)",
+    "parcels": "the registered garden plots (HM Land Registry in England and Wales, by hand; Registers of Scotland, fetched)",
+    "listed": "listed railings and walls (Historic England, only Bath's partition build reads them; Historic Environment Scotland, fetched)",
     "fsa": "pubs and cafes OpenStreetMap is missing, and pub hygiene ratings (food hygiene ratings, UK)",
-    "census": "the mix of flats, terraces, semis and detached houses in each street (2021 Census, England and Wales)",
-    "conservation": "the old core of the town, built of what its old buildings are (conservation areas, England)",
+    "census": "the mix of flats, terraces, semis and detached houses in each street (2021 Census, England and Wales; 2022 Census, Scotland)",
+    "conservation": "the old core of the town, built of what its old buildings are (conservation areas, England and Scotland)",
 }
-COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"lidar", "epc", "parcels", "fsa", "census"}, "GB-NIR": {"fsa"}, "GB-SCT": {"fsa"}}
+COVERS = {"GB-ENG": set(ENGLISH), "GB-WLS": {"lidar", "epc", "parcels", "fsa", "census"}, "GB-NIR": {"fsa"}, "GB-SCT": set(ENGLISH)}
 
 
 def branch(region):
@@ -105,16 +108,28 @@ def region_of(lon, lat):
     return addr.get("ISO3166-2-lvl4") or addr.get("country_code", "").upper()
 
 
-MANUAL = {"epc", "parcels"}     # never fetched by build: they need a hand download (and the parcels only serve Bath's partition)
+# never fetched by build in these regions: they need a hand download (England's certificates need an
+# account; the Land Registry's parcels are a download per council, and Historic England's listed
+# railings only serve Bath's partition). Scotland's are all fetched.
+MANUAL = {"GB-ENG": {"epc", "parcels", "listed"}, "GB-WLS": {"epc", "parcels"}}
+
+
+def fetched(region):
+    """The regional sources build downloads for a place in region."""
+    return COVERS.get(region, set()) - MANUAL.get(region, set())
 
 
 def warn_missing(region):
-    have = COVERS.get(region, set()) - MANUAL
+    have = fetched(region) | ({"listed"} if region == "GB-ENG" else set())
     print(f"The map will be built without:", flush=True)
     for src, why in ENGLISH.items():
-        if src not in have: print(f"  - {why}" + (" [by hand only]" if src in MANUAL and src in COVERS.get(region, set()) else ""))
+        if src not in have: print(f"  - {why}" + (" [by hand only]" if src in COVERS.get(region, set()) else ""))
+    if all(src in have for src in ENGLISH): print("  - none of the regional sources (the lidar only where it has been flown)")
     if "lidar" not in have:
         print("Buildings are guessed from Overture's and OpenStreetMap's heights and floor counts and the area's zones instead.")
+
+
+_terrain = {}
 
 
 def ground_height(lon, lat, z=12):
@@ -123,12 +138,16 @@ def ground_height(lon, lat, z=12):
     from PIL import Image
     n = 2 ** z
     fx, fy = (lon + 180) / 360 * n, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n
-    try:
-        url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{int(fx)}/{int(fy)}.png"
-        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-            px = Image.open(io.BytesIO(r.read())).convert("RGB").getpixel((int(fx % 1 * 256), int(fy % 1 * 256)))
-    except OSError:
-        return 0
+    key = (z, int(fx), int(fy))
+    if key not in _terrain:
+        try:
+            url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{int(fx)}/{int(fy)}.png"
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+                _terrain[key] = Image.open(io.BytesIO(r.read())).convert("RGB")
+        except OSError:
+            _terrain[key] = None
+    if _terrain[key] is None: return 0
+    px = _terrain[key].getpixel((int(fx % 1 * 256), int(fy % 1 * 256)))
     return max(0, round(px[0] * 256 + px[1] + px[2] / 256 - 32768))
 
 
@@ -291,8 +310,43 @@ def run_steps(steps, dry, lock=None):
             print(f"WARN step {name} failed; the map builds without it")
 
 
+def trial_squares(A, raw):
+    """The squares most likely to show a new place's failures, for a trial build: the centre's, the
+    one whose ground climbs most, and the one with the most metres of bridge."""
+    from shapely.geometry import LineString, Point, box, shape
+    G = A.squares
+    size = G.cells * G.dx
+    (fcx, fcy), R = A.field_centre, A.half
+    circle = Point(fcx, fcy).buffer(R, 256)
+    sq = lambda ti, tj: box(G.x0 + ti * size, G.y0 + tj * size, G.x0 + (ti + 1) * size, G.y0 + (tj + 1) * size)
+    tiles = [(ti, tj) for ti in range(math.floor((fcx - R - G.x0) / size), math.floor((fcx + R - G.x0) / size) + 1)
+             for tj in range(math.floor((fcy - R - G.y0) / size), math.floor((fcy + R - G.y0) / size) + 1)
+             if sq(ti, tj).intersects(circle)]
+    lon0, lat0 = A.centre
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
+    centre = (math.floor(-G.x0 / size), math.floor(-G.y0 / size))
+    def climb(t):
+        b = sq(*t).bounds
+        hs = [ground_height(lon0 + (b[0] + (b[2] - b[0]) * i / 4) / kx, lat0 + (b[1] + (b[3] - b[1]) * j / 4) / ky)
+              for i in range(5) for j in range(5)]
+        return max(hs) - min(hs)
+    steep = max(tiles, key=climb)
+    bridged = {t: 0.0 for t in tiles}
+    for layer in ("osm-roads", "osm-rail"):
+        path = os.path.join(ROOT, raw, f"{layer}.geojson")
+        if not os.path.exists(path): continue
+        for f in json.load(open(path))["features"]:
+            if (f["properties"].get("bridge") or "no") == "no" or f["geometry"]["type"] != "LineString": continue
+            line = LineString([((x - lon0) * kx, (y - lat0) * ky) for x, y in f["geometry"]["coordinates"]])
+            for t in tiles:
+                bridged[t] += line.intersection(sq(*t)).length
+    most = max(tiles, key=lambda t: bridged[t])
+    return list(dict.fromkeys([centre, steep, most]))
+
+
 def build(args):
     dry = flag(args, "--dry-run")
+    trial = flag(args, "--trial")
     if not args: raise SystemExit(__doc__)
     map_id = args[0]
     miss = missing_packages()
@@ -302,14 +356,15 @@ def build(args):
     raw = f"data/raw/{map_id}/wide"
     maps = f"web/public/maps/{map_id}"
     region = getattr(A, "region", None)
-    have = COVERS.get(region, set()) if region is not None else set(ENGLISH)
     print(f"BRANCH: {branch(region)}   region: {region or '?'}")
     if region is not None: warn_missing(region)
-    only = ["overture", "canopy", "osm"] + [s for s in ("lidar", "fsa", "census", "conservation") if s in have]
+    have = fetched(region) if region is not None else set(ENGLISH) - MANUAL["GB-ENG"]
+    only = ["overture", "canopy", "osm"] + sorted(have)
     t0 = time.time()
     run_steps([("download", [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)], True)], dry)
     t_dl = time.time() - t0
-    lidar = "lidar" in have
+    # a place the survey hasn't flown (much of Scotland) gets none of the lidar's steps
+    lidar = "lidar" in have and (dry or bool(glob.glob(os.path.join(ROOT, raw, "lidar", "dsm", "*.tif"))))
     squares = ("squares", [*py, "tools/prep_tiles.py", map_id, raw, maps, "--measure"], True)
     wide = ("wide map", [*py, "tools/prep_wide.py", map_id, raw, f"{maps}-wide.json", "--measure"], True)
     # the lidar's ground replaces the terrain tiles' once they are all fetched (the first build fetches
@@ -335,11 +390,19 @@ def build(args):
         ("district names", [*py, "tools/districts.py", map_id], False),
         ("region look", [*py, "tools/region.py", map_id], False),
     ]
+    if trial:
+        picked = trial_squares(A, raw)
+        print("trial squares: " + " ".join(f"{a},{b}" for a, b in picked) + " (the centre, the steepest, the most bridged)")
+        steps = steps[:steps.index(squares)] + [("trial squares", squares[1] + ["--only", *(f"{a},{b}" for a, b in picked)], True)]
     t1 = time.time()
     if dry: run_steps(steps, dry)
     else:
         with BuildLock() as lock: run_steps(steps, dry, lock)
     print(f"\nTIMES download {t_dl:.0f}s, build {time.time() - t1:.0f}s, on {os.cpu_count()} cores")
+    if trial:
+        print(f"TRIAL OK {map_id}" if not dry else "DRY RUN: nothing was run")
+        print(f"next: python3 -I tools/new_area.py build {map_id}")
+        return
     print(f"BUILD OK {map_id}" if not dry else "DRY RUN: nothing was run")
     print(f"next: python3 -I tools/new_area.py verify {map_id}")
 

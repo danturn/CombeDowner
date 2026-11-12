@@ -9,6 +9,12 @@ house's front boundary the listed kind (tools/partition/settle.py). Only entries
 railings or walls are kept. Read from the list's public ArcGIS service (layer 0, the points), or
 from a file of the same already fetched (--from). Data: Historic England, Open Government Licence
 v3; data/combe-down/README.md has the attribution.
+
+In Scotland the list is Historic Environment Scotland's (inspire.hes.scot, layer Listed Buildings by
+Category, points, no account). Scotland seldom lists railings apart: a building's own entry names
+them ("... including railings and boundary walls"), which is what is kept, so the house it stands
+for takes them on its front just the same. The entry is HES's number (LB27838 is 27838). Data:
+Historic Environment Scotland, Open Government Licence v3.
 """
 import json
 import os
@@ -40,6 +46,18 @@ def fetch(bbox):
         offset += len(got)
 
 
+def scottish(bbox):
+    """Scotland's listed buildings, in the shape England's take from the NHLE service."""
+    from conservation import hes
+    out = []
+    for f in hes(0, bbox, "DES_REF,DES_TITLE,CATEGORY"):
+        p = f["properties"]
+        ref = re.sub(r"\D", "", p.get("DES_REF") or "")
+        out.append({"geometry": f.get("geometry"),
+                    "properties": {"ListEntry": int(ref) if ref else None, "Name": p.get("DES_TITLE"), "Grade": p.get("CATEGORY")}})
+    return out
+
+
 def kind_of(name):
     """'railing' or 'wall' from a listed entry's name, or None for a building."""
     if RAILING.search(name):
@@ -53,7 +71,9 @@ def main(argv):
     src = area(argv[0], wide="wide" in argv[2:])
     out_path = argv[1]
     W, S, E, N = src.bbox
-    feats = json.load(open(argv[argv.index("--from") + 1]))["features"] if "--from" in argv else fetch(src.bbox)
+    if "--from" in argv: feats = json.load(open(argv[argv.index("--from") + 1]))["features"]
+    elif getattr(src, "region", None) == "GB-SCT": feats = scottish(src.bbox)
+    else: feats = fetch(src.bbox)
     keep = []
     for f in feats:
         p = f["properties"]

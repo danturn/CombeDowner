@@ -1346,6 +1346,15 @@ def _reach(line, edge, past=0.05):
     return LineString([out[0]] + cs + [out[1]])
 
 
+def _overlap(a, b):
+    """Where a and b overlap, snapped to a millimetre where GEOS cannot settle the overlay of two
+    nearly coincident outlines (an arm re-cut along the face it came from)."""
+    try:
+        return a.intersection(b)
+    except shapely.errors.GEOSException:
+        return shapely.set_precision(a.buffer(0), 1e-3).intersection(shapely.set_precision(b.buffer(0), 1e-3))
+
+
 def _absorb_thin_arms(region, lines, faces, face_label, ways, log=print):
     """Give the thin arms found by `_thin_arms` to the neighbour they lie against, re-cutting the
     block along each arm's outline after every face has its owner (cutting before the growing moved
@@ -1364,7 +1373,7 @@ def _absorb_thin_arms(region, lines, faces, face_label, ways, log=print):
     for n, f in enumerate(recut):
         for k in atree.query(f):
             arm, lab, _, _ = arms[int(k)]
-            if labels[n] != lab and arm.intersection(f).area >= ARM_SHARE * f.area:
+            if labels[n] != lab and _overlap(arm, f).area >= ARM_SHARE * f.area:
                 moved += f.area
                 labels[n] = lab
                 break

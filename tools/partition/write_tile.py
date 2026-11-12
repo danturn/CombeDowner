@@ -2671,7 +2671,11 @@ def deck_gaps(rd, ground, depth=0.9):
             line = LineString(xy)
             if line.length < 2 * BANK + 1:
                 continue
-            under = [(q[2] if mk[a + i] else ground(q[0], q[1])) - depth for i, q in enumerate(p[a:b + 1])]
+            under = []
+            for i, q in enumerate(p[a:b + 1]):
+                g = q[2] if mk[a + i] else ground(q[0], q[1])
+                # an end a rounding error past the square's edge is off its ground; the road there is on the bank
+                under.append((q[2] if g is None else g) - depth)
             cum = [0.0]
             for u, v in zip(xy, xy[1:]):
                 cum.append(cum[-1] + math.dist(u, v))
