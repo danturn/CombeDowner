@@ -28,6 +28,8 @@ from grading import COARSE, grade
 from profiles import carry_profile, ease_kinks
 
 STEP = 4.0
+LOW_STEP = 1.0      # metres between the points of a path with a short tunnel, which may pass under a street
+SHORT_TUNNEL = 40.0  # metres: a path's tunnel no longer than this may be a low arch under a street (low_bores)
 
 # the same widths as prep_map.py, which keeps them in step with the game's
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -1082,6 +1084,7 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
         carry_spans(True)
 
     limit_grades(pending, chains, dips, detail)
+    finer_runs(pending)
     low_bores(pending, road_lines, road_tree)
 
     # 4. a path through the water (the data has no bridge) is a footbridge: its points well
@@ -1140,21 +1143,49 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
 
 
 UNDER_CROWN = TN.UNDER_CROWN    # metres from a short path tunnel's floor to its arch, under a street at grade
-UNDER_COVER = 0.6    # metres of street and fill over that arch
-UNDER_RAMP = 0.5     # the steepest a path's approach falls to such an arch as a ramp
-UNDER_STAIR = 0.7    # and as a flight of steps, where a ramp has no room (flights.STAIR_PITCH)
+UNDER_COVER = 0.4    # metres of street and fill over that arch
+UNDER_RAMP = 0.25    # the steepest a path's approach falls to such an arch, walked as a slope (write_tile.STEEPEST_WALK)
+UNDER_STAIR = 0.7    # and down a flight, only where the data maps the approach as steps (flights.STAIR_PITCH)
+
+
+def finer_runs(pending):
+    """A path with a short tunnel and nothing else marked along it, its heights settled, given a point
+    every LOW_STEP instead of every STEP: a low arch's mouth can then sit at the kerb and the steps down
+    to it fit between the kerb and the next way (low_bores), where at 4 m they missed by a point. Each
+    edge stays evenly walked, as the writer reads its profile."""
+    for r in pending:
+        tunnels = r.get("tunnel_ranges") or []
+        if r["c"] not in PATHS or r["c"] == "pedestrian" or not tunnels or r["span"] or r["deck"] or r["bored"] \
+                or r.get("tow") or r.get("gone") or r.get("dipped") or r.get("beside"):
+            continue
+        run, z = r["run"], r["z"]
+        total = sum(math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])) or 1.0
+        if sum(b - a for a, b in tunnels) * total > SHORT_TUNNEL:
+            continue
+        new_run, new_z, parts = [], [], []
+        for eid, rev, s, e in r["parts"]:
+            line = LineString([q[:2] for q in run[s:e + 1]])
+            cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run[s:e], run[s + 1:e + 1])])])
+            n = max(1, int(math.ceil(line.length / LOW_STEP)))
+            start = len(new_run) - 1 if new_run else 0
+            for k in range(1 if new_run else 0, n + 1):
+                d = line.length * k / n
+                q = line.interpolate(d)
+                new_run.append([q.x, q.y, float(np.interp(d, cum, [run[i][2] for i in range(s, e + 1)]))])
+                new_z.append(float(np.interp(d, cum, z[s:e + 1])))
+            parts.append((eid, rev, start, len(new_run) - 1))
+        r["run"], r["z"], r["parts"] = new_run, new_z, parts
 
 
 def low_bores(pending, road_lines, road_tree):
     """A path the data has in a tunnel under a street, too short or too shallow to bore through a hill
-    (`tunnels.bores`), at the street's level: it passes under the street through a low arch in the
-    bank, the street carried over it as it is. The path falls to the arch's floor UNDER_CROWN and
-    UNDER_COVER under the street, from the nearest ways meeting it either side: as a ramp no steeper
-    than UNDER_RAMP where there is room for one, else as a flight of steps no steeper than UNDER_STAIR
-    (the writer makes the steep stretch a flight, write_tile.steep_paths_as_steps); only where there
-    isn't room even for steps is the path left at the street's level, and the writer stops it at the
-    kerb either side (write_tile.paths_under_streets). The arch runs as far as the data has the path
-    in its tunnel and across the street's width, never on under another way meeting the path. Each such bore is listed in its
+    (`tunnels.bores`), at the street's level: it passes under the street through a low arch, the
+    street carried over it as it is. The arch is the data's tunnel, its mouths at the stretch's ends,
+    its floor UNDER_CROWN and UNDER_COVER under the street. The path falls to the floor outside the
+    mouths, from the nearest ways meeting it either side: as a slope no steeper than UNDER_RAMP, the
+    ground cut to it, or, only where the data maps the way as steps, as a flight no steeper than
+    UNDER_STAIR; never inside the arch. Where either side has no room for that there is no arch: the path stays at the street's level and the writer
+    stops it at the kerb either side (write_tile.paths_under_streets). Each such bore is listed in its
     run's `low` (the game draws its arch UNDER_CROWN high), its approaches as dipped (the writer
     holds them there and lays the ground to them)."""
     points = collections.defaultdict(list)
@@ -1201,24 +1232,16 @@ def low_bores(pending, road_lines, road_tree):
             j, m_, x = over
             o = pending[j]
             floor = o["z"][m_] - UNDER_CROWN - UNDER_COVER
-            # (the bore runs under the street's whole width, kerb to kerb and its pavements)
-            reach = RW.get(o["c"], 4) / 2 + (1.7 if o["c"] in KERBED_RD else 0.5)
-            covered = [i for i in range(n) if road_lines[j].distance(Point(run[i][:2])) < reach
-                       and math.dist(run[i][:2], (x.x, x.y)) < reach + 2 * STEP]
-            if not covered:
-                continue
-            # (as far as the data has the path in its tunnel, and a point past the street's pavements,
-            # but not on to where another way meets the path or crosses it: that one isn't over the arch)
-            i0, i1 = min(covered + [st[0]]), max(covered + [st[-1]])
-            if i0 > 0 and not joined(k, i0 - 1) and not crosses(k, i0 - 1, i0):
-                i0 -= 1
-            if i1 < n - 1 and not joined(k, i1 + 1) and not crosses(k, i1, i1 + 1):
-                i1 += 1
+            # (the bore runs under the street's whole width, kerb to kerb and its pavements; where the
+            # fall to it has no room past the pavements its class may have, its mouth stands at the kerb)
+            # (the arch is the data's tunnel and no more: its mouths at the stretch's ends, and the fall
+            # from the ground to its floor laid outside them, along the way either side)
             ramps = []
-            for e, step in ((i0, -1), (i1, 1)):
-                # out to where the fall to the arch fits as a ramp; else, as a flight of steps, before
-                # the next way meeting the path, or its end
-                for pitch in (UNDER_RAMP, UNDER_STAIR):
+            for e, step in ((st[0], -1), (st[-1], 1)):
+                # out to where the fall fits as a slope you can walk, or as a flight where the data maps
+                # steps, before the next way meeting the path or its end; where neither fits there is no arch
+                got = None
+                for pitch in (UNDER_RAMP,) + ((UNDER_STAIR,) if r["c"] == "steps" else ()):
                     d, at, ok = 0.0, e, True
                     while z[at] - floor > d * pitch:
                         nxt = at + step
@@ -1228,11 +1251,15 @@ def low_bores(pending, road_lines, road_tree):
                         d += math.dist(run[at][:2], run[nxt][:2])
                         at = nxt
                     if ok:
+                        got = (e, at, step, d)
                         break
-                if not ok:
+                if not got:
                     break
-                ramps.append((e, at, step, d))
-            if len(ramps) < 2 or i1 - i0 < 2:
+                ramps.append(got)
+            if len(ramps) < 2:
+                continue
+            i0, i1 = ramps[0][0], ramps[1][0]
+            if i1 - i0 < 2:
                 continue
             for i in range(i0, i1 + 1):
                 z[i] = floor
