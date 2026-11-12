@@ -31,6 +31,11 @@ the game locally, without the sound" in `CLAUDE.md`.
   (`tools/partition/write_tile.py` `smooth_wall_tops`, `wall_feet.py`); the game sets a wall's foot
   0.4 m under the drawn ground (`web/src/world.ts` `barrierRun`); check rule 9's "wall off its
   ground" allows that lift. Every square needs rebuilding.
+- **Ways held over tunnel mouths (branch `claude/edge-fixes`):** a mapped way that crosses a
+  railway or road tunnel's line within 15 m of its mouth is held on the tunnel's lid (its crown plus
+  0.6 m over the floor) and the ground laid to it, so it is never stepped down into the cutting
+  (`tools/partition/write_tile.py` `tunnel_lids`, `lid_over_tunnels`). Low arches are left alone.
+  Every square with a tunnel needs rebuilding.
 
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass

@@ -1871,6 +1871,122 @@ def over_roof(tunnels, inside=False):
     return test
 
 
+LID_REACH = 15.0     # metres into a tunnel from its mouth that a way crossing over it is held up to its lid
+LID_COVER = 0.6      # metres over the bore's crown that the lid stands: its lining and a little fill
+LID_BORE = 3.6       # metres either side of a track that a railway's bore reaches (railway.py PORTAL_R)
+LID_ACROSS = 30.0    # degrees off the tunnel's line a way must run to cross over it, not along it
+LID_PORTAL = 8.0     # metres past a track's last point in a tunnel that its mouth can stand
+
+
+def _out_to_portal(run, portals):
+    """A railway tunnel's points run out at each end to its mouth (the track's first point in the
+    tunnel can lie a few metres in from it)."""
+    def mouth(end, inner):
+        ux, uy = end[0] - inner[0], end[1] - inner[1]
+        best = None
+        for m in portals:
+            d = math.dist(m[:2], end[:2])
+            if d < LID_PORTAL and (m[0] - end[0]) * ux + (m[1] - end[1]) * uy > 0 and (best is None or d < best[0]):
+                best = (d, [m[0], m[1], end[2]])
+        return [best[1]] if best else []
+    return mouth(run[0], run[1])[::-1] + run + mouth(run[-1], run[-2])
+
+
+def tunnel_lids(rail_tracks, tunnels, sq, portals=()):
+    """The first metres of each tunnel in from its mouths, which a way crossing over must clear: each
+    (line, half width, the lid's height a distance along it). A railway's from its tracks in a tunnel
+    out to its mouths (a short one is a bridge over the line, with no mouths), a street's from the
+    square's bores. An end cut at the square's edge is no mouth."""
+    from railway import PORTAL_CROWN, SHORT_TUNNEL
+    w, s, e, n = sq
+    at_edge = lambda q: min(abs(q[0] - w), abs(q[0] - e), abs(q[1] - s), abs(q[1] - n)) < 0.5
+    runs = []
+    for t in rail_tracks or []:
+        p = t["p"]
+        for st in stretches({i for i, q in enumerate(p) if len(q) > 3 and q[3] == 2}):
+            run = [p[i] for i in st]
+            if len(run) >= 2 and LineString([q[:2] for q in run]).length >= SHORT_TUNNEL:
+                runs.append((_out_to_portal(run, portals), LID_BORE, PORTAL_CROWN + LID_COVER))
+    # (a low arch under a street at grade, `cr`, has the street as its lid already)
+    for t in tunnels or []:
+        p = t.get("p") or []
+        if len(p) >= 2 and not t.get("cr"):
+            runs.append((p, max(t.get("hw") or [TN.HALF]), TN.CROWN + LID_COVER))
+    out = []
+    for run, half, lid in runs:
+        line = LineString([q[:2] for q in run])
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
+        floor = [q[2] for q in run]
+        for end, s0, s1 in ((run[0], 0.0, min(LID_REACH, line.length)), (run[-1], max(0.0, line.length - LID_REACH), line.length)):
+            if at_edge(end) or s1 - s0 < 0.5:
+                continue
+            piece = substring(line, s0, s1)
+            out.append((piece, half, functools.partial(_lid_at, line, cum, floor, lid)))
+    return out
+
+
+def _lid_at(line, cum, floor, lid, x, y):
+    return float(np.interp(line.project(Point(x, y)), cum, floor)) + lid
+
+
+def _crossing(a, b, line):
+    """Where the stretch a-b crosses over `line` well off along it, as a point, else None."""
+    cut = LineString([a[:2], b[:2]]).intersection(line)
+    if cut.is_empty or cut.geom_type != "Point":
+        return None
+    s = line.project(cut)
+    u, v = line.interpolate(max(0.0, s - 0.5)), line.interpolate(min(line.length, s + 0.5))
+    tx, ty, ux, uy = v.x - u.x, v.y - u.y, b[0] - a[0], b[1] - a[1]
+    cos = abs(ux * tx + uy * ty) / ((math.hypot(ux, uy) * math.hypot(tx, ty)) or 1)
+    return cut if math.degrees(math.acos(min(1.0, cos))) > LID_ACROSS else None
+
+
+def lid_over_tunnels(rd, lids):
+    """A way crossing over a tunnel near its mouth is held up to the tunnel's lid, never down in the
+    cutting the survey has there, where a flight was made to take it down to the floor and up again
+    and the bore's arch stood through it; the ground is laid to it. A point is put in where it
+    crosses, and its points over the bore come up. Returns how many ways were lifted."""
+    lifted, up = 0, {}
+    for r in rd:
+        if r["c"] in ("rail", "railway") or len(r["p"]) < 2:
+            continue
+        hit = False
+        for line, half, lid_at in lids:
+            p = r["p"]
+            if not LineString([q[:2] for q in p]).intersects(line):
+                continue
+            new, crossed = [p[0]], False
+            for a, b in zip(p, p[1:]):
+                cut = None if (len(a) > 3 and a[3]) or (len(b) > 3 and b[3]) else _crossing(a, b, line)
+                if cut is not None:
+                    crossed = True
+                    if min(math.dist(cut.coords[0], a[:2]), math.dist(cut.coords[0], b[:2])) > 1.0:
+                        f = math.dist(a[:2], cut.coords[0]) / (math.dist(a[:2], b[:2]) or 1)
+                        new.append([round(cut.x, 1), round(cut.y, 1), round(a[2] + (b[2] - a[2]) * f, 2)])
+                new.append(b)
+            if not crossed:
+                continue
+            for q in new:
+                if (len(q) > 3 and q[3]) or line.distance(Point(q[0], q[1])) > half:
+                    continue
+                top = lid_at(q[0], q[1])
+                if q[2] < top:
+                    q[2] = round(top, 2)
+                    r.setdefault("_lay", set()).add(tuple(q[:2]))
+                    up[(round(q[0], 1), round(q[1], 1))] = q[2]
+                    hit = True
+            r["p"] = new
+        lifted += hit
+    # (another way meeting it at a point it was lifted at comes up with it, so they still meet)
+    for r in rd:
+        for q in r["p"]:
+            z = up.get((round(q[0], 1), round(q[1], 1)))
+            if z is not None and q[2] < z and not (len(q) > 3 and q[3]):
+                q[2] = z
+                r.setdefault("_lay", set()).add(tuple(q[:2]))
+    return lifted
+
+
 def along_mouths(tunnels, reach=40.0, beside=10.0):
     """A predicate (seg, i): does the way's point i lie beside a tunnel's road where it comes out
     of the hill (within `reach` out from a portal, `beside` across), running along it?"""
@@ -8725,6 +8841,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
     bore_widths(tile.get("tn"), rd, roads)
+    rail_portals = json.load(open(rail)).get("portals") or [] if os.path.exists(rail) else []
+    lid_over_tunnels(rd, tunnel_lids(rail_tracks, tile.get("tn"), sq, rail_portals))
     # the ground is laid to these streets and paths before anything else stands on it
     laid = lay_ground(T, rd, houses, rail_tracks, tile.get("tn"))
     settle_on_laid_ground(rd, laid, road_ground)
