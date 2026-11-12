@@ -3276,6 +3276,14 @@ def rail_beds(rail, square):
     bed = unary_union([l.buffer(RAIL_BED, cap_style="flat") for l in lines] + mouth_aprons(rail, near))
     bed = unary_union([bed] + cutting_floors(rail, bed))
     bed = bed.buffer(BED_JOIN / 2, join_style="mitre").buffer(-BED_JOIN / 2, join_style="mitre").intersection(square)
+    # (no further than in under a tunnel's face: past it the line is in its bore, under the hill's
+    # own ground, and the bed drawn there left the hill open over the bore)
+    from railway import LID_DEEP, portal_faces
+    bores = [face_box(fc, APRON_IN, 2 * LID_DEEP, fc["v0"], fc["v1"]) for fc in portal_faces(rail.get("portals") or [])]
+    if bores:
+        bed = bed.difference(unary_union(bores))
+    if bed.is_empty:
+        return None, None, None
     tree = STRtree(lines)
 
     def z_at(x, y):

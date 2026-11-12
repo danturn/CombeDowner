@@ -53,8 +53,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   for each pair of them, and stands only as high as the hill it's cut into lets it, with a parapet
   along its top and the ground behind it level with that, a lid over the bores that paths cross
   and steps come down off, with no hedge or fence on it; its wings slope down at their ends, as
-  wing walls do. Behind the face the hill's own ground runs on over the bores, so the face is the
-  only built thing you see. Its bore is lined in stone, the track running in, and goes dark a few metres in, so the
+  wing walls do. Behind the face the hill's own ground runs on over the bores, at least a metre and a
+  half over their crowns, so the face is the only built thing you see. Its bore is lined in stone, the track running in, and goes dark a few metres in, so the
   mouth reads as open from any side. Where the line runs up to it in a deep cutting, the cutting's
   floor is ballast right across between the tracks and its sides are stone walls with the ground
   level at their tops. Walls the map draws

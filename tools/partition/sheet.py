@@ -445,13 +445,14 @@ def in_portals(tn, bounds, x, y):
 def rail_mouths_and_cuttings(rail, bounds, x, y):
     """For points (x, y) on the railway's bed: which lie across a tunnel face's mouth (the bed's end
     there, where the bore goes on into the hill), and which along a cutting up to a face, with the
-    way out from the line at each (unit x, y)."""
+    way out from the line at each (unit x, y), and the lid's height over those behind a face (else nan)."""
     from railway import CUT_REACH, CUT_BAND, LID_DEEP, portal_faces
     mouth = np.zeros(len(x), bool)
     cut = np.zeros(len(x), bool)
     ox, oy = np.zeros(len(x)), np.zeros(len(x))
+    lid = np.full(len(x), np.nan)
     if not rail or not len(x):
-        return mouth, cut, ox, oy
+        return mouth, cut, ox, oy, lid
     w, s, e, n = bounds
     segs = []
     for t in rail.get("tracks") or []:
@@ -463,7 +464,7 @@ def rail_mouths_and_cuttings(rail, bounds, x, y):
             if fb == 2: b = [(a[i] + b[i]) / 2 for i in range(2)]
             segs.append(shapely.LineString([a[:2], b[:2]]))
     if not segs:
-        return mouth, cut, ox, oy
+        return mouth, cut, ox, oy, lid
     pts = shapely.points(x, y)
     tree = shapely.STRtree(segs)
     near = tree.query_nearest(pts, all_matches=False)[1]
@@ -482,7 +483,8 @@ def rail_mouths_and_cuttings(rail, bounds, x, y):
         inside = (v > fc["v0"]) & (v < fc["v1"])
         mouth |= inside & (((u > -1.0) & (np.abs(ox * fc["ux"] + oy * fc["uy"]) > 0.5)) | (u > 0.0)) & (u < LID_DEEP)
         cut |= across & (u <= 0.0) & (u > -CUT_REACH)
-    return mouth, cut & ~mouth, ox, oy
+        lid[inside & (u > 0.0) & (u < LID_DEEP)] = fc["z"] + fc["top"]
+    return mouth, cut & ~mouth, ox, oy, lid
 
 
 def runs(mask):
@@ -674,8 +676,12 @@ def ground_sheet(tile, canal=None, rail=None):
     if rail and on_bed.any():
         from railway import CUT_DEEP
         k = np.nonzero(on_bed)[0]
-        mouth, cut, ox, oy = rail_mouths_and_cuttings(rail, bounds, F.V[spots[k], 0], F.V[spots[k], 1])
+        mouth, cut, ox, oy, lid = rail_mouths_and_cuttings(rail, bounds, F.V[spots[k], 0], F.V[spots[k], 1])
         meet[k[mouth]] = top[k[mouth]]
+        # (behind the face the hill's ground meets the bed's end at the lid's height, over the bore:
+        # the game draws no wall there, the bore's lining being its wall)
+        under = mouth & ~np.isnan(lid)
+        meet[k[under]] = np.maximum(top[k[under]], lid[under])
         out = on_grid(H, T, F.V[spots[k], 0] + ox * T["dx"], F.V[spots[k], 1] + oy * T["dy"])
         walled = cut & (out - top[k] >= CUT_DEEP - 1.0)
         # (not by a bridge over the cutting, whose abutments hold the ground there)
@@ -823,8 +829,9 @@ def ground_sheet(tile, canal=None, rail=None):
         high[k] = np.where(pin, ez, np.minimum(high[k], ez + d[k] / BATTER_CUT))
         low[k] = np.minimum(low[k], high[k])
         banked[k] = True
-    # (behind a railway tunnel's face, over its bores, the lid is left as laid: cut down to the bed
-    # running on into a bore, it opened a hole in the lid behind the parapet)
+    # (behind a railway tunnel's face, over its bores, the lid is left as laid, and none of it lower
+    # than the face's top, right up to the face: cut down to the bed running on into a bore, or left
+    # at the line's own ground by the grid's point nearest the face, it opened a hole behind the parapet)
     if rail:
         from railway import LID_DEEP, portal_faces
         gx, gy = GX.ravel(), GY.ravel()
@@ -832,7 +839,8 @@ def ground_sheet(tile, canal=None, rail=None):
             u = (gx - fc["x"]) * fc["ux"] + (gy - fc["y"]) * fc["uy"]
             v = -(gx - fc["x"]) * fc["uy"] + (gy - fc["y"]) * fc["ux"]
             lid = (u > 0.0) & (u < LID_DEEP) & (v > fc["v0"]) & (v < fc["v1"])
-            low[lid], high[lid] = -np.inf, np.inf
+            low[lid], high[lid] = fc["z"] + fc["top"], np.inf
+            banked[lid] = True
     odd, _ = overlaps(F, A, B, segs, GX, GY)
     for v, z in odd_corners(F, odd, H, T):
         high[v] = min(high[v], z)

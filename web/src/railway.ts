@@ -735,7 +735,7 @@ export class Railway {
       if (this.masonry && role.has(cc)) pm.put(a, b, c, d, role.get(cc)!, f, g);
       else quad(a, b, c, d, f === 1 && g === 1 ? cc : lerp3(DARK, cc, f), lerp3(DARK, cc, g));
     };
-    const BORE_FLOOR = C("#4a453e");
+    const BORE_FLOOR = C("#4a453e"), EARTH = C("#5b4a36");
     // the line out in the open, each stretch into a tunnel only as far as its mouth: no face's wing
     // may stand across another track there (one whose mouth is further in, or that passes by)
     const open: number[][] = [];
@@ -810,6 +810,8 @@ export class Railway {
           for (let i = 0; i < n; i++) {
             const v = a.c - a.hw + (2 * a.hw * i) / n, w = a.c - a.hw + (2 * a.hw * (i + 1)) / n;
             stone(P(u0, v, lo(v)), P(u0, w, lo(w)), P(u1, w, lo(w)), P(u1, v, lo(v)), SOFFIT, l0, l1);
+            // (and over it a skin of earth, so wherever the hill lies thin over the bore it shows soil, not the tube)
+            quad(P(u0, v, lo(v) + 0.3), P(u1, v, lo(v) + 0.3), P(u1, w, lo(w) + 0.3), P(u0, w, lo(w) + 0.3), EARTH, EARTH);
           }
           for (const s of [a.c - a.hw, a.c + a.hw]) stone(P(u0, s, 0), P(u0, s, a.spring), P(u1, s, a.spring), P(u1, s, 0), STONE_IN, l0, l1);
           quad(P(u0, a.c - a.hw, 0.1), P(u0, a.c + a.hw, 0.1), P(u1, a.c + a.hw, 0.1), P(u1, a.c - a.hw, 0.1), shade(u0, BORE_FLOOR), shade(u1, BORE_FLOOR));
@@ -1515,19 +1517,20 @@ function bedAt(d: number, h: number): number | null {
  *  the way into the hill, the rails' height, its bores as [offset across, half width], how high
  *  the ground over it stands above the rails, if known, and how far in behind it the deepest mouth is. */
 const FACE_THICK = 1.2;
+const LID_OVER = 1.5;        // metres of hill over a bore's crown at the least, so the lid buries it (tools/railway.py)
 
 function boreShape(cover: number | undefined, depth: number, bores: number[][]) {
   const fits = cover !== undefined && cover >= PORTAL_LEAST + 0.6;
   const crown = fits ? Math.min(PORTAL_CROWN, cover - 0.6) : PORTAL_CROWN;
-  const top = fits ? Math.min(PORTAL_TOP, Math.max(crown + 0.8, cover)) : PORTAL_TOP;
+  const top = fits ? Math.max(crown + LID_OVER, Math.min(PORTAL_TOP, cover)) : PORTAL_TOP;
   const deep = Math.max(fits ? BORE_LIT : FACE_THICK + 0.3, depth + 2);     // (on past the mouth furthest in)
   const arches = bores.map(([c, hw]) => { const spring = Math.max(2.4, crown - hw); return { c, hw, spring, rise: crown - spring }; });
   return { crown, top, deep, arches };
 }
 
-/** Each railway bore's mouth, for the terrain shader to leave the hill out of as far in as the
- *  bore is lined (world.ts): its middle at the face, the way in, the rails' height, half its
- *  width, how high it is and how deep it's drawn, in data coordinates. */
+/** Each railway bore, for the terrain shader to leave the hill out of under its arch, inside the
+ *  closed tube (world.ts): its middle at the face, the way in, the rails' height, half its width, how high it
+ *  is and how deep the bore is drawn, in data coordinates. */
 export function railMouths(d: RailData): { x: number; y: number; ux: number; uy: number; z: number; hw: number; crown: number; deep: number }[] {
   return headwalls(d.portals ?? []).flatMap(({ x, y, ux, uy, base, bores, cover, depth }) => {
     const { crown, deep } = boreShape(cover, depth, bores);

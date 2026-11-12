@@ -1122,8 +1122,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // and none inside the canal's tunnels, so you see through them from portal to portal
   const bores = canalBores(map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null), map.z0, T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy);
   mouth.a.push(...bores.a); mouth.b.push(...bores.b);
-  // and none inside a railway tunnel's lined mouth, under its arch only, so the hill's own ground
-  // runs on over the bore however low it lies over the crown (its crown given as less than nought)
+  // and none under a railway tunnel's arch, inside its lining (its crown given as less than nought):
+  // the bore is a closed tube under the hill's own ground, held over its crown, so only the opening
+  // in the face shows where it was left out
   for (const m of railMouthsIn(S, T)) {
     mouth.a.push(new THREE.Vector4(m.x, -m.y, m.ux, -m.uy));
     mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, -m.crown, m.hw, m.deep));
@@ -2121,7 +2122,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // wall where it's taller than a kerb (drawn with the walls, in the square's own wall material). A
   // wall holding the ground up above the face faces the face; one the face stands on faces out.
   const retaining: number[][][] = [];
+  // (none inside a railway tunnel's bore, where the ground over it meets the track's bed: the bore's
+  // lining is the wall there)
+  const railBores = railMouthsIn(S, T);
+  const inBore = (x: number, y: number) => railBores.some((m) => {
+    const u = (x - m.x) * m.ux + (y - m.y) * m.uy, v = -(x - m.x) * m.uy + (y - m.y) * m.ux;
+    return u > -0.3 && u < m.deep && Math.abs(v) < m.hw + 0.3;
+  });
   const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo, cuts?: number[][]) => {
+    if (inBore((a[0] + b[0]) / 2, -(a[2] + b[2]) / 2)) return;
     // (a face over the water, or over the canal's bank higher than a walker's headroom, is a
     // street running on off its bridge's span: no wall stands under it, in the water or across the towpath)
     const overWater = (q: number[], m: number) => {

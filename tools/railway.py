@@ -145,6 +145,7 @@ CUT_JOIN = 5.0      # metres: ground narrower than twice this between two tracks
 WING_FALL = 2.0     # the ground beside a face falls from its top along the cutting, 1 in this
 LID_DEEP = 10.0     # metres back from a face that the hill over its bores is held level with its top
 LID_HILL = 2.5      # metres over the face's top the hill there may stand and still be laid level
+LID_OVER = 1.5      # metres of hill over a bore's crown at the least, so the lid buries it (web/src/railway.ts)
 
 
 def portal_faces(portals):
@@ -163,7 +164,7 @@ def portal_faces(portals):
         cover = sum(grounds) / len(grounds) - base if grounds else None
         fits = cover is not None and cover >= PORTAL_LEAST + 0.6
         crown = min(PORTAL_CROWN, cover - 0.6) if fits else PORTAL_CROWN
-        top = min(PORTAL_TOP, max(crown + 0.8, cover)) if fits else PORTAL_TOP
+        top = max(crown + LID_OVER, min(PORTAL_TOP, cover)) if fits else PORTAL_TOP
         out.append(dict(x=cx + ux * min(along), y=cy + uy * min(along), ux=ux, uy=uy, z=base,
                         v0=min(across) - PORTAL_R, v1=max(across) + PORTAL_R, crown=crown, top=top))
     return out
