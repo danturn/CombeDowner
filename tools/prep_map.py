@@ -362,6 +362,7 @@ RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 MAIN = {"primary", "secondary"}     # Overture's classes for the main roads through town
 import tunnels as TN
+from streets import street_access
 roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
 flat_z = grid.copy()
@@ -567,31 +568,33 @@ if getattr(A, "sea", None) is not None:
     quayside = unary_union([q for g, p in L("water") if p.get("subtype") == "ocean" and p.get("class") != "sea"
                             for q in whole_polys(g, box(*(ROAD_BOX or BM.bounds)).buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
     shapely.prepare(quayside)
+# a street with a tram line along it is a road for the trams, whatever closes it to traffic
+TRAM_NEAR = 4.0
+trams = None
+if os.path.exists(f"{src_dir}/osm-rail.geojson"):
+    trams = [transform(proj, g) for g, p in L("osm-rail") if p.get("railway") == "tram" and g.geom_type == "LineString"]
+    trams = unary_union(trams).buffer(TRAM_NEAR) if trams else None
 pending = []
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
-    # a street closed to motor vehicles (the pedestrianised streets in town, some only in the
-    # daytime) is a pedestrian street here: drawn, but with no traffic, no parked cars and no
-    # centre lines; and a one-way street says which way (1 with its points, -1 against them).
-    # A main road stays a road whatever's marked on it: what closes one is a bus gate (the foot of
-    # Broad Street, Northgate Street, High Street, Manvers Street), still a road with buses on it
-    # and its bus stops at the kerb, not a paved square. A street closed to traffic that lets buses
-    # through (Milsom Street, the University's Parade, a bus station's lanes) says so (bu), so its
-    # bus stops are on a road and the buses called to them drive along it. A street closed only at
-    # certain hours (Milsom Street, 10:00-18:00) is a road, with the hours it is shut (tc), which
-    # the traffic keeps out of on the game's clock
-    one_way, shut = 0, []
-    buses = any(ar.get("access_type") == "allowed" and "bus" in ((ar.get("when") or {}).get("mode") or ())
-                for ar in p.get("access_restrictions") or [])
+    # who the street is open to (streets.street_access): a street closed to motor vehicles is a
+    # pedestrian street, drawn with no traffic, no parked cars and no centre lines; a bus street, or a
+    # pedestrian street that lets traffic in at some hours, or a tram street, is a road with the hours it is shut (tc),
+    # which the traffic keeps out of on the game's clock (a bus street's all day: buses only); and one
+    # that lets buses through says so (bu). A one-way street says which way (1 with its points, -1
+    # against them)
+    on_tram = False
+    if trams is not None:
+        line = transform(proj, g)
+        on_tram = line.length > 0 and line.intersection(trams).length >= 0.7 * line.length
+    c, tc, buses = street_access(p, c, p.get("class") in MAIN, on_tram)
+    one_way = 0
     for ar in p.get("access_restrictions") or []:
-        if ar.get("access_type") != "denied": continue
         w = ar.get("when") or {}
-        if w.get("heading") == "backward" and not w.get("mode"): one_way = 1
-        elif w.get("heading") == "forward" and not w.get("mode"): one_way = -1
-        elif not w.get("heading") and not w.get("using") and not w.get("recognized") and not w.get("vehicle") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS and p.get("class") not in MAIN:
-            if w.get("during"): shut.append(w["during"])
-            else: c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
+        if ar.get("access_type") != "denied" or w.get("mode"): continue
+        if w.get("heading") == "backward": one_way = 1
+        elif w.get("heading") == "forward": one_way = -1
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
@@ -618,7 +621,7 @@ for g, p in L("segment"):
             for run, z, tow in pieces:
                 tr = [] if through else tunnel_ranges        # (a towpath through the canal's tunnel is no tunnel of its own)
                 bored = TN.bores(run, z, tr, elev, c)
-                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service"), tc=shut[0] if shut and c != "pedestrian" else None))
+                pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges) - set(tow), bored=bored, tunnel_ranges=tr, ow=one_way, tow=tow, bu=buses and c in ("pedestrian", "service"), tc=tc))
 TN.rebore(pending, elev)
 def chains():
     """The roads in pending joined up where one ends where another of the same kind begins, as

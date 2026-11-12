@@ -111,12 +111,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   up; everyone in a game sees the same time.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
-  each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
-  shelters only at the stops that have one, and the
-  stops on a street closed to traffic that buses still use (the University's Parade) at its
-  kerb, with the bus you call driving along it; a street shut to traffic only in the daytime
-  (Milsom Street, New Bond Street) is a road with its kerbs, empty of traffic in those hours on
-  the game's clock; a pub's or café's tables outside
+  each kerb, and traffic lights at junctions, lit both ways and changing in their own time, their
+  poles on the pavement at each way into the junction; bus shelters only at the stops that have
+  one; a street only buses may use (Princes Street in Edinburgh, a bus station's lanes, the
+  University's Parade) is a road with its carriageway, pavements and stops at the kerb, which the
+  buses drive along and the rest of the traffic keeps out of; a street shut to traffic only in the
+  daytime (Milsom Street, New Bond Street), or a pedestrian street open to traffic in the evening
+  (Edinburgh's Lawnmarket), is a road with its kerbs, empty of traffic in the hours it's shut on
+  the game's clock; a lane open to cars at all hours but mapped for walkers (Foundry Lane,
+  Edinburgh's Castlehill and Victoria Street) is a shared street, paved wall to wall, that cars
+  creep along; the pavements of a dual carriageway (Princes Street either side of its tram line)
+  don't run over each other's road; a pub's or café's tables outside
   stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or

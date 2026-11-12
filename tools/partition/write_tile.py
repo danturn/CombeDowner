@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import shapely
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import LineString, MultiPoint, Point, Polygon, box
 from shapely.geometry.polygon import orient
 from shapely.ops import nearest_points, substring, unary_union
 from shapely.strtree import STRtree
@@ -72,7 +72,7 @@ from partition.settle import drop_unstood, house_kinds, load_evidence, owners_ne
 from partition.standing import Standing
 from partition.straighten import straighten
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
-from streets import KERBED, parked_cars, pave_band, pavement_room, pv_at
+from streets import ALL_DAY, KERBED, parked_cars, pave_band, pavement_room, pv_at
 from landscape import string_wires
 import tunnels as TN
 from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
@@ -684,6 +684,64 @@ def verge_out_of_town(rd, houses):
         if tree is not None and (in_town(judged_line(r)) or in_town(LineString([q[:2] for q in r["p"]]))):
             continue
         r["pv"] = [0.0, 0.0]
+
+
+DUAL_STEP = 2.0     # metres between the points a pavement is tried at against the carriageway beside it
+DUAL_KERB = 1.0     # metres: a pavement narrower than this between two carriageways is none
+
+
+def dual_kerbs(rd):
+    """A pavement facing another carriageway close beside it (the other half of a dual carriageway,
+    the two one-way roads either side of a tram line, two arms of a fork) is only the strip between
+    them, shared half each, or none where that leaves less than `DUAL_KERB`: a full pavement either
+    side ran each over the other's road. Tried every `DUAL_STEP` along each side against kerbed
+    streets running the same way, and written as its `pw` (the pavements' widths along it), so a
+    fork's pavements narrow only where its arms are close."""
+    kerbed = [r for r in rd if r["c"] in KERBED and len(r["p"]) > 1]
+    if len(kerbed) < 2:
+        return
+    lines = [LineString([q[:2] for q in r["p"]]) for r in kerbed]
+    tree = STRtree(lines)
+    for k, (r, line) in enumerate(zip(kerbed, lines)):
+        half = way_width(r) / 2
+        widest = max(r.get("pv") or (PAVE_DRAWN, PAVE_DRAWN))
+        near = [int(j) for j in tree.query(line.buffer(half + widest + 6.0)) if int(j) != k]
+        if not near or line.length < DUAL_STEP:
+            continue
+        at_s = list(np.arange(0.0, line.length, DUAL_STEP)) + [line.length]
+        rows, narrowed = [], False
+        for t in at_s:
+            pv = pv_at(r, t)
+            p0, p1 = line.interpolate(max(t - 0.5, 0)), line.interpolate(min(t + 0.5, line.length))
+            dx, dy = p1.x - p0.x, p1.y - p0.y
+            m = math.hypot(dx, dy) or 1.0
+            dx, dy = dx / m, dy / m
+            at = line.interpolate(t)
+            for i, side in ((0, 1), (1, -1)):
+                far = half + pv[i] + 0.5
+                ray = LineString([(at.x, at.y), (at.x - dy * side * far, at.y + dx * side * far)])
+                for j in near:
+                    o, ol = kerbed[j], lines[j]
+                    if not ray.intersects(ol.buffer(way_width(o) / 2)):
+                        continue
+                    s_ = ol.project(at)
+                    foot = ol.interpolate(s_)
+                    fx, fy = foot.x - at.x, foot.y - at.y
+                    # (straight across, not the same street running on past a joint or a junction)
+                    if math.hypot(fx, fy) < half or abs(fx * dx + fy * dy) > 0.5 * math.hypot(fx, fy):
+                        continue
+                    q0, q1 = ol.interpolate(max(s_ - 0.5, 0)), ol.interpolate(min(s_ + 0.5, ol.length))
+                    ex, ey = q1.x - q0.x, q1.y - q0.y
+                    if abs(ex * dx + ey * dy) < 0.94 * (math.hypot(ex, ey) or 1.0):
+                        continue
+                    gap = at.distance(ray.intersection(ol.buffer(way_width(o) / 2))) - half
+                    if gap < pv[i] and pv[i] > 0:
+                        share = max(gap, 0.0) / 2
+                        pv[i] = round(share, 2) if share >= DUAL_KERB else 0.0
+                        narrowed = True
+            rows.append([round(float(t), 2), round(pv[0], 2), round(pv[1], 2)])
+        if narrowed:
+            r["pw"] = rows
 
 
 def _reaches_side(r, sq, tol=0.1):
@@ -3615,6 +3673,10 @@ PEDESTRIAN_FRONTAGE = 9.0  # metres from a pedestrian street's line: ground whol
 PEDESTRIAN_HALF = 6.0      # metres either side of its line that a pedestrian street is paved across open ground
 WALLED_FRONT = 0.3         # share of a frontage's edge with a wall, fence or hedge along it that makes it a yard
 SHOPFRONT_REACH = 12.0     # metres from a shopping street's line that the building fronts facing it may stand
+SHOPFRONT_PAST = 7.0       # metres past a wide street's pavements that its building fronts may stand
+FRONT_GAP = 0.8            # metres past a street's pavements that the ground fronting it may start (its record and the faces differ that much)
+WIDE_STREET = 5.0          # metres from a street's line to its pavements' edge that make it wide: two lanes and full pavements
+ALONG_PATH = 4.0           # metres past a street's pavement that a path mapped along it (its pavement, mapped on its own) may lie
 
 
 PEDESTRIAN_EDGE = 1.5      # metres past a pedestrian street's paving that its edge may lie, as the partition fits it
@@ -3631,7 +3693,7 @@ def pedestrian_ground(rd):
     return g
 
 
-def pedestrian_frontage(part, peds, br=(), standing=None):
+def pedestrian_frontage(part, peds, br=(), standing=None, shops=()):
     """Open ground and plots between a pedestrian street and its buildings, with nothing standing
     between them and the street: the street's own paving, laid to the building line as a shopping
     street is. The partition fits the street's corridor narrower than the gap between its buildings
@@ -3643,12 +3705,23 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
     faces (`_before_houses`): with nothing standing along its front, the ground before the house is
     the street's. A face walled, fenced or hedged off from the street is
     left whole, and so is one reaching back whose front the lidar (`standing`) sees something stand
-    along: a hedge or wall nobody mapped round a real front garden."""
+    along: a hedge or wall nobody mapped round a real front garden.
+
+    A wide street reaches further: its frontage, and the fronts it is paved to, are measured from
+    its pavements' edge as well as its line (Princes Street's shops stand 11 m from the line of one
+    carriageway). Along a street that wide, a path mapped beside it on its own (its pavement, drawn
+    apart) is the street's edge too, so the ground between it and the shops is paved."""
     if not peds:
         return Polygon()
-    reach = unary_union([l.buffer(PEDESTRIAN_FRONTAGE) for l, _ in peds])
+    reach = unary_union([l.buffer(max(PEDESTRIAN_FRONTAGE, half + PEDESTRIAN_FRONTAGE - PEDESTRIAN_HALF)) for l, half in peds])
     band = unary_union([l.buffer(max(half, PEDESTRIAN_HALF), cap_style="flat") for l, half in peds])
-    edge = unary_union([l.buffer(half + 0.5) for l, half in peds])
+    edge = unary_union([l.buffer(half + FRONT_GAP) for l, half in peds])
+    wide = [(l, half) for l, half in peds if half >= WIDE_STREET]
+    along = unary_union([l.buffer(half + ALONG_PATH) for l, half in wide] or [Polygon()])
+    beside = [g for g in (face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "path" and len(f["xy"]) > 2)
+              if g.intersects(edge) and g.intersects(along)] if wide else []
+    if beside:
+        edge = edge.union(unary_union(beside).intersection(along).buffer(0.5))
     shapely.prepare(reach)
     walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
     wall_tree = STRtree(walls) if walls else None
@@ -3669,22 +3742,24 @@ def pedestrian_frontage(part, peds, br=(), standing=None):
         if g.intersection(reach).area >= 0.95 * g.area:
             out.append(g)
         else:
-            if standing is not None and f["cls"] == "plot" and _seen_along(front, standing) > WALLED_FRONT:
+            if standing is not None and f["cls"] == "plot" and _seen_along(front, standing) > WALLED_FRONT \
+                    and not (not standing.surveyed and _before_shop(g, part, shops)):
                 continue
             near_edge = edge.buffer(0.1)
             if houses is None:
                 houses = [g_ for g_ in (face_shape(h).buffer(0) for h in part["faces"]
                                         if h["cls"] == "building" and len(h["xy"]) > 2) if not g_.is_empty]
                 house_tree = STRtree(houses) if houses else None
-            laid = g.intersection(band.union(_before_houses(g, [l for l, _ in peds], houses, house_tree)))
+            laid = g.intersection(band.union(_before_houses(g, peds, houses, house_tree)))
             out += [q for q in getattr(laid, "geoms", [laid]) if q.geom_type == "Polygon" and q.intersects(near_edge)]
     return unary_union(out) if out else Polygon()
 
 
-def _before_houses(g, lines, houses, tree):
+def _before_houses(g, peds, houses, tree):
     """The ground of face `g` between the street and the walls of the buildings it fronts, where they
-    stand within SHOPFRONT_REACH of the street's line: a shopping street wider than PEDESTRIAN_HALF is
-    paved to its shop fronts, not to a line short of them."""
+    stand within SHOPFRONT_REACH of the street's line, or SHOPFRONT_PAST of its pavements' edge on a
+    wide street: a shopping street wider than PEDESTRIAN_HALF is paved to its shop fronts, not to a
+    line short of them. peds: [(line, half its width with its pavements)]."""
     if tree is None:
         return Polygon()
     rim = g.boundary
@@ -3697,12 +3772,12 @@ def _before_houses(g, lines, houses, tree):
                 continue
             for a, b in zip(piece.coords, piece.coords[1:]):
                 mid = Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-                l = min(lines, key=lambda l: l.distance(mid))
-                if max(l.distance(Point(a)), l.distance(Point(b))) > SHOPFRONT_REACH:
+                l, half = min(peds, key=lambda q: q[0].distance(mid))
+                if max(l.distance(Point(a)), l.distance(Point(b))) > max(SHOPFRONT_REACH, half + SHOPFRONT_PAST):
                     continue
                 pa, pb = l.interpolate(l.project(Point(a))), l.interpolate(l.project(Point(b)))
                 if inner is None:
-                    inner = unary_union([houses[int(j)].buffer(-0.3) for j in tree.query(g.buffer(SHOPFRONT_REACH))] or [Polygon()])
+                    inner = unary_union([houses[int(j)].buffer(-0.3) for j in tree.query(g.buffer(max(SHOPFRONT_REACH, half + SHOPFRONT_PAST)))] or [Polygon()])
                 # (a back wall seen through its own building fronts a yard, not the street)
                 if LineString([mid, l.interpolate(l.project(mid))]).intersects(inner):
                     continue
@@ -3710,6 +3785,24 @@ def _before_houses(g, lines, houses, tree):
                 if not quad.is_empty:
                     out.append(quad)
     return unary_union(out) if out else Polygon()
+
+
+SHOP_SIGN_ON = 1.5    # metres from a building's wall that a shop sign hanging on it stands
+
+
+def _before_shop(g, part, shops):
+    """Whether plot `g` lies against a building with a shop sign on it: ground before a shop, not a
+    house's front garden. Only asked where the map has no survey to say what stands there."""
+    if not shops:
+        return False
+    signs = MultiPoint(shops)
+    for f in part["faces"]:
+        if f["cls"] != "building" or len(f["xy"]) < 3:
+            continue
+        h = face_shape(f).buffer(0)
+        if h.distance(g) < 0.5 and h.distance(signs) < SHOP_SIGN_ON:
+            return True
+    return False
 
 
 def _seen_along(line, standing, step=0.5):
@@ -4910,7 +5003,7 @@ def _level(area, ground, step=1.0):
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
                     standing=None, filled=None, tunnels=(), rail=None, past=(), far=None, centre=None, walls_past=(),
-                    seating=(), plants=(), railings=None):
+                    seating=(), plants=(), railings=None, shops=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -5141,8 +5234,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     pave = pave.difference(plaza)
     # (a tree or shrub in paving laid over open ground, among tables or out to the buildings, stands in its own bed)
     plant_beds = functools.lru_cache(None)(lambda: unary_union([Point(float(q[0]), float(q[1])).buffer(0.6) for q in plants] or [Polygon()]))
-    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] == "pedestrian"], br,
-                                   standing)
+    frontage = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in shared if r["c"] in SHARED_STREETS], br,
+                                   standing, shops)
     here = [g.intersection(square) for g in seating if g.intersects(square)]
     # (tables on a slope stand on a lawn or a terrace the map doesn't have: only level ones are paved)
     here = [g for g in here if g.geom_type in ("Polygon", "MultiPolygon") and g.area > 0.5 and _level(g, ground)]
@@ -5161,7 +5254,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
     # (a road shut to traffic by day is a shopping street too: its pavements run to the shop fronts)
-    shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing)
+    shut = pedestrian_frontage(part, [(l, reach(r, 0)) for l, r in vehicle if r.get("tc") and r["c"] in KERBED], br, standing, shops)
     if not shut.is_empty:
         shut = shut.intersection(square).difference(unary_union([road, plaza, path_faces, plant_beds()]))
         if T is not None:
@@ -8654,7 +8747,7 @@ def place_cars(rd, fx, gt, ground):
     gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt]
     stop_pts = [Point(f[1], f[2]) for f in fx if f[0] == "bus"]
     return parked_cars(lines, vehicle, lambda r: way_width(r) / 2, near_junction, gate_pts, stop_pts, True,
-                       lambda r: car_sides(way_width(r)))
+                       lambda r: "none" if r.get("tc") == ALL_DAY else car_sides(way_width(r)))
 
 
 def car_box(x, y, a):
@@ -8860,18 +8953,82 @@ def crossing_kind(cls, tags):
     return None
 
 
+JUNCTION_NEAR = 1.5      # metres: lights mapped this close to two streets meeting at an angle are the junction's
+POLE_OUT = 0.5           # metres past the carriageway's edge the game stands a crossing's poles (furniture.ts)
+SLIDE_STEP, SLIDE_MAX = 0.5, 15.0    # metres a crossing may be moved along its street to get its poles off another's
+OWN_LIGHTS = 25.0        # an approach with lights of its own mapped this near the junction needs none from it
+ARM_OFF = 4.0            # metres from an approach's middle line that its own lights may be mapped
+
+
 def crossings(sq, rd, ground, points):
     """`cx`: the crossings and traffic lights on the square's streets, each [x, y, ground, angle,
     kind, width]: the point on the street's middle line, the street's direction there (radians, as
     street items are turned), `crossing_kind`'s letter, and the carriageway's width. The game paints
     the stripes or studs across it and stands the beacons or lights at its kerbs, and the driving
-    examiner can ask whether you stopped at them."""
+    examiner can ask whether you stopped at them.
+
+    The poles must stand on the pavement, so a crossing whose poles would stand in another street's
+    carriageway (mapped just by a junction) is moved along its street until they are clear. Lights
+    mapped on the junction itself (where the streets' middle lines meet) control every way into it:
+    they are stood back along each approach, clear of the streets across it, except an approach that
+    traffic only leaves by (a one-way street) or that has lights of its own mapped near; a crossing
+    with lights mapped on a junction goes on one approach."""
     roads = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
     if not roads:
         return [], collections.Counter()
     tree = STRtree([l for l, _ in roads])
+    widest = max(way_width(r) for _, r in roads) / 2
     x0, y0, x1, y1 = sq
+    lights = [(x, y) for x, y, cls, tags in points if cls in ("crossing", "traffic_signals") and crossing_kind(cls, tags) in ("p", "s")]
     out, count, seen = [], collections.Counter(), []
+
+    def heading(line, t):
+        a, b = line.interpolate(max(0.0, t - 1)), line.interpolate(min(line.length, t + 1))
+        d = math.hypot(b.x - a.x, b.y - a.y) or 1
+        return (b.x - a.x) / d, (b.y - a.y) / d
+
+    def clear(k, t):
+        line, r = roads[k]
+        c, (ux, uy) = line.interpolate(t), heading(line, t)
+        off = way_width(r) / 2 + POLE_OUT
+        for side in (1, -1):
+            pole = Point(c.x - uy * off * side, c.y + ux * off * side)
+            for j in tree.query(pole.buffer(widest)):
+                l2, r2 = roads[int(j)]
+                if r2 is r:
+                    continue
+                # (the same street carrying on in another record is the pole's own street)
+                vx, vy = heading(l2, l2.project(c))
+                if l2.distance(c) < 1.0 and abs(ux * vy - uy * vx) < 0.3:
+                    continue
+                if l2.distance(pole) < way_width(r2) / 2:
+                    return False
+        return True
+
+    def slide(k, t, ways):
+        """The nearest place along road k from t, going `ways` (+1, -1 or both), where both poles are clear."""
+        length = roads[k][0].length
+        for n in range(int(SLIDE_MAX / SLIDE_STEP) + 1):
+            for w in ways:
+                u = t + w * n * SLIDE_STEP
+                if 0 <= u <= length and clear(k, u):
+                    return u, n > 0
+        return None, False
+
+    def put(k, t, kind):
+        line, r = roads[k]
+        c = line.interpolate(t)
+        ux, uy = heading(line, t)
+        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy in seen):
+            count["doubled"] += 1
+            return
+        z = ground(c.x, c.y)
+        if z is None:
+            return
+        seen.append((c.x, c.y))
+        out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(uy, ux), 3), kind, round(way_width(r), 1)])
+        count[kind] += 1
+
     for x, y, cls, tags in points:
         if cls not in ("crossing", "traffic_signals") or not (x0 <= x < x1 and y0 <= y < y1):
             continue
@@ -8880,24 +9037,51 @@ def crossings(sq, rd, ground, points):
             count["plain"] += 1
             continue
         p = Point(x, y)
-        near = [(roads[int(k)][0].distance(p), int(k)) for k in tree.query(p.buffer(CROSSING_REACH))]
+        near = sorted((roads[int(k)][0].distance(p), int(k)) for k in tree.query(p.buffer(CROSSING_REACH)))
         near = [n for n in near if n[0] <= CROSSING_REACH]
         if not near:
             count["no street"] += 1
             continue
-        line, r = roads[min(near)[1]]
-        t = line.project(p)
-        c = line.interpolate(t)
-        a, b = line.interpolate(max(0.0, t - 1)), line.interpolate(min(line.length, t + 1))
-        if any(math.hypot(c.x - sx, c.y - sy) < 3 for sx, sy in seen):
-            count["doubled"] += 1
+        # the ways out of the point along the streets through it, one to a direction
+        arms = []
+        for d, k in near:
+            if d > JUNCTION_NEAR:
+                continue
+            line = roads[k][0]
+            t = line.project(p)
+            for w in (1, -1):
+                if (w > 0 and t < line.length - 1.0) or (w < 0 and t > 1.0):
+                    hx, hy = heading(line, t)
+                    h = (hx * w, hy * w)
+                    if not any(h[0] * g[0] + h[1] * g[1] > 0.9 for _, _, _, g in arms):
+                        arms.append((k, t, w, h))
+        junction = any(abs(a[3][0] * b[3][1] - a[3][1] * b[3][0]) > 0.5 for a in arms for b in arms)
+        if not junction:
+            k = near[0][1]
+            t = roads[k][0].project(p)
+            u, moved = slide(k, t, (1, -1))
+            count["moved off a street across"] += moved
+            put(k, t if u is None else u, kind)
             continue
-        z = ground(c.x, c.y)
-        if z is None:
-            continue
-        seen.append((c.x, c.y))
-        out.append([round(c.x, 2), round(c.y, 2), round(z, 2), round(math.atan2(b.y - a.y, b.x - a.x), 3), kind, round(way_width(r), 1)])
-        count[kind] += 1
+        count["on a junction"] += 1
+        placed = 0
+        for k, t, w, h in arms:
+            r = roads[k][1]
+            if (r.get("ow") or 0) * w > 0:
+                continue        # traffic only leaves the junction this way
+            line = roads[k][0]
+            if kind == "s" and any(0 < math.hypot(lx - x, ly - y) <= OWN_LIGHTS and line.distance(Point(lx, ly)) <= ARM_OFF
+                                   and (line.project(Point(lx, ly)) - t) * w > 0 for lx, ly in lights):
+                continue        # this approach's own lights are mapped
+            u, _ = slide(k, t + w * SLIDE_STEP, (w,))
+            if u is None:
+                continue
+            put(k, u, kind)
+            placed += 1
+            if kind != "s":
+                break
+        if not placed:
+            count["junction with no approach clear"] += 1
     return out, count
 
 
@@ -9467,6 +9651,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                      town_fronts(tile.get("bl") or [], evidence))
     footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
     standing = Standing(sq, footprints)
+    # (a lamp post, a shelter or a bin along a plot's front is no hedge: the paving runs past it)
+    items_off = standing.without([(float(f[1]), float(f[2])) for f in tile.get("fx") or [] if f[0] != "car"]
+                                 + [(float(c[0]), float(c[1])) for c in tile.get("cx") or []])
     settled["unstood"] = drop_unstood(part, evidence, standing)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
@@ -9555,17 +9742,19 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     filled, railings = [], []
     tile["sf"] = pack_surfaces(street_surfaces(passage_faces(part, tile.get("bl") or [], rd), rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
-                                               canal_bores(canal), standing, filled, tile.get("tn"),
+                                               canal_bores(canal), items_off, filled, tile.get("tn"),
                                                json.load(open(rail)) if os.path.exists(rail) else None, past, far, tile.get("centre"),
                                                [b for t in tiles for b in t.get("br") or []],
                                                evidence.seating,
-                                               [q[:2] for k in ("tr", "sb") for q in tile.get(k) or []], railings),
+                                               [q[:2] for k in ("tr", "sb") for q in tile.get(k) or []], railings,
+                                               [(float(q[0]), float(q[1])) for q in tile.get("sh") or []]),
                                sq[0], sq[1])
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
     rd = widen_to_paving(rd, filled[0][0] if filled else None, paving, br, houses)
     # (where a building stands nearer the kerb than that, the pavement narrows to it there)
     pavement_room(rd, houses_near, way_width, KERBED)
+    dual_kerbs(rd)
     tile["rd"] = rd
     br, _ = ends_off_pavements(br, rd)
     points = mapped_points(sq)

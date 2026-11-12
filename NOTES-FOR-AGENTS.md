@@ -63,6 +63,16 @@ the game locally, without the sound" in `CLAUDE.md`.
   leaves the lid over the bores as laid; paths on the lid are held at its height and no wall, fence
   or hedge stands on it (`lid_areas`); check rule 6 skips track points behind a face, in its bore.
   Every square with a railway tunnel needs rebuilding. The terrain shader hides ground only under each arch, inside the bore's lining (`world.ts`); the bore is a closed tube with an earth skin over its vault, and no retaining wall is drawn inside it. The face's top is at least `LID_OVER` (1.5 m) over the crown, the sheet holds the lid at least at the face's top right up to the face, the railway's bed stops just in under the face (`rail_beds`), and the ground meets it there at the lid's height (`sheet.py`). `ground_seams.mjs` (rule 38) leaves out cracks inside a bore, which the lining closes.
+- **Bus streets and traffic lights (branch `claude/street-fixes`, code only, map not rebuilt):** a street
+  only buses may use, or a pedestrian street open to traffic at some hours, is built as a road with
+  pavements and shut hours (`streets.street_access`, read by `prep_map.py` and the partition's graph,
+  `once.opened_pedestrian`); traffic lights' poles stand on the pavement, and lights mapped on a
+  junction go on each approach (`write_tile.crossings`). One open to cars at all hours is a living
+  street; a pavement facing another carriageway close beside it narrows (`write_tile.dual_kerbs`,
+  as `pw`); shop-front paving reaches further on wide streets and past a pavement mapped on its own
+  (`pedestrian_frontage`); the lidar's "something stands along a plot's front" leaves out mapped
+  street items (`Standing.without`). Trial on Bath 0,3 1,1 3,3 and Edinburgh 1,0 1,1.
+
 - **Royal Crescent seam (branch `claude/crescent-seam`, waiting for the co-developer):** the Crescent's flags fit
   themselves to the square's kerb (`SetPiece.fit`, `landmarks/royalcrescent.ts` `crescentFit`), grass
   doesn't grow through set pieces' floors (`grass.ts`), and set pieces marked `fills` have the square's
