@@ -1443,7 +1443,11 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
     # (nor is a set piece that paves its outline to the edge, where the square's faces were cut for it)
     from partition import setpiece_cuts
     filled = setpiece_cuts.holes(m.get("centre"), m["b"], sheet.union(("road", "service")))
-    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks
+    # (nor does a street's pavement go on through a building's passage with it: it stops at the wall
+    # beside the arch's mouth)
+    mouths = [Point(ps[k:k + 2]).buffer(ps[0] / 2 + 1.5) for b in m.get("bl") or [] for ps in b.get("ps") or []
+              if len(ps) >= 8 for k in (2, len(ps) - 3)]
+    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks + mouths
                                 + ([filled.buffer(0.3)] if filled is not None else []))
     kerbed = [LineString([q[:2] for q in r["p"]]) for r in m.get("rd") or [] if r["c"] in GAME_KERBED and len(r["p"]) > 1]
     if not kerbed: return

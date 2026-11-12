@@ -142,6 +142,10 @@ def main():
                     if line.distance(pt) >= (t["hw"][k] if t.get("hw") else 2.4): continue
                     return abs(q[2] - tp[k][2]) < 1.0
             return False
+        # (under a building's passage the ground is the building's, out of sight: the way is on its floor)
+        arches = [LineString([ps[i:i + 2] for i in range(2, len(ps), 3)]).buffer(ps[0] / 2 + 0.5)
+                  for b in m.get("bl") or [] for ps in b.get("ps") or [] if len(ps) >= 8]
+        in_passage = lambda q: any(a.contains(shapely.Point(q[:2])) for a in arches)
         lines = [LineString([q[:2] for q in r["p"]]) for r in roads]
         tree = shapely.STRtree(lines)
         marks = [[q[3] if len(q) > 3 else 0 for q in r["p"]] for r in roads]
@@ -159,7 +163,7 @@ def main():
                 k = abs((c[2] - b[2]) / d2 - (b[2] - a[2]) / d1)
                 if k > 0.25: note("1 road kinked", k, (tag, round(b[0]), round(b[1])), f"{r['c']} {r['n']!r} bend {k:.2f}")
             for i, q in enumerate(p):
-                if mk[i] or in_tube(q): continue
+                if mk[i] or in_tube(q) or in_passage(q): continue
                 dz = q[2] - ground(q[0], q[1])
                 if abs(dz) > 0.5: note("1 road off its ground", abs(dz), (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} {dz:+.1f} m")
         # ---- 2. crossings ---------------------------------------------------------------------

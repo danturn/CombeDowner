@@ -2535,7 +2535,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
-  const PASSAGE_ROOF = [0.62, 0.6, 0.56], PASSAGE_FLOOR = [0.56, 0.54, 0.5], PASSAGE_STEP = 0.6;
+  const PASSAGE_ROOF = [0.62, 0.6, 0.56], PASSAGE_CLEAR = 0.3;
   /** Box from (x, y) footprint centre, half-sizes along u and across, from y0 to y1. */
   const boxAt = (g: Geo, x: number, y: number, u: number[], hu: number, hv: number, y0: number, y1: number, col: number[]) => {
     const v = [-u[1], u[0]];
@@ -2689,10 +2689,25 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           }
           if (u < ub) draw(u, ub, ha, hb);
         };
+        // (round an opening the wall is plain, whole bays across and whole storeys up past its top,
+        // so no window is drawn sliced by the arch)
+        const clear = holes.map(([h0, h1, top]) => [Math.floor(h0 - PASSAGE_CLEAR / sp), Math.ceil(h1 + PASSAGE_CLEAR / sp),
+          org + Math.ceil((top + PASSAGE_CLEAR - org) / sto) * sto]);
         const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
           cut(ua, ub, ha, hb, (ua, ub, h0, h1) => {
             const v = (h: number) => hb > ha ? va + (vb - va) * (h - ha) / (hb - ha) : va;
-            facing(g, P(ua, h0), P(ub, h0), P(ub, h1), P(ua, h1), out, [ua, v(h0)], [ub, v(h0)], [ub, v(h1)], [ua, v(h1)], wallCol);
+            const draw = (g: Geo, ua: number, ub: number, h0: number, h1: number) =>
+              facing(g, P(ua, h0), P(ub, h0), P(ub, h1), P(ua, h1), out, [ua, v(h0)], [ub, v(h0)], [ub, v(h1)], [ua, v(h1)], wallCol);
+            let u = ua;
+            for (const [c0, c1, ctop] of g === walls ? clear : []) {
+              const s0 = Math.max(u, c0), s1 = Math.min(ub, c1);
+              if (s1 <= s0 || ctop <= h0) continue;
+              if (s0 > u) draw(walls, u, s0, h0, h1);
+              draw(plain, s0, s1, h0, Math.min(h1, ctop));
+              if (h1 > ctop) draw(walls, s0, s1, ctop, h1);
+              u = s1;
+            }
+            if (u < ub) draw(g, u, ub, h0, h1);
           });
         // ground-floor windows behind a door or shopfront are left out, whole windows at a time
         const blank: number[][] = [];
@@ -2784,8 +2799,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     });
 
-    // each passage's insides: its side walls, its ceiling at the opening's top, and its floor at the way's own height
-    for (const s of passages(b)) for (const [k, { walls, span }] of passageSides(b, s).entries()) {
+    // each passage's insides: its side walls and its ceiling at the opening's top (its floor is the
+    // way's own face, laid through it with the streets' faces)
+    for (const s of passages(b)) for (const { walls, span } of passageSides(b, s)) {
       const S = (p: number[], h: number) => [p[0], p[2] - Z0 + h, -p[1]];
       for (const [p, q] of walls) {
         // (each side faces the middle of the passage)
@@ -2796,11 +2812,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // (in one colour, not the building's: a passage under two houses has both draw these)
       const [l0, l1, r0, r1] = span, ml = Math.hypot(l1[0] - l0[0], l1[1] - l0[1]) / bay;
       facing(plain, S(l0, s.c), S(l1, s.c), S(r1, s.c), S(r0, s.c), [0, -1, 0], [0, 0], [ml, 0], [ml, 1], [0, 1], PASSAGE_ROOF);
-      // the floor runs a step out of each mouth, over the gap the street's paving leaves at the wall
-      const dl = Math.hypot(l1[0] - l0[0], l1[1] - l0[1]) || 1, ux = (l1[0] - l0[0]) / dl, uy = (l1[1] - l0[1]) / dl;
-      const out = (p: number[], d: number) => [p[0] + ux * d, p[1] + uy * d, p[2]];
-      const first = k === 0 ? -PASSAGE_STEP : 0, last = k === s.p.length - 2 ? PASSAGE_STEP : 0;
-      facing(plain, S(out(l0, first), 0.03), S(out(l1, last), 0.03), S(out(r1, last), 0.03), S(out(r0, first), 0.03), [0, 1, 0], [0, 0], [ml, 0], [ml, 1], [0, 1], PASSAGE_FLOOR);
     }
 
     const eave = eaveAll;

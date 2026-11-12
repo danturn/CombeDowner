@@ -18,7 +18,11 @@ export function passages(b: Building): Passage[] {
   if (!out) {
     out = b.ps.filter((q) => q.length >= 8).map((q) => {
       const p: number[][] = [];
-      for (let i = 2; i + 2 < q.length; i += 3) p.push([q[i], q[i + 1], q[i + 2]]);
+      for (let i = 2; i + 2 < q.length; i += 3) {
+        // (a point on top of the one before would make a stretch with no length, and no sides)
+        const last = p[p.length - 1];
+        if (!last || Math.hypot(q[i] - last[0], q[i + 1] - last[1]) > 0.01) p.push([q[i], q[i + 1], q[i + 2]]);
+      }
       return { w: q[0], c: q[1], p };
     });
     parsed.set(b, out);
@@ -117,15 +121,21 @@ export function passageSides(b: Building, s: Passage): { walls: number[][][]; sp
     const A = s.p[i], B = s.p[i + 1], vx = B[0] - A[0], vy = B[1] - A[1], L = Math.hypot(vx, vy);
     if (L < 1e-6) continue;
     const ux = vx / L, uy = vy / L, nx = -uy, ny = ux;
-    // the end stretches reach past the walls, to be cut where each side meets them
-    const pa = i === 0 ? 2 : 0, pb = i === n - 2 ? 2 : 0, T = L + pa + pb;
+    // the end stretches reach past the walls, to be cut where each side meets them, and the others
+    // just past their bends, so neighbouring stretches overlap there instead of leaving a crack
+    const pa = i === 0 ? 2 : h + 0.05, pb = i === n - 2 ? 2 : h + 0.05, T = L + pa + pb;
     const at = (f: number, o: number) => {
       const d = f * T - pa;
       return [A[0] + ux * d + nx * o, A[1] + uy * d + ny * o, A[2] + (B[2] - A[2]) * Math.min(1, Math.max(0, d / L))];
     };
+    // (past a mouth a side runs only as far as this building's own wall there: where the mouth is in
+    // another building's wall, a side going on through this one would stand out in the open)
     const side = (o: number): [number, number] | null => {
       const runs = insideRuns(b, at(0, o), at(1, o));
-      return runs.length ? [runs[0][0], runs[runs.length - 1][1]] : null;
+      if (!runs.length) return null;
+      const f0 = Math.max(runs[0][0], (pa - (i === 0 ? mouthReach(b, A, [-ux, -uy], [nx, ny], o) : turn(s, i, o))) / T);
+      const f1 = Math.min(runs[runs.length - 1][1], (pa + L + (i === n - 2 ? mouthReach(b, B, [ux, uy], [nx, ny], o) : turn(s, i + 1, o))) / T);
+      return f1 > f0 ? [f0, f1] : null;
     };
     const l = side(h), c = side(0), r = side(-h);
     const fl = l ?? c ?? r, fr = r ?? c ?? l;
@@ -146,6 +156,35 @@ export function passageSides(b: Building, s: Passage): { walls: number[][][]; sp
 }
 
 const lerp = (p: number[], q: number[], t: number) => p.map((v, k) => v + (q[k] - v) * t);
+
+/** How far a passage's side `o` off its middle runs out past its mouth at E (heading `out`) to meet
+ *  this building's wall there; a hair if the mouth is not in this building's wall. */
+function mouthReach(b: Building, E: number[], out: number[], n: number[], o = 0): number {
+  let wall: number[][] | null = null, best = 0.5;
+  for (const ring of b.r) for (let i = 0; i < ring.length; i++) {
+    const c = ring[i], d = ring[(i + 1) % ring.length], sx = d[0] - c[0], sy = d[1] - c[1], l2 = sx * sx + sy * sy || 1;
+    const t = Math.max(0, Math.min(1, ((E[0] - c[0]) * sx + (E[1] - c[1]) * sy) / l2));
+    const dist = Math.hypot(E[0] - c[0] - sx * t, E[1] - c[1] - sy * t);
+    if (dist < best) { best = dist; wall = [c, d]; }
+  }
+  if (!wall) return 0.05;
+  const [c, d] = wall, wx = d[0] - c[0], wy = d[1] - c[1];
+  const den = out[0] * wy - out[1] * wx;
+  if (Math.abs(den) < 1e-9) return 0.05;
+  const px = c[0] - E[0] - n[0] * o, py = c[1] - E[1] - n[1] * o;
+  return Math.max(0.05, Math.min(2, (px * wy - py * wx) / den + 0.05));
+}
+
+/** How far past the bend at point i the side `o` off the middle runs to meet the next stretch's
+ *  side: on past it on the outside of the bend, short of it on the inside (where the two sides
+ *  cross), and a hair more either way so they overlap instead of leaving a crack. */
+function turn(s: Passage, i: number, o: number): number {
+  const [a, b, c] = [s.p[i - 1], s.p[i], s.p[i + 1]];
+  const t1 = Math.atan2(b[1] - a[1], b[0] - a[0]), t2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+  const bend = Math.atan2(Math.sin(t2 - t1), Math.cos(t2 - t1));
+  const reach = Math.min(Math.abs(o), Math.abs(o) * Math.tan(Math.abs(bend) / 2));
+  return (o * bend > 0 ? -reach : reach) + 0.05;
+}
 
 /** Whether data (x, y) is in one of the building's courtyards (a hole in its footprint) and the
  *  building has a passage, which may lead into it: open ground, not shut in. */

@@ -24,9 +24,10 @@ the game locally, without the sound" in `CLAUDE.md`.
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in
-  `tools/partition/write_tile.py` (`ways_out_of_buildings`, `passage_floors`); the game cuts the
-  walls, draws the sides, ceiling and floor and walks them through `web/src/passages.ts`
-  (`map.ts`, `world.ts`). The grid under a passage is let down below its floor (`passage_ground`)
+  `tools/partition/write_tile.py` (`ways_out_of_buildings`, `passage_floors`); each floor is laid
+  as the way's own street face (`passage_faces`, before `street_surfaces`), and the game cuts the
+  walls, draws the sides and ceiling and walks them through `web/src/passages.ts` (`map.ts`,
+  `world.ts`). The grid under a passage is let down below its floor (`passage_ground`)
   and doors and shopfronts in its mouths go (`clear_passage_mouths`). Rules 9, 13 and 20 leave
   passages out. Trialled on Edinburgh 1,1 and Bath 0,3 only.
 

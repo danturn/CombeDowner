@@ -67,7 +67,7 @@ from railway import open_runs
 from partition.corridors import CORNERED, PATHW, line_corners, path_width, service_kind
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
 from partition.markings import road_markings
-from partition.sheet import ends_on_faces, ground_sheet, treads as tread_tops
+from partition.sheet import ends_on_faces, ground_sheet, treads as tread_tops, unpack as unpack_faces
 from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts, unregistered
 from partition.standing import Standing
 from partition.straighten import straighten
@@ -5709,7 +5709,8 @@ PASSAGE_LONG = 25.0     # metres: the longest passage the data only implies (a w
 PASSAGE_MARKED = 80.0   # the longest one the data marks as a passage (an arcade)
 PASSAGE_GAP = 0.3       # metres between two buildings' walls that a passage runs on through as one
 PASSAGE_LEVEL = 1.5     # metres a way may be below its building's lowest ground, or above its highest, and pass through at ground level
-PASSAGE_SINK = 0.25     # metres the ground may be let down under a passage where a wall or another building stands on it nearby
+PASSAGE_FLAT = 0.05     # metres a passage's walked floor may stray from its drawn face between the points it keeps
+PASSAGE_SINK = 0.25     # metres the ground may be let down under a passage where it also shapes the open ground beyond its face
 PASSAGE_ALONG = 1.5     # metres off a passage's middle a way may lie and still be the way through it
 
 
@@ -5884,21 +5885,144 @@ def passage_floors(bl, rd):
     return ways_out_of_buildings(rd, [Polygon(b["r"][0]) for b in shut], opened=still)[0]
 
 
-def passage_ground(T, bl, br=(), under=0.05):
+def passage_faces(part, bl, rd, reach=0.5):
+    """The partition with each passage's floor taken out of its building and laid as the way's own
+    face, a carriageway or a path, so the street faces run on through the arch and the ground meets
+    them at its mouths as it meets any other way. Reached a little past the walls, as the partition's
+    outline of a building and the building's own differ by a hair."""
+    rows, seen = [], set()
+    for b in bl:
+        for ps in b.get("ps") or []:
+            if id(ps) not in seen:
+                seen.add(id(ps))
+                rows.append(ps)
+    if not rows:
+        return part
+    lines = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if len(r["p"]) > 1]
+    tree = STRtree([g for g, _ in lines]) if lines else None
+    cuts = {"carriageway": [], "path": []}
+    for ps in rows:
+        mid = LineString([ps[i:i + 2] for i in range(2, len(ps), 3)])
+        a, b = mid.coords[0], mid.coords[-1]
+        ua = np.subtract(mid.coords[1], a) / (math.dist(mid.coords[1], a) or 1)
+        ub = np.subtract(b, mid.coords[-2]) / (math.dist(b, mid.coords[-2]) or 1)
+        longer = LineString([tuple(np.subtract(a, ua * reach))] + list(mid.coords) + [tuple(np.add(b, ub * reach))])
+        near = [lines[int(k)] for k in tree.query(mid.buffer(1.0))] if tree is not None else []
+        way = max(near, key=lambda n: mid.intersection(n[0].buffer(0.5)).length, default=(None, None))[1]
+        kind = "path" if way is None or way["c"] in GAME_PATHS else "carriageway"
+        cuts[kind].append(longer.buffer(ps[0] / 2, cap_style="flat"))
+    cut = {k: unary_union(v) if v else Polygon() for k, v in cuts.items()}
+    every = cut["carriageway"].union(cut["path"])
+    faces, opened = [], []
+    for f in part["faces"]:
+        if f["cls"] != "building" or len(f["xy"]) < 3:
+            faces.append(f)
+            continue
+        g = face_shape(f).buffer(0)
+        if not g.intersects(every):
+            faces.append(f)
+            continue
+        opened.append(g)
+        for q in shapely.get_parts(g.difference(every)):
+            if q.geom_type == "Polygon" and q.area > 0.05:
+                faces.append(dict(f, xy=[list(c) for c in q.exterior.coords[:-1]], holes=[[list(c) for c in h.coords[:-1]] for h in q.interiors]))
+    inside = unary_union(opened) if opened else Polygon()
+    for cls in ("carriageway", "path"):
+        for q in shapely.get_parts(cut[cls].intersection(inside)):
+            if q.geom_type == "Polygon" and q.area > 0.05:
+                faces.append(dict(cls=cls, xy=[list(c) for c in q.exterior.coords[:-1]], holes=[[list(c) for c in h.coords[:-1]] for h in q.interiors]))
+    return dict(part, faces=faces)
+
+
+def passage_floors_on_faces(tile, step=1.0):
+    """Each passage's floor, which the game walks, is read back off the face laid through it, a point
+    every `step` along its middle, so the walking and the drawing agree (a flight's treads included);
+    its headroom stays under its buildings' eaves."""
+    rows, eaves = {}, {}
+    for b in tile.get("bl") or []:
+        for ps in b.get("ps") or []:
+            rows[id(ps)] = ps
+            eaves[id(ps)] = min(eaves.get(id(ps), math.inf), b["g"] + b["h"])
+    if not rows or not tile.get("sf"):
+        return
+    V, _, T, _, _ = unpack_faces(tile["sf"])
+    if not len(T):
+        return
+    tris = shapely.polygons(V[T][:, :, :2])
+    tree = STRtree(tris)
+
+    def face_z(x, y):
+        for k in tree.query(Point(x, y), predicate="intersects"):
+            a, b, c = V[T[int(k)]]
+            det = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])
+            if abs(det) < 1e-9:
+                continue
+            u = ((x - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (y - a[1])) / det
+            v = ((b[0] - a[0]) * (y - a[1]) - (x - a[0]) * (b[1] - a[1])) / det
+            return float(a[2] + u * (b[2] - a[2]) + v * (c[2] - a[2]))
+        return None
+    for key, ps in rows.items():
+        mid = LineString([ps[i:i + 2] for i in range(2, len(ps), 3)])
+        cum = np.concatenate([[0.0], np.cumsum([math.dist(a, c) for a, c in zip(mid.coords, mid.coords[1:])])])
+        old = [ps[i + 2] for i in range(2, len(ps), 3)]
+        n = max(1, math.ceil(mid.length / step))
+        at = []
+        for d in sorted([mid.length * j / n for j in range(n + 1)] + [float(c) for c in cum]):
+            if not at or d - at[-1] > 0.05:
+                at.append(d)
+            elif d in cum:
+                at[-1] = d
+        pts = []
+        for d in at:
+            q = mid.interpolate(d)
+            z = face_z(q.x, q.y)
+            pts.append((d, round(q.x, 2), round(q.y, 2), round(z if z is not None else float(np.interp(d, cum, old)), 2)))
+        # (only the points the floor needs, where it bends or the middle line turns: each stretch is
+        # drawn as a piece of its own, and fewer pieces meet in fewer seams)
+        corners = {round(c, 6) for c in cum}
+        keep = _floor_points(pts, corners, PASSAGE_FLAT)
+        ps[2:] = [v for k in keep for v in pts[k][1:]]
+        pts = [q[1:] for q in pts]
+        ps[1] = round(min(ps[1], eaves[key] - PASSAGE_OVER - max(q[2] for q in pts)), 2)
+
+
+def _floor_points(pts, corners, tol):
+    """Which of a passage floor's points (along, x, y, z) to keep: its ends, its middle line's turns,
+    and enough between that the floor runs within `tol` of every one left out."""
+    keep = {0, len(pts) - 1} | {k for k, q in enumerate(pts) if round(q[0], 6) in corners}
+
+    def split(i, j):
+        if j <= i + 1:
+            return
+        a, b = pts[i], pts[j]
+        worst, at = 0.0, None
+        for k in range(i + 1, j):
+            f = (pts[k][0] - a[0]) / ((b[0] - a[0]) or 1)
+            off = abs(pts[k][3] - (a[3] + (b[3] - a[3]) * f))
+            if off > worst:
+                worst, at = off, k
+        if at is not None and worst > tol:
+            keep.add(at)
+            split(i, at)
+            split(at, j)
+    marks = sorted(keep)
+    for i, j in zip(marks, marks[1:]):
+        split(i, j)
+    return sorted(keep)
+
+
+def passage_ground(T, bl, under=0.05):
     """The ground under a passage is let down below its floor: the grid is coarser than a passage is
-    wide, and the ground in a building, unseen anywhere else, would rise through the floor between
-    its walls. Only a grid point in the passage's own buildings is moved, and only where the ground it
-    shapes reaches out of them in front of the passage's mouths alone, so no wall, fence or other
-    building beside it is left standing over a dip. The grid's outermost ring, which the next square
-    shares, keeps its height."""
+    wide, and the ground in a building, unseen anywhere else, would stand up at the sides of the
+    passage's face. Only a grid point in the passage's own buildings is moved, and one that shapes
+    open ground beyond the face only PASSAGE_SINK, so no wall, fence or building's foot is left
+    standing over a dip. The grid's outermost ring, which the next square shares, keeps its height."""
     nx, ny, z0, dx, dy = T["nx"], T["ny"], T["z0"], T["dx"], T["dy"]
     grid = np.array(T["h"], dtype=float).reshape(ny, nx) / 10.0 + z0
     gx = T["x0"] + np.arange(nx) * dx
     gy = T["y0"] + np.arange(ny) * dy
     rings = [(b, Polygon(b["r"][0], b["r"][1:]).buffer(0)) for b in bl if len(b["r"][0]) >= 3]
     ring_tree = STRtree([g for _, g in rings]) if rings else None
-    bars = [LineString([q[:2] for q in w["p"]]) for w in br if len(w["p"]) > 1]
-    bar_tree = STRtree(bars) if bars else None
     lowered, done = 0, set()
     for b in bl:
         for ps in b.get("ps") or []:
@@ -5911,6 +6035,7 @@ def passage_ground(T, bl, br=(), under=0.05):
             near = [rings[int(k)] for k in ring_tree.query(mid.buffer(ps[0] / 2 + 2 * dx))]
             own = unary_union([g for o, g in near if any(q is ps for q in o.get("ps") or [])])
             others = [g for o, g in near if not any(q is ps for q in o.get("ps") or [])]
+            strip = mid.buffer(ps[0] / 2 + 0.5)
             x0, y0, x1, y1 = mid.buffer(ps[0] / 2 + dx).bounds
             i0, i1 = max(1, int(np.searchsorted(gx, x0))), min(nx - 1, int(np.searchsorted(gx, x1)))
             j0, j1 = max(1, int(np.searchsorted(gy, y0))), min(ny - 1, int(np.searchsorted(gy, y1)))
@@ -5920,11 +6045,10 @@ def passage_ground(T, bl, br=(), under=0.05):
                     cells = box(gx[i] - dx, gy[j] - dy, gx[i] + dx, gy[j] + dy)
                     if not own.contains(pt) or mid.distance(pt) > ps[0] / 2 + dx:
                         continue
-                    # (the open ground this point shapes, which must not hold a wall, a fence or another building's foot)
-                    open_ground = cells.difference(own).difference(unary_union([g for g in others if g.intersects(cells)] or [Polygon()]))
-                    held = not open_ground.is_empty and (
-                        any(g.exterior.distance(open_ground) < 0.5 for g in others if hasattr(g, "exterior") and g.intersects(cells.buffer(0.5)))
-                        or (bar_tree is not None and len(bar_tree.query(open_ground.buffer(0.5), predicate="intersects"))))
+                    # (the ground this point shapes out in the open, beyond the passage's own face, where a
+                    # wall, a fence or a building's foot may stand on it: let down only a little there)
+                    held = not cells.difference(own).difference(strip).difference(
+                        unary_union([g for g in others if g.intersects(cells)] or [Polygon()])).is_empty
                     z = math.floor((float(np.interp(mid.project(pt), cum, floors)) - under - z0) * 10) / 10 + z0
                     if held:
                         z = max(z, grid[j, i] - PASSAGE_SINK)
@@ -5936,19 +6060,27 @@ def passage_ground(T, bl, br=(), under=0.05):
     return lowered
 
 
-def clear_passage_mouths(tile, clear=0.5):
-    """Doors, shopfronts and bay windows set in a wall where a passage opens are taken out: the arch
-    stands there instead. Returns how many went."""
+def clear_passage_mouths(tile, clear=0.3):
+    """Doors, shopfronts and bay windows that would stand in a wall where a passage opens, or reach
+    within `clear` of its sides, are taken out: the arch stands there instead, and none is drawn
+    half through it. Returns how many went."""
     strips = [LineString([ps[i:i + 2] for i in range(2, len(ps), 3)]).buffer(ps[0] / 2 + clear)
               for b in tile.get("bl") or [] for ps in b.get("ps") or []]
     if not strips:
         return 0
     tree = STRtree(strips)
+    # (half of each one's width along its wall: a door's is the game's 1.3 m)
+    half = {"dr": lambda q: 0.65, "sh": lambda q: float(q[4]) / 2, "by": lambda q: float(q[6]) / 2 if len(q) > 6 else 1.0}
     gone = 0
-    for k in ("dr", "sh", "by"):
+    for k, size in half.items():
         if not tile.get(k):
             continue
-        kept = [q for q in tile[k] if not any(strips[int(n)].contains(Point(q[0], q[1])) for n in tree.query(Point(q[0], q[1])))]
+        kept = []
+        for q in tile[k]:
+            spot = Point(float(q[0]), float(q[1])).buffer(size(q))
+            if any(strips[int(n)].intersects(spot) for n in tree.query(spot)):
+                continue
+            kept.append(q)
         gone += len(tile[k]) - len(kept)
         tile[k] = kept
     return gone
@@ -9054,7 +9186,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rebake = {id(r) for r in rd if r.pop("_rebake", None)}
     if rebake:
         flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width), only=rebake)
-    tile["rd"] = rd
+    # (the passages are settled before the faces, which lay each one's floor as its way's own face)
+    rd = tile["rd"] = passage_floors(tile.get("bl") or [], rd)
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
         x = min(max(x, T["x0"]), T["x0"] + (T["nx"] - 1.001) * T["dx"])
@@ -9062,7 +9195,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         return ground(x, y)
 
     filled, railings = [], []
-    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
+    tile["sf"] = pack_surfaces(street_surfaces(passage_faces(part, tile.get("bl") or [], rd), rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq), br,
                                                canal_bores(canal), standing, filled, tile.get("tn"),
                                                json.load(open(rail)) if os.path.exists(rail) else None, past, far, tile.get("centre"),
                                                [b for t in tiles for b in t.get("br") or []],
@@ -9115,8 +9248,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["cx"], cx_count = crossings(sq, rd, street_ground, points)
     tile["mk"] = road_markings(marked_streets(rows, rd, sq), marked_road(tile["sf"], rd, sq), street_ground,
                                [(q[0], q[1]) for q in tile["cx"]])
-    tile["rd"] = passage_floors(tile.get("bl") or [], tile["rd"])
-    passage_ground(T, tile.get("bl") or [], tile.get("br") or [])
+    passage_floors_on_faces(tile)
+    passage_ground(T, tile.get("bl") or [])
     clear_passage_mouths(tile)
     ends_on_faces(tile)
     gs = ground_sheet(tile, canal)
