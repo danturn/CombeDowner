@@ -23,8 +23,10 @@ exactly as written, replacing only the placeholders in angle brackets:
 2. Never edit any file under `web/public/maps/` or `data/` by hand. The tools write them.
 3. Never `git add` anything under `data/raw/`. It is ignored; leave it that way.
 4. Never touch another map: not its entry in `tools/area.py` or `web/src/maps.ts`, not its files.
-5. Run one build at a time. `new_area.py` waits for the machine's build lock by itself: if it prints
-   `waiting for another build to finish`, let it wait. Do not delete the lock.
+5. Run one heavy job at a time on a machine: a build, a `verify` (its clash check) or a `shoot`,
+   never two together, and never two maps at once. `new_area.py` waits for the machine's build lock
+   by itself: if it prints `waiting for another build to finish`, let it wait. Do not delete the lock.
+   Never stop a build with `kill`: a killed build can leave its lock behind.
 6. Every browser run is headless and muted. Use only `new_area.py shoot` (it uses `tools/shoot.mjs`,
    which mutes everything). Never open the game in a browser any other way, never play audio.
 7. Do not `git commit` or `git push` unless the user tells you to.
@@ -35,6 +37,8 @@ exactly as written, replacing only the placeholders in angle brackets:
    the best source for the place, else the worldwide fallback. You never choose sources and never
    leave a layer out. If a step asks you to add a source by hand, STOP: that is work for a person
    (`reference.md`, "One shape for every map").
+10. Reuse the downloads. Never delete `data/raw/<id>/` or a file in it to "start clean", and never
+   fetch by hand: `build` keeps everything it fetched and fetches only what is missing.
 
 ## STOP list: stop and ask the user when
 
@@ -154,7 +158,25 @@ next: python3 -I tools/new_area.py build <id>
 | `FAIL ... has changed shape` | STOP. |
 | The `BRANCH:` differs from Step 2 | STOP. |
 
-## Step 5. Download and build (10 to 40 minutes)
+## Step 5. Download and build (10 to 40 minutes for a town; a city of radius 2000 m about 2 hours)
+
+First a trial: it downloads everything, then builds only two or three squares (the centre's, the one
+whose ground climbs most, and the one with the most bridge), so a failure in the tools shows in
+minutes, not after an hour of building:
+
+```sh
+python3 -I tools/new_area.py build <id> --trial
+```
+
+Success: it ends `TRIAL OK <id>`. It prints `trial squares: ...` with the squares it picked.
+
+IF any line says `FAILED` (a square, or `partition: N squares failed`) or it ends `BUILD FAIL`:
+read `troubleshooting.md`, find the row whose error text matches, and do what it says. A failure
+inside the tools (a `Traceback`, `RuntimeError`, `GEOSException`, `TypeError` in a square's
+`build.log` or in `data/raw/<id>/wide/partition/city.log`) is not yours to fix: STOP and report it,
+with the square and the last 20 lines of its log.
+
+Then the whole map, with the same downloads (nothing is fetched again):
 
 ```sh
 python3 -I tools/new_area.py build <id>
@@ -236,8 +258,10 @@ Play it: cd web && npm run dev, then open http://localhost:5173/?map=<id>
 
 What it has: <England: real roofs, heights, church towers and ground from the lidar, the census's
 house types, conservation areas, pubs with hygiene ratings. Wales: the same lidar from the Welsh
-Government, the census's house types, hygiene ratings. Elsewhere: buildings, roads, water, trees
-and terrain from worldwide open data>.
+Government, the census's house types, hygiene ratings. Scotland: real roofs, heights and ground from
+the Scottish Public Sector LiDAR where it has flown, wall materials from the energy certificates,
+the 2022 Census's house types, conservation areas, listed railings and walls, registered plots,
+hygiene ratings. Elsewhere: buildings, roads, water, trees and terrain from worldwide open data>.
 What it lacks: <copy the "will be built without" list that add printed, plus any WARN step>.
 Clash check: <total> rule failures over <N> squares (<per> per square).
 Frame rate in the screenshots: lowest <N> fps.
