@@ -316,6 +316,8 @@ function probe() {
           const sk = `${Math.round(x * 4)},${Math.round(y * 4)}`;
           if (seen.has(sk)) continue;     // (a street in two squares' records is sampled once)
           seen.add(sk);
+          // (through a building's passage the street is the passage's own floor, under its roof: rule 13's)
+          if (map.passageAt?.(x, -y)) continue;
           const walk = A[2] + (B[2] - A[2]) * f - z0, from = along + s, toEnd = total - from;
           // (a junction of three or more ways: its corners belong to the streets round it)
           const atJunction = (crowded[0] && from < half + 2.5) || (crowded[1] && toEnd < half + 2.5);

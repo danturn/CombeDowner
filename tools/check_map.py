@@ -823,13 +823,15 @@ def fit_together(m, tag, note, f=None):
     cars_ = [r for r in m["rd"] if len(r["p"]) > 1 and r["c"] not in ("footway", "path", "cycleway", "steps", "pedestrian", "track", "bridleway")
              and not any(len(q) > 3 for q in r["p"])]
     carr = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in cars_]
+    # (a way through a building's passage runs under it, not into it)
+    solid = [check_more._open(h, b) for h, b in zip(homes, [b for b in m["bl"] if len(b["r"][0]) >= 3])]
     if carr:
         ctree_ = shapely.STRtree(carr)
-        for h in homes:
+        for h in solid:
             for k in ctree_.query(h):
                 a = carr[int(k)].intersection(h).area
                 if a > 2: note("9 building on a carriageway", a, (tag, round(h.centroid.x), round(h.centroid.y)), f"{cars_[int(k)]['c']} {a:.0f} m2")
-    for h in homes:
+    for h in solid:
         over = sum(paves[int(k)].intersection(h).area for k in ptree.query(h))
         if over > 2: note("9 building on a pavement", over, (tag, round(h.centroid.x), round(h.centroid.y)), f"{over:.0f} m2")
     for r in m["rd"]:

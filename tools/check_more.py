@@ -386,6 +386,13 @@ def surface(m, ground):
     return drawn
 
 
+def _open(home, b):
+    """A building's footprint less its passages (the openings a way goes through it by: `ps`)."""
+    cuts = [LineString([ps[i:i + 2] for i in range(2, len(ps), 3)]).buffer(ps[0] / 2, cap_style="flat")
+            for ps in b.get("ps") or [] if len(ps) >= 8]
+    return home.difference(unary_union(cuts)) if cuts else home
+
+
 def _poly(ring, holes=()):
     g = Polygon(ring, [h for h in holes if len(h) >= 3])
     return g if g.is_valid else g.buffer(0)
@@ -441,7 +448,7 @@ def square(m, tag, note, f):
 
     drawn = surface(m, ground)
     buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, beyond(f, m, drawn), note, at, off_deck, pts)
-    streets(m, roads, rlines, rtree, marked, homes, solid, ground, note, at, sq, f)
+    streets(m, roads, rlines, rtree, marked, [_open(h, b) for h, b in zip(homes, blds)], solid, ground, note, at, sq, f)
     land_and_water(m, waters, ground, note, at, sq, f)
     small_things(m, roads, rlines, rtree, solid, wtree, drawn, note, at, off_deck, pts, hits, inner)
     stair_feet = [e for r in m.get("rd") or [] if r["c"] == "steps" and len(r["p"]) > 1 for e in (r["p"][0], r["p"][-1])]

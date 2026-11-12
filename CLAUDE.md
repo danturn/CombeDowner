@@ -209,7 +209,9 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   buildings, then real walls (mapped walls, and the lidar's from `tools/walls.py`).
   - Next come the streets, fitted between those walls and buildings (`tools/roadwidth.py`), lanes
     and drives too. A street's `w` and `pv` are its only width, for every later step and for the
-    game. A street whose line runs on through a building stops at its wall.
+    game. A street whose line runs into a building and ends there stops at its wall; one that the
+    data marks as a passage, or that comes out of the far side, goes through it by an opening the
+    building carries as `ps` (`write_tile.ways_out_of_buildings`, `web/src/passages.ts`).
   - Then come the gardens: one network of boundaries, each laid once (`tools/gardens.py`). The
     side and back boundaries come from every garden's edge at once, so two neighbours share one
     fence and there is no gap between two guesses at it. A real wall takes the place of a guessed
