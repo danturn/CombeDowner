@@ -6122,16 +6122,52 @@ def find_passages(rows, houses, own, tops, marks):
                 if row not in made.setdefault(k, []):
                     made[k].append(row)
             mid = LineString([row[i:i + 2] for i in range(2, len(row), 3)])
-            strips.append((mid.buffer(max(row[0] / 2, 0.5) + 1.0), mid))
+            strips.append((_passage_strip(mid, row[0]), mid))
     return made, strips
+
+
+PASSAGE_OUT = 1.0       # metres past a passage's mouth that its way is let run on from the wall
+
+
+def _passage_strip(mid, width):
+    """The ground a passage opens: its way's width and a metre each side, and on out of each mouth
+    only as far as the margin a way is stopped short of a wall, not round into the building beside
+    it, where a way turning at the mouth would end indoors."""
+    a, b = mid.coords[0], mid.coords[-1]
+    (ax, ay), (bx, by) = mid.coords[1], mid.coords[-2]
+    da, db = math.dist(a, (ax, ay)) or 1.0, math.dist(b, (bx, by)) or 1.0
+    run = LineString([(a[0] + (a[0] - ax) / da * PASSAGE_OUT, a[1] + (a[1] - ay) / da * PASSAGE_OUT), *mid.coords[1:-1],
+                      (b[0] + (b[0] - bx) / db * PASSAGE_OUT, b[1] + (b[1] - by) / db * PASSAGE_OUT)])
+    return run.buffer(max(width / 2, 0.5) + 1.0, cap_style="flat")
 
 
 def along_passages(line, opened, share=0.6):
     """The ground opened by the passages `line` runs along (most of each one's length), or None: a way
     that only crosses a passage, or stops at its side, still stops at the wall."""
-    got = [strip for strip, mid in opened or ()
-           if mid.intersection(line.buffer(PASSAGE_ALONG)).length >= share * mid.length]
+    got = [strip for strip, mid in opened or () if _run_along(line, mid) >= share * mid.length]
     return unary_union(got) if got else None
+
+
+def _run_along(line, mid):
+    """Metres of `mid` that `line` runs along within PASSAGE_ALONG of it. Measured along the passage,
+    so a way crossing a short passage near its mouth, square to it, doesn't count as going through;
+    a way that ends inside the passage is let reach on a little, as the data often splits a lane
+    under its arch and the next piece carries on through."""
+    zone = mid.buffer(PASSAGE_ALONG, cap_style="flat")
+    near = line.intersection(zone)
+    spans = []
+    for piece in getattr(near, "geoms", [near]):
+        if piece.geom_type != "LineString" or piece.is_empty:
+            continue
+        at = [mid.project(Point(c)) for c in piece.coords]
+        spans.append((min(at), max(at)))
+    run, reach = 0.0, -math.inf
+    for a, b in sorted(spans):
+        if b > reach:
+            run += b - max(a, reach)
+            reach = b
+    run += PASSAGE_ALONG * sum(zone.contains(Point(e[:2])) for e in (line.coords[0], line.coords[-1]))
+    return min(run, mid.length)
 
 
 def ways_out_of_buildings(rd, houses, floor=2.0, opened=None):
@@ -6202,7 +6238,7 @@ def passage_floors(bl, rd):
             b.pop("ps", None)
     if not shut:
         return rd
-    still = [(mid.buffer(max(ps[0] / 2, 0.5) + 1.0), mid) for b in shut for ps in b.get("ps") or []
+    still = [(_passage_strip(mid, ps[0]), mid) for b in shut for ps in b.get("ps") or []
              for mid in [LineString([ps[i:i + 2] for i in range(2, len(ps), 3)])]]
     return ways_out_of_buildings(rd, [Polygon(b["r"][0]) for b in shut], opened=still)[0]
 
@@ -9472,14 +9508,44 @@ def walls_meet_at_sides(br, base_br, sq):
     return br
 
 
+def _paved(T):
+    def paved(x, y):
+        i, j = int((x - T["x0"]) / T["dx"]), int((y - T["y0"]) / T["dy"])
+        return 0 <= i < T["nx"] and 0 <= j < T["ny"] and T["k"][j * T["nx"] + i] == "5"
+    return paved
+
+
+BENCH_ROW_PAVED = 0.5   # share of a lidar run on paved ground that, with benches mapped along it, makes it them
+BENCH_ROW_NEAR = 1.2    # metres from a lidar run a mapped bench stands that the run took for a wall
+
+
+def bench_rows(br, T, seats, step=1.0):
+    """The lidar's runs (those with a measured height) that are a row of benches on paved ground: the
+    survey sees a line of seat backs across a paved square as a wall, so a run there with benches
+    mapped along it is left out. Mapped walls, and runs on open ground, are kept."""
+    if not seats:
+        return []
+    paved = _paved(T)
+    tree = STRtree(seats)
+    out = []
+    for b in br:
+        if "h" not in b or len(b["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in b["p"]])
+        if not any(seats[int(k)].distance(line) <= BENCH_ROW_NEAR for k in tree.query(line.buffer(BENCH_ROW_NEAR))):
+            continue
+        n = max(2, int(math.ceil(line.length / step)))
+        on = [paved(q.x, q.y) for q in (line.interpolate(k / n, normalized=True) for k in range(n + 1))]
+        if sum(on) >= BENCH_ROW_PAVED * len(on):
+            out.append(b)
+    return out
+
+
 def drop_walls_on_paving(part, T, base_br):
     """A wall, fence or hedge standing wholly on paving that main has none beside is a garden the
     partition made of a plaza's building (a ring of garden wall in Abbey Churchyard). It is left out."""
     near = unary_union([LineString([q[:2] for q in b["p"]]).buffer(1.5) for b in base_br if len(b["p"]) > 1] or [Polygon()])
-
-    def paved(x, y):
-        i, j = int((x - T["x0"]) / T["dx"]), int((y - T["y0"]) / T["dy"])
-        return 0 <= i < T["nx"] and 0 <= j < T["ny"] and T["k"][j * T["nx"] + i] == "5"
+    paved = _paved(T)
     for e in part["edges"]:
         if e["kind"] not in ("garden_wall", "fence", "hedge", "wall", "security_wall", "boundary_wall", "palisade") \
                 or e.get("source") not in ("front", "parcel", "inferred"):
@@ -9703,9 +9769,11 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     style_of = {id(l): st for l, st in evidence.styled}
     mapped = [dict(c=style_of.get(id(l), c), p=[list(q[:2]) for q in l.coords]) for l, c in evidence.mapped if l.length > 0]
     mapped += [dict(c=st, p=verge_line(l, rd)) for l, st in evidence.styled if st == "guard_rail"]
+    benches = {id(b) for b in bench_rows(tile.get("br") or [], T, evidence.seats)}
     br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
-                                         blocked=wall_blocked, measured=[b for b in tile.get("br") or [] if "h" in b] + mapped, houses=houses,
+                                         blocked=wall_blocked, measured=[b for b in tile.get("br") or [] if "h" in b and id(b) not in benches] + mapped,
+                                         houses=houses,
                                          paths=[(LineString([q[:2] for q in r["p"]]), r.get("w", 1.8) / 2) for r in rd
                                                 if r["c"] in GAME_PATHS and len(r["p"]) > 1],
                                          guess_blocked=abutments, free=free)
