@@ -414,6 +414,79 @@ def decks(rd, margin):
     return out
 
 
+PORTAL_OUT = 3.0     # metres out in front of a portal, where its headwall holds the hill, that a way's edge counts as going in
+PORTAL_IN = 8.0      # and in past it
+
+
+def in_portals(tn, bounds, x, y):
+    """Which of the points (x, y) lie in a tunnel's mouth: across its headwall, from just outside the
+    portal to a little way in. A tunnel cut at the square's edge has no portal there."""
+    from tunnels import FACE_PAST, half_at
+    out = np.zeros(len(x), bool)
+    w, s, e, n = bounds
+    for t in tn or []:
+        p = t.get("p") or []
+        if len(p) < 2:
+            continue
+        for k, k2 in ((0, 1), (len(p) - 1, len(p) - 2)):
+            (ax, ay), (bx, by) = p[k][:2], p[k2][:2]
+            if min(abs(ax - w), abs(ax - e), abs(ay - s), abs(ay - n)) < 0.5:
+                continue
+            l = math.hypot(bx - ax, by - ay)
+            if l < 1e-6:
+                continue
+            ux, uy = (bx - ax) / l, (by - ay) / l
+            along = (x - ax) * ux + (y - ay) * uy
+            across = np.abs((x - ax) * uy - (y - ay) * ux)
+            out |= (along > -PORTAL_OUT) & (along < PORTAL_IN) & (across < half_at(t, k) + FACE_PAST)
+    return out
+
+
+def rail_mouths_and_cuttings(rail, bounds, x, y):
+    """For points (x, y) on the railway's bed: which lie across a tunnel face's mouth (the bed's end
+    there, where the bore goes on into the hill), and which along a cutting up to a face, with the
+    way out from the line at each (unit x, y), and the lid's height over those behind a face (else nan)."""
+    from railway import CUT_REACH, CUT_BAND, LID_DEEP, portal_faces
+    mouth = np.zeros(len(x), bool)
+    cut = np.zeros(len(x), bool)
+    ox, oy = np.zeros(len(x)), np.zeros(len(x))
+    lid = np.full(len(x), np.nan)
+    if not rail or not len(x):
+        return mouth, cut, ox, oy, lid
+    w, s, e, n = bounds
+    segs = []
+    for t in rail.get("tracks") or []:
+        for a, b in zip(t["p"], t["p"][1:]):
+            fa, fb = (a[3] if len(a) > 3 else 0), (b[3] if len(b) > 3 else 0)
+            if fa == 2 and fb == 2:
+                continue
+            if fa == 2: a = [(a[i] + b[i]) / 2 for i in range(2)]
+            if fb == 2: b = [(a[i] + b[i]) / 2 for i in range(2)]
+            segs.append(shapely.LineString([a[:2], b[:2]]))
+    if not segs:
+        return mouth, cut, ox, oy, lid
+    pts = shapely.points(x, y)
+    tree = shapely.STRtree(segs)
+    near = tree.query_nearest(pts, all_matches=False)[1]
+    foot = shapely.line_interpolate_point(np.asarray(segs, object)[near], shapely.line_locate_point(np.asarray(segs, object)[near], pts))
+    dx, dy = x - shapely.get_x(foot), y - shapely.get_y(foot)
+    d = np.maximum(np.hypot(dx, dy), 1e-6)
+    ox, oy = dx / d, dy / d
+    for fc in portal_faces(rail.get("portals") or []):
+        if not (w - CUT_REACH <= fc["x"] <= e + CUT_REACH and s - CUT_REACH <= fc["y"] <= n + CUT_REACH):
+            continue
+        u = (x - fc["x"]) * fc["ux"] + (y - fc["y"]) * fc["uy"]
+        v = -(x - fc["x"]) * fc["uy"] + (y - fc["y"]) * fc["ux"]
+        across = (v > fc["v0"] - CUT_BAND) & (v < fc["v1"] + CUT_BAND)
+        # (the bed's end, past the line's last point, where the way out from it runs along the line;
+        # and any of its edge in behind the face, where the ground is hidden in the bore)
+        inside = (v > fc["v0"]) & (v < fc["v1"])
+        mouth |= inside & (((u > -1.0) & (np.abs(ox * fc["ux"] + oy * fc["uy"]) > 0.5)) | (u > 0.0)) & (u < LID_DEEP)
+        cut |= across & (u <= 0.0) & (u > -CUT_REACH)
+        lid[inside & (u > 0.0) & (u < LID_DEEP)] = fc["z"] + fc["top"]
+    return mouth, cut & ~mouth, ox, oy, lid
+
+
 def runs(mask):
     """A row of 0s and 1s as run lengths, starting with a run of 0s."""
     out, at, n = [], 0, 0
@@ -484,10 +557,10 @@ def beside_treads(rd, F, spots, top, meet, H, T):
     return out
 
 
-def ground_sheet(tile, canal=None):
+def ground_sheet(tile, canal=None, rail=None):
     """`gs` for a square as written (its `sf`, `t`, `bl`, `wp` and `br`), or None if it has no faces.
     canal: the map's canal, whose tunnels' hills the game raises over the grid before the sheet's
-    moves are added to it."""
+    moves are added to it; rail: the map's railway, whose cuttings up to its tunnels are walled."""
     sf, T = tile.get("sf"), tile["t"]
     if not sf or not sf.get("o") or not sf.get("l") or T.get("dx", 0) <= 3:
         return None
@@ -591,6 +664,34 @@ def ground_sheet(tile, canal=None):
                 floor = np.full(len(spots), np.inf)
                 np.minimum.at(floor, si_[low], bz[low])
                 meet = np.minimum(meet, floor)
+    # A way going into a tunnel ends at its portal with the hill standing metres over it: the
+    # headwall holds that hill, and the game hides the ground in the bore's mouth, so the ground meets
+    # the way's end at its own height there. A retaining wall up to the hill stood across the opening.
+    at_portal = in_portals(tile.get("tn"), bounds, F.V[spots, 0], F.V[spots, 1])
+    meet[at_portal] = top[at_portal]
+    # The railway's bed in a cutting up to a tunnel's face, where the ground beside it is held at the
+    # cutting's top (prep_map.py): a retaining wall at the bed's edge takes all of it, with no bank
+    # cut down to the bed; and at the face itself the bed runs on into the bore with no wall across it.
+    on_bed = np.asarray([int(v) in F.bed for v in spots.tolist()], bool)
+    if rail and on_bed.any():
+        from railway import CUT_DEEP
+        k = np.nonzero(on_bed)[0]
+        mouth, cut, ox, oy, lid = rail_mouths_and_cuttings(rail, bounds, F.V[spots[k], 0], F.V[spots[k], 1])
+        meet[k[mouth]] = top[k[mouth]]
+        # (behind the face the hill's ground meets the bed's end at the lid's height, over the bore:
+        # the game draws no wall there, the bore's lining being its wall)
+        under = mouth & ~np.isnan(lid)
+        meet[k[under]] = np.maximum(top[k[under]], lid[under])
+        out = on_grid(H, T, F.V[spots[k], 0] + ox * T["dx"], F.V[spots[k], 1] + oy * T["dy"])
+        walled = cut & (out - top[k] >= CUT_DEEP - 1.0)
+        # (not by a bridge over the cutting, whose abutments hold the ground there)
+        spans = decks(tile.get("rd"), 2 * T["dx"])
+        if spans:
+            walled[shapely.STRtree(spans).query(shapely.points(F.V[spots[k], :2]), predicate="intersects")[0]] = False
+        meet[k[walled]] = np.maximum(meet[k[walled]], out[walled])
+        cut_walls = set(spots[k[walled]].tolist())
+    else:
+        cut_walls = set()
     meet = np.round(meet, 2)
     held = np.round((meet - top) * 100).astype(np.int64)
     hf = dict(zip(spots.tolist(), (top + held / 100).tolist()))
@@ -627,6 +728,7 @@ def ground_sheet(tile, canal=None):
     vx, vy = bx - ax, by - ay
     u = np.clip(((px - ax) * vx + (py - ay) * vy) / np.maximum(vx * vx + vy * vy, 1e-12), 0, 1)
     d = np.hypot(px - ax - vx * u, py - ay - vy * u)
+    pair_d = d
     at = ha[si] + (hb[si] - ha[si]) * u
     lo = at - d / BATTER_FILL
     hi = at + d / BATTER_CUT
@@ -708,6 +810,14 @@ def ground_sheet(tile, canal=None):
     # the open ground runs on from the deck's end at that height, banked away from it as beside a face,
     # built up as an abutment's bank however far the survey's ground lies below)
     banked = np.zeros(n, bool)
+    # (behind a cutting's wall the ground is built up level with the wall's top however far the grid
+    # had it down at the line's level, as the cutting's own side)
+    if cut_walls:
+        along_wall = np.asarray([sp[a] in cut_walls and sp[b] in cut_walls for a, b in F.free.tolist()], bool)
+        k = along_wall[si] & (pair_d < T["dx"] * 1.5)
+        banked[pi[k]] = True
+        np.maximum.at(low, pi[k], at[k])
+        low = np.minimum(low, high)
     for (ex, ey, ez), (ox, oy) in held_ends(tile.get("se"), tile.get("rd")):
         qx, qy = GX.ravel() - ex, GY.ravel() - ey
         d = np.hypot(qx, qy)
@@ -719,8 +829,18 @@ def ground_sheet(tile, canal=None):
         high[k] = np.where(pin, ez, np.minimum(high[k], ez + d[k] / BATTER_CUT))
         low[k] = np.minimum(low[k], high[k])
         banked[k] = True
-    # (where faces overlap, the cell is drawn whole, gs `x`: as the grid, its corners let down under
-    # the faces in it)
+    # (behind a railway tunnel's face, over its bores, the lid is left as laid, and none of it lower
+    # than the face's top, right up to the face: cut down to the bed running on into a bore, or left
+    # at the line's own ground by the grid's point nearest the face, it opened a hole behind the parapet)
+    if rail:
+        from railway import LID_DEEP, portal_faces
+        gx, gy = GX.ravel(), GY.ravel()
+        for fc in portal_faces(rail.get("portals") or []):
+            u = (gx - fc["x"]) * fc["ux"] + (gy - fc["y"]) * fc["uy"]
+            v = -(gx - fc["x"]) * fc["uy"] + (gy - fc["y"]) * fc["ux"]
+            lid = (u > 0.0) & (u < LID_DEEP) & (v > fc["v0"]) & (v < fc["v1"])
+            low[lid], high[lid] = fc["z"] + fc["top"], np.inf
+            banked[lid] = True
     odd, _ = overlaps(F, A, B, segs, GX, GY)
     for v, z in odd_corners(F, odd, H, T):
         high[v] = min(high[v], z)

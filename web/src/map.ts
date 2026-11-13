@@ -19,7 +19,9 @@ import { breakable, inGap, leafy } from "./gaps";
 import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
 import { alignPortals, boreHeight, portalFaces } from "./tunnels";
+import { railParapets } from "./railway";
 import { straightSkeleton } from "./skeleton";
+import { inOpenCourt, openingsAlong, passageAt, passages, passageSides } from "./passages";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -33,6 +35,7 @@ export interface Building {
   st?: number;                                    // storeys, when they're taller than usual
   rm?: RoofMesh;                                  // the roof as the lidar shows it, in place of rr, rp and hp
   wc?: string; rk?: string;                       // the wall's and the roof's colour where the map data gives one ("#rrggbb")
+  ps?: number[][];                                // passages through it at ground level (passages.ts)
 }
 /** A church or chapel, by what the map tools made of the data (tools/buildings.py's "church" kind):
  *  not a mosque, synagogue, temple or Kingdom Hall that the data files under the same heading. */
@@ -669,6 +672,11 @@ export class GameMap {
     }
     // the portals' faces, either side of the openings
     for (const [ax, ay, bx, by, top] of portalFaces(d.tn ?? [], d.b)) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0);
+    // the railway's tunnel faces' parapets, along the lid over the bores (each square has the ones whose middle is in it)
+    for (const [ax, ay, bx, by, foot, top] of this.railData ? railParapets(this.railData) : []) {
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      if (mx >= d.b[0] && mx < d.b[2] && my >= d.b[1] && my < d.b[3]) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot - this.z0);
+    }
 
     yield;
     this.beginSlice();
@@ -691,6 +699,7 @@ export class GameMap {
           i++;
         }));
       }
+      if (b.ps) this.openPassages(b, first, this.sAx.length);
       // a pitched roof's gable end standing up from the flat roof of the same house beyond it (a
       // gable over an outside wall has that wall)
       if (!b.rm) for (const roof of roofsFit(b)) {
@@ -983,6 +992,8 @@ export class GameMap {
 
   private floorHere(x: number, z: number, y: number): number {
     let g = this.inTunnel(x, z, y) ?? this.ground(x, z);
+    const ps = this.passageAt(x, z);
+    if (ps && y < ps[1] && y > ps[0] - 1.5) g = ps[0];
     const on = (cx: number, cz: number, a: number, hl: number, hw: number, top: number) => {
       if (top <= g || top > y + 0.5) return;
       const c = Math.cos(a), s = Math.sin(a), dx = x - cx, dz = z - cz;
@@ -1123,7 +1134,8 @@ export class GameMap {
     if (tile) return tile.indoors(x, z);
     if (this.d.sp?.some((r) => inRing(r, x, -z))) return true;
     for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      if (inRing(this.d.bl[bi].r[0], x, -z)) return true;
+      const b = this.d.bl[bi];
+      if (inRing(b.r[0], x, -z) && !(b.ps && (passageAt(b, x, -z) || inOpenCourt(b, x, -z)))) return true;
     }
     if (this.wide && !this.inGrid(x, z)) return this.wide.buildingsNear(x, -z, 0).some((b) => inRing(b.r[0], x, -z));
     return false;
@@ -1205,6 +1217,53 @@ export class GameMap {
     const i = this.cX.length;
     this.cX.push(x); this.cZ.push(-y); this.cR.push(r); this.cTop.push(top); this.cFoot.push(foot);
     this.cellsAround(x, -y, r).forEach((k) => push(this.treeCells, k, i));
+  }
+
+  /** Building walls first to end opened where its passages go through: over each opening the wall
+   *  stands only above its top (a lintel walked under), and each passage's sides are walled up to it. */
+  private openPassages(b: Building, first: number, end: number) {
+    for (let i = first; i < end; i++) {
+      const a = [this.sAx[i], -this.sAz[i]], q = [this.sBx[i], -this.sBz[i]], len = Math.hypot(q[0] - a[0], q[1] - a[1]);
+      const ops = openingsAlong(b, a, q);
+      if (!ops.length) continue;
+      const pieces: [number, number, number][] = [];
+      let t = 0;
+      for (const [o0, o1, top] of ops) {
+        const s0 = Math.max(t, o0), s1 = Math.min(len, o1);
+        if (s1 <= s0) continue;
+        if (s0 > t) pieces.push([t, s0, -Infinity]);
+        pieces.push([s0, s1, top - this.z0]);
+        t = s1;
+      }
+      if (t < len) pieces.push([t, len, -Infinity]);
+      const ta = this.sTop[i], tb = this.sTopB[i], roof = this.sRoof[i], ground = this.sGround[i], kind = this.sKind[i];
+      const x = (s: number) => a[0] + (q[0] - a[0]) * s / len, y = (s: number) => a[1] + (q[1] - a[1]) * s / len;
+      const h = (s: number) => ta + (tb - ta) * s / len;
+      pieces.forEach(([s0, s1, foot], k) => {
+        if (k === 0) {
+          this.sAx[i] = x(s0); this.sAz[i] = -y(s0); this.sBx[i] = x(s1); this.sBz[i] = -y(s1);
+          this.sTop[i] = h(s0); this.sTopB[i] = h(s1); this.sFoot[i] = foot;
+          return;
+        }
+        this.addSeg(x(s0), -y(s0), x(s1), -y(s1), h(s0), kind, foot, h(s1));
+        this.sRoof[this.sAx.length - 1] = roof; this.sGround[this.sAx.length - 1] = ground;
+      });
+    }
+    for (const s of passages(b)) for (const { walls } of passageSides(b, s)) for (const [p, q] of walls) {
+      this.addSeg(p[0], -p[1], q[0], -q[1], p[2] + s.c - this.z0, 0, -Infinity, q[2] + s.c - this.z0);
+      this.sGround[this.sAx.length - 1] = b.g - this.z0;
+    }
+  }
+
+  /** The floor and the top of the opening (scene Y) of a building's passage at scene (x, z), or
+   *  null: this map's own buildings, or those of the square loaded there. */
+  passageAt(x: number, z: number): [number, number] | null {
+    for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const b = this.d.bl[bi];
+      const h = b.ps ? passageAt(b, x, -z) : null;
+      if (h) return [h[0] - this.z0, h[1] - this.z0];
+    }
+    return this.tileAt(x, z)?.passageAt(x, z) ?? null;
   }
 
   private addRing(ring: number[][], top: number, kind: number) {
@@ -1407,6 +1466,8 @@ export class GameMap {
   ceiling(x: number, z: number, y: number): number | null {
     const b = this.boreAt(x, z);
     if (b && this.inTunnel(x, z, y) === b[0]) return b[0] + b[2];
+    const ps = this.passageAt(x, z);
+    if (ps && y < ps[1] && y > ps[0] - 1.5) return ps[1];
     return this.underside(x, z, y + 0.6);
   }
 
@@ -1674,6 +1735,8 @@ export class GameMap {
     if (y < this.ground(x, z) - 1.5) return null;   // in a tunnel under it
     const caught = (b: Building) => {
       if (!inRing(b.r[0], x, -z)) return false;
+      const ps = b.ps ? passageAt(b, x, -z) : null;
+      if ((ps && y < ps[1] - this.z0) || inOpenCourt(b, x, -z)) return false;
       const roof = this.roofAt(b, x, -z);
       // (a courtyard: shut in up to the eaves)
       return y < (roof > -Infinity ? roof : b.g - this.z0 + b.h) - 0.8;

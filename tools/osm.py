@@ -46,7 +46,7 @@ def get(url, data=None, timeout=180):
 
 
 ROAD_TAGS = ("highway", "construction", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway",
-             "maxspeed", "maxspeed:type", "zone:maxspeed", "source:maxspeed", "tunnel", "bridge", "layer", "covered")
+             "maxspeed", "maxspeed:type", "zone:maxspeed", "source:maxspeed", "tunnel", "bridge", "layer", "covered", "maxheight")
 BRIDGE_TAGS = ("bridge", "bridge:structure", "bridge:support", "material", "layer", "highway", "railway",
                "waterway", "man_made", "name", "bridge:name")
 DETAIL_TAGS = ("highway", "surface", "tracktype", "service", "access", "handrail", "handrail:left", "handrail:right",

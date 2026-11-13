@@ -49,9 +49,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   The stonework is textured in the area's own material: Bath stone in Bath, London stock brick in
   Hackney. Tracks running side by side over a viaduct share one deck at one height, on piers in
   line with each other's, and a line that passes under another has the headroom for a train.
-  A railway tunnel's mouth is one stone face for the tracks going in side by side, under one arch
-  or an arch each, and stands only as high as the hill it's cut into lets it; its bore is lined
-  in stone, the track running in, until it fades to dark a few metres in. Walls the map draws
+  A railway tunnel's mouth is one stone face for the tracks going in side by side, under an arch
+  for each pair of them, and stands only as high as the hill it's cut into lets it, with a parapet
+  along its top and the ground behind it level with that, a lid over the bores that paths cross
+  and steps come down off, with no hedge or fence on it; its wings slope down at their ends, as
+  wing walls do. Behind the face the hill's own ground runs on over the bores, at least a metre and a
+  half over their crowns, so the face is the only built thing you see. Its bore is lined in stone, the track running in, and goes dark a few metres in, so the
+  mouth reads as open from any side. Where the line runs up to it in a deep cutting, the cutting's
+  floor is ballast right across between the tracks and its sides are stone walls with the ground
+  level at their tops. Walls the map draws
   across the cutting stop at the line, and no building, parked car, bench or path stands on a
   running line or inside a tunnel's mouth. A siding or a line the data ends stops at red buffers.
   Where the map
@@ -73,7 +79,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   A path's tunnel, often an old railway's like the Two Tunnels, is a Victorian brick arch in a
   Bath stone face, about 3.6 m to the top, with a low band of stone over its arch. A footpath the
   map data takes under a street goes through a low arch under 2 m high in the bank, the street
-  carried over it and the arch only as long as the mapped tunnel. Outside each mouth the path slopes
+  carried over it and the arch only as long as the mapped tunnel. Where a street or a path runs on
+  through a building (an arch through a terrace into a mews or a yard, a castle's gatehouse, an
+  arcade), the building has an opening at ground level as wide as the way, about 3.5 m high for a
+  path and 4.5 m for a road (lower where the map gives a height limit, or the building is lower),
+  with the floors and roof above it intact, and you walk or drive through on the way's own level.
+  Only a way the map data marks as a passage, or one that comes out of the far side, goes through:
+  a way that ends at a building still stops at its wall. Outside each mouth the path slopes
   down to it in a sunken approach, or goes down steps where the map has steps there; where there
   isn't room for that the path stops at the kerb either side rather than being drawn across the road. Each bore is as wide as the road or path going in, wall
   to wall, with its pavements carried through where it has them. The road runs level into each
@@ -99,12 +111,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   up; everyone in a game sees the same time.
 - **The streets as OpenStreetMap knows them**: zebra crossings with their stripes and Belisha
   beacons, crossings with lights (pelican, puffin and toucan) with studs, stop lines and lights at
-  each kerb, and traffic lights at junctions, lit both ways and changing in their own time; bus
-  shelters only at the stops that have one, and the
-  stops on a street closed to traffic that buses still use (the University's Parade) at its
-  kerb, with the bus you call driving along it; a street shut to traffic only in the daytime
-  (Milsom Street, New Bond Street) is a road with its kerbs, empty of traffic in those hours on
-  the game's clock; a pub's or café's tables outside
+  each kerb, and traffic lights at junctions, lit both ways and changing in their own time, their
+  poles on the pavement at each way into the junction; bus shelters only at the stops that have
+  one; a street only buses may use (Princes Street in Edinburgh, a bus station's lanes, the
+  University's Parade) is a road with its carriageway, pavements and stops at the kerb, which the
+  buses drive along and the rest of the traffic keeps out of; a street shut to traffic only in the
+  daytime (Milsom Street, New Bond Street), or a pedestrian street open to traffic in the evening
+  (Edinburgh's Lawnmarket), is a road with its kerbs, empty of traffic in the hours it's shut on
+  the game's clock; a lane open to cars at all hours but mapped for walkers (Foundry Lane,
+  Edinburgh's Castlehill and Victoria Street) is a shared street, paved wall to wall, that cars
+  creep along; the pavements of a dual carriageway (Princes Street either side of its tram line)
+  don't run over each other's road; a pub's or café's tables outside
   stand on paving, round any tree or shrub among them; post
   boxes as they really stand (a pillar box, one set in a wall, or a little one on a post) and the
   red K6 telephone boxes where they are. Footpaths across fields are worn grass, bare earth or

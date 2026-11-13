@@ -386,6 +386,13 @@ def surface(m, ground):
     return drawn
 
 
+def _open(home, b):
+    """A building's footprint less its passages (the openings a way goes through it by: `ps`)."""
+    cuts = [LineString([ps[i:i + 2] for i in range(2, len(ps), 3)]).buffer(ps[0] / 2, cap_style="flat")
+            for ps in b.get("ps") or [] if len(ps) >= 8]
+    return home.difference(unary_union(cuts)) if cuts else home
+
+
 def _poly(ring, holes=()):
     g = Polygon(ring, [h for h in holes if len(h) >= 3])
     return g if g.is_valid else g.buffer(0)
@@ -441,7 +448,7 @@ def square(m, tag, note, f):
 
     drawn = surface(m, ground)
     buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, beyond(f, m, drawn), note, at, off_deck, pts)
-    streets(m, roads, rlines, rtree, marked, homes, solid, ground, note, at, sq, f)
+    streets(m, roads, rlines, rtree, marked, [_open(h, b) for h, b in zip(homes, blds)], solid, ground, note, at, sq, f)
     land_and_water(m, waters, ground, note, at, sq, f)
     small_things(m, roads, rlines, rtree, solid, wtree, drawn, note, at, off_deck, pts, hits, inner)
     stair_feet = [e for r in m.get("rd") or [] if r["c"] == "steps" and len(r["p"]) > 1 for e in (r["p"][0], r["p"][-1])]
@@ -1386,6 +1393,10 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
         # (the uncovered ground lying within 0.3 m of both, wider than GAP: a strip of grass between them)
         allf = sheet.union(FACE_KINDS)
         gaps = paths.buffer(0.15).intersection(streets.buffer(0.15)).difference(allf).intersection(inner)
+        # (behind a passage's side walls, in the building's solid ground floor, no ground is seen)
+        walled = [_open(_poly(b["r"][0], b["r"][1:]), b) for b in m.get("bl") or [] if b.get("ps") and len(b["r"][0]) >= 3]
+        if walled:
+            gaps = gaps.difference(unary_union(walled))
         by_street, by_path = streets.buffer(0.03), paths.buffer(0.03)
         shapely.prepare(by_street); shapely.prepare(by_path)
         tot = 0.0
@@ -1436,7 +1447,11 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
     # (nor is a set piece that paves its outline to the edge, where the square's faces were cut for it)
     from partition import setpiece_cuts
     filled = setpiece_cuts.holes(m.get("centre"), m["b"], sheet.union(("road", "service")))
-    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks
+    # (nor does a street's pavement go on through a building's passage with it: it stops at the wall
+    # beside the arch's mouth)
+    mouths = [Point(ps[k:k + 2]).buffer(ps[0] / 2 + 1.5) for b in m.get("bl") or [] for ps in b.get("ps") or []
+              if len(ps) >= 8 for k in (2, len(ps) - 3)]
+    stopped = shapely.union_all([others.buffer(0.05)] + [s.buffer(0.3) for s in stops] + decks + mouths
                                 + ([filled.buffer(0.3)] if filled is not None else []))
     kerbed = [LineString([q[:2] for q in r["p"]]) for r in m.get("rd") or [] if r["c"] in GAME_KERBED and len(r["p"]) > 1]
     if not kerbed: return

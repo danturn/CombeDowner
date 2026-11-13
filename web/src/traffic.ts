@@ -14,7 +14,8 @@
 // Department for Transport's counts (tools/traffic_counts.py; side streets nobody's counted go by the
 // kind of road they are), so new cars turn up mostly on the busy roads and keep to them at junctions,
 // only now and then turning off into a side street. A street shut to traffic in the daytime (Milsom
-// Street, 10:00 to 18:00) they keep out of in those hours of the game's clock. They stop at red traffic lights (signals.ts), and
+// Street, 10:00 to 18:00) they keep out of in those hours of the game's clock, and a street only buses
+// may use ("00:00-24:00") all the time; the buses you drive (busdriver.ts) go along it. They stop at red traffic lights (signals.ts), and
 // at amber if they can stop in time, and wait through red and amber. A car can only turn so tightly:
 // where its way on is sharper than that (a hairpin, a dead end, turning round in a street that's
 // blocked) it doesn't go round and round trying, it does a turn in the road, back on the opposite lock
@@ -230,7 +231,7 @@ function flames(): THREE.Group {
   return g;
 }
 
-/** "10:00-18:00" as hours of the day [10, 18]; undefined if it isn't hours (shut all day, or not at all). */
+/** "10:00-18:00" as hours of the day [10, 18] ("00:00-24:00": all day, a street only buses may use); undefined if it isn't shut. */
 function shutHours(tc?: string): [number, number] | undefined {
   const m = tc?.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
   return m ? [+m[1] + +m[2] / 60, +m[3] + +m[4] / 60] : undefined;
