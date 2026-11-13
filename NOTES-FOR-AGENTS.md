@@ -31,8 +31,8 @@ the game locally, without the sound" in `CLAUDE.md`.
   (`_passage_strip`), so no way ends indoors beside one. Since then: a passage running along one
   already made through the same arch is left out or cut back to where it meets it
   (`_beside_made`), and a drawn boundary nothing sees, beside a path, stands with its foot at the
-  path's level (`guesses_at_path_level`). Full rebuilds of Bath, then Edinburgh, follow on this
-  branch.
+  path's level (`guesses_at_path_level`). Bath and Edinburgh are rebuilt in full on this branch;
+  not yet in the maintainer's main.
 
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
