@@ -36,6 +36,7 @@ import { LIGHT_LEVELS, NIGHT_FAR, SIMPLER_FAR, lampLightsFor, lightLevel, view }
 import { SIGNAL_TIME, signalClock } from "./signals";
 import { shadowSize } from "./safegfx";
 import { wallRuns } from "./wallruns";
+import { openingsAlong, passages, passageSides } from "./passages";
 import { buildSheetGen, buildSheetCdtGen, sheetFacesGen, carved, coveredCells, fillAt, nearFaces, openSeams, type Sheet } from "./sheet";
 
 /** The ground drawn as one sheet with the faces (the Settings page's choice, cd-ground), unless
@@ -1122,10 +1123,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // and none inside the canal's tunnels, so you see through them from portal to portal
   const bores = canalBores(map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null), map.z0, T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy);
   mouth.a.push(...bores.a); mouth.b.push(...bores.b);
-  // and none inside a railway tunnel's lined mouth (the hill over it stays whole)
+  // and none under a railway tunnel's arch, inside its lining (its crown given as less than nought):
+  // the bore is a closed tube under the hill's own ground, held over its crown, so only the opening
+  // in the face shows where it was left out
   for (const m of railMouthsIn(S, T)) {
     mouth.a.push(new THREE.Vector4(m.x, -m.y, m.ux, -m.uy));
-    mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, m.crown + 0.6, m.hw, m.deep));
+    mouth.b.push(new THREE.Vector4(m.z - map.z0 - 0.2, -m.crown, m.hw, m.deep));
   }
   const ownTerr = !S.terrMat || mouth.a.length > 0 || !!works;
   const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
@@ -1167,7 +1170,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (int k = 0; k < ${N}; k++) {
         vec2 d = vTerr.xz - mouthA[k].xy;
         float along = dot(d, mouthA[k].zw), across = abs(d.x * mouthA[k].w - d.y * mouthA[k].z), up = vTerr.y - mouthB[k].x;
-        if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < mouthB[k].y) discard;
+        float roof = mouthB[k].y;
+        if (roof < 0.0) {
+          float spring = max(2.4, -roof - mouthB[k].z), f = min(across / mouthB[k].z, 1.0);
+          roof = 0.5 + spring + (-roof - spring) * sqrt(1.0 - f * f);
+        }
+        if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < roof) discard;
       }`);
   };
   // each square has its own number of tunnel mouths, so its own shader: without this three.js would
@@ -2115,7 +2123,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // wall where it's taller than a kerb (drawn with the walls, in the square's own wall material). A
   // wall holding the ground up above the face faces the face; one the face stands on faces out.
   const retaining: number[][][] = [];
+  // (none inside a railway tunnel's bore, where the ground over it meets the track's bed: the bore's
+  // lining is the wall there)
+  const railBores = railMouthsIn(S, T);
+  const inBore = (x: number, y: number) => railBores.some((m) => {
+    const u = (x - m.x) * m.ux + (y - m.y) * m.uy, v = -(x - m.x) * m.uy + (y - m.y) * m.ux;
+    return u > -0.3 && u < m.deep && Math.abs(v) < m.hw + 0.3;
+  });
   const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo, cuts?: number[][]) => {
+    if (inBore((a[0] + b[0]) / 2, -(a[2] + b[2]) / 2)) return;
     // (a face over the water, or over the canal's bank higher than a walker's headroom, is a
     // street running on off its bridge's span: no wall stands under it, in the water or across the towpath)
     const overWater = (q: number[], m: number) => {
@@ -2534,6 +2550,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   const WALL_USUAL = commonest(D.bl.map((b) => b.m), WALL_TINTS, "r") as Surf, ROOF_USUAL = commonest(D.bl.map((b) => b.rc), ROOF_TINTS, "s");
   const POT = [0.62, 0.34, 0.24];
+  const PASSAGE_ROOF = [0.62, 0.6, 0.56], PASSAGE_CLEAR = 0.3;
   /** Box from (x, y) footprint centre, half-sizes along u and across, from y0 to y1. */
   const boxAt = (g: Geo, x: number, y: number, u: number[], hu: number, hv: number, y0: number, y1: number, col: number[]) => {
     const v = [-u[1], u[0]];
@@ -2674,8 +2691,39 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const org = ground + lift, sto = storey;
         const v0 = (base - org) / sto;
         const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
+        // a passage's opening: no wall below its top
+        const holes = b.ps ? openingsAlong(b, a, q).map(([m0, m1, h]) => [u0 + m0 / sp, u0 + m1 / sp, h - Z0]) : [];
+        const cut = (ua: number, ub: number, ha: number, hb: number, draw: (ua: number, ub: number, ha: number, hb: number) => void) => {
+          let u = ua;
+          for (const [h0, h1, top] of holes) {
+            const s0 = Math.max(u, h0), s1 = Math.min(ub, h1);
+            if (s1 <= s0) continue;
+            if (s0 > u) draw(u, s0, ha, hb);
+            if (hb > top) draw(s0, s1, Math.max(ha, top), hb);
+            u = s1;
+          }
+          if (u < ub) draw(u, ub, ha, hb);
+        };
+        // (round an opening the wall is plain, whole bays across and whole storeys up past its top,
+        // so no window is drawn sliced by the arch)
+        const clear = holes.map(([h0, h1, top]) => [Math.floor(h0 - PASSAGE_CLEAR / sp), Math.ceil(h1 + PASSAGE_CLEAR / sp),
+          org + Math.ceil((top + PASSAGE_CLEAR - org) / sto) * sto]);
         const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
-          facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out, [ua, va], [ub, va], [ub, vb], [ua, vb], wallCol);
+          cut(ua, ub, ha, hb, (ua, ub, h0, h1) => {
+            const v = (h: number) => hb > ha ? va + (vb - va) * (h - ha) / (hb - ha) : va;
+            const draw = (g: Geo, ua: number, ub: number, h0: number, h1: number) =>
+              facing(g, P(ua, h0), P(ub, h0), P(ub, h1), P(ua, h1), out, [ua, v(h0)], [ub, v(h0)], [ub, v(h1)], [ua, v(h1)], wallCol);
+            let u = ua;
+            for (const [c0, c1, ctop] of g === walls ? clear : []) {
+              const s0 = Math.max(u, c0), s1 = Math.min(ub, c1);
+              if (s1 <= s0 || ctop <= h0) continue;
+              if (s0 > u) draw(walls, u, s0, h0, h1);
+              draw(plain, s0, s1, h0, Math.min(h1, ctop));
+              if (h1 > ctop) draw(walls, s0, s1, ctop, h1);
+              u = s1;
+            }
+            if (u < ub) draw(g, u, ub, h0, h1);
+          });
         // ground-floor windows behind a door or shopfront are left out, whole windows at a time
         const blank: number[][] = [];
         for (const o of n > 0 ? ops : []) {
@@ -2733,8 +2781,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (let k = 0; k < cuts.length - 1; k++) {
             const [g0, g1, wide] = bands[k] ?? [0, 1, 1];
             const s = (g1 - g0) / 0.8, o = g0 - 0.1 * s, ha = cuts[k], hb = cuts[k + 1];
-            const piece = (g: Geo, ua: number, ub: number) => facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out,
-              [ua * wide, (ha - o) / s], [ub * wide, (ha - o) / s], [ub * wide, (hb - o) / s], [ua * wide, (hb - o) / s], wallCol);
+            const piece = (g: Geo, ua: number, ub: number) => cut(ua, ub, ha, hb, (ua, ub, ha, hb) => facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out,
+              [ua * wide, (ha - o) / s], [ub * wide, (ha - o) / s], [ub * wide, (hb - o) / s], [ua * wide, (hb - o) / s], wallCol));
             if (!bands.length) { quad(plain, u0, u1, base, eave, v0, v1); continue; }
             let u = u0;
             for (const [ua, ub] of k === 0 ? doors : []) {
@@ -2765,6 +2813,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }
       }
     });
+
+    // each passage's insides: its side walls and its ceiling at the opening's top (its floor is the
+    // way's own face, laid through it with the streets' faces)
+    for (const s of passages(b)) for (const { walls, span } of passageSides(b, s)) {
+      const S = (p: number[], h: number) => [p[0], p[2] - Z0 + h, -p[1]];
+      for (const [p, q] of walls) {
+        // (each side faces the middle of the passage)
+        const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, mx = (span[0][0] + span[2][0]) / 2 - p[0], my = (span[0][1] + span[2][1]) / 2 - p[1];
+        const k = (dy * mx - dx * my) > 0 ? 1 : -1, ml = L / bay, top = s.c / storey;
+        facing(plain, S(p, -0.6), S(q, -0.6), S(q, s.c), S(p, s.c), [k * dy / L, 0, k * dx / L], [0, -0.2], [ml, -0.2], [ml, top], [0, top], wallCol);
+      }
+      // (in one colour, not the building's: a passage under two houses has both draw these)
+      const [l0, l1, r0, r1] = span, ml = Math.hypot(l1[0] - l0[0], l1[1] - l0[1]) / bay;
+      facing(plain, S(l0, s.c), S(l1, s.c), S(r1, s.c), S(r0, s.c), [0, -1, 0], [0, 0], [ml, 0], [ml, 1], [0, 1], PASSAGE_ROOF);
+    }
 
     const eave = eaveAll;
     if (b.rm) { roofFaces(b, roofs, plain, roofCol, wallCol); return; }
@@ -2931,8 +2994,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
       const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];
       // the foot reaches down to the ground as it's drawn, which is pulled down beside a street, so a
-      // wall or hedge there doesn't hang above the grass with a gap under it
-      const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.1 : Infinity); });
+      // wall or hedge there doesn't hang above the grass with a gap under it; as far under it where the
+      // wall's evened-out top lifts it over a dip as where it stands on the ground, so the ground
+      // folding between two points doesn't show the sky under it
+      const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.4 : Infinity); });
       const tops = [barrierTop(l, i, Z0), barrierTop(l, i + 1, Z0)];
       const P = (k: number, top: boolean) => {
         const tp = tops[k === 0 || k === 3 ? 0 : 1];

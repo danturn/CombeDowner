@@ -270,7 +270,7 @@ def make_run(chain, elev):
     """One through-road as a `pending` record: its run (each edge walked every 4 m, in the road's
     direction), smoothed heights with the structures carried straight, and which points are a span
     or bored. `parts` says which points came from which edge, to give each edge its own back."""
-    run, parts, bridge, tunnel, base = [], [], [], [], 0.0
+    run, parts, bridge, tunnel, base, osm = [], [], [], [], 0.0, []
     total = sum(e["line"].length for e, _ in chain) or 1.0
     for e, rev in chain:
         line = e["line"]
@@ -278,6 +278,7 @@ def make_run(chain, elev):
         start = len(run) - 1 if run else 0
         for x, y, t in pts[1:] if run else pts:
             run.append([x, y, (base + t * line.length) / total])
+            osm.append(_osm_level(e, line.length * (1 - t if rev else t)))
         parts.append((e["id"], rev, start, len(run) - 1))
         L = line.length
         for kind, into in (("bridge", bridge), ("tunnel", tunnel)):
@@ -289,7 +290,20 @@ def make_run(chain, elev):
     z = level_structures(run, [elev(x, y) for x, y, _ in run], bridge, tunnel)
     bored = TN.bores(run, z, tunnel, elev, c)
     return dict(parts=parts, c=c, run=run, z=z, span=in_ranges(run, bridge), bored=bored,
-                tunnel_ranges=tunnel)
+                tunnel_ranges=tunnel, osm=osm)
+
+
+def _osm_level(e, m):
+    """(layer, roofed) the OSM way under an edge's point `m` metres along it has: its layer, and
+    whether it is tagged as in a tunnel, a building's passage or under cover."""
+    for t0, t1, tags in e.get("obs", ()):
+        if t0 - 0.05 <= m <= t1 + 0.05:
+            try:
+                layer = int(float(tags.get("layer", 0)))
+            except ValueError:
+                layer = 0
+            return layer, tags.get("tunnel", "no") != "no" or tags.get("covered", "no") != "no"
+    return 0, False
 
 
 def split_back(r):
@@ -469,6 +483,37 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
 
     smooth_network(pending, chains, elev, detail)
 
+    def joined(k, j):
+        """Do roads k and j meet: an end of one on the other, or a point of each at the same spot (a
+        crossroads, which the data gives both roads a point at)? Then they are a junction, not a crossing."""
+        for a, b in ((k, j), (j, k)):
+            run = pending[a]["run"]
+            for q in (run[0], run[-1]):
+                if road_lines[b].distance(Point(q[:2])) < 2.5:
+                    return True
+        if road_lines[k].crosses(road_lines[j]):
+            x = road_lines[k].intersection(road_lines[j])
+            x = x.geoms[0] if hasattr(x, "geoms") else x
+            if x.geom_type == "Point" and all(any(math.dist(q[:2], (x.x, x.y)) < 0.7 for q in pending[i]["run"]) for i in (k, j)):
+                return True
+        return False
+
+    def steps_over(r, over, o, j, k):
+        """Are mapped steps carried over way j? Only when OSM says so: the steps on a different layer
+        from it, or it tagged as in a tunnel or under cover where they pass. Steps that meet it at a
+        node, or cross a way OSM has open there, meet it at grade, as a flight down to it."""
+        if not over or joined(k, j):
+            return False
+        line = road_lines[j]
+        for i in over:
+            q = r["run"][i][:2]
+            t = min(range(len(o["run"])), key=lambda n: math.dist(o["run"][n][:2], q))
+            if line.distance(Point(q)) > RW.get(o["c"], 4) / 2 + 1.0:
+                continue
+            if r["osm"][i][0] != o["osm"][t][0] or o["osm"][t][1]:
+                return True
+        return False
+
     # an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
     # crosses over it is carried over as a bridge, with the cutting as wide as the road in it. Not
     # the ends of a tunnel that is bored: those are its road coming out of the hill face, and what
@@ -498,6 +543,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
                 over = {i for i, q in enumerate(r["run"]) if poly.contains(Point(q[:2]))}
                 if r["c"] not in PATHS:
                     over -= in_ranges(r["run"], r["tunnel_ranges"])
+                if r["c"] == "steps" and not steps_over(r, over, pending[under_k], under_k, k):
+                    continue
                 r["span"] |= over
                 # one crossing it is a bridge whatever the survey's ground there (2. keeps it), and so
                 # is one the data lays right on top of the road down in it, along it
@@ -510,21 +557,6 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
                     top = {i for i in over if mid.distance(Point(r["run"][i][:2])) < half}
                     if len(top) >= 3:
                         r.setdefault("overpass", set()).update(top)
-
-    def joined(k, j):
-        """Do roads k and j meet: an end of one on the other, or a point of each at the same spot (a
-        crossroads, which the data gives both roads a point at)? Then they are a junction, not a crossing."""
-        for a, b in ((k, j), (j, k)):
-            run = pending[a]["run"]
-            for q in (run[0], run[-1]):
-                if road_lines[b].distance(Point(q[:2])) < 2.5:
-                    return True
-        if road_lines[k].crosses(road_lines[j]):
-            x = road_lines[k].intersection(road_lines[j])
-            x = x.geoms[0] if hasattr(x, "geoms") else x
-            if x.geom_type == "Point" and all(any(math.dist(q[:2], (x.x, x.y)) < 0.7 for q in pending[i]["run"]) for i in (k, j)):
-                return True
-        return False
 
     def crossing(k, j, line):
         """Where road j crosses the stretch line of road k, well inside it: the point, or None."""

@@ -297,6 +297,17 @@ function probe() {
       const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2));
       return Math.hypot(px - ax - t * dx, py - ay - t * dy) < h;
     });
+    // (a street's pavements at `s` metres along it: `pv`, narrowed where its `pw` says, as map.ts pvAt)
+    const pvAt = (r, s, pv) => {
+      const pw = r.pw;
+      if (!pw?.length || s < pw[0][0] || s > pw[pw.length - 1][0]) return pv;
+      for (let k = 0; k + 1 < pw.length; k++) {
+        const a = pw[k], b = pw[k + 1];
+        if (s <= b[0]) { const f = (s - a[0]) / (b[0] - a[0] || 1); return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]; }
+      }
+      const e = pw[pw.length - 1];
+      return [e[1], e[2]];
+    };
     const seen = new Set();
     for (const m of maps) for (const r of m.d.rd) {
       if (!KERBED.has(r.c) || r.p.length < 2 || r.bridge || r.p.some((q) => q[3])) continue;
@@ -316,6 +327,8 @@ function probe() {
           const sk = `${Math.round(x * 4)},${Math.round(y * 4)}`;
           if (seen.has(sk)) continue;     // (a street in two squares' records is sampled once)
           seen.add(sk);
+          // (through a building's passage the street is the passage's own floor, under its roof: rule 13's)
+          if (map.passageAt?.(x, -y)) continue;
           const walk = A[2] + (B[2] - A[2]) * f - z0, from = along + s, toEnd = total - from;
           // (a junction of three or more ways: its corners belong to the streets round it)
           const atJunction = (crowded[0] && from < half + 2.5) || (crowded[1] && toEnd < half + 2.5);
@@ -332,8 +345,11 @@ function probe() {
             row.push({ rule: road ? "road" : "none", n: r.n ?? "", side: o > 0 ? 1 : o < 0 ? -1 : 0, x: px, y: py, h: road ? top[0] - road[0] : 0, what: top[1] });
           }
           // (a street paved kerb to kerb, a shared surface or a private road, is paved on purpose)
-          if (!(row.length === offs.length && row.every((q) => q.rule === "none" && q.what === "drive"))) out.push(...row);
-          for (const [side, w] of [[1, pv[0]], [-1, pv[1]]]) {
+          // (and a living street, a shared surface, is paving wherever its carriageway runs into it)
+          if (!(row.length === offs.length && row.every((q) => q.rule === "none" && q.what === "drive")))
+            out.push(...(r.c === "living_street" ? row.filter((q) => !(q.rule === "none" && q.what === "drive")) : row));
+          const pvHere = pvAt(r, from, pv);
+          for (const [side, w] of [[1, pvHere[0]], [-1, pvHere[1]]]) {
             if (!(w >= 0.8) || atJunction) continue;
             let off = false;
             // (from 0.6 m off the kerb, as a record's line and the drawn kerb differ a little round
