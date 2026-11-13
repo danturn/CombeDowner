@@ -28,8 +28,11 @@ the game locally, without the sound" in `CLAUDE.md`.
   mapped along it is left out (`bench_rows`), a way counts as going through a passage only if it runs
   along it (`_run_along`; a piece ending inside it, where the data splits a lane under its arch,
   still counts), and a passage frees its way only a metre past each mouth
-  (`_passage_strip`), so no way ends indoors beside one. Trialled on Edinburgh 1,1 and Bath 0,3, 2,3
-  and 3,3 only.
+  (`_passage_strip`), so no way ends indoors beside one. Since then: a passage running along one
+  already made through the same arch is left out or cut back to where it meets it
+  (`_beside_made`), and a drawn boundary nothing sees, beside a path, stands with its foot at the
+  path's level (`guesses_at_path_level`). Full rebuilds of Bath, then Edinburgh, follow on this
+  branch.
 
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps

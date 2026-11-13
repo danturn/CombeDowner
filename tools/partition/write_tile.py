@@ -6110,20 +6110,51 @@ def find_passages(rows, houses, own, tops, marks):
     foot_tree = STRtree(foots)
     mark_tree = STRtree([m for m, _ in marks]) if marks else None
     made, strips = {}, []
-    for e in rows:
-        line = LineString(e["line"])
-        r = dict(c=e["cls"], p=[list(q[:2]) for q in line.coords])
+    # (the widest way first, so where two ways are mapped side by side through one arch it is the
+    # wider's passage that is made, and the other's runs along it)
+    ways = [(line, dict(c=e["cls"], p=[list(q[:2]) for q in line.coords])) for e in rows for line in [LineString(e["line"])]]
+    for line, r in sorted(ways, key=lambda lr: -way_width(lr[1])):
         w = min(8.0, max(1.2, way_width(r)))
         near = sorted(int(k) for k in foot_tree.query(line.buffer(w / 2 + 0.5)) if int(k) < own)
         if not near:
             continue
         for row, touched in _passages(r, line, near, foots, own, tops, marks, mark_tree):
+            row = _beside_made(row, [mid for _, mid in strips])
+            if row is None:
+                continue
+            mid = LineString([row[i:i + 2] for i in range(2, len(row), 3)])
             for k in touched:
                 if row not in made.setdefault(k, []):
                     made[k].append(row)
-            mid = LineString([row[i:i + 2] for i in range(2, len(row), 3)])
             strips.append((_passage_strip(mid, row[0]), mid))
     return made, strips
+
+
+def _beside_made(row, made, share=0.6, least=1.0):
+    """A passage `row` as made beside the passages `made` already (their middle lines): None if most
+    of it runs along one of them, two ways mapped side by side through one arch, whose two passages
+    each opened the other's walls and left a sliver of wall standing between them; cut back to
+    where it meets one if part of it does, so it opens its own mouth and joins the other inside."""
+    pts = [row[i:i + 3] for i in range(2, len(row), 3)]
+    mid, mid3 = LineString([q[:2] for q in pts]), LineString(pts)
+    if mid.length <= 0:
+        return row
+    beside = [o for o in made if _run_along(mid, o, ends=False) >= least]
+    if not beside:
+        return row
+    if max(_run_along(mid, o, ends=False) for o in beside) >= share * mid.length:
+        return None
+    rest = mid.difference(unary_union([o.buffer(PASSAGE_ALONG, cap_style="flat") for o in beside]))
+    pieces = [g for g in getattr(rest, "geoms", [rest]) if g.geom_type == "LineString" and g.length >= least]
+    if not pieces:
+        return None
+    keep = max(pieces, key=lambda g: g.length)
+    s0, s1 = sorted(mid.project(Point(c)) for c in (keep.coords[0], keep.coords[-1]))
+    # (run on into the other passage, so the two floors meet)
+    s0 = 0.0 if s0 < 0.05 else max(0.0, s0 - PASSAGE_ALONG)
+    s1 = mid.length if s1 > mid.length - 0.05 else min(mid.length, s1 + PASSAGE_ALONG)
+    cut = substring(mid3, s0, s1)
+    return row[:2] + [round(v, 2) for c in cut.coords for v in c]
 
 
 PASSAGE_OUT = 1.0       # metres past a passage's mouth that its way is let run on from the wall
@@ -6148,7 +6179,7 @@ def along_passages(line, opened, share=0.6):
     return unary_union(got) if got else None
 
 
-def _run_along(line, mid):
+def _run_along(line, mid, ends=True):
     """Metres of `mid` that `line` runs along within PASSAGE_ALONG of it. Measured along the passage,
     so a way crossing a short passage near its mouth, square to it, doesn't count as going through;
     a way that ends inside the passage is let reach on a little, as the data often splits a lane
@@ -6166,7 +6197,8 @@ def _run_along(line, mid):
         if b > reach:
             run += b - max(a, reach)
             reach = b
-    run += PASSAGE_ALONG * sum(zone.contains(Point(e[:2])) for e in (line.coords[0], line.coords[-1]))
+    if ends:
+        run += PASSAGE_ALONG * sum(zone.contains(Point(e[:2])) for e in (line.coords[0], line.coords[-1]))
     return min(run, mid.length)
 
 
@@ -7176,18 +7208,18 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
                     # next square draws on from there; this guards the grid's own edge
                     if not (x0 <= px <= x1 and y0 <= py <= y1):
                         if len(run) >= 2:
-                            out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"]))
+                            out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"], _u=not seen))
                         run = []
                         continue
                     z = ground(px, py)
                     if z is None:
                         if len(run) >= 2:
-                            out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"]))
+                            out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"], _u=not seen))
                         run = []
                         continue
                     run.append([round(px, 1), round(py, 1), round(z, 1)])
                 if len(run) >= 2:
-                    out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"]))
+                    out.append(dict(c=style, p=run, h=height, _k=rank, _g=guessed and kind == e["kind"], _u=not seen))
 
         # the gate rows, from the same interval ends the wall stopped at
         for a, b, o in cuts:
@@ -7235,7 +7267,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     hard = [g for g in (road_area, blocked) if g is not None and not g.is_empty]
     hard += [LineString([(g[0], g[1]), (g[2], g[3])]).buffer(0.8) for g in gaps]
     out, _ = straighten(out, lambda r: r.get("_g"), ground, hard, houses)
-    out = [{k: v for k, v in r.items() if k != "_g"} for r in out]
+    out = [{**{k: v for k, v in r.items() if k not in ("_g", "_u")}, **({"_gp": True} if r.get("_u") else {})} for r in out]
     out = tidy_walls(out, ground, [(g[i], g[i + 1]) for g in gaps for i in (0, 2)])
     out, gaps = reseat_gates(out, gaps, ground)
     out, gaps = clear_gates_of_junctions(out, gaps, ground)
@@ -9198,6 +9230,44 @@ def _folds(T, a, b):
     return sorted(out)
 
 
+PATH_SIDE = 1.0     # metres past a path's edge a guessed fence or hedge counts as standing beside it
+PATH_SUNK = 0.5     # metres below its path a guessed boundary's foot may sink before it is stood at the path's level
+
+
+def guesses_at_path_level(br, rd, T):
+    """A drawn fence or hedge nothing sees standing, beside a raised path, stands at the path's
+    level. It is a boundary along the path, but its foot followed the survey's ground down the bank
+    below, and its top came up level with the path, a flat slab of hedge to walk beside. One the
+    lidar sees, or a mapped one, keeps its ground. Clears the mark the runs carried here."""
+    ways = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if r["c"] in GAME_PATHS and len(r["p"]) > 1]
+    tree = STRtree([w for w, _ in ways]) if ways else None
+    out = []
+    for b in br:
+        guessed = b.pop("_gp", False)
+        if not guessed or tree is None or len(b["p"]) < 2 or any(len(q) < 3 for q in b["p"]):
+            out.append(b)
+            continue
+        p, moved = [list(q) for q in b["p"]], False
+        for q in p:
+            pt = Point(q[0], q[1])
+            best = None
+            for k in tree.query(pt.buffer(4.0 + PATH_SIDE)):
+                w, r = ways[int(k)]
+                d = w.distance(pt)
+                if d <= way_width(r) / 2 + PATH_SIDE and (best is None or d < best[0]):
+                    best = (d, w, r)
+            if best is None:
+                continue
+            _, w, r = best
+            cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], c[:2]) for a, c in zip(r["p"], r["p"][1:])])])
+            level = float(np.interp(w.project(pt), cum, [c[2] for c in r["p"]]))
+            if q[2] < level - PATH_SUNK:
+                # (no more than any wall stands over a dip, its foot still going down to the ground)
+                q[2], moved = round(max(q[2], min(level, _drawn_ground(T, q[0], q[1]) + WALL_LIFT_MOST)), 2), True
+        out.append(dict(b, p=p) if moved else b)
+    return out
+
+
 def walls_follow_the_ground(br, T):
     """The game stands a wall's foot on the ground only at its points and runs it straight between
     them, so a wall whose points are far apart hangs in the air where the ground dips between them
@@ -9830,7 +9900,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = rails_off_walls(rd, br)
     br, gt = clear_doorsteps(br, gt, (tile.get("dr") or []) + doors_near, wall_ground)
     br = walls_meet_at_sides(br, base_walls, sq)
-    br = smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"])
+    br = guesses_at_path_level(smooth_wall_tops(walls_follow_the_ground(br, tile["t"]), tile["t"]), rd, tile["t"])
     # (a railing on a pavement's wall beside steps stands on the pavement, not the ground below, and
     # takes the place of the steps' handrail on that side)
     if railings:
@@ -9874,6 +9944,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         tile["gs"] = gs
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
+    for b in tile.get("br") or []:
+        b.pop("_gp", None)
     open(out, "w").write(json.dumps(tile, separators=(",", ":")))
     # (the walls' feet are settled on the ground as the game draws it, which needs the square written)
     wall_feet.bake(out)
