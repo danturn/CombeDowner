@@ -12,6 +12,9 @@
 // in turn on the frames between, less often the bigger they are: a shadow 1 km off a few frames
 // behind can't be seen.
 //
+// There are only as many squares' lights as the level and draw distance have needed so far (two at
+// least), as every lit surface works out its shadow from each one there is, used or not.
+//
 // This file changes how three.js lights every material on the page (the ShaderChunk below): a scene
 // with more than one shadow-casting directional light has them taken as one sun's cascades, the
 // sun's own light first. Only the streets' world (world.ts) has more than one. Nothing here goes over
@@ -41,6 +44,9 @@ export const SHADOW_ONLY = 1;
 const NEAR = 70;
 /** The most squares: each is a light with a shadow map, and each costs every lit surface a little. */
 const MOST_CASCADES = MOBILE ? 3 : 4;
+/** The fewest lights while shadows are on: with one, three.js's own lighting would cut the shadows off
+ *  sharply at the square's edge instead of fading them out. */
+const LEAST_CASCADES = 2;
 
 /** The level in force. Set with setShadowLevel. */
 export let shadowLevel: number = MOBILE ? SHADOW_LOW : SHADOW_MEDIUM;
@@ -129,20 +135,25 @@ export class SunShadows {
   private drawnAt: { x: number; z: number; d: THREE.Vector3 }[] = [];
 
   constructor(readonly sun: THREE.DirectionalLight, private size: number) {
-    this.lights = [sun];
-    for (let k = 1; k < MOST_CASCADES; k++) {
-      const l = new THREE.DirectionalLight(sun.color, 0);
+    this.lights = [];
+    this.addLight(sun);
+    this.fit();
+  }
+
+  /** One more square's light. Every lit material is built again for a new light, a stutter, so there
+   *  are only as many as the level and draw distance have needed so far. */
+  private addLight(l: THREE.DirectionalLight) {
+    const k = this.lights.length;
+    if (k > 0) {
       l.name = `sun shadows ${k}`;
       l.castShadow = true;
-      l.visible = false;
-      this.lights.push(l);
+      l.visible = this.level > SHADOW_OFF;
     }
-    for (const l of this.lights) {
-      l.shadow.autoUpdate = false;
-      l.shadow.camera.layers.enable(SHADOW_ONLY);
-      this.group.add(l, l.target);
-      this.drawnAt.push({ x: Infinity, z: Infinity, d: new THREE.Vector3() });
-    }
+    l.shadow.autoUpdate = false;
+    l.shadow.camera.layers.enable(SHADOW_ONLY);
+    this.lights.push(l);
+    this.group.add(l, l.target);
+    this.drawnAt.push({ x: Infinity, z: Infinity, d: new THREE.Vector3() });
   }
 
   /** Set the squares for the level and draw distance in force, if they've changed. */
@@ -150,10 +161,12 @@ export class SunShadows {
     const reach = shadowReach();
     const halves = squaresFor(Math.max(1, reach));
     if (this.level === shadowLevel && halves.join() === this.halves.join()) return;
-    // the extra lights are there whenever shadows are, so the materials needn't be built again when
-    // the reach changes; off, they go, and the lighting is three.js's own
+    // the extra lights stay whenever shadows are on, so the materials needn't be built again when the
+    // reach shrinks; off, they go, and the lighting is three.js's own
     const on = shadowLevel > SHADOW_OFF;
     this.level = shadowLevel; this.halves = halves;
+    while (on && this.lights.length < Math.min(MOST_CASCADES, Math.max(LEAST_CASCADES, halves.length)))
+      this.addLight(new THREE.DirectionalLight(this.sun.color, 0));
     this.lights.forEach((l, k) => {
       const h = halves[k];
       if (k > 0) l.visible = on;
@@ -183,6 +196,7 @@ export class SunShadows {
     const every = quality.shadowEvery, f = this.frame++;
     this.halves.forEach((h, k) => {
       const l = this.lights[k], at = this.drawnAt[k];
+      if (!l) return;
       // snapped to the square's texels so its shadows don't shimmer as you move
       const snap = 2 * h / this.size;
       const cx = Math.round(px / snap) * snap, cz = Math.round(pz / snap) * snap, back = l.userData.back as number;
