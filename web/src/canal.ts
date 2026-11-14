@@ -37,6 +37,7 @@ export interface CanalData {
 const HW = 1.04;                       // half a narrowboat's beam (7 ft)
 const CRUISE = 1.8, TOP = 2.8, ASTERN = 1.2;   // m/s: about 4 mph, flat out, and going backwards
 const COUNT = 4;                       // boats under way at once
+const BOAT_PATCH = 500;                // metres: the moored boats are drawn a stretch this long at a time
 const MOOR = 2e9;                      // a moored boat cast off is boat MOOR + its place in the canal file's list
 const NEAR = 150, FAR = 520, GONE = 800;
 const SWING = 5;                       // seconds for a pair of gates to swing
@@ -828,12 +829,18 @@ export class Canal {
       this.poseLock(lk);
     }
 
-    // the moored boats: one instanced mesh for each livery, each on its own stretch's water
-    const byPaint = new Map<number, number[]>();
-    d.moor.forEach((m, i) => (byPaint.get(m[4]) ?? byPaint.set(m[4], []).get(m[4])!).push(i));
+    // the moored boats: one instanced mesh for each livery in each stretch of BOAT_PATCH metres, each
+    // boat on its own stretch's water (one mesh a livery for the whole canal would be drawn whole,
+    // shadows and all, wherever you were)
+    const byPaint = new Map<string, number[]>();
+    d.moor.forEach((m, i) => {
+      const k = `${m[4]},${Math.floor(m[0] / BOAT_PATCH)},${Math.floor(m[1] / BOAT_PATCH)}`;
+      (byPaint.get(k) ?? byPaint.set(k, []).get(k)!).push(i);
+    });
     const long = d.runs.reduce((a, r) => (r.p.length > a.n ? { n: r.p.length, lv: r.lv } : a), { n: 0, lv: 0 }).lv;
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
-    for (const [paint, list] of byPaint) {
+    for (const list of byPaint.values()) {
+      const paint = d.moor[list[0]][4];
       const im = new THREE.InstancedMesh(this.boatGeo[paint % this.boatGeo.length], this.boatMat, list.length);
       list.forEach((i, k) => {
         const [x, y, ang, len, , basin] = d.moor[i], at = this.nearest(x, -y), lv = basin ?? (at ? d.runs[at.run].lv : long);
