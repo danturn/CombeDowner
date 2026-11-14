@@ -6119,7 +6119,7 @@ def find_passages(rows, houses, own, tops, marks):
         if not near:
             continue
         for row, touched in _passages(r, line, near, foots, own, tops, marks, mark_tree):
-            row = _beside_made(row, [mid for _, mid in strips])
+            row = _beside_made(row, [mid for _, mid in strips], [Point(line.coords[0]), Point(line.coords[-1])])
             if row is None:
                 continue
             mid = LineString([row[i:i + 2] for i in range(2, len(row), 3)])
@@ -6130,7 +6130,7 @@ def find_passages(rows, houses, own, tops, marks):
     return made, strips
 
 
-def _beside_made(row, made, share=0.6, least=1.0):
+def _beside_made(row, made, way_ends=(), share=0.6, least=1.0):
     """A passage `row` as made beside the passages `made` already (their middle lines): None if most
     of it runs along one of them, two ways mapped side by side through one arch, whose two passages
     each opened the other's walls and left a sliver of wall standing between them; cut back to
@@ -6150,9 +6150,11 @@ def _beside_made(row, made, share=0.6, least=1.0):
         return None
     keep = max(pieces, key=lambda g: g.length)
     s0, s1 = sorted(mid.project(Point(c)) for c in (keep.coords[0], keep.coords[-1]))
-    # (run on into the other passage, so the two floors meet)
-    s0 = 0.0 if s0 < 0.05 else max(0.0, s0 - PASSAGE_ALONG)
-    s1 = mid.length if s1 > mid.length - 0.05 else min(mid.length, s1 + PASSAGE_ALONG)
+    # (run on into the other passage, so the two floors meet; and right to an end where the way
+    # itself ends, meeting another indoors, or the way is left stopped short of the one it meets)
+    at_end = lambda c: any(Point(c).distance(e) < 0.5 for e in way_ends)
+    s0 = 0.0 if s0 < 0.05 or at_end(mid.coords[0]) else max(0.0, s0 - PASSAGE_ALONG)
+    s1 = mid.length if s1 > mid.length - 0.05 or at_end(mid.coords[-1]) else min(mid.length, s1 + PASSAGE_ALONG)
     cut = substring(mid3, s0, s1)
     return row[:2] + [round(v, 2) for c in cut.coords for v in c]
 
