@@ -13,13 +13,15 @@
 // behind can't be seen.
 //
 // There are only as many squares' lights as the level and draw distance have needed so far (two at
-// least), as every lit surface works out its shadow from each one there is, used or not.
+// least), as every lit surface works out its shadow from each one there is, used or not. Big models
+// are drawn into the shadows in pieces, so a square draws only what's in it ("in pieces", below).
 //
 // This file changes how three.js lights every material on the page (the ShaderChunk below): a scene
 // with more than one shadow-casting directional light has them taken as one sun's cascades, the
 // sun's own light first. Only the streets' world (world.ts) has more than one. Nothing here goes over
 // the network: everyone sees shadows as far as they like.
 import * as THREE from "three";
+import { traverseAll } from "./cull";
 import { quality } from "./quality";
 import { MOBILE } from "./safegfx";
 import { view } from "./view";
@@ -134,9 +136,14 @@ export class SunShadows {
   /** Where each square was last drawn round, and the light's direction then. */
   private drawnAt: { x: number; z: number; d: THREE.Vector3 }[] = [];
 
-  constructor(readonly sun: THREE.DirectionalLight, private size: number) {
+  constructor(readonly sun: THREE.DirectionalLight, private size: number, scene: THREE.Scene) {
     this.lights = [];
     this.addLight(sun);
+    // (pieces are only ever drawn into shadows: the models are whole again before the picture works
+    // out what to draw, and once it's drawn, for the rest of the game)
+    const before = scene.onBeforeRender, after = scene.onAfterRender;
+    scene.onBeforeRender = function (...a) { wholeAgain(); before.apply(this, a); };
+    scene.onAfterRender = function (...a) { wholeAgain(); after.apply(this, a); };
     this.fit();
   }
 
@@ -151,6 +158,8 @@ export class SunShadows {
     }
     l.shadow.autoUpdate = false;
     l.shadow.camera.layers.enable(SHADOW_ONLY);
+    const um = l.shadow.updateMatrices.bind(l.shadow);
+    l.shadow.updateMatrices = (light: THREE.Light) => { um(light); piecesFor(k === 0, l.shadow.getFrustum()); };
     this.lights.push(l);
     this.group.add(l, l.target);
     this.drawnAt.push({ x: Infinity, z: Infinity, d: new THREE.Vector3() });
@@ -213,5 +222,154 @@ export class SunShadows {
 
   dispose() {
     for (const l of this.lights.slice(1)) l.dispose();   // the sun is the world's
+  }
+}
+
+// ---- big models in pieces, for the shadows --------------------------------------------------------
+// A square's buildings, walls or steps are each drawn as a handful of big models reaching hundreds of
+// metres, and a model is drawn into a shadow map whole if any of it is in the square, so the sharpest
+// square (140 m across) drew several squares' worth of the city every time. So each big model's
+// triangles are put in order by PIECE-metre cell as its square is finished, and pieces, each one cell's
+// run of them, stand in for the model in the sharpest square: only the pieces in it are drawn. The
+// bigger squares hold most of a model anyway, and draw it whole in one go, unless it is a heavy one.
+// The picture itself is drawn exactly as before (the same triangles, in the same order cell by cell).
+const PIECE = 100;
+/** Models smaller than this, in triangles, aren't worth more draws. */
+const LEAST_TRIS = 3000;
+/** Models this heavy go in pieces into every square. */
+const HEAVY_TRIS = 40000;
+
+interface Pieces { holder: THREE.Group; heavy: boolean }
+const pieced = new Map<THREE.Mesh, Pieces>();
+const inUse: THREE.Mesh[] = [];
+
+function wholeAgain() {
+  for (const m of inUse) { m.castShadow = true; pieced.get(m)!.holder.visible = false; }
+  inUse.length = 0;
+}
+
+/** As the sun's square k is about to be drawn: its pieces in, for the models that are in it. */
+function piecesFor(sharpest: boolean, frustum: THREE.Frustum) {
+  wholeAgain();
+  for (const [m, p] of pieced) {
+    if (!(sharpest || p.heavy) || !m.visible || !m.castShadow || !frustum.intersectsObject(m)) continue;
+    m.castShadow = false; p.holder.visible = true;
+    inUse.push(m);
+  }
+}
+
+const keepArrays = () => !!(globalThis as { __keepArrays?: boolean }).__keepArrays;
+
+/** g's triangles in order of the PIECE-metre cell each is in, as a new model (g is left as it was),
+ *  and each cell's run of them with its bounds; null if g can't be or needn't be. */
+function byCell(g: THREE.BufferGeometry) {
+  const pos = g.attributes.position, idx = g.index;
+  const attrs = Object.entries(g.attributes) as [string, THREE.BufferAttribute][];
+  if (!(pos instanceof THREE.BufferAttribute) || pos.itemSize !== 3 || !(pos.array instanceof Float32Array) || g.groups.length > 1
+    || g.drawRange.start !== 0 || g.drawRange.count !== Infinity || Object.keys(g.morphAttributes).length
+    || attrs.some(([, a]) => !(a instanceof THREE.BufferAttribute) || (a as unknown as THREE.InstancedBufferAttribute).isInstancedBufferAttribute || !a.array)
+    || (idx && !idx.array)) return null;
+  const n = Math.floor((idx ? idx.count : pos.count) / 3);
+  if (n < LEAST_TRIS) return null;
+  const P = pos.array, I = idx?.array;
+  const v = (t: number, c: number) => (I ? I[3 * t + c] : 3 * t + c);
+  const cellOf = new Int32Array(n), ids = new Map<number, number>();
+  for (let t = 0; t < n; t++) {
+    const a = v(t, 0), b = v(t, 1), c = v(t, 2);
+    const x = (P[3 * a] + P[3 * b] + P[3 * c]) / 3, z = (P[3 * a + 2] + P[3 * b + 2] + P[3 * c + 2]) / 3;
+    const key = Math.floor(x / PIECE) * 65536 + Math.floor(z / PIECE);
+    let id = ids.get(key);
+    if (id === undefined) ids.set(key, (id = ids.size));
+    cellOf[t] = id;
+  }
+  if (ids.size < 2) return null;
+  const cells = Array.from({ length: ids.size }, () => ({ start: 0, count: 0, box: new THREE.Box3() }));
+  for (let t = 0; t < n; t++) cells[cellOf[t]].count++;
+  for (let k = 1; k < cells.length; k++) cells[k].start = cells[k - 1].start + cells[k - 1].count;
+  const at = cells.map((c) => c.start);
+  const out = new THREE.BufferGeometry(), _v = new THREE.Vector3();
+  // runs of triangles in one cell are copied in one go: a model is mostly built a place at a time
+  const copy = (from: THREE.TypedArray, to: THREE.TypedArray, per: number) => {
+    at.forEach((_, k) => (at[k] = cells[k].start));
+    for (let t = 0; t < n;) {
+      let e = t + 1;
+      while (e < n && cellOf[e] === cellOf[t]) e++;
+      const k = cellOf[t];
+      to.set(from.subarray(t * per, e * per), at[k] * per);
+      at[k] += e - t;
+      t = e;
+    }
+  };
+  if (I) {
+    const J = new (I.constructor as new (n: number) => THREE.TypedArray)(I.length);
+    copy(I, J, 3);
+    out.setIndex(new THREE.BufferAttribute(J, 1));
+    for (const [name, a] of attrs) out.setAttribute(name, new THREE.BufferAttribute(a.array.slice(), a.itemSize, a.normalized));
+  } else {
+    for (const [name, a] of attrs) {
+      const to = new (a.array.constructor as new (n: number) => THREE.TypedArray)(a.array.length);
+      copy(a.array, to, 3 * a.itemSize);
+      out.setAttribute(name, new THREE.BufferAttribute(to, a.itemSize, a.normalized));
+    }
+  }
+  const Q = (out.attributes.position as THREE.BufferAttribute).array, K = out.index?.array;
+  for (const c of cells)
+    for (let i = 3 * c.start; i < 3 * (c.start + c.count); i++) { const q = K ? K[i] : i; c.box.expandByPoint(_v.set(Q[3 * q], Q[3 * q + 1], Q[3 * q + 2])); }
+  out.boundingSphere = g.boundingSphere?.clone() ?? null;
+  out.boundingBox = g.boundingBox?.clone() ?? null;
+  if (!out.boundingSphere) out.computeBoundingSphere();
+  out.userData = g.userData;
+  if (g.groups.length) out.addGroup(0, Infinity, g.groups[0].materialIndex);
+  if (!keepArrays()) for (const a of [...Object.values(out.attributes), ...(out.index ? [out.index] : [])] as THREE.BufferAttribute[])
+    a.onUpload(() => { (a as { array: unknown }).array = null; });
+  return { geo: out, cells };
+}
+
+/** Put the big shadow-casting models under root in pieces (see above), a few at a time. skip: models
+ *  lent by another world, which other meshes draw too; kept: meshes whose models may be kept for
+ *  another square. */
+export function* inPieces(root: THREE.Object3D, skip: Set<unknown>, kept: (o: THREE.Object3D) => boolean): Generator<void> {
+  const users = new Map<THREE.BufferGeometry, number>(), meshes: THREE.Mesh[] = [];
+  traverseAll(root, (o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !m.geometry) return;
+    users.set(m.geometry, (users.get(m.geometry) ?? 0) + 1);
+    if (m.castShadow && !(m as THREE.InstancedMesh).isInstancedMesh && !(m as THREE.SkinnedMesh).isSkinnedMesh && !Array.isArray(m.material) && !pieced.has(m)) meshes.push(m);
+  });
+  let work = 0;
+  for (const m of meshes) {
+    const g = m.geometry;
+    if (users.get(g)! > 1 || skip.has(g) || (g.boundingSphere && g.boundingSphere.radius < PIECE) || kept(m)) continue;
+    const cut = byCell(g);
+    if (!cut) continue;
+    m.geometry = cut.geo;
+    g.dispose();
+    const holder = new THREE.Group();
+    holder.visible = false;
+    holder.matrixAutoUpdate = holder.matrixWorldAutoUpdate = false;
+    for (const c of cut.cells) {
+      const pg = new THREE.BufferGeometry();
+      for (const [name, a] of Object.entries(cut.geo.attributes)) pg.setAttribute(name, a);
+      if (cut.geo.index) pg.setIndex(cut.geo.index);
+      pg.setDrawRange(3 * c.start, 3 * c.count);
+      pg.boundingBox = c.box;
+      pg.boundingSphere = c.box.getBoundingSphere(new THREE.Sphere());
+      const piece = new THREE.Mesh(pg, m.material);
+      piece.castShadow = true;
+      piece.receiveShadow = false;
+      piece.customDepthMaterial = m.customDepthMaterial;
+      piece.customDistanceMaterial = m.customDistanceMaterial;
+      // (it sits where its model does, always: the same matrix, not a copy kept up to date)
+      piece.matrixAutoUpdate = piece.matrixWorldAutoUpdate = false;
+      piece.matrixWorld = m.matrixWorld;
+      piece.raycast = () => {};
+      holder.add(piece);
+    }
+    m.add(holder);
+    const n = (cut.geo.index ? cut.geo.index.count : cut.geo.attributes.position.count) / 3;
+    pieced.set(m, { holder, heavy: n >= HEAVY_TRIS });
+    cut.geo.addEventListener("dispose", () => { pieced.delete(m); const i = inUse.indexOf(m); if (i >= 0) inUse.splice(i, 1); });
+    work += n;
+    if (work > 40000) { work = 0; yield; }
   }
 }

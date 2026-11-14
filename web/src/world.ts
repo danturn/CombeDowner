@@ -54,7 +54,7 @@ export function groundSheet(): boolean {
 export function groundCdt(): boolean {
   return typeof location === "undefined" || new URLSearchParams(location.search).get("ground") !== "sheet";
 }
-import { SunShadows } from "./shadows";
+import { SunShadows, inPieces } from "./shadows";
 import { tag, tagSince } from "./kinds";
 
 const CHUNK = 320;
@@ -134,11 +134,15 @@ export class Geo {
  */
 export function freeOnUpload<G extends THREE.BufferGeometry>(g: G): G {
   if ((globalThis as { __keepArrays?: boolean }).__keepArrays) return g;     // (tools/bridge_audit.mjs reads what was drawn)
+  const kept = keeping;
   for (const a of [...Object.values(g.attributes), g.index]) {
-    if (a instanceof THREE.BufferAttribute) a.onUpload(() => { (a as { array: unknown }).array = null; });
+    if (a instanceof THREE.BufferAttribute) a.onUpload(() => { if (kept && !kept.done) kept.list.push(a); else (a as { array: unknown }).array = null; });
   }
   return g;
 }
+interface Kept { list: THREE.BufferAttribute[]; done: boolean }
+/** While a square is being built (tileWorld): where freeOnUpload's copies wait till it's finished. */
+let keeping: Kept | null = null;
 
 function hash(n: number) {
   let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
@@ -235,7 +239,20 @@ export type Shared = Record<string, any>;
  *  the main world's materials, into the group given (which can already be in the scene). */
 export function* tileWorld(map: GameMap, shared: Shared, into: THREE.Group): Generator<void, TileWorld> {
   const since = { geo: new THREE.BufferGeometry().id, attr: new THREE.BufferAttribute(new Float32Array(0), 1).id };
-  const w = (yield* worldGen(map, shared, into)) as TileWorld;
+  // the copies freeOnUpload lets go of are kept till the square is finished, for its shadows' pieces
+  const kept: Kept = { list: [], done: false };
+  const build = worldGen(map, shared, into);
+  let w: TileWorld;
+  for (;;) {
+    keeping = kept;
+    let r: IteratorResult<void, World | TileWorld>;
+    try { r = build.next(); } finally { keeping = null; }
+    if (r.done) { w = r.value as TileWorld; break; }
+    yield;
+  }
+  yield* inPieces(into, sharedThings(shared), (o) => keepsModels(o, into));
+  kept.done = true;
+  for (const a of kept.list) (a as { array: unknown }).array = null;
   shedArrays(into, shared, since);
   return w;
 }
@@ -252,6 +269,7 @@ function sharedThings(shared: Shared) {
 
 // Parts of a square whose models may be kept for the next square, so they must keep their own copy.
 const KEEPS_MODELS = /^(landmarks|grass|lamps|sky)/;
+const keepsModels = (o: THREE.Object3D | null, top: THREE.Object3D): boolean => !!o && o !== top && (KEEPS_MODELS.test(o.name) || keepsModels(o.parent, top));
 
 /** freeOnUpload for the rest of a square, once it's built: the copy the page keeps of each big model
  *  made for this square alone (since: the first model and attribute numbers made for it) goes once
@@ -459,7 +477,7 @@ function makeShell(scene: THREE.Scene) {
   const sun = new THREE.DirectionalLight("#fff0d8", 2.6);
   sun.castShadow = true;
   // its shadows reach as far as Settings say, in squares round you (shadows.ts)
-  const shadows = new SunShadows(sun, shadowSize);
+  const shadows = new SunShadows(sun, shadowSize, scene);
   scene.add(shadows.group);
 
   // ---- sky dome -----------------------------------------------------------------
@@ -3512,6 +3530,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   mark("field");
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
+  yield* inPieces(scene, sharedThings(S), (o) => keepsModels(o, scene));
   const tiles = map.tileIndex ? new Tiles(map, world, (m, g) => tileWorld(m, S, g), (g) => disposeTileGroup(g, S)) : null;
   /** The drawn surface: out in a loaded square, that square's. */
   const surfaceAll = (x: number, z: number, y?: number) => tiles?.worldAt(x, z)?.surface(x, z, y) ?? surface(x, z, y);
