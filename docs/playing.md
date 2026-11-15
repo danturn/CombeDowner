@@ -490,7 +490,7 @@ and the indicator stalk goes up or down as you signal. Each car is fitted out as
 XR3i's sports seats, three-spoke wheel and furry dice (they swing on their strings as you pull away, brake, corner and hit the bumps), the GTI's tartan seats and golf-ball gear knob,
 the Land Rover's painted metal, its dials in the middle of the dash and its three levers, the Robin's
 one big speedo, a van's bench seat and bulkhead, and a newer hatchback's airbag wheel, glowing radio
-and air freshener. Look round and it's all there: pedals, gear stick and handbrake, the radio and
+and pine tree air freshener, swinging from the mirror like the dice. Look round and it's all there: pedals, gear stick and handbrake, the radio and
 heater, the door handles and window winders, seatbelts, sun visors and a tax disc in the windscreen.
 At the longest draw distances the carpet, seats and roof lining show their weave and the windscreen
 its film of dust. The buses have a cab of their own, with a big flat wheel and an old ticket machine by the door. The bonnet camera, as in a
