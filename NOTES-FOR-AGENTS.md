@@ -29,13 +29,14 @@ the game locally, without the sound" in `CLAUDE.md`.
   and opening its pavement where a street joins it at its level; the in-game clearing stays as the
   fallback. Argyle Street's paving lies under the street's fall (`landmarks/terraces.ts`). The rest
   of the map picks it up at the next whole-map build.
+
 - **Buildings lined up with the lidar (branch `claude/milsom`):** a measure-time step,
   `tools/register.py`, moves each block of touching buildings onto the survey and keeps the shifts in
   `data/combe-down/measured/registered.json`; every reader of the buildings layer applies them
   (`prep_map.py` `L`, `prep_wide.py`, `partition/__init__.py`, `data.py`, `cache.py`, `canal.py`,
   `railway.py`), and kept roof faces move with their building. Squares must be built with `--measure`
   after it, then their roofs refitted (`roofs/shapes.py --keep`, see README). Trialled on 0_3, 1_3,
-  1_1 and -1_2 only; `registered.json` and the four squares' measured zips and roof faces hold that.
+  1_1 and -1_2 first, then built over the whole map on `claude/ground-and-pulteney`.
   Also on the branch: front paths and drives run on to the street's faces (`write_tile.run_on`),
   the ground sheet keeps odd cells' corners off a house's foot and lets a passage's deck lie on the
   ground (`sheet.py`), and rule 47's riding paths count only where the ground is dug out under them.
