@@ -26,7 +26,8 @@ the game locally, without the sound" in `CLAUDE.md`.
   `data/combe-down/measured/registered.json`; every reader of the buildings layer applies them
   (`prep_map.py` `L`, `prep_wide.py`, `partition/__init__.py`, `data.py`, `cache.py`, `canal.py`,
   `railway.py`), and kept roof faces move with their building. Squares must be built with `--measure`
-  after it. Trialled on 0_3, 1_3, 1_1 and -1_2 only.
+  after it, then their roofs refitted (`roofs/shapes.py --keep`, see README). Trialled on 0_3, 1_3,
+  1_1 and -1_2 only; `registered.json` and the four squares' measured zips and roof faces hold that.
 
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps

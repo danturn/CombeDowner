@@ -260,6 +260,15 @@ def L(f):
     return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
 
 
+def place_key(poly, p):
+    """A whole number from where a building stands, for its random draws. A building lined up with
+    the lidar (tools/register.py) keeps the one from where it was mapped, so moving it doesn't
+    reroll its walls, roof or door."""
+    c = poly.centroid
+    dx, dy = p.get("shift") or (0, 0)
+    return zlib.crc32(f"{c.x - dx:.1f},{c.y - dy:.1f}".encode())
+
+
 inside = lambda x, y: X0 <= x <= X1 and Y0 <= y <= Y1
 name = lambda p: (p.get("names") or {}).get("primary") or ""
 
@@ -2460,7 +2469,7 @@ if _census or _cores:
     except FileNotFoundError:
         pass
     _got = priors([e[1] for e in _every], [e[2] for e in _every], _every_certs,
-                  [zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()) for c in (e[1].centroid for e in _every)],
+                  [place_key(e[1], e[2]) for e in _every],
                   A.zones, A.default_zone, _census, _cores)
     for (fid, _, _), pr in zip(_every, _got):
         PRIOR[fid] = dict(pr, near=[_every[j][0] for j in pr["near"]])
@@ -2679,7 +2688,7 @@ except FileNotFoundError as e:
 # the random choices for each building come from where it stands (see buildings.classify), as do
 # those along each street and at each door below, so a rebuild comes out the same, a change in one
 # place doesn't reshuffle the rest, and a tile picks the same as its neighbour where they overlap
-keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
+keys = [place_key(poly, p) for poly, p in cand]
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs, keys)
 if TILE is not None:
     # the buildings past the margin were only there to be classed
@@ -2757,10 +2766,12 @@ FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {
 
 
 def kept_faces(ring, holes, p):
-    """The lidar's roof kept for this outline as built, or None. A building lined up with the survey
-    (tools/register.py) finds it by the outline it had before, and it moves with the building."""
+    """The lidar's roof kept for this outline as built, or None. Roofs fitted before a building was
+    lined up with the survey (tools/register.py) are found by the outline it had then, and moved
+    with it."""
+    kept = FACES.get(roof_faces.ring_key({"r": [ring, *holes]}))
     s = p.get("shift")
-    if not s: return FACES.get(roof_faces.ring_key({"r": [ring, *holes]}))
+    if kept is not None or not s: return kept
     back = lambda rr: [[r1(x - s[0]), r1(y - s[1])] for x, y in rr]
     kept = FACES.get(roof_faces.ring_key({"r": [back(ring), *[back(h) for h in holes]]}))
     return None if kept is None else roof_faces.moved(kept, s[0], s[1])
@@ -3235,6 +3246,39 @@ def _through_buildings(roads):
     return out, cut
 roads, _cut = _through_buildings(roads)
 print(f"streets: {_cut} stop at a building they ran through")
+
+
+# A path mapped up to a building's door ends at its wall; where the building was lined up with the
+# survey (tools/register.py) the path's end can lie inside it, and it stops at the wall instead.
+def _ends_at_walls(roads):
+    inner = [f.buffer(-0.3) for f in footprints]
+    inner = [g for g in inner if not g.is_empty]
+    if not inner: return roads, 0
+    btree = shapely.STRtree(inner)
+    out, cut = [], 0
+    for r in roads:
+        if r["c"] not in PATHS or len(r["p"]) < 2 or any(len(q) > 3 for q in r["p"]):
+            out.append(r); continue
+        whole = shapely.LineString([tuple(q[:2]) for q in r["p"]])
+        line, moved = whole, False
+        for end in (0, -1):
+            e = shapely.Point(line.coords[end])
+            hit = [inner[int(k)] for k in btree.query(e) if inner[int(k)].contains(e)]
+            if not hit: continue
+            rest = line.difference(unary_union([h.buffer(0.3) for h in hit]))
+            far = shapely.Point(line.coords[-1 - end])
+            keep = [q for q in getattr(rest, "geoms", [rest]) if q.geom_type == "LineString" and q.distance(far) < 1e-6]
+            if not keep or keep[0].length < 1.0: continue
+            line, moved = keep[0], True
+        if not moved: out.append(r); continue
+        cut += 1
+        # (heights along it as they were, read off where each point lies along the old line)
+        at = [whole.project(shapely.Point(q[:2])) for q in r["p"]]
+        zs = [q[2] for q in r["p"]]
+        out.append(dict(r, p=[[r1(x), r1(y), r1(float(np.interp(whole.project(shapely.Point(x, y)), at, zs)))] for x, y in line.coords]))
+    return out, cut
+roads, _cut = _ends_at_walls(roads)
+print(f"paths: {_cut} ends brought back to the wall of a building they ran into")
 
 # ---- footpaths: none runs along a carriageway --------------------------------------------------
 # A footpath mapped down the middle of a street (a pavement drawn as the street's centre line, or a

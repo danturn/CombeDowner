@@ -42,6 +42,10 @@ TIE = 0.15          # how much worse than standing still a block's area's shift 
 FIELD = 150.0       # metres round a block whose blocks make the area's shift
 FIELD_MIN = 4       # blocks the survey clearly shows that make an area's shift
 PARTY = 0.6         # metres: buildings this close share a wall (roofs.common.PARTY)
+EDGE = 0.03         # how much cleaner a block's own walls must sit on the survey's than its area's shift puts them, to go its own way
+ON_ROAD = 1.0       # square metres more of a mapped carriageway a shift may put a block on
+CARRIAGEWAY = {"service": 1.0}      # metres either side of a mapped road's line that are surely carriageway: else 2.0
+NOT_ROADS = {"footway", "steps", "track", "cycleway", "bridleway", "path", "pedestrian", "elevator", "construction", "raceway", "escape"}
 
 
 def path(map_id):
@@ -117,21 +121,86 @@ _job = {}
 
 
 def _fit_one(k):
+    """A block's fit, and for each shift how cleanly its walls sit on the survey's and how much of
+    a mapped carriageway it would stand on."""
     from roofs.common import fit
     lidar, outline = _job["lidar"], _job["outlines"][k]
     try:
         scores, _ = fit(lidar, outline, (), reach=REACH)
+        if scores is None: return None
+        edges, onroad = _sides(lidar, outline, _job.get("roads"))
+        return scores, edges, onroad
     except Exception:
-        scores = None
-    return scores
+        return None
+
+
+def _sides(lidar, outline, roads):
+    """For each shift (on the fit's half-metre grid): the share of the survey's solid raised surface
+    in a band just outside the walls plus the share of open ground in a band just inside them (0 is
+    walls exactly on the survey's), and the square metres of mapped carriageway under the block."""
+    import numpy as np
+    import shapely
+    px, n = 0.5, int(round(REACH / 0.5))
+    x0, y0, x1, y1 = outline.bounds
+    xs = np.arange(x0 - 3, x1 + 3, px); ys = np.arange(y0 - 3, y1 + 3, px)
+    X, Y = np.meshgrid(xs, ys)
+    out = shapely.contains_xy(outline.buffer(2.0).difference(outline), X, Y)
+    inn = shapely.contains_xy(outline.difference(outline.buffer(-1.5)), X, Y)
+    body = shapely.contains_xy(outline, X, Y)
+    bx = np.arange(xs[0] - n * px, xs[-1] + n * px + px / 2, px)[:len(xs) + 2 * n]
+    by = np.arange(ys[0] - n * px, ys[-1] + n * px + px / 2, px)[:len(ys) + 2 * n]
+    BX, BY = np.meshgrid(bx, by)
+    e, nn = lidar._bng(BX.ravel(), BY.ravel())
+    f, g, l = (lidar._sample(w, e, nn).reshape(BX.shape) for w in ("dsm", "dtm", "last"))
+    solid = ((f - g) > 2.5) & ((f - l) < 0.5)
+    road = np.zeros(BX.shape, bool)
+    if roads is not None:
+        tree, geoms = roads
+        near = [geoms[int(i)] for i in tree.query(shapely.box(bx[0], by[0], bx[-1], by[-1]))]
+        if near: road = shapely.contains_xy(shapely.union_all(near), BX, BY)
+    no, ni = max(1, out.sum()), max(1, inn.sum())
+    edges, onroad = {}, {}
+    for j in range(-n, n + 1):
+        for i in range(-n, n + 1):
+            win = (slice(n + j, n + j + len(ys)), slice(n + i, n + i + len(xs)))
+            sw = solid[win]
+            edges[(i * px, j * px)] = float((sw & out).sum() / no + (~sw & inn).sum() / ni)
+            onroad[(i * px, j * px)] = float((road[win] & body).sum() * px * px)
+    return edges, onroad
+
+
+def roads_of(map_id, raw):
+    """The mapped carriageways near the buildings, as areas (an STRtree and its geometries)."""
+    import numpy as np
+    import shapely
+    from shapely.geometry import shape
+    from area import area
+    p = os.path.join(raw, "osm-roads.geojson")
+    if not os.path.exists(p): return None
+    lon0, lat0 = area(map_id).centre
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
+    geoms = []
+    for f in json.load(open(p))["features"]:
+        q = f.get("properties") or {}
+        h = q.get("highway")
+        # (a road under a building, through its passage or in a tunnel, is no reason to keep it off)
+        if h in NOT_ROADS or q.get("tunnel") or q.get("covered") or q.get("layer", "0") not in ("0", 0): continue
+        try: g = shape(f["geometry"])
+        except Exception: continue
+        g = shapely.transform(g, lambda a: np.c_[(a[:, 0] - lon0) * kx, (a[:, 1] - lat0) * ky])
+        geoms.append(g.buffer(CARRIAGEWAY.get(h, 2.0), cap_style="flat"))
+    return (shapely.STRtree(geoms), geoms) if geoms else None
 
 
 def decide(fits, centres, sizes):
     """Each block's shift from its own fit and its area's: [(dx, dy, why)]."""
     import numpy as np
     import shapely
-    fits = [None if sc is None else {k: v for k, v in sc.items() if math.hypot(*k) <= REACH + 1e-9} for sc in fits]
     zero = (0.0, 0.0)
+    # a block isn't moved further than REACH, nor onto a mapped carriageway it wasn't on
+    edges = [None if f is None else f[1] for f in fits]
+    fits = [None if f is None else {k: v for k, v in f[0].items() if math.hypot(*k) <= REACH + 1e-9 and f[2][k] <= f[2][zero] + ON_ROAD}
+            for f in fits]
     top = [None if sc is None else max(sc.values()) for sc in fits]
 
     def choose(k, prior):
@@ -169,7 +238,13 @@ def decide(fits, centres, sizes):
         area = area_of(k, own)
         best = choose(k, area or zero)
         alone = sizes[k] >= OWN_AREA and top[k] >= STRONG and sc[best] - sc[zero] >= GAIN
-        if area is not None and sc[area] >= top[k] - NEAR:
+        # of the shifts that fit about as well as its best, the one that sits its walls cleanest on the survey's
+        walls = min((s for s, v in sc.items() if v >= top[k] - NEAR), key=edges[k].get)
+        if alone and area is not None and walls != area and edges[k][area] - edges[k][walls] >= EDGE:
+            # its walls sit plainly cleaner on the survey's at its own shift than at its area's:
+            # a long terrace whose fronts the area's shift would leave standing in the street
+            pick, why = walls, "own"
+        elif area is not None and sc[area] >= top[k] - NEAR:
             pick, why = area, "area"
         elif alone and (area is None or sc[best] - sc[area] >= OWN_MARGIN):
             pick, why = best, "own"
@@ -212,10 +287,11 @@ def load(map_id, raw):
     return keys, polys, groups, outlines, centres, sizes
 
 
-def fit_all(lidar, outlines, todo, jobs):
-    """Each listed block's fit ({shift: score}, or None), spread over jobs processes."""
+def fit_all(lidar, outlines, todo, jobs, roads=None):
+    """Each listed block's fit (({shift: score}, {shift: edges}, {shift: carriageway m2}), or None),
+    spread over jobs processes."""
     import multiprocessing
-    _job.update(lidar=lidar, outlines=outlines)
+    _job.update(lidar=lidar, outlines=outlines, roads=roads)
     if jobs > 1 and len(todo) > 50:
         with multiprocessing.get_context("fork").Pool(jobs) as pool:
             return pool.map(_fit_one, todo, chunksize=8)
@@ -247,7 +323,7 @@ def main():
     else:
         todo = owned
     print(f"register: {len(polys)} buildings in {len(groups)} blocks; fitting {len(todo)} blocks")
-    got = fit_all(open_lidar(map_id, raw), outlines, todo, jobs)
+    got = fit_all(open_lidar(map_id, raw), outlines, todo, jobs, roads_of(map_id, raw))
     by_block = dict(zip(todo, decide(got, [centres[k] for k in todo], [sizes[k] for k in todo])))
     p = path(map_id)
     kept = json.load(open(p)) if only and os.path.exists(p) else {"moved": {}}

@@ -750,10 +750,17 @@ pavement twice as wide as the other and left the survey's building fronts standi
 where the tree canopy took them for trees. Buildings that touch move together as one block, by
 the shift that best puts the survey's roofs inside their outlines and its drops to the ground on
 their walls, up to 5 m; a block whose own fit says little takes the shift of the blocks round it,
-and one goes its own way only on clear evidence. The streets, paths and mapped walls stay where
-they are. The shifts are kept in `data/$MAP/measured/registered.json`: run `register.py` again
-(with the raw lidar) to measure them afresh, then build the squares with `--measure`, as what the
-lidar measures is kept by each building's outline.
+and one goes its own way only on clear evidence (its fit well ahead, or its walls sitting plainly
+cleaner on the survey's). No block is moved onto a mapped carriageway it wasn't on. The streets,
+paths and mapped walls stay where they are; a path that now ends inside a building stops at its
+wall. A moved building keeps its walls, roof and door as they were chosen for it (they are drawn
+from where it was mapped), and a roof fitted to the lidar before moves with it. The shifts are
+kept in `data/$MAP/measured/registered.json`: run `register.py` again (with the raw lidar) to
+measure them afresh, then build the squares with `--measure`, as what the lidar measures is kept
+by each building's outline. Then fit the roofs again over the moved squares: move their
+`data/$MAP/measured/faces/<ti>_<tj>.json` aside to a folder, build them, run
+`tools/roofs/shapes.py ti,tj ... --keep <folder>` (which keeps the old roofs beside the new ones),
+and build them again.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks

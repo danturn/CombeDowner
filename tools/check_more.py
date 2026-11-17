@@ -57,7 +57,8 @@ from the packs alone, a few seconds a square:
 25. No tree, shrub or boulder stands in a path, drive or pavement.
 26. No face's edge stands more than 0.3 m off what is beside it (a wedge down a bank, a pavement
     over a path).
-27. Faces meet: no strip of bare ground between a path and a street, no lump of ground between faces
+27. Faces meet: no strip of bare ground between a path and a street (one along a wall, fence or
+    hedge is where the faces stop for it), no lump of ground between faces
     of two kinds, no pavement that just stops with nothing across its end.
 28. A bridge's deck lands on the street at each end, not in the air or off the street's height.
 29. No parapet gap where three or more pieces of a bridge meet on its deck.
@@ -1517,9 +1518,13 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
             gaps = gaps.difference(unary_union(walled))
         by_street, by_path = streets.buffer(0.03), paths.buffer(0.03)
         shapely.prepare(by_street); shapely.prepare(by_path)
+        # (a strip along a wall, fence or hedge is where the faces stop for it, under it: as for cracks)
+        stops = [LineString([q[:2] for q in b["p"]]) for b in m.get("br") or [] if len(b["p"]) > 1]
+        along = shapely.union_all([g.buffer(0.5) for g in stops] or [Polygon()])
         tot = 0.0
         for gp in getattr(gaps, "geoms", [gaps]):
             if gp.geom_type != "Polygon" or gp.buffer(-GAP / 2).is_empty: continue
+            if gp.intersection(along).area > 0.5 * gp.area: continue
             # (its length is how far it runs along both: a strip beside one only, past a thin strip
             # of the other, is no gap between them)
             if not (by_street.intersects(gp) and by_path.intersects(gp)): continue

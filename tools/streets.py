@@ -143,7 +143,8 @@ def pavement_room(rd, houses, width_of, kerbed=KERBED):
     the buildings beside it, down to nothing where a building stands at the kerb: written as the
     street's `pw`. The carriageway keeps its width and the buildings stay where they were measured;
     the pavement gives way. A street with room all along keeps only its `pv`."""
-    houses = [h for h in houses if not h.is_empty]
+    # (an outline that crosses itself is read as the ground it covers)
+    houses = [h if h.is_valid else shapely.make_valid(h) for h in houses if not h.is_empty]
     if not houses:
         return 0
     tree = shapely.STRtree(houses)
