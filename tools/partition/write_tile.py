@@ -3119,8 +3119,10 @@ def bridge_decks(rd, ground=None, under=False):
     # Only a way far enough below the deck by its own height: one up on the bank beside it is still the
     # deck's ground. The ground under a deck is no guide, as the survey often has the deck or its
     # abutments' bank there, and a footway through a short underpass was cut out with the deck above)
+    # (the step from a span to its abutment is deck too, as deck_stretches cuts it: a towpath passing
+    # under a deck's end was cut out with it and never given back)
     def on_span(a, b):
-        return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b))
+        return any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))
     # (as wide as the deck cut from the faces: narrower, a path under a deck wider than its street
     # was cut out with it and never given back)
     high = [(LineString([a[:2], b[:2]]).buffer(max(reach(r), r.get("w", 4) / 2 + max(r.get("pv") or [0])) + 0.5, cap_style="flat"),
