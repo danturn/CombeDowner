@@ -21,6 +21,15 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Set pieces cut into the street faces at build time, and Pulteney Bridge's ends made junctions
+  (branch `claude/pulteney-ship`, the nine squares a set piece reaches rebuilt and committed:
+  -2,8 0,3 0,5 1,1 1,2 1,3 2,1 2,3 4,1):** every set piece's outline now splits the square's faces as
+  it's written (`tools/partition/setpiece_cuts.py`, `setPieceCuts` in `landmarks/setpieces.ts`), and
+  Pulteney Bridge's own street takes the faces out exactly where the game draws it, graded evenly
+  and opening its pavement where a street joins it at its level; the in-game clearing stays as the
+  fallback. Argyle Street's paving lies under the street's fall (`landmarks/terraces.ts`). The rest
+  of the map picks it up at the next whole-map build.
+
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in

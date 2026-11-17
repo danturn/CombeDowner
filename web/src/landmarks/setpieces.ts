@@ -35,10 +35,12 @@
 // floor, where the lidar has it higher than the street. Such a point comes down too, but never
 // below the street's own level, so the pavement still has its ground under it.
 //
-// One thing the map tools do for them: a set piece that draws all of its outline to the edge
-// (`fills`: the Royal Crescent, its flags out to the kerb) has the square's street faces cut along
-// its outline as the square is written (tools/partition/setpiece_cuts.py, reading this table), so
-// the two meet edge to edge; a square written before that still has them taken out here.
+// One thing the map tools do for them: every set piece has the square's street faces cut along its
+// outline as the square is written (tools/partition/setpiece_cuts.py, reading this table, setPieceCuts),
+// so what's taken out here is whole faces and the two meet edge to edge. One that draws all of its
+// outline to the edge (`fills`: the Royal Crescent, its flags out to the kerb) has the faces inside
+// taken out there, and so does a set piece's own street, where it's drawn. A square written before a
+// set piece was added or moved still has its faces taken out here, triangle by triangle.
 //
 // So a rebuilt map, or a new area, needs nothing doing here: a set piece's place is longitude,
 // latitude and a bearing, and its outline catches whatever the tools build there next time. A new
@@ -49,7 +51,7 @@
 //
 // Nothing here goes over the network: every player masks the squares they load the same way.
 import type { MapData, Road } from "../map";
-import { KERBED, PAVE, roadHalf } from "../map";
+import { KERBED, PATHS, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
 import { terraceArgs } from "./terraces";
 import { BRIDGE, paradeArgs } from "./grandparade";
@@ -140,7 +142,7 @@ export interface SetPiece {
    *  outline it stands in for (in place of outline) and its builder's args. */
   fit?: (road: (x: number, z: number) => number | null) => { outline: [number, number][]; args: (number | string)[] };
   /** It draws everything inside its outline, to the outline's edge: the map tools cut the square's
-   *  street faces along it (filledOutlines), so the two meet edge to edge. */
+   *  street faces along it and take out what's inside (setPieceCuts), so the two meet edge to edge. */
   fills?: boolean;
 }
 
@@ -159,9 +161,10 @@ export const SET_PIECES: SetPiece[] = [
     // landmarks/pulteney.ts. The origin: the middle of the bridge, at the river's level.
     name: "Pulteney Bridge", kind: "pulteney", at: [-2.357923, 51.38304], bearing: 60,
     height: (c) => c.water ?? 15.6,
-    // its street, from Bridge Street over the bridge and along Argyle Street to Laura Place: one
-    // carriageway between the shopfronts and the terraces, with a pavement each side
-    street: { names: ["Bridge Street", "Argyle Street"], x0: -20.4, x1: 117, zMax: 6, carriage: 6.0, pave: [[-20.4, 20.4, 1.75], [20.4, 117, 3.0]] },
+    // its street, from Bridge Street where Grand Parade leaves it, over the bridge and along Argyle
+    // Street to Laura Place: one carriageway between the shopfronts and the terraces, with a pavement
+    // each side
+    street: { names: ["Bridge Street", "Argyle Street"], x0: -35.3, x1: 117, zMax: 6, carriage: 6.0, pave: [[-35.3, 20.4, 1.75], [20.4, 117, 3.0]] },
     outline: [[-25.3, -10.4], [20.9, -10.4], [20.9, 12.2], [-20.7, 12.2], [-20.7, -3.2], [-25.3, -3.2]],
     covers: [[-24.9, 20.4, -9.8, -3.4], [-20.4, 20.4, 6.1, 10.5]],
     args: (c, h) => {
@@ -410,11 +413,11 @@ function covers(sp: SetPiece, centre: [number, number], x: number, y: number, ri
 
 // ---- the masking --------------------------------------------------------------------------------
 
-/** Lay the pieces of a set piece's street as one street (SetPiece.street). local: its frame's x, z of data x, y. */
-function layStreet(d: MapData, st: NonNullable<SetPiece["street"]>, local: (x: number, y: number) => [number, number]) {
+/** Map rd with the pieces of a set piece's street laid as one street (SetPiece.street). local: its frame's x, z of data x, y. */
+function layStreet(rd: Road[], st: NonNullable<SetPiece["street"]>, local: (x: number, y: number) => [number, number]): Road[] {
   const paveAt = (x: number) => st.pave.find(([a, b]) => x >= a && x < b)?.[2];
   const out: Road[] = [];
-  for (const r of d.rd) {
+  for (const r of rd) {
     const loc = r.p.map((q) => local(q[0], q[1]));
     // (the pieces of it here: most of their points along its line, within its ends' reach)
     const along = loc.filter(([x, z]) => Math.abs(z) < st.zMax && x > st.x0 - 40 && x < st.x1 + 1).length;
@@ -435,32 +438,101 @@ function layStreet(d: MapData, st: NonNullable<SetPiece["street"]>, local: (x: n
       out.push({ ...r, p, c: "unclassified", w: st.carriage, pv: [pave, pave], piece: mid >= st.x0 && mid <= st.x1 });
     }
   }
-  d.rd = out;
+  gradeStreet(out.filter((r) => r.piece), st, local);
+  return out;
+}
+
+/** A set piece lays its street at an even grade from each of its ends to its bridge's span, and
+ *  between spans, as the terraces lay their paving: the survey's ground under a street at grade
+ *  beside a bridge often drops away into the vaults and the bank the bridge stands on, and a street
+ *  levelled from it dipped into a hollow at the junction off the bridge's end. Changes the points'
+ *  heights in place (and so the square's roads they belong to). */
+function gradeStreet(pieces: Road[], st: NonNullable<SetPiece["street"]>, local: (x: number, y: number) => [number, number]) {
+  const pts = [...new Set(pieces.flatMap((r) => r.p))].map((q) => ({ q, x: local(q[0], q[1])[0] }))
+    .filter(({ x }) => x >= st.x0 - 0.5 && x <= st.x1 + 0.5).sort((a, b) => a.x - b.x);
+  if (pts.length < 3) return;
+  const anchors = pts.filter(({ q }, i) => q[3] === 1 || i === 0 || i === pts.length - 1);
+  for (const { q, x } of pts) {
+    if (q[3] === 1) continue;
+    const k = anchors.findIndex((a) => a.x >= x);
+    if (k <= 0) continue;
+    const a = anchors[k - 1], b = anchors[k], f = (x - a.x) / (b.x - a.x || 1);
+    q[2] = +(a.q[2] + (b.q[2] - a.q[2]) * f).toFixed(2);
+  }
+}
+
+const STRIP_STEP = 2;        // metres between the points world.ts draws a street's strip through
+
+/** Where the game draws the set pieces' own streets (the pieces in rd: world.ts strips), in data x, y:
+ *  each stretch of a carriageway, and of its pavements but where they cross another street, which
+ *  world.ts leaves them off. The square's faces go exactly there, so the two meet without a gap. */
+function streetFootprint(rd: Road[]): number[][][] {
+  const own = rd.filter((r) => r.piece);
+  if (!own.length) return [];
+  const xs = own.flatMap((r) => r.p.map((q) => q[0])), ys = own.flatMap((r) => r.p.map((q) => q[1]));
+  const bx0 = Math.min(...xs) - 60, bx1 = Math.max(...xs) + 60, by0 = Math.min(...ys) - 60, by1 = Math.max(...ys) + 60;
+  const others = rd.filter((r) => !PATHS.has(r.c) && r.p.some((q) => q[0] > bx0 && q[0] < bx1 && q[1] > by0 && q[1] < by1));
+  const onOther = (me: Road, x: number, y: number, h: number) => others.some((s) => {
+    if (s === me || s.piece) return false;
+    const w = roadHalf(s.c, s.w) + 0.4;
+    for (let k = 0; k + 1 < s.p.length; k++) {
+      const a = s.p[k], b = s.p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+      const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
+      if (me.n && s.n === me.n && alongside(me, a[0] + vx * t, a[1] + vy * t)) continue;
+      if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < w && Math.abs(a[2] + (b[2] - a[2]) * t - h) < JOIN_LEVEL) return true;
+    }
+    return false;
+  });
+  const quads: number[][][] = [];
+  for (const r of own) {
+    const p: number[][] = [];
+    for (let i = 0; i + 1 < r.p.length; i++) {
+      const [ax, ay, az] = r.p[i], [bx, by, bz] = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / STRIP_STEP));
+      for (let s = 0; s < n; s++) p.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n, az + ((bz - az) * s) / n]);
+    }
+    p.push(r.p[r.p.length - 1]);
+    const nrm = p.map((_, i) => {
+      const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      return [-(b[1] - a[1]) / l, (b[0] - a[0]) / l];
+    });
+    const at = (i: number, o: number) => [p[i][0] + nrm[i][0] * o, p[i][1] + nrm[i][1] * o];
+    const half = roadHalf(r.c, r.w), pv = KERBED.has(r.c) ? r.pv ?? [PAVE, PAVE] : [0, 0];
+    const bands: [number, number, boolean][] = [[-half, half, false], [half, half + pv[0], true], [-half - pv[1], -half, true]];
+    for (let i = 0; i + 1 < p.length; i++) for (const [o1, o2, pave] of bands) {
+      if (o2 <= o1) continue;
+      const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
+      const kind = !pave ? "road" : joinsAt(r, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2, onOther) ? "road" : "pave";
+      quads.push(Object.assign([a1, b1, b2, a2], { kind, z: [p[i][2], p[i + 1][2]] }));
+    }
+  }
+  return quads;
+}
+
+export const JOIN_LEVEL = 1.0;      // metres apart in height that two streets crossing are still at one level
+
+/** Is a stretch of a set piece's pavement from a to b (its line's points, the normal there, and
+ *  the band's offsets) where another street meets the street at its own level? There the
+ *  carriageway runs on across it, so a side street joins as a junction and doesn't dead-end at a
+ *  kerb (but not where a street passes under the deck). world.ts lays it so, by the same test. */
+export function joinsAt(r: Road, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number,
+  onOther: (r: Road, x: number, y: number, h: number) => boolean): boolean {
+  const lo = o1 + Math.min(0.3, (o2 - o1) / 2), hi = o2 - Math.min(0.3, (o2 - o1) / 2), mid = (o1 + o2) / 2;
+  return ([[a, na], [b, nb]] as const).some(([q, n]) => [lo, mid, hi].some((o) => onOther(r, q[0] + n[0] * o, q[1] + n[1] * o, q[2])));
+}
+
+/** Is (x, y) on a set piece's street r's carriageway? The map's own record of the street runs along
+ *  under it there and isn't a street joining it, though a branch of the same name leaving it is. */
+export function alongside(r: Road, x: number, y: number): boolean {
+  const half = roadHalf(r.c, r.w);
+  for (let k = 0; k + 1 < r.p.length; k++) {
+    const a = r.p[k], b = r.p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+    const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
+    if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < half) return true;
+  }
+  return false;
 }
 
 const FACE_LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
-
-/** Take a square's street faces (unpacked, sfpack.ts) and their outlines out where inside(x, y). */
-function cutFaces(sf: NonNullable<MapData["sf"]>, inside: (x: number, y: number) => boolean) {
-  const V = sf.v, mid = (ia: number[]) => inside(ia.reduce((t, i) => t + V[3 * i], 0) / ia.length, ia.reduce((t, i) => t + V[3 * i + 1], 0) / ia.length);
-  for (const kind of FACE_LISTS) {
-    const I = sf[kind];
-    if (!I) continue;
-    const keep: number[] = [];
-    for (let k = 0; k + 2 < I.length; k += 3) if (!mid([I[k], I[k + 1], I[k + 2]])) keep.push(I[k], I[k + 1], I[k + 2]);
-    if (keep.length < I.length) sf[kind] = Int32Array.from(keep);
-  }
-  sf.e = sf.e.flatMap((e) => {
-    const out: { c: string; i: Int32Array }[] = [];
-    let run: number[] = [e.i[0]];
-    for (let k = 1; k < e.i.length; k++) {
-      if (mid([e.i[k - 1], e.i[k]])) { if (run.length > 1) out.push({ c: e.c, i: Int32Array.from(run) }); run = [e.i[k]]; }
-      else run.push(e.i[k]);
-    }
-    if (run.length > 1) out.push({ c: e.c, i: Int32Array.from(run) });
-    return out;
-  });
-}
 
 const OUTLINE_OF: Record<string, string> = { road: "road", service: "road", pave: "pave", path: "path", grass: "path", dirt: "path", gravel: "path", front: "front", drive: "drive", bed: "bed" };
 
@@ -621,23 +693,33 @@ function frameOf(sp: SetPiece, lon0: number, lat0: number) {
   return { ox, oy, a, at, local };
 }
 
-/** The outlines, in data metres, of the set pieces that fill them (`fills`) reaching the box
- *  x0, y0, x1, y1 of a map centred at centre, each fitted to the carriageway (road at data x, y)
- *  where it fits itself to the street. For the map tools (tools/partition/write_tile.py), which cut
- *  the square's street faces along them so the set piece meets them edge to edge, as the game would
- *  fit it to the faces they leave. */
-export function filledOutlines(centre: [number, number], box: number[], road: (x: number, y: number) => boolean): number[][][] {
-  const out: number[][][] = [];
+/** Where the map tools cut a square's street faces for the set pieces reaching the box x0, y0, x1,
+ *  y1 of a map centred at centre (tools/partition/setpiece_cuts.py), in data metres, so each meets
+ *  the faces edge to edge rather than the game taking out whole triangles across its edge and
+ *  leaving a ragged strip or a hole: `fill`, the outlines of those that draw all of it (`fills`),
+ *  fitted to the carriageway (road at data x, y) where they fit themselves to the street, whose faces
+ *  go; `split`, every other's outline, which the faces are split along and kept, for the game to
+ *  take out those it lays its own ground over (clearSetPieceGround); and `street`, where a set
+ *  piece's own street is drawn over the square's roads rd (streetFootprint), whose faces go, or,
+ *  with no roads given, the stretch it's laid along. */
+export function setPieceCuts(centre: [number, number], box: number[], road: (x: number, y: number) => boolean, rd?: Road[]) {
+  const fill: number[][][] = [], split: number[][][] = [], street: number[][][] = [];
+  let laid = rd;
   for (const sp of SET_PIECES) {
-    if (!sp.fills) continue;
-    const { at } = frameOf(sp, centre[0], centre[1]);
+    const { at, local } = frameOf(sp, centre[0], centre[1]);
     const ring = (o: [number, number][]) => o.map(([lx, lz]) => at(lx, lz));
+    const st = sp.street;
+    if (st && laid) laid = layStreet(laid, st, local);
+    else if (st) street.push(ring([[st.x0, -st.zMax], [st.x1, -st.zMax], [st.x1, st.zMax], [st.x0, st.zMax]]));
     const near = [sp.outline, ...sp.more ?? []].flat().map(([lx, lz]) => at(lx, lz));
     if (near.every((q) => q[0] < box[0]) || near.every((q) => q[0] > box[2]) || near.every((q) => q[1] < box[1]) || near.every((q) => q[1] > box[3])) continue;
     const outline = sp.fit ? sp.fit((lx, lz) => (road(...at(lx, lz)) ? 0 : null)).outline : sp.outline;
-    out.push(ring(outline), ...(sp.more ?? []).map(ring));
+    (sp.fills ? fill : split).push(ring(outline), ...(sp.more ?? []).map(ring));
   }
-  return out;
+  if (laid) street.push(...streetFootprint(laid));
+  // (the lines it's laid along, at the heights it lays them: the square's faces meet them there)
+  const lines = laid ? laid.filter((r) => r.piece).map((r) => r.p.map((q) => [q[0], q[1], q[2]])) : [];
+  return { fill, split, street, lines };
 }
 
 /** Hide what the tools built under every set piece reaching into map d (the first area or a
@@ -652,11 +734,16 @@ export function maskSetPieces(d: MapData) {
     const { ox, oy, a, at, local } = frameOf(sp, lon0, lat0);
     // the street it carries, laid as one street from end to end whatever pieces the map has it in
     if (sp.street) {
-      layStreet(d, sp.street, local);
+      d.rd = layStreet(d.rd, sp.street, local);
       // (a square's own street faces there were cut to the map's pieces, ragged at their joins and
-      // with grass between: the street is drawn as laid instead)
-      const st = sp.street;
-      if (d.sf && !("o" in d.sf)) cutFaces(d.sf, (x, y) => { const [lx, lz] = local(x, y); return lx >= st.x0 && lx <= st.x1 && Math.abs(lz) < st.zMax; });
+      // with grass between: the street is drawn as laid instead, and the faces go where it's drawn.
+      // A square written since the set piece was last changed has them cut there already: setPieceCuts)
+      if (d.sf && !("o" in d.sf)) {
+        const foot = streetFootprint(d.rd), V = d.sf.v, on = (x: number, y: number) => foot.some((q) => inRing(q, x, y));
+        // (only a face it's drawn all over: one partly beside it, in a square written before the
+        // set piece's street was, stays rather than leave the ground showing round the street)
+        if (foot.length) clearFaces(d, (x, y, a, b, c) => on(x, y) && [a, b, c].every((k) => on(V[3 * k] + (x - V[3 * k]) * 0.15, V[3 * k + 1] + (y - V[3 * k + 1]) * 0.15)));
+      }
     }
     let rings = [sp.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
     const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
