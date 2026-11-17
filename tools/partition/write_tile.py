@@ -3666,6 +3666,10 @@ def unpaved_ground(zone, T, green):
 
 
 PLAZA_BEYOND = 1.5      # metres past a street's pavement where paving stops being that pavement
+CORNER_SPIKE = 1.5      # metres: a point of a pavement corner narrower than twice this, out into the road, is road
+CORNER_LOBE = 4.0       # square metres: no more than this of it (a narrow pavement running on is no point)
+PLAZA_HOLLOW = 0.5      # metres the ground under a plaza by a street may lie below that street before it's a hollow the survey made
+SEAM_LEVEL = 2.5        # metres a face may lie off a set piece's laid street where they meet before it's another level
 SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, flush, with no kerb
 
 
@@ -5044,6 +5048,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return ground(x, y)
 
     def level(k, x, y):
+        if streets[k].get("_laid"):
+            line = heights[k]
+            return line.interpolate(line.project(Point(x, y))).z
         return _level_at(heights[k], x, y, line_ground, square)
     walls = [LineString([q[:2] for q in b["p"]]) for b in list(br) + list(walls_past)
              if "wall" in b["c"] and len(b["p"]) > 1]
@@ -5406,14 +5413,26 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                          [cls in ("carriageway", "pavement") for cls, _ in pieces])
     # (a set piece meets the faces along its edge: what it draws all of goes, and the rest are split
     # along its outline for the game to take out what it lays its own ground over: setpiece_cuts.py)
-    cut, split = setpiece_cuts.cuts(centre, sq, road, rd) if centre else (None, None)
+    cut, split, laid = setpiece_cuts.cuts(centre, sq, road, rd) if centre else (None, None, [])
     if cut is not None or split is not None:
         for g in (cut, split):
             if g is not None:
                 shapely.prepare(g)
         left = []
+        carriage = unary_union([q for (cls, _), q in zip(pieces, simple) if cls == "carriageway"] or [Polygon()])
         for (cls, _), q in zip(pieces, simple):
+            # (paving left between a set piece's own street and the streets it meets is that street's
+            # pavement carried round the corner, at kerb height, not a square laid on the ground; and a
+            # corner, not the points the streets' outlines left it, which stood out into the road)
+            corner = cls in ("plaza", "pavement") and cut is not None and laid and q.distance(cut) < 0.05
             q = q.difference(cut) if cut is not None and cut.intersects(q) else q
+            if corner:
+                cls = "pavement"
+                body = q.buffer(-CORNER_SPIKE).buffer(CORNER_SPIKE, join_style="mitre").intersection(q)
+                for g in getattr(q.difference(body), "geoms", [q.difference(body)]):
+                    if g.geom_type == "Polygon" and 0.05 < g.area < CORNER_LOBE and g.distance(carriage) < 0.05:
+                        left.append(("carriageway", g))
+                        q = q.difference(g)
             parts = [q]
             # (not a carriageway: the game keeps the streets through a set piece, and a point added
             # across one is levelled afresh, a step in the road)
@@ -5561,6 +5580,31 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     simple = noded([_points_where_needed(q, step_of, lambda x, y, f=f: z_once(x, y, f), also=kept, sq=sq if f in (True, "g") else None)
                     for f, q in zip(flat, simple)])
 
+    # (where a set piece's own street is cut out, the faces left meet it at its level: levelled from
+    # the square's streets they stood a step up or down from it across the junction)
+    laid_edge = cut.boundary.buffer(0.02) if cut is not None and laid else None
+    laid_lines = [LineString(q) for q in laid if len(q) > 1]
+    laid_tree = STRtree(laid_lines) if laid_edge is not None and laid_lines else None
+    if laid_tree is not None:
+        shapely.prepare(laid_edge)
+
+    def plaza_over_hollow(x, y):
+        """The level of the street a plaza's paving lies beside, where the survey's ground under it is
+        well below that: the ground model leaves out the vaults and terraces paving stands on (as at
+        the top of Grand Parade), and paving laid on it sank into a hollow between the streets."""
+        k = nearest(x, y)
+        if k is None or lines[k].distance(Point(x, y)) > reach_of[k] + PAVE_TO_WALL:
+            return None
+        z, g = street_level(k, x, y), ground(x, y)
+        return z if z is not None and g is not None and z - g > PLAZA_HOLLOW else None
+
+    def laid_z(x, y):
+        if laid_tree is None or not shapely.contains_xy(laid_edge, x, y):
+            return None
+        pt = Point(x, y)
+        line = laid_lines[int(laid_tree.nearest(pt))]
+        return line.interpolate(line.project(pt)).z
+
     v, at = [], {}
     # (a plaza's paving lies on the ground, but along the edge it shares with a path, a front path or
     # a drive it is at that one's level: on the ground there it stood a step up or down from it)
@@ -5582,11 +5626,17 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 z = bed_z(x, y)
             elif on_ground is True or (on_ground == "g" and shapely.contains_xy(level_edge, x, y)):
                 z = level_z(x, y)
+            elif on_ground == "g" and (z_up := plaza_over_hollow(x, y)) is not None:
+                z = z_up
             elif k is None:
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)
             else:
                 z = street_level(k, x, y)
+            z_seam = laid_z(x, y) if on_ground != "r" else None
+            # (a face a storey below, under the set piece's bridge, only meets its outline in plan)
+            if z_seam is not None and (z is None or abs(z_seam - z) < SEAM_LEVEL):
+                z = z_seam
             if z is None:
                 return None
             at[key] = len(v) // 3
@@ -9939,6 +9989,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width), only=rebake)
     # (the passages are settled before the faces, which lay each one's floor as its way's own face)
     rd = tile["rd"] = passage_floors(tile.get("bl") or [], rd)
+    rd = tile["rd"] = setpiece_cuts.lay(tile.get("centre"), sq, rd)
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
         x = min(max(x, T["x0"]), T["x0"] + (T["nx"] - 1.001) * T["dx"])
@@ -9954,6 +10005,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                                [q[:2] for k in ("tr", "sb") for q in tile.get(k) or []], railings,
                                                [(float(q[0]), float(q[1])) for q in tile.get("sh") or []]),
                                sq[0], sq[1])
+    for r in rd:
+        r.pop("_laid", None)
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
     rd = widen_to_paving(rd, filled[0][0] if filled else None, paving, br, houses)

@@ -438,7 +438,27 @@ function layStreet(rd: Road[], st: NonNullable<SetPiece["street"]>, local: (x: n
       out.push({ ...r, p, c: "unclassified", w: st.carriage, pv: [pave, pave], piece: mid >= st.x0 && mid <= st.x1 });
     }
   }
+  gradeStreet(out.filter((r) => r.piece), st, local);
   return out;
+}
+
+/** A set piece lays its street at an even grade from each of its ends to its bridge's span, and
+ *  between spans, as the terraces lay their paving: the survey's ground under a street at grade
+ *  beside a bridge often drops away into the vaults and the bank the bridge stands on, and a street
+ *  levelled from it dipped into a hollow at the junction off the bridge's end. Changes the points'
+ *  heights in place (and so the square's roads they belong to). */
+function gradeStreet(pieces: Road[], st: NonNullable<SetPiece["street"]>, local: (x: number, y: number) => [number, number]) {
+  const pts = [...new Set(pieces.flatMap((r) => r.p))].map((q) => ({ q, x: local(q[0], q[1])[0] }))
+    .filter(({ x }) => x >= st.x0 - 0.5 && x <= st.x1 + 0.5).sort((a, b) => a.x - b.x);
+  if (pts.length < 3) return;
+  const anchors = pts.filter(({ q }, i) => q[3] === 1 || i === 0 || i === pts.length - 1);
+  for (const { q, x } of pts) {
+    if (q[3] === 1) continue;
+    const k = anchors.findIndex((a) => a.x >= x);
+    if (k <= 0) continue;
+    const a = anchors[k - 1], b = anchors[k], f = (x - a.x) / (b.x - a.x || 1);
+    q[2] = +(a.q[2] + (b.q[2] - a.q[2]) * f).toFixed(2);
+  }
 }
 
 const STRIP_STEP = 2;        // metres between the points world.ts draws a street's strip through
@@ -452,13 +472,14 @@ function streetFootprint(rd: Road[]): number[][][] {
   const xs = own.flatMap((r) => r.p.map((q) => q[0])), ys = own.flatMap((r) => r.p.map((q) => q[1]));
   const bx0 = Math.min(...xs) - 60, bx1 = Math.max(...xs) + 60, by0 = Math.min(...ys) - 60, by1 = Math.max(...ys) + 60;
   const others = rd.filter((r) => !PATHS.has(r.c) && r.p.some((q) => q[0] > bx0 && q[0] < bx1 && q[1] > by0 && q[1] < by1));
-  const onOther = (me: Road, x: number, y: number) => others.some((s) => {
-    if (s === me) return false;
+  const onOther = (me: Road, x: number, y: number, h: number) => others.some((s) => {
+    if (s === me || s.piece) return false;
     const w = roadHalf(s.c, s.w) + 0.4;
     for (let k = 0; k + 1 < s.p.length; k++) {
       const a = s.p[k], b = s.p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
       const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
-      if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < w) return true;
+      if (me.n && s.n === me.n && alongside(me, a[0] + vx * t, a[1] + vy * t)) continue;
+      if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < w && Math.abs(a[2] + (b[2] - a[2]) * t - h) < JOIN_LEVEL) return true;
     }
     return false;
   });
@@ -466,8 +487,8 @@ function streetFootprint(rd: Road[]): number[][][] {
   for (const r of own) {
     const p: number[][] = [];
     for (let i = 0; i + 1 < r.p.length; i++) {
-      const [ax, ay] = r.p[i], [bx, by] = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / STRIP_STEP));
-      for (let s = 0; s < n; s++) p.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n]);
+      const [ax, ay, az] = r.p[i], [bx, by, bz] = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / STRIP_STEP));
+      for (let s = 0; s < n; s++) p.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n, az + ((bz - az) * s) / n]);
     }
     p.push(r.p[r.p.length - 1]);
     const nrm = p.map((_, i) => {
@@ -480,11 +501,35 @@ function streetFootprint(rd: Road[]): number[][][] {
     for (let i = 0; i + 1 < p.length; i++) for (const [o1, o2, pave] of bands) {
       if (o2 <= o1) continue;
       const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
-      if (pave && (onOther(r, (a1[0] + a2[0]) / 2, (a1[1] + a2[1]) / 2) || onOther(r, (b1[0] + b2[0]) / 2, (b1[1] + b2[1]) / 2))) continue;
-      quads.push([a1, b1, b2, a2]);
+      const kind = !pave ? "road" : joinsAt(r, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2, onOther) ? "road" : "pave";
+      quads.push(Object.assign([a1, b1, b2, a2], { kind, z: [p[i][2], p[i + 1][2]] }));
     }
   }
   return quads;
+}
+
+export const JOIN_LEVEL = 1.0;      // metres apart in height that two streets crossing are still at one level
+
+/** Is a stretch of a set piece's pavement from a to b (its line's points, the normal there, and
+ *  the band's offsets) where another street meets the street at its own level? There the
+ *  carriageway runs on across it, so a side street joins as a junction and doesn't dead-end at a
+ *  kerb (but not where a street passes under the deck). world.ts lays it so, by the same test. */
+export function joinsAt(r: Road, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number,
+  onOther: (r: Road, x: number, y: number, h: number) => boolean): boolean {
+  const lo = o1 + Math.min(0.3, (o2 - o1) / 2), hi = o2 - Math.min(0.3, (o2 - o1) / 2), mid = (o1 + o2) / 2;
+  return ([[a, na], [b, nb]] as const).some(([q, n]) => [lo, mid, hi].some((o) => onOther(r, q[0] + n[0] * o, q[1] + n[1] * o, q[2])));
+}
+
+/** Is (x, y) on a set piece's street r's carriageway? The map's own record of the street runs along
+ *  under it there and isn't a street joining it, though a branch of the same name leaving it is. */
+export function alongside(r: Road, x: number, y: number): boolean {
+  const half = roadHalf(r.c, r.w);
+  for (let k = 0; k + 1 < r.p.length; k++) {
+    const a = r.p[k], b = r.p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+    const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
+    if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < half) return true;
+  }
+  return false;
 }
 
 const FACE_LISTS = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const;
@@ -672,7 +717,9 @@ export function setPieceCuts(centre: [number, number], box: number[], road: (x: 
     (sp.fills ? fill : split).push(ring(outline), ...(sp.more ?? []).map(ring));
   }
   if (laid) street.push(...streetFootprint(laid));
-  return { fill, split, street };
+  // (the lines it's laid along, at the heights it lays them: the square's faces meet them there)
+  const lines = laid ? laid.filter((r) => r.piece).map((r) => r.p.map((q) => [q[0], q[1], q[2]])) : [];
+  return { fill, split, street, lines };
 }
 
 /** Hide what the tools built under every set piece reaching into map d (the first area or a

@@ -1580,7 +1580,7 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
     # (nor is a set piece that paves its outline to the edge, or lays its own street, where the
     # square's faces were cut for it)
     from partition import setpiece_cuts
-    filled, _ = setpiece_cuts.cuts(m.get("centre"), m["b"], sheet.union(("road", "service")), m.get("rd"))
+    filled, _, _ = setpiece_cuts.cuts(m.get("centre"), m["b"], sheet.union(("road", "service")), m.get("rd"))
     # (nor does a street's pavement go on through a building's passage with it: it stops at the wall
     # beside the arch's mouth)
     mouths = [Point(ps[k:k + 2]).buffer(ps[0] / 2 + 1.5) for b in m.get("bl") or [] for ps in b.get("ps") or []
