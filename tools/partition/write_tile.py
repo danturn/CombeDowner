@@ -75,6 +75,7 @@ from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import ALL_DAY, KERBED, parked_cars, pave_band, pavement_room, pv_at
 from landscape import string_wires
 import tunnels as TN
+import clearance
 from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
@@ -9978,6 +9979,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                         stand=face_heights(tile["sf"]))
     clear_under_decks(tile, gaps, gone)
     clear_portals(tile, gone)
+    # last of the plants: the room over the streets and paths kept clear of the trees, as in prep_map.py
+    cleared = clearance.keep_clear(tile, rd, ground, GAME_PATHS, KERBED,
+                                 clearance.trunk_room([b["r"][0] for b in tile.get("bl") or [] if b.get("r")], [b["p"] for b in br], rd))
+    if verbose:
+        print("clearance: {cells_filled} canopy cells filled, {cells_lowered} lowered, {cells_opened} opened; {unwooded} wood trees crowned; "
+              "{stepped} trees stepped back, {lifted} raised, {trimmed} made smaller, {dropped} left out".format(**cleared))
     # placed after the clash pass, which would take a car for a thing standing in the road
     no_parking = unary_union([g for g in (blocked_ground([], tile, rail_tracks, canal, sq),) if g is not None]
                              + [g[0] for g in gaps])
