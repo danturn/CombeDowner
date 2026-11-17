@@ -37,7 +37,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   concrete beam's deeper one, or a stone arch's barrel, which over the canal's towpath can be low
   enough to make you crouch. Every deck is solid from parapet to parapet, however narrow the path along it, and the
   parapets run unbroken round its bends and where its pieces join, stopping only where another
-  deck runs right alongside. A bridge over a road opens over all of it, both carriageways and their
+  deck runs right alongside. A side with no drop beside it, where a building stands against it or the ground is level with it, has no parapet, and a street the map has over a tunnel or a building's passage with no drop anywhere is just a street, with no railings along it. A bridge over a road opens over all of it, both carriageways and their
   pavements, with no pier or wall standing in the road and an arch flattened to clear it, and the
   road runs on under it unbroken, for walking or driving under; a street with a junction on its deck is one bridge through it. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
   round arches with voussoirs and a coping along the parapet, flatter arches where an opening is

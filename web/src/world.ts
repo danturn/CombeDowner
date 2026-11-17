@@ -1668,8 +1668,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           else ds.push(side);
         });
       }
+      // (a side is fenced if the ground falls away beside any piece of it)
+      const measured = pieces.filter(({ r: q }) => q.ledge);
+      const ledge = measured.length ? [0, 1].map((k) => measured.some(({ r: q, fwd }) => q.ledge![fwd ? k : 1 - k])) : undefined;
       out.push({
-        ...r, p: pts, uo: uo.length ? uo : undefined, ds,
+        ...r, p: pts, uo: uo.length ? uo : undefined, ds, ledge,
         ...(flip && Array.isArray(r.dk) ? { dk: [r.dk[1], r.dk[0]] } : {}),
         ...(flip && r.pv ? { pv: [r.pv[1], r.pv[0]] } : {}),
         ...(flip && r.ow ? { ow: -r.ow } : {}),
@@ -1970,6 +1973,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           return out;
         };
         for (const side of [1, -1]) {
+          if (r.ledge && !r.ledge[side > 0 ? 0 : 1]) continue;
           const back = hangA ? [] : approach(a, 0, side, P[0]).reverse(), on = hangB ? [] : approach(b, r.p.length - 1, side, P[P.length - 1]);
           for (const q of back) q.s = -q.s;
           for (const q of on) q.s += s;
