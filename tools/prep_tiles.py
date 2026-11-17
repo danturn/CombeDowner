@@ -170,8 +170,19 @@ def main():
     prep_out = prep_dir(src_dir) if staged else out_dir
     os.makedirs(prep_out, exist_ok=True)
     out_of = lambda t: os.path.join(prep_out, f"{t[0]}_{t[1]}.json")
-    index = lambda: json.dump(dict(x0=X0, y0=Y0, dx=D, cells=CELLS, z0=G.z0, tiles=[list(t) for t in tiles if os.path.exists(out_of(t))]),
-                              open(os.path.join(out_dir, "tiles.json"), "w"), separators=(",", ":"))
+    index_path = os.path.join(out_dir, "tiles.json")
+
+    def index():
+        # (every square the game already has stays listed: a run with --only, or from a checkout whose
+        # build folder holds only the squares built in it, listed just those, and the rest of the map
+        # never loaded)
+        try:
+            listed = {tuple(t) for t in json.load(open(index_path))["tiles"]}
+        except (OSError, ValueError, KeyError):
+            listed = set()
+        have = [list(t) for t in tiles if t in listed or os.path.exists(out_of(t))
+                or os.path.exists(os.path.join(out_dir, f"{t[0]}_{t[1]}.json"))]
+        json.dump(dict(x0=X0, y0=Y0, dx=D, cells=CELLS, z0=G.z0, tiles=have), open(index_path, "w"), separators=(",", ":"))
     if partition_only:
         if not staged: sys.exit(f"{map_id} has no partition stage")
         code = run_partition(map_id, src_dir, out_dir, only, jobs)
