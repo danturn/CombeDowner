@@ -84,6 +84,13 @@ export type Oblong = Extract<Pitch, ["f" | "r", ...unknown[]]>;
  *  and its pieces' outlines. n is the level, 1 for the decks over the ground's faces. Where it has
  *  them, `sf.dk` 1 says the decks are faces, to be drawn and stood on instead of a strip of their own. */
 export interface SurfaceLevel { n: number; road?: ArrayLike<number>; service?: ArrayLike<number>; pave?: ArrayLike<number>; path?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; stone?: ArrayLike<number>; steel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[] }
+/** ?decks=1 tries the decks' level: a square whose decks are faces (`sf.dk`) draws them, and stands you
+ *  on them, instead of each bridge's strip. Off, the strips as before, to compare. */
+export const DECK_FACES = typeof location !== "undefined" && new URLSearchParams(location.search).get("decks") === "1";
+export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf.lv?.length;
+/** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
+export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
+export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
 export interface MapData {
   id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
@@ -414,8 +421,11 @@ export class GameMap {
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
   // and how far under its road its flat underside is drawn
-  private decks: { p: number[][]; half: number; left: number; right: number; drop: number }[] = [];
+  private decks: { p: number[][]; half: number; left: number; right: number; drop: number; held?: boolean }[] = [];
   private deckCells = new Map<number, number[]>();
+  // with ?decks=1, the decks' faces (sf.lv): each triangle's corners in scene coords as x, z, top, by cell
+  private deckTris: number[] = [];
+  private deckTriCells = new Map<number, number[]>();
   // the arches drawn under bridges (world.ts), each stretch of barrel in scene coords: [ax, az, bx, bz,
   // half its width, the road's height over it at a and b, the barrel's at a and b], by cell
   private arches: number[][] = [];
@@ -619,7 +629,7 @@ export class GameMap {
         let b = a + 1;
         while (b < r.p.length - 1 && (flags[b] || flags[b + 1])) b++;
         const k = this.decks.length, seen = new Set<number>(), p = r.p.slice(a, b + 1);
-        this.decks.push({ p: p.map((q, i) => [q[0], -q[1], deckTop(q, flags[a + i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
+        this.decks.push({ p: p.map((q, i) => [q[0], -q[1], deckTop(q, flags[a + i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r), held: !!r.held });
         for (let i = 0; i < p.length - 1; i++) {
           const A = p[i], B = p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(B[0] - A[0], B[1] - A[1]) / (CELL / 2)));
           for (let s = 0; s <= n; s++)
@@ -627,6 +637,26 @@ export class GameMap {
               if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
         }
         a = b - 1;
+      }
+    }
+    if (facedDecks(d.sf)) {
+      const sf = d.sf!, V = sf.v;
+      for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) {
+        const T = lv[kind] ?? [], lift = FACE_LIFT[kind];
+        for (let k = 0; k + 2 < T.length; k += 3) {
+          const n = this.deckTris.length / 9, seen = new Set<number>();
+          let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+          for (let m = 0; m < 3; m++) {
+            const i = T[k + m], x = V[3 * i], z = -V[3 * i + 1];
+            this.deckTris.push(x, z, V[3 * i + 2] - this.z0 + lift);
+            x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+          }
+          for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++)
+            for (let cz = Math.floor(z0 / CELL); cz <= Math.floor(z1 / CELL); cz++) {
+              const c = key(cx, cz);
+              if (!seen.has(c)) { seen.add(c); push(this.deckTriCells, c, n); }
+            }
+        }
       }
     }
     yield;
@@ -1068,6 +1098,29 @@ export class GameMap {
     const tile = this.tileAt(x, z);
     if (tile) return tile.deck(x, z, y);
     let best: number | null = null, floor: number | null = null;
+    if (this.deckTris.length) {
+      const D = this.deckTris;
+      for (const n of this.deckTriCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+        const o = 9 * n, ax = D[o], az = D[o + 1], bx = D[o + 3], bz = D[o + 4], cx = D[o + 6], cz = D[o + 7];
+        const det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+        if (Math.abs(det) < 1e-9) continue;
+        const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det, l3 = 1 - l1 - l2;
+        if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+        const h = l1 * D[o + 2] + l2 * D[o + 5] + l3 * D[o + 8];
+        if (h > y + 0.6 || (best !== null && h <= best)) continue;
+        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
+      }
+      // (a set piece's held bridge keeps its own strip)
+      for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+        if (!this.decks[k].held) continue;
+        const { p, left, right } = this.decks[k];
+        const h = deckAt(p, x, z);
+        if (nearDeck.off >= (nearDeck.left ? left : right)) continue;
+        if (h > y + 0.6 || (best !== null && h <= best)) continue;
+        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
+      }
+      return best;
+    }
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, left, right } = this.decks[k];
       const h = deckAt(p, x, z);
