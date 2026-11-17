@@ -1,4 +1,4 @@
-// How open water looks: the river, the canal and its locks, ponds, lakes and pools. The surface is
+// How open water looks: the river, the canal and its locks and basins, streams, ponds, lakes and pools. The surface is
 // still one flat sheet of triangles, but each spot on it is drawn rippling in the light: a few
 // wind ripples crossing it, and a broken chop carried along with the current, downstream on a river
 // (the way its middle line runs in the map) and drifting slowly on still water. Looked at from a
@@ -6,9 +6,16 @@
 // (or by night the moon) glinting off the ripples; looked straight down into it, it's dark and
 // green in the middle. Where it meets the land it laps in a broken white line, and the ground, the
 // banks' and locks' stone and bridges' piers are dark and wet just above it (ShoreMap, wetBy). Below
-// a weir the water churns white. It's drawn in squares as coarse as the world's own textures.
+// a weir the water churns white, and down a weir's face white streaks pour with the flow
+// (fallingWater). It's drawn in squares as coarse as the world's own textures.
 // Every water mesh shares the one look, so it costs no more draws than flat water did, and the
 // Low scenery detail (view.ts) leaves out the finest chop.
+//
+// Settings offers Simple water too, for slow laptops and phones (and the normal at Low scenery
+// detail): one colour a stretch of water, mirroring the sky's colour at the time of day, with one
+// slow ripple, no glints, no wet band or lapping line (the shore picture isn't kept at all), and a
+// plain white band below each weir instead of churning foam. Changing it builds the water's and the
+// wet stone's shaders again on the spot. ?water=simple or ?water=fancy tries one for a visit.
 //
 // Nothing here goes over the network: the water moves on each player's own clock, and the ripples
 // are the same pattern for everyone.
@@ -24,6 +31,36 @@ const WEIRS = 8;
 const WEIR_NEAR = 450;
 /** How fast a river's current carries its ripples (m/s), and the canal's barely moving water. */
 export const RIVER_FLOW = 0.45, CANAL_FLOW = 0.06;
+
+export type WaterMode = "simple" | "fancy";
+const WATER_KEY = "cd-water";
+const isMode = (s: string | null): s is WaterMode => s === "simple" || s === "fancy";
+// (read as the page loads: the game tidies the address away before the first shader is built)
+const askedWater = typeof location !== "undefined" ? new URLSearchParams(location.search).get("water") : null;
+let chosen: WaterMode | null = isMode(askedWater) ? askedWater : (() => {
+  try { const s = localStorage.getItem(WATER_KEY); return isMode(s) ? s : null; } catch { return null; }
+})();
+/** The water's look unless you choose one: Simple at the Low scenery detail, a phone's or tablet's normal. */
+export const waterDefault = (): WaterMode => detailLevel === 0 ? "simple" : "fancy";
+/** The water's look in force now. */
+export const waterMode = (): WaterMode => chosen ?? waterDefault();
+/** Choose the water's look (null: follow the scenery detail); keep: remember it on this computer. */
+export function setWaterMode(m: WaterMode | null, keep = false) {
+  chosen = m;
+  if (keep) { try { if (m) localStorage.setItem(WATER_KEY, m); else localStorage.removeItem(WATER_KEY); } catch { /* private window: just this visit */ } }
+}
+/** The look the shaders were last built for, and every material that has to be built again when it changes. */
+let built = waterMode();
+const looks: WeakRef<THREE.Material>[] = [];
+function rebuildIfChanged() {
+  const m = waterMode();
+  if (m === built) return;
+  built = m;
+  for (let i = looks.length - 1; i >= 0; i--) {
+    const mat = looks[i].deref();
+    if (mat) mat.needsUpdate = true; else looks.splice(i, 1);
+  }
+}
 
 const U = {
   wTime: { value: 0 },
@@ -58,7 +95,8 @@ function shorePicture() {
   return t;
 }
 const SU = {
-  shoreMap: { value: shorePicture() },
+  // (made only once fancy water first needs it, so Simple water never sends it to the graphics chip)
+  shoreMap: { value: null as THREE.DataTexture | null },
   /** The picture's corner (scene x, z), one over its width in metres, and 1 once it's painted. */
   shoreBox: { value: new THREE.Vector4(0, 0, 1, 0) },
   /** The level the picture's lowest step stands for (scene y), and metres a step. */
@@ -106,7 +144,7 @@ export class ShoreMap {
   private toLand = new Uint8Array(SHORE * SHORE);
   private xs: number[] = [];
   private ids = new WeakMap<object, number>(); private nextId = 1;
-  constructor(private src: ShoreSource) {}
+  constructor(private src: ShoreSource) { SU.shoreMap.value ??= shorePicture(); }
 
   /** Each frame, with where you are. */
   update(px: number, pz: number, dt: number) {
@@ -207,7 +245,7 @@ export class ShoreMap {
         if (tired()) { yield; rest(); }
       }
     }
-    const tex = SU.shoreMap.value, out = tex.image.data as Uint8Array, base = Number.isFinite(low) ? low - 0.5 : 0;
+    const tex = SU.shoreMap.value!, out = tex.image.data as Uint8Array, base = Number.isFinite(low) ? low - 0.5 : 0;
     for (let k = 0; k < N * N; k++) {
       const l = near[k], dry = Number.isNaN(lv[k]);
       out[k * 4] = Number.isNaN(l) ? 0 : Math.max(1, Math.min(255, Math.round((l - base) / SHORE_LEVEL)));
@@ -246,16 +284,67 @@ export const wetLike = <M extends THREE.Material>(from: THREE.Material, to: M): 
 export function wetBy<M extends THREE.Material>(m: M): M {
   if (wetDone.has(m) || !(m as unknown as THREE.MeshLambertMaterial).isMeshLambertMaterial) return m;
   wetDone.add(m);
+  looks.push(new WeakRef(m));
   const was = m.onBeforeCompile, ownKey = m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey : null;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
+    // (in both looks: going back to a look's shader three.js reuses the uniforms this last gave it,
+    // and a shore picture missing from them would leave the shader reading whatever's in its place)
     Object.assign(sh.uniforms, SU);
+    if (built === "simple") return;
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWetAt;")
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${WET_VERT}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\nvarying vec3 vWetAt;\n${SHORE_DECL}`)
       .replace("#include <color_fragment>", `#include <color_fragment>\n  ${WET_FRAG}`);
   };
-  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + "|wet"; };
+  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + (built === "simple" ? "" : "|wet"); };
+  return m;
+}
+
+// Water pouring over a weir: white streaks and broken water sliding down its face with the flow,
+// smooth rather than in the world's coarse squares, which shimmer on a steep face seen edge-on
+const FALL_DECL = `varying vec3 vFallAt; varying float vFall; uniform float wTime;
+float fwHash(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float fwNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(fwHash(i), fwHash(i + vec3(1, 0, 0)), u.x), mix(fwHash(i + vec3(0, 1, 0)), fwHash(i + vec3(1, 1, 0)), u.x), u.y),
+             mix(mix(fwHash(i + vec3(0, 0, 1)), fwHash(i + vec3(1, 0, 1)), u.x), mix(fwHash(i + vec3(0, 1, 1)), fwHash(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+}`;
+// (the pattern's carried downwards in the world, so it runs down a face whatever way the face lies;
+// how white the face is already, from glassy at the crest to white at the foot, sets how much breaks)
+const FALL_FRAG = `if (vFall > 0.5) {
+    vec3 fq = vec3(vFallAt.x, vFallAt.y + wTime * 1.8, vFallAt.z);
+    float fn = fwNoise(fq * vec3(1.4, 0.7, 1.4)) * 0.65 + fwNoise(fq * vec3(3.5, 1.8, 3.5) + 7.0) * 0.35;
+    float fw = dot(diffuseColor.rgb, vec3(0.33));
+    float fb = smoothstep(0.46, 0.6, fn + (fw - 0.55) * 0.4);
+    vec3 fGap = mix(diffuseColor.rgb, vec3(0.3, 0.42, 0.47), 0.55) * mix(0.8, 1.1, fn);
+    diffuseColor.rgb = mix(fGap, vec3(0.88, 0.91, 0.91), fb);
+  }`;
+const fallDone = new WeakSet<THREE.Material>();
+/** Let material m (a Lambert one) show water pouring down it: all of it, or with masked, only where
+ *  its geometry's weirWater attribute is 1 (the rest, its stone, keeps any wet band it has). */
+export function fallingWater<M extends THREE.Material>(m: M, masked = false): M {
+  if (fallDone.has(m)) return m;
+  fallDone.add(m);
+  looks.push(new WeakRef(m));
+  const was = m.onBeforeCompile, ownKey = m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey : null;
+  m.onBeforeCompile = function (this: THREE.Material, sh, r) {
+    was.call(this, sh, r);
+    Object.assign(sh.uniforms, U, SU);
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${masked ? "attribute float weirWater;" : ""}\nvarying vec3 vFallAt; varying float vFall;`)
+      .replace("#include <project_vertex>", `#include <project_vertex>
+  vec4 fallAt = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  fallAt = instanceMatrix * fallAt;
+#endif
+  vFallAt = (modelMatrix * fallAt).xyz; vFall = ${masked ? "weirWater" : "1.0"};`);
+    // (pouring water isn't stone at the water's edge: no wet band on it)
+    sh.fragmentShader = sh.fragmentShader.replace("if (ws.b > 0.02) {", "if (ws.b > 0.02 && vFall < 0.5) {");
+    if (built === "simple") { sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vFallAt; varying float vFall;"); return; }
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FALL_DECL}`)
+      .replace("#include <color_fragment>", `#include <color_fragment>\n  ${FALL_FRAG}`);
+  };
+  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + `|fall${masked ? "m" : ""}|${built}`; };
   return m;
 }
 
@@ -332,7 +421,8 @@ const FRAG_SURFACE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV)
   // shows through, and the water laps at the bank in a broken white line
   float wEdge = clamp(distance(wp, vWC.xy) / max(vWC.z, 0.5), 0.0, 1.0);
   diffuseColor.rgb = wDeep * mix(0.8, 1.0, smoothstep(0.3, 0.9, wEdge));
-  float wSh = wShore.a;
+  // (land with no water near it, under water: water the picture doesn't know, so not the shore)
+  float wSh = wShore.b > 0.0 || wShore.a < 0.99 ? wShore.a : 0.0;
   diffuseColor.rgb = mix(diffuseColor.rgb, wShallow, step(0.5, wSh + wHash(floor(wp * 2.0)) * 0.15) * 0.3);
   float wLap = wNoise(wp * 2.5 + vec2(wTime * 0.3, 0.0)).x + 0.2 * sin(wTime * 1.4 - wSh * 9.0);
   // (a thin line at most: only where the land is right by, and fading out far off where it'd be a white rim)
@@ -359,28 +449,72 @@ const FRAG_SKY = `// (white water shows white even in shade: it's lit by the who
     outgoingLight += wLightCol * pow(max(dot(wS, wLightDir), 0.0), wSharp) * (wSharp / 400.0) * (1.0 - wFoam);
   }`;
 
+// Simple water: no shore picture, one ripple, flat white below weirs, the sky's colour mirrored without glints
+const VERT_DECL_SIMPLE = `varying vec3 vWPos;`;
+const VERT_SIMPLE = `vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`;
+const FRAG_DECL_SIMPLE = `varying vec3 vWPos;
+uniform float wTime, wReflect; uniform vec3 wSkyTop, wSkyLow, wBank, wDeep;
+uniform int wWeirs; uniform vec4 wWeir[${WEIRS}]; uniform float wWeirRun[${WEIRS}];`;
+const FRAG_SURFACE_SIMPLE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV); wV /= wDist;
+  float wAbove = step(vWPos.y, cameraPosition.y);
+  vec2 wp = (floor(vWPos.xz * 8.0) + 0.5) / 8.0;
+  float wR = cos(dot(vec2(0.8, 0.6), wp) * 2.1 - wTime * 2.3) * 0.03 / (1.0 + wDist / 70.0);
+  vec3 wN = normalize(vec3(-0.8 * wR, 1.0, -0.6 * wR));
+  diffuseColor.rgb = wDeep;
+  // (a set piece's weir, Pulteney's, has no white water of its own: a flat band below each crest)
+  float wFoam = 0.0;
+  vec2 wd = vec2(wp.x, -wp.y);
+  for (int i = 0; i < ${WEIRS}; i++) {
+    if (i >= wWeirs) break;
+    vec2 a = wWeir[i].xy, ab = wWeir[i].zw - a;
+    float l = max(length(ab), 0.01); vec2 t = ab / l;
+    float s = dot(wd - a, t), dn = dot(wd - a, vec2(t.y, -t.x));
+    wFoam = max(wFoam, step(0.0, s) * step(s, l) * step(-0.3, dn) * step(dn, wWeirRun[i] * 0.35));
+  }
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.88, 0.88), wFoam);`;
+const FRAG_SKY_SIMPLE = `outgoingLight = mix(outgoingLight, max(outgoingLight, wSkyLow * 0.7), wFoam);
+  if (wAbove > 0.5) {
+    // (fancy water's ripples mirror mostly the sky overhead, and near by the darker far bank: so
+    // this does too, or a low sun's pale horizon would turn the whole river to mud)
+    vec3 wSky = mix(wSkyLow, wSkyTop * wSkyTop, 0.6);
+    wSky = mix(mix(wBank, wSkyLow, smoothstep(150.0, 600.0, wDist)), wSky, 0.5);
+    float wF = 0.02 + 0.98 * pow(1.0 - max(dot(wN, wV), 0.0), 5.0);
+    outgoingLight = mix(outgoingLight, wSky, mix(0.08, 1.0, wF) * wReflect * (1.0 - wFoam));
+  }`;
+
 const done = new WeakSet<THREE.Material>();
 /** Give material m (a Lambert one, on water meshes made with waterCorners) the water's look. */
 export function waterLook<M extends THREE.Material>(m: M): M {
   if (done.has(m)) return m;
   done.add(m);
+  looks.push(new WeakRef(m));
   const was = m.onBeforeCompile;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
+    // (both looks get every uniform: see wetBy)
     Object.assign(sh.uniforms, U, SU);
+    if (built === "simple") {
+      sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL_SIMPLE}`)
+        .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT_SIMPLE}`);
+      sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FRAG_DECL_SIMPLE}`)
+        .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n  ${FRAG_SURFACE_SIMPLE}`)
+        .replace("#include <opaque_fragment>", `${FRAG_SKY_SIMPLE}\n  #include <opaque_fragment>`);
+      return;
+    }
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL}`)
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FRAG_DECL}`)
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>\n  ${FRAG_SURFACE}`)
       .replace("#include <opaque_fragment>", `${FRAG_SKY}\n  #include <opaque_fragment>`);
   };
-  m.customProgramCacheKey = () => "water";
+  m.customProgramCacheKey = () => "water|" + built;
   return m;
 }
 
 /** Each frame: the light now (daylight.ts), the fog's colour (the sky at the horizon) and how much
  *  a tunnel's darkened everything. */
 export function waterSky(sk: Sky, low: THREE.Color, dark: number) {
+  rebuildIfChanged();
   U.wTime.value = (performance.now() / 1000) % 4096;
   U.wFine.value = detailLevel > 0 ? 1 : 0;
   U.wSkyTop.value.copy(sk.top).multiplyScalar(1 - dark);
