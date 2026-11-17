@@ -1481,6 +1481,23 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     return false;
   };
+  // another street, out to its pavements, at about height h here: a bridge's parapet stops where a
+  // street joins its deck at the deck's own level, rather than standing across the street's mouth
+  const streetAtLevel = (own: Road, x: number, y: number, h: number) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      for (const s of streetCells.get(`${i},${j}`) ?? []) {
+        const r = s.r as Road;
+        // (the bridge's own street, mapped in pieces, runs on from its ends)
+        if (r === own || (own.n && r.n === own.n)) continue;
+        const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+        const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+        if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) > s.w + (KERBED.has(r.c) ? pv(r) : 0)) continue;
+        if (Math.abs(s.a[2] + (s.b[2] - s.a[2]) * t - Z0 - h) < 1.0) return true;
+      }
+    }
+    return false;
+  };
   const half = (r: { c: string; w?: number }) => width(r) / 2;
   const roadMats: Record<string, THREE.Material> = S.roadMats ??= {
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
@@ -1890,11 +1907,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           }
           return got;
         };
-        // a side's parapet stops only along the stretch where the other deck touches it
+        // a side's parapet stops only along the stretch where the other deck touches it, or a street
+        // meets it at the deck's level
+        const joined = (q: Pt, side: number) => {
+          const o = Ws(side) + 0.4 + side * wider(q, side);
+          return streetAtLevel(r, q.x + q.nx * o * side, q.y + q.ny * o * side, q.top);
+        };
         const walled = (run: Pt[], side: number) => {
-          const by = run.map((q) => beside(q, side)), out: Pt[][] = [];
+          const by = run.map((q) => beside(q, side)), into = run.map((q) => joined(q, side)), out: Pt[][] = [];
           let cur: Pt[] = [];
           for (let i = 0; i < run.length; i++) {
+            if (into[i]) { if (cur.length > 1) out.push(cur); cur = []; continue; }
             if (i && by[i - 1] && by[i]) { if (cur.length > 1) out.push(cur); cur = []; }
             cur.push(run[i]);
           }
