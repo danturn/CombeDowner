@@ -629,6 +629,12 @@ def buildings(m, own, blds, homes, htree, solid, ring_tree, rings, bars, btree, 
         for k in btree.query(step):
             if step.intersects(LineString([q[:2] for q in bars[int(k)]["p"]])):
                 note("12 door opening into a wall", 1, at(x, y), bars[int(k)]["c"]); break
+    from shops import on_shopfront
+    shopfront = on_shopfront(m.get("sh") or [])
+    for d in m.get("dr") or []:
+        if shopfront(d[0], d[1]) and not (len(d) > 6 and d[6]): note("12 door over a shop window", 1, at(d[0], d[1]), "")
+    for q in m.get("by") or []:
+        if shopfront(q[0], q[1], 0.8): note("12 bay window over a shop window", 1, at(q[0], q[1]), "")
     for s in m.get("sh") or []:
         if len(s) > 7 and s[7]: continue
         off = on_wall(s[0], s[1])
@@ -2471,11 +2477,11 @@ def markings(m, f, sheet, note, at, sq, fig):
         if kind == "z":
             t = -h + 0.25
             while t + 0.5 <= h - 0.15: parts.append(quad(-1.3, 1.3, t, t + 0.5)); t += 1.0
-        else:
+        elif kind != "c":
             sl = 3 if kind == "p" else 2
             parts += [quad(-sl - 0.15, -sl + 0.15, 0, h - 0.2), quad(sl - 0.15, sl + 0.15, -h + 0.2, 0)]
         out = sum(off_by(p) for p in parts if p.is_valid) / 0.3
-        what = {"z": "zebra", "p": "crossing", "s": "lights"}.get(kind, kind)
+        what = {"z": "zebra", "p": "crossing", "c": "crossing", "s": "lights"}.get(kind, kind)
         if out > MARK_OFF:
             totals["off"] += 1
             note("39 road marking off the carriageway", out, at(x, y), f"{what}'s stripes or stop lines {out:.1f} m off the road")
