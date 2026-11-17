@@ -161,9 +161,10 @@ export const SET_PIECES: SetPiece[] = [
     // landmarks/pulteney.ts. The origin: the middle of the bridge, at the river's level.
     name: "Pulteney Bridge", kind: "pulteney", at: [-2.357923, 51.38304], bearing: 60,
     height: (c) => c.water ?? 15.6,
-    // its street, from Bridge Street over the bridge and along Argyle Street to Laura Place: one
-    // carriageway between the shopfronts and the terraces, with a pavement each side
-    street: { names: ["Bridge Street", "Argyle Street"], x0: -20.4, x1: 117, zMax: 6, carriage: 6.0, pave: [[-20.4, 20.4, 1.75], [20.4, 117, 3.0]] },
+    // its street, from Bridge Street where Grand Parade leaves it, over the bridge and along Argyle
+    // Street to Laura Place: one carriageway between the shopfronts and the terraces, with a pavement
+    // each side
+    street: { names: ["Bridge Street", "Argyle Street"], x0: -35.3, x1: 117, zMax: 6, carriage: 6.0, pave: [[-35.3, 20.4, 1.75], [20.4, 117, 3.0]] },
     outline: [[-25.3, -10.4], [20.9, -10.4], [20.9, 12.2], [-20.7, 12.2], [-20.7, -3.2], [-25.3, -3.2]],
     covers: [[-24.9, 20.4, -9.8, -3.4], [-20.4, 20.4, 6.1, 10.5]],
     args: (c, h) => {
