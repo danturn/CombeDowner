@@ -92,9 +92,22 @@ export function terraceArgs(road: string, style: number, pave?: [number, number]
     if (pave) {
       const over = (b: Block) => b.x1 > pave[0] && b.x0 < pave[1];
       const zN = Math.max(...blocks.filter((b) => b.side < 0 && over(b)).map((b) => b.zf)), zS = Math.min(...blocks.filter((b) => b.side > 0 && over(b)).map((b) => b.zf));
-      // level with the crown of the street (the ground under it is highest along its middle)
-      const crown = Math.max(...pts.filter((q) => q[0] > pave[0] - 2 && q[0] < pave[1] + 2 && Math.abs(q[1]) < 10).map((q) => q[2])) - height + 0.1;
-      if (Number.isFinite(zN) && Number.isFinite(zS) && zS > zN && Number.isFinite(crown)) paved = [1, pave[0], pave[1], r(zN), r(zS), r(crown), r(crown)];
+      // just under the street all along it, falling as it falls (laid level with its crown, it stood
+      // through the carriageway where the street dips a few centimetres)
+      const on = pts.filter((q) => q[0] > pave[0] - 2 && q[0] < pave[1] + 2 && Math.abs(q[1]) < 10);
+      const n = on.length, sx = on.reduce((a, q) => a + q[0], 0), sz = on.reduce((a, q) => a + q[2], 0);
+      const sxx = on.reduce((a, q) => a + q[0] * q[0], 0), sxz = on.reduce((a, q) => a + q[0] * q[2], 0), den = n * sxx - sx * sx;
+      const fall = n > 1 && den ? (n * sxz - sx * sz) / den : 0, at0 = n ? (sz - fall * sx) / n : NaN;
+      const under = Math.min(...on.map((q) => q[2] - (at0 + fall * q[0])));
+      const top = (x: number) => Math.floor((at0 + under + fall * x - height + 0.1) * 100) / 100;
+      // and how far out the street itself reaches, kerb and pavement, for where a side street leaves it
+      // with no terrace to pave up to (setpieces.ts lays it so)
+      const laid = c.d.rd.filter((q) => q.piece && q.n === road && q.w), half = Math.max(...laid.map((q) => q.w! / 2 + Math.max(0, ...(q.pv ?? []))));
+      const zm = mid((pave[0] + pave[1]) / 2);
+      if (Number.isFinite(zN) && Number.isFinite(zS) && zS > zN && Number.isFinite(top(0))) {
+        paved = [1, pave[0], pave[1], r(zN), r(zS), top(pave[0]), top(pave[1])];
+        if (Number.isFinite(half)) paved.push(r(zm - half), r(zm + half));
+      }
     }
     return [style, blocks.length, ...blocks.flatMap((b) => [b.side, r(b.x0), r(b.x1), r(b.zf), r(b.zb), r(b.y0), r(b.top)]),
       wings.length, ...wings.flatMap((w) => [r(w.x0), r(w.x1), r(w.z0), r(w.z1), r(w.top)]),
@@ -112,7 +125,7 @@ function plan(args: (number | string)[]) {
   for (let i = 0; i < nw; i++, k += 5) wings.push({ x0: a[k], x1: a[k + 1], z0: a[k + 2], z1: a[k + 3], top: a[k + 4] });
   const nn = a[k++] || 0;
   for (let i = 0; i < nn; i++, k += 3) names.push({ side: a[k], x: a[k + 1], name: String(args[k + 2]) });
-  const pave = a[k] === 1 ? { x0: a[k + 1], x1: a[k + 2], z0: a[k + 3], z1: a[k + 4], y0: a[k + 5], y1: a[k + 6] } : null;
+  const pave = a[k] === 1 ? { x0: a[k + 1], x1: a[k + 2], z0: a[k + 3], z1: a[k + 4], y0: a[k + 5], y1: a[k + 6], e0: a[k + 7], e1: a[k + 8] } : null;
   return { style, blocks, wings, names, pave };
 }
 
@@ -219,7 +232,18 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
   // game lays the carriageway and its pavements on it (setpieces.ts, Pulteney Bridge's street)
   if (pave) {
     const flags = stone("#b9b1a2");
-    for (const s of paving(pave)) k.slab(flags, s.x0, s.x1, s.y - 1.5, s.y - 0.12, pave.z0, pave.z1, 2);
+    // (across a side street's mouth, where no terrace stands that side, only out to the street's own
+    // edge: run on to the fronts' line it stood proud over the side street falling away from it)
+    const fronted = (side: number, x: number) => blocks.some((b) => b.side === side && b.x0 <= x && b.x1 >= x);
+    for (const s of paving(pave)) {
+      const cuts = [s.x0, ...blocks.flatMap((b) => [b.x0, b.x1]).filter((x) => x > s.x0 + 0.05 && x < s.x1 - 0.05).sort((a, b) => a - b), s.x1];
+      for (let i = 0; i + 1 < cuts.length; i++) {
+        const m = (cuts[i] + cuts[i + 1]) / 2;
+        const z0 = Number.isFinite(pave.e0) && !fronted(-1, m) ? Math.max(pave.z0, pave.e0) : pave.z0;
+        const z1 = Number.isFinite(pave.e1) && !fronted(1, m) ? Math.min(pave.z1, pave.e1) : pave.z1;
+        k.slab(flags, cuts[i], cuts[i + 1], s.y - 1.5, s.y - 0.12, z0, z1, 2);
+      }
+    }
   }
   for (const w of wings) {
     k.slab(G, w.x0, w.x1, w.top - 30, w.top, w.z0, w.z1, 3.4);

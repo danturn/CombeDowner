@@ -144,6 +144,8 @@ function limb(a: number[], b: number[], r0: number, r1: number, sides: number) {
   return out;
 }
 
+/** How high the trunk's limbs reach on a tree of size 1. */
+const TRUNK_TOP = 5.65;
 function trunkGeo() {
   const parts = [limb([0, -0.3, 0], [0, 3.2, 0], 0.27, 0.19, 7), limb([0, 3.2, 0], [0.1, 5.6, 0.05], 0.19, 0.08, 6)];
   for (let k = 0; k < 4; k++) {
@@ -476,12 +478,15 @@ function plantPictures(geo: VegetationKit["geo"], leaf: THREE.Material, bark: TH
 }
 
 /**
- * Builds the trees (x, y, ground, size[, in a wood]) and shrubs (x, y, ground, height) into the
- * scene (or any group in it). Z0 turns ground heights into scene heights. look: the map's trees
- * (region.ts). Given a kit from another Vegetation, it shares its materials, models and look, and
- * that one keeps the wind's time.
+ * Builds the trees (x, y, ground, size[, 1 in a wood | 0, lift]) and shrubs (x, y, ground, height)
+ * into the scene (or any group in it). A lifted tree's crown is raised on a taller trunk, that many
+ * times as tall (tools/clearance.py, clear of a street under it). Z0 turns ground heights into scene
+ * heights. look: the map's trees (region.ts). Given a kit from another Vegetation, it shares its
+ * materials, models and look, and that one keeps the wind's time. woodTop(x, y): how high the middle
+ * of the woods' canopy is over the ground there (world.ts), 0 where there's none.
  */
-export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, look: Region["trees"], shared?: VegetationKit): Vegetation {
+export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, look: Region["trees"], shared?: VegetationKit,
+  woodTop?: (x: number, y: number) => number): Vegetation {
   const kit = shared ?? vegetationKit(look), { time, leaf, bark, flat: flatMats, geo } = kit;
   const made: THREE.InstancedMesh[] = [], ownGeos: THREE.BufferGeometry[] = [];
   // tints over the leaf texture
@@ -601,24 +606,28 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
 
   let seq = 0;
   for (const list of group(trees, (t) => t)) {
-    // trees inside woods are trunks only: the wood canopy is drawn as one surface
-    const kind = list.map((t) => (t.length >= 5 ? -1 : hash(seq++ * 31) < CONIFERS ? 2 : hash(seq * 7 + 3) < 0.5 ? 0 : 1));
+    // trees inside woods are trunks only, the wood canopy drawn as one surface over them; where it's
+    // been opened (over a tunnel's mouth, a cutting's banks, the canal) a tree has its own crown
+    const canopy = list.map((t) => (t[4] === 1 ? woodTop?.(t[0], t[1]) ?? Infinity : 0));
+    const kind = list.map((_, i) => (canopy[i] > 0 ? -1 : hash(seq++ * 31) < CONIFERS ? 2 : hash(seq * 7 + 3) < 0.5 ? 0 : 1));
     const count = (k: number) => kind.filter((v) => v === k).length;
     const trunks = instanced(geo.trunk, bark, list.length), tmat = new Float32Array(list.length * 16);
     const meshes = DRAWN.map((l) => [geo.broad[l][0], geo.broad[l][1], geo.cone[l]].map((g, k) => instanced(g, leaf[0][l], count(k))));
-    list.forEach(([x, y, z, s], i) => {
+    list.forEach(([x, y, z, s, , lift = 1], i) => {
       const r = hash(Math.round(x * 13 + y * 7));
       q.setFromAxisAngle(up, r * 6.28);
-      // conifers have short, hidden trunks; wood trunks reach up into the canopy
-      const tall = kind[i] === 2 ? 0.7 : 1;
-      m4.compose(ps.set(x, z - Z0 - 0.1, -y), q, sc.set(s, s * tall, s));
+      // conifers have short, hidden trunks; wood trunks reach up into the canopy, their limbs
+      // ending inside it however low it is there, not up through its top
+      let tall = s * (kind[i] === 2 ? 0.7 : 1) * lift, wide = s;
+      if (kind[i] === -1 && canopy[i] < Infinity) { tall = Math.min(tall, canopy[i] / TRUNK_TOP); wide = Math.min(s, tall * 2); }
+      m4.compose(ps.set(x, z - Z0 - 0.1, -y), q, sc.set(wide, tall, wide));
       m4.toArray(tmat, i * 16);
     });
     chunk(list.length, meshes, [geo.broad[2][0], geo.broad[2][1], geo.cone[2]], [0, 1, 2], TREE_TO, (i) => {
-      const [x, y, z, s] = list[i], k = kind[i];
+      const [x, y, z, s, , lift = 1] = list[i], k = kind[i];
       const r = hash(Math.round(x * 13 + y * 7)), r2 = hash(Math.round(x * 5 - y * 11));
       q.setFromAxisAngle(up, r * 6.28);
-      m4.compose(ps.set(x, z - Z0 - 0.1, -y), q, sc.set(s * (0.88 + r2 * 0.24), s * (0.9 + r * 0.2), s * (1.1 - r2 * 0.22)));
+      m4.compose(ps.set(x, z - Z0 - 0.1, -y), q, sc.set(s * (0.88 + r2 * 0.24), s * lift * (0.9 + r * 0.2), s * (1.1 - r2 * 0.22)));
       return [k, k === 2 ? CONIFER : LEAF[Math.floor(r2 * LEAF.length)]];
     }, trunks, tmat);
   }

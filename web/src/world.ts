@@ -28,7 +28,7 @@ import { ROCK, WILD_CHANNEL } from "./groundkinds";
 import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
-import { aqueductSetPieceAt, clearSetPieceGround, setPieceAt } from "./landmarks/setpieces";
+import { alongside, aqueductSetPieceAt, clearSetPieceGround, JOIN_LEVEL, joinsAt, onPiece, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
@@ -1388,26 +1388,38 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
     skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo,
-    onGround: (x: number, z: number) => number = (x, z) => map.trueGround(x, z)) => {
+    onGround: (x: number, z: number) => number = (x, z) => map.trueGround(x, z),
+    skipQuad?: (l: any, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => boolean) => {
     const g = into ?? new Geo(), white = [1, 1, 1], laid = groundTris();
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
       // keeps the span's mark, so it's drawn at the road's own height)
       const p: number[][] = [], level = own?.(L) ?? false;
       const flags = level ? spanFlags(L as Road, (x, z) => map.trueGround(x, z), Z0) : null;
+      // (the abutment's end at the deck's own end height, as bridgeStructures lands it: on the
+      // survey's ground the deck's floor stood a hair over the way and covered its last metres)
+      // (but a set piece's own street there is at the height the piece beyond the deck is laid at, its
+      // grade or the ground drawn under it if that's higher: landed on the survey, the two left a step
+      // between them with a line of daylight across it)
+      const end = (q: number[]) => ((L as Road).piece ? Math.max(q[2], onGround(q[0], -q[1]) + Z0)
+        : deckTop(q, 0, (x, z) => map.trueGround(x, z), Z0, map.d.se) + Z0);
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
         // on a span, and on the stretch from its last point to the abutment at either end, the
         // road is drawn at the height the bridge is built to (bridgeStructures: the deck's own,
         // ramping to the ground at the abutment), so it meets its parapets with no dip or step
         const on = flags && (flags[i] || flags[i + 1]) ? 1 : 0;
-        const za = on && !flags![i] ? map.trueGround(ax, -ay) + Z0 : az, zb = on && !flags![i + 1] ? map.trueGround(bx, -by) + Z0 : bz;
+        const za = on && !flags![i] ? end(L.p[i]) : az, zb = on && !flags![i + 1] ? end(L.p[i + 1]) : bz;
         // (a way going on off a deck's end straight down to the ground below isn't drawn: the deck ends there)
         const drop = on && offTheEnd(za, zb, Math.hypot(bx - ax, by - ay)) ? 1 : 0;
         for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, za + (zb - za) * s / n, on, drop]);
       }
-      const last = L.p[L.p.length - 1];
-      p.push(flags && flags[L.p.length - 1] ? [...last.slice(0, 3), 1] : [...last.slice(0, 3), 0]);
+      // (a line ending at an abutment, as a bridge's deck stretch does, ends at the deck's height
+      // there too: on the ground its last metres dived into the dip under the abutment)
+      const ln = L.p.length - 1, last = L.p[ln];
+      if (flags && flags[ln]) p.push([...last.slice(0, 3), 1]);
+      else if (flags && ln && flags[ln - 1]) p.push([last[0], last[1], end(last), 1]);
+      else p.push([...last.slice(0, 3), 0]);
       if (p.length < 2) continue;
       const nrm: number[][] = [], along: number[] = [0];
       for (let i = 0; i < p.length; i++) {
@@ -1416,11 +1428,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         nrm.push([-dy / l, dx / l]);
         if (i) along.push(along[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
       }
+      const en = (L as Road).en;
+      if (en?.[0]) nrm[0] = en[0];
+      if (en?.[1]) nrm[p.length - 1] = en[1];
       for (const [o1, o2] of bands(L)) {
         const flat = LEVEL && onGround !== drawnGround;
+        // (a set piece's own street is laid at the grade it gives it, not down into a hollow in the survey)
+        const laidOwn = flat && (L as Road).piece;
         const at = (i: number, o: number) => {
           const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = flat && !(level && p[i][3]) ? onGround(p[i][0], -p[i][1]) : onGround(x, -y);
-          const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
+          const top = (level && p[i][3] ? p[i][2] - Z0 : laidOwn ? Math.max(gz, p[i][2] - Z0) : gz) + lift;
           if (!flat || (level && p[i][3])) return { x, y, top, foot: top - lift - 0.35 };   // (a bridge's span has its own sides)
           const dg = drawnGround(x, -y);
           let foot = Math.min(top - lift - 0.1, dg - 0.03);
@@ -1432,6 +1449,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (p[i][4]) continue;
           const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
           if (skip && (skip(L, (a1.x + a2.x) / 2, (a1.y + a2.y) / 2) || skip(L, (b1.x + b2.x) / 2, (b1.y + b2.y) / 2))) continue;
+          if (skipQuad?.(L, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2)) continue;
           const u0 = along[i] / 4, u1 = along[i + 1] / 4;
           const A1 = [a1.x, a1.top, -a1.y], B1 = [b1.x, b1.top, -b1.y], B2 = [b2.x, b2.top, -b2.y], A2 = [a2.x, a2.top, -a2.y];
           if (onGround === drawnGround && !(level && (p[i][3] || p[i + 1][3]))) {
@@ -1492,6 +1510,40 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
         const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
         if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) < s.w + 0.4) return true;
+      }
+    }
+    return false;
+  };
+  // another street's carriageway at about data height h here (a set piece's own street's pavement
+  // gives way to it: setpieces.ts joinsAt)
+  const carriagewayAtLevel = (own: Road, x: number, y: number, h: number) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      for (const s of streetCells.get(`${i},${j}`) ?? []) {
+        const r = s.r as Road;
+        if (r === own) continue;
+        if (r.piece) { if (own.piece && onPiece(own, r, x, y, h)) return true; continue; }
+        const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+        const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+        if (own.n && r.n === own.n && alongside(own, s.a[0] + vx * t, s.a[1] + vy * t)) continue;
+        if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) < s.w + 0.4 && Math.abs(s.a[2] + (s.b[2] - s.a[2]) * t - h) < JOIN_LEVEL) return true;
+      }
+    }
+    return false;
+  };
+  // another street, out to its pavements, at about height h here: a bridge's parapet stops where a
+  // street joins its deck at the deck's own level, rather than standing across the street's mouth
+  const streetAtLevel = (own: Road, x: number, y: number, h: number) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      for (const s of streetCells.get(`${i},${j}`) ?? []) {
+        const r = s.r as Road;
+        // (the bridge's own street, mapped in pieces, runs on from its ends)
+        if (r === own || (own.n && r.n === own.n)) continue;
+        const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+        const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+        if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) > s.w + (KERBED.has(r.c) ? pv(r) : 0)) continue;
+        if (Math.abs(s.a[2] + (s.b[2] - s.a[2]) * t - Z0 - h) < 1.0) return true;
       }
     }
     return false;
@@ -1624,8 +1676,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           else ds.push(side);
         });
       }
+      // (a side is fenced if the ground falls away beside any piece of it)
+      const measured = pieces.filter(({ r: q }) => q.ledge);
+      const ledge = measured.length ? [0, 1].map((k) => measured.some(({ r: q, fwd }) => q.ledge![fwd ? k : 1 - k])) : undefined;
       out.push({
-        ...r, p: pts, uo: uo.length ? uo : undefined, ds,
+        ...r, p: pts, uo: uo.length ? uo : undefined, ds, ledge,
         ...(flip && Array.isArray(r.dk) ? { dk: [r.dk[1], r.dk[0]] } : {}),
         ...(flip && r.pv ? { pv: [r.pv[1], r.pv[0]] } : {}),
         ...(flip && r.ow ? { ow: -r.ow } : {}),
@@ -1874,8 +1929,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const w = side * Ws(side);
             // the deck's side, and the spandrel down to the arch where there is one
             // (a stone bridge's side goes down to the bank beside its abutments, where no arch
-            // springs: as a wall with an upright end, not a wedge slanting across to the next point)
-            if (A.top - A.g <= 0.3 && B.top - B.g <= 0.3) continue;
+            // springs: as a wall with an upright end, not a wedge slanting across to the next point;
+            // and wherever the bank under the side falls away, though the road's line is on the
+            // ground, or the deck's edge stood over a void at its end)
+            const sideGround = (q: Pt) => Math.min(q.g, ground(q.x + q.nx * w, -(q.y + q.ny * w)));
+            if (A.top - sideGround(A) <= 0.3 && B.top - sideGround(B) <= 0.3) continue;
             const bank = (q: Pt) => { const x = q.x + q.nx * w, y = q.y + q.ny * w; return wallFoot(x, y, ground(x, -y) - 0.3, q.top - DECK); };
             const foot = (q: Pt, wall: boolean) => { const f = archAt(q.s) ?? q.top - DECK; return wall ? Math.min(f, bank(q)) : f; };
             for (const [Q, R, wall] of besideAbutments(A, B)) {
@@ -1905,11 +1963,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           }
           return got;
         };
-        // a side's parapet stops only along the stretch where the other deck touches it
+        // a side's parapet stops only along the stretch where the other deck touches it, or a street
+        // meets it at the deck's level
+        const joined = (q: Pt, side: number) => {
+          const o = Ws(side) + 0.4 + side * wider(q, side);
+          return streetAtLevel(r, q.x + q.nx * o * side, q.y + q.ny * o * side, q.top);
+        };
         const walled = (run: Pt[], side: number) => {
-          const by = run.map((q) => beside(q, side)), out: Pt[][] = [];
+          const by = run.map((q) => beside(q, side)), into = run.map((q) => joined(q, side)), out: Pt[][] = [];
           let cur: Pt[] = [];
           for (let i = 0; i < run.length; i++) {
+            if (into[i]) { if (cur.length > 1) out.push(cur); cur = []; continue; }
             if (i && by[i - 1] && by[i]) { if (cur.length > 1) out.push(cur); cur = []; }
             cur.push(run[i]);
           }
@@ -1917,6 +1981,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           return out;
         };
         for (const side of [1, -1]) {
+          if (r.ledge && !r.ledge[side > 0 ? 0 : 1]) continue;
           const back = hangA ? [] : approach(a, 0, side, P[0]).reverse(), on = hangB ? [] : approach(b, r.p.length - 1, side, P[P.length - 1]);
           for (const q of back) q.s = -q.s;
           for (const q of on) q.s += s;
@@ -1993,6 +2058,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const lh = low(h, 0.1), lw = low(w, 0.3);
             facing(g, at(q, h, lh), at(q, w, lw), at(q, w, q.top + up), at(q, h, q.top + up), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], col);
             if (ashore && floor(q) - Math.min(lh, low(e, 0.1)) > 0.05) facing(g, at(q, e, low(e, 0.1), true), at(q, h, lh), at(q, h, floor(q)), at(q, e, floor(q), true), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], stone ? COPING : CONCRETE);
+            // a pier at the end, a little proud of the parapet and down into the bank, so the
+            // parapet ends on something rather than stopping short in the air
+            const fx = q.ny * dir, fy = -q.nx * dir, v0 = Math.min(w, h) - 0.1, v1 = Math.max(w, h) + 0.1;
+            const c = [[-0.6, v0], [0.1, v0], [0.1, v1], [-0.6, v1]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
+            const foot = Math.min(...c.map(([x, y]) => ground(x, -y))) - 0.3, cap = q.top + up + 0.12;
+            prism(g, c, Math.min(foot, floor(q) - DECK), cap, col);
+            facing(g, [c[0][0], cap, -c[0][1]], [c[1][0], cap, -c[1][1]], [c[2][0], cap, -c[2][1]], [c[3][0], cap, -c[3][1]], [0, 1, 0], [0, 0], [0.3, 0], [0.3, 0.3], [0, 0.3], stone ? COPING : CONCRETE);
           }
         }
         if (kind === "suspension" && !seam(P[0]) && !seam(P[P.length - 1])) {
@@ -2031,19 +2103,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             prism(g, box(-t - 0.1, t + 0.1, -Ws(-1) + 0.3, Ws(1) - 0.3), under - 0.6, under, CONCRETE);
           }
         }
-        // the abutments: a face across each end from the deck's underside down to the bank, its
-        // foot following the ground under it, so it never stands out where the bank falls away
+        // the abutments: a face across each end from the deck's floor down to the bank, its foot
+        // following the ground under it, so it never stands out where the bank falls away (and the
+        // deck's end, where it stands over the ground in front, is closed: no underside shows)
         for (const [sp, dir] of [[0, 1], [s, -1]] as const) {
           if (!supports.includes(sp) || under(sp + dir * 0.5)) continue;
-          const q = lerpAt(sp), underside = q.top - DECK + 0.02, fwd = [q.ny * dir, 0, q.nx * dir];
+          const q = lerpAt(sp), face = floor(q), fwd = [q.ny * dir, 0, q.nx * dir];
           const n = Math.max(2, Math.ceil((Ws(1) + Ws(-1)) / 1.0));
           for (let k = 0; k < n; k++) {
             const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
-            const foot = (o: number) => { const x = q.x + q.nx * o, y = q.y + q.ny * o; return wallFoot(x, y, ground(x, -y) - 0.3, underside); };
+            const foot = (o: number) => { const x = q.x + q.nx * o, y = q.y + q.ny * o; return wallFoot(x, y, ground(x, -y) - 0.3, face); };
             const g1 = foot(o1), g2 = foot(o2);
-            if (underside <= Math.min(g1, g2)) continue;
-            facing(g, at(q, o1, Math.min(g1, underside)), at(q, o2, Math.min(g2, underside)), at(q, o2, underside), at(q, o1, underside), fwd,
-              [o1 / 2.5, Math.min(g1, underside) / 2.5], [o2 / 2.5, Math.min(g2, underside) / 2.5], [o2 / 2.5, underside / 2.5], [o1 / 2.5, underside / 2.5], stone ? STONE : CONCRETE);
+            if (face <= Math.min(g1, g2)) continue;
+            facing(g, at(q, o1, Math.min(g1, face)), at(q, o2, Math.min(g2, face)), at(q, o2, face), at(q, o1, face), fwd,
+              [o1 / 2.5, Math.min(g1, face) / 2.5], [o2 / 2.5, Math.min(g2, face) / 2.5], [o2 / 2.5, face / 2.5], [o1 / 2.5, face / 2.5], stone ? STONE : CONCRETE);
           }
         }
       }
@@ -2093,7 +2166,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       strips(veh.filter((r) => !KERBED.has(r.c)), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
-      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
+      const paveBands = (r: Road) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a);
+      strips(kerb.filter((r) => pv(r) > 0 && !r.piece), paveBands, 0.17, onOtherStreet, true, own, geo.pave);
+      // a set piece's own pavements, and the carriageway running on across them where a street joins
+      const joins = (r: Road, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => joinsAt(r, a, b, na, nb, o1, o2, carriagewayAtLevel);
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.17, undefined, true, own, geo.pave, undefined, joins);
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.07, undefined, false, own, geo.road, undefined, (r, a, b, na, nb, o1, o2) => !joins(r, a, b, na, nb, o1, o2));
       yield;
     }
     // what holds the bridges up, each built whole (joinSpans)
@@ -3136,8 +3214,81 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   yield;
 
   mark("walls-fences");
+  // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
+  let woodTop: ((x: number, y: number) => number) | undefined;
+  if (D.cn) {
+    const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
+    for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+    const portal = aroundPortals(map), banks = portalBanks(map), r = C.step / 2;
+    // (laid over a cutting's side the wood came down it in a tilted sheet)
+    const steep = (x: number, y: number) => {
+      const g = [[-r, -r], [r, -r], [r, r], [-r, r]].map(([u, v]) => map.trueGround(x + u, -(y + v)));
+      return Math.max(...g) - Math.min(...g) > REPOSE * C.step;
+    };
+    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+      const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
+      if (!H[j * C.nx + i]) continue;
+      if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v)) || (banks(x, y) && steep(x, y))) H[j * C.nx + i] = 0;
+    }
+    const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
+    // corner heights: the average of the canopy cells around each corner (edges taper down)
+    const corner = (i: number, j: number) => {
+      let s = 0, n = 0;
+      for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { const v = hAtC(a, b); if (v) { s += v; n++; } }
+      return n ? (s / n) * (0.55 + 0.45 * n / 4) : 0;
+    };
+    // where the wood ends (or opens over a path) its top comes down to meet its underside, so the
+    // canopy's edge slopes away as the trees' crowns do rather than standing up in a wall
+    const edge = (i: number, j: number) => [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]].some(([a, b]) => !hAtC(a, b));
+    const top = (a: number, b: number) => {
+      const hc = Math.max(1.5, corner(a, b));
+      return edge(a, b) ? hc * 0.5 : hc + lump(a, b);
+    };
+    const lump = (a: number, b: number) => (hash(a * 31337 + b * 17) - 0.5) * 1.6;
+    // a wood's trees stand under it, their limbs reaching halfway up into it and no further
+    woodTop = (x, y) => {
+      const i = Math.round((x - C.x0) / C.step), j = Math.round((y - C.y0) / C.step);
+      if (!hAtC(i, j)) return 0;
+      // (the limbs spread across the cell, so the lowest of its corners)
+      const mid = (a: number, b: number) => (Math.max(1.5, corner(a, b)) * 0.5 + top(a, b)) / 2;
+      return Math.min(mid(i, j), mid(i + 1, j), mid(i, j + 1), mid(i + 1, j + 1));
+    };
+    const geos = new Map<string, Geo>();
+    const LEAVES = look.trees.canopy;
+    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+      const h = hAtC(i, j);
+      if (!h) continue;
+      const x0 = C.x0 + (i - 0.5) * C.step, x1 = x0 + C.step, y0 = C.y0 + (j - 0.5) * C.step, y1 = y0 + C.step;
+      const key = core ? `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}` : `${Math.floor((x0 - cx0) / cw)},${Math.floor((y0 - cy0) / cw)}`;
+      let g = geos.get(key);
+      if (!g) geos.set(key, (g = new Geo()));
+      const col = LEAVES[Math.floor(hash(i * 7919 + j) * LEAVES.length)];
+      const P = (x: number, y: number, a: number, b: number, under: boolean) => {
+        const hc = Math.max(1.5, corner(a, b));
+        return [x, map.trueGround(x, -y) + (under ? hc * 0.5 : top(a, b)), -y];
+      };
+      const t = [P(x0, y0, i, j, false), P(x1, y0, i + 1, j, false), P(x1, y1, i + 1, j + 1, false), P(x0, y1, i, j + 1, false)];
+      const b = [P(x0, y0, i, j, true), P(x1, y0, i + 1, j, true), P(x1, y1, i + 1, j + 1, true), P(x0, y1, i, j + 1, true)];
+      const uv = [[x0 / 4, y0 / 4], [x1 / 4, y0 / 4], [x1 / 4, y1 / 4], [x0 / 4, y1 / 4]];
+      facing(g, t[0], t[1], t[2], t[3], [0, 1, 0], uv[0], uv[1], uv[2], uv[3], col);
+      facing(g, b[0], b[1], b[2], b[3], [0, -1, 0], uv[0], uv[1], uv[2], uv[3], col.map((c) => c * 0.7));
+      if (j % 8 === 7) yield;
+    }
+    const canopyMat: THREE.Material = S.canopyMat ??= new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
+    for (const g of geos.values()) {
+      const built = g.build();
+      if (!built) continue;
+      const m = new THREE.Mesh(built, canopyMat);
+      m.castShadow = true; m.receiveShadow = true;
+      scene.add(tag(m, "plant"));
+      culler.add(m, () => view.sceneryFar);
+    }
+  }
+  yield;
+
+  mark("woods");
   // ---- trees and shrubs ------------------------------------------------------------------
-  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, look.trees, S.vegKit);
+  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, look.trees, S.vegKit, woodTop);
   S.vegKit ??= vegetation.kit;
   buildBoulders(scene, D.rk ?? [], Z0, culler, () => view.sceneryFar * 0.6);
   yield;
@@ -3162,69 +3313,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }) : null;
 
   mark("outskirts");
-  // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
-  if (D.cn) {
-    const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
-    for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
-    const portal = aroundPortals(map), banks = portalBanks(map), r = C.step / 2;
-    // (laid over a cutting's side the wood came down it in a tilted sheet)
-    const steep = (x: number, y: number) => {
-      const g = [[-r, -r], [r, -r], [r, r], [-r, r]].map(([u, v]) => map.trueGround(x + u, -(y + v)));
-      return Math.max(...g) - Math.min(...g) > REPOSE * C.step;
-    };
-    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
-      const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
-      if (!H[j * C.nx + i]) continue;
-      if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v)) || (banks(x, y) && steep(x, y))) H[j * C.nx + i] = 0;
-    }
-    const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
-    // corner heights: the average of the canopy cells around each corner (edges taper down)
-    const corner = (i: number, j: number) => {
-      let s = 0, n = 0;
-      for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { const v = hAtC(a, b); if (v) { s += v; n++; } }
-      return n ? (s / n) * (0.55 + 0.45 * n / 4) : 0;
-    };
-    const geos = new Map<string, Geo>();
-    const LEAVES = look.trees.canopy;
-    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
-      const h = hAtC(i, j);
-      if (!h) continue;
-      const x0 = C.x0 + (i - 0.5) * C.step, x1 = x0 + C.step, y0 = C.y0 + (j - 0.5) * C.step, y1 = y0 + C.step;
-      const key = core ? `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}` : `${Math.floor((x0 - cx0) / cw)},${Math.floor((y0 - cy0) / cw)}`;
-      let g = geos.get(key);
-      if (!g) geos.set(key, (g = new Geo()));
-      const col = LEAVES[Math.floor(hash(i * 7919 + j) * LEAVES.length)];
-      const lump = (a: number, b: number) => (hash(a * 31337 + b * 17) - 0.5) * 1.6;
-      const P = (x: number, y: number, a: number, b: number, under: boolean) => {
-        const hc = Math.max(1.5, corner(a, b));
-        return [x, map.trueGround(x, -y) + (under ? hc * 0.5 : hc + lump(a, b)), -y];
-      };
-      const t = [P(x0, y0, i, j, false), P(x1, y0, i + 1, j, false), P(x1, y1, i + 1, j + 1, false), P(x0, y1, i, j + 1, false)];
-      const b = [P(x0, y0, i, j, true), P(x1, y0, i + 1, j, true), P(x1, y1, i + 1, j + 1, true), P(x0, y1, i, j + 1, true)];
-      const uv = [[x0 / 4, y0 / 4], [x1 / 4, y0 / 4], [x1 / 4, y1 / 4], [x0 / 4, y1 / 4]];
-      facing(g, t[0], t[1], t[2], t[3], [0, 1, 0], uv[0], uv[1], uv[2], uv[3], col);
-      facing(g, b[0], b[1], b[2], b[3], [0, -1, 0], uv[0], uv[1], uv[2], uv[3], col.map((c) => c * 0.7));
-      // sides where the wood ends
-      const sides: [number, number, number, number, number[]][] = [[0, 1, i, j - 1, [0, 0, 1]], [1, 2, i + 1, j, [1, 0, 0]], [2, 3, i, j + 1, [0, 0, -1]], [3, 0, i - 1, j, [-1, 0, 0]]];
-      for (const [p, q, ni, nj, out] of sides) {
-        if (hAtC(ni, nj)) continue;
-        facing(g, b[p], b[q], t[q], t[p], out, [0, 0], [1, 0], [1, 1], [0, 1], col.map((c) => c * 0.85));
-      }
-      if (j % 8 === 7) yield;
-    }
-    const canopyMat: THREE.Material = S.canopyMat ??= new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
-    for (const g of geos.values()) {
-      const built = g.build();
-      if (!built) continue;
-      const m = new THREE.Mesh(built, canopyMat);
-      m.castShadow = true; m.receiveShadow = true;
-      scene.add(tag(m, "plant"));
-      culler.add(m, () => view.sceneryFar);
-    }
-  }
-  yield;
-
-  mark("woods");
   // ---- front doors and bay windows ---------------------------------------------------------
   {
     const DOOR = ["#1f3b2d", "#24324a", "#c8302c", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));

@@ -1,6 +1,11 @@
 """Roofs from the lidar as a roofer would draw them: plain roofs on the rectangles of each house.
 
-Usage: python3 -I tools/roofs/shapes.py <ti,tj> ... [--map combe-down] [--drawn <drawn.mjs>]
+Usage: python3 -I tools/roofs/shapes.py <ti,tj> ... [--map combe-down] [--drawn <drawn.mjs>] [--keep <dir>]
+
+--keep <dir> keeps beside the new roofs those in <dir>/<ti>_<tj>.json (the square's roofs as they
+were, moved aside while it was built without them) for every outline given none anew: buildings
+lined up with the lidar since (tools/register.py) find theirs by their old outline and move them
+with them (tools/prep_map.py).
 
 Today's roofs (tools/lidar.py) are one flat, gabled or hipped roof per building, no more than 5 m
 from eaves to ridge. Here each footprint is cut into a few rectangles lined up on its own walls
@@ -630,6 +635,8 @@ def main():
     map_id, drawn = "combe-down", None
     if "--map" in args: k = args.index("--map"); map_id = args[k + 1]; del args[k:k + 2]
     if "--drawn" in args: k = args.index("--drawn"); drawn = args[k + 1]; del args[k:k + 2]
+    keep = None
+    if "--keep" in args: k = args.index("--keep"); keep = args[k + 1]; del args[k:k + 2]
     near = None
     if "--near" in args: k = args.index("--near"); near = [float(v) for v in args[k + 1].split(",")]; del args[k:k + 2]
     if drawn is None:
@@ -759,8 +766,10 @@ def main():
                           "shared", [s and s[:3] for s in p.shared], "joined", p.joined,
                           m and (m.kind, m.hips, m.k, m.sign, m.e and round(m.e, 2), m.R and round(m.R, 2)))
             continue
+        before = os.path.join(keep, f"{sq}.json") if keep else None
         with open(os.path.join(out_dir, f"{sq}.json"), "w") as f:
-            json.dump(kept, f, separators=(",", ":"), sort_keys=True)
+            json.dump({**(json.load(open(before)) if before and os.path.exists(before) else {}), **kept}, f,
+                      separators=(",", ":"), sort_keys=True)
         s = np.array([(w, n, u) for _, w, n, _, u, _ in stats]) if stats else np.zeros((0, 3))
         print(f"{sq}: {len(blds)} buildings, roofs for {len(built)} ({', '.join(f'{v} {k}' for k, v in why.items())}); "
               f"used for {len(kept)}; median miss today {np.nanmedian(s[:, 0]) if len(s) else 0:.2f} m, "

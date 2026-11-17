@@ -117,23 +117,21 @@ def free_edges(poly, others, step=0.5):
     return np.array(pts).reshape(-1, 2), np.array(nrm).reshape(-1, 2)
 
 
-def register(lidar, poly, others=(), patch=None):
-    """How far the survey's building lies from its footprint (dx, dy, metres), so the roof can be
-    read off the survey where it really is and laid on the walls as drawn. The open data's
-    outlines are often a metre or two off the lidar, which reads a ridge as a slope. The shift
-    taken is the one that puts the survey's drops to the ground on the footprint's free walls
-    (those not shared with a neighbour) and fills the footprint with raised surface; along a
-    terrace only its front and back say anything, and the nearest of the near-best shifts is kept."""
-    P = patch or Patch(lidar, poly)
+def fit(lidar, poly, others=(), patch=None, reach=REACH):
+    """How well the survey's building matches the footprint moved by each shift up to reach metres
+    each way, on the survey's half-metre grid: {(dx, dy): score}, and the Patch read. A good match
+    puts the survey's drops to the ground on the footprint's free walls (those not shared with a
+    neighbour) and fills the footprint with raised surface. None where the survey can't say."""
+    P = patch or Patch(lidar, poly, margin=reach + 2.5)
     ep, en = free_edges(poly, list(others))
     gx, gy = grid_in(poly, inset=0.5)
-    if len(gx) < 8: return 0.0, 0.0, P
+    if len(gx) < 8: return None, P
     above = P.dsm - P.dtm
-    if np.isnan(above).mean() > 0.2: return 0.0, 0.0, P
+    if np.isnan(above).mean() > 0.2: return None, P
     above = np.nan_to_num(above)
     dsm = np.nan_to_num(P.dsm, nan=float(np.nanmin(P.dsm)) if not np.all(np.isnan(P.dsm)) else 0.0)
-    n = int(round(REACH / PX))
-    scores = []
+    n = int(round(reach / PX))
+    scores = {}
     for j in range(-n, n + 1):
         for i in range(-n, n + 1):
             dx, dy = i * PX, j * PX
@@ -143,7 +141,22 @@ def register(lidar, poly, others=(), patch=None):
                 inn = P.at(dsm, ep[:, 0] - en[:, 0] * 0.75 + dx, ep[:, 1] - en[:, 1] * 0.75 + dy)
                 out = P.at(dsm, ep[:, 0] + en[:, 0] * 0.75 + dx, ep[:, 1] + en[:, 1] * 0.75 + dy)
                 drop = float(np.mean(np.clip(inn - out, 0, 4)))
-            scores.append((drop + 3 * fill, math.hypot(dx, dy), dx, dy))
-    top = max(s[0] for s in scores)
-    _, _, dx, dy = min((s for s in scores if s[0] >= top - 0.1), key=lambda s: s[1])
+            scores[(dx, dy)] = drop + 3 * fill
+    return scores, P
+
+
+def nearest_best(scores, tie=0.1):
+    """The shift with the best score, or the nearest of those within tie of it."""
+    top = max(scores.values())
+    return min((k for k, v in scores.items() if v >= top - tie), key=lambda k: math.hypot(*k))
+
+
+def register(lidar, poly, others=(), patch=None):
+    """How far the survey's building lies from its footprint (dx, dy, metres), so the roof can be
+    read off the survey where it really is and laid on the walls as drawn. The open data's
+    outlines are often a metre or two off the lidar, which reads a ridge as a slope. Along a
+    terrace only its front and back say anything, and the nearest of the near-best shifts is kept."""
+    scores, P = fit(lidar, poly, others, patch)
+    if scores is None: return 0.0, 0.0, P
+    dx, dy = nearest_best(scores)
     return dx, dy, P

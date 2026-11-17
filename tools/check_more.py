@@ -57,7 +57,8 @@ from the packs alone, a few seconds a square:
 25. No tree, shrub or boulder stands in a path, drive or pavement.
 26. No face's edge stands more than 0.3 m off what is beside it (a wedge down a bank, a pavement
     over a path).
-27. Faces meet: no strip of bare ground between a path and a street, no lump of ground between faces
+27. Faces meet: no strip of bare ground between a path and a street (one along a wall, fence or
+    hedge is where the faces stop for it), no lump of ground between faces
     of two kinds, no pavement that just stops with nothing across its end.
 28. A bridge's deck lands on the street at each end, not in the air or off the street's height.
 29. No parapet gap where three or more pieces of a bridge meet on its deck.
@@ -95,7 +96,7 @@ from the packs alone, a few seconds a square:
 46. A set piece's floor at the street's level runs on to what stands beyond its edge, with no gap to
     drop into between it and a wall or another floor (tools/ground_seams.mjs, with rule 38).
 47. No building stands in a pit of ground carved down beside it, and no path rides a bridge that
-    isn't there.
+    isn't there with the ground dug out under it.
 48. A shop's front meets its pavement, with no strip of open ground between.
 49. A road meets a pedestrian street at its paving: it neither runs on into the paving nor bulges
     into the mouth of one stopping short of it.
@@ -185,7 +186,7 @@ def _set_pieces(centre):
         at = lambda lx, lz: (ox + ux * lx + uy * lz, oy + uy * lx - ux * lz)
         for r in rings:
             if len(r) >= 3: out.append(_poly([at(lx, lz) for lx, lz in r]))
-        # (the street it lays end to end, whose faces the game cuts out of the square's: setpieces.ts cutFaces)
+        # (the stretch it lays its street along, whose faces the game takes out where it's drawn)
         if street:
             x0, x1, z = street["x0"], street["x1"], street["zMax"]
             streets.append(_poly([at(x0, -z), at(x1, -z), at(x1, z), at(x0, z)]))
@@ -201,6 +202,15 @@ def set_piece_streets(centre):
     game cuts the map's own faces out of them and draws the street as laid."""
     _set_pieces(centre)
     return _SET_PIECE_STREETS.get(centre, [])
+
+
+def set_piece_laid(m):
+    """Where square m's faces were taken out for the set pieces (setpiece_cuts.py): those that draw all
+    of their outline, and their own streets where the game draws them; None if there's none."""
+    if not m.get("centre"):
+        return None
+    from partition import setpiece_cuts
+    return setpiece_cuts.cuts(m["centre"], m["b"], None, m.get("rd"))[0]
 
 
 @functools.lru_cache(maxsize=2)
@@ -1523,9 +1533,13 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
             gaps = gaps.difference(unary_union(walled))
         by_street, by_path = streets.buffer(0.03), paths.buffer(0.03)
         shapely.prepare(by_street); shapely.prepare(by_path)
+        # (a strip along a wall, fence or hedge is where the faces stop for it, under it: as for cracks)
+        stops = [LineString([q[:2] for q in b["p"]]) for b in m.get("br") or [] if len(b["p"]) > 1]
+        along = shapely.union_all([g.buffer(0.5) for g in stops] or [Polygon()])
         tot = 0.0
         for gp in getattr(gaps, "geoms", [gaps]):
             if gp.geom_type != "Polygon" or gp.buffer(-GAP / 2).is_empty: continue
+            if gp.intersection(along).area > 0.5 * gp.area: continue
             # (its length is how far it runs along both: a strip beside one only, past a thin strip
             # of the other, is no gap between them)
             if not (by_street.intersects(gp) and by_path.intersects(gp)): continue
@@ -1568,9 +1582,10 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
     stops += [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     # (a deck is drawn by the bridge, not as faces: a pavement running on to one has something there)
     decks = [LineString([q[:2] for q in r["p"]]).buffer(max(_deck_sides(r)) + 1) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
-    # (nor is a set piece that paves its outline to the edge, where the square's faces were cut for it)
+    # (nor is a set piece that paves its outline to the edge, or lays its own street, where the
+    # square's faces were cut for it)
     from partition import setpiece_cuts
-    filled = setpiece_cuts.holes(m.get("centre"), m["b"], sheet.union(("road", "service")))
+    filled, _, _ = setpiece_cuts.cuts(m.get("centre"), m["b"], sheet.union(("road", "service")), m.get("rd"))
     # (nor does a street's pavement go on through a building's passage with it: it stops at the wall
     # beside the arch's mouth)
     mouths = [Point(ps[k:k + 2]).buffer(ps[0] / 2 + 1.5) for b in m.get("bl") or [] for ps in b.get("ps") or []
@@ -1701,6 +1716,7 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     roads = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
     pieces = [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
     held = lambda x, y: any(p.contains(Point(x, y)) for p in pieces)
+    laid = set_piece_laid(m)
     chains, joints = join_spans(roads)
     x0, y0, x1, y1 = m["b"]
     seam = lambda q: min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) < 0.6
@@ -1800,7 +1816,8 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
                 ox, oy = q[0] + (q[0] - p[inward][0]) / d * 0.5, q[1] + (q[1] - p[inward][1]) / d * 0.5
                 there, k = sheet.top(np.array([ox]), np.array([oy]), drawn) if sheet.ok else (drawn(np.array([ox]), np.array([oy])), [None])
                 gap = abs(floor - (float(there[0]) - (FACE_LIFT[k[0]] if k[0] else 0)))
-                if gap > DECK_END:
+                # (off its end on to a set piece's own street, which the game draws, not the faces)
+                if gap > DECK_END and not (laid is not None and laid.contains(Point(ox, oy))):
                     note("28 deck end off the street", gap, at(q[0], q[1]), f"{name} {kind}, {gap * 100:.0f} cm from the {k[0] or 'ground'} it meets")
                     fig["deck ends off"] = fig.get("deck ends off", 0) + 1
             # the deck's footprint between its abutments, a metre and a half in from each, every half metre
@@ -2717,7 +2734,14 @@ def street_holes(m, f, sheet, note, at, inner, fig):
     covered += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
     covered += [_deck(r) for r in m.get("rd") or [] if 1 in _flags(r)]
     if m.get("centre"): covered += set_piece_streets(tuple(m["centre"]))
-    holes = shapely.union_all(strips).difference(shapely.union_all(covered).buffer(0.05)).intersection(inner)
+    if (laid := set_piece_laid(m)) is not None: covered.append(laid)
+    street, over = shapely.union_all(strips), shapely.union_all(covered).buffer(0.05)
+    try:
+        holes = street.difference(over).intersection(inner)
+    except shapely.errors.GEOSException:
+        # (edges a hair apart, as a moved outline leaves them, can defeat the exact overlay)
+        snap = lambda gs: shapely.union_all([shapely.make_valid(g) for g in gs], grid_size=0.001)
+        holes = shapely.difference(snap(strips), snap(covered).buffer(0.05), grid_size=0.001).intersection(inner)
     total = 0.0
     for g in getattr(holes, "geoms", [holes]):
         if g.geom_type != "Polygon" or g.area < STREET_HOLE or g.buffer(-0.3).is_empty: continue
@@ -2747,20 +2771,30 @@ def played(m, f, sheet, note, at, sq, inner, fig):
 PIT_DEPTH = 0.3       # metres the sheet may carve the ground beside a building before it is a pit...
 PIT_BELOW = 0.1       # ...when it also ends this far under the foot of its walls (sheet.FOOT_DEPTH)
 RIDE_SPAN = 15.0      # metres: a path riding a bridge's deck has one of the bridge's span points this near
+RIDE_UNDER = 0.6      # metres under a riding path that the ground near it is dug out to, for its deck (a footbridge's is 0.45 deep)
 
 
 def buildings_in_pits(m, note, at, inner, fig):
     """47. No building stands in a pit: the ground beside its walls is not carved down more than
     PIT_DEPTH and below its walls' foot. And no path rides the deck of a bridge that isn't there (a
-    point marked as riding beside a span with no span point within RIDE_SPAN): the sheet dug the
-    ground out under that deck. Scored by the deepest point, and by the riding points."""
+    point marked as riding beside a span with no span point within RIDE_SPAN) with the ground dug
+    out under that deck: carved more than PIT_DEPTH, to more than RIDE_UNDER under the path, within a
+    cell of it. (Through a building's passage a path rides on with no bridge near, its deck lying on
+    the ground.) Scored by the deepest point, and by the riding points."""
     T = m["t"]
+    dug = None
     if m.get("gs"):
         nx, ny = T["nx"], T["ny"]
         H = gsheet.read(m["gs"], T)[1]
         H0 = np.asarray(T["h"], float).reshape(ny, nx) / 10 + T["z0"]
         GX, GY = np.meshgrid(T["x0"] + np.arange(nx) * T["dx"], T["y0"] + np.arange(ny) * T["dy"])
         cut = np.nonzero((H0 - H).ravel() > PIT_DEPTH)[0]
+        cut_tree = shapely.STRtree(shapely.points(GX.ravel()[cut], GY.ravel()[cut])) if len(cut) else None
+
+        def dug(q):
+            if cut_tree is None: return False
+            near = cut[cut_tree.query(Point(q[:2]), predicate="dwithin", distance=T["dx"])]
+            return bool(len(near)) and float(H.ravel()[near].min()) < q[2] - RIDE_UNDER
         bl = [(Polygon(b["r"][0]).buffer(0), b) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
         if len(cut) and bl:
             pts = shapely.points(GX.ravel()[cut], GY.ravel()[cut])
@@ -2781,7 +2815,8 @@ def buildings_in_pits(m, note, at, inner, fig):
     tree = shapely.STRtree(shapely.points(spans)) if spans else None
     for r in m.get("rd") or []:
         lone = [q for q in r["p"] if len(q) > 3 and q[3] == 2
-                and (tree is None or not len(tree.query(Point(q[:2]), predicate="dwithin", distance=RIDE_SPAN)))]
+                and (tree is None or not len(tree.query(Point(q[:2]), predicate="dwithin", distance=RIDE_SPAN)))
+                and (dug is None or dug(q))]
         if lone and inner.contains(Point(lone[0][:2])):
             note("47 path riding a bridge that isn't there", len(lone), at(*lone[0][:2]), f"{r.get('n') or r['c']!r}: {len(lone)} points")
 
@@ -2829,7 +2864,7 @@ def shopfronts_on_grass(m, sheet, note, at, inner, fig):
         c = poly.representative_point()
         if not inner.contains(c) or not len(stree.query(poly, predicate="dwithin", distance=SHOP_SIGN)): continue
         if poly.distance(pave) > SHOP_LOOK: continue
-        ring = poly.exterior
+        ring = poly.exterior if poly.geom_type == "Polygon" else max(poly.geoms, key=lambda g: g.area).exterior
         L, bare = ring.length, 0.0
         for d in np.arange(0.25, L, 0.5):
             p, a, q = ring.interpolate(d), ring.interpolate(max(0, d - 0.2)), ring.interpolate(min(L, d + 0.2))
