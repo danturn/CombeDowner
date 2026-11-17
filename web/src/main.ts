@@ -6,8 +6,8 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
-import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
-import { STREETS, controlsPage, ctl, ctlText, input, isKey, placeNow } from "./controls";
+import { B, GamepadControls, PAD_NAME, key, padActions, padLayout, padLayouts, padPress, padSettings, tap, type PadRuns } from "./gamepad";
+import { controlsPage, ctl, ctlText, input, isKey, placeNow, streetsFor } from "./controls";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { watchNet } from "./netcheck";
@@ -889,7 +889,7 @@ const pictureHooks = settingsPage({
 }
 
 // A game controller: what each button does here, mostly the key that does it (gamepad.ts), laid out
-// as Warzone's defaults. Each row can be moved to another button in Settings; the rows "at the wheel"
+// as Warzone's defaults (CODish) or Arma Reforger's (Dragon Camp), as chosen in Settings. Each row can be moved to another button in Settings; the rows "at the wheel"
 // take over their button while you drive.
 const pad = new GamepadControls(() => game && {
   playing: () => !!game?.active && $("pause").hidden,
@@ -904,16 +904,28 @@ const hold = (code: string) => (down: boolean) => key(code, down);
 const press = (code: string) => (down: boolean) => { if (down) tap(code); };
 const weapon = (by: 1 | -1) => (down: boolean) => {
   if (!down || !game) return;
+  if (game.watching) { tap(by < 0 ? "ArrowLeft" : "ArrowRight"); return; }   // out of a race: the next racer along
   if (game.busMenuUp) game.callBus(by < 0 ? "minibus" : "bus");
   else game.cycleWeapon(by);
 };
-controlsPage(STREETS);
-padActions(STREETS, {
+// Dragon Camp: use (□) goes at once when there's something to use and stays down while held, as
+// E does; with nothing, a tap reloads. Getting on a ride, a ladder up or a strange object down are
+// use too, as getting in a car is, and △ gets you off a ride, as it gets you out of a car.
+let useHeld = false;
+const dragonUse = (down: boolean) => {
+  if (!down) { if (useHeld) { useHeld = false; key("KeyE", false); } return; }
+  if (!game?.active) return;
+  if (game.useOffered) { useHeld = true; key("KeyE", true); }
+  else if (game.rideUse) game.toggleRide();
+  else tap("KeyR");
+};
+const padRuns = (dragon: boolean): PadRuns => ({
   fire: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } },
   aim: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } },
   jump: hold("Space"),
   reload: press("KeyR"),
-  use: { now: () => !!game?.active && !!game.useOffered, run: hold("KeyE") },
+  use: dragon ? { now: () => !!game?.active && (game.useOffered || game.rideUse), run: dragonUse }
+    : { now: () => !!game?.active && !!game.useOffered, run: hold("KeyE") },
   crouch: (down) => {
     const p = game?.player;
     if (!down || !p || p.diveBusy) return;
@@ -928,7 +940,7 @@ padActions(STREETS, {
     else if (p.canProne) { if (!p.dive()) { p.crouchLatch = false; p.proneLatch = true; } }
     else p.crouchLatch = true;
   },
-  swap: (down) => { if (down) game?.cycleWeapon(1); },
+  swap: (down) => { if (!down || !game) return; if (dragon && game.isRiding) game.toggleRide(); else game.cycleWeapon(1); },
   prev: weapon(-1),
   next: weapon(1),
   trick: (down) => { if (!game) return; game.player.trickHeld = down; if (down) game.player.padSprint(); },
@@ -949,7 +961,18 @@ padActions(STREETS, {
   radiodown: press("KeyJ"),
   station: press("KeyI"),
   window: press("KeyU"),
-}, "cd-padbuttons", () => placeNow() === "back" ? "back" : game?.atWheel ? "wheel" : "foot", { reload: B.triangle });
+});
+const padWhere = () => placeNow() === "back" ? "back" as const : game?.atWheel ? "wheel" as const : "foot" as const;
+function padLayoutOn() {
+  const dragon = padLayout() === "dragon", table = streetsFor(padLayout());
+  controlsPage(table);
+  if (!dragon) { padActions(table, padRuns(false), "cd-padbuttons", padWhere, { reload: B.triangle }); return; }
+  // what prompts call getting on and off a ride, which has no button of its own here
+  const ride = () => game?.isRiding ? PAD_NAME[B.triangle] : ctl("use", "pad");
+  padActions(table, padRuns(true), "cd-padbuttons-dragon", padWhere, {}, "dragon", { ride });
+}
+padLayouts(padLayoutOn);
+padLayoutOn();
 padSettings();
 
 let last = performance.now();

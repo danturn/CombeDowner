@@ -264,7 +264,11 @@ still aim finely with small pushes. Once a pad's been seen, Settings (and the mi
 a Controller section: look speed side to side and up and down, invert up and down, invert left and right, the faster turn,
 the stick's dead zone and rumble, all usable with the pad itself.
 
-The buttons are laid out as Call of Duty: Warzone's defaults, so they feel familiar. Square reloads
+Settings, Controller, Layout picks how the buttons are laid out in the streets: **CODish** (the
+default, below) or **Dragon Camp**, Arma Reforger's on a PS5. Each keeps its own moved buttons. The
+mines keep CODish.
+
+In CODish the buttons are laid out as Call of Duty: Warzone's defaults, so they feel familiar. Square reloads
 on a tap and uses on a hold (about a third of a second); when there's something to use, get in or
 take right there (the prompt is up), a tap uses it instead. Circle crouches on a tap and lies you
 down on a hold, and either again stands you up.
@@ -303,6 +307,18 @@ screen) aims without the mouse, so "Click to aim" only shows while you're on the
 | Create, held | the scores | the scores |
 | Touchpad | tap: the map (on it: Cross marks, Triangle finds you, Circle closes); hold: the job's poster again (a Wanted bounty) | the map |
 | Options | pause (with a big card up: put it away) | pause |
+
+Dragon Camp, where it differs from CODish:
+
+| Button | On foot | Driving |
+|---|---|---|
+| Square | tap: use, get in or out, get on a ride, put a ladder up or a strange object down, and reload when there's none of that; hold: reload | get out |
+| Triangle | switch weapon (on a ride: get off) | get out |
+| L1, held | radio | radio |
+| R1 | mark the spot | |
+| L3 | sprint (on a ride: grind or manual) | horn (a narrowboat's bell) |
+| R3 | | chase, seat, bonnet or cinematic camera |
+| D-pad | up: the torch; hold down: binoculars; left and right: weapon back and forward (at a bus stop: call the minibus or the bus; out of a race: who you watch) | left and right indicate |
 
 On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
 change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
