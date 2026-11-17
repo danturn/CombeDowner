@@ -199,3 +199,10 @@ def _sliver(v, tri):
     (ax, ay), (bx, by), (cx, cy) = ((v[3 * i], v[3 * i + 1]) for i in tri)
     longest = max(math.hypot(bx - ax, by - ay), math.hypot(cx - bx, cy - by), math.hypot(ax - cx, ay - cy))
     return longest == 0 or abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / longest < SLIVER
+
+
+def moved(kept, dx, dy):
+    """A kept roof moved dx, dy metres, with the building it was fitted to (tools/register.py)."""
+    w = [[a + (dx if k in (0, 4) else dy if k in (1, 5) else 0) for k, a in enumerate(q)] for q in kept["w"]]
+    return dict(kept, v=[[x + dx, y + dy, z] for x, y, z in kept["v"]], w=w,
+                r=[[[x + dx, y + dy] for x, y in ring] for ring in kept["r"]])

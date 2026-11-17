@@ -377,6 +377,8 @@ def build(args):
         ("pack layers", [*py, "tools/mapdata.py", "pack", map_id, raw], True),
         # the ecoregion next: it says what the satellite's shrubland is
         ("ecoregion", [*py, "tools/region.py", map_id, "fetch"], False),
+        # the buildings lined up with the lidar, before anything reads them
+        *([("buildings on the lidar", [*py, "tools/register.py", map_id, raw], False)] if lidar else []),
         # then the railway: the squares cut the ground to its levels
         ("railway", [*py, "tools/railway.py", map_id, raw, f"{maps}-rail.json"], False),
         *([("church towers", [*py, "tools/towers.py", map_id, raw], False)] if lidar else []),

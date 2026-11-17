@@ -42,6 +42,7 @@ from shapely.ops import linemerge, nearest_points, split, substring, transform, 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
+import register
 
 args = sys.argv[1:]
 TILE = None
@@ -251,10 +252,21 @@ def L(f):
     """One layer's features as (geometry, properties). Each file is read once and kept, as several
     steps read the same layer; the properties are copied each time, so no step sees another's changes."""
     if f not in _layers:
-        _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+        feats = json.load(open(f"{src_dir}/{f}.geojson"))["features"]
+        if f in ("building", "footprints"): feats = register.apply(A.id, feats)
+        _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in feats]
         # the footprints the buildings layer lacks (tools/footprints.py) are buildings like any other
         if f == "building" and os.path.exists(f"{src_dir}/footprints.geojson"): _layers[f] += L("footprints")
     return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
+
+
+def place_key(poly, p):
+    """A whole number from where a building stands, for its random draws. A building lined up with
+    the lidar (tools/register.py) keeps the one from where it was mapped, so moving it doesn't
+    reroll its walls, roof or door."""
+    c = poly.centroid
+    dx, dy = p.get("shift") or (0, 0)
+    return zlib.crc32(f"{c.x - dx:.1f},{c.y - dy:.1f}".encode())
 
 
 inside = lambda x, y: X0 <= x <= X1 and Y0 <= y <= Y1
@@ -2457,7 +2469,7 @@ if _census or _cores:
     except FileNotFoundError:
         pass
     _got = priors([e[1] for e in _every], [e[2] for e in _every], _every_certs,
-                  [zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()) for c in (e[1].centroid for e in _every)],
+                  [place_key(e[1], e[2]) for e in _every],
                   A.zones, A.default_zone, _census, _cores)
     for (fid, _, _), pr in zip(_every, _got):
         PRIOR[fid] = dict(pr, near=[_every[j][0] for j in pr["near"]])
@@ -2676,7 +2688,7 @@ except FileNotFoundError as e:
 # the random choices for each building come from where it stands (see buildings.classify), as do
 # those along each street and at each door below, so a rebuild comes out the same, a change in one
 # place doesn't reshuffle the rest, and a tile picks the same as its neighbour where they overlap
-keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
+keys = [place_key(poly, p) for poly, p in cand]
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs, keys)
 if TILE is not None:
     # the buildings past the margin were only there to be classed
@@ -2753,11 +2765,23 @@ from roofs import mesh as roof_faces
 FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {}
 
 
-def _faced(poly):
+def kept_faces(ring, holes, p):
+    """The lidar's roof kept for this outline as built, or None. Roofs fitted before a building was
+    lined up with the survey (tools/register.py) are found by the outline it had then, and moved
+    with it."""
+    kept = FACES.get(roof_faces.ring_key({"r": [ring, *holes]}))
+    s = p.get("shift")
+    if kept is not None or not s: return kept
+    back = lambda rr: [[r1(x - s[0]), r1(y - s[1])] for x, y in rr]
+    kept = FACES.get(roof_faces.ring_key({"r": [back(ring), *[back(h) for h in holes]]}))
+    return None if kept is None else roof_faces.moved(kept, s[0], s[1])
+
+
+def _faced(poly, p):
     """Whether the lidar's roof is kept for this outline as built (it is found by the outline)."""
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
-    return bool(ring) and roof_faces.ring_key({"r": [ring, *holes]}) in FACES
+    return bool(ring) and kept_faces(ring, holes, p) is not None
 
 
 def give_way(cand, info, fresh):
@@ -2782,7 +2806,7 @@ def give_way(cand, info, fresh):
     polys = [c[0] for c in cand]
     tree = shapely.STRtree(polys)
     faced = [None] * len(polys)
-    is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i])) or faced[i]
+    is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i], cand[i][1])) or faced[i]
     cut, merged = 0, set()
     for i in range(len(polys)):
         for j in sorted(int(k) for k in tree.query(polys[i])):
@@ -2895,16 +2919,16 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
         if b["roof"].get("sure_ends"): out["hs"] = 1
     if b["level"] and b["kind"] in ("terrace", "semi"): out["lt"] = 1
-    k = roof_faces.ring_key(out) if FACES else None
+    kept = kept_faces(ring, holes, p) if FACES else None
     _whole = shapely.Polygon(ring, holes).buffer(0) if b["roof"] and b["roof"].get("box") else None
-    if _whole is not None and _whole.geom_type == "Polygon" and k not in FACES:
+    if _whole is not None and _whole.geom_type == "Polygon" and kept is None:
         out["r"], out["rm"] = box_dormer(_whole, b["roof"], eaves)
         boxed += 1
-    elif k in FACES:
+    elif kept is not None:
         # into the map's frame as the eaves were: the survey's heights over its ground at the walls
         # (where the survey gave no eaves here, its ground as the roofs were fitted)
-        up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - FACES[k]["base"]
-        out["r"], out["rm"] = roof_faces.for_game(FACES[k], up)
+        up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - kept["base"]
+        out["r"], out["rm"] = roof_faces.for_game(kept, up)
         faced += 1
     if b["chim"]:
         out["ch"] = [[r1(x), r1(y)] for x, y in b["chim"]]
@@ -3222,6 +3246,39 @@ def _through_buildings(roads):
     return out, cut
 roads, _cut = _through_buildings(roads)
 print(f"streets: {_cut} stop at a building they ran through")
+
+
+# A path mapped up to a building's door ends at its wall; where the building was lined up with the
+# survey (tools/register.py) the path's end can lie inside it, and it stops at the wall instead.
+def _ends_at_walls(roads):
+    inner = [f.buffer(-0.3) for f in footprints]
+    inner = [g for g in inner if not g.is_empty]
+    if not inner: return roads, 0
+    btree = shapely.STRtree(inner)
+    out, cut = [], 0
+    for r in roads:
+        if r["c"] not in PATHS or len(r["p"]) < 2 or any(len(q) > 3 for q in r["p"]):
+            out.append(r); continue
+        whole = shapely.LineString([tuple(q[:2]) for q in r["p"]])
+        line, moved = whole, False
+        for end in (0, -1):
+            e = shapely.Point(line.coords[end])
+            hit = [inner[int(k)] for k in btree.query(e) if inner[int(k)].contains(e)]
+            if not hit: continue
+            rest = line.difference(unary_union([h.buffer(0.3) for h in hit]))
+            far = shapely.Point(line.coords[-1 - end])
+            keep = [q for q in getattr(rest, "geoms", [rest]) if q.geom_type == "LineString" and q.distance(far) < 1e-6]
+            if not keep or keep[0].length < 1.0: continue
+            line, moved = keep[0], True
+        if not moved: out.append(r); continue
+        cut += 1
+        # (heights along it as they were, read off where each point lies along the old line)
+        at = [whole.project(shapely.Point(q[:2])) for q in r["p"]]
+        zs = [q[2] for q in r["p"]]
+        out.append(dict(r, p=[[r1(x), r1(y), r1(float(np.interp(whole.project(shapely.Point(x, y)), at, zs)))] for x, y in line.coords]))
+    return out, cut
+roads, _cut = _ends_at_walls(roads)
+print(f"paths: {_cut} ends brought back to the wall of a building they ran into")
 
 # ---- footpaths: none runs along a carriageway --------------------------------------------------
 # A footpath mapped down the middle of a street (a pavement drawn as the street's centre line, or a

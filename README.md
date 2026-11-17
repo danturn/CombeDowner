@@ -719,7 +719,8 @@ ground of the whole map out as one partition (`tools/partition/stage.py`), for e
 Bath: every bit of ground is a street, a pavement, a garden plot, a path or open land, the streets
 are fitted once across the whole city, the plots follow the registered parcels where the map
 has them (the Land Registry's in England and Wales, Registers of Scotland's in Scotland) and the blocks and the houses' fronts everywhere else, and every wall,
-fence, hedge and gate stands on an edge between two of them. A map without the lidar's wall runs
+fence, hedge and gate stands on an edge between two of them. A front path or a drive runs on to
+the pavement or road it comes up to, with no strip of grass between. A map without the lidar's wall runs
 (outside England) has only its mapped walls and the guessed boundaries; one without the kept lidar
 (`partition.zip`, below) keeps every guess whether or not anything is seen standing there.
 `--no-partition` builds `prep_map.py`'s squares straight into the game's folder instead, as every
@@ -731,7 +732,8 @@ streets as they're drawn. Each square also carries its ground as one sheet with 
 paths (`tools/partition/sheet.py`): the grass is cut down or built up to meet every street's,
 pavement's and path's edge, banked no steeper than 1 in 1.5 above it and 1 in 2 below, and where a
 bank 3 m wide can't make up the difference a low retaining wall in the square's own kind of wall
-takes the rest. The railway lies on a bed of ballast in the sheet too, level across and flush with
+takes the rest. Beside a house the ground is never dug below its walls' foot, and a path running
+through a building's passage lies on the ground, with nothing dug out under it as under a bridge. The railway lies on a bed of ballast in the sheet too, level across and flush with
 the grass either side, two tracks side by side on one bed, each at its own height. That's how the ground is drawn and walked: the open ground is triangulated
 round the faces' edges, meeting them only at their own corners; `?ground=sheet` in the address cuts
 each grid cell along the edges instead, and `?ground=old` draws the grid let down under the faces,
@@ -746,6 +748,29 @@ building is drawn as a church when it was built as one, whatever it's used for n
 `building=church`, `chapel` or `cathedral`, a Christian place of worship, or a building Wikidata
 calls a church (St Mark's in Widcombe is a community centre), or whose name says so (a chapel, church, abbey or kerk, but not Chapel Row or a church hall). `python3 -I tools/worship.py $MAP`
 looks those up afresh into `data/$MAP/worship.json`.
+Before anything is laid out round them, the buildings are lined up with the lidar
+(`tools/register.py`). OpenStreetMap's outlines are often a metre or two to one side of the
+buildings the survey sees, while its streets run down the middle of the survey's gaps between
+them: in the middle of Bath whole terraces were about 2 m west, which gave Milsom Street one
+pavement twice as wide as the other and left the survey's building fronts standing in the street,
+where the tree canopy took them for trees. Buildings that touch move together as one block, by
+the shift that best puts the survey's roofs inside their outlines and its drops to the ground on
+their walls, up to 5 m; a block whose own fit says little takes the shift of the blocks round it,
+and one goes its own way only on clear evidence (its fit well ahead, or its walls sitting plainly
+cleaner on the survey's). No block is moved onto a mapped street it wasn't on, taking each street at its own width
+(its tag's or its lanes', else its kind's, pedestrian streets too), so no corner is left standing in
+a pavement, though a block may go up to a foot further in along its street fronts. Nor are two blocks
+a slit apart moved so the slit opens into a way through: of the two, the smaller moves with the
+larger, so a courtyard shut off behind a terrace stays shut off. Nor is a block moved into another's building. The streets,
+paths and mapped walls stay where they are; a path that now ends inside a building stops at its
+wall. A moved building keeps its walls, roof and door as they were chosen for it (they are drawn
+from where it was mapped), and a roof fitted to the lidar before moves with it. The shifts are
+kept in `data/$MAP/measured/registered.json`: run `register.py` again (with the raw lidar) to
+measure them afresh, then build the squares with `--measure`, as what the lidar measures is kept
+by each building's outline. Then fit the roofs again over the moved squares: move their
+`data/$MAP/measured/faces/<ti>_<tj>.json` aside to a folder, build them, run
+`tools/roofs/shapes.py ti,tj ... --keep <folder>` (which keeps the old roofs beside the new ones),
+and build them again.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks
@@ -770,6 +795,7 @@ steps, then pack it back:
 pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
 python3 -I tools/lidar_ground.py $MAP           # the terrain tiles take the lidar's ground wherever it covers them
+python3 -I tools/register.py $MAP              # the buildings lined up with the lidar (--only ti,tj ... for some squares)
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide     # also the partition's lidar, from the build's passes
 ```

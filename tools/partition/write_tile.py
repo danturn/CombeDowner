@@ -3965,6 +3965,23 @@ KERB_SLIT = 0.25       # metres: half the width of paving anyone could stand on
 KERB_ISLAND = 0.9      # of its edge: an island narrower than 2 * KERB_POINT with the road all round it is the road's
 
 
+RUN_ON = 0.25         # metres: bare ground narrower than twice this between a front path or drive and the street is paved
+
+
+def run_on(layer, street, kept, reach=RUN_ON):
+    """`layer` (the front paths or the drives) run on to the street's faces where they come within
+    2 * reach of them: laid from the gate, a front path stopped a few centimetres short of the
+    pavement, or ran along it at a slant with a strip of grass between, as a hairline of bare ground
+    the game showed. Not under a wall, a fence or a house (`kept`), where the faces stop for it."""
+    if layer.is_empty or street.is_empty:
+        return layer
+    fill = _minus(_both(layer.buffer(reach), street.buffer(reach)), unary_union([layer, street, kept]))
+    by_layer, by_street = layer.buffer(0.02), street.buffer(0.02)
+    pieces = [g for g in getattr(fill, "geoms", [fill]) if g.geom_type == "Polygon" and g.area > 1e-4
+              and g.intersects(by_layer) and g.intersects(by_street)]
+    return unary_union([layer, *pieces]) if pieces else layer
+
+
 FACE_CRACK = 0.4      # metres: bare ground narrower than this closed in by the street faces is a crack
 FACE_CRACK_MOST = 3.0  # m2: a larger gap was left open on purpose
 
@@ -5381,6 +5398,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     taken = unary_union([road, pave, plaza, path, *buildings])
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
+    kept_open = unary_union([*buildings, *(LineString([q[:2] for q in b["p"]]).buffer(0.3) for b in br if len(b["p"]) > 1)]
+                            or [Polygon()])
+    street_side = unary_union([road, pave, plaza])
+    drive = run_on(drive, street_side, taken.union(front).union(kept_open))
+    front = run_on(front, street_side, taken.union(drive).union(kept_open))
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: level(k, x, y)
                      if _portal_owner(planes, k, x, y) else None, surface)

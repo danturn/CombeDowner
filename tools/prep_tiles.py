@@ -257,7 +257,7 @@ def main():
     shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
-    lines += [p for p in [os.path.join(data_dir(map_id), "region.json")] if os.path.exists(p)]
+    lines += [p for p in [os.path.join(data_dir(map_id), "region.json"), os.path.join(measured_dir(map_id), "registered.json")] if os.path.exists(p)]
     # and, built from the repository's measurements, its own measurements file
     kept = lambda t: [p for p in [os.path.join(measured_dir(map_id), "faces", f"{t[0]}_{t[1]}.json")] if os.path.exists(p)] + (
         [] if measure else [p for p in [os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")] if os.path.exists(p)])
