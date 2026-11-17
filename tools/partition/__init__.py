@@ -34,6 +34,7 @@ from shapely.geometry import box, shape
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 from area import area, MAPS
+import register
 
 
 def _map_named():
@@ -95,6 +96,8 @@ def _layer(src):
     key = (src, st.st_mtime_ns, st.st_size)
     if key not in _LAYERS:
         feats = json.load(lzma.open(src) if src.endswith(".xz") else open(src))["features"]
+        if os.path.basename(src).split(".")[0] in ("building", "footprints"):
+            feats = register.apply(MAP, feats)
         _LAYERS[key] = (feats, [_lonlat_bounds(f["geometry"]) for f in feats])
     return _LAYERS[key]
 

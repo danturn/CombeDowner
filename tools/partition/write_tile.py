@@ -75,6 +75,7 @@ from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import ALL_DAY, KERBED, parked_cars, pave_band, pavement_room, pv_at
 from landscape import string_wires
 import tunnels as TN
+import clearance
 from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
@@ -3149,8 +3150,10 @@ def bridge_decks(rd, ground=None, under=False):
     # Only a way far enough below the deck by its own height: one up on the bank beside it is still the
     # deck's ground. The ground under a deck is no guide, as the survey often has the deck or its
     # abutments' bank there, and a footway through a short underpass was cut out with the deck above)
+    # (the step from a span to its abutment is deck too, as deck_stretches cuts it: a towpath passing
+    # under a deck's end was cut out with it and never given back)
     def on_span(a, b):
-        return all(len(q) > 3 and q[3] in (1, 2) for q in (a, b))
+        return any(len(q) > 3 and q[3] in (1, 2) for q in (a, b))
     # (as wide as the deck cut from the faces: narrower, a path under a deck wider than its street
     # was cut out with it and never given back)
     high = [(LineString([a[:2], b[:2]]).buffer(max(reach(r), r.get("w", 4) / 2 + max(r.get("pv") or [0])) + 0.5, cap_style="flat"),
@@ -3963,6 +3966,23 @@ KERB_POINT = 0.5      # metres: a point of paving or road narrower than twice th
 KERB_POINT_AREA = 8.0  # m2: a larger piece is a strip of its own (an island between two carriageways)
 KERB_SLIT = 0.25       # metres: half the width of paving anyone could stand on
 KERB_ISLAND = 0.9      # of its edge: an island narrower than 2 * KERB_POINT with the road all round it is the road's
+
+
+RUN_ON = 0.25         # metres: bare ground narrower than twice this between a front path or drive and the street is paved
+
+
+def run_on(layer, street, kept, reach=RUN_ON):
+    """`layer` (the front paths or the drives) run on to the street's faces where they come within
+    2 * reach of them: laid from the gate, a front path stopped a few centimetres short of the
+    pavement, or ran along it at a slant with a strip of grass between, as a hairline of bare ground
+    the game showed. Not under a wall, a fence or a house (`kept`), where the faces stop for it."""
+    if layer.is_empty or street.is_empty:
+        return layer
+    fill = _minus(_both(layer.buffer(reach), street.buffer(reach)), unary_union([layer, street, kept]))
+    by_layer, by_street = layer.buffer(0.02), street.buffer(0.02)
+    pieces = [g for g in getattr(fill, "geoms", [fill]) if g.geom_type == "Polygon" and g.area > 1e-4
+              and g.intersects(by_layer) and g.intersects(by_street)]
+    return unary_union([layer, *pieces]) if pieces else layer
 
 
 FACE_CRACK = 0.4      # metres: bare ground narrower than this closed in by the street faces is a crack
@@ -5381,6 +5401,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     taken = unary_union([road, pave, plaza, path, *buildings])
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
+    kept_open = unary_union([*buildings, *(LineString([q[:2] for q in b["p"]]).buffer(0.3) for b in br if len(b["p"]) > 1)]
+                            or [Polygon()])
+    street_side = unary_union([road, pave, plaza])
+    drive = run_on(drive, street_side, taken.union(front).union(kept_open))
+    front = run_on(front, street_side, taken.union(drive).union(kept_open))
     surface = unary_union([road, pave])
     cut = level_cuts(lines, reach_of, lambda k, x, y: level(k, x, y)
                      if _portal_owner(planes, k, x, y) else None, surface)
@@ -10070,6 +10095,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                         stand=face_heights(tile["sf"]))
     clear_under_decks(tile, gaps, gone)
     clear_portals(tile, gone)
+    # last of the plants: the room over the streets and paths kept clear of the trees, as in prep_map.py
+    cleared = clearance.keep_clear(tile, rd, ground, GAME_PATHS, KERBED,
+                                 clearance.trunk_room([b["r"][0] for b in tile.get("bl") or [] if b.get("r")], [b["p"] for b in br], rd))
+    if verbose:
+        print("clearance: {cells_filled} canopy cells filled, {cells_lowered} lowered, {cells_opened} opened; {unwooded} wood trees crowned; "
+              "{stepped} trees stepped back, {lifted} raised, {trimmed} made smaller, {dropped} left out".format(**cleared))
     # placed after the clash pass, which would take a car for a thing standing in the road
     no_parking = unary_union([g for g in (blocked_ground([], tile, rail_tracks, canal, sq),) if g is not None]
                              + [g[0] for g in gaps])

@@ -13,9 +13,9 @@ interface Crown { x: number; y: number; z: number; r: number }
 function crownsNear(map: GameMap, x: number, z: number, r: number): Crown[] {
   const out: Crown[] = [];
   for (const a of map.areas()) {
-    for (const [tx, ty, tz, s] of a.d.tr) {
+    for (const [tx, ty, tz, s, , lift = 1] of a.d.tr) {
       if (Math.abs(tx - x) > r || Math.abs(-ty - z) > r) continue;
-      out.push({ x: tx, y: tz - a.z0 + CROWN_CY * s, z: -ty, r: CROWN_R * s });
+      out.push({ x: tx, y: tz - a.z0 + CROWN_CY * s * lift, z: -ty, r: CROWN_R * s });
     }
   }
   return out;

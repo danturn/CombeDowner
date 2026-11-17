@@ -24,6 +24,8 @@ data/<map>/ (see the README there for where each comes from and its licence):
 - the Mapzen terrain tiles the builds read (zoom 15 for the squares, the canal and the railway,
   zoom 14 for the wide file), packed smaller;
 - what the partition reads from the lidar (tools/partition/measured.py), in measured/partition.zip;
+- how far each building is moved to line it up with the lidar (tools/register.py), in
+  measured/registered.json;
 - what the builds measure from the lidar and the tree canopy map (gigabytes, so not kept: see
   docs/new-area.md to fetch them), in measured/: for each square, what the survey shows of each
   building's roof (its heights as percentiles, the ground at its walls, the roof planes fitted to

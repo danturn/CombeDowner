@@ -38,6 +38,7 @@ from area import RELEASE, area
 from buildings import classify, wings
 
 import mapdata
+import register
 MEASURE = "--measure" in sys.argv
 if MEASURE: sys.argv.remove("--measure")
 A, src_dir, out_path = area(sys.argv[1], wide=True), sys.argv[2], sys.argv[3]
@@ -138,7 +139,9 @@ def gelev(x, y):
 
 # ---- helpers ------------------------------------------------------------------------
 def L(f):
-    got = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+    feats = json.load(open(f"{src_dir}/{f}.geojson"))["features"]
+    if f in ("building", "footprints"): feats = register.apply(A.id, feats)
+    got = [(shape(x["geometry"]), x["properties"]) for x in feats]
     # the footprints the buildings layer lacks (tools/footprints.py) are buildings like any other
     return got + L("footprints") if f == "building" and os.path.exists(f"{src_dir}/footprints.geojson") else got
 name = lambda p: (p.get("names") or {}).get("primary") or ""
