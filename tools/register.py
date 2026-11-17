@@ -20,6 +20,10 @@ buildings), so it is the buildings that move to the survey, by translation only:
   about as well as its own (within TIE), and one whose own fit says little takes the area's shift
   if it fits that no worse than standing still. So a block with poor evidence doesn't jump on its
   own, and one that disagrees with its neighbours does so only on clear evidence.
+- no block is moved onto more of a mapped street than it stood on (each street as wide as its tags
+  or its kind make it, as the build starts it), beyond a strip ON_ROAD_DEPTH wide along its street
+  fronts, and no two blocks a slit apart are moved so the
+  slit opens into a way through.
 
 What's kept is each moved building's shift (dx, dy, metres east and north), by its Overture id;
 apply() moves the buildings layer by it wherever a tool reads it (prep_map.py, prep_wide.py, the
@@ -43,9 +47,27 @@ FIELD = 150.0       # metres round a block whose blocks make the area's shift
 FIELD_MIN = 4       # blocks the survey clearly shows that make an area's shift
 PARTY = 0.6         # metres: buildings this close share a wall (roofs.common.PARTY)
 EDGE = 0.03         # how much cleaner a block's own walls must sit on the survey's than its area's shift puts them, to go its own way
-ON_ROAD = 1.0       # square metres more of a mapped carriageway a shift may put a block on
-CARRIAGEWAY = {"service": 1.0}      # metres either side of a mapped road's line that are surely carriageway: else 2.0
-NOT_ROADS = {"footway", "steps", "track", "cycleway", "bridleway", "path", "pedestrian", "elevator", "construction", "raceway", "escape"}
+CLOSED = 1.5        # metres: a slit narrower than this between two blocks is no way through
+OPEN_MOST = 2.0     # square metres of such a slit a shift may open into a way through
+ON_ROAD = 1.0       # square metres more of a mapped street a shift may put a block on...
+ON_ROAD_DEPTH = 0.3    # ...or this many metres in along the length of its street fronts, as a street's
+                       # width is guessed to, but no corner a metre in: counted over its whole outline,
+                       # a big block with yards inside it was let half a metre into a street
+FRONT = 1.0         # metres: a block's outline this close to a mapped street is a street front
+# a street's own width, where its record gives none (prep_map.py RW)
+STREET_WIDTH = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6,
+                "unclassified": 5.5, "living_street": 5, "service": 3.5, "pedestrian": 4}
+NOT_ROADS = {"footway", "steps", "track", "cycleway", "bridleway", "path", "elevator", "construction", "raceway", "escape"}
+
+
+def street_width(q):
+    """A mapped street's width as the build starts it, before anything stands beside it
+    (roadwidth.py): its tag's, else its lanes', no wider than its kind's; else its kind's."""
+    from roadwidth import _num
+    kind = STREET_WIDTH.get((q.get("highway") or "").removesuffix("_link"), 4.0)
+    w = _num(q.get("width")) or _num(q.get("est_width"))
+    if w is None and _num(q.get("lanes")): w = 3.25 * _num(q["lanes"])
+    return min(w, kind) if w and w > 1.0 else kind
 
 
 def path(map_id):
@@ -122,7 +144,7 @@ _job = {}
 
 def _fit_one(k):
     """A block's fit, and for each shift how cleanly its walls sit on the survey's and how much of
-    a mapped carriageway it would stand on."""
+    a mapped street it would stand on."""
     from roofs.common import fit
     lidar, outline = _job["lidar"], _job["outlines"][k]
     try:
@@ -137,7 +159,7 @@ def _fit_one(k):
 def _sides(lidar, outline, roads):
     """For each shift (on the fit's half-metre grid): the share of the survey's solid raised surface
     in a band just outside the walls plus the share of open ground in a band just inside them (0 is
-    walls exactly on the survey's), and the square metres of mapped carriageway under the block."""
+    walls exactly on the survey's), and the square metres of mapped street under the block."""
     import numpy as np
     import shapely
     px, n = 0.5, int(round(REACH / 0.5))
@@ -170,7 +192,8 @@ def _sides(lidar, outline, roads):
 
 
 def roads_of(map_id, raw):
-    """The mapped carriageways near the buildings, as areas (an STRtree and its geometries)."""
+    """The mapped streets near the buildings, each as wide as it is (pedestrian streets too), as areas
+    (an STRtree and its geometries): a block moved so its corner stood in one pinched its pavement to a point."""
     import numpy as np
     import shapely
     from shapely.geometry import shape
@@ -188,19 +211,83 @@ def roads_of(map_id, raw):
         try: g = shape(f["geometry"])
         except Exception: continue
         g = shapely.transform(g, lambda a: np.c_[(a[:, 0] - lon0) * kx, (a[:, 1] - lat0) * ky])
-        geoms.append(g.buffer(CARRIAGEWAY.get(h, 2.0), cap_style="flat"))
+        geoms.append(g.buffer(street_width(q) / 2, cap_style="flat"))
     return (shapely.STRtree(geoms), geoms) if geoms else None
 
 
-def decide(fits, centres, sizes):
+def street_front(outline, roads):
+    """Metres of the block's outline along a mapped street."""
+    import shapely
+    if roads is None: return 0.0
+    tree, geoms = roads
+    near = [geoms[int(i)] for i in tree.query(outline.buffer(FRONT))]
+    return float(outline.exterior.intersection(shapely.union_all(near).buffer(FRONT)).length) if near else 0.0
+
+
+def opens(blk, shift, others):
+    """How much of the slits narrower than CLOSED between this block and the others round it moving
+    it by shift would open wider (m2): a courtyard behind Milsom Street, shut off by such slits,
+    was joined to Broad Street through one and laid out as the street."""
+    import shapely, shapely.affinity
+    moved = shapely.affinity.translate(blk, *shift)
+    near = [o for o in others if o.distance(blk) < CLOSED]
+    if not near: return 0.0
+    rest = shapely.union_all(near)
+    slit = blk.buffer(CLOSED / 2).intersection(rest.buffer(CLOSED / 2)).difference(moved.buffer(CLOSED / 2))
+    return slit.difference(blk).difference(rest).area
+
+
+def keep_slits(todo, picked, fits, outlines, sizes, fronts):
+    """The shifts with no slit opened into a way through between two blocks moved
+    differently: of the two, the smaller takes the larger's shift where that fits it no worse than
+    standing still (and puts it on no street), else stays, and the larger stays if that still opens it."""
+    import shapely, shapely.affinity
+    out = [list(p) for p in picked]
+    at = {k: i for i, k in enumerate(todo)}
+    otree = shapely.STRtree([outlines[k] for k in todo])
+    zero = (0.0, 0.0)
+
+    def fits_ok(i, s):
+        f = fits[i]
+        if f is None or s not in f[0]: return False
+        room = max(ON_ROAD, ON_ROAD_DEPTH * fronts[i])
+        return f[0][s] >= f[0][zero] - TIE and f[2][s] <= f[2][zero] + room
+
+    def opened(i, j):
+        si, sj = tuple(out[i][:2]), tuple(out[j][:2])
+        if si == sj: return False
+        a = shapely.affinity.translate(outlines[todo[i]], *sj)
+        b = shapely.affinity.translate(outlines[todo[j]], *sj)
+        rel = (si[0] - sj[0], si[1] - sj[1])
+        return opens(a, rel, [b]) > OPEN_MOST
+    for _ in range(3):
+        changed = 0
+        for i in sorted(range(len(todo)), key=lambda i: sizes[todo[i]]):
+            for j in otree.query(outlines[todo[i]].buffer(CLOSED)).tolist():
+                if j == i or not opened(i, j): continue
+                small, big = (i, j) if sizes[todo[i]] <= sizes[todo[j]] else (j, i)
+                want = tuple(out[big][:2])
+                if fits_ok(small, want) and want != tuple(out[small][:2]):
+                    out[small] = [want[0], want[1], "slit"]
+                elif tuple(out[small][:2]) != zero:
+                    out[small] = [0.0, 0.0, "slit"]
+                if opened(i, j) and tuple(out[big][:2]) != zero:
+                    out[big] = [0.0, 0.0, "slit"]
+                changed += 1
+        if not changed: break
+    return [tuple(o) for o in out]
+
+
+def decide(fits, centres, sizes, fronts=None):
     """Each block's shift from its own fit and its area's: [(dx, dy, why)]."""
     import numpy as np
     import shapely
     zero = (0.0, 0.0)
-    # a block isn't moved further than REACH, nor onto a mapped carriageway it wasn't on
+    # a block isn't moved further than REACH, nor onto a mapped street it wasn't on
     edges = [None if f is None else f[1] for f in fits]
-    fits = [None if f is None else {k: v for k, v in f[0].items() if math.hypot(*k) <= REACH + 1e-9 and f[2][k] <= f[2][zero] + ON_ROAD}
-            for f in fits]
+    room = [max(ON_ROAD, ON_ROAD_DEPTH * (fronts[k] if fronts else 0.0)) for k in range(len(fits))]
+    fits = [None if f is None else {s: v for s, v in f[0].items() if math.hypot(*s) <= REACH + 1e-9 and f[2][s] <= f[2][zero] + room[k]}
+            for k, f in enumerate(fits)]
     top = [None if sc is None else max(sc.values()) for sc in fits]
 
     def choose(k, prior):
@@ -288,7 +375,7 @@ def load(map_id, raw):
 
 
 def fit_all(lidar, outlines, todo, jobs, roads=None):
-    """Each listed block's fit (({shift: score}, {shift: edges}, {shift: carriageway m2}), or None),
+    """Each listed block's fit (({shift: score}, {shift: edges}, {shift: street m2}), or None),
     spread over jobs processes."""
     import multiprocessing
     _job.update(lidar=lidar, outlines=outlines, roads=roads)
@@ -323,8 +410,11 @@ def main():
     else:
         todo = owned
     print(f"register: {len(polys)} buildings in {len(groups)} blocks; fitting {len(todo)} blocks")
-    got = fit_all(open_lidar(map_id, raw), outlines, todo, jobs, roads_of(map_id, raw))
-    by_block = dict(zip(todo, decide(got, [centres[k] for k in todo], [sizes[k] for k in todo])))
+    roads = roads_of(map_id, raw)
+    got = fit_all(open_lidar(map_id, raw), outlines, todo, jobs, roads)
+    fronts = [street_front(outlines[k], roads) for k in todo]
+    picked = decide(got, [centres[k] for k in todo], [sizes[k] for k in todo], fronts)
+    by_block = dict(zip(todo, keep_slits(todo, picked, got, outlines, sizes, fronts)))
     p = path(map_id)
     kept = json.load(open(p)) if only and os.path.exists(p) else {"moved": {}}
     mine = {keys[i] for k in owned for i in groups[k]}

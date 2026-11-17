@@ -753,7 +753,11 @@ where the tree canopy took them for trees. Buildings that touch move together as
 the shift that best puts the survey's roofs inside their outlines and its drops to the ground on
 their walls, up to 5 m; a block whose own fit says little takes the shift of the blocks round it,
 and one goes its own way only on clear evidence (its fit well ahead, or its walls sitting plainly
-cleaner on the survey's). No block is moved onto a mapped carriageway it wasn't on. The streets,
+cleaner on the survey's). No block is moved onto a mapped street it wasn't on, taking each street at its own width
+(its tag's or its lanes', else its kind's, pedestrian streets too), so no corner is left standing in
+a pavement, though a block may go up to a foot further in along its street fronts. Nor are two blocks
+a slit apart moved so the slit opens into a way through: of the two, the smaller moves with the
+larger, so a courtyard shut off behind a terrace stays shut off. The streets,
 paths and mapped walls stay where they are; a path that now ends inside a building stops at its
 wall. A moved building keeps its walls, roof and door as they were chosen for it (they are drawn
 from where it was mapped), and a roof fitted to the lidar before moves with it. The shifts are

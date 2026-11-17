@@ -2716,7 +2716,13 @@ def street_holes(m, f, sheet, note, at, inner, fig):
     covered += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
     covered += [_deck(r) for r in m.get("rd") or [] if 1 in _flags(r)]
     if m.get("centre"): covered += set_piece_streets(tuple(m["centre"]))
-    holes = shapely.union_all(strips).difference(shapely.union_all(covered).buffer(0.05)).intersection(inner)
+    street, over = shapely.union_all(strips), shapely.union_all(covered).buffer(0.05)
+    try:
+        holes = street.difference(over).intersection(inner)
+    except shapely.errors.GEOSException:
+        # (edges a hair apart, as a moved outline leaves them, can defeat the exact overlay)
+        snap = lambda gs: shapely.union_all([shapely.make_valid(g) for g in gs], grid_size=0.001)
+        holes = shapely.difference(snap(strips), snap(covered).buffer(0.05), grid_size=0.001).intersection(inner)
     total = 0.0
     for g in getattr(holes, "geoms", [holes]):
         if g.geom_type != "Polygon" or g.area < STREET_HOLE or g.buffer(-0.3).is_empty: continue
