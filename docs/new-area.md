@@ -506,7 +506,9 @@ The game names the part of the map you're in after OpenStreetMap's districts:
 game falls back on park and square names). In England, `python3 -I tools/towers.py $MAP
 data/raw/$MAP/wide` measures each church's tower and spire from the lidar into
 `data/$MAP/measured/towers.json`; run it before the squares are built, which place them.
-`tools/new_area.py build` runs both.
+`tools/new_area.py build` runs both. Where there's lidar it also runs `tools/register.py $MAP
+data/raw/$MAP/wide` first, which lines the buildings' outlines up with the survey (they are often
+a metre or two off it) into `data/$MAP/measured/registered.json`, before anything reads them.
 
 ### What the land is like: heath, grass and trees
 

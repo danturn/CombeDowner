@@ -2823,7 +2823,7 @@ def shopfronts_on_grass(m, sheet, note, at, inner, fig):
         c = poly.representative_point()
         if not inner.contains(c) or not len(stree.query(poly, predicate="dwithin", distance=SHOP_SIGN)): continue
         if poly.distance(pave) > SHOP_LOOK: continue
-        ring = poly.exterior
+        ring = poly.exterior if poly.geom_type == "Polygon" else max(poly.geoms, key=lambda g: g.area).exterior
         L, bare = ring.length, 0.0
         for d in np.arange(0.25, L, 0.5):
             p, a, q = ring.interpolate(d), ring.interpolate(max(0, d - 0.2)), ring.interpolate(min(L, d + 0.2))

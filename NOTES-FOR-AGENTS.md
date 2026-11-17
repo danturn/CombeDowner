@@ -21,6 +21,13 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### The co-developer's agents
 
+- **Buildings lined up with the lidar (branch `claude/milsom`):** a measure-time step,
+  `tools/register.py`, moves each block of touching buildings onto the survey and keeps the shifts in
+  `data/combe-down/measured/registered.json`; every reader of the buildings layer applies them
+  (`prep_map.py` `L`, `prep_wide.py`, `partition/__init__.py`, `data.py`, `cache.py`, `canal.py`,
+  `railway.py`), and kept roof faces move with their building. Squares must be built with `--measure`
+  after it. Trialled on 0_3, 1_3, 1_1 and -1_2 only.
+
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
   going and the building gets `ps` (openings: width, headroom, middle line with floor heights) in

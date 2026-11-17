@@ -42,6 +42,7 @@ from shapely.ops import linemerge, nearest_points, split, substring, transform, 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
+import register
 
 args = sys.argv[1:]
 TILE = None
@@ -251,7 +252,9 @@ def L(f):
     """One layer's features as (geometry, properties). Each file is read once and kept, as several
     steps read the same layer; the properties are copied each time, so no step sees another's changes."""
     if f not in _layers:
-        _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+        feats = json.load(open(f"{src_dir}/{f}.geojson"))["features"]
+        if f in ("building", "footprints"): feats = register.apply(A.id, feats)
+        _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in feats]
         # the footprints the buildings layer lacks (tools/footprints.py) are buildings like any other
         if f == "building" and os.path.exists(f"{src_dir}/footprints.geojson"): _layers[f] += L("footprints")
     return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
@@ -2753,11 +2756,21 @@ from roofs import mesh as roof_faces
 FACES = roof_faces.load(A.id, f"{TILE[0]}_{TILE[1]}") if TILE is not None else {}
 
 
-def _faced(poly):
+def kept_faces(ring, holes, p):
+    """The lidar's roof kept for this outline as built, or None. A building lined up with the survey
+    (tools/register.py) finds it by the outline it had before, and it moves with the building."""
+    s = p.get("shift")
+    if not s: return FACES.get(roof_faces.ring_key({"r": [ring, *holes]}))
+    back = lambda rr: [[r1(x - s[0]), r1(y - s[1])] for x, y in rr]
+    kept = FACES.get(roof_faces.ring_key({"r": [back(ring), *[back(h) for h in holes]]}))
+    return None if kept is None else roof_faces.moved(kept, s[0], s[1])
+
+
+def _faced(poly, p):
     """Whether the lidar's roof is kept for this outline as built (it is found by the outline)."""
     ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
     holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
-    return bool(ring) and roof_faces.ring_key({"r": [ring, *holes]}) in FACES
+    return bool(ring) and kept_faces(ring, holes, p) is not None
 
 
 def give_way(cand, info, fresh):
@@ -2782,7 +2795,7 @@ def give_way(cand, info, fresh):
     polys = [c[0] for c in cand]
     tree = shapely.STRtree(polys)
     faced = [None] * len(polys)
-    is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i])) or faced[i]
+    is_faced = lambda i: faced[i] if faced[i] is not None else faced.__setitem__(i, _faced(polys[i], cand[i][1])) or faced[i]
     cut, merged = 0, set()
     for i in range(len(polys)):
         for j in sorted(int(k) for k in tree.query(polys[i])):
@@ -2895,16 +2908,16 @@ for n_c, ((poly, p), b, f) in enumerate(zip(cand, info, fresh)):
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
         if b["roof"].get("sure_ends"): out["hs"] = 1
     if b["level"] and b["kind"] in ("terrace", "semi"): out["lt"] = 1
-    k = roof_faces.ring_key(out) if FACES else None
+    kept = kept_faces(ring, holes, p) if FACES else None
     _whole = shapely.Polygon(ring, holes).buffer(0) if b["roof"] and b["roof"].get("box") else None
-    if _whole is not None and _whole.geom_type == "Polygon" and k not in FACES:
+    if _whole is not None and _whole.geom_type == "Polygon" and kept is None:
         out["r"], out["rm"] = box_dormer(_whole, b["roof"], eaves)
         boxed += 1
-    elif k in FACES:
+    elif kept is not None:
         # into the map's frame as the eaves were: the survey's heights over its ground at the walls
         # (where the survey gave no eaves here, its ground as the roofs were fitted)
-        up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - FACES[k]["base"]
-        out["r"], out["rm"] = roof_faces.for_game(FACES[k], up)
+        up = eaves - b["base"] - b["eaves"] if b.get("base") is not None else ground - kept["base"]
+        out["r"], out["rm"] = roof_faces.for_game(kept, up)
         faced += 1
     if b["chim"]:
         out["ch"] = [[r1(x), r1(y)] for x, y in b["chim"]]

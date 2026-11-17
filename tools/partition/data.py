@@ -22,6 +22,7 @@ from shapely.geometry import LineString, box
 from shapely.strtree import STRtree
 
 from . import KX, KY, LON0, LAT0, MAP, OPTIONAL, Q, ROOT
+import register
 from .corridors import REACH
 
 SIZE = Q.dx * Q.cells
@@ -62,6 +63,8 @@ def _features(raw, name):
             feats = []
         else:
             feats = json.load(lzma.open(packed))["features"]
+        if name in ("building", "footprints"):
+            feats = register.apply(MAP, feats)
         if name == "building":
             feats = feats + _features(raw, "footprints")[0]
         # each feature's lon/lat envelope, computed once, so a window can be answered without

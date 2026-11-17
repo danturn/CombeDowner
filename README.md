@@ -742,6 +742,18 @@ building is drawn as a church when it was built as one, whatever it's used for n
 `building=church`, `chapel` or `cathedral`, a Christian place of worship, or a building Wikidata
 calls a church (St Mark's in Widcombe is a community centre), or whose name says so (a chapel, church, abbey or kerk, but not Chapel Row or a church hall). `python3 -I tools/worship.py $MAP`
 looks those up afresh into `data/$MAP/worship.json`.
+Before anything is laid out round them, the buildings are lined up with the lidar
+(`tools/register.py`). OpenStreetMap's outlines are often a metre or two to one side of the
+buildings the survey sees, while its streets run down the middle of the survey's gaps between
+them: in the middle of Bath whole terraces were about 2 m west, which gave Milsom Street one
+pavement twice as wide as the other and left the survey's building fronts standing in the street,
+where the tree canopy took them for trees. Buildings that touch move together as one block, by
+the shift that best puts the survey's roofs inside their outlines and its drops to the ground on
+their walls, up to 5 m; a block whose own fit says little takes the shift of the blocks round it,
+and one goes its own way only on clear evidence. The streets, paths and mapped walls stay where
+they are. The shifts are kept in `data/$MAP/measured/registered.json`: run `register.py` again
+(with the raw lidar) to measure them afresh, then build the squares with `--measure`, as what the
+lidar measures is kept by each building's outline.
 
 `prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
 more the first time (five and a half hours of processor time, nearly all of it dividing the blocks
@@ -766,6 +778,7 @@ steps, then pack it back:
 pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
 python3 -I tools/lidar_ground.py $MAP           # the terrain tiles take the lidar's ground wherever it covers them
+python3 -I tools/register.py $MAP              # the buildings lined up with the lidar (--only ti,tj ... for some squares)
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide     # also the partition's lidar, from the build's passes
 ```

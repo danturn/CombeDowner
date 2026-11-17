@@ -240,6 +240,7 @@ class Layers:
             return self._layers[name]
         from . import MAP, ROOT as R
         from .data import _lonlat_bounds
+        import register
         path = os.path.join(self.raw, name + ".geojson")
         if not os.path.exists(path):
             path = os.path.join(R, "data", MAP, name + ".geojson.xz")
@@ -248,7 +249,7 @@ class Layers:
             return self._layers[name]
         whole = file_digest(path)
         if name == "building":
-            whole = sha(whole + file_digest(footprints_file(self.raw)))
+            whole = sha(whole + file_digest(footprints_file(self.raw)) + register.digest(MAP))
         saved = os.path.join(self.cache_dir, "layers", f"{name}-{whole}.npz") if self.cache_dir else None
         if saved and os.path.exists(saved):
             z = np.load(saved)
@@ -258,6 +259,8 @@ class Layers:
         if name == "building" and os.path.exists(footprints_file(self.raw)):
             fp = footprints_file(self.raw)
             feats = feats + json.load(lzma.open(fp) if fp.endswith(".xz") else open(fp))["features"]
+        if name == "building":
+            feats = register.apply(MAP, feats)
         env = np.array([_lonlat_bounds(f["geometry"]) for f in feats], float).reshape(-1, 4)
         dig = [sha(json.dumps(f, sort_keys=True)) for f in feats]
         if saved:

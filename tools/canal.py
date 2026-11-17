@@ -48,6 +48,7 @@ from shapely.ops import linemerge, nearest_points, substring, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
+import register
 from terrain import Terrain
 
 PACKS = {
@@ -473,7 +474,7 @@ def main():
         elif c not in PATHS and "is_bridge" not in flags and "is_tunnel" not in flags:
             side_obstacles.append((g, ROAD_HALF.get(c, 3.0)))
     bfeats = [proj(shape(f["geometry"])) for l in ("building", "footprints") if os.path.exists(os.path.join(src, f"{l}.geojson"))
-              for f in json.load(open(os.path.join(src, f"{l}.geojson")))["features"]]
+              for f in register.apply(map_id, json.load(open(os.path.join(src, f"{l}.geojson")))["features"])]
     canal_zone = unary_union([LineString([q[:2] for q in r["p"]]) for r in runs if len(r["p"]) > 1]).buffer(30)
     blds = [b if b.is_valid else shapely.make_valid(b) for b in bfeats if b.intersects(canal_zone)]
     btree = shapely.STRtree(blds) if blds else None
