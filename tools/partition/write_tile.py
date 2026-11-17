@@ -2691,7 +2691,7 @@ FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front":
              "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
 
 
-def face_heights(sf, lifted=True):
+def face_heights(sf, lifted=True, kinds=None):
     """(x, y) -> the drawn height of the street surface there (its face plus how far the game lifts
     that kind), or None off the faces. Street items, trees and shrubs on a street stand at it: they came
     at the base tile's ground, but the faces follow the streets' own levels, which on a hill can be a
@@ -2702,6 +2702,8 @@ def face_heights(sf, lifted=True):
     v = np.asarray(sf["v"], float).reshape(-1, 3)
     tris, lifts = [], []
     for kind, lift in FACE_LIFT.items():
+        if kinds is not None and kind not in kinds:
+            continue
         ids = np.asarray(list(sf.get(kind) or []), int)
         if len(ids) >= 3:
             tris.append(v[ids[: len(ids) // 3 * 3].reshape(-1, 3)])
@@ -2722,6 +2724,34 @@ def face_heights(sf, lifted=True):
             return wa * az + wb * bz + (1 - wa - wb) * cz + (lifts[int(k)] if lifted else 0.0)
         return None
     return drawn
+
+
+FLIGHT_UNDER = 1.5      # metres under the paving a flight's end may land and still be meant to meet it
+
+
+def flights_onto_paving(rd, drawn):
+    """A mapped flight whose top or bottom lands under a pavement or street drawn above it has that end
+    levelled to it, and its treads regraded between its ends: where the paving stands over the
+    survey's ground (lifted over a hollow the ground model made, beside a set piece's bridge), the
+    flight left at the survey's heights was buried in it."""
+    for r in rd:
+        p = r["p"]
+        if r["c"] != "steps" or len(p) < 2 or any(len(q) > 3 and q[3] for q in p):
+            continue
+        ends = {}
+        for e in (0, len(p) - 1):
+            z = drawn(p[e][0], p[e][1])
+            if z is not None and 0.05 < z - p[e][2] < FLIGHT_UNDER:
+                ends[e] = round(z, 2)
+        if not ends:
+            continue
+        z0, z1 = ends.get(0, p[0][2]), ends.get(len(p) - 1, p[-1][2])
+        whole = sum(math.dist(p[k][:2], p[k + 1][:2]) for k in range(len(p) - 1)) or 1.0
+        run = 0.0
+        for k in range(len(p)):
+            if k:
+                run += math.dist(p[k - 1][:2], p[k][:2])
+            p[k] = [p[k][0], p[k][1], round(z0 + (z1 - z0) * run / whole, 2), *p[k][3:]]
 
 
 def deck_reach(rd):
@@ -10007,6 +10037,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                sq[0], sq[1])
     for r in rd:
         r.pop("_laid", None)
+    flights_onto_paving(rd, face_heights(tile["sf"], kinds=("road", "service", "pave")))
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
     rd = widen_to_paving(rd, filled[0][0] if filled else None, paving, br, houses)
