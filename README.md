@@ -715,7 +715,8 @@ ground of the whole map out as one partition (`tools/partition/stage.py`), for e
 Bath: every bit of ground is a street, a pavement, a garden plot, a path or open land, the streets
 are fitted once across the whole city, the plots follow the registered parcels where the map
 has them (the Land Registry's in England and Wales, Registers of Scotland's in Scotland) and the blocks and the houses' fronts everywhere else, and every wall,
-fence, hedge and gate stands on an edge between two of them. A map without the lidar's wall runs
+fence, hedge and gate stands on an edge between two of them. A front path or a drive runs on to
+the pavement or road it comes up to, with no strip of grass between. A map without the lidar's wall runs
 (outside England) has only its mapped walls and the guessed boundaries; one without the kept lidar
 (`partition.zip`, below) keeps every guess whether or not anything is seen standing there.
 `--no-partition` builds `prep_map.py`'s squares straight into the game's folder instead, as every
@@ -727,7 +728,8 @@ streets as they're drawn. Each square also carries its ground as one sheet with 
 paths (`tools/partition/sheet.py`): the grass is cut down or built up to meet every street's,
 pavement's and path's edge, banked no steeper than 1 in 1.5 above it and 1 in 2 below, and where a
 bank 3 m wide can't make up the difference a low retaining wall in the square's own kind of wall
-takes the rest. The railway lies on a bed of ballast in the sheet too, level across and flush with
+takes the rest. Beside a house the ground is never dug below its walls' foot, and a path running
+through a building's passage lies on the ground, with nothing dug out under it as under a bridge. The railway lies on a bed of ballast in the sheet too, level across and flush with
 the grass either side, two tracks side by side on one bed, each at its own height. That's how the ground is drawn and walked: the open ground is triangulated
 round the faces' edges, meeting them only at their own corners; `?ground=sheet` in the address cuts
 each grid cell along the edges instead, and `?ground=old` draws the grid let down under the faces,

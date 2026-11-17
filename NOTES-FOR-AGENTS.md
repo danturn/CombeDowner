@@ -28,6 +28,9 @@ the game locally, without the sound" in `CLAUDE.md`.
   `railway.py`), and kept roof faces move with their building. Squares must be built with `--measure`
   after it, then their roofs refitted (`roofs/shapes.py --keep`, see README). Trialled on 0_3, 1_3,
   1_1 and -1_2 only; `registered.json` and the four squares' measured zips and roof faces hold that.
+  Also on the branch: front paths and drives run on to the street's faces (`write_tile.run_on`),
+  the ground sheet keeps odd cells' corners off a house's foot and lets a passage's deck lie on the
+  ground (`sheet.py`), and rule 47's riding paths count only where the ground is dug out under them.
 
 - **Passages through buildings (branch `claude/passages`):** a way the data marks
   `tunnel=building_passage` / `covered=yes`, or that runs on out of a building's far side, keeps
