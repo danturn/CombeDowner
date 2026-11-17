@@ -1651,3 +1651,19 @@ The ground is one constrained triangulation round the faces (`web/src/sheet.ts`
   If they are looked at again, two ways to go: keep the grid's own points in the triangulation
   near decks and flights (a few more triangles a square, only there), or put back the points
   where the grid's lines cross a face's edge there, as the cell-by-cell sheet does.
+
+## Bridges' decks as a level of the faces (17 November)
+
+Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
+`docs/plans/bridge-levels.md`). The maintainer accepted these trade-offs:
+
+- [ ] **Squares are up to 2% bigger while they carry both the strips and the decks' level.** Level 1 is
+  written alongside the old strip fields, so older pages still draw strips. On the trial squares the
+  game's packed square grew by 0.4–0.9% on most squares, 1.16% on 1_3 (Pulteney) and 1.82% on 2_4
+  (London Road's slips). The gate was +1%, and is +2% until the game draws from level 1. To undo it:
+  once the game draws decks from level 1 (stage 2 on), drop the strip-only fields it no longer reads
+  (the level-0 hole's held heights, the strip's own record fields) and measure again against +1%.
+- [ ] **Steps riding a deck are left off their deck's line** (rule 54 excuses them by kind). A flight
+  on a deck is held at the flight's height, as much as 2.8 m off the deck's line at 2_4
+  (276, 3242), and 2 m at 4_2 (3149, 1635). To undo it: give a flight on a deck a level of its own,
+  or land the deck's faces on the flight's treads.

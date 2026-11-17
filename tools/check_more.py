@@ -2796,13 +2796,13 @@ def deck_faces(m, sheet, note, at, sq, fig):
     """Rule 54, and rule 28's caps, on a square whose decks are faces (sf.lv)."""
     decks = Sheet(m, 0)
     if not decks.ok or not sheet.ok: return
-    from partition.write_tile import CAP_SNAP, bridge_decks, cap_lines, deck_half, deck_runs, run_z
+    from partition.write_tile import CAP_LAND, CAP_SNAP, bridge_decks, cap_lines, deck_half, deck_runs, run_z
     rd = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
     runs = deck_runs(rd, m.get("se"))
     if not runs: return
     over = bridge_decks(rd)
     own = [o for o in runs if not o["r"].get("held")]
-    foot = bridge_decks([o["r"] for o in own]) if own else None
+    foot = bridge_decks([o["r"] for o in own], past_cut=True) if own else None
     # (a set piece lays its own ground: the faces leave it out at every level)
     solid = [_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     solid += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
@@ -2847,6 +2847,8 @@ def deck_faces(m, sheet, note, at, sq, fig):
         near = [runs[int(i)] for i in ptree.query(p, predicate="intersects")]
         if not near: continue
         o = max(near, key=lambda o: run_z(o, x, y))
+        # (a flight of steps on a deck climbs over it, held at the flight's height, not the deck's line)
+        if o["r"]["c"] == "steps": continue
         off = abs(z - run_z(o, x, y))
         key = id(o)
         if off > DECK_OFF and off > worst.get(key, (0,))[0]:
@@ -2865,6 +2867,9 @@ def deck_faces(m, sheet, note, at, sq, fig):
             if L < 0.05: continue
             mx, my = (pa + pb) / 2 + np.array([pb[1] - pa[1], pa[0] - pb[0]]) / L * 0.05
             if not below.contains(Point(mx, my)): continue
+            # (a way passing under the deck's end lies across it a storey down, on its own level)
+            _, zb = sheet.hit(mx, my)
+            if not np.isnan(zb[0]) and abs(zb[0] - (decks.V[a, 2] + decks.V[b, 2]) / 2) > CAP_LAND: continue
             note("28 deck end not joined to the street", L, at(mx, my), f"{L:.1f} m of a deck's end not sharing its corners with the faces it lands on")
             fig["deck ends off"] = fig.get("deck ends off", 0) + 1
 

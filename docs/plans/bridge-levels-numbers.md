@@ -61,3 +61,32 @@ Rules that changed (check_map --tiles over the eight squares; the rest stayed th
   with 2 to 4 m of paving). Most of the rest are trunk roads and links in 2,4 and 2,5, where the
   partition gives 0.4 to 0.8 m of pavement and the record gives none, and carriageways 0.2 to 0.6 m
   wider than the record.
+
+## Stage 1 follow-up (the maintainer's four points)
+
+Rebuilt the same squares with the follow-up changes. This is "after5" in the scratch notes. 1,2 first
+failed on a GEOS overlay error in the deck's kerbs; that is now retried at millimetre precision.
+What changed:
+- Level 0 gives way to the deck near its caps, and the deck fills the slivers left between them.
+- A way passing under a deck's end keeps its own height and doesn't join the cap.
+- The decks' level runs on past a deck cut at a square's side.
+- Rule 54 excuses steps riding a deck, by kind.
+- Watertight leaves out set-piece cuts.
+
+| measure | base | after (first commit) | after5 |
+|---|---|---|---|
+| pack.gz change, worst square | – | +1.82% (2,4) | +1.79% (2,4); 1,3 +1.17%; 1,2 +0.82%; the rest under 0.9% |
+| end probe: lips over 0.15 m / mean worst lip | 11 / 0.111 | 11 / 0.113 | 11 / 0.113 |
+| road_bumps | 293 | 293 | 293 |
+| 28 deck end not joined to the street | – | 6 | 10 |
+| 28 deck end off the street | 4 | 8 | 8 |
+| 41 step in the carriageway | 72 | 73 | 73 |
+| 42 faces don't meet the next square's | 42 | 46 | 45 |
+| 53 bare ground inside a street | 45 | 35 | 35 |
+| 54 deck footprint not drawn | – | 3 | 0 |
+| 54 deck point off its line | – | 16 | 15 |
+| watertight deck uncovered, 1,3 | – | 684 m² | 1.4 m² |
+
+On 4,2, 2,4 and 2,5 alone, "not joined" went from 4 to 0 and rule 42 went back to base (7). The
+spots that remain are kerbs rounding round a cap in 0,2, 0,3 and 1,2 (for example 1,2 at
+-517,1620). Moving the corners on to the cap line instead (projection) did worse on 1,2.

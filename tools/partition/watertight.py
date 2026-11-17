@@ -101,8 +101,14 @@ def deck_levels(tile, sq):
     over = bridge_decks(rd)
     caps = cap_lines(runs, over) if over is not None else []
     cap_zone = union([c[0] for c in caps]).buffer(CAP_SNAP)
-    foot = bridge_decks([r for r in rd if not r.get("held")])
+    foot = bridge_decks([r for r in rd if not r.get("held")], past_cut=True)
     foot = foot.intersection(square) if foot is not None else Polygon()
+    # (what a set piece took out of the faces is the set piece's to draw, on either level)
+    if tile.get("centre") and not foot.is_empty:
+        from partition import setpiece_cuts
+        gone = setpiece_cuts.cuts(tile["centre"], sq, None, rd)[0]
+        if gone is not None:
+            foot = foot.difference(gone)
     solid = union([Polygon(b["r"][0], b["r"][1:]).buffer(0) for b in tile.get("bl") or [] if len(b["r"][0]) >= 3])
     below = union([t for k in ("road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel")
                    for t in _tris(v, sf.get(k) or [])])
