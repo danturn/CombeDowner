@@ -24,7 +24,7 @@ import type { Mover, Pond } from "./map";
 import { compact } from "./railway";
 import { wall } from "./textures";
 import { tag } from "./kinds";
-import { CANAL_FLOW, waterCorners, waterLook } from "./water";
+import { CANAL_FLOW, waterCorners, waterLook, wetBy } from "./water";
 
 export interface CanalData {
   runs: { lv: number; p: number[][]; x?: number[][] }[];
@@ -686,7 +686,7 @@ export class Canal {
   private build() {
     const z0 = this.z0, d = this.d;
     const waterMat = waterLook(new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
-    const stoneMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: stoneTex ??= wall("stone", false) });
+    const stoneMat = wetBy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: stoneTex ??= wall("stone", false) }));
     const STONE = "#c3ae84", COPING = "#a89c86", DARK = "#4a3f33", BRICK = "#5a3c2e";
     const add = (o: THREE.Object3D, range = 700) => {
       this.group.add(o);
