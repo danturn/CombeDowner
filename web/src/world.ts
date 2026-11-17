@@ -3202,8 +3202,81 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   yield;
 
   mark("walls-fences");
+  // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
+  let woodTop: ((x: number, y: number) => number) | undefined;
+  if (D.cn) {
+    const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
+    for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+    const portal = aroundPortals(map), banks = portalBanks(map), r = C.step / 2;
+    // (laid over a cutting's side the wood came down it in a tilted sheet)
+    const steep = (x: number, y: number) => {
+      const g = [[-r, -r], [r, -r], [r, r], [-r, r]].map(([u, v]) => map.trueGround(x + u, -(y + v)));
+      return Math.max(...g) - Math.min(...g) > REPOSE * C.step;
+    };
+    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+      const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
+      if (!H[j * C.nx + i]) continue;
+      if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v)) || (banks(x, y) && steep(x, y))) H[j * C.nx + i] = 0;
+    }
+    const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
+    // corner heights: the average of the canopy cells around each corner (edges taper down)
+    const corner = (i: number, j: number) => {
+      let s = 0, n = 0;
+      for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { const v = hAtC(a, b); if (v) { s += v; n++; } }
+      return n ? (s / n) * (0.55 + 0.45 * n / 4) : 0;
+    };
+    // where the wood ends (or opens over a path) its top comes down to meet its underside, so the
+    // canopy's edge slopes away as the trees' crowns do rather than standing up in a wall
+    const edge = (i: number, j: number) => [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]].some(([a, b]) => !hAtC(a, b));
+    const top = (a: number, b: number) => {
+      const hc = Math.max(1.5, corner(a, b));
+      return edge(a, b) ? hc * 0.5 : hc + lump(a, b);
+    };
+    const lump = (a: number, b: number) => (hash(a * 31337 + b * 17) - 0.5) * 1.6;
+    // a wood's trees stand under it, their limbs reaching halfway up into it and no further
+    woodTop = (x, y) => {
+      const i = Math.round((x - C.x0) / C.step), j = Math.round((y - C.y0) / C.step);
+      if (!hAtC(i, j)) return 0;
+      // (the limbs spread across the cell, so the lowest of its corners)
+      const mid = (a: number, b: number) => (Math.max(1.5, corner(a, b)) * 0.5 + top(a, b)) / 2;
+      return Math.min(mid(i, j), mid(i + 1, j), mid(i, j + 1), mid(i + 1, j + 1));
+    };
+    const geos = new Map<string, Geo>();
+    const LEAVES = look.trees.canopy;
+    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+      const h = hAtC(i, j);
+      if (!h) continue;
+      const x0 = C.x0 + (i - 0.5) * C.step, x1 = x0 + C.step, y0 = C.y0 + (j - 0.5) * C.step, y1 = y0 + C.step;
+      const key = core ? `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}` : `${Math.floor((x0 - cx0) / cw)},${Math.floor((y0 - cy0) / cw)}`;
+      let g = geos.get(key);
+      if (!g) geos.set(key, (g = new Geo()));
+      const col = LEAVES[Math.floor(hash(i * 7919 + j) * LEAVES.length)];
+      const P = (x: number, y: number, a: number, b: number, under: boolean) => {
+        const hc = Math.max(1.5, corner(a, b));
+        return [x, map.trueGround(x, -y) + (under ? hc * 0.5 : top(a, b)), -y];
+      };
+      const t = [P(x0, y0, i, j, false), P(x1, y0, i + 1, j, false), P(x1, y1, i + 1, j + 1, false), P(x0, y1, i, j + 1, false)];
+      const b = [P(x0, y0, i, j, true), P(x1, y0, i + 1, j, true), P(x1, y1, i + 1, j + 1, true), P(x0, y1, i, j + 1, true)];
+      const uv = [[x0 / 4, y0 / 4], [x1 / 4, y0 / 4], [x1 / 4, y1 / 4], [x0 / 4, y1 / 4]];
+      facing(g, t[0], t[1], t[2], t[3], [0, 1, 0], uv[0], uv[1], uv[2], uv[3], col);
+      facing(g, b[0], b[1], b[2], b[3], [0, -1, 0], uv[0], uv[1], uv[2], uv[3], col.map((c) => c * 0.7));
+      if (j % 8 === 7) yield;
+    }
+    const canopyMat: THREE.Material = S.canopyMat ??= new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
+    for (const g of geos.values()) {
+      const built = g.build();
+      if (!built) continue;
+      const m = new THREE.Mesh(built, canopyMat);
+      m.castShadow = true; m.receiveShadow = true;
+      scene.add(tag(m, "plant"));
+      culler.add(m, () => view.sceneryFar);
+    }
+  }
+  yield;
+
+  mark("woods");
   // ---- trees and shrubs ------------------------------------------------------------------
-  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, look.trees, S.vegKit);
+  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, look.trees, S.vegKit, woodTop);
   S.vegKit ??= vegetation.kit;
   buildBoulders(scene, D.rk ?? [], Z0, culler, () => view.sceneryFar * 0.6);
   yield;
@@ -3228,69 +3301,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }) : null;
 
   mark("outskirts");
-  // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
-  if (D.cn) {
-    const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
-    for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
-    const portal = aroundPortals(map), banks = portalBanks(map), r = C.step / 2;
-    // (laid over a cutting's side the wood came down it in a tilted sheet)
-    const steep = (x: number, y: number) => {
-      const g = [[-r, -r], [r, -r], [r, r], [-r, r]].map(([u, v]) => map.trueGround(x + u, -(y + v)));
-      return Math.max(...g) - Math.min(...g) > REPOSE * C.step;
-    };
-    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
-      const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
-      if (!H[j * C.nx + i]) continue;
-      if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => portal(x + u, y + v)) || (banks(x, y) && steep(x, y))) H[j * C.nx + i] = 0;
-    }
-    const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
-    // corner heights: the average of the canopy cells around each corner (edges taper down)
-    const corner = (i: number, j: number) => {
-      let s = 0, n = 0;
-      for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { const v = hAtC(a, b); if (v) { s += v; n++; } }
-      return n ? (s / n) * (0.55 + 0.45 * n / 4) : 0;
-    };
-    const geos = new Map<string, Geo>();
-    const LEAVES = look.trees.canopy;
-    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
-      const h = hAtC(i, j);
-      if (!h) continue;
-      const x0 = C.x0 + (i - 0.5) * C.step, x1 = x0 + C.step, y0 = C.y0 + (j - 0.5) * C.step, y1 = y0 + C.step;
-      const key = core ? `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}` : `${Math.floor((x0 - cx0) / cw)},${Math.floor((y0 - cy0) / cw)}`;
-      let g = geos.get(key);
-      if (!g) geos.set(key, (g = new Geo()));
-      const col = LEAVES[Math.floor(hash(i * 7919 + j) * LEAVES.length)];
-      const lump = (a: number, b: number) => (hash(a * 31337 + b * 17) - 0.5) * 1.6;
-      const P = (x: number, y: number, a: number, b: number, under: boolean) => {
-        const hc = Math.max(1.5, corner(a, b));
-        return [x, map.trueGround(x, -y) + (under ? hc * 0.5 : hc + lump(a, b)), -y];
-      };
-      const t = [P(x0, y0, i, j, false), P(x1, y0, i + 1, j, false), P(x1, y1, i + 1, j + 1, false), P(x0, y1, i, j + 1, false)];
-      const b = [P(x0, y0, i, j, true), P(x1, y0, i + 1, j, true), P(x1, y1, i + 1, j + 1, true), P(x0, y1, i, j + 1, true)];
-      const uv = [[x0 / 4, y0 / 4], [x1 / 4, y0 / 4], [x1 / 4, y1 / 4], [x0 / 4, y1 / 4]];
-      facing(g, t[0], t[1], t[2], t[3], [0, 1, 0], uv[0], uv[1], uv[2], uv[3], col);
-      facing(g, b[0], b[1], b[2], b[3], [0, -1, 0], uv[0], uv[1], uv[2], uv[3], col.map((c) => c * 0.7));
-      // sides where the wood ends
-      const sides: [number, number, number, number, number[]][] = [[0, 1, i, j - 1, [0, 0, 1]], [1, 2, i + 1, j, [1, 0, 0]], [2, 3, i, j + 1, [0, 0, -1]], [3, 0, i - 1, j, [-1, 0, 0]]];
-      for (const [p, q, ni, nj, out] of sides) {
-        if (hAtC(ni, nj)) continue;
-        facing(g, b[p], b[q], t[q], t[p], out, [0, 0], [1, 0], [1, 1], [0, 1], col.map((c) => c * 0.85));
-      }
-      if (j % 8 === 7) yield;
-    }
-    const canopyMat: THREE.Material = S.canopyMat ??= new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
-    for (const g of geos.values()) {
-      const built = g.build();
-      if (!built) continue;
-      const m = new THREE.Mesh(built, canopyMat);
-      m.castShadow = true; m.receiveShadow = true;
-      scene.add(tag(m, "plant"));
-      culler.add(m, () => view.sceneryFar);
-    }
-  }
-  yield;
-
-  mark("woods");
   // ---- front doors and bay windows ---------------------------------------------------------
   {
     const DOOR = ["#1f3b2d", "#24324a", "#c8302c", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));

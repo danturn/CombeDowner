@@ -110,7 +110,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   heath and scrub OpenStreetMap maps are heath. The grass and the trees belong there too: in
   Cape Town's summer-dry climate the meadows and verges are going to straw and a quarter of the
   trees are pines among olive and grey-green leaves, while England keeps its green fields,
-  buttercups and daisies, and its broadleaves with the odd conifer and copper beech. South of the equator (Cape Town) the sun crosses the
+  buttercups and daisies, and its broadleaves with the odd conifer and copper beech. Trees are cut
+  back out of the room over every street and path: no crown hangs across a bridge's deck or into
+  your head height over a path, or a bus's over a main road (a tree is stepped back a little, its
+  crown raised on a taller trunk or made smaller, and left out only if none of that will do), and a
+  wood's canopy stays under a viaduct over it and opens where a path goes through low. A wood's
+  canopy slopes down at its edges rather than standing up like a hedge, its trunks stay under it,
+  and a tree in a wood where the canopy is open has its own crown. South of the equator (Cape Town) the sun crosses the
   northern sky, so slopes facing north are the sunny ones. A whole day goes by every 24 minutes,
   and the game always opens, and every new game starts, at seven in the morning with the sun just
   up; everyone in a game sees the same time.

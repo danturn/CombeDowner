@@ -4387,6 +4387,7 @@ out = dict(
     **({"wf": weir_faces} if weir_faces else {}),
     **({"rt": track_list} if track_list else {}),     # running tracks (pitches.py; older pages pass them by)
 )
+room_roads = roads     # (a square's trees keep clear of the streets just over its edge too)
 if TILE is not None:
     # ---- a tile keeps only what is its own -------------------------------------------------
     def clip_runs(pts, x0=TX0, y0=TY0, x1=TX1, y1=TY1):
@@ -4574,6 +4575,14 @@ if corridors:
     print(f"gates: {n_open} left open where their wall was cut off the road or the pavement")
     gone = (before[0] - len(out["tr"]), before[1] - len(out["sb"]), before[2] - len(out["fx"]))
     print(f"corridors: {gone[0]} trees, {gone[1]} shrubs and {gone[2]} street items taken off the roads, the railway and the water; {before[3]} wall runs cut to {len(out['br'])}")
+# ---- the room over the streets and paths is kept clear of the trees (tools/clearance.py) ----
+import clearance
+_free = clearance.trunk_room([b["r"][0] for b in out["bl"]], [b["p"] for b in out["br"]], room_roads,
+                             lambda x, y: not (corridors and clear_at(x, y)))
+_clear = clearance.keep_clear(out, room_roads, gelev, PATHS, KERBED_RD, _free)
+print("clearance: {cells_filled} canopy cells filled over wood trees, {cells_lowered} canopy cells lowered under a deck and {cells_opened} opened over a street or path; "
+      "{unwooded} wood trees given crowns where the canopy is open; of the trees reaching into a street's or path's room, "
+      "{stepped} stepped back, {lifted} raised, {trimmed} made smaller, {dropped} left out".format(**_clear))
 open(out_path, "w").write(json.dumps(out, separators=(",", ":")))
 if STORE is not None: STORE.save()
 print(f"terrain {out['t']['nx']}x{out['t']['ny']} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
