@@ -23,7 +23,7 @@ buildings), so it is the buildings that move to the survey, by translation only:
 - no block is moved onto more of a mapped street than it stood on (each street as wide as its tags
   or its kind make it, as the build starts it), beyond a strip ON_ROAD_DEPTH wide along its street
   fronts, and no two blocks a slit apart are moved so the
-  slit opens into a way through.
+  slit opens into a way through, nor any block into another's building.
 
 What's kept is each moved building's shift (dx, dy, metres east and north), by its Overture id;
 apply() moves the buildings layer by it wherever a tool reads it (prep_map.py, prep_wide.py, the
@@ -49,6 +49,7 @@ PARTY = 0.6         # metres: buildings this close share a wall (roofs.common.PA
 EDGE = 0.03         # how much cleaner a block's own walls must sit on the survey's than its area's shift puts them, to go its own way
 CLOSED = 1.5        # metres: a slit narrower than this between two blocks is no way through
 OPEN_MOST = 2.0     # square metres of such a slit a shift may open into a way through
+OVERLAP = 0.5       # square metres a moved block may stand in a building of another block
 ON_ROAD = 1.0       # square metres more of a mapped street a shift may put a block on...
 ON_ROAD_DEPTH = 0.3    # ...or this many metres in along the length of its street fronts, as a street's
                        # width is guessed to, but no corner a metre in: counted over its whole outline,
@@ -278,6 +279,51 @@ def keep_slits(todo, picked, fits, outlines, sizes, fronts):
     return [tuple(o) for o in out]
 
 
+def keep_apart(todo, picked, fits, outlines, sizes, fronts, fixed):
+    """The shifts with no block standing in another block's building: two blocks moved differently
+    put one terrace inside the next, and its doors and signs off its walls. A block that would
+    takes the nearest shift that fits it about as well and stands clear (and puts it on no street),
+    else stays; the smaller of two gives way first. `fixed` holds the shifts of blocks not decided
+    here."""
+    import shapely, shapely.affinity
+    out = [list(p) for p in picked]
+    at = {k: i for i, k in enumerate(todo)}
+    tree = shapely.STRtree(outlines)
+    zero = (0.0, 0.0)
+    shift_of = lambda j: tuple(fixed[j]) if j in fixed else tuple(out[at[j]][:2]) if j in at else zero
+
+    def overlap(k, s):
+        moved = shapely.affinity.translate(outlines[k], *s)
+        got = 0.0
+        for j in tree.query(moved.buffer(REACH)).tolist():
+            if j == k: continue
+            sj = shift_of(j)
+            other = shapely.affinity.translate(outlines[j], *sj) if sj != zero else outlines[j]
+            if other.intersects(moved): got += moved.intersection(other).area
+        return got
+
+    def clear(i):
+        k, s, f = todo[i], tuple(out[i][:2]), fits[i]
+        if f is None: return zero
+        room = max(ON_ROAD, ON_ROAD_DEPTH * fronts[i])
+        sc = f[0]
+        good = [c for c, v in sc.items() if v >= sc.get(s, sc[zero]) - NEAR and f[2][c] <= f[2][zero] + room
+                and math.hypot(*c) >= LEAST]
+        for c in sorted(good, key=lambda c: (math.dist(c, s), -sc[c])):
+            if overlap(k, c) <= OVERLAP: return c
+        return zero
+
+    for _ in range(3):
+        changed = 0
+        for i in sorted(range(len(todo)), key=lambda i: sizes[todo[i]]):
+            if todo[i] in fixed or tuple(out[i][:2]) == zero or overlap(todo[i], tuple(out[i][:2])) <= OVERLAP: continue
+            c = clear(i)
+            out[i] = [c[0], c[1], "apart"]
+            changed += 1
+        if not changed: break
+    return [tuple(o) for o in out]
+
+
 def decide(fits, centres, sizes, fronts=None):
     """Each block's shift from its own fit and its area's: [(dx, dy, why)]."""
     import numpy as np
@@ -414,9 +460,20 @@ def main():
     got = fit_all(open_lidar(map_id, raw), outlines, todo, jobs, roads)
     fronts = [street_front(outlines[k], roads) for k in todo]
     picked = decide(got, [centres[k] for k in todo], [sizes[k] for k in todo], fronts)
-    by_block = dict(zip(todo, keep_slits(todo, picked, got, outlines, sizes, fronts)))
     p = path(map_id)
     kept = json.load(open(p)) if only and os.path.exists(p) else {"moved": {}}
+    # (the blocks round the squares being measured keep the shifts they were given before)
+    fixed = {}
+    if only:
+        mine = set(owned)
+        for k in todo:
+            if k not in mine:
+                fixed[k] = tuple(kept["moved"].get(keys[groups[k][0]], (0.0, 0.0)))
+        for k in range(len(groups)):
+            if k not in mine and keys[groups[k][0]] in kept["moved"]:
+                fixed.setdefault(k, tuple(kept["moved"][keys[groups[k][0]]]))
+    picked = keep_slits(todo, picked, got, outlines, sizes, fronts)
+    by_block = dict(zip(todo, keep_apart(todo, picked, got, outlines, sizes, fronts, fixed)))
     mine = {keys[i] for k in owned for i in groups[k]}
     moved = {k: v for k, v in kept["moved"].items() if k not in mine}
     tally = {}
