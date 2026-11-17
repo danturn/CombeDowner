@@ -1,0 +1,63 @@
+# Bridge levels: stage 0 and stage 1 numbers
+
+The trial squares for `bridge-levels.md`, built partition-only with `tools/prep_tiles.py --only` (4 jobs)
+on a laptop that was also running a whole-map build, so build times are only rough. "Base" is the branch
+before stage 1 (with the clearance fix for trees off the edge of a square's ground, without which 0,2,
+1,2, 2,4 and 2,5 failed to build). "After" is stage 1 as committed. 1,0 has no bridges, which makes it
+the byte-identical check.
+
+## Per square
+
+| square | write s base / after | gz JSON base / after | pack.gz base / after | sf triangles base / after (level 0 + level 1) |
+|---|---|---|---|---|
+| 1,2 | 215 / 196 | 961,398 / 966,038 | 633,826 / 638,584 (+0.75%) | 37,524 / 37,535 + 430 |
+| 0,2 | 832 / 761 | 1,355,309 / 1,361,015 | 886,223 / 890,840 (+0.52%) | 58,087 / 58,071 + 575 |
+| 1,3 (Pulteney) | 314 / 296 | 1,128,759 / 1,138,952 | 768,070 / 777,003 (+1.16%) | 48,311 / 48,325 + 1,048 |
+| 0,3 | 716 / 648 | 1,361,658 / 1,370,534 | 950,115 / 957,997 (+0.83%) | 68,302 / 68,329 + 856 |
+| 4,2 | 9.6 / 10 | 306,789 / 308,040 | 191,912 / 193,058 (+0.60%) | 8,010 / 8,009 + 123 |
+| 2,0 | 15.3 / 15.8 | 356,459 / 357,486 | 219,548 / 220,436 (+0.40%) | 7,774 / 7,778 + 119 |
+| 2,4 (crosses into 2,5) | 96 / 98 | 618,249 / 624,687 | 402,599 / 409,934 (+1.82%) | 23,217 / 23,202 + 663 |
+| 2,5 | 177 / 178 | 734,838 / 739,706 | 475,195 / 479,370 (+0.88%) | 26,820 / 26,828 + 502 |
+| 1,0 (no bridges) | 52 / 52 | 518,623 / 518,623, same sha1 | same | 14,158 / 14,158 |
+
+Game meshes were not counted: in stage 1 the game unpacks `lv` but doesn't draw it yet.
+
+## Checks over the eight bridged squares
+
+| measure | base | after |
+|---|---|---|
+| bridge-end probe (`tools/bridge_ends.mjs`): ends / lip over 0.15 m / mean worst lip | 92 / 11 / 0.111 m | 92 / 11 / 0.113 m |
+| `tools/road_bumps.mjs`: bumpy streets | 293 of 3131 | 293 of 3131 |
+| watertight, level 0 (street missing / extra / path not drawn, m²) | 25,587 / 32,060 / 22,999 | unchanged (within 0.1) |
+| watertight deck uncovered, m² | – | 1,1 1.1; 0,2 2.1; 0,3 1.6; 1,3 684 (Argyle Street and Pulteney set-piece cuts); 2,4 1.5; 2,5 0.5; 4,2 0.1 |
+| watertight cap unshared, m | – | 0,3 1.5; 1,3 0.3; 2,4 0.6; 4,2 0.9 |
+
+Rules that changed (check_map --tiles over the eight squares; the rest stayed the same):
+
+| rule | base | after |
+|---|---|---|
+| 9 path strip along a pavement | 2 | 3 |
+| 9 sliver or spike where road and paving meet | 31 | 30 |
+| 20 no road drawn: ground | 31 | 30 |
+| 23 path not drawn | 171 | 173 |
+| 23 step between two pieces of path | 8 | 6 |
+| 28 deck end not joined to the street (new) | – | 6 |
+| 28 deck end off the street | 4 | 8 |
+| 30 ground up through a deck | 3 | 2 |
+| 41 step in the carriageway | 72 | 73 |
+| 42 faces don't meet the next square's | 42 | 46 |
+| 53 bare ground inside a street | 45 | 35 |
+| 54 deck footprint not drawn (new) | – | 3 |
+| 54 deck point off its line (new) | – | 16 |
+
+## Lists
+
+- Decks over decks: none in the trial squares. The nearest is Rossiter Road over the steps beside it in
+  1,2 (-592,1616), 2.0 m apart, right on the threshold.
+- Culverts (under 0.5 m of air): none in the trial squares. The lowest is the steps at Ferry Lane in
+  4,2 (3149,1635) at 1.6 m.
+- Caps whose record cross-section and partition cross-section differ by more than 0.3 m: 29. The worst
+  is Argyle Street in 1,3 (record 8.8 m carriageway with no pavement, against a partition of 5.0 to 7.4 m
+  with 2 to 4 m of paving). Most of the rest are trunk roads and links in 2,4 and 2,5, where the
+  partition gives 0.4 to 0.8 m of pavement and the record gives none, and carriageways 0.2 to 0.6 m
+  wider than the record.

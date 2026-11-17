@@ -79,6 +79,11 @@ export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv
  *  is the long axis (the wicket, for cricket). */
 export type Pitch = ["f", number, number, number, number, number] | ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
 export type Oblong = Extract<Pitch, ["f" | "r", ...unknown[]]>;
+/** A level of bridges' decks over a square's street faces (`sf.lv`), sharing their points: its own
+ *  triangles of each kind (stone and steel: the deck's own top beside its road, by the bridge's kind)
+ *  and its pieces' outlines. n is the level, 1 for the decks over the ground's faces. Where it has
+ *  them, `sf.dk` 1 says the decks are faces, to be drawn and stood on instead of a strip of their own. */
+export interface SurfaceLevel { n: number; road?: ArrayLike<number>; service?: ArrayLike<number>; pave?: ArrayLike<number>; path?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; stone?: ArrayLike<number>; steel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[] }
 export interface MapData {
   id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
@@ -98,7 +103,7 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; bed?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number };   // grass, dirt, gravel: paths the map says are made of that; bed: the railway's bed, met by the ground, its ballast drawn by railway.ts; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; bed?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number; lv?: SurfaceLevel[]; dk?: number };   // grass, dirt, gravel: paths the map says are made of that; bed: the railway's bed, met by the ground, its ballast drawn by railway.ts; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
   // the ground as one sheet with the faces (tools/partition/sheet.py; drawn unless ?ground=old): the cells under faces as
   // run lengths, the grid points carved or built up to meet the faces (h, by hz decimetres), the face corners where the ground
   // meets a face below or above its top (s, by sz centimetres: a retaining wall), the square's wall for those, and the cells where faces overlap (x), drawn whole

@@ -387,9 +387,11 @@ def held_ends(ends, rd):
 def ends_on_faces(tile, out=0.5):
     """Each abutment held at its way's height (`se`, held 2) lands at the face it meets instead, where
     one is drawn just past the deck's end (its written height, as the deck's floor meets the street's):
-    the way's own line can stand a few centimetres off the face built round it. Changes `se` in place."""
+    the way's own line can stand a few centimetres off the face built round it. Changes `se` in place.
+    Where the decks are faces (`dk`), the build has landed each deck's end on the faces already, and
+    the two share their corners there."""
     sf = tile.get("sf")
-    if not sf or not sf.get("o"):
+    if not sf or not sf.get("o") or sf.get("dk"):
         return 0
     held = held_ends(tile.get("se"), tile.get("rd"))
     if not held:
