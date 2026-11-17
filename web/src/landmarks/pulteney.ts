@@ -16,7 +16,8 @@
 // Its frame: x along the bridge from the middle towards Argyle Street (east-north-east), z
 // downstream, y up from the river's water. The street over it keeps the deck the map gives it to
 // walk and drive on; the map's plain bridge under it isn't built (setpieces.ts). Solid as it's
-// drawn (landmarks/shape.ts).
+// drawn (landmarks/shape.ts). The weir's crests are handed on so the river churns white below
+// them, as it does below any weir (water.ts).
 //
 // args (after kind, x, y, ground, angle): the street's height above the water at the west end
 // (x = -20.4) and the east end (x = 20.4), how far downstream its middle is (z), then for each
@@ -180,11 +181,17 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
     }
   }
 
+  const falls: { p: number[][]; drop: number }[] = [];
   // ---- Pulteney Weir -------------------------------------------------------------------------------
   {
     const east: [number, number][] = [[0.4, 36.6], [3.6, 37.4], [6.5, 39.0], [9.5, 41.5], [14, 47.5], [18.5, 54.5], [22, 61], [24.8, 68.5]];
     const west: [number, number][] = [[0.4, 36.6], [-1.6, 38.5], [-2.4, 41.5], [-2.2, 60], [-2.0, 90], [-2.2, 95]];
     const inside = [9, 72];      // a point inside the horseshoe, where the water falls to
+    // (each arm listed for the water's white water with the water it falls to on its right: landmarks/index.ts)
+    for (const arm of [east, west]) {
+      const [ax, az] = arm[0], [bx, bz] = arm[1];
+      falls.push({ p: (inside[0] - ax) * -(bz - az) + (inside[1] - az) * (bx - ax) > 0 ? arm : [...arm].reverse(), drop: 1.5 });
+    }
     for (const arm of [east, west]) for (let i = 0; i < arm.length - 1; i++) {
       const [ax, az] = arm[i], [bx, bz] = arm[i + 1], l = Math.hypot(bx - ax, bz - az);
       let nx = -(bz - az) / l, nz = (bx - ax) / l;
@@ -202,6 +209,7 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
   }
 
   const grp = k.build();
+  grp.userData.falls = falls;
   for (const m of [sash, arched]) glow(grp, m, 0, 0.85);
   return grp;
 }

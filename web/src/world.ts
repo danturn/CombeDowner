@@ -15,7 +15,7 @@ import * as TX from "./textures";
 import { LANCETS, churchGlass } from "./stainedglass";
 import { LAMP_GLASS, LAMP_GLOW, SHOPFRONT_LEAST, buildFurniture, buildShops, fitShopfront, stepsDetail } from "./furniture";
 import { setLatitude, sky as skyNow } from "./daylight";
-import { buildLandmarks, landmarkLamps } from "./landmarks";
+import { buildLandmarks, landmarkFalls, landmarkLamps } from "./landmarks";
 import { Culler, show, traverseAll } from "./cull";
 import { buildVegetation } from "./trees";
 import { region } from "./region";
@@ -56,6 +56,7 @@ export function groundCdt(): boolean {
 }
 import { SunShadows, inPieces } from "./shadows";
 import { tag, tagSince } from "./kinds";
+import { RIVER_FLOW, waterCorners, waterLook, waterSky, waterWeirs } from "./water";
 
 const CHUNK = 320;
 
@@ -2388,11 +2389,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // ponds and the lake
   // (both sides: with your eyes under it you look up at it, as you do at the canal's)
-  const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const waterMat: THREE.Material = S.waterMat ??= waterLook(new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+  const rivers = D.wl.filter((l) => l.c === "river").map((l) => l.p);
   const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
     for (const hole of w.r.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
-    const g = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
+    const g = waterCorners(new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2), rivers, RIVER_FLOW);
     const m = new THREE.Mesh(g, waterMat);
     m.position.y = w.z - Z0;
     return m;
@@ -3559,6 +3561,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   fieldMesh.renderOrder = 5;
   scene.add(tag(fieldMesh, "field"));
   const clock = new THREE.Clock();
+  let weirT = 0;
 
   mark("field");
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
@@ -3627,6 +3630,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
       skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
+      waterSky(sk, fog.color, dark);
+      if ((weirT -= dt) <= 0) {
+        weirT = 0.5;
+        waterWeirs([map, ...map.tilesNear(px, pz, 500)].flatMap((m) => [...m.d.wf ?? [], ...landmarkFalls(m)]), px, -pz);
+      }
       for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
       LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);
       if (Number.isFinite(lastX) && dt > 0) {
