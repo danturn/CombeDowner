@@ -1396,19 +1396,26 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // keeps the span's mark, so it's drawn at the road's own height)
       const p: number[][] = [], level = own?.(L) ?? false;
       const flags = level ? spanFlags(L as Road, (x, z) => map.trueGround(x, z), Z0) : null;
+      // (the abutment's end at the deck's own end height, as bridgeStructures lands it: on the
+      // survey's ground the deck's floor stood a hair over the way and covered its last metres)
+      const end = (q: number[]) => deckTop(q, 0, (x, z) => map.trueGround(x, z), Z0, map.d.se) + Z0;
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
         // on a span, and on the stretch from its last point to the abutment at either end, the
         // road is drawn at the height the bridge is built to (bridgeStructures: the deck's own,
         // ramping to the ground at the abutment), so it meets its parapets with no dip or step
         const on = flags && (flags[i] || flags[i + 1]) ? 1 : 0;
-        const za = on && !flags![i] ? map.trueGround(ax, -ay) + Z0 : az, zb = on && !flags![i + 1] ? map.trueGround(bx, -by) + Z0 : bz;
+        const za = on && !flags![i] ? end(L.p[i]) : az, zb = on && !flags![i + 1] ? end(L.p[i + 1]) : bz;
         // (a way going on off a deck's end straight down to the ground below isn't drawn: the deck ends there)
         const drop = on && offTheEnd(za, zb, Math.hypot(bx - ax, by - ay)) ? 1 : 0;
         for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, za + (zb - za) * s / n, on, drop]);
       }
-      const last = L.p[L.p.length - 1];
-      p.push(flags && flags[L.p.length - 1] ? [...last.slice(0, 3), 1] : [...last.slice(0, 3), 0]);
+      // (a line ending at an abutment, as a bridge's deck stretch does, ends at the deck's height
+      // there too: on the ground its last metres dived into the dip under the abutment)
+      const ln = L.p.length - 1, last = L.p[ln];
+      if (flags && flags[ln]) p.push([...last.slice(0, 3), 1]);
+      else if (flags && ln && flags[ln - 1]) p.push([last[0], last[1], end(last), 1]);
+      else p.push([...last.slice(0, 3), 0]);
       if (p.length < 2) continue;
       const nrm: number[][] = [], along: number[] = [0];
       for (let i = 0; i < p.length; i++) {
@@ -1911,8 +1918,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const w = side * Ws(side);
             // the deck's side, and the spandrel down to the arch where there is one
             // (a stone bridge's side goes down to the bank beside its abutments, where no arch
-            // springs: as a wall with an upright end, not a wedge slanting across to the next point)
-            if (A.top - A.g <= 0.3 && B.top - B.g <= 0.3) continue;
+            // springs: as a wall with an upright end, not a wedge slanting across to the next point;
+            // and wherever the bank under the side falls away, though the road's line is on the
+            // ground, or the deck's edge stood over a void at its end)
+            const sideGround = (q: Pt) => Math.min(q.g, ground(q.x + q.nx * w, -(q.y + q.ny * w)));
+            if (A.top - sideGround(A) <= 0.3 && B.top - sideGround(B) <= 0.3) continue;
             const bank = (q: Pt) => { const x = q.x + q.nx * w, y = q.y + q.ny * w; return wallFoot(x, y, ground(x, -y) - 0.3, q.top - DECK); };
             const foot = (q: Pt, wall: boolean) => { const f = archAt(q.s) ?? q.top - DECK; return wall ? Math.min(f, bank(q)) : f; };
             for (const [Q, R, wall] of besideAbutments(A, B)) {
@@ -2036,6 +2046,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const lh = low(h, 0.1), lw = low(w, 0.3);
             facing(g, at(q, h, lh), at(q, w, lw), at(q, w, q.top + up), at(q, h, q.top + up), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], col);
             if (ashore && floor(q) - Math.min(lh, low(e, 0.1)) > 0.05) facing(g, at(q, e, low(e, 0.1), true), at(q, h, lh), at(q, h, floor(q)), at(q, e, floor(q), true), fwd, [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], stone ? COPING : CONCRETE);
+            // a pier at the end, a little proud of the parapet and down into the bank, so the
+            // parapet ends on something rather than stopping short in the air
+            const fx = q.ny * dir, fy = -q.nx * dir, v0 = Math.min(w, h) - 0.1, v1 = Math.max(w, h) + 0.1;
+            const c = [[-0.6, v0], [0.1, v0], [0.1, v1], [-0.6, v1]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
+            const foot = Math.min(...c.map(([x, y]) => ground(x, -y))) - 0.3, cap = q.top + up + 0.12;
+            prism(g, c, Math.min(foot, floor(q) - DECK), cap, col);
+            facing(g, [c[0][0], cap, -c[0][1]], [c[1][0], cap, -c[1][1]], [c[2][0], cap, -c[2][1]], [c[3][0], cap, -c[3][1]], [0, 1, 0], [0, 0], [0.3, 0], [0.3, 0.3], [0, 0.3], stone ? COPING : CONCRETE);
           }
         }
         if (kind === "suspension" && !seam(P[0]) && !seam(P[P.length - 1])) {
@@ -2074,19 +2091,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             prism(g, box(-t - 0.1, t + 0.1, -Ws(-1) + 0.3, Ws(1) - 0.3), under - 0.6, under, CONCRETE);
           }
         }
-        // the abutments: a face across each end from the deck's underside down to the bank, its
-        // foot following the ground under it, so it never stands out where the bank falls away
+        // the abutments: a face across each end from the deck's floor down to the bank, its foot
+        // following the ground under it, so it never stands out where the bank falls away (and the
+        // deck's end, where it stands over the ground in front, is closed: no underside shows)
         for (const [sp, dir] of [[0, 1], [s, -1]] as const) {
           if (!supports.includes(sp) || under(sp + dir * 0.5)) continue;
-          const q = lerpAt(sp), underside = q.top - DECK + 0.02, fwd = [q.ny * dir, 0, q.nx * dir];
+          const q = lerpAt(sp), face = floor(q), fwd = [q.ny * dir, 0, q.nx * dir];
           const n = Math.max(2, Math.ceil((Ws(1) + Ws(-1)) / 1.0));
           for (let k = 0; k < n; k++) {
             const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
-            const foot = (o: number) => { const x = q.x + q.nx * o, y = q.y + q.ny * o; return wallFoot(x, y, ground(x, -y) - 0.3, underside); };
+            const foot = (o: number) => { const x = q.x + q.nx * o, y = q.y + q.ny * o; return wallFoot(x, y, ground(x, -y) - 0.3, face); };
             const g1 = foot(o1), g2 = foot(o2);
-            if (underside <= Math.min(g1, g2)) continue;
-            facing(g, at(q, o1, Math.min(g1, underside)), at(q, o2, Math.min(g2, underside)), at(q, o2, underside), at(q, o1, underside), fwd,
-              [o1 / 2.5, Math.min(g1, underside) / 2.5], [o2 / 2.5, Math.min(g2, underside) / 2.5], [o2 / 2.5, underside / 2.5], [o1 / 2.5, underside / 2.5], stone ? STONE : CONCRETE);
+            if (face <= Math.min(g1, g2)) continue;
+            facing(g, at(q, o1, Math.min(g1, face)), at(q, o2, Math.min(g2, face)), at(q, o2, face), at(q, o1, face), fwd,
+              [o1 / 2.5, Math.min(g1, face) / 2.5], [o2 / 2.5, Math.min(g2, face) / 2.5], [o2 / 2.5, face / 2.5], [o1 / 2.5, face / 2.5], stone ? STONE : CONCRETE);
           }
         }
       }

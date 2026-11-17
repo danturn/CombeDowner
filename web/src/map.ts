@@ -605,13 +605,23 @@ export class GameMap {
       if (!r.bridge) continue;
       // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
       // (out to its parapets, each side its own: a side with no pavement stops at its kerb)
-      const k = this.decks.length, half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), seen = new Set<number>(), flags = spanFlags(r, g, this.z0);
-      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
-      for (let i = 0; i < r.p.length - 1; i++) {
-        const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
-        for (let s = 0; s <= n; s++)
-          for (const c of this.cellsAround(a[0] + (b[0] - a[0]) * s / n, -(a[1] + (b[1] - a[1]) * s / n), half))
-            if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
+      // Only its bridge is a deck, each span with the step to its abutment at either end, as the game
+      // draws it (world.ts deckStretches): the rest of the street is stood on as the ground, or every
+      // few metres where its line and the drawn ground parted it stood you on one or the other.
+      const half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), flags = spanFlags(r, g, this.z0);
+      for (let a = 0; a < r.p.length - 1; a++) {
+        if (!flags[a] && !flags[a + 1]) continue;
+        let b = a + 1;
+        while (b < r.p.length - 1 && (flags[b] || flags[b + 1])) b++;
+        const k = this.decks.length, seen = new Set<number>(), p = r.p.slice(a, b + 1);
+        this.decks.push({ p: p.map((q, i) => [q[0], -q[1], deckTop(q, flags[a + i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
+        for (let i = 0; i < p.length - 1; i++) {
+          const A = p[i], B = p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(B[0] - A[0], B[1] - A[1]) / (CELL / 2)));
+          for (let s = 0; s <= n; s++)
+            for (const c of this.cellsAround(A[0] + (B[0] - A[0]) * s / n, -(A[1] + (B[1] - A[1]) * s / n), half))
+              if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
+        }
+        a = b - 1;
       }
     }
     yield;
