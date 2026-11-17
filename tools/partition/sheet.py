@@ -69,6 +69,7 @@ BATTER_FILL = 2.0     # ground below a face's edge is built up to it no steeper 
 BATTER_CUT = 1.5      # ground above it is cut down to it no steeper than 1 in 1.5
 FILL_MOST = 1.0       # metres a grid point is ever built up over the survey: more would fill in a cutting
 DECK_UNDER = 0.5      # metres the ground is kept under a deck's underside, so there is room under it
+PASSAGE_RIDE = 15.0   # metres: a way riding with no span this near is in a passage, not on a bridge (check_more RIDE_SPAN)
 DECK_DEPTH = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}   # world.ts: each kind's deck
 FOOT_WAYS = {"footway", "path", "cycleway", "steps", "bridleway"}
 FOOT_DEPTH = 0.4      # metres under a building's ground height the ground beside it may be cut to (its walls go 0.6 down)
@@ -259,11 +260,13 @@ def overlaps(F, A, B, segs, GX, GY):
     return odd, top
 
 
-def odd_corners(F, odd, H, T, under=0.05, step=0.25):
+def odd_corners(F, odd, H, T, under=0.05, step=0.25, keep=None):
     """How low each corner of the cells where faces overlap must be let down, so the cell drawn whole
     as the grid stays under every face in it: each corner only as far as the faces near it need, so a
     corner the low face doesn't reach (where a bridge's deck comes down to its abutment beside the
-    path passing under it) keeps its height. As (grid point, height) pairs."""
+    path passing under it) keeps its height. A corner beside a house (`keep`, by grid point: its
+    walls' foot) is let down no lower than that foot wherever the faces allow it. As (grid point,
+    height) pairs."""
     from scipy.optimize import linprog
     nx, dx, dy = T["nx"], T["dx"], T["dy"]
     lift = np.asarray([LIFT[k] for k in FACE_KINDS])[F.K]
@@ -300,7 +303,18 @@ def odd_corners(F, odd, H, T, under=0.05, step=0.25):
             # face is near keeps its height: let down to the lowest face whole, a cell beside a
             # house left it standing in a pit; and none lower than under the lowest face)
             floor = np.minimum(z, ts.min())
-            got = linprog(-np.ones(4), A_ub=ws, b_ub=ts, bounds=list(zip(floor.tolist(), z.tolist())), method="highs")
+            got = None
+            if keep is not None:
+                # (summed over the corners, the least let down can be one corner dropped a metre
+                # to spare the others a little: beside a house that dug a pit under its wall)
+                held = keep[[j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1]]
+                if np.isfinite(held).any():
+                    least = np.maximum(floor, np.minimum(held, z))
+                    got = linprog(-np.ones(4), A_ub=ws, b_ub=ts, bounds=list(zip(least.tolist(), z.tolist())), method="highs")
+                    if not got.success:
+                        got = None
+            if got is None:
+                got = linprog(-np.ones(4), A_ub=ws, b_ub=ts, bounds=list(zip(floor.tolist(), z.tolist())), method="highs")
             z = got.x if got.success else floor
         for v, h in zip((j * nx + i, j * nx + i + 1, (j + 1) * nx + i, (j + 1) * nx + i + 1), z.tolist()):
             out.append((v, h - 1e-3))
@@ -318,18 +332,24 @@ def deck_lines(rd, ground, ends=()):
         e = next((e for e in held if math.dist(e[1:3], (x, y)) < 0.3), None)
         return e[3] if e is not None else landed(x, y)
     out = []
+    spans = [q[:2] for r in rd or [] for q in r["p"] if len(q) > 3 and q[3] == 1]
+    span_tree = shapely.STRtree(shapely.points(spans)) if spans else None
     for r in rd or []:
         p = r["p"]
         if len(p) < 2 or len(p[0]) < 3:
             continue
         on = [len(q) > 3 and q[3] in (1, 2) for q in p]
+        # (a path riding with no bridge near, through a building's passage, lies on the ground: the
+        # ground meets its deck's underside and isn't dug out under it, which left a pit at the wall)
+        lying = all(not on[i] or (p[i][3] == 2 and (span_tree is None or not len(
+            span_tree.query(shapely.Point(p[i][:2]), predicate="dwithin", distance=PASSAGE_RIDE)))) for i in range(len(p)))
         dk = r.get("dk")
         side = max(dk) if isinstance(dk, list) and dk else dk if isinstance(dk, (int, float)) else 0
         half = max((r.get("w") or 8) / 2, side) + 0.5
         kind = r.get("bt") if r.get("bt") in DECK_DEPTH else (
             "foot" if r["c"] in FOOT_WAYS else "beam" if r["c"] in ("trunk", "motorway") else "arch")
         # (its underside: the road's top, lifted as drawn, less the deck's depth)
-        under = (0.07 if r["c"] not in FOOT_WAYS else 0.04) - DECK_DEPTH[kind]
+        under = (0.07 if r["c"] not in FOOT_WAYS else 0.04) - DECK_DEPTH[kind] + (DECK_UNDER if lying else 0.0)
         # (and from its last point on the span to its abutment, where the game brings the deck down
         # to the survey's ground: the bank is dug from under it there too, as an abutment stands)
         for a in range(len(p) - 1):
@@ -790,15 +810,19 @@ def ground_sheet(tile, canal=None, rail=None):
     feet = [(Polygon(b["r"][0], b["r"][1:]).buffer(0), b["g"] - FOOT_DEPTH) for b in tile.get("bl") or []
             if len((b.get("r") or [[]])[0]) >= 3 and isinstance(b.get("g"), (int, float))]
     # (nor under a tree, a shrub or a street item, which stand where they were put)
+    houses_only = len(feet)
     feet += [(shapely.Point(q[0], q[1]), q[2] - FOOT_DEPTH) for key, k in (("tr", 0), ("sb", 0), ("rk", 0), ("fx", 1))
              for row in tile.get(key) or [] for q in [row[k:k + 3]]
              if len(q) == 3 and all(isinstance(v, (int, float)) for v in q)]
+    house_foot = np.full(n, -np.inf)
     if feet:
         rings = [g.buffer(T["dx"]) for g, _ in feet]
         gi, bi = shapely.STRtree(rings).query(pts, predicate="intersects")
         if len(gi):
             foot = np.full(n, -np.inf)
             np.maximum.at(foot, gi, np.asarray([feet[k][1] for k in bi.tolist()]))
+            own = bi < houses_only
+            np.maximum.at(house_foot, gi[own], np.asarray([feet[k][1] for k in bi[own].tolist()]))
             near_b = np.isfinite(foot)
             high[near_b] = np.maximum(high[near_b], np.minimum(H.ravel()[near_b], foot[near_b]))
             low = np.minimum(low, high)
@@ -842,7 +866,7 @@ def ground_sheet(tile, canal=None, rail=None):
             low[lid], high[lid] = fc["z"] + fc["top"], np.inf
             banked[lid] = True
     odd, _ = overlaps(F, A, B, segs, GX, GY)
-    for v, z in odd_corners(F, odd, H, T):
+    for v, z in odd_corners(F, odd, H, T, keep=np.minimum(house_foot, under_deck)):
         high[v] = min(high[v], z)
         low[v] = min(low[v], high[v])
     H0 = H.ravel()
