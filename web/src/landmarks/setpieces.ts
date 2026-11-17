@@ -218,6 +218,10 @@ export const SET_PIECES: SetPiece[] = [
     // set piece lays its own), not the street.
     name: "Grand Parade", kind: "colonnade", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
     outline: [[BRIDGE, -16], [104, -16], [104, -6.5], [BRIDGE, -6.5]],
+    // the bank in front of the river wall down to just under the water (15.8 m): the survey has the
+    // street's level out past the wall towards Orange Grove, which stood as a slope through the arches.
+    // Over, as the street's pavement there holds those points up and the set piece paves over it
+    sink: [{ x0: BRIDGE, x1: 104, z0: -16, z1: -11, y: -9.9, over: true }],
     args: paradeArgs,
   },
   {

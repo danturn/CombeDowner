@@ -1824,7 +1824,8 @@ def city_tunnels(roads, profiles, sq):
     """The square's tunnels (`tn`) from the city's bores (structures.json `bored`), portal to portal at
     the floor heights the city gave them, so the bore, its portals (`se`) and the ways cut off at its
     mouths are one decision; a bore running on past the square's edge is cut there. Pieces of one
-    bore on two edges are joined. A path's low arch under a street (structures.low_bores) carries its
+    bore on two edges are joined. A path's low arch under a street (structures.low_bores), and a
+    lane through a building's passage well under a street (structures.deep_bores), carries its
     crown, `cr`. [] where the city bored nothing near."""
     pieces = []
     for r in roads:
@@ -1842,14 +1843,17 @@ def city_tunnels(roads, profiles, sq):
                 q = whole.interpolate(k / steps, normalized=True)
                 p.append([q.x, q.y, prof["z"][k]])
             low = [i0, i1] in (prof.get("low") or [])
-            pieces.append(dict(c=r["cls"], n=r.get("name", ""), p=p, **({"cr": TN.UNDER_CROWN} if low else {})))
+            cr = TN.UNDER_CROWN if low else next((c for a_, b_, c in prof.get("cr") or () if [a_, b_] == [i0, i1]), None)
+            if cr and not low:
+                _to_data_ends(p, whole, r.get("obs") or ())
+            pieces.append(dict(c=r["cls"], n=r.get("name", ""), p=p, **({"cr": cr} if cr else {})))
     joined = list(pieces)
     merged = True
     while merged:
         merged = False
         for m, n in ((m, n) for m in range(len(joined)) for n in range(len(joined)) if m != n):
             o, t = joined[m], joined[n]
-            if o["c"] != t["c"]:
+            if o["c"] != t["c"] or o.get("cr") != t.get("cr"):
                 continue
             if math.dist(o["p"][-1][:2], t["p"][-1][:2]) < 0.5:
                 t = dict(t, p=t["p"][::-1])
@@ -1866,6 +1870,32 @@ def city_tunnels(roads, profiles, sq):
             out.append(dict(c=t["c"], n=t["n"], p=[[round(q[0], 1), round(q[1], 1), round(q[2], 2)] for q in piece],
                             **({"cr": t["cr"]} if t.get("cr") else {})))
     return out
+
+
+def _to_data_ends(p, whole, obs, reach=4.5):
+    """A deep bore's ends (points [x, y, floor] along `whole`) carried out to where the data's tunnel
+    or passage ends, the wall or hillside it comes out of, if that is within a profile step: from
+    the profile's points alone a portal stood up to 4 m inside a building, its way stopped short."""
+    runs = []
+    for t0, t1, tags in sorted(obs):
+        if tags.get("tunnel", "no") == "no" and tags.get("covered", "no") == "no":
+            continue
+        if runs and t0 <= runs[-1][1] + 0.1:
+            runs[-1][1] = max(runs[-1][1], t1)
+        else:
+            runs.append([t0, t1])
+    for end, out in ((0, -1), (-1, 1)):
+        d = whole.project(Point(p[end][:2]))
+        run = next((r for r in runs if r[0] - 0.1 <= d <= r[1] + 0.1), None)
+        if run is None:
+            continue
+        to = run[0] if out < 0 else run[1]
+        if 0.3 < abs(to - d) <= reach:
+            q = whole.interpolate(to)
+            if end == 0:
+                p.insert(0, [q.x, q.y, p[0][2]])
+            else:
+                p.append([q.x, q.y, p[-1][2]])
 
 
 def _clip_to(pts, sq):
@@ -6356,12 +6386,13 @@ def ways_out_of_buildings(rd, houses, floor=2.0, opened=None):
     return out, cut
 
 
-def passage_floors(bl, rd):
+def passage_floors(bl, rd, bores=()):
     """Each passage's floor follows its way as finally laid, and its width the way's; its headroom
-    stays under its buildings' eaves. A passage whose way has since gone (taken for a path along a
-    street, say), that no longer has room for an arch, or whose way runs well off its buildings'
-    ground, is closed, and the ways through it stop at its walls again. Returns the streets and paths."""
-    lines = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if len(r["p"]) > 1]
+    stays under its buildings' eaves. A passage over a bore (`bores`, the square's tunnels), a lane
+    under a terrace, is the bore's: its floor, and as high as the bore's crown. A passage whose way
+    has since gone (taken for a path along a street, say), that no longer has room for an arch, or
+    whose way runs well off its buildings' ground, is closed, and the ways through it stop at its walls again. Returns the streets and paths."""
+    lines = [(LineString([q[:2] for q in r["p"]]), r) for r in rd + list(bores) if len(r["p"]) > 1]
     tree = STRtree([g for g, _ in lines]) if lines else None
     eaves, ground = {}, {}
     for b in bl:
@@ -6715,6 +6746,10 @@ def _lay_passage(ps, lines, tree, eaves, ground):
         cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], c[:2]) for a, c in zip(p, p[1:])])])
         ps[i + 2] = round(float(np.interp(g.project(pt), cum, [q[2] for q in p])), 2)
     main = max(near, key=lambda n: mid.intersection(n[0].buffer(0.3)).length)[1]
+    if "hw" in main or "cr" in main:
+        ps[0] = round(2 * max(TN.half_at(main, k) for k in range(len(main["p"]))), 2)
+        ps[1] = round(min(max(ps[1], TN.crown(main["c"]) if "cr" not in main else main["cr"]), eaves - PASSAGE_OVER - max(ps[4::3])), 2)
+        return ps[1] >= PASSAGE_HEAD
     ps[0] = round(min(8.0, max(1.2, way_width(main))), 2)
     ps[1] = round(min(ps[1], eaves - PASSAGE_OVER - max(ps[4::3])), 2)
     # (a way well off its buildings' ground is on a deck or down a cutting, not through their ground floor)
@@ -10043,7 +10078,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     if rebake:
         flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width), only=rebake)
     # (the passages are settled before the faces, which lay each one's floor as its way's own face)
-    rd = tile["rd"] = passage_floors(tile.get("bl") or [], rd)
+    rd = tile["rd"] = passage_floors(tile.get("bl") or [], rd, tile.get("tn") or ())
     rd = tile["rd"] = setpiece_cuts.lay(tile.get("centre"), sq, rd)
     # the grid stops just short of the square's edge, and a face must reach it
     def surface_ground(x, y):
