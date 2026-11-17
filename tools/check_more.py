@@ -185,7 +185,7 @@ def _set_pieces(centre):
         at = lambda lx, lz: (ox + ux * lx + uy * lz, oy + uy * lx - ux * lz)
         for r in rings:
             if len(r) >= 3: out.append(_poly([at(lx, lz) for lx, lz in r]))
-        # (the street it lays end to end, whose faces the game cuts out of the square's: setpieces.ts cutFaces)
+        # (the stretch it lays its street along, whose faces the game takes out where it's drawn)
         if street:
             x0, x1, z = street["x0"], street["x1"], street["zMax"]
             streets.append(_poly([at(x0, -z), at(x1, -z), at(x1, z), at(x0, z)]))
@@ -201,6 +201,15 @@ def set_piece_streets(centre):
     game cuts the map's own faces out of them and draws the street as laid."""
     _set_pieces(centre)
     return _SET_PIECE_STREETS.get(centre, [])
+
+
+def set_piece_laid(m):
+    """Where square m's faces were taken out for the set pieces (setpiece_cuts.py): those that draw all
+    of their outline, and their own streets where the game draws them; None if there's none."""
+    if not m.get("centre"):
+        return None
+    from partition import setpiece_cuts
+    return setpiece_cuts.cuts(m["centre"], m["b"], None, m.get("rd"))[0]
 
 
 @functools.lru_cache(maxsize=2)
@@ -1568,9 +1577,10 @@ def face_joins(m, sheet, D, drawn, note, at, inner, fig):
     stops += [LineString(b["r"][0] + b["r"][0][:1]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     # (a deck is drawn by the bridge, not as faces: a pavement running on to one has something there)
     decks = [LineString([q[:2] for q in r["p"]]).buffer(max(_deck_sides(r)) + 1) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
-    # (nor is a set piece that paves its outline to the edge, where the square's faces were cut for it)
+    # (nor is a set piece that paves its outline to the edge, or lays its own street, where the
+    # square's faces were cut for it)
     from partition import setpiece_cuts
-    filled = setpiece_cuts.holes(m.get("centre"), m["b"], sheet.union(("road", "service")))
+    filled, _ = setpiece_cuts.cuts(m.get("centre"), m["b"], sheet.union(("road", "service")), m.get("rd"))
     # (nor does a street's pavement go on through a building's passage with it: it stops at the wall
     # beside the arch's mouth)
     mouths = [Point(ps[k:k + 2]).buffer(ps[0] / 2 + 1.5) for b in m.get("bl") or [] for ps in b.get("ps") or []
@@ -1701,6 +1711,7 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
     roads = [r for r in m.get("rd") or [] if len(r["p"]) > 1]
     pieces = [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
     held = lambda x, y: any(p.contains(Point(x, y)) for p in pieces)
+    laid = set_piece_laid(m)
     chains, joints = join_spans(roads)
     x0, y0, x1, y1 = m["b"]
     seam = lambda q: min(abs(q[0] - x0), abs(q[0] - x1), abs(q[1] - y0), abs(q[1] - y1)) < 0.6
@@ -1800,7 +1811,8 @@ def bridges(m, f, sheet, drawn, ground, note, at, sq, fig):
                 ox, oy = q[0] + (q[0] - p[inward][0]) / d * 0.5, q[1] + (q[1] - p[inward][1]) / d * 0.5
                 there, k = sheet.top(np.array([ox]), np.array([oy]), drawn) if sheet.ok else (drawn(np.array([ox]), np.array([oy])), [None])
                 gap = abs(floor - (float(there[0]) - (FACE_LIFT[k[0]] if k[0] else 0)))
-                if gap > DECK_END:
+                # (off its end on to a set piece's own street, which the game draws, not the faces)
+                if gap > DECK_END and not (laid is not None and laid.contains(Point(ox, oy))):
                     note("28 deck end off the street", gap, at(q[0], q[1]), f"{name} {kind}, {gap * 100:.0f} cm from the {k[0] or 'ground'} it meets")
                     fig["deck ends off"] = fig.get("deck ends off", 0) + 1
             # the deck's footprint between its abutments, a metre and a half in from each, every half metre
@@ -2717,6 +2729,7 @@ def street_holes(m, f, sheet, note, at, inner, fig):
     covered += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
     covered += [_deck(r) for r in m.get("rd") or [] if 1 in _flags(r)]
     if m.get("centre"): covered += set_piece_streets(tuple(m["centre"]))
+    if (laid := set_piece_laid(m)) is not None: covered.append(laid)
     holes = shapely.union_all(strips).difference(shapely.union_all(covered).buffer(0.05)).intersection(inner)
     total = 0.0
     for g in getattr(holes, "geoms", [holes]):

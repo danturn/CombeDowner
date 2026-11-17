@@ -5404,14 +5404,22 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         shapely.prepare(barriers)
     simple = needles_off(list(shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)), barriers,
                          [cls in ("carriageway", "pavement") for cls, _ in pieces])
-    # (a set piece that draws all of its outline meets the faces along its edge: setpiece_cuts.py)
-    cut = setpiece_cuts.holes(centre, sq, road) if centre else None
-    if cut is not None:
-        shapely.prepare(cut)
+    # (a set piece meets the faces along its edge: what it draws all of goes, and the rest are split
+    # along its outline for the game to take out what it lays its own ground over: setpiece_cuts.py)
+    cut, split = setpiece_cuts.cuts(centre, sq, road, rd) if centre else (None, None)
+    if cut is not None or split is not None:
+        for g in (cut, split):
+            if g is not None:
+                shapely.prepare(g)
         left = []
         for (cls, _), q in zip(pieces, simple):
-            q = q.difference(cut) if cut.intersects(q) else q
-            left += [(cls, g) for g in getattr(q, "geoms", [q]) if g.geom_type == "Polygon" and g.area > 0.05]
+            q = q.difference(cut) if cut is not None and cut.intersects(q) else q
+            parts = [q]
+            # (not a carriageway: the game keeps the streets through a set piece, and a point added
+            # across one is levelled afresh, a step in the road)
+            if cls != "carriageway" and split is not None and split.intersects(q) and not split.contains(q):
+                parts = [q.intersection(split), q.difference(split)]
+            left += [(cls, g) for part in parts for g in getattr(part, "geoms", [part]) if g.geom_type == "Polygon" and g.area > 0.05]
         if not left:
             return None
         pieces, simple = left, [g for _, g in left]
