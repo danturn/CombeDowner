@@ -56,7 +56,7 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
   const { deck, top, rz, names, low } = plan(args);
   const k = new Kit();
   const S = stone(), S2 = stone("#cbb487"), render = stone("#efe6d2"), lead = plain("#6f767c"), roofs = slate();
-  const sash = sashGlass(), arched = archedGlass(), dark = plain("#2c2a27"), foam = plain("#f4f7f6", { transparent: true, opacity: 0.8, emissive: "#9fb0b4" });
+  const sash = sashGlass(), arched = archedGlass(), dark = plain("#2c2a27");
   const roundel = plain("#7a6a50");
   const fronts = FRAMES.map((c) => new THREE.MeshLambertMaterial({ color: c, map: shopTex() }));
   const sides = [1, -1];
@@ -192,13 +192,15 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
       const [ax, az] = arm[0], [bx, bz] = arm[1];
       falls.push({ p: (inside[0] - ax) * -(bz - az) + (inside[1] - az) * (bx - ax) > 0 ? arm : [...arm].reverse(), drop: 1.5 });
     }
+    // the crest, and the sheet of water pouring off its inside down to the river below (whose own
+    // surface churns white from there on: water.ts)
+    const pour = plain("#d6dfdd");
     for (const arm of [east, west]) for (let i = 0; i < arm.length - 1; i++) {
       const [ax, az] = arm[i], [bx, bz] = arm[i + 1], l = Math.hypot(bx - ax, bz - az);
       let nx = -(bz - az) / l, nz = (bx - ax) / l;
       if ((inside[0] - ax) * nx + (inside[1] - az) * nz < 0) { nx = -nx; nz = -nz; }
       k.beam(S2, [ax, 0.08, az], [bx, 0.08, bz], 1.0, 0.36, 2);
-      // three falls of white water down the inside of the crest
-      for (const [o, y] of [[0.95, 0.05], [1.9, 0.035], [2.85, 0.02]]) k.beam(foam, [ax + nx * o, y, az + nz * o], [bx + nx * o, y, bz + nz * o], 0.85, 0.04, 2);
+      k.beam(pour, [ax + nx * 0.75, -0.72, az + nz * 0.75], [bx + nx * 0.75, -0.72, bz + nz * 0.75], 0.5, 1.6, 2);
     }
     // the radial flood gate by the east bank: two piers, the gate and the walkway over it
     const g0: [number, number] = [36.6, 92.5], g1: [number, number] = [54.1, 89.1];

@@ -4,7 +4,9 @@
 // (the way its middle line runs in the map) and drifting slowly on still water. Looked at from a
 // low angle it mirrors the sky, the same colours and time of day as the sky itself, with the sun
 // (or by night the moon) glinting off the ripples; looked straight down into it, it's dark and
-// green in the middle, paler and siltier along its banks. Below a weir the water churns white.
+// green in the middle. Where it meets the land it laps in a broken white line, and the ground, the
+// banks' and locks' stone and bridges' piers are dark and wet just above it (ShoreMap, wetBy). Below
+// a weir the water churns white. It's drawn in squares as coarse as the world's own textures.
 // Every water mesh shares the one look, so it costs no more draws than flat water did, and the
 // Low scenery detail (view.ts) leaves out the finest chop.
 //
@@ -33,13 +35,147 @@ const U = {
   wLightCol: { value: new THREE.Color() },
   wBank: { value: new THREE.Color() },
   wDeep: { value: new THREE.Color("#2c4a3a") },
-  wShallow: { value: new THREE.Color("#7c7a56") },
+  wShallow: { value: new THREE.Color("#6b6547") },
   /** Each weir's crest (data x, y from one end to the other, the lower water on its right). */
   wWeir: { value: Array.from({ length: WEIRS }, () => new THREE.Vector4()) },
   /** How far its white water reaches downstream, metres (0: no weir). */
   wWeirRun: { value: new Array(WEIRS).fill(0) },
   wWeirs: { value: 0 },
 };
+
+// ---- the shore: where the water meets everything else -------------------------------------------
+// One picture of the ground round you, seen from above, a dot a metre: how high the water stands at
+// each dot (on the land beside it too, the level of the water it's beside), how near the water each
+// dot of land is, and how near the land each dot of water is. The water reads it for its shallows
+// and the white line where it laps at the bank; the ground, the banks' and locks' stonework and
+// bridges' piers read it for the dark, wet band just above the water. One picture for all of them,
+// painted afresh over a few frames as you move or squares load, so it costs no more however much water there is.
+const SHORE = 256, SHORE_STEP = 1, SHORE_LEVEL = 0.1;
+function shorePicture() {
+  const t = new THREE.DataTexture(new Uint8Array(SHORE * SHORE * 4), SHORE, SHORE, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+const SU = {
+  shoreMap: { value: shorePicture() },
+  /** The picture's corner (scene x, z), one over its width in metres, and 1 once it's painted. */
+  shoreBox: { value: new THREE.Vector4(0, 0, 1, 0) },
+  /** The level the picture's lowest step stands for (scene y), and metres a step. */
+  shoreBase: { value: new THREE.Vector2(0, SHORE_LEVEL) },
+};
+const SHORE_DECL = `uniform sampler2D shoreMap; uniform vec4 shoreBox; uniform vec2 shoreBase;
+float shHash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+// the water's level here (scene y), how near the water it is on land (b) and how near land it is on water (a)
+vec4 shoreAt(vec3 p) {
+  vec2 uv = (p.xz - shoreBox.xy) * shoreBox.z;
+  if (shoreBox.w < 0.5 || uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
+  vec4 t = texture2D(shoreMap, uv);
+  return vec4(shoreBase.x + t.r * 255.0 * shoreBase.y, 0.0, t.b, t.a);
+}`;
+
+/**
+ * The shore picture, for one world. level(x, z): the water's level at scene (x, z) (scene y), or
+ * null where there's none.
+ */
+export class ShoreMap {
+  private job: Generator<void> | null = null;
+  private cx = NaN; private cz = NaN; private since = 0; private sig = "";
+  /** squares(): something that changes when the squares of Bath loaded do. */
+  constructor(private level: (x: number, z: number) => number | null, private squares: () => string) {}
+
+  /** Each frame, with where you are. */
+  update(px: number, pz: number, dt: number) {
+    this.since += dt;
+    // (afresh as you move off, and now and then for squares built since and the locks' water)
+    const sig = this.squares();
+    if (!this.job && (Math.hypot(px - this.cx, pz - this.cz) > SHORE * SHORE_STEP / 6 || this.since > 8 || sig !== this.sig)) {
+      this.since = 0; this.sig = sig;
+      this.cx = Math.round(px / SHORE_STEP) * SHORE_STEP; this.cz = Math.round(pz / SHORE_STEP) * SHORE_STEP;
+      this.job = this.paint(this.cx - SHORE * SHORE_STEP / 2, this.cz - SHORE * SHORE_STEP / 2);
+    }
+    if (this.job && this.job.next().done) this.job = null;
+  }
+
+  private *paint(x0: number, z0: number): Generator<void> {
+    const N = SHORE, lv = new Float32Array(N * N).fill(NaN);
+    let low = Infinity;
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const l = this.level(x0 + (i + 0.5) * SHORE_STEP, z0 + (j + 0.5) * SHORE_STEP);
+        if (l !== null) { lv[j * N + i] = l; if (l < low) low = l; }
+      }
+      if (j % 32 === 31) yield;
+    }
+    // how far each dot is from the other side of the shore, in dots (up to REACH), and on land
+    // the level of the nearest water
+    const REACH = 4, toWater = new Uint8Array(N * N).fill(REACH + 1), toLand = new Uint8Array(N * N).fill(REACH + 1), near = new Float32Array(lv);
+    for (let k = 0; k < N * N; k++) (Number.isNaN(lv[k]) ? toLand : toWater)[k] = 0;
+    for (let pass = 1; pass <= REACH; pass++) {
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+        const k = j * N + i;
+        for (const [d, o] of [[toWater, 1], [toLand, 0]] as const) {
+          if (d[k] <= pass) continue;
+          for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+            const ii = i + di, jj = j + dj;
+            if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
+            if (d[jj * N + ii] === pass - 1) { d[k] = pass; if (o && Number.isNaN(near[k])) near[k] = near[jj * N + ii]; }
+          }
+        }
+      }
+      yield;
+    }
+    const tex = SU.shoreMap.value, out = tex.image.data as Uint8Array, base = Number.isFinite(low) ? low - 0.5 : 0;
+    const LAND = [255, 200, 120, 50, 0], WATER = [255, 170, 90, 30, 0];
+    for (let k = 0; k < N * N; k++) {
+      const l = near[k];
+      out[k * 4] = Number.isNaN(l) ? 0 : Math.max(1, Math.min(255, Math.round((l - base) / SHORE_LEVEL)));
+      out[k * 4 + 1] = 0;
+      out[k * 4 + 2] = Number.isNaN(l) ? 0 : LAND[Math.min(toWater[k], REACH)];
+      out[k * 4 + 3] = Number.isNaN(lv[k]) ? 255 : WATER[Math.min(toLand[k], REACH)];
+    }
+    tex.needsUpdate = true;
+    SU.shoreBox.value.set(x0, z0, 1 / (N * SHORE_STEP), 1);
+    SU.shoreBase.value.set(base, SHORE_LEVEL);
+  }
+}
+
+// On anything standing at the water's edge: a dark, wet band from the water up, its top ragged in
+// the world's own coarse squares, and right at the waterline a green-black stain
+const WET_FRAG = `{
+    vec4 ws = shoreAt(vWetAt);
+    if (ws.b > 0.02) {
+      vec3 wq = floor(vWetAt * 8.0);
+      float jit = shHash(wq.xz + wq.y * 7.13);
+      float h = vWetAt.y - ws.r;
+      float wet = step(h, (0.2 + 0.4 * jit) * ws.b) * step(-3.0, h);
+      diffuseColor.rgb *= 1.0 - 0.5 * wet;
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.06, 0.08, 0.05), step(abs(h - 0.04), 0.05 + 0.05 * jit) * step(0.6, ws.b) * 0.55);
+    }
+  }`;
+const WET_VERT = `vec4 wetAt = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  wetAt = instanceMatrix * wetAt;
+#endif
+  vWetAt = (modelMatrix * wetAt).xyz;`;
+const wetDone = new WeakSet<THREE.Material>();
+/** Give a copy of a material (three.js's clone leaves the wet band behind) the band too, if it had it. */
+export const wetLike = <M extends THREE.Material>(from: THREE.Material, to: M): M => wetDone.has(from) ? wetBy(to) : to;
+/** Let material m (a Lambert one: ground, stonework) darken where it's wet at the water's edge. */
+export function wetBy<M extends THREE.Material>(m: M): M {
+  if (wetDone.has(m) || !(m as unknown as THREE.MeshLambertMaterial).isMeshLambertMaterial) return m;
+  wetDone.add(m);
+  const was = m.onBeforeCompile, ownKey = m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? m.customProgramCacheKey : null;
+  m.onBeforeCompile = function (this: THREE.Material, sh, r) {
+    was.call(this, sh, r);
+    Object.assign(sh.uniforms, SU);
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vWetAt;")
+      .replace("#include <project_vertex>", `#include <project_vertex>\n  ${WET_VERT}`);
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\nvarying vec3 vWetAt;\n${SHORE_DECL}`)
+      .replace("#include <color_fragment>", `#include <color_fragment>\n  ${WET_FRAG}`);
+  };
+  m.customProgramCacheKey = function (this: THREE.Material) { return (ownKey ? ownKey.call(this) : was.toString()) + "|wet"; };
+  return m;
+}
 
 const VERT_DECL = `attribute vec3 waterC; attribute vec2 waterF;
 varying vec3 vWPos; varying vec3 vWC; varying vec2 vWF;`;
@@ -51,6 +187,7 @@ const FRAG_DECL = `varying vec3 vWPos; varying vec3 vWC; varying vec2 vWF;
 uniform float wTime, wFine, wReflect; uniform int wWeirs;
 uniform vec3 wSkyTop, wSkyLow, wBank, wLightDir, wLightCol, wDeep, wShallow;
 uniform vec4 wWeir[${WEIRS}]; uniform float wWeirRun[${WEIRS}];
+${SHORE_DECL}
 // (a hash without sin: sin loses its precision on some phones' graphics chips at the map's distances)
 float wHash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 // value noise and its slope
@@ -74,7 +211,10 @@ vec2 wChop(vec2 p, vec2 flow) {
 // white) goes in before it's lit
 const FRAG_SURFACE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV); wV /= wDist;
   float wAbove = step(vWPos.y, cameraPosition.y);
-  vec2 wp = vWPos.xz;
+  // (sampled in squares of an eighth of a metre, as coarse as the world's own textures, so the
+  // water's chunky like everything round it)
+  vec2 wp = (floor(vWPos.xz * 8.0) + 0.5) / 8.0;
+  vec4 wShore = shoreAt(vec3(wp.x, vWPos.y, wp.y));
   // wind ripples, crossing at three angles
   vec2 wG = vec2(0.0);
   vec2 d1 = vec2(0.8, 0.6), d2 = vec2(-0.45, 0.89), d3 = vec2(0.97, -0.24);
@@ -93,11 +233,12 @@ const FRAG_SURFACE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV)
     float l = max(length(ab), 0.01); vec2 t = ab / l, r = vec2(t.y, -t.x);
     float s = dot(wd - a, t), dn = dot(wd - a, r), run = wWeirRun[i];
     float side = smoothstep(-2.0, 0.5, s) * smoothstep(-2.0, 0.5, l - s);
-    float f = side * smoothstep(-0.3, 0.4, dn) * (1.0 - smoothstep(0.0, run, dn));
+    float f = side * step(-0.3, dn) * (1.0 - smoothstep(0.0, run, dn));
     if (f > 0.0) {
       float n = wNoise(vec2(s * 0.7, dn * 0.5 - wTime * 1.1)).x * 0.6 + wNoise(vec2(s * 2.1, dn * 1.4 - wTime * 2.2)).x * 0.4;
-      float band = 1.0 - smoothstep(run * 0.12, run * 0.4, dn + n * 1.5);
-      wFoam = max(wFoam, f * max(band, smoothstep(0.55, 0.8, n + f * 0.25)));
+      // solid white from the crest, its far edge ragged, then broken lumps carried off downstream
+      float band = step(dn + n * 2.0, run * 0.3) * step(n * 0.6 - 0.3, dn);
+      wFoam = max(wFoam, f * max(band, step(0.62, n + f * 0.2)) * mix(0.8, 1.0, n));
       wFlow += r * f * 1.2;
     }
   }
@@ -105,9 +246,15 @@ const FRAG_SURFACE = `vec3 wV = cameraPosition - vWPos; float wDist = length(wV)
   wG *= mix(0.15, 1.0, wNear);
   vec3 wN = normalize(vec3(-wG.x, 1.0, -wG.y));
   if (wAbove > 0.5) normal = normalize((viewMatrix * vec4(wN, 0.0)).xyz);
-  // deep and green in the middle, paler towards the banks
+  // deepest in the middle of a river or the canal; over the shallows at the very edge the bed
+  // shows through, and the water laps at the bank in a broken white line
   float wEdge = clamp(distance(wp, vWC.xy) / max(vWC.z, 0.5), 0.0, 1.0);
-  diffuseColor.rgb = mix(wDeep, wShallow, smoothstep(0.65, 1.0, wEdge) * 0.7);
+  diffuseColor.rgb = wDeep * mix(0.8, 1.0, smoothstep(0.3, 0.9, wEdge));
+  float wSh = wShore.a;
+  diffuseColor.rgb = mix(diffuseColor.rgb, wShallow, step(0.5, wSh + wHash(floor(wp * 2.0)) * 0.15) * 0.3);
+  float wLap = wNoise(wp * 2.5 + vec2(wTime * 0.3, 0.0)).x + 0.2 * sin(wTime * 1.4 - wSh * 9.0);
+  // (a thin line at most: only where the land is right by, and fading out far off where it'd be a white rim)
+  wFoam = max(wFoam, step(0.9, wSh + 0.08 * wLap) * step(0.5, wLap) * 0.6 * (1.0 - smoothstep(60.0, 160.0, wDist)));
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.88, 0.88), wFoam);`;
 
 // Before fog: the sky mirrored at a low angle (Fresnel), and the light glinting off the ripples
@@ -138,7 +285,7 @@ export function waterLook<M extends THREE.Material>(m: M): M {
   const was = m.onBeforeCompile;
   m.onBeforeCompile = function (this: THREE.Material, sh, r) {
     was.call(this, sh, r);
-    Object.assign(sh.uniforms, U);
+    Object.assign(sh.uniforms, U, SU);
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${VERT_DECL}`)
       .replace("#include <project_vertex>", `#include <project_vertex>\n  ${VERT}`);
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${FRAG_DECL}`)

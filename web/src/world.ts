@@ -56,7 +56,7 @@ export function groundCdt(): boolean {
 }
 import { SunShadows, inPieces } from "./shadows";
 import { tag, tagSince } from "./kinds";
-import { RIVER_FLOW, waterCorners, waterLook, waterSky, waterWeirs } from "./water";
+import { RIVER_FLOW, ShoreMap, waterCorners, waterLook, waterSky, waterWeirs, wetBy } from "./water";
 
 const CHUNK = 320;
 
@@ -400,7 +400,7 @@ function railMasonry(map: GameMap): Masonry {
       seen.set(key, k);
       return k;
     },
-    material: (k) => (MASON_MATS[k] ??= lampLit(new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide }))),
+    material: (k) => (MASON_MATS[k] ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ map: TX.wall(k === "s" ? "stone" : k === "k" ? "brick" : "stock", false), vertexColors: true, side: THREE.DoubleSide })))),
   };
 }
 
@@ -1202,6 +1202,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // fewer mouths would leave gaps in the list and stop the drawing
   if (ownTerr) terrMat.customProgramCacheKey = () => `terrain:${mouth.a.length}:${works ? 1 : 0}`;
   lampLit(terrMat);   // (after dark, the far-off lamps' pools of light: lamppools.ts)
+  wetBy(terrMat);
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped: a square of Bath is three by three of them (each one costs
   // the computer a little to draw however small, and Bath has a lot of squares in sight).
@@ -1241,7 +1242,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     };
     const g = works.geometry(map.z0, (x, y) => drawnBare(x, -y) + map.z0, colour);
     if (g) {
-      const m = new THREE.Mesh(g, S.worksMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide })));
+      const m = new THREE.Mesh(g, S.worksMat ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide }))));
       m.receiveShadow = true;
       freeOnUpload(g);
       g.computeBoundingSphere();
@@ -2094,7 +2095,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     mat.customProgramCacheKey = () => id;
     return (S[id] = mat);
   };
-  const bridgeMat: THREE.Material = S.bridgeMat ??= lampLit(new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }));
+  const bridgeMat: THREE.Material = S.bridgeMat ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true })));
   const steelMat: THREE.Material = S.steelMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
@@ -2561,7 +2562,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
       geo.computeVertexNormals();
-      S.weirMat ??= new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      S.weirMat ??= wetBy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
       const m = new THREE.Mesh(geo, S.weirMat);
       m.receiveShadow = true;
       m.userData.water = true;
@@ -3151,7 +3152,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),
     steel: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
   };
-  for (const m of Object.values(barMats)) lampLit(m);
+  for (const m of Object.values(barMats)) wetBy(lampLit(m));
   for (const [k, geo] of barGeos) {
     const g = geo.build();
     if (!g) continue;
@@ -3610,6 +3611,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   scene.add(tag(fieldMesh, "field"));
   const clock = new THREE.Clock();
   let weirT = 0;
+  const shore = new ShoreMap((x, z) => (map.canal instanceof Canal ? map.canal.waterAt(x, z) : null) ?? tiles?.worldAt(x, z)?.water(x, z) ?? waterAt(x, z),
+    () => [...map.tiles.keys()].join());
 
   mark("field");
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
@@ -3679,6 +3682,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
       skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
       waterSky(sk, fog.color, dark);
+      shore.update(px, pz, dt);
       if ((weirT -= dt) <= 0) {
         weirT = 0.5;
         waterWeirs([map, ...map.tilesNear(px, pz, 500)].flatMap((m) => [...m.d.wf ?? [], ...landmarkFalls(m)]), px, -pz);
