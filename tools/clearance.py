@@ -142,7 +142,10 @@ def keep_clear(out, roads, ground, paths, kerbed, free=lambda x, y: True):
             if s * f < SMALLEST and f < 1: continue
             nx_, ny_ = round(x + bx * m, 1), round(y + by * m, 1)
             if m and not free(nx_, ny_): continue
-            g_ = round(ground(nx_, ny_), 1) if m else g
+            g_ = ground(nx_, ny_) if m else g
+            # (stepped back off the square's grid, it has no ground to stand on there)
+            if g_ is None: continue
+            g_ = round(g_, 1)
             if crown_clash(nx_, ny_, g_, s * f, k, room) is None:
                 fit = (nx_, ny_, g_, round(s * f, 2), k); break
         if fit is None:
