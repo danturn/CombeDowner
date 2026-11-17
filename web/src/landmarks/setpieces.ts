@@ -439,7 +439,43 @@ function layStreet(rd: Road[], st: NonNullable<SetPiece["street"]>, local: (x: n
     }
   }
   gradeStreet(out.filter((r) => r.piece), st, local);
+  mitrePieces(out.filter((r) => r.piece));
   return out;
+}
+
+/** Where two pieces of a set piece's street meet end to end at an angle, both ends are cut along
+ *  the line halving the angle between them (Road.en), and widened to keep their width across it:
+ *  each cut square to its own line left a wedge open on the outside of the bend, down to whatever
+ *  is under the street, and a sliver of the square's paving between the two. */
+function mitrePieces(pieces: Road[]) {
+  const ends = new Map<string, [Road, number][]>();
+  const spot = (q: number[]) => `${Math.round(q[0] * 20)},${Math.round(q[1] * 20)}`;
+  for (const r of pieces) if (r.p.length > 1) for (const e of [0, r.p.length - 1]) {
+    const k = spot(r.p[e]);
+    (ends.get(k) ?? ends.set(k, []).get(k)!).push([r, e]);
+  }
+  // the way along r at its end e, pointing along its points
+  const dir = (r: Road, e: number) => {
+    const a = e ? r.p[e - 1] : r.p[0], b = e ? r.p[e] : r.p[1], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+  };
+  for (const meet of ends.values()) {
+    if (meet.length !== 2 || meet[0][0] === meet[1][0]) continue;
+    const [[A, ea], [B, eb]] = meet;
+    // (each looking the same way through the joint: into it along A, out of it along B)
+    const da = dir(A, ea).map((v) => (ea ? v : -v)), db = dir(B, eb).map((v) => (eb ? -v : v));
+    const tx = da[0] + db[0], ty = da[1] + db[1], tl = Math.hypot(tx, ty);
+    if (tl < 0.5) continue;
+    const n = [-ty / tl, tx / tl], k = 1 / Math.max(0.5, n[0] * -da[1] + n[1] * da[0]);
+    const cut = (r: Road, e: number, sign: number) => {
+      const en = r.en ?? [null, null];
+      en[e ? 1 : 0] = [n[0] * k * sign, n[1] * k * sign];
+      r.en = en;
+    };
+    // (a piece running the other way has its left on the other side)
+    cut(A, ea, ea ? 1 : -1);
+    cut(B, eb, eb ? -1 : 1);
+  }
 }
 
 /** A set piece lays its street at an even grade from each of its ends to its bridge's span, and
@@ -473,7 +509,8 @@ function streetFootprint(rd: Road[]): number[][][] {
   const bx0 = Math.min(...xs) - 60, bx1 = Math.max(...xs) + 60, by0 = Math.min(...ys) - 60, by1 = Math.max(...ys) + 60;
   const others = rd.filter((r) => !PATHS.has(r.c) && r.p.some((q) => q[0] > bx0 && q[0] < bx1 && q[1] > by0 && q[1] < by1));
   const onOther = (me: Road, x: number, y: number, h: number) => others.some((s) => {
-    if (s === me || s.piece) return false;
+    if (s === me) return false;
+    if (s.piece) return onPiece(me, s, x, y, h);
     const w = roadHalf(s.c, s.w) + 0.4;
     for (let k = 0; k + 1 < s.p.length; k++) {
       const a = s.p[k], b = s.p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
@@ -495,6 +532,8 @@ function streetFootprint(rd: Road[]): number[][][] {
       const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
       return [-(b[1] - a[1]) / l, (b[0] - a[0]) / l];
     });
+    if (r.en?.[0]) nrm[0] = r.en[0];
+    if (r.en?.[1]) nrm[p.length - 1] = r.en[1];
     const at = (i: number, o: number) => [p[i][0] + nrm[i][0] * o, p[i][1] + nrm[i][1] * o];
     const half = roadHalf(r.c, r.w), pv = KERBED.has(r.c) ? r.pv ?? [PAVE, PAVE] : [0, 0];
     const bands: [number, number, boolean][] = [[-half, half, false], [half, half + pv[0], true], [-half - pv[1], -half, true]];
@@ -509,6 +548,22 @@ function streetFootprint(rd: Road[]): number[][][] {
 }
 
 export const JOIN_LEVEL = 1.0;      // metres apart in height that two streets crossing are still at one level
+
+/** Is (x, y), at about height h, on piece s's carriageway, s being another piece of a set piece's
+ *  street than me and not the one running on from it round a bend (mitrePieces)? Where the street
+ *  forks, each branch's pavement gives way to the other's carriageway, so the two make one road
+ *  with kerbs only round its outside, rather than pavements cutting into it in wedges. */
+export function onPiece(me: Road, s: Road, x: number, y: number, h: number): boolean {
+  const ends = (r: Road) => [0, r.p.length - 1].map((e, k) => ({ q: r.p[e], cut: !!r.en?.[k] }));
+  if (ends(me).some((a) => a.cut && ends(s).some((b) => b.cut && Math.hypot(a.q[0] - b.q[0], a.q[1] - b.q[1]) < 0.05))) return false;
+  const half = roadHalf(s.c, s.w);
+  for (let k = 0; k + 1 < s.p.length; k++) {
+    const a = s.p[k], b = s.p[k + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+    const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
+    if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < half && Math.abs(a[2] + (b[2] - a[2]) * t - h) < JOIN_LEVEL) return true;
+  }
+  return false;
+}
 
 /** Is a stretch of a set piece's pavement from a to b (its line's points, the normal there, and
  *  the band's offsets) where another street meets the street at its own level? There the
@@ -540,7 +595,7 @@ const OUTLINE_OF: Record<string, string> = { road: "road", service: "road", pave
  *  what is left: the faces left standing get an outline where they now end, so the ground meets
  *  them there with their edge drawn, and the grid's cells no face covers any more get their ground
  *  back (gs.c), or the set piece's floor would stand over a hole to the sky. */
-function clearFaces(d: MapData, cut: (x: number, y: number, a: number, b: number, c: number) => boolean) {
+function clearFaces(d: MapData, cut: (x: number, y: number, a: number, b: number, c: number) => boolean, only?: readonly string[]) {
   const sf = d.sf!, V = sf.v, NP = V.length / 3;
   const gone = new Set<number>(), kept = new Set<number>();
   const keptTris: number[] = [], goneTris: number[] = [], fresh: { c: string; i: Int32Array }[] = [];
@@ -552,7 +607,7 @@ function clearFaces(d: MapData, cut: (x: number, y: number, a: number, b: number
   const cuts: [(typeof FACE_LISTS)[number], number[]][] = [];
   for (const kind of FACE_LISTS) {
     const I = sf[kind];
-    if (!I) continue;
+    if (!I || (only && !only.includes(kind))) continue;
     const keep: number[] = [];
     for (let k = 0; k + 2 < I.length; k += 3) {
       const a = I[k], b = I[k + 1], c = I[k + 2];
@@ -809,6 +864,10 @@ export function maskSetPieces(d: MapData) {
     });
     // (the street faces it lays its own ground over go once its shape is known: clearSetPieceGround)
     (d.so ??= []).push(...rings);
+    // and on a bridge it builds itself, the footpaths' faces inside go with their paths: a footway the
+    // map has along the bridge's side poked up through its street in a wedge where it fell and rose
+    // (a garden's paths, off any bridge, stay)
+    if (d.sf && held.length) clearFaces(d, (x, y) => hide(x, y), ["path"]);
     // the canopy over woods
     if (d.cn) {
       const C = d.cn, raw = atob(C.h), H = new Uint8Array(raw.length);

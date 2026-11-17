@@ -57,7 +57,7 @@ export interface RoofMesh { v: number[]; t: number[]; w?: number[]; z: number[][
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; pw?: number[][]; dk?: number | number[]; held?: boolean; piece?: boolean; bt?: string; uo?: number[][]; ms?: number }   // ms: its speed limit in mph (tools/maxspeed.py); bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; piece: a set piece's own street (SetPiece.street), drawn as it lays it rather than as the square's faces; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE), the widest they get along it; pw: where a building stands nearer the kerb than that, [metres along, left, right] (pvAt)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; pw?: number[][]; dk?: number | number[]; held?: boolean; ledge?: boolean[]; piece?: boolean; en?: (number[] | null)[]; bt?: string; uo?: number[][]; ms?: number }   // ms: its speed limit in mph (tools/maxspeed.py); bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; ledge: whether the ground falls away beside its bridge's deck [left, right], where it doesn't on a side (deckLedges); held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; en: a set piece's street piece's sideways at its first and last points where it meets the next piece at an angle, else null (setpieces.ts mitrePieces); piece: a set piece's own street (SetPiece.street), drawn as it lays it rather than as the square's faces; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE), the widest they get along it; pw: where a building stands nearer the kerb than that, [metres along, left, right] (pvAt)
 /** What a street or path's ways say beyond its class (tools/osm.py's osm-detail): su, a path's surface (g grass, d dirt, v gravel; paved if left out);
  *  sv, a service road's kind (d a drive, l an alley, a a car park's aisle, p private); and for steps sc, how many treads, hr, its handrails
  *  (1 on the left looking along its points, 2 on the right, 4 down the middle), up, 1 where its points run uphill and -1 downhill,
@@ -584,6 +584,13 @@ export class GameMap {
       if (this.spent(2)) yield;
       const flags = spanFlags(r, g, this.z0);
       if (!flags.some((f) => f)) continue;
+      if (!r.held && flags.includes(1)) {
+        const xs = r.p.map((q) => q[0]), ys = r.p.map((q) => q[1]), x0 = Math.min(...xs) - 30, x1 = Math.max(...xs) + 30, y0 = Math.min(...ys) - 30, y1 = Math.max(...ys) + 30;
+        const near = [...d.bl.map((b) => b.r[0]), ...d.sp ?? []].filter((ring) => ring.some((q) => q[0] > x0 && q[0] < x1 && q[1] > y0 && q[1] < y1));
+        const [under, left, right] = deckLedges(r, flags, g, this.z0, d.se, (x, y) => near.some((ring) => inRing(ring, x, y)));
+        if (!under && !left && !right) { for (const q of r.p) if (q.length > 3) q.length = 3; continue; }
+        r.ledge = [left, right];
+      }
       r.bridge = true;
       if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
@@ -591,6 +598,7 @@ export class GameMap {
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0, d.se));
         for (const side of [1, -1]) {
+          if (r.ledge && !r.ledge[side > 0 ? 0 : 1]) continue;
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
           // (down only to the deck's underside, so a road or path passing under has no wall across it)
           for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, Math.min(tops[i], tops[i + 1]) - deckDrop(r), tops[i + 1] + 1.25);
@@ -2359,6 +2367,29 @@ export function deckTop(q: number[], flag: number, ground: (x: number, z: number
   if (e?.[6] === 2) return e[3] - z0;
   // (a flight's end a metre off the ground there is not where the survey and the ways agree: the ground wins)
   return e && Math.abs(e[3] - z0 - g) < 1 ? e[3] - z0 : g;
+}
+const LEDGE = 1.0;    // metres the ground must fall below a deck, under it or just beside it, for there to be anything to fall off
+/** Where the ground falls away from a bridge's deck: [under it, beside its left side, beside its
+ *  right side], looking along its points, a metre out from each side. The map marks a street over
+ *  a tunnel or a building's passage as a bridge, and a set piece can fill the ground up to the
+ *  street there: with no drop anywhere it's an ordinary street, and a side the ground stays level
+ *  with, or a building stands against (walled: data x, y), has nothing to fence off. */
+export function deckLedges(r: Road, flags: number[], ground: (x: number, z: number) => number, z0: number, ends?: MapData["se"],
+  walled?: (x: number, y: number) => boolean): [boolean, boolean, boolean] {
+  const [hl, hr] = deckSides(r), out: [boolean, boolean, boolean] = [false, false, false];
+  for (let i = 0; i < r.p.length - 1; i++) {
+    if (flags[i] !== 1 && flags[i + 1] !== 1) continue;
+    const A = r.p[i], B = r.p[i + 1], len = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, nx = -(B[1] - A[1]) / len, ny = (B[0] - A[0]) / len;
+    const ta = deckTop(A, flags[i], ground, z0, ends), tb = deckTop(B, flags[i + 1], ground, z0, ends);
+    for (let k = 0, n = Math.ceil(len); k <= n; k++) {
+      const f = k / n, x = A[0] + (B[0] - A[0]) * f, y = A[1] + (B[1] - A[1]) * f, top = ta + (tb - ta) * f;
+      [0, hl + 1, -(hr + 1)].forEach((o, j) => {
+        const px = x + nx * o, py = y + ny * o;
+        if (top - ground(px, -py) > LEDGE && !(o && walled?.(px, py))) out[j] = true;
+      });
+    }
+  }
+  return out;
 }
 /**
  * The spans of a bridge: ranges [a, b] of the road's point indexes, each from the abutment at one

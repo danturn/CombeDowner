@@ -28,7 +28,7 @@ import { ROCK, WILD_CHANNEL } from "./groundkinds";
 import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
-import { alongside, aqueductSetPieceAt, clearSetPieceGround, JOIN_LEVEL, joinsAt, setPieceAt } from "./landmarks/setpieces";
+import { alongside, aqueductSetPieceAt, clearSetPieceGround, JOIN_LEVEL, joinsAt, onPiece, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
@@ -1398,7 +1398,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const flags = level ? spanFlags(L as Road, (x, z) => map.trueGround(x, z), Z0) : null;
       // (the abutment's end at the deck's own end height, as bridgeStructures lands it: on the
       // survey's ground the deck's floor stood a hair over the way and covered its last metres)
-      const end = (q: number[]) => deckTop(q, 0, (x, z) => map.trueGround(x, z), Z0, map.d.se) + Z0;
+      // (but a set piece's own street there is at the height the piece beyond the deck is laid at, its
+      // grade or the ground drawn under it if that's higher: landed on the survey, the two left a step
+      // between them with a line of daylight across it)
+      const end = (q: number[]) => ((L as Road).piece ? Math.max(q[2], onGround(q[0], -q[1]) + Z0)
+        : deckTop(q, 0, (x, z) => map.trueGround(x, z), Z0, map.d.se) + Z0);
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
         // on a span, and on the stretch from its last point to the abutment at either end, the
@@ -1424,6 +1428,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         nrm.push([-dy / l, dx / l]);
         if (i) along.push(along[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
       }
+      const en = (L as Road).en;
+      if (en?.[0]) nrm[0] = en[0];
+      if (en?.[1]) nrm[p.length - 1] = en[1];
       for (const [o1, o2] of bands(L)) {
         const flat = LEVEL && onGround !== drawnGround;
         // (a set piece's own street is laid at the grade it gives it, not down into a hollow in the survey)
@@ -1514,7 +1521,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
       for (const s of streetCells.get(`${i},${j}`) ?? []) {
         const r = s.r as Road;
-        if (r === own || r.piece) continue;
+        if (r === own) continue;
+        if (r.piece) { if (own.piece && onPiece(own, r, x, y, h)) return true; continue; }
         const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
         const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
         if (own.n && r.n === own.n && alongside(own, s.a[0] + vx * t, s.a[1] + vy * t)) continue;
@@ -1668,8 +1676,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           else ds.push(side);
         });
       }
+      // (a side is fenced if the ground falls away beside any piece of it)
+      const measured = pieces.filter(({ r: q }) => q.ledge);
+      const ledge = measured.length ? [0, 1].map((k) => measured.some(({ r: q, fwd }) => q.ledge![fwd ? k : 1 - k])) : undefined;
       out.push({
-        ...r, p: pts, uo: uo.length ? uo : undefined, ds,
+        ...r, p: pts, uo: uo.length ? uo : undefined, ds, ledge,
         ...(flip && Array.isArray(r.dk) ? { dk: [r.dk[1], r.dk[0]] } : {}),
         ...(flip && r.pv ? { pv: [r.pv[1], r.pv[0]] } : {}),
         ...(flip && r.ow ? { ow: -r.ow } : {}),
@@ -1970,6 +1981,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           return out;
         };
         for (const side of [1, -1]) {
+          if (r.ledge && !r.ledge[side > 0 ? 0 : 1]) continue;
           const back = hangA ? [] : approach(a, 0, side, P[0]).reverse(), on = hangB ? [] : approach(b, r.p.length - 1, side, P[P.length - 1]);
           for (const q of back) q.s = -q.s;
           for (const q of on) q.s += s;
