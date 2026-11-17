@@ -2802,7 +2802,7 @@ def deck_faces(m, sheet, note, at, sq, fig):
     if not runs: return
     over = bridge_decks(rd)
     own = [o for o in runs if not o["r"].get("held")]
-    foot = bridge_decks([o["r"] for o in own], past_cut=True) if own else None
+    foot = bridge_decks([o["r"] for o in own], past_cut=sq) if own else None
     # (a set piece lays its own ground: the faces leave it out at every level)
     solid = [_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
     solid += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]

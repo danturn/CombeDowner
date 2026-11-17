@@ -1667,3 +1667,13 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   on a deck is held at the flight's height, as much as 2.8 m off the deck's line at 2_4
   (276, 3242), and 2 m at 4_2 (3149, 1635). To undo it: give a flight on a deck a level of its own,
   or land the deck's faces on the flight's treads.
+- [ ] **A few decks' ends don't share every corner with the street they land on** (rule 28 "deck
+  end not joined to the street": 6 over the eight trial squares, none before there were levels). Each
+  is a kerb rounding round a cap, so that the street's corner and the deck's don't meet:
+  - 0_3 (-1673, 2106), 1.5 m
+  - 1_2 (-524, 1624), 1.0 m
+  - 0_2 (-999, 1739), 0_3 (-939, 2372), 1_3 (-850, 2312) and 1_3 (-303, 2450), 0.3 m each
+
+  None shows as a lip in the trial shots with `?decks=1`. Moving corners straight on to the cap line
+  did worse on 1_2. To undo it: lay a cap's corners first and fit the kerbs' rounding to them,
+  rather than matching the two afterwards.

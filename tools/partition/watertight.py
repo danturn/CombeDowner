@@ -101,7 +101,7 @@ def deck_levels(tile, sq):
     over = bridge_decks(rd)
     caps = cap_lines(runs, over) if over is not None else []
     cap_zone = union([c[0] for c in caps]).buffer(CAP_SNAP)
-    foot = bridge_decks([r for r in rd if not r.get("held")], past_cut=True)
+    foot = bridge_decks([r for r in rd if not r.get("held")], past_cut=square)
     foot = foot.intersection(square) if foot is not None else Polygon()
     # (what a set piece took out of the faces is the set piece's to draw, on either level)
     if tile.get("centre") and not foot.is_empty:

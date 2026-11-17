@@ -90,3 +90,37 @@ What changed:
 On 4,2, 2,4 and 2,5 alone, "not joined" went from 4 to 0 and rule 42 went back to base (7). The
 spots that remain are kerbs rounding round a cap in 0,2, 0,3 and 1,2 (for example 1,2 at
 -517,1620). Moving the corners on to the cap line instead (projection) did worse on 1,2.
+
+## Stage 2 (`?decks=1`) and the last stage 1 changes (after7)
+
+What changed since after5:
+- Each side of a deck is cut to its own width (`dk` [left, right]), on both levels, where it used to
+  be cut to the wider side's width on both. That was what made the stone stick out past Ferry
+  Lane's parapet.
+- The decks' level runs on past a deck only where its record is cut at the square's side, not where
+  a deck stops in the air.
+
+| measure | base | after7 |
+|---|---|---|
+| pack.gz change, worst square | – | +1.79% (2,4), +1.39% (1,3), the rest under 0.9% |
+| bridge-free square 1,0 | – | byte-identical |
+| end probe: lips over 0.15 m / mean worst lip | 11 / 0.111 | 11 / 0.113 |
+| road_bumps | 293 | 293 |
+| 28 not joined / off the street | – / 4 | 6 / 8 |
+| 41 / 42 / 53 | 72 / 42 / 45 | 73 / 46 / 35 |
+| 54 not drawn / off its line | – | 0 / 16 |
+
+The game with `?decks=1` against strips, for the square in view in each trial shot:
+
+| view | square | draw calls | triangles |
+|---|---|---|---|
+| Ferry Lane | 4_2 | 81 → 81 | 156,705 → 156,787 |
+| Rossiter Road | 1_2 | 131 → 131 | 357,285 → 357,393 |
+| steps footbridge | 4_2 | 75 → 75 | 137,065 → 137,147 |
+| canal bridge | 1_2 | 151 → 151 | 409,188 → 409,296 |
+| Sydney Wharf | 1_3 | 167 → 167 | 503,389 → 503,514 |
+
+Height you stand at on the deck (`map.deck`), strips → faces: Ferry Lane 9.24 → 9.31, Ferry Lane's
+other bridge 23.97 → 24.05, Rossiter Road 7.18 → 7.25, the canal footbridge in 1_2 11.92 → 11.89,
+Sydney Wharf 17.84 → 17.92, North Parade 3.33 → 3.37, the steps footbridge 5.87 → 6.11. The faces
+include the street's lift above its line, which is why most come out a few centimetres higher.

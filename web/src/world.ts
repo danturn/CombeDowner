@@ -67,6 +67,7 @@ const WIN_MARK = { win: 255, glass: 128, rose: 40 };
 
 export class Geo {
   private n = 0;   // vertices so far
+  get empty() { return this.n === 0; }
   private P = new Float32Array(3 * 1024); private N = new Int8Array(3 * 1024);
   private U = new Float32Array(2 * 1024); private C = new Uint8ClampedArray(3 * 1024);
   private vert(p: number[], n: number[], uv: number[], col: number[]) {
@@ -2139,7 +2140,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
     decksFaced = faced && facedDecks(sf);
-    if (faced) yield* surfaceFaces(sf!, geo);
+    if (faced) yield* surfaceFaces(sf!, geo, rd);
     const spans = own ? joinSpans(rd.filter(own)) : [];
     // (where the faces cover a bridge off its deck, its strip is only the deck, so what meets it on the
     // ground joins its faces rather than a strip laid over and beside them: sp 1 says so of paths'
@@ -2264,8 +2265,26 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** The decks' level (sf.lv) as faces at their written heights, with the kerb's step where a deck's
    *  pavement meets its carriageway or the street it lands on. Its sides and what holds it up are
    *  still the bridge's own (bridgeStructures). */
-  function* deckFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "bridge" | "steel" | "grass" | "dirt" | "gravel", Geo>) {
+  function* deckFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "bridge" | "steel" | "grass" | "dirt" | "gravel", Geo>, rd: Road[]) {
     const V = sf.v, up = [0, 1, 0], NP = V.length / 3;
+    // (each stretch of a bridge's line on its deck, and whether it's over the span or the step down
+    // to an abutment: over the span the bridge's own sides are drawn, off it the deck's edge goes down
+    // to the ground like any face's)
+    const on = (q: number[]) => q[3] === 1 || q[3] === 2;
+    const stretches: number[][] = [];
+    for (const r of rd) if (!r.held) for (let i = 0; i + 1 < r.p.length; i++) {
+      const A = r.p[i], B = r.p[i + 1];
+      if (on(A) || on(B)) stretches.push([A[0], A[1], B[0], B[1], on(A) && on(B) ? 1 : 0]);
+    }
+    const overSpan = (x: number, y: number) => {
+      let best = Infinity, span = false;
+      for (const [ax, ay, bx, by, s] of stretches) {
+        const vx = bx - ax, vy = by - ay, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+        const d = Math.hypot(x - ax - vx * t, y - ay - vy * t);
+        if (d < best) { best = d; span = s === 1; }
+      }
+      return span;
+    };
     const top = (i: number, kind: string) => [V[3 * i], V[3 * i + 2] - Z0 + LEVEL_LIFT[kind], -V[3 * i + 1]];
     // (each edge's face on its left, as the triangles run anticlockwise, for the step at its side)
     const left = new Map<number, string>();
@@ -2278,10 +2297,30 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     };
     for (const kind of ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel"] as const) note(sf[kind] ?? [], kind);
+    // (into a mesh the square already draws: a deck's steel edging is drawn with the stone, and a kind
+    // of face only a deck has here with the one nearest it, so the decks add no draw call)
+    const NEXT: Record<string, string> = { steel: "bridge", stone: "bridge", service: "road", road: "service", grass: "path", dirt: "path", gravel: "path", path: "pave", pave: "road" };
+    const into = (kind: string) => {
+      let k = kind === "stone" || kind === "steel" ? "bridge" : kind;
+      for (let n = 0; n < 4 && (geo as Record<string, Geo>)[k].empty && NEXT[k] && k !== "bridge"; n++) k = NEXT[k];
+      return (geo as Record<string, Geo>)[k];
+    };
+    let edges = 0;
+    function* outerEdge(ia: number, ib: number, kind: string) {
+      if (++edges % 400 === 399) yield;
+      if (overSpan((V[3 * ia] + V[3 * ib]) / 2, (V[3 * ia + 1] + V[3 * ib + 1]) / 2)) return;
+      const a = top(ia, kind), b = top(ib, kind), l = Math.hypot(b[0] - a[0], b[2] - a[2]);
+      if (l < 1e-3) return;
+      const foot = (q: number[]) => { const g = drawnGround(q[0], q[2]); return Math.min(q[1] - LEVEL_LIFT[kind] - 0.1, Number.isFinite(g) ? g - 0.03 : q[1] - 0.5); };
+      const fa = foot(a), fb = foot(b), tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
+      const g = tall ? geo.bridge : into(kind), s = tall ? 2.5 : 1;
+      const out = [-(b[2] - a[2]) / l, 0, (b[0] - a[0]) / l];
+      facing(g, [a[0], fa, a[2]], [b[0], fb, b[2]], b, a, out, [0, fa / s], [l / s, fb / s], [l / s, b[1] / s], [0, a[1] / s], tall ? STONE : kind === "steel" ? PLATE : [1, 1, 1]);
+    }
     for (const lv of sf.lv!) {
       for (const kind of LEVEL_KINDS) note(lv[kind] ?? [], kind);
       for (const kind of LEVEL_KINDS) {
-        const T = lv[kind] ?? [], g = kind === "stone" ? geo.bridge : geo[kind], col = kind === "stone" ? COPING : kind === "steel" ? PLATE : [1, 1, 1];
+        const T = lv[kind] ?? [], g = into(kind), col = kind === "stone" ? COPING : kind === "steel" ? PLATE : [1, 1, 1];
         for (let k = 0; k + 2 < T.length; k += 3) {
           if (k % 1200 === 1197) yield;
           const a = top(T[k], kind), b = top(T[k + 1], kind), c = top(T[k + 2], kind);
@@ -2290,16 +2329,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
         const ia = e.i[k], ib = e.i[k + 1], hi = left.get(ia * NP + ib), lo = left.get(ib * NP + ia);
+        if (hi && !lo) { yield* outerEdge(ia, ib, hi); continue; }
         if (!hi || !lo || LEVEL_LIFT[hi] - LEVEL_LIFT[lo] < 0.02) continue;
         const a = top(ia, hi), b = top(ib, hi), l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
         const out = [-(b[2] - a[2]) / l, 0, (b[0] - a[0]) / l], fa = top(ia, lo)[1], fb = top(ib, lo)[1];
-        const g = hi === "stone" ? geo.bridge : hi === "steel" ? geo.steel : geo[hi as "pave"];
+        const g = into(hi);
         facing(g, [a[0], fa, a[2]], [b[0], fb, b[2]], b, a, out, [0, 0], [l, 0], [l, 0.1], [0, 0.1], hi === "stone" ? COPING : hi === "steel" ? PLATE : [1, 1, 1]);
       }
     }
   }
-  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "steel" | "grass" | "dirt" | "gravel" | "bed", Geo>) {
+  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "steel" | "grass" | "dirt" | "gravel" | "bed", Geo>, rd: Road[] = []) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
     const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0 };
     const onGround = (k: string) => LIFT[k] === 0.04 && !levelPaths;
@@ -2350,7 +2390,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
     yield* laid.flush();
-    if (facedDecks(sf)) yield* deckFaces(sf, geo);
+    if (facedDecks(sf)) yield* deckFaces(sf, geo, rd);
     if (meet) {
       const T = sf.bed ?? [];
       for (let k = 0; k + 2 < T.length; k += 3) sheetTri(geo.bed, [T[k], T[k + 1], T[k + 2]], [at(T[k], "bed"), at(T[k + 1], "bed"), at(T[k + 2], "bed")], () => [0, 0]);

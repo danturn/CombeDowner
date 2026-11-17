@@ -3126,13 +3126,14 @@ def deck_stretches(r):
     return out
 
 
-def _past_cut(r, line, by=3.0):
+def _past_cut(r, line, side, by=3.0):
     """A deck's stretch run on past an end its record was cut at a square's side (an end still on the
     span): ended there square to the deck, it left a corner of the side uncovered, and the next
     square, ending it the same way from the other side, the other corner, so the two didn't meet."""
     p, xy = r["p"], list(line.coords)
+    side = side.boundary
     for end, q, prev in ((0, p[0], xy[1] if len(xy) > 1 else None), (-1, p[-1], xy[-2] if len(xy) > 1 else None)):
-        if prev is None or not on_deck(q) or math.dist(xy[end], q[:2]) > 1e-6:
+        if prev is None or not on_deck(q) or math.dist(xy[end], q[:2]) > 1e-6 or side.distance(Point(q[:2])) > 0.05:
             continue
         d = math.dist(prev, xy[end]) or 1.0
         x, y = xy[end][0] + (xy[end][0] - prev[0]) / d * by, xy[end][1] + (xy[end][1] - prev[1]) / d * by
@@ -3143,18 +3144,28 @@ def _past_cut(r, line, by=3.0):
     return LineString(xy)
 
 
-def bridge_decks(rd, ground=None, under=False, past_cut=False):
+def _deck_band(r, line, extra):
+    """The ground a deck along `line` covers, out to each side's own edge and `extra` past it (map.ts
+    deckSides): one side can stop at its kerb while the other carries a pavement, and cut as wide as
+    the wider on both, a deck's top stood out past the narrow side's parapet."""
+    dk = r.get("dk")
+    if isinstance(dk, list) and len(dk) == 2 and dk[0] != dk[1]:
+        return unary_union([line.buffer(dk[0] + extra, single_sided=True), line.buffer(-(dk[1] + extra), single_sided=True)])
+    return line.buffer(deck_half(r) + extra, cap_style="flat")
+
+
+def bridge_decks(rd, ground=None, under=False, past_cut=None):
     """The ground each bridge's strip covers, with room for its parapets, or None. A bridge is drawn as
     a strip with what holds it up, so the faces leave it out; given the ground, not where a way passes
     under it. A bridge's strip is its deck only (each span with the step to the abutment at either
     end): off it, a street or a path is faces like any other, so what meets or crosses it at grade
     meets its faces rather than stopping short at room left for parapets that aren't there. With
-    `under`, also what of the paths passing under a deck is theirs to draw there. With `past_cut`, a
-    deck cut at the square's side runs on past it (the decks' own level: the strip ends square to it)."""
+    `under`, also what of the paths passing under a deck is theirs to draw there. Given the square as
+    `past_cut`, a deck cut at its side runs on past it (the decks' own level: the strip ends square to it)."""
     # (out to the deck's own sides where the record gives them: out to its pavements' width instead,
     # a slip road's deck beside a main road's took the main road's surface past its abutment)
     reach = deck_half
-    decks = [(_past_cut(r, line) if past_cut else line).buffer(reach(r) + 0.5, cap_style="flat") for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
+    decks = [_deck_band(r, _past_cut(r, line, past_cut) if past_cut is not None else line, 0.5) for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
     if not decks:
         return (None, None) if under else None
     deck = unary_union(decks)
@@ -5688,7 +5699,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # deck met the faces a step up or down, a crack open between them.
     deck_pieces, caps, bare = [], [], None
     if runs:
-        foot = bridge_decks(rd, past_cut=True).intersection(square)
+        foot = bridge_decks(rd, past_cut=square).intersection(square)
         deck_pieces = deck_level(foot, _minus(foot, deck) if deck is not None else Polygon(), runs,
                                  shapes("carriageway", True), shapes("pavement", True), shapes("path", True),
                                  holes=cut)
