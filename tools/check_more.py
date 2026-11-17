@@ -2837,6 +2837,15 @@ def deck_faces(m, sheet, note, at, sq, fig):
     caps = cap_lines(runs, over)
     cap_zone = shapely.union_all([c[0] for c in caps] or [LineString()]).buffer(CAP_SNAP)
     # (a corner both levels share, at a cap, is at the cap's height)
+    # (each run measured from the height its ends were laid at, the corners it shares with the street
+    # there: the strip an older page draws lands elsewhere, at the face just past the end)
+    shared = np.intersect1d(np.unique(decks.T.ravel()), sheet.T.ravel())
+    if len(shared):
+        SV = decks.V[shared]
+        for line, _, o, k in caps:
+            on = shapely.dwithin(line, shapely.points(SV[:, :2]), CAP_SNAP)
+            if on.any():
+                o["z"][k] = float(SV[on, 2].mean())
     pts = np.setdiff1d(np.unique(decks.T.ravel()), sheet.T.ravel())
     V = decks.V[pts]
     ptree = shapely.STRtree([o["line"].buffer(deck_half(o["r"]) + 0.6, cap_style="flat") for o in runs])

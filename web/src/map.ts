@@ -91,6 +91,8 @@ export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf
 /** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
 export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
 export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
+const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot
+const FACE_KINDS_0 = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
 export interface MapData {
   id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
@@ -601,6 +603,8 @@ export class GameMap {
       if (!flags.some((f) => f)) continue;
       r.bridge = true;
       if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
+      // (with its deck as faces, its parapets stand along their outline instead: below)
+      if (facedDecks(d.sf)) continue;
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
       const sides = deckSides(r);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
@@ -657,6 +661,34 @@ export class GameMap {
               if (!seen.has(c)) { seen.add(c); push(this.deckTriCells, c, n); }
             }
         }
+      }
+      // A deck's parapets stand along its faces' outer edge where it's over the span, a hand
+      // inside it, from its underside to a walker's chest (off the span its edge is the ground's)
+      const NP = V.length / 3, inside = new Set<number>();
+      const note = (T: ArrayLike<number>) => { for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) inside.add(T[k + m] * NP + T[k + (m + 1) % 3]); };
+      for (const kind of FACE_KINDS_0) note(sf[kind] ?? []);
+      for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) note(lv[kind] ?? []);
+      const spans: [number, number, number, number, boolean, Road][] = [];
+      for (const r of d.rd) if (r.bridge && !r.held) for (let i = 0; i + 1 < r.p.length; i++) {
+        const on = (q: number[]) => q[3] === 1 || q[3] === 2, A = r.p[i], B = r.p[i + 1];
+        if (on(A) || on(B)) spans.push([A[0], A[1], B[0], B[1], on(A) && on(B), r]);
+      }
+      const nearest = (x: number, y: number) => {
+        let best = Infinity, got: (typeof spans)[number] | null = null;
+        for (const sp of spans) {
+          const [ax, ay, bx, by] = sp, vx = bx - ax, vy = by - ay, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+          const dd = Math.hypot(x - ax - vx * t, y - ay - vy * t);
+          if (dd < best) { best = dd; got = sp; }
+        }
+        return got;
+      };
+      for (const lv of sf.lv!) for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
+        const a = e.i[k], b = e.i[k + 1];
+        if (inside.has(b * NP + a)) continue;
+        const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
+        if (!sp || !sp[4]) continue;
+        const ta = V[3 * a + 2] - this.z0, tb = V[3 * b + 2] - this.z0;
+        this.addSeg(V[3 * a], -V[3 * a + 1], V[3 * b], -V[3 * b + 1], ta + 1.25, 1, Math.min(ta, tb) - deckDrop(sp[5]), tb + 1.25);
       }
     }
     yield;
@@ -1099,14 +1131,7 @@ export class GameMap {
     if (tile) return tile.deck(x, z, y);
     let best: number | null = null, floor: number | null = null;
     if (this.deckTris.length) {
-      const D = this.deckTris;
-      for (const n of this.deckTriCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-        const o = 9 * n, ax = D[o], az = D[o + 1], bx = D[o + 3], bz = D[o + 4], cx = D[o + 6], cz = D[o + 7];
-        const det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
-        if (Math.abs(det) < 1e-9) continue;
-        const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det, l3 = 1 - l1 - l2;
-        if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
-        const h = l1 * D[o + 2] + l2 * D[o + 5] + l3 * D[o + 8];
+      for (const h of this.deckFaceTops(x, z)) {
         if (h > y + 0.6 || (best !== null && h <= best)) continue;
         if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
       }
@@ -1131,12 +1156,43 @@ export class GameMap {
     return best;
   }
 
+  /** The tops of the decks' faces (?decks=1) over scene (x, z), as drawn. */
+  private deckFaceTops(x: number, z: number): number[] {
+    const D = this.deckTris, out: number[] = [];
+    for (const n of this.deckTriCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const o = 9 * n, ax = D[o], az = D[o + 1], bx = D[o + 3], bz = D[o + 4], cx = D[o + 6], cz = D[o + 7];
+      const det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+      if (Math.abs(det) < 1e-9) continue;
+      const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det, l3 = 1 - l1 - l2;
+      if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+      out.push(l1 * D[o + 2] + l2 * D[o + 5] + l3 * D[o + 8]);
+    }
+    return out;
+  }
+
+  /** Whether scene (x, y, z) is inside a deck's slab (?decks=1): a shot hits it. */
+  inDeckSlab(x: number, z: number, y: number): boolean {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.inDeckSlab(x, z, y);
+    return this.deckTris.length > 0 && this.deckFaceTops(x, z).some((h) => y < h && y > h - DECK_SLAB);
+  }
+
+  /** Where something walking about (a naughty boy, a cat) at height y stands at scene (x, z): on
+   *  a deck it's on or can step up to, with ?decks=1, else the ground. */
+  walkTop(x: number, z: number, y: number): number {
+    const g = this.ground(x, z);
+    if (!DECK_FACES) return g;
+    const d = this.deck(x, z, y);
+    return d !== null && d > g ? d : g;
+  }
+
   /** The lowest bridge deck over scene (x, z) whose top is above y: its top (scene Y), or null.
    *  For a boat going under: its deck and arch hang a metre or so below that (world.ts). */
   overhead(x: number, z: number, y: number): number | null {
     const tile = this.tileAt(x, z);
     if (tile) return tile.overhead(x, z, y);
     let low: number | null = null;
+    if (this.deckTris.length) for (const h of this.deckFaceTops(x, z)) if (h > y && (low === null || h < low)) low = h;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
       const h = deckAt(p, x, z);
@@ -1555,6 +1611,12 @@ export class GameMap {
       const h = deckAt(p, x, z);
       if (nearDeck.off < half && h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
     }
+    // (with the decks as faces, the faces' own height: the strip's line can stand off them)
+    if (this.deckTris.length) {
+      let face: number | null = null;
+      for (const h of this.deckFaceTops(x, z)) if (h > y && (face === null || h < face)) face = h;
+      if (face !== null) low = face;
+    }
     if (low === null) return null;
     // (an arch belongs to the deck whose road it's under: within a hand of the same height)
     let arch: number | null = null, near = 0.3;
@@ -1936,7 +1998,7 @@ export class GameMap {
     const lim = best ? best.dist : maxDist;
     const solid = (f: number) => {
       const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.boreAt(x, z);
-      return t && y < t[0] + t[1] ? y < t[0] : y < this.ground(x, z);
+      return t && y < t[0] + t[1] ? y < t[0] : y < this.ground(x, z) || (DECK_FACES && this.inDeckSlab(x, z, y));
     };
     let prev = 0;
     for (let f = 0.5; f <= lim + 0.5; f += 0.5) {

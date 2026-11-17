@@ -1677,3 +1677,14 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   None shows as a lip in the trial shots with `?decks=1`. Moving corners straight on to the cap line
   did worse on 1_2. To undo it: lay a cap's corners first and fit the kerbs' rounding to them,
   rather than matching the two afterwards.
+- [ ] **Where a deck crosses a square's side, the two squares can disagree about it** (rule 42 "faces
+  don't meet the next square's": 46 over the trial squares, 42 before). This comes from the
+  build, not the levels: each square marks its own ways' spans, and at the shared point the two
+  can differ. The levels only make it show.
+  - 2_4/2_5 (700, 3872): the trunk road is on the span at 26.14 m in 2_4, and off it at 24.5 m
+    in 2_5.
+  - 0_3/1_3 (-932, 2337): the steps are on a deck (riding it) in 0_3, and on the ground in 1_3.
+
+  So level 1 has the deck on one side of the edge and nothing on the other. To undo it: decide
+  spans and their heights once for a way that crosses a square's side (in the city-wide passes),
+  rather than once in each square.

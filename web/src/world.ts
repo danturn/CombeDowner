@@ -1719,6 +1719,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     return out;
   }
+  /** With the decks as faces, the height of the deck's face at data (x, y) nearest `near` (scene
+   *  height, without the face's lift), so what holds a deck up stands under its faces, or null. */
+  let onFace: (x: number, y: number, near: number) => number | null = () => null;
   function bridgeStructures(rd: Road[], g: Geo, steel: Geo, ways: Road[] = []) {
     const ground = (x: number, z: number) => map.trueGround(x, z);
     const spot = (q: number[]) => `${Math.round(q[0] * 3)},${Math.round(q[1] * 3)}`;
@@ -1743,12 +1746,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const ta = deckTop(A, flags[i], ground, Z0, map.d.se), tb = deckTop(B, flags[i + dir], ground, Z0, map.d.se);
           for (let k = 0; k < n; k++) {
             const f = k / n, x = A[0] + (B[0] - A[0]) * f, y = A[1] + (B[1] - A[1]) * f;
-            out.push({ x, y, s: s + len * f, top: ta + (tb - ta) * f + lift, g: ground(x, -y), nx: 0, ny: 0, ...reach(i, i + dir, f) });
+            out.push({ x, y, s: s + len * f, top: (onFace(x, y, ta + (tb - ta) * f) ?? ta + (tb - ta) * f) + lift, g: ground(x, -y), nx: 0, ny: 0, ...reach(i, i + dir, f) });
           }
           s += len;
         }
         const E = r.p[to];
-        out.push({ x: E[0], y: E[1], s, top: deckTop(E, flags[to], ground, Z0, map.d.se) + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0, ...reach(to, to, 0) });
+        const tE = deckTop(E, flags[to], ground, Z0, map.d.se);
+        out.push({ x: E[0], y: E[1], s, top: (onFace(E[0], E[1], tE) ?? tE) + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0, ...reach(to, to, 0) });
         for (let i = 0; i < out.length; i++) {
           const A = out[Math.max(0, i - 1)], B = out[Math.min(out.length - 1, i + 1)], dx = (B.x - A.x) * dir, dy = (B.y - A.y) * dir, l = Math.hypot(dx, dy) || 1;
           out[i].nx = -dy / l; out[i].ny = dx / l;
@@ -2140,6 +2144,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
     decksFaced = faced && facedDecks(sf);
+    onFace = () => null;
     if (faced) yield* surfaceFaces(sf!, geo, rd);
     const spans = own ? joinSpans(rd.filter(own)) : [];
     // (where the faces cover a bridge off its deck, its strip is only the deck, so what meets it on the
@@ -2304,6 +2309,31 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       let k = kind === "stone" || kind === "steel" ? "bridge" : kind;
       for (let n = 0; n < 4 && (geo as Record<string, Geo>)[k].empty && NEXT[k] && k !== "bridge"; n++) k = NEXT[k];
       return (geo as Record<string, Geo>)[k];
+    };
+    const cells = new Map<number, number[]>(), CELL_ = 8, ck = (i: number, j: number) => (i + 32768) * 65536 + (j + 32768);
+    const tris: number[] = [];
+    for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) {
+      const T = lv[kind] ?? [];
+      for (let k = 0; k + 2 < T.length; k += 3) {
+        const n = tris.length / 3;
+        tris.push(T[k], T[k + 1], T[k + 2]);
+        const xs = [0, 1, 2].map((m) => V[3 * T[k + m]]), ys = [0, 1, 2].map((m) => V[3 * T[k + m] + 1]);
+        for (let i = Math.floor(Math.min(...xs) / CELL_); i <= Math.floor(Math.max(...xs) / CELL_); i++)
+          for (let j = Math.floor(Math.min(...ys) / CELL_); j <= Math.floor(Math.max(...ys) / CELL_); j++) (cells.get(ck(i, j)) ?? cells.set(ck(i, j), []).get(ck(i, j))!).push(n);
+      }
+    }
+    onFace = (x, y, near) => {
+      let best: number | null = null;
+      for (const n of cells.get(ck(Math.floor(x / CELL_), Math.floor(y / CELL_))) ?? []) {
+        const [a, b, c] = [tris[3 * n], tris[3 * n + 1], tris[3 * n + 2]], ax = V[3 * a], ay = V[3 * a + 1], bx = V[3 * b], by = V[3 * b + 1], cx = V[3 * c], cy = V[3 * c + 1];
+        const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if (Math.abs(det) < 1e-9) continue;
+        const l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / det, l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / det;
+        if (l1 < -1e-6 || l2 < -1e-6 || l1 + l2 > 1 + 1e-6) continue;
+        const h = l1 * V[3 * a + 2] + l2 * V[3 * b + 2] + (1 - l1 - l2) * V[3 * c + 2] - Z0;
+        if (Math.abs(h - near) < 1 && (best === null || Math.abs(h - near) < Math.abs(best - near))) best = h;
+      }
+      return best;
     };
     let edges = 0;
     function* outerEdge(ia: number, ib: number, kind: string) {
