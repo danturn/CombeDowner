@@ -28,7 +28,7 @@ import { ROCK, WILD_CHANNEL } from "./groundkinds";
 import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
-import { aqueductSetPieceAt, clearSetPieceGround, setPieceAt } from "./landmarks/setpieces";
+import { alongside, aqueductSetPieceAt, clearSetPieceGround, JOIN_LEVEL, joinsAt, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
@@ -1379,7 +1379,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
     skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo,
-    onGround: (x: number, z: number) => number = (x, z) => map.trueGround(x, z)) => {
+    onGround: (x: number, z: number) => number = (x, z) => map.trueGround(x, z),
+    skipQuad?: (l: any, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => boolean) => {
     const g = into ?? new Geo(), white = [1, 1, 1], laid = groundTris();
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
@@ -1409,9 +1410,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       for (const [o1, o2] of bands(L)) {
         const flat = LEVEL && onGround !== drawnGround;
+        // (a set piece's own street is laid at the grade it gives it, not down into a hollow in the survey)
+        const laidOwn = flat && (L as Road).piece;
         const at = (i: number, o: number) => {
           const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = flat && !(level && p[i][3]) ? onGround(p[i][0], -p[i][1]) : onGround(x, -y);
-          const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
+          const top = (level && p[i][3] ? p[i][2] - Z0 : laidOwn ? Math.max(gz, p[i][2] - Z0) : gz) + lift;
           if (!flat || (level && p[i][3])) return { x, y, top, foot: top - lift - 0.35 };   // (a bridge's span has its own sides)
           const dg = drawnGround(x, -y);
           let foot = Math.min(top - lift - 0.1, dg - 0.03);
@@ -1423,6 +1426,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (p[i][4]) continue;
           const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
           if (skip && (skip(L, (a1.x + a2.x) / 2, (a1.y + a2.y) / 2) || skip(L, (b1.x + b2.x) / 2, (b1.y + b2.y) / 2))) continue;
+          if (skipQuad?.(L, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2)) continue;
           const u0 = along[i] / 4, u1 = along[i + 1] / 4;
           const A1 = [a1.x, a1.top, -a1.y], B1 = [b1.x, b1.top, -b1.y], B2 = [b2.x, b2.top, -b2.y], A2 = [a2.x, a2.top, -a2.y];
           if (onGround === drawnGround && !(level && (p[i][3] || p[i + 1][3]))) {
@@ -1481,6 +1485,39 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
         const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
         if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) < s.w + 0.4) return true;
+      }
+    }
+    return false;
+  };
+  // another street's carriageway at about data height h here (a set piece's own street's pavement
+  // gives way to it: setpieces.ts joinsAt)
+  const carriagewayAtLevel = (own: Road, x: number, y: number, h: number) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      for (const s of streetCells.get(`${i},${j}`) ?? []) {
+        const r = s.r as Road;
+        if (r === own || r.piece) continue;
+        const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+        const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+        if (own.n && r.n === own.n && alongside(own, s.a[0] + vx * t, s.a[1] + vy * t)) continue;
+        if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) < s.w + 0.4 && Math.abs(s.a[2] + (s.b[2] - s.a[2]) * t - h) < JOIN_LEVEL) return true;
+      }
+    }
+    return false;
+  };
+  // another street, out to its pavements, at about height h here: a bridge's parapet stops where a
+  // street joins its deck at the deck's own level, rather than standing across the street's mouth
+  const streetAtLevel = (own: Road, x: number, y: number, h: number) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      for (const s of streetCells.get(`${i},${j}`) ?? []) {
+        const r = s.r as Road;
+        // (the bridge's own street, mapped in pieces, runs on from its ends)
+        if (r === own || (own.n && r.n === own.n)) continue;
+        const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+        const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+        if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) > s.w + (KERBED.has(r.c) ? pv(r) : 0)) continue;
+        if (Math.abs(s.a[2] + (s.b[2] - s.a[2]) * t - Z0 - h) < 1.0) return true;
       }
     }
     return false;
@@ -1894,11 +1931,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           }
           return got;
         };
-        // a side's parapet stops only along the stretch where the other deck touches it
+        // a side's parapet stops only along the stretch where the other deck touches it, or a street
+        // meets it at the deck's level
+        const joined = (q: Pt, side: number) => {
+          const o = Ws(side) + 0.4 + side * wider(q, side);
+          return streetAtLevel(r, q.x + q.nx * o * side, q.y + q.ny * o * side, q.top);
+        };
         const walled = (run: Pt[], side: number) => {
-          const by = run.map((q) => beside(q, side)), out: Pt[][] = [];
+          const by = run.map((q) => beside(q, side)), into = run.map((q) => joined(q, side)), out: Pt[][] = [];
           let cur: Pt[] = [];
           for (let i = 0; i < run.length; i++) {
+            if (into[i]) { if (cur.length > 1) out.push(cur); cur = []; continue; }
             if (i && by[i - 1] && by[i]) { if (cur.length > 1) out.push(cur); cur = []; }
             cur.push(run[i]);
           }
@@ -2082,7 +2125,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       strips(veh.filter((r) => !KERBED.has(r.c)), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
-      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
+      const paveBands = (r: Road) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a);
+      strips(kerb.filter((r) => pv(r) > 0 && !r.piece), paveBands, 0.17, onOtherStreet, true, own, geo.pave);
+      // a set piece's own pavements, and the carriageway running on across them where a street joins
+      const joins = (r: Road, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => joinsAt(r, a, b, na, nb, o1, o2, carriagewayAtLevel);
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.17, undefined, true, own, geo.pave, undefined, joins);
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.07, undefined, false, own, geo.road, undefined, (r, a, b, na, nb, o1, o2) => !joins(r, a, b, na, nb, o1, o2));
       yield;
     }
     // what holds the bridges up, each built whole (joinSpans)

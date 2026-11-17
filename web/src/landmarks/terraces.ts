@@ -92,9 +92,15 @@ export function terraceArgs(road: string, style: number, pave?: [number, number]
     if (pave) {
       const over = (b: Block) => b.x1 > pave[0] && b.x0 < pave[1];
       const zN = Math.max(...blocks.filter((b) => b.side < 0 && over(b)).map((b) => b.zf)), zS = Math.min(...blocks.filter((b) => b.side > 0 && over(b)).map((b) => b.zf));
-      // level with the crown of the street (the ground under it is highest along its middle)
-      const crown = Math.max(...pts.filter((q) => q[0] > pave[0] - 2 && q[0] < pave[1] + 2 && Math.abs(q[1]) < 10).map((q) => q[2])) - height + 0.1;
-      if (Number.isFinite(zN) && Number.isFinite(zS) && zS > zN && Number.isFinite(crown)) paved = [1, pave[0], pave[1], r(zN), r(zS), r(crown), r(crown)];
+      // just under the street all along it, falling as it falls (laid level with its crown, it stood
+      // through the carriageway where the street dips a few centimetres)
+      const on = pts.filter((q) => q[0] > pave[0] - 2 && q[0] < pave[1] + 2 && Math.abs(q[1]) < 10);
+      const n = on.length, sx = on.reduce((a, q) => a + q[0], 0), sz = on.reduce((a, q) => a + q[2], 0);
+      const sxx = on.reduce((a, q) => a + q[0] * q[0], 0), sxz = on.reduce((a, q) => a + q[0] * q[2], 0), den = n * sxx - sx * sx;
+      const fall = n > 1 && den ? (n * sxz - sx * sz) / den : 0, at0 = n ? (sz - fall * sx) / n : NaN;
+      const under = Math.min(...on.map((q) => q[2] - (at0 + fall * q[0])));
+      const top = (x: number) => Math.floor((at0 + under + fall * x - height + 0.1) * 100) / 100;
+      if (Number.isFinite(zN) && Number.isFinite(zS) && zS > zN && Number.isFinite(top(0))) paved = [1, pave[0], pave[1], r(zN), r(zS), top(pave[0]), top(pave[1])];
     }
     return [style, blocks.length, ...blocks.flatMap((b) => [b.side, r(b.x0), r(b.x1), r(b.zf), r(b.zb), r(b.y0), r(b.top)]),
       wings.length, ...wings.flatMap((w) => [r(w.x0), r(w.x1), r(w.z0), r(w.z1), r(w.top)]),
