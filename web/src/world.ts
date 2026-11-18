@@ -2017,6 +2017,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
                 [uA, e / 2.5], [uB, e / 2.5], [uB, w / 2.5], [uA, w / 2.5], stone ? COPING : CONCRETE);
               const bank = (q: Pt) => Math.min(floor(q), ground(q.x + q.nx * h, -(q.y + q.ny * h)) - 0.1);
               lowA = bank(A); lowB = bank(B);
+              // (the deck's own parapets are the map's; these stand on the bank, where it falls away)
+              const m = (w + h) / 2, a = at(A, m, 0), b = at(B, m, 0);
+              map.addParapet(a[0], -a[2], b[0], -b[2], A.top + 1.25, B.top + 1.25, Math.min(gA, gB));
             }
             if (kind === "arch" || kind === "beam") {
               const up = stone ? PARAPET : 0.35, col = stone ? STONE : CONCRETE;
