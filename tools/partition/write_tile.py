@@ -3544,13 +3544,19 @@ def snap_caps(pieces, others, zone):
     return [_still_whole(shapely.snap(g, pts, CAP_SNAP), g) if g.intersects(zone) else g for g in pieces]
 
 
+MEND_REACH = 0.1     # metres: a mended piece lies within this of the piece it was before its corners moved
+
+
 def _still_whole(got, was):
     """`got`, a piece `was` with its corners moved, mended into one polygon if moving them turned a
-    narrow stretch of it inside out, or `was` if mending it lost more than a tenth of it."""
+    narrow stretch of it inside out, or `was` if mending it lost more than a tenth of it or reached
+    out past it (an edge folded right across the piece mended into the ground it enclosed, a deck's
+    margin laid over its own road)."""
     if got.is_valid:
         return got
     got = _one_polygon(shapely.make_valid(got), was)
-    return got if got.is_valid and got.area >= 0.9 * was.area else was
+    ok = got.is_valid and got.area >= 0.9 * was.area and got.within(was.buffer(MEND_REACH))
+    return got if ok else was
 
 
 HEADROOM = 2.5             # metres: a deck at least this far above a way has room for it to pass under
