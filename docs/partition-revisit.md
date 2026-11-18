@@ -1677,14 +1677,24 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   None shows as a lip in the trial shots with `?decks=1`. Moving corners straight on to the cap line
   did worse on 1_2. To undo it: lay a cap's corners first and fit the kerbs' rounding to them,
   rather than matching the two afterwards.
-- [ ] **Where a deck crosses a square's side, the two squares can disagree about it** (rule 42 "faces
-  don't meet the next square's": 46 over the trial squares, 42 before). This comes from the
-  build, not the levels: each square marks its own ways' spans, and at the shared point the two
-  can differ. The levels only make it show.
-  - 2_4/2_5 (700, 3872): the trunk road is on the span at 26.14 m in 2_4, and off it at 24.5 m
-    in 2_5.
-  - 0_3/1_3 (-932, 2337): the steps are on a deck (riding it) in 0_3, and on the ground in 1_3.
+- [x] **Where a deck crosses a square's side, the two squares disagreed about it** (rule 42 "faces
+  don't meet the next square's": 46 over the trial squares, 42 before; 43 now). The city's
+  structures pass already decides each way's spans once, for the whole way. Three steps in each
+  square then changed that decision for its own part, so the two squares could differ at the
+  point they share. Each now leaves the city's decision alone at the side:
+  - `structures.drop_empty_spans`, which judged each square's part of a span on its own, cleared
+    the trunk's span at 2_4/2_5 (700, 3872) in 2_5, because what it crosses is in 2_4. A stretch
+    reaching the square's side is now kept as the city marked it.
+  - `_cut_at_sides` gave the point on the side the marks of each square's own inside point. Now
+    both squares take the marks of the point nearer the side.
+  - `setpiece_cuts.lay` took a deck point off its deck if the nearest span in the square was a set
+    piece's, even 70 m away. At 0_3/1_3 (-932, 2337) that was Argyle Street in 1_3 and a
+    footway in 0_3. It now looks for a span within 15 m only.
+  - The deck's footprint, and the part level 0 gives up to it, runs on past the square's side far
+    enough to cover the corner a slanting deck leaves there.
 
-  So level 1 has the deck on one side of the edge and nothing on the other. To undo it: decide
-  spans and their heights once for a way that crosses a square's side (in the city-wide passes),
-  rather than once in each square.
+  Still open: the steps at 0_3/1_3 meet the side at a shallow angle, and each square runs its own
+  piece on past the side by a guess. Their footprints there still differ by a few metres along the
+  side, and the base build had a level-0 mismatch at the same spot. To undo it: lay a deck's
+  footprint at a side from the whole deck, both squares' pieces, rather than running each piece
+  on in a straight line.

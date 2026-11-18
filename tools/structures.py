@@ -1505,11 +1505,16 @@ def deck_ends(marks, reach=4):
     return out
 
 
-def drop_empty_spans(roads, ground, water, rails, reach=2.5):
+def drop_empty_spans(roads, ground, water, rails, reach=2.5, sq=None):
     """Clear the span marks of a bridge with nothing under it, as the tile will draw it: no water,
-    railway or road it does not join, and no drop of 2.5 m to the ground. A marked stretch that
-    lost its crossing to the square's edge, or whose street the ground was never cut for, would
-    otherwise be a deck over nothing; it lies on the ground instead. `roads` are `rd` records."""
+    railway or road it does not join, and no drop of 2.5 m to the ground. A marked stretch whose
+    street the ground was never cut for would otherwise be a deck over nothing; it lies on the
+    ground instead. `roads` are `rd` records.
+
+    A stretch reaching a side of the square `sq` is left as `solve` marked it: the bridge goes on
+    into the next square, and what it crosses may be there. `solve` judged it whole, so both
+    squares keep it, where judging each square's part on its own left the deck on one side of the
+    seam and the road on the ground at the other."""
     lines = [LineString([q[:2] for q in r["p"]]) for r in roads]
     tree = STRtree(lines)
     water_tree, rail_tree = STRtree(water), STRtree(rails)
@@ -1517,6 +1522,9 @@ def drop_empty_spans(roads, ground, water, rails, reach=2.5):
     def joined(i, j):
         return any(lines[b].distance(Point(roads[a]["p"][e][:2])) < reach
                    for a, b in ((i, j), (j, i)) for e in (0, -1))
+
+    def on_side(q, tol=0.05):
+        return min(abs(q[0] - sq[0]), abs(q[0] - sq[2]), abs(q[1] - sq[1]), abs(q[1] - sq[3])) < tol
     dropped = 0
     for n, r in enumerate(roads):
         p = r["p"]
@@ -1528,6 +1536,9 @@ def drop_empty_spans(roads, ground, water, rails, reach=2.5):
             e = k
             while e + 1 < len(p) and len(p[e + 1]) > 3 and p[e + 1][3] == 1:
                 e += 1
+            if sq is not None and any(on_side(p[i]) for i in range(k, e + 1)):
+                k = e + 1
+                continue
             seg = LineString([q[:2] for q in p[max(0, k - 1):min(len(p) - 1, e + 1) + 1]])
             under = any(water[int(w)].intersects(seg) for w in water_tree.query(seg)) \
                 or any(rails[int(t)].intersects(seg) for t in rail_tree.query(seg)) \

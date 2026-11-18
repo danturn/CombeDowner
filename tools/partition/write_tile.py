@@ -618,7 +618,7 @@ def _cut_at_sides(p, sq):
     def out(q):
         return not (x0 < q[0] < x1 and y0 < q[1] < y1)
 
-    def cross(a, b, outside):
+    def cross(a, b):
         lo, hi = 0.0, 1.0
         for _ in range(40):
             mid = (lo + hi) / 2
@@ -630,21 +630,23 @@ def _cut_at_sides(p, sq):
         x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
         x = min((x0, x1), key=lambda e: abs(e - x)) if min(abs(x - x0), abs(x - x1)) < 1e-3 else x
         y = min((y0, y1), key=lambda e: abs(e - y)) if min(abs(y - y0), abs(y - y1)) < 1e-3 else y
-        q = b if out(b) == outside else a
+        # (the marks of the point nearer the side, not of the point on this square's own side: both
+        # squares then give their shared point the same mark, as the city's profile has it there)
+        q = a if t < 0.5 else b
         return [round(x, 2), round(y, 2), round(a[2] + (b[2] - a[2]) * t, 2)] + list(q[3:])
     ins, outs = [], []
     run = [p[0]]
     for a, b in zip(p, p[1:]):
         if out(a) != out(b):
-            run.append(cross(a, b, out(a)))
+            run.append(cross(a, b))
             (outs if out(a) else ins).append(run)
-            run = [cross(a, b, out(b)), b]
+            run = [cross(a, b), b]
         elif out(a) and not out(m := [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]):
             # (across a corner of the square: out, in for a moment, and out again)
             m = m + [(a[2] + b[2]) / 2]
-            outs.append(run + [cross(a, m, True)])
-            ins.append([cross(a, m, False), cross(m, b, False)])
-            run = [cross(m, b, True), b]
+            outs.append(run + [cross(a, m)])
+            ins.append([cross(a, m), cross(m, b)])
+            run = [cross(m, b), b]
         else:
             run.append(b)
     (outs if out(p[-1]) else ins).append(run)
@@ -2693,7 +2695,7 @@ FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front":
              "grass": 0.04, "dirt": 0.04, "gravel": 0.04}
 
 
-def face_heights(sf, lifted=True, kinds=None):
+def face_heights(sf, lifted=True, kinds=None, level=0):
     """(x, y) -> the drawn height of the street surface there (its face plus how far the game lifts
     that kind), or None off the faces. Street items, trees and shrubs on a street stand at it: they came
     at the base tile's ground, but the faces follow the streets' own levels, which on a hill can be a
@@ -2702,11 +2704,12 @@ def face_heights(sf, lifted=True, kinds=None):
     if not sf:
         return lambda x, y: None
     v = np.asarray(sf["v"], float).reshape(-1, 3)
+    faces = sf if level == 0 else (sf.get("lv") or [{}])[0]
     tris, lifts = [], []
     for kind, lift in FACE_LIFT.items():
         if kinds is not None and kind not in kinds:
             continue
-        ids = np.asarray(list(sf.get(kind) or []), int)
+        ids = np.asarray(list(faces.get(kind) or []), int)
         if len(ids) >= 3:
             tris.append(v[ids[: len(ids) // 3 * 3].reshape(-1, 3)])
             lifts += [lift] * (len(ids) // 3)
@@ -3129,14 +3132,21 @@ def deck_stretches(r):
 def _past_cut(r, line, side, by=3.0):
     """A deck's stretch run on past an end its record was cut at a square's side (an end still on the
     span): ended there square to the deck, it left a corner of the side uncovered, and the next
-    square, ending it the same way from the other side, the other corner, so the two didn't meet."""
+    square, ending it the same way from the other side, the other corner, so the two didn't meet.
+    A deck crossing the side at a slant leaves a longer corner, so it runs on further."""
     p, xy = r["p"], list(line.coords)
+    x0, y0, x1, y1 = side.bounds
     side = side.boundary
+    dk = r.get("dk")
+    half = (max(dk) if isinstance(dk, list) else dk or deck_half(r)) + 1.0
     for end, q, prev in ((0, p[0], xy[1] if len(xy) > 1 else None), (-1, p[-1], xy[-2] if len(xy) > 1 else None)):
         if prev is None or not on_deck(q) or math.dist(xy[end], q[:2]) > 1e-6 or side.distance(Point(q[:2])) > 0.05:
             continue
         d = math.dist(prev, xy[end]) or 1.0
-        x, y = xy[end][0] + (xy[end][0] - prev[0]) / d * by, xy[end][1] + (xy[end][1] - prev[1]) / d * by
+        ux, uy = (xy[end][0] - prev[0]) / d, (xy[end][1] - prev[1]) / d
+        across = abs(ux) if min(abs(q[0] - x0), abs(q[0] - x1)) <= min(abs(q[1] - y0), abs(q[1] - y1)) else abs(uy)
+        far = by + min(half * math.sqrt(max(0.0, 1 - across * across)) / max(across, 0.2), 30.0)
+        x, y = xy[end][0] + ux * far, xy[end][1] + uy * far
         if end == 0:
             xy.insert(0, (x, y))
         else:
@@ -5320,7 +5330,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         ray = LineString([p, nearest_points(lines[k], p)[0]])
         return walls.intersects(ray) or (not thick_walls.contains(p) and thick_walls.intersects(ray))
     planes = portal_planes(tunnels, lines, heights)
-    deck, path_under = bridge_decks(rd, ground, under=True)
+    # (run on past the square's sides, as the decks' own level is: ended square to the deck, the corner
+    # of a deck crossing the side at a slant was left to these faces in one square and to the deck in
+    # the next)
+    deck, path_under = bridge_decks(rd, ground, under=True, past_cut=square)
     over = bridge_decks(rd)
     if over is not None:
         shapely.prepare(over)
@@ -10278,7 +10291,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
     rd, _ = drop_paths_along_streets(rd)
-    drop_empty_spans(rd, road_ground, water, rails)
+    drop_empty_spans(rd, road_ground, water, rails, sq=sq)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks, level_crossings=tile.get("lx") or ())
     # (the streets past the sides are judged as this square's are, so both squares choose alike)
     for ways in (past, rd):
@@ -10469,11 +10482,19 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     no_parking = unary_union([g for g in (blocked_ground([], tile, rail_tracks, canal, sq),) if g is not None]
                              + [g[0] for g in gaps])
     # a car stands on the street as it's drawn, as everything kept on it does
-    face = face_heights(tile["sf"], lifted=False)
+    face, deck = face_heights(tile["sf"], lifted=False), face_heights(tile["sf"], lifted=False, level=1)
 
+    # (a deck's own faces where the street is on a bridge: a marking reaching the square's side on a
+    # deck that goes on into the next square ends where the ground is cut away under it, and the
+    # faces' corners there are rounded to the centimetre, a few millimetres short of the side)
     def street_ground(x, y):
-        z = face(x, y)
-        return ground(x, y) if z is None else z
+        for dx, dy in ((0, 0), (0, 0.01), (0, -0.01), (0.01, 0), (-0.01, 0)):
+            z = face(x + dx, y + dy)
+            if z is None:
+                z = deck(x + dx, y + dy)
+            if z is not None:
+                return z
+        return ground(x, y)
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, street_ground, dv,
                                       None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + [c[:3] + [round(street_ground(c[1], c[2]) + 0.07, 2)] + c[4:] for c in drive_cars]
