@@ -1667,16 +1667,33 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   on a deck is held at the flight's height, as much as 2.8 m off the deck's line at 2_4
   (276, 3242), and 2 m at 4_2 (3149, 1635). To undo it: give a flight on a deck a level of its own,
   or land the deck's faces on the flight's treads.
-- [ ] **A few decks' ends don't share every corner with the street they land on** (rule 28 "deck
-  end not joined to the street": 6 over the eight trial squares, none before there were levels). Each
-  is a kerb rounding round a cap, so that the street's corner and the deck's don't meet:
-  - 0_3 (-1673, 2106), 1.5 m
-  - 1_2 (-524, 1624), 1.0 m
-  - 0_2 (-999, 1739), 0_3 (-939, 2372), 1_3 (-850, 2312) and 1_3 (-303, 2450), 0.3 m each
+- [ ] **A few decks' ends still don't share every corner with the street they land on** (rule 28
+  "deck end not joined to the street": 37 over the 46 squares with decks, now 8). The causes found
+  and mended: a corner on the cap levelled from the ground under the span, so the join refused it;
+  the landing tested against the end's own height only, so a deck whose record ends on the bank's
+  slope stood below the street it lands on; a flight's end landed on the ground, not the flight;
+  the two levels' corners on a cap simplified a few centimetres apart; slivers along a cap folding
+  an outline back. Left, each a corner a little further from the other level's than the build
+  pairs (6 cm laid, 15 cm simplified):
+  - 4_-2 (2558, -2966), 2.0 m, a set piece's end: both levels share the cap's corner as built, and
+    the set piece's cut lays the ground's corner again 1 cm off it
+  - 0_3 (-1042, 2250), 1.3 m (8 cm apart); -6_5 (-7216, 4483), 1.2 m (22 cm)
+  - -2_3 (-3383, 2199), 0.6 m; 4_2 (2989, 1570), 0.3 m; 2_5 (580, 4049), 0.2 m; 1_-1 (8, -1988), 0.1 m
+  - 1_4 (-37, 3138), 0.2 m, where the footbridge's steps come down beside its end
 
-  None shows as a lip in the trial shots with `?decks=1`. Moving corners straight on to the cap line
-  did worse on 1_2. To undo it: lay a cap's corners first and fit the kerbs' rounding to them,
-  rather than matching the two afterwards.
+  To undo it: lay a cap's corners first and fit each level's kerbs to them (decision 9's taper),
+  rather than matching the two afterwards, and let the set piece's cut keep a cap's corners.
+- [ ] **A deck's walked end with nothing on the ground to land on is listed, not joined** (rule 28
+  "deck end with nothing to land on": 25 over the 46 squares). Where the street or path the deck
+  carries isn't mapped past the bank (open ground), or meets a building or a set piece's cut, there
+  is no face to share corners with, and the check says which. A stone or steel margin, and a
+  stretch under half a metre (a corner's rounding), aren't listed. To undo it: carry a short ramp
+  of the deck's own kind down to the ground at such an end, or have the data map the way on.
+- [ ] **A deck's corner on a cap is moved up to 15 cm to meet the ground's** (CAP_PAIR, and corners
+  within 6 cm are one, CAP_MERGE). Each level was simplified on its own, so each stood its kerbs off
+  the cap by up to its tolerance. A piece that would lose a tenth of its area by the move (a strip
+  lying along a cap) keeps its own corners. To undo it: simplify the two levels together along
+  their caps.
 - [x] **Where a deck crosses a square's side, the two squares disagreed about it** (rule 42 "faces
   don't meet the next square's": 46 over the trial squares, 42 before; 43 now). The city's
   structures pass already decides each way's spans once, for the whole way. Three steps in each

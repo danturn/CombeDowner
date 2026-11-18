@@ -60,7 +60,10 @@ from the packs alone, a few seconds a square:
 27. Faces meet: no strip of bare ground between a path and a street (one along a wall, fence or
     hedge is where the faces stop for it), no lump of ground between faces
     of two kinds, no pavement that just stops with nothing across its end.
-28. A bridge's deck lands on the street at each end, not in the air or off the street's height.
+28. A bridge's deck lands on the street at each end, not in the air or off the street's height;
+    where its decks are faces, each end shares its corners with the faces it lands on, and where its
+    walked surface ends over nothing to land on, it says what is there (a building, a set piece's
+    cut, open ground).
 29. No parapet gap where three or more pieces of a bridge meet on its deck.
 30. No ground stands up through a deck.
 31. Room under a bridge: the ground half a metre under its underside, and headroom for a way or the
@@ -2790,6 +2793,7 @@ def street_holes(m, f, sheet, note, at, inner, fig):
 
 DECK_OFF = 0.02      # metres a deck's point may stand off its deck's line
 DECK_HOLE = 0.5      # m2: a smaller piece of a deck's footprint left undrawn is the simplifying
+DECK_BARE = 0.5      # metres: a shorter stretch of a deck's end over nothing is a corner's rounding
 
 
 def deck_faces(m, sheet, note, at, sq, fig):
@@ -2804,11 +2808,12 @@ def deck_faces(m, sheet, note, at, sq, fig):
     own = [o for o in runs if not o["r"].get("held")]
     foot = bridge_decks([o["r"] for o in own], past_cut=sq) if own else None
     # (a set piece lays its own ground: the faces leave it out at every level)
-    solid = [_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3]
-    solid += [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
-    if m.get("centre"): solid += set_piece_streets(tuple(m["centre"]))
-    if (laid := set_piece_laid(m)) is not None: solid.append(laid)
-    solid = shapely.union_all(solid or [Polygon()])
+    houses = shapely.union_all([_poly(b["r"][0], b["r"][1:]) for b in m.get("bl") or [] if len(b["r"][0]) >= 3] or [Polygon()])
+    cuts = [_poly(r) for r in m.get("sp") or [] if len(r) >= 3]
+    if m.get("centre"): cuts += set_piece_streets(tuple(m["centre"]))
+    if (laid := set_piece_laid(m)) is not None: cuts.append(laid)
+    cuts = shapely.union_all(cuts or [Polygon()])
+    solid = houses.union(cuts)
     drawn = decks.union(LEVEL_KINDS)
     if foot is not None:
         bare = foot.intersection(sq).difference(drawn).difference(solid)
@@ -2867,7 +2872,7 @@ def deck_faces(m, sheet, note, at, sq, fig):
     # 28: each cap's corners are the faces' it lands on
     below = sheet.union(FACE_KINDS)
     edges_below = {(int(a), int(b)) for _, idx in sheet.edges for a, b in zip(idx, idx[1:])}
-    for _, idx in decks.edges:
+    for (_, idx), e in zip(decks.edges, m["sf"]["lv"][0]["e"]):
         for a, b in zip(idx, idx[1:]):
             a, b = int(a), int(b)
             pa, pb = decks.V[a, :2], decks.V[b, :2]
@@ -2875,7 +2880,16 @@ def deck_faces(m, sheet, note, at, sq, fig):
             L = float(np.hypot(*(pb - pa)))
             if L < 0.05: continue
             mx, my = (pa + pb) / 2 + np.array([pb[1] - pa[1], pa[0] - pb[0]]) / L * 0.05
-            if not below.contains(Point(mx, my)): continue
+            if not below.contains(Point(mx, my)):
+                # (a deck's walked surface may end where there is nothing on the ground to land on: said
+                # why, so each can be looked at and listed; its stone or steel margin over the bank is
+                # the bridge's own)
+                if e["c"] in ("stone", "steel") or L < DECK_BARE or not cap_zone.contains(Point((pa + pb) / 2)): continue
+                fx, fy = (pa + pb) / 2 + np.array([pb[1] - pa[1], pa[0] - pb[0]]) / L * 0.3
+                why = ("a building" if houses.contains(Point(fx, fy)) else "a set piece's cut" if cuts.contains(Point(fx, fy))
+                       else "open ground, no street or path mapped")
+                note("28 deck end with nothing to land on", L, at(mx, my), f"{L:.1f} m of a deck's {e['c']} ending over {why}")
+                continue
             # (a way passing under the deck's end lies across it a storey down, on its own level)
             _, zb = sheet.hit(mx, my)
             if not np.isnan(zb[0]) and abs(zb[0] - (decks.V[a, 2] + decks.V[b, 2]) / 2) > CAP_LAND: continue
