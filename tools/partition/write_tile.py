@@ -3306,13 +3306,28 @@ def deck_runs(rd, ends=(), ground=None):
     return out
 
 
+RUN_BEND = 0.5      # metres: within this much of each other, two stretches of a deck's line both say where along it a point is
+
+
 def run_z(o, x, y):
-    """A deck run's height at the point of its line nearest (x, y): level across."""
-    line = o["line"]
-    if "_cum" not in o:
-        c = line.coords
-        o["_cum"] = list(itertools.accumulate([0.0] + [math.dist(a, b) for a, b in zip(c, c[1:])]))
-    return float(np.interp(line.project(Point(x, y)), o["_cum"], o["z"]))
+    """A deck run's height at the point of its line nearest (x, y): level across. Inside a bend the
+    nearest point jumps from one stretch to the next, and the height with it (12 cm a centimetre
+    apart on a steep deck), so stretches about as near as each other there share the say."""
+    if "_seg" not in o:
+        c = np.asarray(o["line"].coords)
+        d = c[1:] - c[:-1]
+        n = np.hypot(d[:, 0], d[:, 1])
+        o["_seg"] = (c[:-1], d, n, np.concatenate([[0.0], np.cumsum(n)]))
+    a, d, n, cum = o["_seg"]
+    raw = ((x - a[:, 0]) * d[:, 0] + (y - a[:, 1]) * d[:, 1]) / np.maximum(n * n, 1e-12)
+    t = np.clip(raw, 0.0, 1.0)
+    gap = np.hypot(a[:, 0] + d[:, 0] * t - x, a[:, 1] + d[:, 1] * t - y)
+    # (only a stretch the point lies square beside: past its end, it says the end, a straight line's
+    # next stretch pulling the point along towards their shared corner)
+    w = np.where((raw > 0) & (raw < 1), np.exp(-(gap - gap.min()) / RUN_BEND), 0.0)
+    w[int(np.argmin(gap))] = 1.0
+    along = float((w * (cum[:-1] + t * n)).sum() / w.sum())
+    return float(np.interp(along, cum, o["z"]))
 
 
 def cap_lines(runs, footprint):
@@ -3433,6 +3448,78 @@ def deck_level(foot, kept, runs, road, pave, path, holes=None):
 CAP_SNAP = 0.02     # metres: a corner this near a deck's cap is on it, and shared with the faces across it
 CAP_NEAR = 1.0      # metres from a deck's cap within which a corner both levels have is shared
 CAP_LAND = 1.0      # metres: a deck's end further than this off the faces it meets keeps its own height
+CAP_PAIR = DECK_TOLERANCE    # metres: a deck's corner on a cap this near one of the ground's there is moved on to it
+CAP_MERGE = 0.06    # metres: corners on a cap rounded or laid this near each other are one
+
+
+def _one_polygon(g, was):
+    """g as one polygon, its largest part, or `was` if moving its corners left nothing of it."""
+    parts = [q for q in getattr(g, "geoms", [g]) if q.geom_type == "Polygon" and q.area > 1e-6]
+    return max(parts, key=lambda q: q.area) if parts else was
+
+
+def onto_caps(pieces, lines, reach):
+    """The pieces with every corner within `reach` of a deck's cap moved on to its line: simplified,
+    each level's outline stood off the cap by up to its tolerance, and the two levels' corners there
+    missed each other. A corner moves the same way in every piece that has it, so they still meet."""
+    if not lines:
+        return pieces
+    tree = STRtree(lines)
+    zone = unary_union(lines).buffer(reach)
+    shapely.prepare(zone)
+
+    def move(xy):
+        out = xy.copy()
+        on = shapely.contains_xy(zone, xy[:, 0], xy[:, 1])
+        for k in np.nonzero(on)[0]:
+            p = Point(xy[k])
+            line = lines[int(tree.nearest(p))]
+            q = line.interpolate(line.project(p))
+            out[k] = (q.x, q.y)
+        return out
+    # (not a piece lying along a cap, a strip narrower than the reach: it would fold flat on to it)
+    def moved(g):
+        got = _one_polygon(shapely.make_valid(shapely.transform(g, move)), g)
+        return got if got.area >= 0.9 * g.area else g
+    return [moved(g) if g.intersects(zone) else g for g in pieces]
+
+
+def pair_caps(pieces, ground, zone):
+    """The deck's pieces with each of their corners on a cap moved to the nearest of the ground's
+    corners there, within CAP_PAIR, each of those taken once: simplified apart, the two levels'
+    kerbs met the cap a few centimetres apart, and each level's edge ran to its own corner."""
+    on = lambda gs: np.unique(np.round(np.asarray([xy for g in gs if g.intersects(zone) for xy in shapely.get_coordinates(g)
+                                                    if shapely.contains_xy(zone, *xy)]).reshape(-1, 2), 6), axis=0)
+    mine, theirs = on(pieces), on(ground)
+    if not len(mine) or not len(theirs):
+        return pieces
+    d = np.hypot(mine[:, None, 0] - theirs[None, :, 0], mine[:, None, 1] - theirs[None, :, 1])
+    to, used = {}, set()
+    for i, j in zip(*np.unravel_index(np.argsort(d, axis=None), d.shape)):
+        if d[i, j] > CAP_PAIR:
+            break
+        # (only two corners each the other's nearest: past one nearer, a narrow strip's corner
+        # crossed over its neighbour's and the strip turned inside out)
+        if (i, "m") in used or (j, "t") in used or d[i].argmin() != j or d[:, j].argmin() != i:
+            continue
+        used |= {(i, "m"), (j, "t")}
+        if d[i, j] > 0:
+            to[tuple(mine[i])] = theirs[j]
+    if not to:
+        return pieces
+
+    def move(xy):
+        out = xy.copy()
+        for k, q in enumerate(np.round(xy, 6)):
+            got = to.get(tuple(q))
+            if got is not None:
+                out[k] = got
+        return out
+
+    def moved(g):
+        got = _one_polygon(shapely.make_valid(shapely.transform(g, move)), g)
+        return got if got.area >= 0.9 * g.area else g
+    return [moved(g) if g.intersects(zone) else g for g in pieces]
 
 
 def snap_caps(pieces, others, zone):
@@ -6018,7 +6105,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                                  holes=cut)
         caps = [c for c in cap_lines(runs, over) if c[0].intersects(square)]
     deck_simple = list(shapely.coverage_simplify([q for _, q in deck_pieces], DECK_TOLERANCE)) if deck_pieces else []
-    shared_xy = set()
+    shared_xy, under_zone = set(), None
     if caps:
         bare = unary_union([c[0] for c in caps]).buffer(CAP_SNAP)
         shapely.prepare(bare)
@@ -6028,7 +6115,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         near = unary_union([c[0] for c in caps]).buffer(CAP_NEAR)
         # (not where a way passes under the deck's end: that is on the level below)
         under = [g for g in (_minus(foot, deck) if deck is not None else None, path_under) if g is not None and not g.is_empty]
-        zone = _minus(near, unary_union(under).buffer(0.05)) if under else near
+        under_zone = unary_union(under).buffer(0.05) if under else None
+        if under_zone is not None:
+            shapely.prepare(under_zone)
+        zone = _minus(near, under_zone) if under else near
         top = unary_union([q for q in deck_simple if q.intersects(zone)] or [Polygon()]).intersection(zone)
         if not top.is_empty:
             cut_pieces, cut_simple = [], []
@@ -6050,6 +6140,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             got = deck_simple[j].union(part)
             if got.geom_type == "Polygon":
                 deck_simple[j] = got
+        cap_segs = [c[0] for c in caps]
+        simple = onto_caps(simple, cap_segs, SURFACE_TOLERANCE + 0.02)
+        deck_simple = onto_caps(deck_simple, cap_segs, DECK_TOLERANCE + 0.02)
+        deck_simple = pair_caps(deck_simple, simple, bare)
         deck_simple = snap_caps(deck_simple, simple, bare)
         simple = snap_caps(simple, deck_simple, bare)
         corners = lambda gs: {(round(x, 2), round(y, 2)) for x, y in shapely.get_coordinates([g for g in gs if g.intersects(near)])
@@ -6213,7 +6307,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         x, y = o["line"].coords[0 if k == 0 else -1]
         held = next((e for e in ends or () if e[0] == "abutment" and len(e) > 6 and math.dist(e[1:3], (x, y)) < 0.3), None)
         if held is not None and held[6] == 1:
-            landed[(id(o), k)] = z
+            # (at the flight's height: the game's strip lets the ground win a metre off it, but the
+            # faces the flight lands on are at the flight's, and a cap on the ground stood under them)
+            landed[(id(o), k)] = o["z"][k] = round(held[3], 2)
             continue
         # (as the face just across the cap is laid: a path's at its line's level, a street's at its own)
         (ax, ay) = o["line"].coords[1 if k == 0 else -2]
@@ -6231,7 +6327,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         else:
             j = nearest(x, y)
             h = street_level(j, x, y) if j is not None else ground(x, y)
-        h = z if h is None or abs(h - z) > CAP_LAND else round(h, 2)
+        # (near the end's own height or the deck's just inside it: an end the record has on the bank's
+        # slope, below a street the deck lands level with, still lands on that street)
+        inside = o["z"][1 if k == 0 else -2] if len(o["z"]) > 1 else z
+        h = z if h is None or min(abs(h - z), abs(h - inside)) > CAP_LAND else round(h, 2)
         landed[(id(o), k)] = h
         o["z"][k] = h
         # (and an older page, drawing the deck as its strip, lands it there too)
@@ -6303,32 +6402,50 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     level_edge = unary_union([q.boundary for f, q in zip(flat, simple) if f is True] or [LineString()]).buffer(0.01)
     shapely.prepare(level_edge)
 
-    cap_at, cap_tree = {}, STRtree([c[0] for c in caps]) if caps else None
+    cap_at, cap_cells, cap_levels, cap_tree = {}, {}, {}, STRtree([c[0] for c in caps]) if caps else None
 
-    def cap_point(x, y, z=None):
+    def cap_point(x, y, z=None, deck=False):
         """The point both levels share on a deck's cap, at the deck's height there. Not for a corner
-        at height `z` well off it: a way passing under the deck's end is on the level below."""
+        at height `z` well off it where a way passes under the deck's end: that is on the level below.
+        Elsewhere on a cap a corner is the cap's whatever its height: levelled from a street whose line
+        ends on the span, or a cut copy of it from the next square, it took the ground under the deck."""
         if cap_tree is None:
             return None
+        p = Point(x, y)
+        check = z is not None and under_zone is not None and under_zone.contains(p)
         if (x, y) in cap_at:
             c = cap_at[(x, y)]
-            return c if z is None or abs(v[3 * c + 2] - z) <= CAP_LAND else None
-        p = Point(x, y)
+            if check and abs(v[3 * c + 2] - z) > CAP_LAND:
+                return None
+            cap_levels[c].add(deck)
+            return c
         reach = CAP_NEAR if (x, y) in shared_xy else CAP_SNAP
         near = [(caps[int(k)][0].distance(p), caps[int(k)][1]) for k in cap_tree.query(p, predicate="dwithin", distance=reach)]
         if not near:
             return None
         h = round(min(near)[1], 2)
-        if z is not None and abs(h - z) > CAP_LAND:
+        if check and abs(h - z) > CAP_LAND:
             return None
-        cap_at[(x, y)] = len(v) // 3
-        v.extend([x, y, h])
-        return cap_at[(x, y)]
+        # (a corner on a cap a few centimetres from one the other level has there, the two rounded or laid
+        # apart, is that corner: kept apart, each level's edge ran to its own and the two didn't meet.
+        # Each pairs with one of the other level's at most, as a strip narrower than that folded away)
+        cell = (round(x / CAP_MERGE), round(y / CAP_MERGE))
+        twins = [(math.dist(v[3 * c:3 * c + 2], (x, y)), c) for i in (-1, 0, 1) for j in (-1, 0, 1)
+                 for c in cap_cells.get((cell[0] + i, cell[1] + j), ()) if deck not in cap_levels[c]]
+        twins = [t for t in twins if t[0] <= CAP_MERGE]
+        c = min(twins)[1] if twins else len(v) // 3
+        if not twins:
+            cap_cells.setdefault(cell, []).append(c)
+            cap_levels[c] = set()
+            v.extend([x, y, h])
+        cap_at[(x, y)] = c
+        cap_levels[c].add(deck)
+        return c
 
     def point(x, y, on_ground):
         # (a path and the pavement it meets share the corner but not its height: the kerb is a step)
         key = (round(x, 2), round(y, 2), on_ground)
-        if on_ground == "d" and cap_tree is not None and (c := cap_point(key[0], key[1])) is not None:
+        if on_ground == "d" and cap_tree is not None and (c := cap_point(key[0], key[1], deck=True)) is not None:
             return c
         if on_ground == "d":
             if key not in at:
@@ -6403,6 +6520,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 else:
                     kind = {"pavement": "pave", "path": path_kind(cx, cy)}.get(cls, cls)
                 ids = [point(x, y, "d") for x, y in pts]
+                if len(set(ids)) < 3:
+                    continue
                 (a, b), c = pts[:2], pts[2]
                 turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
                 deck_tris.append([kind, len(piece_of) - 1, ids, 1 if turn > 0 else -1])
@@ -6429,7 +6548,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                     c = streets[k]["c"] if k is not None else ""
                     kind = "road" if c in KERBED or shapely.contains_xy(corner_road, cx, cy) else "pave" if c == "pedestrian" else "service"
                 ids = [point(x, y, flat) for x, y in pts]
-                if None not in ids:
+                if None not in ids and len(set(ids)) == 3:
                     (a, b), c = pts[:2], pts[2]
                     turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
                     tris.append([kind, len(piece_of) - 1, ids, 1 if turn > 0 else -1])
@@ -6442,7 +6561,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         (ax, ay, az), (bx, by, bz) = v[3 * a:3 * a + 3], v[3 * b:3 * b + 3]
         ex, ey = bx - ax, by - ay
         t = min(1.0, max(0.0, ((key[0] - ax) * ex + (key[1] - ay) * ey) / ((ex * ex + ey * ey) or 1.0)))
-        if cap_tree is not None and (c := cap_point(key[0], key[1], None if flat == "d" else az + (bz - az) * t)) is not None:
+        if cap_tree is not None and (c := cap_point(key[0], key[1], None if flat == "d" else az + (bz - az) * t, flat == "d")) is not None:
             return c
         # (a plaza is at a path's level along the edge they share, so the two share the corner)
         if flat == "g" and (key[0], key[1], True) in at:
@@ -6451,7 +6570,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             return at[(key[0], key[1], "g")]
         if key not in at:
             at[key] = len(v) // 3
-            v.extend([key[0], key[1], round(az + (bz - az) * t, 2)])
+            # (a deck's corner is at its line's height, which bends where the line does: along the
+            # edge it stood off the deck's own corners round it)
+            z = deck_z(key[0], key[1]) if flat == "d" else az + (bz - az) * t
+            v.extend([key[0], key[1], round(z, 2)])
         return at[key]
     tris = _mend_corners(tris, v, mend_point)
     deck_tris = _mend_corners(deck_tris, v, mend_point) if deck_tris else []
@@ -6461,6 +6583,23 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         both = _mend_corners(tris + deck_tris, v, mend_point)
         tris = [t for t in both if piece_of[t[1]][1] != "d"]
         deck_tris = [t for t in both if piece_of[t[1]][1] == "d"]
+    if cap_at:
+        # (a triangle with all three corners along a cap is a sliver lying on it, folded back over its
+        # neighbour: its outline ran out along the cap and back, past the other level's corner)
+        on_cap = set(cap_at.values())
+
+        def sliver(ids):
+            if not on_cap.issuperset(ids):
+                return False
+            (ax, ay), (bx, by), (cx, cy) = ((v[3 * i], v[3 * i + 1]) for i in ids)
+            # (on one cap: a deck short enough has thin triangles running from one end's cap to the other's)
+            if not any(all(caps[int(k)][0].distance(Point(px, py)) <= 2 * CAP_MERGE for px, py in ((bx, by), (cx, cy)))
+                       for k in cap_tree.query(Point(ax, ay), predicate="dwithin", distance=CAP_NEAR)):
+                return False
+            longest = max(math.hypot(bx - ax, by - ay), math.hypot(cx - bx, cy - by), math.hypot(ax - cx, ay - cy))
+            return abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) <= 2 * CAP_MERGE * longest
+        tris = [t for t in tris if not sliver(t[2])]
+        deck_tris = [t for t in deck_tris if not sliver(t[2])]
     for kind, n, ids, _ in tris:
         out[kind] += ids
         (walk if piece_of[n][0] == "pavement" else kerbside).update(ids)
