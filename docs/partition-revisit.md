@@ -1701,3 +1701,27 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
 - [ ] **A tunnel under buildings is only as wide as the room the data leaves.** Spring Gardens Road's
   bore is 2.7 m, narrower than the real one, because `bores_inside` keeps it within the gap between
   the buildings' walls. The maintainer accepted this: widen it only if the data shows more room.
+
+## Footbridge and Ferry Lane fixes (18 November)
+
+- [ ] **Piers, parapet end posts and approach parapets are made solid by the scene's build**
+  (`world.ts` hands each one to `map.addStructure` / `map.addParapet`), not by the map's own
+  collision pass, because only the scene works out where they stand. Checks that load the map
+  without drawing it (`pack_behave.mjs`, Node probes) don't see them. To undo it: move the
+  supports' placement (`supports`, `approach`) into a shared function both read.
+- [ ] **A bridge's parapets can still be vaulted.** Walking head on into a 1.25 m parapet hops you
+  over it (`player.ts` auto-vault, under 1.45 m), in both modes, so you can still go off a high deck
+  without crouching. Left as it is: whether a parapet over a drop should stop the vault is a game
+  choice.
+- [ ] **The towpath rule for a path climbing to a street was rebuilt in 2_0 and 4_2 only.** It is in
+  both `prep_map.towpath` and `structures.towpath_points`, so the next whole-map build brings it
+  everywhere; until then other squares keep paths that stay on the towpath up to a street above it.
+- [ ] **1_2 was not rebuilt with the towpath rule.** Rebuilt as a trial, the path from the river up
+  to Pulteney Road's bridge (-560, 1610) climbs instead of stepping 2.4 m, and most counts fell
+  (23: 20 to 17, 26: 46 to 43, 27 down 3), but rule 28 rose by two slivers of 0.4 and 0.1 m at
+  (-538, 1606) and rule 47 by one house 300 m away. Look at it before the next whole build.
+- [ ] **The Two Tunnels Greenway's south approach has no wall.** Past the abutment (316, -1073) the
+  bank falls 0.3 to 0.6 m within 2 m of the path and about 2 m over 8 m, so no approach parapet is
+  drawn there by the 0.5 m rule and you can walk down the bank. Walling it would need that rule changed.
+- [ ] **At Ferry Lane's east end, without decks, you can step off the pavement at the bridge's corner
+  (2991, 1561) down to the towpath**: the approach parapet there is drawn, and solid, only with `?decks=1`.
