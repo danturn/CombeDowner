@@ -87,7 +87,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   carried over it and the arch only as long as the mapped tunnel. A lane or path the map data takes
   through a building's passage well below the street crossing over it goes through a bore of its
   own, from where it comes out on one side to the other, as high as the street over it leaves
-  room for: Spring Gardens Road runs under Argyle Street and its terraces, by the river, and you can
+  room for and no wider than the buildings over it, with the buildings' own walls round its
+  openings rather than a tunnel's headwall: Spring Gardens Road runs under Argyle Street and its terraces, by the river, and you can
   walk or drive through. Where a street or a path runs on
   through a building (an arch through a terrace into a mews or a yard, a castle's gatehouse, an
   arcade), the building has an opening at ground level as wide as the way, about 3.5 m high for a

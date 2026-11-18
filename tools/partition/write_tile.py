@@ -1826,7 +1826,8 @@ def city_tunnels(roads, profiles, sq):
     mouths are one decision; a bore running on past the square's edge is cut there. Pieces of one
     bore on two edges are joined. A path's low arch under a street (structures.low_bores), and a
     lane through a building's passage well under a street (structures.deep_bores), carries its
-    crown, `cr`. [] where the city bored nothing near."""
+    crown, `cr`, and marks each end that comes out of a building's wall, `bw`. [] where the city
+    bored nothing near."""
     pieces = []
     for r in roads:
         prof = (profiles or {}).get(r.get("id"))
@@ -1844,9 +1845,8 @@ def city_tunnels(roads, profiles, sq):
                 p.append([q.x, q.y, prof["z"][k]])
             low = [i0, i1] in (prof.get("low") or [])
             cr = TN.UNDER_CROWN if low else next((c for a_, b_, c in prof.get("cr") or () if [a_, b_] == [i0, i1]), None)
-            if cr and not low:
-                _to_data_ends(p, whole, r.get("obs") or ())
-            pieces.append(dict(c=r["cls"], n=r.get("name", ""), p=p, **({"cr": cr} if cr else {})))
+            bw = _to_data_ends(p, whole, r.get("obs") or ()) if cr and not low else [0, 0]
+            pieces.append(dict(c=r["cls"], n=r.get("name", ""), p=p, **({"cr": cr} if cr else {}), **({"bw": bw} if any(bw) else {})))
     joined = list(pieces)
     merged = True
     while merged:
@@ -1856,46 +1856,62 @@ def city_tunnels(roads, profiles, sq):
             if o["c"] != t["c"] or o.get("cr") != t.get("cr"):
                 continue
             if math.dist(o["p"][-1][:2], t["p"][-1][:2]) < 0.5:
-                t = dict(t, p=t["p"][::-1])
+                t = _reversed(t)
             elif math.dist(o["p"][0][:2], t["p"][0][:2]) < 0.5:
-                o = dict(o, p=o["p"][::-1])
+                o = _reversed(o)
             if math.dist(o["p"][-1][:2], t["p"][0][:2]) < 0.5:
-                joined[m] = dict(o, p=o["p"] + t["p"][1:])
+                bw = [o.get("bw", [0, 0])[0], t.get("bw", [0, 0])[1]]
+                joined[m] = dict(o, p=o["p"] + t["p"][1:], bw=bw)
+                if not any(bw):
+                    del joined[m]["bw"]
                 del joined[n]
                 merged = True
                 break
     out = []
     for t in joined:
         for piece in _clip_to(t["p"], sq):
+            # (an end cut at the square's edge is no wall's: the game puts no portal there anyway)
+            bw = [int(bool(t.get("bw", [0, 0])[k]) and math.dist(piece[e][:2], t["p"][e][:2]) < 0.1) for k, e in ((0, 0), (1, -1))]
             out.append(dict(c=t["c"], n=t["n"], p=[[round(q[0], 1), round(q[1], 1), round(q[2], 2)] for q in piece],
-                            **({"cr": t["cr"]} if t.get("cr") else {})))
+                            **({"cr": t["cr"]} if t.get("cr") else {}), **({"bw": bw} if any(bw) else {})))
     return out
+
+
+def _reversed(t):
+    return dict(t, p=t["p"][::-1], **({"bw": t["bw"][::-1]} if "bw" in t else {}))
 
 
 def _to_data_ends(p, whole, obs, reach=4.5):
     """A deep bore's ends (points [x, y, floor] along `whole`) carried out to where the data's tunnel
     or passage ends, the wall or hillside it comes out of, if that is within a profile step: from
-    the profile's points alone a portal stood up to 4 m inside a building, its way stopped short."""
-    runs = []
+    the profile's points alone a portal stood up to 4 m inside a building, its way stopped short.
+    Returns, for each end, 1 where it comes out of a building's passage: the building's wall is its
+    face there, and no headwall is built (`bw`)."""
+    runs, bw = [], [0, 0]
     for t0, t1, tags in sorted(obs):
         if tags.get("tunnel", "no") == "no" and tags.get("covered", "no") == "no":
             continue
+        housed = tags.get("tunnel") == "building_passage" or tags.get("covered", "no") != "no"
         if runs and t0 <= runs[-1][1] + 0.1:
             runs[-1][1] = max(runs[-1][1], t1)
+            runs[-1][3] = housed
         else:
-            runs.append([t0, t1])
-    for end, out in ((0, -1), (-1, 1)):
+            runs.append([t0, t1, housed, housed])
+    for k, (end, out) in enumerate(((0, -1), (-1, 1))):
         d = whole.project(Point(p[end][:2]))
         run = next((r for r in runs if r[0] - 0.1 <= d <= r[1] + 0.1), None)
         if run is None:
             continue
         to = run[0] if out < 0 else run[1]
+        if abs(to - d) <= reach:
+            bw[k] = int(run[2 if out < 0 else 3])
         if 0.3 < abs(to - d) <= reach:
             q = whole.interpolate(to)
             if end == 0:
                 p.insert(0, [q.x, q.y, p[0][2]])
             else:
                 p.append([q.x, q.y, p[-1][2]])
+    return bw
 
 
 def _clip_to(pts, sq):
@@ -4542,7 +4558,7 @@ def portal_planes(tunnels, lines, heights, reach=3.0, rise=1.5):
     return out
 
 
-def bore_widths(tunnels, rd, rows):
+def bore_widths(tunnels, rd, rows, houses=()):
     """Each tunnel's bore as wide as its way going in at each portal (TN.bore_half, TN.widen): the
     record of `rd` that comes up to the portal, or with none (`rd` not yet written, or an end cut at
     the square's edge) pass 1's corridor there, which the next square reads too, so the bore meets
@@ -4602,6 +4618,49 @@ def bore_widths(tunnels, rd, rows):
             ends.append(got)
         known = [e for e in ends if e]
         TN.widen(t, [e or (known[0] if known else (TN.HALF, 0.0)) for e in ends])
+    bores_inside(tunnels, houses)
+
+
+BORE_IN = 0.1           # metres of a building's wall kept outside a lane's bore through its passage
+BORE_NARROWEST = 1.2    # half the narrowest a lane's bore is made to keep inside its buildings
+
+
+def bores_inside(tunnels, houses):
+    """A lane's bore through buildings' passages (structures.deep_bores, with `cr`) no wider than
+    the room inside them each side of its middle, all along it: with its way mapped near a side
+    wall, the lining stood out of the building over the street beside it, a bank of grass up to a
+    metre above the pavement. Its ends, in the walls it comes out of, don't count, and are marked
+    as a building's (`bw`) when they stand in one's wall."""
+    for t in tunnels or []:
+        p = t.get("p") or []
+        if len(p) < 3 or not t.get("cr") or t["cr"] <= TN.UNDER_CROWN + 0.01:
+            continue
+        reach = LineString([q[:2] for q in p]).buffer(8.0)
+        # (closed over the hairline gaps between neighbours, which a ray across them took for open air)
+        union = unary_union([h.buffer(0) for h in houses if h.intersects(reach)] or [Polygon()])
+        union = union.buffer(0.5, join_style=2).buffer(-0.5, join_style=2)
+        # and an end in a building's wall is marked, whichever way the data tags the way there
+        bw = [int(bool((t.get("bw") or (0, 0))[k]) or union.distance(Point(p[e][:2])) < 0.5) for k, e in ((0, 0), (1, -1))]
+        if any(bw):
+            t["bw"] = bw
+        room = math.inf
+        for k in range(1, len(p) - 1):
+            pt = Point(p[k][:2])
+            if not union.contains(pt):
+                continue
+            a, b = p[k - 1], p[k + 1]
+            n = math.dist(a[:2], b[:2]) or 1.0
+            nx, ny = -(b[1] - a[1]) / n, (b[0] - a[0]) / n
+            for s in (1, -1):
+                ray = LineString([p[k][:2], (p[k][0] + s * nx * 6, p[k][1] + s * ny * 6)])
+                hit = ray.intersection(union.boundary)
+                room = min(room, pt.distance(hit) if not hit.is_empty else 6.0)
+        half = room - BORE_IN
+        if half < BORE_NARROWEST or half >= max(TN.half_at(t, k) for k in range(len(p))):
+            continue
+        t["hw"] = [round(min(TN.half_at(t, k), half), 2) for k in range(len(p))]
+        if t.get("pv"):
+            t["pv"] = [round(min(v, h / 3), 2) for v, h in zip(t["pv"], t["hw"])]
 
 
 STEEPEST_WALK = 0.25    # the steepest a path is walked up as a slope (1 in 4); steeper, it is a flight of steps
@@ -4987,13 +5046,16 @@ def portal_faces(tunnels):
     each side of the bore's middle the face reaches: TN.FACE_PAST past its wall). Bores coming out
     side by side share one headwall, square to them, at the outermost one's mouth: the game carries
     each bore that stops short on to it (web/src/tunnels.ts alignPortals), and a face left where
-    the data's bore stopped had the median kerb between them climbing the wall."""
+    the data's bore stopped had the median kerb between them climbing the wall. An end that comes
+    out of a building's wall (`bw`) has no headwall: the building is its face."""
     ends = []
     for t in tunnels or []:
         p = t.get("p") or []
         if len(p) < 2:
             continue
         for k, (a, b) in ((0, (p[0], p[1])), (len(p) - 1, (p[-1], p[-2]))):
+            if (t.get("bw") or (0, 0))[min(k, 1)]:
+                continue
             n = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
             ends.append((id(t), a, (b[0] - a[0]) / n, (b[1] - a[1]) / n, TN.half_at(t, k) + TN.FACE_PAST))
     group = list(range(len(ends)))
@@ -9926,7 +9988,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     dug_for = list(tile.get("tn") or [])
     if profiles:
         tile["tn"] = city_tunnels(near_roads, profiles, sq)
-    bore_widths(tile.get("tn"), None, roads)
+    bore_widths(tile.get("tn"), None, roads, houses_near)
     as_based = dict(T, h=list(T["h"]))
     carried = fill_dug_ground(T, tile.get("rd") or [], dug_for + (tile.get("tn") or []), roads, profiles, houses, rail_tracks)
     past = []
@@ -9972,7 +10034,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     deck_reach(rd)
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
-    bore_widths(tile.get("tn"), rd, roads)
+    bore_widths(tile.get("tn"), rd, roads, houses_near)
     rail_portals = json.load(open(rail)).get("portals") or [] if os.path.exists(rail) else []
     lids = lid_areas(rail_portals, T, houses_near)
     lid_over_tunnels(rd, tunnel_lids(rail_tracks, tile.get("tn"), sq, rail_portals), lids)
