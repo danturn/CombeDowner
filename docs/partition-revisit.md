@@ -1725,3 +1725,11 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   drawn there by the 0.5 m rule and you can walk down the bank. Walling it would need that rule changed.
 - [ ] **At Ferry Lane's east end, without decks, you can step off the pavement at the bridge's corner
   (2991, 1561) down to the towpath**: the approach parapet there is drawn, and solid, only with `?decks=1`.
+- [ ] **A gentle bank beside a footbridge's approach gets no wall.** At the Two Tunnels footbridge's south
+  end the bank falls about 2 m over 8 m, under the 0.5 m drop rule, so you can walk down it. The
+  maintainer agreed to leave it.
+- [ ] **Bridge parapets can be vaulted.** At 1.25 m they are under the 1.45 m auto-vault, so walking
+  into one head on takes you over. The maintainer is happy with that for now.
+- [ ] **The towpath climb rule is not yet built into 1_2.** It turns the 2.4 m step on the path up to
+  Pulteney Road's bridge into a ramp, but leaves two small deck-end slivers there. Take it in the
+  next whole-map build and clear the slivers then.
