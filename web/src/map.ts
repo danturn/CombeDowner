@@ -91,6 +91,11 @@ export const DECK_FACES = typeof location !== "undefined" && new URLSearchParams
 export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf.lv?.length;
 /** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
 export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
+/** How far over its line a tunnel's floor is drawn and walked: as far as its way's faces are over
+ *  theirs, so the floor meets the way laid up to its mouth with no step to see under. */
+export function floorLift(t: Tunnel) {
+  return PATHS.has(t.c) ? FACE_LIFT.path : FACE_LIFT.road;
+}
 export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
 const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot
 const FACE_KINDS_0 = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
@@ -671,16 +676,23 @@ export class GameMap {
             }
         }
       }
-      // A deck's parapets stand along its faces' outer edge where it's over the span, a hand
-      // inside it, from its underside to a walker's chest (off the span its edge is the ground's)
-      const NP = V.length / 3, inside = new Set<number>();
-      const note = (T: ArrayLike<number>) => { for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) inside.add(T[k + m] * NP + T[k + (m + 1) % 3]); };
+      // A deck's parapets stand along its faces' outer edge over the span and the step down to each
+      // abutment, as they're drawn, a hand inside it, from its underside to a walker's chest
+      // (an outer edge is one only one triangle has: the lists keep no one winding)
+      const NP = V.length / 3, sides = new Map<number, number>();
+      const edge = (a: number, b: number) => Math.min(a, b) * NP + Math.max(a, b);
+      const note = (T: ArrayLike<number>) => {
+        for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) {
+          const e = edge(T[k + m], T[k + (m + 1) % 3]);
+          sides.set(e, (sides.get(e) ?? 0) + 1);
+        }
+      };
       for (const kind of FACE_KINDS_0) note(sf[kind] ?? []);
       for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) note(lv[kind] ?? []);
       const spans: [number, number, number, number, boolean, Road][] = [];
       for (const r of d.rd) if (r.bridge && !r.held) for (let i = 0; i + 1 < r.p.length; i++) {
         const on = (q: number[]) => q[3] === 1 || q[3] === 2, A = r.p[i], B = r.p[i + 1];
-        if (on(A) || on(B)) spans.push([A[0], A[1], B[0], B[1], on(A) && on(B), r]);
+        if (on(A) || on(B)) spans.push([A[0], A[1], B[0], B[1], A[3] === 1 || B[3] === 1, r]);
       }
       const nearest = (x: number, y: number) => {
         let best = Infinity, got: (typeof spans)[number] | null = null;
@@ -693,7 +705,7 @@ export class GameMap {
       };
       for (const lv of sf.lv!) for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
         const a = e.i[k], b = e.i[k + 1];
-        if (inside.has(b * NP + a)) continue;
+        if ((sides.get(edge(a, b)) ?? 0) !== 1) continue;
         const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
         if (!sp || !sp[4]) continue;
         // (a side the ground stays level with has no parapet drawn, so none to walk into either)
@@ -758,7 +770,8 @@ export class GameMap {
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
         const half = Math.max(boreHalf(t, i), boreHalf(t, i + 1));
-        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half, boreCrown(t), carriesTraffic(t) ? 1 : 0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        const y = (q: number[]) => q[2] + floorLift(t) - this.z0;
+        this.tA.push([p[i][0], -p[i][1], y(p[i]), half, boreCrown(t), carriesTraffic(t) ? 1 : 0]); this.tB.push([p[i + 1][0], -p[i + 1][1], y(p[i + 1])]);
         const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
         const seen = new Set<number>();
         for (let s = 0; s <= n; s++) {
@@ -1654,6 +1667,30 @@ export class GameMap {
   }
   /** Forget the arches, before the scene is built again. */
   clearArches() { this.arches = []; this.archCells.clear(); }
+
+  /** Something solid a bridge is built with (world.ts: a pier, the post at a parapet's end): its
+   *  outline in data (x, y), from foot to top (scene). The scene is built again with the same ones, so
+   *  each is kept once. */
+  addStructure(ring: number[][], foot: number, top: number) {
+    const k = ring.map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).join(" ");
+    if (this.structures.has(k)) return;
+    this.structures.add(k);
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      this.addSeg(a[0], -a[1], b[0], -b[1], top, 1, foot);
+    }
+    if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
+  }
+  /** A bridge's parapet along its approach (world.ts), where it's drawn over a bank falling away
+   *  beside it: data (ax, ay) to (bx, by), its top at ta and tb and its foot (scene), kept once. */
+  addParapet(ax: number, ay: number, bx: number, by: number, ta: number, tb: number, foot: number) {
+    const k = [ax, ay, bx, by].map((v) => v.toFixed(2)).join(" ");
+    if (this.structures.has(k)) return;
+    this.structures.add(k);
+    this.addSeg(ax, -ay, bx, -by, ta, 1, foot, tb);
+    if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
+  }
+  private structures = new Set<string>();
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
    *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of

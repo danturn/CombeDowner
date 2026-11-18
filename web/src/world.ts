@@ -28,7 +28,7 @@ import { ROCK, WILD_CHANNEL } from "./groundkinds";
 import { buildBoulders } from "./wild";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt, inRing } from "./canal";
-import { alongside, aqueductSetPieceAt, clearSetPieceGround, JOIN_LEVEL, joinsAt, onPiece, setPieceAt } from "./landmarks/setpieces";
+import { alongside, aqueductSetPieceAt, bandBeside, clearSetPieceGround, JOIN_LEVEL, joinsAt, onPiece, setPieceAt } from "./landmarks/setpieces";
 import { Railway, railMouths, type Masonry, type MasonKind } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
@@ -169,6 +169,35 @@ function facingTri(g: Geo, a: number[], b: number[], c: number[], out: number[],
   const n = norm(cross(sub(b, a), sub(c, a)));
   if (dot(n, out) >= 0) g.tri(a, b, c, norm(out), ua, ub, uc, col);
   else g.tri(a, c, b, norm(out), ua, uc, ub, col);
+}
+
+/** The square's carriageway and pavement faces near the lines given: which kind is at data (x, y),
+ *  "road" or "pave" (null off them), and the top of the one there as drawn, above sea level. */
+function faceLookup(sf: NonNullable<MapData["sf"]>, near: { p: number[][] }[]) {
+  const V = sf.v, xs = near.flatMap((r) => r.p.map((q) => q[0])), ys = near.flatMap((r) => r.p.map((q) => q[1]));
+  const x0 = Math.min(...xs) - 20, x1 = Math.max(...xs) + 20, y0 = Math.min(...ys) - 20, y1 = Math.max(...ys) + 20;
+  const cells = new Map<string, [string, number, number, number][]>(), C = 5, key = (i: number, j: number) => `${i},${j}`;
+  for (const kind of ["road", "service", "pave"] as const) {
+    const I = sf[kind] ?? [];
+    for (let k = 0; k + 2 < I.length; k += 3) {
+      const a = I[k], b = I[k + 1], c = I[k + 2], tx = [V[3 * a], V[3 * b], V[3 * c]], ty = [V[3 * a + 1], V[3 * b + 1], V[3 * c + 1]];
+      if (Math.max(...tx) < x0 || Math.min(...tx) > x1 || Math.max(...ty) < y0 || Math.min(...ty) > y1) continue;
+      for (let i = Math.floor(Math.min(...tx) / C); i <= Math.floor(Math.max(...tx) / C); i++)
+        for (let j = Math.floor(Math.min(...ty) / C); j <= Math.floor(Math.max(...ty) / C); j++)
+          (cells.get(key(i, j)) ?? cells.set(key(i, j), []).get(key(i, j))!).push([kind, a, b, c]);
+    }
+  }
+  const find = (x: number, y: number) => {
+    for (const [kind, a, b, c] of cells.get(key(Math.floor(x / C), Math.floor(y / C))) ?? []) {
+      const ax = V[3 * a], ay = V[3 * a + 1], bx = V[3 * b], by = V[3 * b + 1], cx = V[3 * c], cy = V[3 * c + 1];
+      const d1 = (bx - ax) * (y - ay) - (by - ay) * (x - ax), d2 = (cx - bx) * (y - by) - (cy - by) * (x - bx), d3 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx);
+      if (!((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))) continue;
+      const area = d1 + d2 + d3 || 1;
+      return { kind: kind === "pave" ? "pave" : "road", top: (V[3 * a + 2] * d2 + V[3 * b + 2] * d3 + V[3 * c + 2] * d1) / area + LEVEL_LIFT[kind] };
+    }
+    return null;
+  };
+  return { kind: (x: number, y: number) => find(x, y)?.kind ?? null, top: (x: number, y: number) => find(x, y)?.top ?? null };
 }
 
 export interface World {
@@ -1391,7 +1420,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
     skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo,
     onGround: (x: number, z: number) => number = (x, z) => map.trueGround(x, z),
-    skipQuad?: (l: any, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => boolean) => {
+    skipQuad?: (l: any, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => boolean,
+    beside?: (x: number, y: number) => number | null) => {
     const g = into ?? new Geo(), white = [1, 1, 1], laid = groundTris();
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
@@ -1452,6 +1482,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
           if (skip && (skip(L, (a1.x + a2.x) / 2, (a1.y + a2.y) / 2) || skip(L, (b1.x + b2.x) / 2, (b1.y + b2.y) / 2))) continue;
           if (skipQuad?.(L, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2)) continue;
+          // (a band that stops where the next stretch of it is skipped ends in a kerb across it: left
+          // open, the pavement's end stood over a slit down to the ground under the street)
+          if (skipQuad && edges) for (const [j, k, sign] of [[i, i - 1, -1], [i + 1, i + 1, 1]] as const) {
+            if (k < 0 || k + 1 >= p.length || !skipQuad(L, p[k], p[k + 1], nrm[k], nrm[k + 1], o1, o2)) continue;
+            const e1 = at(j, o1), e2 = at(j, o2), dx = p[j][0] - p[j - sign][0], dy = p[j][1] - p[j - sign][1], l = Math.hypot(dx, dy) || 1;
+            facing(g, [e1.x, e1.top - lift - 0.1, -e1.y], [e2.x, e2.top - lift - 0.1, -e2.y], [e2.x, e2.top, -e2.y], [e1.x, e1.top, -e1.y],
+              [dx / l, 0, -dy / l], [o1 / 4, 0], [o2 / 4, 0], [o2 / 4, 0.1], [o1 / 4, 0.1], white);
+          }
           const u0 = along[i] / 4, u1 = along[i + 1] / 4;
           const A1 = [a1.x, a1.top, -a1.y], B1 = [b1.x, b1.top, -b1.y], B2 = [b2.x, b2.top, -b2.y], A2 = [a2.x, a2.top, -a2.y];
           if (onGround === drawnGround && !(level && (p[i][3] || p[i + 1][3]))) {
@@ -1462,6 +1500,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (edges || flat) for (const [e, side] of [[o1, -1], [o2, 1]] as const) {
             const ea = at(i, e), eb = at(i + 1, e), n = nrm[i];
             const out = [n[0] * side, 0, -n[1] * side];
+            // (where the square's own faces lie just outside, about level with it, the edge is a kerb
+            // down to them, not a wall down to the ground lowered under the street)
+            const next = beside?.((ea.x + eb.x) / 2 + n[0] * side * 0.3, (ea.y + eb.y) / 2 + n[1] * side * 0.3);
+            if (next != null) {
+              ea.foot = Math.max(ea.foot, Math.min(ea.top - lift - 0.12, next - Z0 - 0.05));
+              eb.foot = Math.max(eb.foot, Math.min(eb.top - lift - 0.12, next - Z0 - 0.05));
+            }
             // a tall face is stone: a retaining wall under the street's edge, or holding the bank back beside it
             const tall = flat && faceGeo && Math.max(ea.top - ea.foot, eb.top - eb.foot) > 0.45;
             const sg = tall ? faceGeo! : g, sc = tall ? STONE : white, k = tall ? 2.5 : 1;
@@ -1585,8 +1630,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     arch: { deck: BRIDGE_DECK.arch, gap: 16 }, beam: { deck: BRIDGE_DECK.beam, gap: 26 }, truss: { deck: BRIDGE_DECK.truss, gap: 45 },
     foot: { deck: BRIDGE_DECK.foot, gap: 18 }, suspension: { deck: BRIDGE_DECK.suspension, gap: Infinity },
   };
-  /** An upright block on corners [x, y] (data) from low to high. */
+  /** An upright block on corners [x, y] (data) from low to high, as solid as it looks. */
   function prism(g: Geo, c: number[][], low: number, high: number, col: number[]) {
+    map.addStructure(c, low, high);
     const mx = c.reduce((s, q) => s + q[0], 0) / c.length, my = c.reduce((s, q) => s + q[1], 0) / c.length;
     for (let k = 0; k < c.length; k++) {
       const A = c[k], B = c[(k + 1) % c.length], l = Math.hypot(B[0] - A[0], B[1] - A[1]);
@@ -2016,6 +2062,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
                 [uA, e / 2.5], [uB, e / 2.5], [uB, w / 2.5], [uA, w / 2.5], stone ? COPING : CONCRETE);
               const bank = (q: Pt) => Math.min(floor(q), ground(q.x + q.nx * h, -(q.y + q.ny * h)) - 0.1);
               lowA = bank(A); lowB = bank(B);
+              // (the deck's own parapets are the map's; these stand on the bank, where it falls away)
+              const m = (w + h) / 2, a = at(A, m, 0), b = at(B, m, 0);
+              map.addParapet(a[0], -a[2], b[0], -b[2], A.top + 1.25, B.top + 1.25, Math.min(gA, gB));
             }
             if (kind === "arch" || kind === "beam") {
               const up = stone ? PARAPET : 0.35, col = stone ? STONE : CONCRETE;
@@ -2163,6 +2212,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // ground joins its faces rather than a strip laid over and beside them: sp 1 says so of paths'
     // bridges, sp 2 of every bridge)
     // (with the decks drawn as faces, a bridge's deck has no strip but a set piece's own)
+    const besideFaces = faced && rd.some((r) => r.piece) ? faceLookup(sf!, rd.filter((r) => r.piece)) : null;
     const laid = faced && sf!.sp && own ? rd.flatMap((r) => (own(r) && !r.piece && (PATHS.has(r.c) || sf!.sp! > 1) ? (decksFaced && !r.held ? [] : deckStretches(r)) : [r])) : rd;
     for (let k = 0; k < laid.length; k += 15) {
       const part = laid.slice(k, k + 15).filter((r) => !faced || own?.(r) || r.piece), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
@@ -2178,9 +2228,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const paveBands = (r: Road) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a);
       strips(kerb.filter((r) => pv(r) > 0 && !r.piece), paveBands, 0.17, onOtherStreet, true, own, geo.pave);
       // a set piece's own pavements, and the carriageway running on across them where a street joins
-      const joins = (r: Road, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => joinsAt(r, a, b, na, nb, o1, o2, carriagewayAtLevel);
-      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.17, undefined, true, own, geo.pave, undefined, joins);
-      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.07, undefined, false, own, geo.road, undefined, (r, a, b, na, nb, o1, o2) => !joins(r, a, b, na, nb, o1, o2));
+      // (as the square's faces just outside it have it where they reach it, so the two make one
+      // corner; where they don't, as another street meets it: setpieces.ts bandBeside)
+      const joins = (r: Road, a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => {
+        const k = besideFaces ? bandBeside(a, b, na, nb, o1, o2, besideFaces.kind) : null;
+        return k ? k === "road" : joinsAt(r, a, b, na, nb, o1, o2, carriagewayAtLevel);
+      };
+      // (but a stretch the square's faces lay, at a junction, is theirs: setpieces.ts streetFootprint)
+      const laidHere = (a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => {
+        const o = (o1 + o2) / 2;
+        return !!besideFaces?.kind((a[0] + b[0] + (na[0] + nb[0]) * o) / 2, (a[1] + b[1] + (na[1] + nb[1]) * o) / 2);
+      };
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.17, undefined, true, own, geo.pave, undefined,
+        (r, a, b, na, nb, o1, o2) => laidHere(a, b, na, nb, o1, o2) || joins(r, a, b, na, nb, o1, o2), besideFaces?.top);
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.07, undefined, false, own, geo.road, undefined,
+        (r, a, b, na, nb, o1, o2) => laidHere(a, b, na, nb, o1, o2) || !joins(r, a, b, na, nb, o1, o2));
       yield;
     }
     // what holds the bridges up, each built whole (joinSpans)

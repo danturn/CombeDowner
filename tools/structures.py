@@ -348,12 +348,17 @@ def split_back(r):
 TOW_OVER = 2.0      # metres a deck stands over the towpath at its end for the span to reach on over it
 
 
-def towpath_points(run, z, c, canal_open, canal_tree, locks, bridged):
+TOW_CLIMB = 1.0     # metres over the towpath a path's end at a street must be to have climbed the bank to it
+TOW_FOOT = 0.5      # metres over the towpath the survey has a path's point at, still on the towpath
+
+
+def towpath_points(run, z, c, canal_open, canal_tree, locks, bridged, streets=(), bank=None):
     """{i: height} of the points of a path's run that lie on the canal's towpath: level with the
     coping, whatever the survey made of the ground, so the path neither rises to the bridges over it
     nor dips under them. A path crossing the bank on its way to the towpath is level with it there.
     The run keeps its place (the street graph has fitted it); prep_map.py's `towpath` also moves the
-    points onto the towpath's middle."""
+    points onto the towpath's middle. `streets`: which of its ends (0, the last) meet a street; `bank`
+    takes the points of a path climbing the bank from the towpath to one."""
     snap = c != "steps"
     at = {}
     for i, q in enumerate(run):
@@ -378,6 +383,20 @@ def towpath_points(run, z, c, canal_open, canal_tree, locks, bridged):
             at[i] = lv + TOW_UP
         elif snap and w >= 1.5 and along >= 0.8 and half - 1.0 < abs(o) < half + w + 1.5:
             at[i] = lv + TOW_UP
+    # a path that leaves the towpath up the bank to a street (at a bridge's end, say) is on the
+    # towpath only as far as the survey has it near the towpath's level: put on it all the way, it
+    # met the street a storey below it, against the bridge's side
+    if at:
+        tow = min(at.values())
+        for end in streets:
+            if z[end] < tow + TOW_CLIMB:
+                continue
+            i, step = end, (1 if end == 0 else -1)
+            while 0 <= i < len(run) and z[i] > tow + TOW_FOOT:
+                at.pop(i, None)
+                if bank is not None:
+                    bank.add(i)
+                i += step
     on = sorted(at)
     for i0, i1 in zip(on, on[1:]):
         if 1 < i1 - i0 <= 3:
@@ -478,9 +497,15 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
     # the towpath is level with the canal's banks: nothing eases it and no span is carried over it
     if canal_open:
         canal_tree = STRtree([LineString([a[:2], b[:2]]) for a, b, _ in canal_open])
-        for r in pending:
+        def at_street(k, q):
+            # (as near as joined() takes a junction to be: the graph has fitted both)
+            return any(pending[int(j)]["c"] not in PATHS and road_lines[int(j)].distance(Point(q[:2])) < 2.5
+                       for j in road_tree.query(Point(q[:2]).buffer(2.5)) if int(j) != k)
+        for k, r in enumerate(pending):
             if r["c"] in PATHS:
-                r["tow"] = {i: h for i, h in towpath_points(r["run"], r["z"], r["c"], canal_open, canal_tree, locks, r["span"]).items()
+                ends = [e for e in (0, len(r["run"]) - 1) if at_street(k, r["run"][e])]
+                r["bank"] = set()
+                r["tow"] = {i: h for i, h in towpath_points(r["run"], r["z"], r["c"], canal_open, canal_tree, locks, r["span"], ends, r["bank"]).items()
                             if i not in r.get("gone", ())}
                 r["span"] -= set(r["tow"])
                 for i, h in r["tow"].items():
@@ -608,7 +633,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
                 if pl.length > 6 and pl.intersection(poly).length < 0.6 * min(pl.length, line.length) and road_lines[k].crosses(pl):
                     continue
                 for i, q in enumerate(r["run"]):
-                    if i in r["tow"] or i in under or not poly.contains(Point(q[:2])):
+                    # (nor does one climbing the bank from the towpath to the street at its end)
+                    if i in r["tow"] or i in under or i in r.get("bank", ()) or not poly.contains(Point(q[:2])):
                         continue
                     t = line.project(Point(q[:2])) / (line.length or 1) * (len(zs) - 1)
                     lo = min(len(zs) - 2, int(t))
