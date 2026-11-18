@@ -4944,7 +4944,7 @@ SURFACE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04}   # how far the game l
 JOIN_REACH = 0.3        # metres past a street's pavement that a path's end still meets it
 
 
-def abutments_on_the_ground(rd, sq, ground):
+def abutments_on_the_ground(rd, sq, ground, paved=None):
     """A path's bridge's abutment, the point either side of its span, at the ground there: the game
     lands the deck on the grid's ground at it whatever the way's own point says, and the faces
     leaving it are laid from that point. (A road's approach climbs on its own embankment, which the
@@ -4962,12 +4962,20 @@ def abutments_on_the_ground(rd, sq, ground):
                 continue
             if min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1:
                 continue
+            # (a path's way into a tunnel from a pavement keeps the pavement's height it was given)
+            tunnel = all(len(n) < 4 or n[3] == 2 for n in p[max(0, i - 1):i + 2] if n is not q)
+            if tunnel and i in (0, len(p) - 1) and paved is not None and shapely.dwithin(paved, Point(q[:2]), PAVED_NEAR):
+                continue
             z = ground(q[0], q[1])
             if z is not None:
                 p[i] = [q[0], q[1], round(z, 2)] + list(q[3:])
 
 
-def ways_meet_level(rd, sq, ground, tunnels=()):
+PAVED_REACH = 15.0      # metres from its street that a pavement widened to the walls still reaches
+PAVED_NEAR = 1.0        # metres off a pavement a path's end still leaves it from (its own piece is cut from it)
+
+
+def ways_meet_level(rd, sq, ground, tunnels=(), paved=None):
     """Where a path meets a street, or another path, the two are at one height: a path's end on a
     pavement is laid level with the pavement's top and on a carriageway with the road's, and paths
     sharing a point share its height, the path's own climb eased in to it no steeper than a walk; a
@@ -4982,14 +4990,18 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
     tree = STRtree(lines) if lines else None
     half = [r.get("w", 4) / 2 for r in streets]
     reach = [h + max(r.get("pv") or (0, 0)) for h, r in zip(half, streets)]
+    # (a path going into a tunnel too: its end on a pavement is held at the pavement's top and the
+    # path takes the drop on its way in, where the pavement had been let down to the path's ground)
     walks = [r for r in rd if r["c"] in GAME_PATHS and r["c"] != "pedestrian" and len(r["p"]) > 1
-             and not any(len(q) > 3 and q[3] for q in r["p"])]
+             and not any(len(q) > 3 and q[3] and q[3] != 2 for q in r["p"])]
     # (a point a path shares with a bridge's way is the bridge's record too, which is left as it is)
     for r in walks:
         r["p"] = [list(q) for q in r["p"]]
+    bored = {id(q) for r in walks for q in r["p"] if len(q) > 3 and q[3]}
 
-    def street_top(x, y):
-        """The drawn top of the street a point lies on, as a path's point's height, or None."""
+    def street_top(x, y, wide=False):
+        """The drawn top of the street a point lies on, as a path's point's height, or None (`wide`:
+        or of the pavement widened out from the nearest street that it leaves)."""
         if tree is None:
             return None
         p = Point(x, y)
@@ -5003,24 +5015,38 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
             if z is not None:
                 kind = "road" if d <= half[k] else "pave"
                 best = (d, z + SURFACE_LIFT[kind] - SURFACE_LIFT["path"])
+        # (a pavement widened out to the walls reaches past the street's own width: a point on it is
+        # at the pavement's top, the level of the nearest street it belongs to)
+        if best is None and wide and paved is not None and shapely.dwithin(paved, p, PAVED_NEAR):
+            for k in tree.query(p, predicate="dwithin", distance=PAVED_REACH):
+                k = int(k)
+                d = lines[k].distance(p)
+                if best is not None and d >= best[0]:
+                    continue
+                z = _level_at(heights[k], x, y, ground, square)
+                if z is not None:
+                    best = (d, z + SURFACE_LIFT["pave"] - SURFACE_LIFT["path"])
         return None if best is None else best[1]
 
     moved = 0
     changed = set()
     # paths sharing a point share its height (a flight lands on the path it meets, so a path's wins)
     at, meet = {}, collections.Counter()
-    for r in sorted(walks, key=lambda r: r["c"] == "steps"):
+    # (a path into a tunnel shares no heights here: only its end on a pavement is held, below)
+    for r in sorted([r for r in walks if not any(id(q) in bored for q in r["p"])], key=lambda r: r["c"] == "steps"):
         if r["c"] != "steps":
             for key in {(round(q[0], 1), round(q[1], 1)) for q in r["p"]}:
                 meet[key] += 1
         for q in r["p"]:
             key = (round(q[0], 1), round(q[1], 1))
+            if id(q) in bored:
+                continue
             if key in at and abs(at[key] - q[2]) > 0.01 and min(q[0] - sq[0], sq[2] - q[0], q[1] - sq[1], sq[3] - q[1]) >= 0.1:
                 q[2] = at[key]
                 changed.add(id(q))
                 moved += 1
             at.setdefault(key, q[2])
-    flat = [r for r in walks if r["c"] != "steps"]
+    flat = [r for r in walks if r["c"] != "steps" and not any(id(q) in bored for q in r["p"])]
     flat_lines = [LineString([q[:3] for q in r["p"]]) for r in flat]
     flat_tree = STRtree([LineString([q[:2] for q in r["p"]]) for r in flat]) if flat else None
 
@@ -5045,7 +5071,7 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
     for r in rd:
         f = [len(q) > 3 and bool(q[3]) for q in r["p"]]
         if any(f):
-            abutments += [r["p"][i][:2] for i in range(len(f)) if not f[i] and ((i and f[i - 1]) or (i + 1 < len(f) and f[i + 1]))]
+            abutments += [(r["p"][i][:2], r) for i in range(len(f)) if not f[i] and ((i and f[i - 1]) or (i + 1 < len(f) and f[i + 1]))]
 
     # (a way cut at a portal ends on the bore's floor, under the street over the arch)
     portals = [q for t in tunnels or () if len(t.get("p") or ()) > 1 for q in (t["p"][0], t["p"][-1])]
@@ -5053,9 +5079,10 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
     def at_portal(q):
         return any(math.dist(q[:2], m[:2]) <= 1.0 and abs(q[2] - m[2]) <= 0.5 for m in portals)
 
-    def abutment_ground(x, y):
-        for a in abutments:
-            if math.dist(a, (x, y)) <= 0.5:
+    def abutment_ground(r, x, y):
+        # (a path's own way in to its tunnel is no deck's end: it is held at what it meets)
+        for a, of in abutments:
+            if of is not r and math.dist(a, (x, y)) <= 0.5:
                 return ground(*a)
         return None
 
@@ -5063,19 +5090,25 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
     # only if neither moves it)
     x0, y0, x1, y1 = sq
     on_edge = lambda q: min(q[0] - x0, x1 - q[0], q[1] - y0, y1 - q[1]) < 0.1   # (or past it)
-    held = {id(q) for r in walks for q in r["p"] if on_edge(q)}
+    held = {id(q) for r in walks for q in r["p"] if on_edge(q)} | bored
     for r in walks:
         p = r["p"]
         for end in (0, -1):
             # (where paths meet each other they keep the height they share, but at an abutment every
             # one of them meets the deck on the ground there)
-            z = None if on_edge(p[end]) else abutment_ground(*p[end][:2])
+            if id(p[end]) in bored:
+                continue
+            z = None if on_edge(p[end]) else abutment_ground(r, *p[end][:2])
             if z is None and (on_edge(p[end]) or at_portal(p[end]) or meet[(round(p[end][0], 1), round(p[end][1], 1))] > (r["c"] != "steps")):
                 held.add(id(p[end]))
                 continue
+            into = any(id(q) in bored for q in p)
+            if into and meet[(round(p[end][0], 1), round(p[end][1], 1))]:
+                held.add(id(p[end]))
+                continue
             if z is None:
-                z = street_top(*p[end][:2])
-            if z is None:
+                z = street_top(*p[end][:2], wide=into)
+            if z is None and not into:
                 z = path_top(r, *p[end][:2])
             if z is None:
                 continue
@@ -5093,6 +5126,8 @@ def ways_meet_level(rd, sq, ground, tunnels=()):
     for r in walks:
         p = r["p"]
         if r["c"] == "steps":
+            if any(id(q) in bored for q in p):
+                continue
             cum = [0.0]
             for a, b in zip(p, p[1:]):
                 cum.append(cum[-1] + math.dist(a[:2], b[:2]))
@@ -5888,22 +5923,33 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     reach_mid = [way_width(r) / 2 + LEVEL_REACH for r in levelled]
     # (and a path's approach to a bridge, off the span, level across too, its abutment at the ground
     # the game lands the deck on: on the hill's own slope its face met the deck's end tilted)
+    mouths = []
     for r in rd:
         if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2:
             continue
         f = [len(q) > 3 and bool(q[3]) for q in r["p"]]
         if not any(f):
             continue
+        # (but a path's way into a tunnel keeps its own heights, as far as the tunnel's first point:
+        # held at a pavement's top where it leaves it, laid on the ground at its mouth it sank the
+        # pavement round it into a skirt)
+        bore = [len(q) > 3 and q[3] == 2 for q in r["p"]]
         run = []
         for i, q in enumerate(r["p"] + [None]):
             if q is not None and not f[i]:
-                lands = (i and f[i - 1]) or (i + 1 < len(f) and f[i + 1])
+                lands = (i and f[i - 1] and not bore[i - 1]) or (i + 1 < len(f) and f[i + 1] and not bore[i + 1])
+                if not run and i and bore[i - 1]:
+                    run.append(tuple(r["p"][i - 1][:3]))
                 z = ground(q[0], q[1]) if lands else q[2]
                 run.append((q[0], q[1], q[2] if z is None else z))
+                if i + 1 < len(f) and bore[i + 1]:
+                    run.append(tuple(r["p"][i + 1][:3]))
                 continue
             if len(run) > 1:
                 middles.append(LineString(run))
                 reach_mid.append(way_width(r) / 2 + LEVEL_REACH)
+                if any(bore):
+                    mouths.append((middles[-1], reach_mid[-1]))
             run = []
     for rows, half in ((fp, FRONT_PATH_HALF), (dv, DRIVE_WIDTH / 2)):
         for row in rows:
@@ -6277,6 +6323,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if g is not None:
             z = v[3 * k + 2]
             if widened is not None and shapely.contains_xy(widened, x, y):
+                # (but beside a path's way into a tunnel, at that way's height: it leaves the pavement
+                # at the pavement's top, and the ground at its mouth is the hole it goes down into)
+                near = [line for line, reach in mouths if line.distance(Point(x, y)) <= reach]
+                if near:
+                    line = min(near, key=lambda l: l.distance(Point(x, y)))
+                    g = line.interpolate(line.project(Point(x, y))).z
                 v[3 * k + 2] = round(g, 2)
             else:
                 v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
@@ -10534,8 +10586,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     steep_flights_that_fit(rd, ground)
     rd, _ = flight_pieces.settle_overlaps(rd, GAME_PATHS, way_width)
     rd, _ = flights_across_streets(rd, way_width)
-    ways_meet_level(rd, sq, ground, tile.get("tn"))
-    abutments_on_the_ground(rd, sq, ground)
+    paved = unary_union([face_shape(f) for f in part["faces"] if f["cls"] == "pavement" and len(f["xy"]) > 2] or [Polygon()])
+    shapely.prepare(paved)
+    ways_meet_level(rd, sq, ground, tile.get("tn"), paved)
+    abutments_on_the_ground(rd, sq, ground, paved)
     flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width))
     tile["se"] = structure_ends.settle(rd, structure_ends.city_ends(profiles, [r["id"] for r in near_roads]), sq)
     unreached_low_arches(tile, rd, sq)
