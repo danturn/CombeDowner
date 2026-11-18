@@ -584,6 +584,19 @@ export function joinsAt(r: Road, a: number[], b: number[], na: number[], nb: num
   return ([[a, na], [b, nb]] as const).some(([q, n]) => [lo, mid, hi].some((o) => onOther(r, q[0] + n[0] * o, q[1] + n[1] * o, q[2])));
 }
 
+/** What the square's own faces are just outside a set piece's pavement band from a to b (as
+ *  joinsAt): "road" or "pave" where most of it reads one, null where they don't reach it. The band
+ *  is drawn to match, so the street's own pavement and the paving the map laid round it make one
+ *  corner, rather than the band standing on as a stub beside the map's carriageway or giving way
+ *  to carriageway beside its pavement. */
+export function bandBeside(a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number,
+  faceAt: (x: number, y: number) => string | null): "road" | "pave" | null {
+  const outer = Math.abs(o2) > Math.abs(o1) ? o2 : o1, o = outer + Math.sign(outer) * 0.3;
+  const got = [0.15, 0.5, 0.85].map((f) => faceAt(a[0] + (b[0] - a[0]) * f + (na[0] + (nb[0] - na[0]) * f) * o, a[1] + (b[1] - a[1]) * f + (na[1] + (nb[1] - na[1]) * f) * o));
+  const n = (k: string) => got.filter((g) => g === k).length;
+  return n("road") >= 2 ? "road" : n("pave") >= 2 ? "pave" : null;
+}
+
 /** Is (x, y) on a set piece's street r's carriageway? The map's own record of the street runs along
  *  under it there and isn't a street joining it, though a branch of the same name leaving it is. */
 export function alongside(r: Road, x: number, y: number): boolean {
