@@ -1,5 +1,5 @@
 // Every control in the game in one place: what it does, its keys and mouse button, its button on a
-// game controller (Call of Duty: Warzone's default layout), and its word on a touch screen. Prompts
+// game controller (Call of Duty: Warzone's default layout, CODish, or Dragon Camp's: PAD_LAYOUTS), and its word on a touch screen. Prompts
 // name controls, never keys: ctl("use") gives "E", "□" or "Use" by whichever was touched last (the
 // keyboard, the pad or the screen), and ctlText("{use} Get in") does the same for a whole line.
 // The pad's buttons (gamepad.ts), the Buttons list in Settings, the Controls list on the menu and the
@@ -43,10 +43,12 @@ export interface Control {
   keys?: string[];
   /** A mouse button that does it (0 left, 1 middle, 2 right). */
   mouse?: number;
-  /** Its button on a pad, in the Warzone layout, if it has one of its own. */
+  /** Its button on a pad, in the Warzone (CODish) layout, if it has one of its own. */
   pad?: number;
   /** On the pad it's taken by holding its button, which a tap does something else with. */
   hold?: boolean;
+  /** On the pad only a hold does it, even with nothing on a tap of its button. */
+  holdOnly?: boolean;
   /** Its word on a touch screen. */
   touch?: string;
   where?: Where;
@@ -135,6 +137,38 @@ export const STREETS: Control[] = [
   { id: "station", name: "Change station", keys: ["KeyI"], pad: B.left, touch: "Change station", where: "back" },
   { id: "window", name: "Window", keys: ["KeyU"], pad: B.right, touch: "Window", where: "back" },
 ];
+
+/** The pad's layouts for the streets: CODish is the table above (Warzone's defaults), and Dragon
+ *  Camp is Arma Reforger's on a PS5 as near as the game allows, set as what differs from CODish.
+ *  Square uses on a tap and reloads on a hold (a tap reloads when there's nothing to use); the radio
+ *  is on L1; the weapons (and calling a bus) are on the d-pad, where Reforger keeps its quick slots;
+ *  binoculars are a hold of d-pad down; getting on a ride, putting a ladder up or a strange object
+ *  down are on use, as getting in a car is, and getting off a ride is Triangle, as getting out of a
+ *  car is (main.ts); at the wheel the horn is L3 and the camera R3. Reforger has nothing like the
+ *  marker, so it goes on R1, the shoulder button left over. Chosen in Settings (gamepad.ts). */
+export type PadLayout = "codish" | "dragon";
+export const PAD_LAYOUTS: Record<PadLayout, string> = { codish: "CODish", dragon: "Dragon Camp" };
+const DRAGON_CAMP: Record<string, Partial<Control> | null> = {
+  use: { pad: B.square, hold: false },
+  reload: { pad: B.square, hold: true },
+  prev: { pad: B.left },
+  next: { pad: B.right },
+  radio: { pad: B.l1 },
+  mark: { pad: B.r1 },
+  bino: { pad: B.down, hold: true, holdOnly: true },
+  ride: null,
+  horn: { pad: B.l3 },
+  view: { pad: B.r3 },
+};
+/** The streets' table with a layout's buttons on it. */
+export function streetsFor(layout: PadLayout): Control[] {
+  if (layout === "codish") return STREETS;
+  return STREETS.map((c) => {
+    if (!(c.id in DRAGON_CAMP)) return c;
+    const o = DRAGON_CAMP[c.id];
+    return o ? { ...c, ...o } : { ...c, pad: undefined, hold: undefined };
+  });
+}
 
 /** Down the mines. */
 export const MINES: Control[] = [

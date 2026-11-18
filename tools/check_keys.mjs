@@ -80,11 +80,12 @@ for (const f of files(ROOT)) {
   });
 }
 const bad = [];
-const runsOf = (file, from) => {
+const runsOf = (file, from, end = "\n}, ") => {
   const src = fs.readFileSync(ROOT + file, "utf8"), i = src.indexOf(from);
-  return i < 0 ? "" : src.slice(i, src.indexOf("\n}, ", i));
+  return i < 0 ? "" : src.slice(i, src.indexOf(end, i));
 };
-const RUNS = { streets: runsOf("src/main.ts", "padActions(STREETS"), mines: runsOf("src/mines/main.ts", "padActions(MINES") };
+// the streets' runs are one table for both pad layouts (padRuns in main.ts)
+const RUNS = { streets: runsOf("src/main.ts", "const padRuns", "\n});"), mines: runsOf("src/mines/main.ts", "padActions(MINES") };
 // the mines have no touch controls, so input() never says "touch" down there
 const TOUCH = { streets: /id="touch"/.test(fs.readFileSync(ROOT + "index.html", "utf8")), mines: /id="touch"/.test(fs.readFileSync(ROOT + "mines.html", "utf8")) };
 const MAP_PAD = runsOf("src/game.ts", "mapPad(b: number");

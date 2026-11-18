@@ -3,7 +3,7 @@
 // (its own button order, the triggers and d-pad as axes) is put into that order here, and anything
 // else gets a best guess. Each page is told when a pad comes or goes, so it can say so. The left stick walks (or steers), the right stick looks, the triggers shoot and aim
 // (or drive and brake), and the rest stand in for keys, laid out as Call of Duty: Warzone lays them out
-// by default so a pad feels familiar: Square reloads on a tap and uses on a hold (a tap is enough when
+// by default so a pad feels familiar (CODish; Settings also has Dragon Camp, Arma Reforger's, for the streets): Square reloads on a tap and uses on a hold (a tap is enough when
 // there's something to use), Circle crouches on a tap and lies down on a hold, Triangle swaps weapon
 // (and gets out of a car). A button can carry one thing on a tap and another on a hold: the tap goes
 // when you let go, the hold once it's been held a moment. It's only another way of pressing the same
@@ -18,7 +18,7 @@
 // Who decides what: nobody. Like the keyboard, a pad only moves you; what you do goes out as usual.
 import type { Player } from "./player";
 import { modalUp } from "./modal";
-import { B, HOLD_MS, PAD_NAME, keyName, padHooks, type Control, type Where } from "./controls";
+import { B, HOLD_MS, PAD_LAYOUTS, PAD_NAME, keyName, padHooks, type Control, type PadLayout, type Where } from "./controls";
 
 export { B, PAD_NAME };
 
@@ -90,6 +90,30 @@ function showPadSettings() {
   }
 }
 
+// ---- the layout ------------------------------------------------------------------------------
+
+/** Which layout the streets' buttons are in (controls.ts), kept in this browser. */
+const LAYOUT_STORE = "cd-padlayout";
+let layoutNow: PadLayout = "codish";
+try { if (localStorage.getItem(LAYOUT_STORE) === "dragon") layoutNow = "dragon"; } catch { /* private window: CODish */ }
+export const padLayout = () => layoutNow;
+// the page that has a choice of layouts puts its buttons on again with this when it changes
+let relayout: (() => void) | null = null;
+/** A page with a choice of layouts (the streets): how to put its buttons on again after a change. */
+export function padLayouts(redo: () => void) { relayout = redo; }
+function setLayout(l: PadLayout) {
+  if (l === layoutNow) return;
+  layoutNow = l;
+  try { localStorage.setItem(LAYOUT_STORE, l); } catch { /* just this visit */ }
+  listening = null;
+  pending = null;
+  relayout?.();
+  buttonsList();
+  padControlsList();
+  const el = document.getElementById("pad-layout") as HTMLSelectElement | null;
+  if (el) el.value = l;
+}
+
 /** The controls list on the menu, from the page's table: each control's keys, and its pad button
  *  beside them once a pad's been seen. Rows marked data-ctl in the page are filled in; the rest
  *  (voice, pickups) stay as written. */
@@ -104,7 +128,7 @@ function padControlsList() {
     const named = new Set<string>();
     for (const c of cs) {
       const a = actions.find((x) => x.id === c.id);
-      const n = a ? label(a, over(a) ? a.where : "foot") : c.say?.pad;
+      const n = a ? label(a, over(a) ? a.where : "foot") : names[c.id]?.() ?? c.say?.pad;
       if (n) named.add(n);
     }
     if (!named.size) continue;
@@ -123,6 +147,14 @@ export function padSettings() {
   padControlsList();
   buttonsList();
   showPadSettings();
+  // the layout, where a page has a choice (the streets: the box shows only there)
+  const lay = document.getElementById("pad-layout") as HTMLSelectElement | null;
+  if (lay) {
+    lay.closest<HTMLElement>(".padlayout")!.hidden = !relayout;
+    lay.replaceChildren(...(Object.keys(PAD_LAYOUTS) as PadLayout[]).map((l) => new Option(PAD_LAYOUTS[l], l)));
+    lay.value = layoutNow;
+    lay.addEventListener("change", () => setLayout(lay.value === "dragon" ? "dragon" : "codish"));
+  }
   for (const k of Object.keys(PAD_INPUTS) as (keyof PadSettings)[]) {
     const el = document.getElementById(PAD_INPUTS[k]) as HTMLInputElement | null;
     if (!el) continue;
@@ -134,6 +166,7 @@ export function padSettings() {
 export function resetPadSettings() {
   for (const k of Object.keys(PAD_DEFAULTS) as (keyof PadSettings)[]) setPad(k, PAD_DEFAULTS[k]);
   showPadSettings();
+  if (relayout) setLayout("codish");
   resetButtons();
 }
 
@@ -170,15 +203,23 @@ let bound: Record<string, number> = {};
 let bindKey = "";
 let context: () => Where = () => "foot";
 let listening: PadAction | null = null;
+// what prompts call a control with no button of its own in this layout (Dragon Camp's rides: use or Triangle)
+let names: Record<string, () => string | undefined> = {};
 
 // kept with the buttons you've moved; a list without it was saved under the old layout
-const LAYOUT_KEY = "_layout", LAYOUT = "warzone";
+const LAYOUT_KEY = "_layout";
+let LAYOUT = "warzone";
 
 /** This page's buttons, from its table of controls (controls.ts) and what each does here; where
  *  they're kept in this browser; and where you are (on foot, at a wheel or helm, in a back seat).
- *  `before` is where any control sat in the layout before Warzone's, for lists kept from then. */
-export function padActions(table: Control[], runs: PadRuns, storeAs: string, where: () => Where = () => "foot", before: Record<string, number> = {}) {
+ *  `before` is where any control sat in the layout before Warzone's, for lists kept from then.
+ *  `layout` is the one the table's in (each keeps the buttons you've moved apart), and `say` names
+ *  any control that's done by another's button here. */
+export function padActions(table: Control[], runs: PadRuns, storeAs: string, where: () => Where = () => "foot", before: Record<string, number> = {},
+  layout = "warzone", say: Record<string, () => string | undefined> = {}) {
   page = table;
+  LAYOUT = layout;
+  names = say;
   actions = table.filter((c) => c.pad !== undefined && runs[c.id]).map((c) => {
     const r = runs[c.id];
     return { ...c, pad: c.pad!, where: c.where ?? "all", ...(typeof r === "function" ? { run: r } : r) };
@@ -206,7 +247,7 @@ export function padActions(table: Control[], runs: PadRuns, storeAs: string, whe
     const back = before[a.id];
     bound[a.id] = back !== undefined && !taken(a, back) ? back : freeFor(a, bound[a.id]);
   }
-  padHooks((id) => { const a = actions.find((x) => x.id === id); return a ? label(a, over(a) ? a.where : context()) : undefined; }, padInUse);
+  padHooks((id) => { const a = actions.find((x) => x.id === id); return a ? label(a, over(a) ? a.where : context()) : names[id]?.(); }, padInUse);
 }
 
 function saveButtons() {
@@ -226,7 +267,7 @@ function rowsOn(b: number, here: Where): PadAction[] {
 }
 
 // a button with a tap and a hold on it, pressed and not yet let go or held long enough to tell
-let pending: { b: number; at: number; tap: PadAction; hold: PadAction } | null = null;
+let pending: { b: number; at: number; tap: PadAction | null; hold: PadAction } | null = null;
 
 /** A button pressed or let go while playing: whatever it's set to do. At the wheel the triggers are
  *  the pedals and do nothing else. Let-gos go to everything on the button, so nothing's left held. */
@@ -238,7 +279,7 @@ export function padTake(fn: typeof taker) { taker = fn; }
 export function padPress(b: number, down: boolean) {
   if (taker?.(b, down)) return;
   if (!down) {
-    if (pending?.b === b) { const t = pending.tap; pending = null; t.run(true); }
+    if (pending?.b === b) { const t = pending.tap; pending = null; t?.run(true); }
     for (const a of actions) if (bound[a.id] === b) a.run(false);
     return;
   }
@@ -246,7 +287,9 @@ export function padPress(b: number, down: boolean) {
   if (here === "wheel" && (b === B.r2 || b === B.l2)) return;
   const rows = rowsOn(b, here);
   const tapRow = rows.find((x) => !x.hold), holdRow = rows.find((x) => x.hold);
-  if (tapRow && holdRow && !holdRow.now?.()) { pending = { b, at: performance.now(), tap: tapRow, hold: holdRow }; return; }
+  // a tap that's enough right now goes at once and stays down (Dragon Camp's use, with something to use)
+  if (tapRow && holdRow && !holdRow.now?.() && tapRow.now?.()) { tapRow.run(true); return; }
+  if (holdRow && !holdRow.now?.() && (tapRow || holdRow.holdOnly)) { pending = { b, at: performance.now(), tap: tapRow ?? null, hold: holdRow }; return; }
   (holdRow ?? tapRow)?.run(true);
 }
 
@@ -258,7 +301,7 @@ function padTick(now: number) {
 /** A row's button as a prompt names it: "hold □" when a tap of it would do something else. */
 function label(a: PadAction, here: Where): string {
   const b = bound[a.id], name = PAD_NAME[b];
-  return a.hold && !a.now?.() && rowsOn(b, here).some((x) => !x.hold) ? `hold ${name}` : name;
+  return a.hold && !a.now?.() && (a.holdOnly || rowsOn(b, here).some((x) => !x.hold)) ? `hold ${name}` : name;
 }
 
 /** The button a key is on, for the old way of naming keys (keyLabel): the row of the place you're in, else the one on foot. */
@@ -288,7 +331,7 @@ function buttonsList() {
         const name = document.createElement("span"), btn = document.createElement("kbd");
         name.textContent = a.name;
         btn.textContent = listening === a ? "Press a button…"
-          : a.hold && actions.some((y) => y !== a && bound[y.id] === bound[a.id] && !y.hold && together(a, y)) ? `hold ${PAD_NAME[bound[a.id]]}` : PAD_NAME[bound[a.id]];
+          : a.hold && (a.holdOnly || actions.some((y) => y !== a && bound[y.id] === bound[a.id] && !y.hold && together(a, y))) ? `hold ${PAD_NAME[bound[a.id]]}` : PAD_NAME[bound[a.id]];
         row.append(name, btn);
         row.addEventListener("click", () => { listening = a; buttonsList(); refocus(a.id); });
         row.dataset.act = a.id;
@@ -297,7 +340,7 @@ function buttonsList() {
     }
     const reset = document.createElement("button");
     reset.type = "button";
-    reset.textContent = "Reset to default (Warzone layout)";
+    reset.textContent = `Reset to default (${PAD_LAYOUTS[layoutNow === "dragon" && relayout ? "dragon" : "codish"]} layout)`;
     reset.addEventListener("click", () => resetButtons());
     box.append(reset);
   }

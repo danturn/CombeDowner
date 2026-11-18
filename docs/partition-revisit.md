@@ -1651,3 +1651,50 @@ The ground is one constrained triangulation round the faces (`web/src/sheet.ts`
   If they are looked at again, two ways to go: keep the grid's own points in the triangulation
   near decks and flights (a few more triangles a square, only there), or put back the points
   where the grid's lines cross a face's edge there, as the cell-by-cell sheet does.
+
+## Bridges' decks as a level of the faces (17 November)
+
+Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
+`docs/plans/bridge-levels.md`). The maintainer accepted these trade-offs:
+
+- [ ] **Squares are up to 2% bigger while they carry both the strips and the decks' level.** Level 1 is
+  written alongside the old strip fields, so older pages still draw strips. On the trial squares the
+  game's packed square grew by 0.4–0.9% on most squares, 1.16% on 1_3 (Pulteney) and 1.82% on 2_4
+  (London Road's slips). The gate was +1%, and is +2% until the game draws from level 1. To undo it:
+  once the game draws decks from level 1 (stage 2 on), drop the strip-only fields it no longer reads
+  (the level-0 hole's held heights, the strip's own record fields) and measure again against +1%.
+- [ ] **Steps riding a deck are left off their deck's line** (rule 54 excuses them by kind). A flight
+  on a deck is held at the flight's height, as much as 2.8 m off the deck's line at 2_4
+  (276, 3242), and 2 m at 4_2 (3149, 1635). To undo it: give a flight on a deck a level of its own,
+  or land the deck's faces on the flight's treads.
+- [ ] **A few decks' ends don't share every corner with the street they land on** (rule 28 "deck
+  end not joined to the street": 6 over the eight trial squares, none before there were levels). Each
+  is a kerb rounding round a cap, so that the street's corner and the deck's don't meet:
+  - 0_3 (-1673, 2106), 1.5 m
+  - 1_2 (-524, 1624), 1.0 m
+  - 0_2 (-999, 1739), 0_3 (-939, 2372), 1_3 (-850, 2312) and 1_3 (-303, 2450), 0.3 m each
+
+  None shows as a lip in the trial shots with `?decks=1`. Moving corners straight on to the cap line
+  did worse on 1_2. To undo it: lay a cap's corners first and fit the kerbs' rounding to them,
+  rather than matching the two afterwards.
+- [x] **Where a deck crosses a square's side, the two squares disagreed about it** (rule 42 "faces
+  don't meet the next square's": 46 over the trial squares, 42 before; 43 now). The city's
+  structures pass already decides each way's spans once, for the whole way. Three steps in each
+  square then changed that decision for its own part, so the two squares could differ at the
+  point they share. Each now leaves the city's decision alone at the side:
+  - `structures.drop_empty_spans`, which judged each square's part of a span on its own, cleared
+    the trunk's span at 2_4/2_5 (700, 3872) in 2_5, because what it crosses is in 2_4. A stretch
+    reaching the square's side is now kept as the city marked it.
+  - `_cut_at_sides` gave the point on the side the marks of each square's own inside point. Now
+    both squares take the marks of the point nearer the side.
+  - `setpiece_cuts.lay` took a deck point off its deck if the nearest span in the square was a set
+    piece's, even 70 m away. At 0_3/1_3 (-932, 2337) that was Argyle Street in 1_3 and a
+    footway in 0_3. It now looks for a span within 15 m only.
+  - The deck's footprint, and the part level 0 gives up to it, runs on past the square's side far
+    enough to cover the corner a slanting deck leaves there.
+
+  Still open: the steps at 0_3/1_3 meet the side at a shallow angle, and each square runs its own
+  piece on past the side by a guess. Their footprints there still differ by a few metres along the
+  side, and the base build had a level-0 mismatch at the same spot. To undo it: lay a deck's
+  footprint at a side from the whole deck, both squares' pieces, rather than running each piece
+  on in a straight line.

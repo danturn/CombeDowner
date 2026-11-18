@@ -3641,6 +3641,20 @@ export class Game {
     this.sendState();
   }
 
+  /** Whether getting on or off your ride would do something now (toggleRide), for a pad layout
+   *  that puts it on use (Dragon Camp, main.ts): on a ride, carrying one you can get on, a strange
+   *  object to put down, or a ladder facing a wall it would go up. */
+  get rideUse(): boolean {
+    if (this.riding) return true;
+    const me = this.net.selfId, p = this.player;
+    if (!this.held && this.ladders.carriers.has(me)) return p.onGround && typeof this.ladders.aim(p.pos.x, p.pos.y, p.pos.z, p.yaw) !== "string";
+    if (!this.held && this.oddments.carrying(me)) return this.alive && !this.car && !this.ride;
+    return !!this.held && this.alive && !this.car && !this.ride && !this.basket && !this.sports.lining && !this.world.canal?.helmOf(me);
+  }
+  get isRiding() { return this.riding; }
+  /** Out and watching someone else (a race): the weapon buttons switch who. */
+  get watching() { return !this.alive && !!this.quests.spectate(); }
+
   /** Off your ride, keeping it with you. */
   private dismount(tell = true) {
     if (!this.riding) return;

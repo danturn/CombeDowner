@@ -10,7 +10,8 @@
 // Where the hill beside the cutting stands high, a wing wall holds it up, and the ground between
 // the wing walls is dug to the floor (world.ts, from cuttings()). A tunnel cut at its square's edge,
 // deep under the hill, has no portal there. A path's low arch just under a street has a face only
-// up to the street, and no wing walls or dug cutting: the map lays the steps or ramp down to it.
+// up to the street, and no wing walls or dug cutting: the map lays the steps or ramp down to it. A
+// lane that comes out of a building's passage has no headwall there: the building's wall is its face.
 //
 // ?portal=a or ?portal=b in the address draws tunnels the other way, to compare by eye (portalStyle).
 //
@@ -107,10 +108,11 @@ function onSeam(x: number, y: number, b: Bounds) {
   return !!b && Math.min(Math.abs(x - b[0]), Math.abs(y - b[1]), Math.abs(x - b[2]), Math.abs(y - b[3])) < 0.5;
 }
 
-/** Every portal, each with the tunnel it opens and which end. */
+/** Every portal, each with the tunnel it opens and which end. An end coming out of a building's wall
+ *  has none: the building is its face. */
 function allPortals(tn: Tunnel[], b: Bounds): Portal[] {
   const out: Portal[] = [];
-  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => { if (!onSeam(m.x, m.y, b)) out.push({ t, end: e as 0 | 1, ...m }); });
+  for (const t of tn) if (t.p.length > 1) portals(t).forEach((m, e) => { if (!onSeam(m.x, m.y, b) && !t.bw?.[e]) out.push({ t, end: e as 0 | 1, ...m }); });
   return out;
 }
 
