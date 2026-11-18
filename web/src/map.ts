@@ -72,8 +72,9 @@ export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's 
 export interface Place { n: string; r: number[][] }
 /** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z];
  *  hw: half the bore's width at each point, as wide as its way going in; pv: the pavement each side at each point, where it has one. */
-/** cr: floor to arch, where it isn't its way's usual (a path's low arch under a street) */
-export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv?: number[]; cr?: number }
+/** cr: floor to arch, where it isn't its way's usual (a path's low arch under a street); bw: 1 for an
+ *  end, first then last, that comes out of a building's wall, which is its face there (no headwall) */
+export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv?: number[]; cr?: number; bw?: number[] }
 /** A football pitch ["f", x, y, length, width, angle], a rugby pitch ["r", x, y, length, width, angle],
  *  or a cricket field ["c", x, y, angle, boundary rope ring, sightscreens [[x, y], ...]]. The angle
  *  is the long axis (the wicket, for cricket). */
