@@ -1698,3 +1698,6 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   side, and the base build had a level-0 mismatch at the same spot. To undo it: lay a deck's
   footprint at a side from the whole deck, both squares' pieces, rather than running each piece
   on in a straight line.
+- [ ] **A tunnel under buildings is only as wide as the room the data leaves.** Spring Gardens Road's
+  bore is 2.7 m, narrower than the real one, because `bores_inside` keeps it within the gap between
+  the buildings' walls. The maintainer accepted this: widen it only if the data shows more room.
