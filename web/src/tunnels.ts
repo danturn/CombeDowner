@@ -19,7 +19,7 @@
 // costs nothing at run time, and the tube ignores the sun. world.ts turns the fog dark while
 // you're in one. Nothing here goes over the network: every player draws the same from the map.
 import * as THREE from "three";
-import { GameMap, TUNNEL, Tunnel, boreCrown, boreHalf, carriesTraffic } from "./map";
+import { GameMap, TUNNEL, Tunnel, boreCrown, boreHalf, carriesTraffic, floorLift } from "./map";
 import * as TX from "./textures";
 
 const LAMP = 14;         // metres between lamps
@@ -205,6 +205,13 @@ export function portalStyle(tn: Tunnel[], t: Tunnel): PortalStyle {
   return got.get(t) ?? (carriesTraffic(t) ? "b" : "a");
 }
 
+/** Metres over a mouth's floor that the terrain shader (world.ts) still draws the ground. Inside the
+ *  tube its mouths are given from that much under the floor's line, or the ground's coarse grid,
+ *  sloping up through the floor, showed across it in dark slivers. */
+const KEPT = 0.1;
+/** Metres in front of a mouth's start that the terrain shader begins to hide the ground. */
+const LIP = 0.3;
+
 /** The tube's mouths, for the terrain shader: (x, z, into x, into z) and (floor, top, half width, depth), scene coords. */
 export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
@@ -219,8 +226,15 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
       const l = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]);
       if (l < 1e-3) continue;
       const dx = (p[i + 1][0] - p[i][0]) / l, dy = (p[i + 1][1] - p[i][1]) / l;
-      a.push(new THREE.Vector4(p[i][0], -p[i][1], dx, -dy));
-      b.push(new THREE.Vector4(Math.min(p[i][2], p[i + 1][2]) - map.z0, boreCrown(t) + Math.abs(p[i + 1][2] - p[i][2]) + 0.05, Math.max(half(i), half(i + 1)), l + 0.3));
+      const lo = Math.min(p[i][2], p[i + 1][2]) - map.z0, roof = boreCrown(t) + Math.abs(p[i + 1][2] - p[i][2]) + 0.05, h = Math.max(half(i), half(i + 1));
+      // (just outside the portal there's no floor, and the ground at its level stays to meet the way
+      // laid up to it, or the sky showed under that way's edge)
+      if (i === 0) {
+        a.push(new THREE.Vector4(p[i][0], -p[i][1], dx, -dy));
+        b.push(new THREE.Vector4(lo, roof, h, 0.3));
+      }
+      a.push(new THREE.Vector4(p[i][0] + dx * LIP, -(p[i][1] + dy * LIP), dx, -dy));
+      b.push(new THREE.Vector4(lo - KEPT, roof + KEPT, h, i < p.length - 2 ? l : l - LIP));
       s += l;
     }
   }
@@ -306,8 +320,11 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
           const l = light(q.s, h, o, len, crown);
           col.push(l, l * 0.93, l * 0.82);
         });
+        // (out of a building's wall the floor runs on under the way laid up to it, so no seam shows between them)
+        const on = q === pts[0] && t.bw?.[0] ? -RUN_ON : q === pts[pts.length - 1] && t.bw?.[1] ? RUN_ON : 0;
+        const fx = q.x + q.ny * on, fy = q.y - q.nx * on;
         for (const [o, h] of floorAcross(t, q)) {
-          fpos.push(q.x + q.nx * o, q.z - Z0 + h, -(q.y + q.ny * o));
+          fpos.push(fx + q.nx * o, q.z - Z0 + h, -(fy + q.ny * o));
           fuv.push(o / 4, q.s / 4 + h);
           const l = light(q.s, 0, o, len, crown);
           fcol.push(l, l * 0.93, l * 0.82);
@@ -348,14 +365,16 @@ export function buildTunnels(map: GameMap, scene: THREE.Object3D, drawn: (x: num
   for (const w of walls(map)) buildPortal(w, scene, Z0, drawn, { stone, concrete, apronGrass }, tint);
 }
 
+const RUN_ON = 0.3;      // metres the floor runs on past a mouth in a building's wall
 const KERB = 0.15;       // a pavement's height over the carriageway, through the tunnel as outside it
 
 /** Across the tube's floor at one ring, [across, up] from its left wall to its right: the
  *  carriageway, and up a kerb to a pavement each side where the bore has them. */
 function floorAcross(t: Tunnel, q: { h: number; pv: number }): number[][] {
-  if (!t.pv) return [[q.h, 0.02], [-q.h, 0.02]];
-  const c = Math.max(0, q.h - q.pv), k = q.pv > 0.05 ? KERB : 0.02;
-  return [[q.h, k], [c, k], [c, 0.02], [-c, 0.02], [-c, k], [-q.h, k]];
+  const f = floorLift(t);
+  if (!t.pv) return [[q.h, f], [-q.h, f]];
+  const c = Math.max(0, q.h - q.pv), k = q.pv > 0.05 ? KERB + f - 0.02 : f;
+  return [[q.h, k], [c, k], [c, f], [-c, f], [-c, k], [-q.h, k]];
 }
 
 interface Mats { stone: THREE.Material; concrete: THREE.Material; apronGrass: THREE.Material }

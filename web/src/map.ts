@@ -91,6 +91,11 @@ export const DECK_FACES = typeof location !== "undefined" && new URLSearchParams
 export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf.lv?.length;
 /** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
 export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
+/** How far over its line a tunnel's floor is drawn and walked: as far as its way's faces are over
+ *  theirs, so the floor meets the way laid up to its mouth with no step to see under. */
+export function floorLift(t: Tunnel) {
+  return PATHS.has(t.c) ? FACE_LIFT.path : FACE_LIFT.road;
+}
 export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
 const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot
 const FACE_KINDS_0 = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
@@ -758,7 +763,8 @@ export class GameMap {
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
         const half = Math.max(boreHalf(t, i), boreHalf(t, i + 1));
-        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0, half, boreCrown(t), carriesTraffic(t) ? 1 : 0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        const y = (q: number[]) => q[2] + floorLift(t) - this.z0;
+        this.tA.push([p[i][0], -p[i][1], y(p[i]), half, boreCrown(t), carriesTraffic(t) ? 1 : 0]); this.tB.push([p[i + 1][0], -p[i + 1][1], y(p[i + 1])]);
         const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
         const seen = new Set<number>();
         for (let s = 0; s <= n; s++) {
