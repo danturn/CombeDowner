@@ -3342,6 +3342,33 @@ def bridge_kind(r):
     return r.get("bt") or ("foot" if r["c"] in GAME_PATHS and r["c"] != "pedestrian" else "beam" if r["c"] in ("trunk", "motorway") else "arch")
 
 
+def under_own_faces(deck, path_under, foot, runs, faces):
+    """`deck` less what of the faces within the decks' footprint `foot` is a way's passing under it:
+    the faces the partition laid for that way past the room bridge_decks left it, touching that room,
+    of a kind the deck's own cross-section has none of there (`faces`: class to its faces). On the
+    deck, a sliver of a lane's tarmac under a footbridge lay right across the footbridge's path."""
+    under = unary_union([g for g in (_minus(foot, deck) if deck is not None else None, path_under)
+                         if g is not None and not g.is_empty] or [Polygon()])
+    if deck is None or under.is_empty:
+        return deck
+    streets = [o for o in runs if o["r"]["c"] not in GAME_PATHS or o["r"]["c"] == "pedestrian"]
+    paths = [o for o in runs if o["r"]["c"] in GAME_PATHS and o["r"]["c"] != "pedestrian"]
+    band = lambda os_, reach, cap="flat": unary_union([o["line"].buffer(reach(o["r"]), cap_style=cap) for o in os_] or [Polygon()])
+    # (a street's own faces reach out to its parapets, round its kerbs and past its ends, so it keeps them all)
+    whole = band(streets, lambda r: deck_half(r) + 0.5, "round")
+    own = {"carriageway": whole, "pavement": whole, "path": band(paths, lambda r: deck_half(r) + 0.5)}
+    near = under.buffer(0.05)
+    stray = []
+    for cls, g in faces.items():
+        left = _minus(g.intersection(foot), under)
+        for part in getattr(left, "geoms", [left]):
+            if part.geom_type == "Polygon" and part.intersects(near):
+                rest = _minus(part, own[cls])
+                if rest.area > 1e-3:
+                    stray.append(rest)
+    return _minus(deck, unary_union(stray)) if stray else deck
+
+
 def deck_level(foot, kept, runs, road, pave, path, holes=None):
     """The pieces of the level of bridges' decks (`lv`), as (class, polygon): the partition's own
     carriageway, pavement and path faces within the decks' footprint `foot`, and where a way passing
@@ -3355,10 +3382,16 @@ def deck_level(foot, kept, runs, road, pave, path, holes=None):
             if not line.buffer(deck_half(r) + 0.5).intersects(kept):
                 continue
             half = way_width(r) / 2
-            own = line.buffer(half, cap_style="flat").intersection(kept)
             if r["c"] in GAME_PATHS and r["c"] != "pedestrian":
-                path = path.union(own)
+                # (as wide as its path is on the rest of the deck: narrower, the deck's edging stood
+                # out into the path in a step at each side)
+                reach = deck_half(r) + 0.5
+                rest = _minus(line, kept).length
+                if rest > 1:
+                    half = min(reach, max(half, path.intersection(line.buffer(reach, cap_style="flat")).area / (2 * rest)))
+                path = path.union(line.buffer(half, cap_style="flat").intersection(kept))
                 continue
+            own = line.buffer(half, cap_style="flat").intersection(kept)
             sides = [line.buffer(sd * (half + w), cap_style="flat", single_sided=True)
                      for sd, w in zip((1, -1), r.get("pv") or (0, 0)) if w > 0]
             road = road.union(own)
@@ -5579,6 +5612,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         g = g.difference(deck) if deck is not None else g
         return g.union(path_under.intersection(square)) if cls == "path" and path_under is not None else g
 
+    if runs:
+        deck = under_own_faces(deck, path_under, bridge_decks(rd, past_cut=square).intersection(square), runs,
+                               {cls: shapes(cls, True) for cls in ("carriageway", "pavement", "path")})
     road, pave = shapes("carriageway"), shapes("pavement")
     path_faces = shapes("path")
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
