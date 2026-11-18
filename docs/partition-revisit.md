@@ -1730,10 +1730,12 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   over it (`player.ts` auto-vault, under 1.45 m), in both modes, so you can still go off a high deck
   without crouching. Left as it is: whether a parapet over a drop should stop the vault is a game
   choice.
-- [ ] **The towpath rule for a path climbing to a street was rebuilt in 2_0 and 4_2 only.** It is in
+- [x] **The towpath rule for a path climbing to a street was rebuilt in 2_0 and 4_2 only.** (The whole-map
+  build from the merge of the bridge-deck branches took it everywhere.) It is in
   both `prep_map.towpath` and `structures.towpath_points`, so the next whole-map build brings it
   everywhere; until then other squares keep paths that stay on the towpath up to a street above it.
-- [ ] **1_2 was not rebuilt with the towpath rule.** Rebuilt as a trial, the path from the river up
+- [x] **1_2 was not rebuilt with the towpath rule.** (Built in now: the slivers at (-538, 1606) are
+  gone; the house 300 m away is listed below.) Rebuilt as a trial, the path from the river up
   to Pulteney Road's bridge (-560, 1610) climbs instead of stepping 2.4 m, and most counts fell
   (23: 20 to 17, 26: 46 to 43, 27 down 3), but rule 28 rose by two slivers of 0.4 and 0.1 m at
   (-538, 1606) and rule 47 by one house 300 m away. Look at it before the next whole build.
@@ -1747,6 +1749,23 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   maintainer agreed to leave it.
 - [ ] **Bridge parapets can be vaulted.** At 1.25 m they are under the 1.45 m auto-vault, so walking
   into one head on takes you over. The maintainer is happy with that for now.
-- [ ] **The towpath climb rule is not yet built into 1_2.** It turns the 2.4 m step on the path up to
+- [x] **The towpath climb rule is not yet built into 1_2.** (Built in with the whole-map build.) It turns the 2.4 m step on the path up to
   Pulteney Road's bridge into a ramp, but leaves two small deck-end slivers there. Take it in the
   next whole-map build and clear the slivers then.
+- [ ] **Ferry Lane's bridge ends (4_2) over nothing at the deck's own level.** Its deck is 8.8 m
+  across (a 4.8 m road with 2 m pavements) and lands at its east end (2990, 1566) on a service lane
+  2.5 m wide, with the towpath passing under the deck's end; the bridge at (3064, 1714) is the same.
+  Since bridge decks share their corners with the street at each end, the deck's corners lie on its
+  cap, so check_map rule 28 sees the pavements and road edge there as "deck end with nothing to land
+  on" (4_2: 2 to 6; the deck-joins build of 4_2 had the same 6). It is the data: the lane narrows at
+  the bridge. Clearing it would take a landing laid at the deck's level past its end, a change to the
+  ground plan, not to these rules.
+- [ ] **A few counts moved by one with the towpath climb rule built in**, each looked at, none from
+  the faces at the place itself: in 1_2 a semi at (-342, 1620) now stands 1.2 m over the ground
+  sheet beside it (rule 47; the sheet's cells there moved by up to 0.5 m with nothing changed within
+  20 m) and 2 m2 of ground 9 cm over Pulteney Road at (-518, 1622) (rule 20), beside the path that
+  now climbs to the bridge; in 4_1 the footbridge (2335, -19) starts at the top of the bank, so 2 m2
+  of ground under its span is within 0.5 m of the underside (rule 31). Two more changed with no
+  change to the faces near them: a flight in 3_5 (1759, 4820) lands 0.18 m off the ground as the
+  check draws it (rule 33; only the ground sheet's wall corners differ), and the moored boat in 1_3
+  (-684, 2019) has 2 m of front behind open ground (rule 48). Look at them in the game.
