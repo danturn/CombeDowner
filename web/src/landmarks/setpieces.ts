@@ -89,8 +89,10 @@ export interface PlaceCtx {
   local: (x: number, y: number) => [number, number];
   /** The level of the water at x, z in its frame, above sea level, if that's in a river or a pond. */
   waterAt: (x: number, z: number) => number | null;
-  /** The top of the square's street, pavement or path faces at x, z in its frame, above sea level, as
-   *  they're drawn, or null where it draws none: for paving of its own to meet them at their height. */
+  /** The top of the square's carriageway or pavement faces at x, z in its frame, above sea level, as
+   *  they're drawn, or null where it draws neither: for paving of its own to meet the street at its
+   *  height. Not a path's: a path leaving the street goes its own way, often down steps or into a
+   *  passage, and paving meeting it there sloped down after it. */
   facesAt: (x: number, z: number) => number | null;
   d: MapData;
 }
@@ -909,7 +911,7 @@ export function maskSetPieces(d: MapData) {
       return u + v <= 1 ? H(k) + (H(k + 1) - H(k)) * u + (H(k + n) - H(k)) * v
         : H(k + n + 1) + (H(k + n) - H(k + n + 1)) * (1 - u) + (H(k + 1) - H(k + n + 1)) * (1 - v);
     };
-    const facesAt = d.sf ? faces(d, local, mx0, mx1, my0, my1, ["road", "service", "pave", "path"], true) : () => null;
+    const facesAt = d.sf ? faces(d, local, mx0, mx1, my0, my1, ["road", "service", "pave"], true) : () => null;
     const ctx: PlaceCtx = { local, waterAt, ground, groundAt, facesAt, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
     const z = typeof sp.height === "number" ? sp.height : sp.height(ctx);
     for (const p of ctx.held) for (const q of p) { q[2] = q[3] - z; q.length = 3; }

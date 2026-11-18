@@ -63,6 +63,11 @@ export function paradeArgs(c: PlaceCtx, height: number): (number | string)[] {
     const h = c.facesAt(Math.min(x, P1), OUT + 0.25);
     edge.push(h === null ? NONE : r(h - height));
   }
+  // (where it reads no street, as where a path leaves it, the paving runs on level from the nearest
+  // reading rather than dropping to the carriageway's fitted line and back)
+  const read = edge.flatMap((h, k) => (h === NONE ? [] : [k]));
+  if (read.length) for (let k = 0; k < edge.length; k++) if (edge[k] === NONE)
+    edge[k] = edge[read.reduce((a, b) => (Math.abs(b - k) < Math.abs(a - k) ? b : a))];
   return [r(r0), r(r1), r(c0), r(c1), r(w === null ? -10 : w - height), ...edge];
 }
 
