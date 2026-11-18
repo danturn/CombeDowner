@@ -5789,7 +5789,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                          [cls in ("carriageway", "pavement") for cls, _ in pieces])
     # (a set piece meets the faces along its edge: what it draws all of goes, and the rest are split
     # along its outline for the game to take out what it lays its own ground over: setpiece_cuts.py)
-    cut, split, laid = setpiece_cuts.cuts(centre, sq, road, rd) if centre else (None, None, [])
+    cut, split, laid, own_street = setpiece_cuts.cut_parts(centre, sq, road, rd) if centre else (None, None, [], None)
     if cut is not None or split is not None:
         for g in (cut, split):
             if g is not None:
@@ -5800,7 +5800,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             # (paving left between a set piece's own street and the streets it meets is that street's
             # pavement carried round the corner, at kerb height, not a square laid on the ground; and a
             # corner, not the points the streets' outlines left it, which stood out into the road)
-            corner = cls in ("plaza", "pavement") and cut is not None and laid and q.distance(cut) < 0.05
+            corner = cls in ("plaza", "pavement") and own_street is not None and laid and q.distance(own_street) < 0.05
             q = q.difference(cut) if cut is not None and cut.intersects(q) else q
             if corner:
                 cls = "pavement"
@@ -6058,7 +6058,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
 
     # (where a set piece's own street is cut out, the faces left meet it at its level: levelled from
     # the square's streets they stood a step up or down from it across the junction)
-    laid_edge = cut.boundary.buffer(0.02) if cut is not None and laid else None
+    laid_edge = own_street.boundary.buffer(0.02) if own_street is not None and laid else None
     laid_lines = [LineString(q) for q in laid if len(q) > 1]
     laid_tree = STRtree(laid_lines) if laid_edge is not None and laid_lines else None
     if laid_tree is not None:
@@ -6264,8 +6264,15 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # over that footway's ground and lies on it, as the footway did: held at the street's level it
     # stood a ledge over the ground behind, and the house there stood on air.
     widened = along.buffer(0.05) if not along.is_empty else None
+    # (not where its back edge is a set piece's outline: the set piece's own paving meets it there, at
+    # its level, and the ground behind is under the set piece; let down to it, the edge sank in a
+    # sawtooth below the set piece's paving)
+    set_edge = unary_union([g.boundary for g in (cut, split) if g is not None] or [LineString()]).buffer(0.02)
+    shapely.prepare(set_edge)
     for k in walk - kerbside:
         x, y = v[3 * k], v[3 * k + 1]
+        if shapely.contains_xy(set_edge, x, y):
+            continue
         g = ground(x, y)
         if g is not None:
             z = v[3 * k + 2]

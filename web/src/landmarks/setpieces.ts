@@ -51,10 +51,10 @@
 //
 // Nothing here goes over the network: every player masks the squares they load the same way.
 import type { MapData, Road } from "../map";
-import { KERBED, PATHS, PAVE, roadHalf } from "../map";
+import { FACE_LIFT, KERBED, PATHS, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
 import { terraceArgs } from "./terraces";
-import { BRIDGE, paradeArgs } from "./grandparade";
+import { BRIDGE, OUT, paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
@@ -89,6 +89,9 @@ export interface PlaceCtx {
   local: (x: number, y: number) => [number, number];
   /** The level of the water at x, z in its frame, above sea level, if that's in a river or a pond. */
   waterAt: (x: number, z: number) => number | null;
+  /** The top of the square's street, pavement or path faces at x, z in its frame, above sea level, as
+   *  they're drawn, or null where it draws none: for paving of its own to meet them at their height. */
+  facesAt: (x: number, z: number) => number | null;
   d: MapData;
 }
 
@@ -214,15 +217,15 @@ export const SET_PIECES: SetPiece[] = [
   },
   {
     // landmarks/grandparade.ts. The origin: the middle of Grand Parade where it leaves the bridge,
-    // at its level there. The outline is the strip along the river's edge and its pavement (the
-    // set piece lays its own), not the street.
+    // at its level there. The outline is the strip along the river's edge, which it paves all of
+    // out to the street's own pavement.
     name: "Grand Parade", kind: "colonnade", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
-    outline: [[BRIDGE, -16], [104, -16], [104, -6.5], [BRIDGE, -6.5]],
+    outline: [[BRIDGE, -16], [104, -16], [104, OUT], [BRIDGE, OUT]],
     // the bank in front of the river wall down to just under the water (15.8 m): the survey has the
     // street's level out past the wall towards Orange Grove, which stood as a slope through the arches.
     // Over, as the street's pavement there holds those points up and the set piece paves over it
     sink: [{ x0: BRIDGE, x1: 104, z0: -16, z1: -11, y: -9.9, over: true }],
-    args: paradeArgs,
+    args: paradeArgs, fills: true,
   },
   {
     // landmarks/grandparade.ts, in Grand Parade's frame.
@@ -808,7 +811,7 @@ export function maskSetPieces(d: MapData) {
     const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
     let mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);
     if (mx1 < T.x0 || mx0 > gx1 || my1 < T.y0 || my0 > gy1) continue;
-    const fitted = sp.fit && d.sf ? sp.fit(carriageway(d, local, mx0, mx1, my0, my1)) : null;
+    const fitted = sp.fit && d.sf ? sp.fit(faces(d, local, mx0, mx1, my0, my1, ["road", "service"], false)) : null;
     if (fitted) {
       rings = [fitted.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
       const fx = rings.flat().map((q) => q[0]), fy = rings.flat().map((q) => q[1]);
@@ -906,7 +909,8 @@ export function maskSetPieces(d: MapData) {
       return u + v <= 1 ? H(k) + (H(k + 1) - H(k)) * u + (H(k + n) - H(k)) * v
         : H(k + n + 1) + (H(k + n) - H(k + n + 1)) * (1 - u) + (H(k + 1) - H(k + n + 1)) * (1 - v);
     };
-    const ctx: PlaceCtx = { local, waterAt, ground, groundAt, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
+    const facesAt = d.sf ? faces(d, local, mx0, mx1, my0, my1, ["road", "service", "pave", "path"], true) : () => null;
+    const ctx: PlaceCtx = { local, waterAt, ground, groundAt, facesAt, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
     const z = typeof sp.height === "number" ? sp.height : sp.height(ctx);
     for (const p of ctx.held) for (const q of p) { q[2] = q[3] - z; q.length = 3; }
     if (sp.sink) lower(d, sp.sink.map((r) => ({ ...r, y: z + r.y })), local, hide, mx0, mx1, my0, my1);
@@ -920,15 +924,16 @@ export function maskSetPieces(d: MapData) {
 
 const FIT_REACH = 20;        // metres round a set piece's outline that a square's carriageway is looked for
 
-/** The height square d draws a carriageway at x, z in a set piece's frame (local() taking data x, y
- *  into it), above sea level as written, or null where it draws none: its road and lane faces near
- *  the box x0..x1, y0..y1. */
-function carriageway(d: MapData, local: (x: number, y: number) => [number, number], x0: number, x1: number, y0: number, y1: number) {
+/** The height square d's faces of those kinds are at x, z in a set piece's frame (local() taking data
+ *  x, y into it), above sea level, as written or as drawn (lifted), or null where it has none: those
+ *  near the box x0..x1, y0..y1. */
+function faces(d: MapData, local: (x: number, y: number) => [number, number], x0: number, x1: number, y0: number, y1: number,
+  kinds: ("road" | "service" | "pave" | "path")[], lifted: boolean) {
   const V = d.sf!.v, tris: number[] = [];
-  for (const I of [d.sf!.road, d.sf!.service]) for (let k = 0; k + 2 < I.length; k += 3) {
+  for (const kind of kinds) for (let k = 0, I = d.sf![kind] ?? [], up = lifted ? FACE_LIFT[kind] : 0; k + 2 < I.length; k += 3) {
     const xs = [V[3 * I[k]], V[3 * I[k + 1]], V[3 * I[k + 2]]], ys = [V[3 * I[k] + 1], V[3 * I[k + 1] + 1], V[3 * I[k + 2] + 1]];
     if (Math.max(...xs) < x0 - FIT_REACH || Math.min(...xs) > x1 + FIT_REACH || Math.max(...ys) < y0 - FIT_REACH || Math.min(...ys) > y1 + FIT_REACH) continue;
-    tris.push(...[0, 1, 2].flatMap((n) => [...local(xs[n], ys[n]), V[3 * I[k + n] + 2]]));
+    tris.push(...[0, 1, 2].flatMap((n) => [...local(xs[n], ys[n]), V[3 * I[k + n] + 2] + up]));
   }
   return (x: number, z: number) => {
     for (let k = 0; k < tris.length; k += 9) {

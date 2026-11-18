@@ -124,16 +124,24 @@ def cuts(centre, sq, road, rd=None):
     lays its own street along, each [x, y, z] its points at the heights it lays them). `road` is the
     carriageway the set pieces fitting to it are fitted to; rd the square's roads, for a set piece's
     own street laid over them (without them, the stretch it's laid along is taken out, for `key`)."""
+    gone, split, lines, _ = cut_parts(centre, sq, road, rd)
+    return gone, split, lines
+
+
+def cut_parts(centre, sq, road, rd=None):
+    """As `cuts`, and the part of what's taken out that is a set piece's own street (None if none)."""
     got = _run(centre, sq, road, rd)
     if got is None:
-        return None, None, []
+        return None, None, [], None
+    near = box(*sq).buffer(REACH)
+
+    def here(g):
+        # (only where it reaches the square: the street's quads run the whole length of it)
+        g = g.intersection(near) if g is not None else None
+        return None if g is None or g.is_empty else g
     fill, street = _shape(got["fill"]), _shape(got["street"])
-    gone = unary_union([g for g in (fill, street) if g is not None]) if fill is not None or street is not None else None
-    # (only where it reaches the square: the street's quads run the whole length of it)
-    if gone is not None:
-        gone = gone.intersection(box(*sq).buffer(REACH))
-        gone = None if gone.is_empty else gone
-    return gone, _shape(got["split"]), got.get("lines") or []
+    gone = here(unary_union([g for g in (fill, street) if g is not None])) if fill is not None or street is not None else None
+    return gone, _shape(got["split"]), got.get("lines") or [], here(street)
 
 
 def _outlines(centre, sq):
