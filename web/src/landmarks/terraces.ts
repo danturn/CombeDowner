@@ -216,13 +216,13 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
   const { style, blocks, wings, names, holes, verges, pave } = plan(args);
   const k = new Kit();
   // a box of stone, with a way left through it for each bore passing under
-  const slab = (mat: THREE.Material, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, tile = 3) => {
+  // (walled: a bore running along just inside the box's end leaves that end's wall standing, a skin over it)
+  const slab = (mat: THREE.Material, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, tile = 3, walled = false) => {
     for (const o of holes) {
       const g = gap(o, x0, x1, z0, z1);
       if (!g || y0 >= o.y1) continue;
-      // (a bore running along just inside an end leaves that end's wall standing, a skin over it)
-      slab(mat, x0, Math.max(g[0], x0 + SKIN), y0, y1, z0, z1, tile);
-      slab(mat, Math.min(g[1], x1 - SKIN), x1, y0, y1, z0, z1, tile);
+      if (g[0] > x0) slab(mat, x0, g[0], y0, y1, z0, z1, tile); else if (walled) k.slab(mat, x0, x0 + SKIN, y0, Math.min(y1, o.y1), z0, z1, tile);
+      if (g[1] < x1) slab(mat, g[1], x1, y0, y1, z0, z1, tile); else if (walled) k.slab(mat, x1 - SKIN, x1, y0, Math.min(y1, o.y1), z0, z1, tile);
       if (y1 > o.y1) slab(mat, Math.max(x0, g[0]), Math.min(x1, g[1]), o.y1, y1, z0, z1, tile);
       return;
     }
@@ -243,7 +243,7 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
     const ry = out > 0 ? 0 : Math.PI;
     const { f, G1, F1, F2, AT } = storeys(b, style);
     // the block itself (its backs and ends with plain sash windows), and its roof
-    slab(G, x0, x1, y0 - 8, AT, Math.min(zf, zb), Math.max(zf, zb), 3.4);
+    slab(G, x0, x1, y0 - 8, AT, Math.min(zf, zb), Math.max(zf, zb), 3.4, true);
     k.roof(roofs, x0 + 0.4, x1 - 0.4, AT, Math.min(zf, zb) + 0.6, Math.max(zf, zb) - 0.6, style ? 2.2 : 2.6, false, true);
     // the bays, and which are pavilions
     const n = Math.max(3, Math.round((x1 - x0) / BAY)), bw = (x1 - x0) / n;

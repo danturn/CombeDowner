@@ -4737,6 +4737,7 @@ def steep_paths_as_steps(rd):
 
 STAIR_PITCH = 0.7       # the steepest a flight's treads climb (furniture.ts)
 CLIMB_MOST = 1 / 1.5    # the steepest slope anyone walks up without steps
+FLIGHT_LEAST = 0.3      # metres between the ground at a flight's two ends, less than which it is no flight
 FLIGHT_OVER = 0.5       # metres of a flight's line on another path or a street before it isn't built
 
 SURFACE_LIFT = {"road": 0.07, "pave": 0.17, "path": 0.04}   # how far the game lifts each face over its point (world.ts)
@@ -4946,10 +4947,12 @@ def steep_flights_that_fit(rd, ground):
         on = max([beside[int(k)].intersection(line).length for k in near.query(line)] or [0.0]) if near is not None else 0.0
         fits = L >= STEP_RUN and a is not None and b is not None and max(abs(b - a), abs(p[-1][2] - p[0][2])) <= STAIR_PITCH * L
         if fits and on <= FLIGHT_OVER:
+            r["_from"] = (was["c"], was.get("w"))
             continue
         # (but a stretch no one could walk up as a slope stays a flight, however short)
         if any(math.dist(u[:2], v[:2]) > 2 and abs(v[2] - u[2]) > CLIMB_MOST * math.dist(u[:2], v[:2])
                for u, v in zip(whole, whole[1:])):
+            r["_from"] = (was["c"], was.get("w"))
             continue
         # (as it was mapped, its ends back where the path either side of it ends)
         r["c"], r["p"] = was["c"], whole
@@ -4970,6 +4973,23 @@ def steep_flights_that_fit(rd, ground):
         out.append((r, of if r["c"] != "steps" else None))
     rd[:] = [r for r, _ in out]
     return back
+
+
+def level_flights_back(rd):
+    """A flight made from a steep stretch of path that, laid at last, hardly climbs at all is the path
+    again: a dip in a pavement's heights over the low ground beside a street on vaults made one,
+    which the ways meeting it then laid level, leaving a flight of 0.14 m."""
+    for r in rd:
+        was = r.pop("_from", None)
+        p = r["p"]
+        if was is None or r["c"] != "steps" or len(p) < 2 or abs(p[-1][2] - p[0][2]) >= FLIGHT_LEAST:
+            continue
+        r["c"] = was[0]
+        r.pop("tb", None)
+        if was[1] is None:
+            r.pop("w", None)
+        else:
+            r["w"] = was[1]
 
 
 def unreached_low_arches(tile, rd, sq, reach=1.0, rise=0.5):
@@ -10139,6 +10159,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rebake = {id(r) for r in rd if r.pop("_rebake", None)}
     if rebake:
         flight_pieces.bake(rd, ground, sq, way_width, flight_pieces.shared_ends(rd, way_width), only=rebake)
+    level_flights_back(rd)
     # (the passages are settled before the faces, which lay each one's floor as its way's own face)
     rd = tile["rd"] = passage_floors(tile.get("bl") or [], rd, tile.get("tn") or ())
     rd = tile["rd"] = setpiece_cuts.lay(tile.get("centre"), sq, rd)
