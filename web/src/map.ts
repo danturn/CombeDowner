@@ -676,16 +676,23 @@ export class GameMap {
             }
         }
       }
-      // A deck's parapets stand along its faces' outer edge where it's over the span, a hand
-      // inside it, from its underside to a walker's chest (off the span its edge is the ground's)
-      const NP = V.length / 3, inside = new Set<number>();
-      const note = (T: ArrayLike<number>) => { for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) inside.add(T[k + m] * NP + T[k + (m + 1) % 3]); };
+      // A deck's parapets stand along its faces' outer edge over the span and the step down to each
+      // abutment, as they're drawn, a hand inside it, from its underside to a walker's chest
+      // (an outer edge is one only one triangle has: the lists keep no one winding)
+      const NP = V.length / 3, sides = new Map<number, number>();
+      const edge = (a: number, b: number) => Math.min(a, b) * NP + Math.max(a, b);
+      const note = (T: ArrayLike<number>) => {
+        for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) {
+          const e = edge(T[k + m], T[k + (m + 1) % 3]);
+          sides.set(e, (sides.get(e) ?? 0) + 1);
+        }
+      };
       for (const kind of FACE_KINDS_0) note(sf[kind] ?? []);
       for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) note(lv[kind] ?? []);
       const spans: [number, number, number, number, boolean, Road][] = [];
       for (const r of d.rd) if (r.bridge && !r.held) for (let i = 0; i + 1 < r.p.length; i++) {
         const on = (q: number[]) => q[3] === 1 || q[3] === 2, A = r.p[i], B = r.p[i + 1];
-        if (on(A) || on(B)) spans.push([A[0], A[1], B[0], B[1], on(A) && on(B), r]);
+        if (on(A) || on(B)) spans.push([A[0], A[1], B[0], B[1], A[3] === 1 || B[3] === 1, r]);
       }
       const nearest = (x: number, y: number) => {
         let best = Infinity, got: (typeof spans)[number] | null = null;
@@ -698,7 +705,7 @@ export class GameMap {
       };
       for (const lv of sf.lv!) for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
         const a = e.i[k], b = e.i[k + 1];
-        if (inside.has(b * NP + a)) continue;
+        if ((sides.get(edge(a, b)) ?? 0) !== 1) continue;
         const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
         if (!sp || !sp[4]) continue;
         // (a side the ground stays level with has no parapet drawn, so none to walk into either)
@@ -1660,6 +1667,30 @@ export class GameMap {
   }
   /** Forget the arches, before the scene is built again. */
   clearArches() { this.arches = []; this.archCells.clear(); }
+
+  /** Something solid a bridge is built with (world.ts: a pier, the post at a parapet's end): its
+   *  outline in data (x, y), from foot to top (scene). The scene is built again with the same ones, so
+   *  each is kept once. */
+  addStructure(ring: number[][], foot: number, top: number) {
+    const k = ring.map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).join(" ");
+    if (this.structures.has(k)) return;
+    this.structures.add(k);
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      this.addSeg(a[0], -a[1], b[0], -b[1], top, 1, foot);
+    }
+    if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
+  }
+  /** A bridge's parapet along its approach (world.ts), where it's drawn over a bank falling away
+   *  beside it: data (ax, ay) to (bx, by), its top at ta and tb and its foot (scene), kept once. */
+  addParapet(ax: number, ay: number, bx: number, by: number, ta: number, tb: number, foot: number) {
+    const k = [ax, ay, bx, by].map((v) => v.toFixed(2)).join(" ");
+    if (this.structures.has(k)) return;
+    this.structures.add(k);
+    this.addSeg(ax, -ay, bx, -by, ta, 1, foot, tb);
+    if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
+  }
+  private structures = new Set<string>();
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
    *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of

@@ -1630,8 +1630,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     arch: { deck: BRIDGE_DECK.arch, gap: 16 }, beam: { deck: BRIDGE_DECK.beam, gap: 26 }, truss: { deck: BRIDGE_DECK.truss, gap: 45 },
     foot: { deck: BRIDGE_DECK.foot, gap: 18 }, suspension: { deck: BRIDGE_DECK.suspension, gap: Infinity },
   };
-  /** An upright block on corners [x, y] (data) from low to high. */
+  /** An upright block on corners [x, y] (data) from low to high, as solid as it looks. */
   function prism(g: Geo, c: number[][], low: number, high: number, col: number[]) {
+    map.addStructure(c, low, high);
     const mx = c.reduce((s, q) => s + q[0], 0) / c.length, my = c.reduce((s, q) => s + q[1], 0) / c.length;
     for (let k = 0; k < c.length; k++) {
       const A = c[k], B = c[(k + 1) % c.length], l = Math.hypot(B[0] - A[0], B[1] - A[1]);
@@ -2061,6 +2062,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
                 [uA, e / 2.5], [uB, e / 2.5], [uB, w / 2.5], [uA, w / 2.5], stone ? COPING : CONCRETE);
               const bank = (q: Pt) => Math.min(floor(q), ground(q.x + q.nx * h, -(q.y + q.ny * h)) - 0.1);
               lowA = bank(A); lowB = bank(B);
+              // (the deck's own parapets are the map's; these stand on the bank, where it falls away)
+              const m = (w + h) / 2, a = at(A, m, 0), b = at(B, m, 0);
+              map.addParapet(a[0], -a[2], b[0], -b[2], A.top + 1.25, B.top + 1.25, Math.min(gA, gB));
             }
             if (kind === "arch" || kind === "beam") {
               const up = stone ? PARAPET : 0.35, col = stone ? STONE : CONCRETE;
