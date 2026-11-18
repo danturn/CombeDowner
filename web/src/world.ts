@@ -1585,8 +1585,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     arch: { deck: BRIDGE_DECK.arch, gap: 16 }, beam: { deck: BRIDGE_DECK.beam, gap: 26 }, truss: { deck: BRIDGE_DECK.truss, gap: 45 },
     foot: { deck: BRIDGE_DECK.foot, gap: 18 }, suspension: { deck: BRIDGE_DECK.suspension, gap: Infinity },
   };
-  /** An upright block on corners [x, y] (data) from low to high. */
+  /** An upright block on corners [x, y] (data) from low to high, as solid as it looks. */
   function prism(g: Geo, c: number[][], low: number, high: number, col: number[]) {
+    map.addStructure(c, low, high);
     const mx = c.reduce((s, q) => s + q[0], 0) / c.length, my = c.reduce((s, q) => s + q[1], 0) / c.length;
     for (let k = 0; k < c.length; k++) {
       const A = c[k], B = c[(k + 1) % c.length], l = Math.hypot(B[0] - A[0], B[1] - A[1]);

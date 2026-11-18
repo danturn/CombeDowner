@@ -1655,6 +1655,21 @@ export class GameMap {
   /** Forget the arches, before the scene is built again. */
   clearArches() { this.arches = []; this.archCells.clear(); }
 
+  /** Something solid a bridge is built with (world.ts: a pier, the post at a parapet's end): its
+   *  outline in data (x, y), from foot to top (scene). The scene is built again with the same ones, so
+   *  each is kept once. */
+  addStructure(ring: number[][], foot: number, top: number) {
+    const k = ring.map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).join(" ");
+    if (this.structures.has(k)) return;
+    this.structures.add(k);
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      this.addSeg(a[0], -a[1], b[0], -b[1], top, 1, foot);
+    }
+    if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
+  }
+  private structures = new Set<string>();
+
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
    *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of
    *  the square loaded there. */
