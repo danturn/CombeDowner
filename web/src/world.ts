@@ -2230,8 +2230,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const k = besideFaces ? bandBeside(a, b, na, nb, o1, o2, besideFaces.kind) : null;
         return k ? k === "road" : joinsAt(r, a, b, na, nb, o1, o2, carriagewayAtLevel);
       };
-      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.17, undefined, true, own, geo.pave, undefined, joins, besideFaces?.top);
-      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.07, undefined, false, own, geo.road, undefined, (r, a, b, na, nb, o1, o2) => !joins(r, a, b, na, nb, o1, o2));
+      // (but a stretch the square's faces lay, at a junction, is theirs: setpieces.ts streetFootprint)
+      const laidHere = (a: number[], b: number[], na: number[], nb: number[], o1: number, o2: number) => {
+        const o = (o1 + o2) / 2;
+        return !!besideFaces?.kind((a[0] + b[0] + (na[0] + nb[0]) * o) / 2, (a[1] + b[1] + (na[1] + nb[1]) * o) / 2);
+      };
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.17, undefined, true, own, geo.pave, undefined,
+        (r, a, b, na, nb, o1, o2) => laidHere(a, b, na, nb, o1, o2) || joins(r, a, b, na, nb, o1, o2), besideFaces?.top);
+      strips(kerb.filter((r) => pv(r) > 0 && r.piece), paveBands, 0.07, undefined, false, own, geo.road, undefined,
+        (r, a, b, na, nb, o1, o2) => laidHere(a, b, na, nb, o1, o2) || !joins(r, a, b, na, nb, o1, o2));
       yield;
     }
     // what holds the bridges up, each built whole (joinSpans)

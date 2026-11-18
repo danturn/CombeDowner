@@ -511,7 +511,7 @@ const STRIP_STEP = 2;        // metres between the points world.ts draws a stree
 /** Where the game draws the set pieces' own streets (the pieces in rd: world.ts strips), in data x, y:
  *  each stretch of a carriageway, and of its pavements but where they cross another street, which
  *  world.ts leaves them off. The square's faces go exactly there, so the two meet without a gap. */
-function streetFootprint(rd: Road[]): number[][][] {
+function streetFootprint(rd: Road[]): Quad[] {
   const own = rd.filter((r) => r.piece);
   if (!own.length) return [];
   const xs = own.flatMap((r) => r.p.map((q) => q[0])), ys = own.flatMap((r) => r.p.map((q) => q[1]));
@@ -529,7 +529,7 @@ function streetFootprint(rd: Road[]): number[][][] {
     }
     return false;
   });
-  const quads: number[][][] = [];
+  const quads: Quad[] = [];
   for (const r of own) {
     const p: number[][] = [];
     for (let i = 0; i + 1 < r.p.length; i++) {
@@ -546,15 +546,25 @@ function streetFootprint(rd: Road[]): number[][][] {
     const at = (i: number, o: number) => [p[i][0] + nrm[i][0] * o, p[i][1] + nrm[i][1] * o];
     const half = roadHalf(r.c, r.w), pv = KERBED.has(r.c) ? r.pv ?? [PAVE, PAVE] : [0, 0];
     const bands: [number, number, boolean][] = [[-half, half, false], [half, half + pv[0], true], [-half - pv[1], -half, true]];
-    for (let i = 0; i + 1 < p.length; i++) for (const [o1, o2, pave] of bands) {
+    for (const [o1, o2, pave] of bands) {
       if (o2 <= o1) continue;
-      const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
-      const kind = !pave ? "road" : joinsAt(r, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2, onOther) ? "road" : "pave";
-      quads.push(Object.assign([a1, b1, b2, a2], { kind, z: [p[i][2], p[i + 1][2]] }));
+      const run: Quad[] = [];
+      for (let i = 0; i + 1 < p.length; i++) {
+        const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
+        const kind: Quad["kind"] = !pave ? "road" : joinsAt(r, p[i], p[i + 1], nrm[i], nrm[i + 1], o1, o2, onOther) ? "road" : "pave";
+        run.push(Object.assign([a1, b1, b2, a2], { kind, z: [p[i][2], p[i + 1][2]], open: false }));
+      }
+      // (a pavement's stretches where another street meets it, and one either side, are the square's:
+      // its faces lay the corner there as one kerb from street to street, which a band cut in 2 m
+      // stretches can't. world.ts leaves them to the faces where the square has them)
+      if (pave) run.forEach((q, i) => { q.open = [run[i - 1], q, run[i + 1]].some((n) => n?.kind === "road"); });
+      quads.push(...run);
     }
   }
   return quads;
 }
+
+type Quad = number[][] & { kind: "road" | "pave"; z: number[]; open: boolean };
 
 export const JOIN_LEVEL = 1.0;      // metres apart in height that two streets crossing are still at one level
 
@@ -778,7 +788,8 @@ function frameOf(sp: SetPiece, lon0: number, lat0: number) {
  *  go; `split`, every other's outline, which the faces are split along and kept, for the game to
  *  take out those it lays its own ground over (clearSetPieceGround); and `street`, where a set
  *  piece's own street is drawn over the square's roads rd (streetFootprint), whose faces go, or,
- *  with no roads given, the stretch it's laid along. */
+ *  with no roads given, the stretch it's laid along; and `corners`, the stretches of its pavements at
+ *  a junction (each `kind` road or pave as the street would draw it), which the square's faces lay. */
 export function setPieceCuts(centre: [number, number], box: number[], road: (x: number, y: number) => boolean, rd?: Road[]) {
   const fill: number[][][] = [], split: number[][][] = [], street: number[][][] = [];
   let laid = rd;
@@ -793,10 +804,11 @@ export function setPieceCuts(centre: [number, number], box: number[], road: (x: 
     const outline = sp.fit ? sp.fit((lx, lz) => (road(...at(lx, lz)) ? 0 : null)).outline : sp.outline;
     (sp.fills ? fill : split).push(ring(outline), ...(sp.more ?? []).map(ring));
   }
-  if (laid) street.push(...streetFootprint(laid));
+  const corners: Quad[] = [];
+  if (laid) for (const q of streetFootprint(laid)) (q.open ? corners : street).push(q);
   // (the lines it's laid along, at the heights it lays them: the square's faces meet them there)
   const lines = laid ? laid.filter((r) => r.piece).map((r) => r.p.map((q) => [q[0], q[1], q[2]])) : [];
-  return { fill, split, street, lines };
+  return { fill, split, street, lines, corners };
 }
 
 /** Hide what the tools built under every set piece reaching into map d (the first area or a
@@ -816,7 +828,8 @@ export function maskSetPieces(d: MapData) {
       // with grass between: the street is drawn as laid instead, and the faces go where it's drawn.
       // A square written since the set piece was last changed has them cut there already: setPieceCuts)
       if (d.sf && !("o" in d.sf)) {
-        const foot = streetFootprint(d.rd), V = d.sf.v, on = (x: number, y: number) => foot.some((q) => inRing(q, x, y));
+        // (but not at a junction, where its pavement's corner is the square's to lay: streetFootprint)
+        const foot = streetFootprint(d.rd).filter((q) => !q.open), V = d.sf.v, on = (x: number, y: number) => foot.some((q) => inRing(q, x, y));
         // (only a face it's drawn all over: one partly beside it, in a square written before the
         // set piece's street was, stays rather than leave the ground showing round the street)
         if (foot.length) clearFaces(d, (x, y, a, b, c) => on(x, y) && [a, b, c].every((k) => on(V[3 * k] + (x - V[3 * k]) * 0.15, V[3 * k + 1] + (y - V[3 * k + 1]) * 0.15)));

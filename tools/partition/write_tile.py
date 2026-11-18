@@ -3947,6 +3947,12 @@ def unpaved_ground(zone, T, green):
 PLAZA_BEYOND = 1.5      # metres past a street's pavement where paving stops being that pavement
 CORNER_SPIKE = 1.5      # metres: a point of a pavement corner narrower than twice this, out into the road, is road
 CORNER_LOBE = 4.0       # square metres: no more than this of it (a narrow pavement running on is no point)
+CORNER_REACH = 5.0      # metres round a set piece's street's stretches at a junction that the square lays the corner afresh
+CORNER_KERB = 2.0       # metres: the kerb's radius round such a corner, where the carriageways meet
+CORNER_RAMP = 3.0       # metres the faces round such stretches take to come to the set piece's street's level
+CORNER_MEET = 1.0       # metres: the square's paving this near such a stretch comes up to meet it
+CORNER_SNAP = 0.05      # metres: a corner this near the set piece's street's edge is on it
+CORNER_SLOT = 0.8       # metres: a slot or point of road there narrower than twice this is pavement
 PLAZA_HOLLOW = 0.5      # metres the ground under a plaza by a street may lie below that street before it's a hollow the survey made
 SEAM_LEVEL = 2.5        # metres a face may lie off a set piece's laid street where they meet before it's another level
 SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, flush, with no kerb
@@ -4114,6 +4120,108 @@ def drawn_paths(faces, rd, paving=None):
         near = paving.buffer(0.2)
         cut = unary_union([g for g in getattr(cut, "geoms", [cut]) if not g.intersects(near)] or [Polygon()])
     return faces.difference(cut)
+
+
+def corners_met(pieces, cut, own_street, corners):
+    """Which of a set piece's street's junction stretches (setpiece_cuts `corners`) the square lays:
+    those where its pavement carries on past the junction and the square's own paving comes up to
+    meet it, so there's a kerb to lay from one to the other. Where the other street has no pavement
+    of its own there (between buildings), or the set piece's street opens into a place at its end,
+    the set piece's street draws them as before, and they're cut out with it. Gives (cut, own_street,
+    corners) with those moved over."""
+    foot = unary_union([p for _, p in corners] + ([own_street] if own_street is not None else []))
+    stretches = [(k, p) for k, p in corners if k != "band"]
+    kept, given = [], []
+    for run in shapely.get_parts(unary_union([p for _, p in stretches] or [Polygon()]).buffer(0.05)):
+        mine = [(k, p) for k, p in stretches if p.intersects(run)]
+        meets = any(k == "pave" for k, _ in mine) and any(
+            c in ("pavement", "plaza") and g.distance(run) < CORNER_MEET and _minus(g, foot).distance(run) < CORNER_MEET
+            for c, g in pieces)
+        (kept if meets else given).extend(mine)
+    if not given:
+        return cut, own_street, corners
+    more = unary_union([p for _, p in given])
+    return (unary_union([g for g in (cut, more) if g is not None]),
+            unary_union([g for g in (own_street, more) if g is not None]),
+            kept + [(k, p) for k, p in corners if k == "band"])
+
+
+def corner_paving(pieces, corners, own_street, square):
+    """Where a set piece's own street meets another at a junction, its pavement's stretches there are
+    the square's to lay (setpiece_cuts `corners`), and the corner is laid afresh round them: the
+    carriageways meeting there are rounded off into each other with a kerb of CORNER_KERB radius, and
+    any point of road left poking into the paving goes, so the kerb runs from the set piece's
+    pavement round to the next street's in one line, with no spike, slot or sliver of either in the
+    other. pieces: (class, shape), as cut; own_street: what the set piece's street takes out; square,
+    the square's own ground, which a stretch just past it is left to the next square to lay."""
+    opened = unary_union([p for k, p in corners if k in ("road", "pave")] or [Polygon()]).intersection(square)
+    if opened.is_empty:
+        return pieces
+    zone = opened.buffer(CORNER_REACH)
+    street = ("carriageway", "pavement", "plaza")
+    # (a crumb of path left at the corner is laid with whatever is laid round it)
+    crumb = lambda c, g: c == "path" and g.area < CORNER_SLOT and g.intersects(zone)
+    pieces = [("pavement" if crumb(c, g) else c, g) for c, g in pieces]
+    others = unary_union([g for c, g in pieces if c not in street and g.intersects(zone)] or [Polygon()])
+    covered = _minus(unary_union([g for c, g in pieces if c in street and g.intersects(zone)] + [opened]), others)
+    # (the set piece's own pavement, at the corner and beyond it, stays pavement: the kerb comes in along it)
+    held = unary_union([p for k, p in corners if k in ("pave", "band")] or [Polygon()])
+    carriage = unary_union([g for c, g in pieces if c == "carriageway" and g.intersects(zone.buffer(2 * CORNER_KERB))]
+                           + [p for k, p in corners if k == "road"]
+                           + ([_minus(own_street, held)] if own_street is not None else []))
+    # (rounded into each other where they meet, but square where they reach a wall: a rounded corner
+    # there left a point of paving between it and the wall)
+    carriage = carriage.buffer(CORNER_KERB).buffer(-CORNER_KERB)
+    carriage = carriage.buffer(-CORNER_SLOT, join_style="mitre").buffer(CORNER_SLOT, join_style="mitre")
+    paved = _minus(covered, _minus(carriage, held)).intersection(zone)
+    # (nor a point of paving left out in the road on those stretches, where the kerb's rounding meets
+    # the street's straight edge: one mostly edged with road, not paving narrowing against a wall)
+    road_side = _minus(covered, paved).buffer(1e-3)
+    for g in shapely.get_parts(_minus(paved, unary_union([paved.buffer(-CORNER_SLOT).buffer(CORNER_SLOT), held]))):
+        if g.intersection(opened).area > g.area / 2 and g.boundary.intersection(road_side).length > g.boundary.length / 2:
+            paved = _minus(paved, g)
+    out = []
+    for c, g in pieces:
+        if c not in street or not g.intersects(zone):
+            out.append((c, g))
+            continue
+        # (each piece keeps its class but where the corner's laid the other way)
+        turn = g.intersection(paved) if c == "carriageway" else _minus(g.intersection(zone), paved)
+        out += [(c, q) for q in shapely.get_parts(_minus(g, turn))]
+        out += [("pavement" if c == "carriageway" else "carriageway", q) for q in shapely.get_parts(turn)]
+    # (and the stretches no face of the square's reached, cut out with the street before)
+    bare = _minus(_minus(opened, unary_union([g for _, g in pieces] or [Polygon()])), others)
+    out += [("pavement", q) for q in shapely.get_parts(bare.intersection(paved))]
+    out += [("carriageway", q) for q in shapely.get_parts(_minus(bare, paved))]
+    # (a corner a hair off the street's edge took the ground's height, not the street's, a step
+    # between two corners side by side)
+    if own_street is not None:
+        edge = own_street.boundary
+        out = [(c, shapely.snap(q, edge, CORNER_SNAP).buffer(0) if q.intersects(zone) else q) for c, q in out]
+    out = [(c, q) for c, q in out if q.geom_type == "Polygon" and q.area > 1e-4]
+    # (and one laid inside another of its own class is part of it: a face with a hole in it was laid
+    # round the hole badly, a spike of the one across the other)
+    gone = set()
+    for i, (c, q) in enumerate(out):
+        if not q.interiors or not q.intersects(zone):
+            continue
+        kept = []
+        for ring in q.interiors:
+            hole = Polygon(ring)
+            inside = [j for j, (k, g) in enumerate(out) if j != i and hole.contains(g.representative_point())]
+            if inside and hole.intersects(zone) and hole.area < CORNER_SLOT and all(out[j][0] == c for j in inside):
+                gone.update(inside)
+            else:
+                kept.append(ring)
+        out[i] = (c, Polygon(q.exterior, kept))
+    out = [p for j, p in enumerate(out) if j not in gone]
+    # (a crumb too small to lay on its own takes the class of what it lies against most)
+    for i, (c, q) in enumerate(out):
+        if c in street and q.area < 0.05 and q.intersects(zone):
+            near = [(q.boundary.intersection(g.buffer(1e-3)).length, k) for k, g in out if k in street and g is not q]
+            if near and max(near)[0] > 0:
+                out[i] = (max(near)[1], q)
+    return out
 
 
 def _minus(a, b):
@@ -5824,7 +5932,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                          [cls in ("carriageway", "pavement") for cls, _ in pieces])
     # (a set piece meets the faces along its edge: what it draws all of goes, and the rest are split
     # along its outline for the game to take out what it lays its own ground over: setpiece_cuts.py)
-    cut, split, laid, own_street = setpiece_cuts.cut_parts(centre, sq, road, rd) if centre else (None, None, [], None)
+    cut, split, laid, own_street, corners = setpiece_cuts.cut_parts(centre, sq, road, rd) if centre else (None, None, [], None, [])
+    if corners:
+        cut, own_street, corners = corners_met(pieces, cut, own_street, corners)
+    # (the stretches of them its street drew as road, where it meets the other's carriageway: road still,
+    # though the square's nearest street there is a pedestrian one, whose paving it took for)
+    corner_road = unary_union([p for k, p in corners if k == "road"] or [Polygon()])
+    shapely.prepare(corner_road)
+    corner_area = unary_union([p for k, p in corners if k != "band"] or [Polygon()])
     if cut is not None or split is not None:
         for g in (cut, split):
             if g is not None:
@@ -5850,6 +5965,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             if cls != "carriageway" and split is not None and split.intersects(q) and not split.contains(q):
                 parts = [q.intersection(split), q.difference(split)]
             left += [(cls, g) for part in parts for g in getattr(part, "geoms", [part]) if g.geom_type == "Polygon" and g.area > 0.05]
+        if corners:
+            left = corner_paving(left, corners, own_street, square)
         if not left:
             return None
         pieces, simple = left, [g for _, g in left]
@@ -6104,7 +6221,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
 
     # (where a set piece's own street is cut out, the faces left meet it at its level: levelled from
     # the square's streets they stood a step up or down from it across the junction)
-    laid_edge = own_street.boundary.buffer(0.02) if own_street is not None and laid else None
+    # (and across the stretches of its pavement the faces lay at a junction, which it drew at its own
+    # level, and the street it meets there rises or falls to meet: at the ground's height they stood
+    # a step below it all along its edge)
+    laid_edge = unary_union([own_street.boundary, corner_area]).buffer(0.02) if own_street is not None and laid else None
     laid_lines = [LineString(q) for q in laid if len(q) > 1]
     laid_tree = STRtree(laid_lines) if laid_edge is not None and laid_lines else None
     if laid_tree is not None:
@@ -6126,6 +6246,20 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         pt = Point(x, y)
         line = laid_lines[int(laid_tree.nearest(pt))]
         return line.interpolate(line.project(pt)).z
+
+    # (and the street's faces round them run up or down to that level over CORNER_RAMP, not in a step
+    # at their edge, where the kerb's curve leaves its points close together)
+    ramp = corner_area.buffer(CORNER_RAMP) if laid_tree is not None and not corner_area.is_empty else None
+    if ramp is not None:
+        shapely.prepare(ramp)
+
+    def ramp_z(x, y, z):
+        if ramp is None or z is None or not shapely.contains_xy(ramp, x, y):
+            return z
+        pt = Point(x, y)
+        line = laid_lines[int(laid_tree.nearest(pt))]
+        lz = line.interpolate(line.project(pt)).z
+        return z if abs(lz - z) >= SEAM_LEVEL else lz + (z - lz) * min(1.0, corner_area.distance(pt) / CORNER_RAMP)
 
     v, at = [], {}
     # (a plaza's paving lies on the ground, but along the edge it shares with a path, a front path or
@@ -6183,7 +6317,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)
             else:
-                z = street_level(k, x, y)
+                z = ramp_z(x, y, street_level(k, x, y))
             z_seam = laid_z(x, y) if on_ground != "r" else None
             # (a face a storey below, under the set piece's bridge, only meets its outline in plan)
             if z_seam is not None and (z is None or abs(z_seam - z) < SEAM_LEVEL):
@@ -6254,9 +6388,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 elif flat:
                     kind = cls
                 else:
-                    k = carriageway_of(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
+                    cx, cy = sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3
+                    k = carriageway_of(cx, cy)
                     c = streets[k]["c"] if k is not None else ""
-                    kind = "road" if c in KERBED else "pave" if c == "pedestrian" else "service"
+                    kind = "road" if c in KERBED or shapely.contains_xy(corner_road, cx, cy) else "pave" if c == "pedestrian" else "service"
                 ids = [point(x, y, flat) for x, y in pts]
                 if None not in ids:
                     (a, b), c = pts[:2], pts[2]

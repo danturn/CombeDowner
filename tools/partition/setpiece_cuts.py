@@ -47,7 +47,9 @@ process.stdin.on("end", () => {
     }
     return n;
   };
-  console.log(JSON.stringify(setPieceCuts(centre, box, inside, rd ?? undefined)));
+  const out = setPieceCuts(centre, box, inside, rd ?? undefined);
+  const band = out.street.filter((q) => q.kind === "pave").map((q) => ({ kind: "band", p: [...q] }));
+  console.log(JSON.stringify({ ...out, corners: [...out.corners.map((q) => ({ kind: q.kind, p: [...q] })), ...band] }));
 });
 """
 
@@ -124,15 +126,18 @@ def cuts(centre, sq, road, rd=None):
     lays its own street along, each [x, y, z] its points at the heights it lays them). `road` is the
     carriageway the set pieces fitting to it are fitted to; rd the square's roads, for a set piece's
     own street laid over them (without them, the stretch it's laid along is taken out, for `key`)."""
-    gone, split, lines, _ = cut_parts(centre, sq, road, rd)
+    gone, split, lines, _, _ = cut_parts(centre, sq, road, rd)
     return gone, split, lines
 
 
 def cut_parts(centre, sq, road, rd=None):
-    """As `cuts`, and the part of what's taken out that is a set piece's own street (None if none)."""
+    """As `cuts`, and the part of what's taken out that is a set piece's own street (None if none),
+    and its pavements' stretches at a junction, left to the square to lay (setPieceCuts `corners`):
+    (kind, shape) each, kind "road" or "pave" as the street draws it, with the stretches of pavement it
+    draws itself as "band" (cut out with the rest, for the corners to meet)."""
     got = _run(centre, sq, road, rd)
     if got is None:
-        return None, None, [], None
+        return None, None, [], None, []
     near = box(*sq).buffer(REACH)
 
     def here(g):
@@ -140,8 +145,21 @@ def cut_parts(centre, sq, road, rd=None):
         g = g.intersection(near) if g is not None else None
         return None if g is None or g.is_empty else g
     fill, street = _shape(got["fill"]), _shape(got["street"])
+    corners = [(q["kind"], p) for q in got.get("corners") or []
+               for p in [_corner(q)] if p is not None and p.intersects(near)]
+    # (where a pavement fans out over the street's own carriageway, as where it opens into a place at
+    # its end, there's no corner of the square's there to lay: the street draws it as before)
+    over = [(k, p) for k, p in corners if k != "band" and street is not None and p.intersection(street).area > p.area / 2]
+    if over:
+        street = unary_union([street] + [p for _, p in over])
+        corners = [c for c in corners if c not in over]
     gone = here(unary_union([g for g in (fill, street) if g is not None])) if fill is not None or street is not None else None
-    return gone, _shape(got["split"]), got.get("lines") or [], here(street)
+    return gone, _shape(got["split"]), got.get("lines") or [], here(street), corners
+
+
+def _corner(q):
+    p = Polygon(q["p"]).buffer(0)
+    return None if p.is_empty else p
 
 
 def _outlines(centre, sq):
