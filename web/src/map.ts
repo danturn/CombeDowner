@@ -80,6 +80,20 @@ export interface Tunnel { c: string; n: string; p: number[][]; hw?: number[]; pv
  *  is the long axis (the wicket, for cricket). */
 export type Pitch = ["f", number, number, number, number, number] | ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
 export type Oblong = Extract<Pitch, ["f" | "r", ...unknown[]]>;
+/** A level of bridges' decks over a square's street faces (`sf.lv`), sharing their points: its own
+ *  triangles of each kind (stone and steel: the deck's own top beside its road, by the bridge's kind)
+ *  and its pieces' outlines. n is the level, 1 for the decks over the ground's faces. Where it has
+ *  them, `sf.dk` 1 says the decks are faces, to be drawn and stood on instead of a strip of their own. */
+export interface SurfaceLevel { n: number; road?: ArrayLike<number>; service?: ArrayLike<number>; pave?: ArrayLike<number>; path?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; stone?: ArrayLike<number>; steel?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[] }
+/** ?decks=1 tries the decks' level: a square whose decks are faces (`sf.dk`) draws them, and stands you
+ *  on them, instead of each bridge's strip. Off, the strips as before, to compare. */
+export const DECK_FACES = typeof location !== "undefined" && new URLSearchParams(location.search).get("decks") === "1";
+export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf.lv?.length;
+/** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
+export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
+export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
+const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot
+const FACE_KINDS_0 = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
 export interface MapData {
   id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
@@ -99,7 +113,7 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; bed?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number };   // grass, dirt, gravel: paths the map says are made of that; bed: the railway's bed, met by the ground, its ballast drawn by railway.ts; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; grass?: ArrayLike<number>; dirt?: ArrayLike<number>; gravel?: ArrayLike<number>; bed?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number; sp?: number; pl?: number; lv?: SurfaceLevel[]; dk?: number };   // grass, dirt, gravel: paths the map says are made of that; bed: the railway's bed, met by the ground, its ballast drawn by railway.ts; sp: a bridge has faces off its deck, so only the deck is its strip (1: paths' bridges, 2: every bridge); pl: paths, front paths and drives are written level across, drawn at their written height
   // the ground as one sheet with the faces (tools/partition/sheet.py; drawn unless ?ground=old): the cells under faces as
   // run lengths, the grid points carved or built up to meet the faces (h, by hz decimetres), the face corners where the ground
   // meets a face below or above its top (s, by sz centimetres: a retaining wall), the square's wall for those, and the cells where faces overlap (x), drawn whole
@@ -410,8 +424,11 @@ export class GameMap {
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
   // and how far under its road its flat underside is drawn
-  private decks: { p: number[][]; half: number; left: number; right: number; drop: number }[] = [];
+  private decks: { p: number[][]; half: number; left: number; right: number; drop: number; held?: boolean }[] = [];
   private deckCells = new Map<number, number[]>();
+  // with ?decks=1, the decks' faces (sf.lv): each triangle's corners in scene coords as x, z, top, by cell
+  private deckTris: number[] = [];
+  private deckTriCells = new Map<number, number[]>();
   // the arches drawn under bridges (world.ts), each stretch of barrel in scene coords: [ax, az, bx, bz,
   // half its width, the road's height over it at a and b, the barrel's at a and b], by cell
   private arches: number[][] = [];
@@ -594,6 +611,8 @@ export class GameMap {
       }
       r.bridge = true;
       if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
+      // (with its deck as faces, its parapets stand along their outline instead: below)
+      if (facedDecks(d.sf)) continue;
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
       const sides = deckSides(r);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
@@ -623,7 +642,7 @@ export class GameMap {
         let b = a + 1;
         while (b < r.p.length - 1 && (flags[b] || flags[b + 1])) b++;
         const k = this.decks.length, seen = new Set<number>(), p = r.p.slice(a, b + 1);
-        this.decks.push({ p: p.map((q, i) => [q[0], -q[1], deckTop(q, flags[a + i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r) });
+        this.decks.push({ p: p.map((q, i) => [q[0], -q[1], deckTop(q, flags[a + i], g, this.z0, d.se)]), half, left: hl + 0.2, right: hr + 0.2, drop: deckDrop(r), held: !!r.held });
         for (let i = 0; i < p.length - 1; i++) {
           const A = p[i], B = p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(B[0] - A[0], B[1] - A[1]) / (CELL / 2)));
           for (let s = 0; s <= n; s++)
@@ -631,6 +650,57 @@ export class GameMap {
               if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
         }
         a = b - 1;
+      }
+    }
+    if (facedDecks(d.sf)) {
+      const sf = d.sf!, V = sf.v;
+      for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) {
+        const T = lv[kind] ?? [], lift = FACE_LIFT[kind];
+        for (let k = 0; k + 2 < T.length; k += 3) {
+          const n = this.deckTris.length / 9, seen = new Set<number>();
+          let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+          for (let m = 0; m < 3; m++) {
+            const i = T[k + m], x = V[3 * i], z = -V[3 * i + 1];
+            this.deckTris.push(x, z, V[3 * i + 2] - this.z0 + lift);
+            x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+          }
+          for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++)
+            for (let cz = Math.floor(z0 / CELL); cz <= Math.floor(z1 / CELL); cz++) {
+              const c = key(cx, cz);
+              if (!seen.has(c)) { seen.add(c); push(this.deckTriCells, c, n); }
+            }
+        }
+      }
+      // A deck's parapets stand along its faces' outer edge where it's over the span, a hand
+      // inside it, from its underside to a walker's chest (off the span its edge is the ground's)
+      const NP = V.length / 3, inside = new Set<number>();
+      const note = (T: ArrayLike<number>) => { for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) inside.add(T[k + m] * NP + T[k + (m + 1) % 3]); };
+      for (const kind of FACE_KINDS_0) note(sf[kind] ?? []);
+      for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) note(lv[kind] ?? []);
+      const spans: [number, number, number, number, boolean, Road][] = [];
+      for (const r of d.rd) if (r.bridge && !r.held) for (let i = 0; i + 1 < r.p.length; i++) {
+        const on = (q: number[]) => q[3] === 1 || q[3] === 2, A = r.p[i], B = r.p[i + 1];
+        if (on(A) || on(B)) spans.push([A[0], A[1], B[0], B[1], on(A) && on(B), r]);
+      }
+      const nearest = (x: number, y: number) => {
+        let best = Infinity, got: (typeof spans)[number] | null = null;
+        for (const sp of spans) {
+          const [ax, ay, bx, by] = sp, vx = bx - ax, vy = by - ay, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+          const dd = Math.hypot(x - ax - vx * t, y - ay - vy * t);
+          if (dd < best) { best = dd; got = sp; }
+        }
+        return got;
+      };
+      for (const lv of sf.lv!) for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
+        const a = e.i[k], b = e.i[k + 1];
+        if (inside.has(b * NP + a)) continue;
+        const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
+        if (!sp || !sp[4]) continue;
+        // (a side the ground stays level with has no parapet drawn, so none to walk into either)
+        const [ax, ay, bx, by, , r] = sp, mx = (V[3 * a] + V[3 * b]) / 2, my = (V[3 * a + 1] + V[3 * b + 1]) / 2;
+        if (r.ledge && !r.ledge[(bx - ax) * (my - ay) - (by - ay) * (mx - ax) > 0 ? 0 : 1]) continue;
+        const ta = V[3 * a + 2] - this.z0, tb = V[3 * b + 2] - this.z0;
+        this.addSeg(V[3 * a], -V[3 * a + 1], V[3 * b], -V[3 * b + 1], ta + 1.25, 1, Math.min(ta, tb) - deckDrop(sp[5]), tb + 1.25);
       }
     }
     yield;
@@ -1072,6 +1142,22 @@ export class GameMap {
     const tile = this.tileAt(x, z);
     if (tile) return tile.deck(x, z, y);
     let best: number | null = null, floor: number | null = null;
+    if (this.deckTris.length) {
+      for (const h of this.deckFaceTops(x, z)) {
+        if (h > y + 0.6 || (best !== null && h <= best)) continue;
+        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
+      }
+      // (a set piece's held bridge keeps its own strip)
+      for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+        if (!this.decks[k].held) continue;
+        const { p, left, right } = this.decks[k];
+        const h = deckAt(p, x, z);
+        if (nearDeck.off >= (nearDeck.left ? left : right)) continue;
+        if (h > y + 0.6 || (best !== null && h <= best)) continue;
+        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
+      }
+      return best;
+    }
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, left, right } = this.decks[k];
       const h = deckAt(p, x, z);
@@ -1082,12 +1168,43 @@ export class GameMap {
     return best;
   }
 
+  /** The tops of the decks' faces (?decks=1) over scene (x, z), as drawn. */
+  private deckFaceTops(x: number, z: number): number[] {
+    const D = this.deckTris, out: number[] = [];
+    for (const n of this.deckTriCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const o = 9 * n, ax = D[o], az = D[o + 1], bx = D[o + 3], bz = D[o + 4], cx = D[o + 6], cz = D[o + 7];
+      const det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+      if (Math.abs(det) < 1e-9) continue;
+      const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det, l3 = 1 - l1 - l2;
+      if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+      out.push(l1 * D[o + 2] + l2 * D[o + 5] + l3 * D[o + 8]);
+    }
+    return out;
+  }
+
+  /** Whether scene (x, y, z) is inside a deck's slab (?decks=1): a shot hits it. */
+  inDeckSlab(x: number, z: number, y: number): boolean {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.inDeckSlab(x, z, y);
+    return this.deckTris.length > 0 && this.deckFaceTops(x, z).some((h) => y < h && y > h - DECK_SLAB);
+  }
+
+  /** Where something walking about (a naughty boy, a cat) at height y stands at scene (x, z): on
+   *  a deck it's on or can step up to, with ?decks=1, else the ground. */
+  walkTop(x: number, z: number, y: number): number {
+    const g = this.ground(x, z);
+    if (!DECK_FACES) return g;
+    const d = this.deck(x, z, y);
+    return d !== null && d > g ? d : g;
+  }
+
   /** The lowest bridge deck over scene (x, z) whose top is above y: its top (scene Y), or null.
    *  For a boat going under: its deck and arch hang a metre or so below that (world.ts). */
   overhead(x: number, z: number, y: number): number | null {
     const tile = this.tileAt(x, z);
     if (tile) return tile.overhead(x, z, y);
     let low: number | null = null;
+    if (this.deckTris.length) for (const h of this.deckFaceTops(x, z)) if (h > y && (low === null || h < low)) low = h;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
       const h = deckAt(p, x, z);
@@ -1506,6 +1623,12 @@ export class GameMap {
       const h = deckAt(p, x, z);
       if (nearDeck.off < half && h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
     }
+    // (with the decks as faces, the faces' own height: the strip's line can stand off them)
+    if (this.deckTris.length) {
+      let face: number | null = null;
+      for (const h of this.deckFaceTops(x, z)) if (h > y && (face === null || h < face)) face = h;
+      if (face !== null) low = face;
+    }
     if (low === null) return null;
     // (an arch belongs to the deck whose road it's under: within a hand of the same height)
     let arch: number | null = null, near = 0.3;
@@ -1887,7 +2010,7 @@ export class GameMap {
     const lim = best ? best.dist : maxDist;
     const solid = (f: number) => {
       const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.boreAt(x, z);
-      return t && y < t[0] + t[1] ? y < t[0] : y < this.ground(x, z);
+      return t && y < t[0] + t[1] ? y < t[0] : y < this.ground(x, z) || (DECK_FACES && this.inDeckSlab(x, z, y));
     };
     let prev = 0;
     for (let f = 0.5; f <= lim + 0.5; f += 0.5) {

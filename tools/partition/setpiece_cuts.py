@@ -147,6 +147,10 @@ def _along(p, i, j):
 
 # as setpieces.ts JOIN_LEVEL: ways nearer each other in height than this meet
 JOIN_LEVEL = 1.0
+# metres from a way's deck point to the span it rides: past this the nearest span in the square is
+# some other bridge, and judging by it left the same point on the deck in one square and on the
+# ground in the next (structures.py's widest deck reach is under 13 m)
+RIDE = 15.0
 # metres a way's heights are moved by before its faces are levelled by them rather than by the survey's
 # ground under its line, which leaves out the vaults these streets stand on
 LAID_MOVED = 0.1
@@ -181,7 +185,8 @@ def lay(centre, sq, rd):
             for r in rd:
                 p = r["p"]
                 freed = [k for k, q in enumerate(p) if len(q) > 3 and q[3] == 2 and not shape.contains(Point(q[:2]))
-                         and shape.contains(Point(spans[int(tree.nearest(Point(q[:2])))][:2]))]
+                         and (n := tree.query_nearest(Point(q[:2]), max_distance=RIDE)).size
+                         and shape.contains(Point(spans[int(n[0])][:2]))]
                 # (and the deck's end, where the way left on the deck is that one point: its strip ran
                 # off the deck across the junction)
                 deck = lambda k: 0 <= k < len(p) and k not in freed and len(p[k]) > 3 and p[k][3] in (1, 2)
