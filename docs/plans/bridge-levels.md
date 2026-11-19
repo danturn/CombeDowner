@@ -55,6 +55,14 @@ Most read only known lists, so they keep measuring level 0 until taught — that
 5. Remove old strip path for faced squares (1-2 days, after every partition map is rebuilt and one release out). Keep strips for maps without sf (Hackney prep_map, single-file build) and outskirts.ts; keep deckTop/spanFlags/se held for them.
 6. (optional) Fold culverts (< DECK_CLEAR air and nothing under) into level 0; then underpasses as level −1.
 
+### Faults seen in play with ?decks=1, to fix before decks go on for everyone
+Found by the maintainer on the test site (build 23747f8). Stages 3 and 4 are expected to clear the structure ones; the rest are faults in stages 1–2.
+- Pulteney, Grand Parade side, `?at=-906,2268,104,-10`: the paving's edge at the foot of the set piece's tall stone block is jagged and stepped, with a dark gap and a notch. Check whether this shows without decks too.
+- Midford Road, `?at=118,-1924,254,-3`: a thin green line runs across the carriageway at the deck's end, which looks like a crack at the cap. The right-hand pavement turns to rough stone along the deck.
+- Midland Road truss, `?at=-2217,2473,174,-10`: a grey stone wedge slopes from the ground up to the deck. The deck's pavement is a raised block with a stepped end. Brown dirt lies between the pavement and the truss, and the truss stands beside the deck edge rather than on it.
+- Under Midland Road on the cycle track, `?at=-2204,2456,325,15`: the bank runs up into the deck's underside, with no abutment wall at that end.
+- Ferry Lane, `?at=2989,1562,26,-10` and `?at=2991,1575,191,-5`: the left parapet stops short and the right has none, only a stone slab, dirt and a drop. From the bank the flat deck sits beside the stone arch on its own stepped walls instead of on top of it.
+
 Trial squares: 1,2 (Widcombe footbridges, canal, towpath), 0,2 (Broad Quay, Wells Road bridge), 1,3 (Sydney Gardens canal bridges), Pulteney's square, Ferry Lane's 4,2, and one where a bridge crosses a square edge.
 
 ## Decisions (agreed)
