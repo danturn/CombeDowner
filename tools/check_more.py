@@ -2379,10 +2379,15 @@ def markings(m, f, sheet, note, at, sq, fig):
     if not sheet.ok: return
     cars = sheet.union(("road", "service"))
     if cars.is_empty: return
-    # (near the square's own sides the next square's faces carry on; a bridge's deck is its own)
+    # (near the square's own sides the next square's faces carry on; a bridge's deck is its own, and
+    # where the decks are faces, its carriageway is theirs)
     own = box(*m["b"]).buffer(-0.5)
-    decks = [LineString([q[:2] for q in r["p"]]).buffer(_road_half(r["c"], r.get("w")) + 2) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
-    if decks: own = own.difference(shapely.union_all(decks))
+    faced = Sheet(m, 0) if (m.get("sf") or {}).get("dk") else None
+    if faced is not None and faced.ok:
+        cars = cars.union(faced.union(("road", "service")))
+    else:
+        decks = [LineString([q[:2] for q in r["p"]]).buffer(_road_half(r["c"], r.get("w")) + 2) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
+        if decks: own = own.difference(shapely.union_all(decks))
     streets = _streets_round(m, f)
     if not streets: return
     stree = shapely.STRtree([l for _, l in streets])

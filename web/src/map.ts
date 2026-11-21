@@ -102,7 +102,9 @@ export function floorLift(t: Tunnel) {
   return PATHS.has(t.c) ? FACE_LIFT.path : FACE_LIFT.road;
 }
 export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", "gravel", "stone", "steel"] as const;
-const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot
+const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot, where it is near no bridge's span
+const HOP_REACH = 1.2;   // metres past where a hop starts that it comes down
+const HOP_DROP = 1.5;    // metres: a longer drop than this the other side, and nobody hops it    // metres: how thick a deck is to a shot
 const FACE_KINDS_0 = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
 export interface MapData {
   id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
@@ -438,6 +440,7 @@ export class GameMap {
   private deckCells = new Map<number, number[]>();
   // with ?decks=1, the decks' faces (sf.lv): each triangle's corners in scene coords as x, z, top, by cell
   private deckTris: number[] = [];
+  private deckDepth: number[] = [];   // each deck triangle's depth to its underside, as drawn
   private deckTriCells = new Map<number, number[]>();
   // the arches drawn under bridges (world.ts), each stretch of barrel in scene coords: [ax, az, bx, bz,
   // half its width, the road's height over it at a and b, the barrel's at a and b], by cell
@@ -663,7 +666,7 @@ export class GameMap {
       }
     }
     if (facedDecks(d.sf)) {
-      const sf = d.sf!, V = sf.v;
+      const sf = d.sf!, V = sf.v, first = this.deckTris.length / 9;
       for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) {
         const T = lv[kind] ?? [], lift = DECK_LIFT[kind];
         for (let k = 0; k + 2 < T.length; k += 3) {
@@ -684,7 +687,8 @@ export class GameMap {
       // A deck's parapets stand along its faces' outer edge over the span, and on the step down to each
       // abutment while it stands PARAPET_OVER or more over the ground beside it, as they're drawn
       // (world.ts bridgeStructures), from its underside to a walker's chest
-      // (an outer edge is one only one triangle has: the lists keep no one winding)
+      // (an outer edge has deck on one side only and no ground's face sharing it, where the deck lands:
+      // the lists keep no one winding, and the edging can lie over the paving at a deck's end)
       const NP = V.length / 3, sides = new Map<number, number>();
       const edge = (a: number, b: number) => Math.min(a, b) * NP + Math.max(a, b);
       const note = (T: ArrayLike<number>) => {
@@ -694,7 +698,6 @@ export class GameMap {
         }
       };
       for (const kind of FACE_KINDS_0) note(sf[kind] ?? []);
-      for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) note(lv[kind] ?? []);
       const spans: [number, number, number, number, boolean, Road][] = [];
       for (const r of d.rd) if (r.bridge && !r.held) for (let i = 0; i + 1 < r.p.length; i++) {
         const on = (q: number[]) => q[3] === 1 || q[3] === 2, A = r.p[i], B = r.p[i + 1];
@@ -709,9 +712,20 @@ export class GameMap {
         }
         return got;
       };
+      // (each triangle as deep as its bridge's deck is drawn, for a shot at its underside)
+      const D = this.deckTris;
+      for (let n = first; n < D.length / 9; n++) {
+        const sp = nearest((D[9 * n] + D[9 * n + 3] + D[9 * n + 6]) / 3, -(D[9 * n + 1] + D[9 * n + 4] + D[9 * n + 7]) / 3);
+        this.deckDepth.push(sp ? BRIDGE_DECK[bridgeKind(sp[5])] : DECK_SLAB);
+      }
       for (const lv of sf.lv!) for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
         const a = e.i[k], b = e.i[k + 1];
-        if ((sides.get(edge(a, b)) ?? 0) !== 1) continue;
+        if (sides.has(edge(a, b))) continue;
+        {
+          const ex = V[3 * b] - V[3 * a], ey = V[3 * b + 1] - V[3 * a + 1], l = Math.hypot(ex, ey) || 1, mx = V[3 * a] + ex / 2, my = V[3 * a + 1] + ey / 2;
+          const on = (sx: number) => this.deckFaceTops(mx + (ey / l) * 0.03 * sx, -(my - (ex / l) * 0.03 * sx)).length > 0;
+          if (on(1) === on(-1)) continue;
+        }
         const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
         if (!sp) continue;
         // (a side the ground stays level with has no parapet drawn, so none to walk into either)
@@ -1197,8 +1211,8 @@ export class GameMap {
     return best;
   }
 
-  /** The tops of the decks' faces (?decks=1) over scene (x, z), as drawn. */
-  private deckFaceTops(x: number, z: number): number[] {
+  /** The tops of the decks' faces (?decks=1) over scene (x, z), as drawn (deep: each followed by its depth). */
+  private deckFaceTops(x: number, z: number, deep = false): number[] {
     const D = this.deckTris, out: number[] = [];
     for (const n of this.deckTriCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const o = 9 * n, ax = D[o], az = D[o + 1], bx = D[o + 3], bz = D[o + 4], cx = D[o + 6], cz = D[o + 7];
@@ -1207,6 +1221,7 @@ export class GameMap {
       const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det, l3 = 1 - l1 - l2;
       if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
       out.push(l1 * D[o + 2] + l2 * D[o + 5] + l3 * D[o + 8]);
+      if (deep) out.push(this.deckDepth[n]);
     }
     return out;
   }
@@ -1215,7 +1230,31 @@ export class GameMap {
   inDeckSlab(x: number, z: number, y: number): boolean {
     const tile = this.tileAt(x, z);
     if (tile) return tile.inDeckSlab(x, z, y);
-    return this.deckTris.length > 0 && this.deckFaceTops(x, z).some((h) => y < h && y > h - DECK_SLAB);
+    if (!this.deckTris.length) return false;
+    const tops = this.deckFaceTops(x, z, true);
+    return tops.some((h, k) => k % 2 === 0 && y < h && y > h - tops[k + 1]);
+  }
+
+  /** Whether a deck's faces (?decks=1) lie over scene (x, z), at any height: a spot on a bridge or
+   *  under one, where something put down at "the ground" would not know which it is on. */
+  atDeck(x: number, z: number): boolean {
+    return DECK_FACES && this.deck(x, z, Infinity) !== null;
+  }
+
+  /** walkTop, but mid-hop over a drop deeper than HOP_DROP (from a deck's end to the street beside
+   *  it, across the gap at its corner) the feet stay at the height they left from, not down in it. */
+  hopTop(x: number, z: number, y: number, hopping: boolean): number {
+    const g = this.walkTop(x, z, y);
+    return hopping && DECK_FACES && y - g > HOP_DROP ? y : g;
+  }
+
+  /** Whether something walking about at height y at scene (x, z), hopping over what's in its way
+   *  along (dx, dz), would come down a long way the other side: a bridge's parapet over the river or
+   *  a bank, not a garden wall. */
+  dropAhead(x: number, z: number, dx: number, dz: number, y: number): boolean {
+    if (!DECK_FACES) return false;
+    const l = Math.hypot(dx, dz) || 1, ax = x + (dx / l) * HOP_REACH, az = z + (dz / l) * HOP_REACH;
+    return y - this.walkTop(ax, az, y) > HOP_DROP;
   }
 
   /** Where something walking about (a naughty boy, a cat) at height y stands at scene (x, z): on
@@ -2077,6 +2116,12 @@ export class GameMap {
         const hx = ox + dx * hi, hz = oz + dz * hi;
         const tf = this.boreAt(hx, hz);
         if (tf && oy + dy * hi < tf[0] + tf[1]) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
+        // (a deck's slab, not the ground under it: its top, its underside, or its side, as it came in)
+        if (DECK_FACES && oy + dy * hi >= this.ground(hx, hz) && this.inDeckSlab(hx, hz, oy + dy * hi)) {
+          const lx = ox + dx * lo, lz = oz + dz * lo, hl = Math.hypot(dx, dz) || 1;
+          if (!this.atDeck(lx, lz)) return { dist: hi, kind: "building", nx: -dx / hl, ny: 0, nz: -dz / hl };
+          return { dist: hi, kind: dy < 0 ? "ground" : "building", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
+        }
         const gx = this.ground(hx + 0.5, hz) - this.ground(hx - 0.5, hz), gz = this.ground(hx, hz + 0.5) - this.ground(hx, hz - 0.5);
         const nl = Math.hypot(gx, 1, gz);
         return { dist: hi, kind: "ground", nx: -gx / nl, ny: 1 / nl, nz: -gz / nl };

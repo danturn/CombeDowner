@@ -1820,3 +1820,33 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   the bank at 19.9 m (rule 3, "deck end off the road").
 - [x] **One square drew more of its bridges' structure**: 4_1 (the Dundas Aqueduct's towpaths near
   2400, -100) about 3,000 triangles more, with no more draw calls: its arch, open again (above).
+- [ ] **An edge of a deck's piece with deck just outside it is inside the deck, and gets no face**
+  (world.ts `deckFaces`). At Ferry Lane's east end the stone edging overlaps the paving and pokes
+  4 cm into the road; the edging's own edge there stood a 0.9 m end face inside the deck, seen from
+  the towpath as a pale post under the deck's corner. The build still writes the overlap.
+- [ ] **A ground piece that touches a deck's cap at one lone corner, its other corners more than
+  `CAP_UNDER` (2 m) below, gets a corner of its own there** (`write_tile.off_caps`). The towpath under
+  Ferry Lane ran to the deck's corner and shared it at the deck's height, so its edge stood up as a
+  thin stone post from the towpath to the deck, and `ramp_to_caps` then lifted the towpath round it.
+  A piece less than 2 m below still shares the corner and is ramped.
+
+## Bridge decks, stage 4: naughty boys, cats and shots (21 November)
+
+- [ ] **Naughty boys and cats are not put down on a bridge or under one** (`map.atDeck`, in
+  `clearSpot` and in the gangs' and cats' spawn spots). They are put on the ground, which there may
+  be the river; they still walk on and off a deck from its ends, at the deck's height.
+- [ ] **A naughty boy's grade, hop and footsteps read the level he is on** (`map.walkTop`), so the
+  deck is flat to him and he doesn't think he's in the air over the river.
+- [ ] **A deck's parapet collision stands on every edge with deck on one side only and no ground's
+  face sharing it** (map.ts), not on edges one triangle has: the edging lies over the paving at
+  Ferry Lane's east end, so the edge there was had twice and naughty boys walked off it. Edges at a
+  square's side are walled as before.
+- [ ] **Nobody hops a barrier with a drop of more than 1.5 m behind it** (`map.dropAhead`, with
+  `?decks=1` only), and mid-hop across the gap at a deck's corner the feet stay at the height they
+  left from (`map.hopTop`). Naughty boys hopped Ferry Lane's parapet and fell 3 m to the bank.
+- [ ] **A deck is as thick to a shot as its underside is drawn** (`BRIDGE_DECK` of the bridge whose
+  span is nearest, 0.6 m away from any), so a splat sits on the underside rather than inside it.
+- [ ] **Rule 39 measures road markings on decks** against the decks' own road faces, where a square
+  has them, instead of leaving out a strip round every bridge.
+- [ ] **A shot into a deck's slab comes back with the deck's own face**: up on its top (ground), down on
+  its underside and back along the shot on its side (stone), so the paint splat sits on the face it hit.
