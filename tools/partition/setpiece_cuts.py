@@ -18,6 +18,7 @@ does the same for a set piece added or moved since the square was written).
 """
 import functools
 import json
+import math
 import os
 import subprocess
 import sys
@@ -237,6 +238,7 @@ def lay(centre, sq, rd):
                     whole = _along(p, i - 1, j + 1) or 1
                     p[k][2] = round(a[2] + (zb - a[2]) * _along(p, i - 1, k) / whole, 2)
     got = _run(centre, sq, None, rd)
+    _footpaths_off_own_bridge(centre, sq, rd, (got or {}).get("lines") or [])
     laid = {(round(q[0], 2), round(q[1], 2)): q[2] for line in (got or {}).get("lines") or [] for q in line}
     for r in rd:
         for q in r["p"]:
@@ -252,6 +254,94 @@ def lay(centre, sq, rd):
         if any((round(q[0], 2), round(q[1], 2)) in moved for q in (r["p"][0], r["p"][-1])):
             r["_laid"] = True
     return rd
+
+
+# as setpieces.ts FOOTPATHS: the ways the game leaves out inside a set piece's outline
+FOOTPATHS = {"footway", "steps", "cycleway", "path", "bridleway", "track"}
+# metres from a set piece's laid street that a footpath beside it on its bridge takes its level
+BESIDE_STREET = 12.0
+# the steepest a footpath so laid climbs to or from the rest of it, left where it was (1 in 2)
+WALKABLE = 0.5
+
+
+def _footpaths_off_own_bridge(centre, sq, rd, lines):
+    """A footpath riding a set piece's bridge is the set piece's to build inside its outline, pavement
+    and all, and the game leaves that run of it out. Laid as a deck of its own, the deck reached past
+    the outline, and with the game drawing no deck there it left a hole in the paving at the set
+    piece's foot (Pulteney Bridge's south-west corner). So its run inside the outline is off the deck,
+    at the level of the set piece's street beside it, which the paving round its foot meets, and no
+    steeper than WALKABLE from the rest of the way, which keeps its own heights."""
+    if not any(r["c"] in FOOTPATHS and any(len(q) > 3 and q[3] in (1, 2) for q in r["p"]) for r in rd):
+        return
+    shape = _outlines(centre, sq)
+    if shape is None:
+        return
+    shapely.prepare(shape)
+    spans = [q for r in rd for q in r["p"] if len(q) > 3 and q[3] == 1]
+    tree = STRtree([Point(q[:2]) for q in spans]) if spans else None
+    streets = [LineString(q) for q in lines if len(q) > 1]
+
+    def rides(q):
+        if len(q) < 4 or q[3] not in (1, 2):
+            return False
+        if q[3] == 1:
+            return True
+        n = tree.query_nearest(Point(q[:2]), max_distance=RIDE) if tree is not None else []
+        return len(n) > 0 and shape.contains(Point(spans[int(n[0])][:2]))
+
+    def street_z(q):
+        if not streets:
+            return q[2]
+        line = min(streets, key=lambda l: l.distance(Point(q[:2])))
+        return round(line.interpolate(line.project(Point(q[:2]))).z, 2) if line.distance(Point(q[:2])) < BESIDE_STREET else q[2]
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in FOOTPATHS or len(p) < 2:
+            continue
+        inside = [shape.contains(Point(q[:2])) for q in p]
+        run = set()
+        for k in range(len(p)):
+            if inside[k] and rides(p[k]):
+                i = j = k
+                while i > 0 and inside[i - 1]:
+                    i -= 1
+                while j < len(p) - 1 and inside[j + 1]:
+                    j += 1
+                run.update(range(i, j + 1))
+        if not run:
+            continue
+        at = _along_each(p)
+        # (the rest of the way, and the ways meeting the run, each point as its height and how far
+        # along from it the run's points are: from a junction in the run, through it)
+        fixed = [(p[f][2], at[f], 0.0) for f in range(len(p)) if f not in run]
+        joins = {}
+        for k in run:
+            key = (round(p[k][0], 2), round(p[k][1], 2))
+            for o in rd:
+                if o is r:
+                    continue
+                for n, q in enumerate(o["p"]):
+                    if (round(q[0], 2), round(q[1], 2)) == key:
+                        joins.setdefault(k, []).append(q)
+                        oat = _along_each(o["p"])
+                        fixed += [(o["p"][f][2], at[k], abs(oat[f] - oat[n])) for f in range(len(o["p"])) if f != n]
+        for k in sorted(run):
+            lo, hi = -math.inf, math.inf
+            for z0, a0, past in fixed:
+                reach = WALKABLE * (abs(at[k] - a0) + past)
+                lo, hi = max(lo, z0 - reach), min(hi, z0 + reach)
+            z = street_z(p[k])
+            z = round(min(max(z, lo), hi) if lo <= hi else z, 2)
+            p[k] = [p[k][0], p[k][1], z]
+            for q in joins.get(k, ()):
+                q[2] = z
+
+
+def _along_each(p):
+    out = [0.0]
+    for a, b in zip(p, p[1:]):
+        out.append(out[-1] + math.dist(a[:2], b[:2]))
+    return out
 
 
 @functools.lru_cache(maxsize=4)
