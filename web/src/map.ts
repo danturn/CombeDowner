@@ -93,6 +93,9 @@ export const PARAPET_OVER = 0.5;
 export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf.lv?.length;
 /** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
 export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
+/** The same for a deck's faces (level 1): a path on a deck is the deck's paving, at its pavement's
+ *  height, so it meets the edging and a road bridge's pavement beside it with no kerb between. */
+export const DECK_LIFT: Record<string, number> = { ...FACE_LIFT, path: 0.17, grass: 0.17, dirt: 0.17, gravel: 0.17 };
 /** How far over its line a tunnel's floor is drawn and walked: as far as its way's faces are over
  *  theirs, so the floor meets the way laid up to its mouth with no step to see under. */
 export function floorLift(t: Tunnel) {
@@ -662,7 +665,7 @@ export class GameMap {
     if (facedDecks(d.sf)) {
       const sf = d.sf!, V = sf.v;
       for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) {
-        const T = lv[kind] ?? [], lift = FACE_LIFT[kind];
+        const T = lv[kind] ?? [], lift = DECK_LIFT[kind];
         for (let k = 0; k + 2 < T.length; k += 3) {
           const n = this.deckTris.length / 9, seen = new Set<number>();
           let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;

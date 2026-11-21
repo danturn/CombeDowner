@@ -1792,13 +1792,31 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
 - [ ] **Ferry Lane is one bridge in the data** (one record, an arch, spans 2979 to 2986.5 m east,
   abutments at 2975 and 2990): the "two bridges" were the old parapets and sides stopping at the
   record's span while the deck ran on to its cap at the towpath. They now run with the deck.
-- [ ] **Midland Road's deck pavement still has a small stepped notch** where the cycle bridge's
-  pavement meets the road bridge's: the two decks' outlines meet there at different heights, which
-  is the faces' join, not the structure. Left for stage 4's look at decks side by side.
+- [x] **Midland Road's deck pavement had a small stepped notch** where the cycle bridge meets the road
+  bridge: the cycle bridge's edging strip lay between the two decks, drawn as coping, and its path
+  stood a kerb below the pavement. Edging with deck on every side is now drawn as paving, and a path
+  on a deck takes the pavement's lift (`DECK_LIFT`), stepping down to a path on the ground at its cap.
+  The two decks still meet up to 0.25 m apart in height there, as the writer fits each run.
+- [ ] **Each deck edge and triangle goes to the nearest bridge's deck stretch** (its span with the
+  step to each abutment), not to the nearest point of its whole way: Ferry Lane's deck corner went to
+  the lane running on north from it, whose span is 150 m away, and stood as a wall beside the arch.
+- [ ] **Where a deck stands in the air or over a way passing under it, its sides, ends and underside
+  are its own depth**, not walls to the ground, and run on past the span (Ferry Lane's end over the
+  towpath). Whether a way passes under is measured at the edge itself, so a skewed deck's corner over
+  the towpath counts. A parapet's end pier stands only where its foot is on the bank: over the
+  towpath they stood as loose pillars.
+- [ ] **Where the bank comes up under a deck short of its end, an abutment face stands across there**,
+  from the underside to the bank, and the sides between it and the end are walls (under Midland Road).
+- [ ] **An outline that doubles back over its own corner is split there**, and sliver triangles with no
+  width are left out when the game decides which side of an edge is deck: Ferry Lane's north edge
+  lost 2 m of its side to one.
+- [ ] **The Dundas Aqueduct's arch (4_1) is open with `?decks=1`**: stage 2 filled it with a flat wall.
+  That is the 3,000 more triangles in that square.
+- [ ] **A slanting stone strip on the towpath under Ferry Lane's deck end is a level-0 retaining wall**
+  (`sheetEdge`, where the ground sheet meets the lane's faces), not the bridge's; it was there before.
 - [ ] **A bridge's own point at an abutment now takes the abutment's height** when the abutment is
   landed on the faces (`sheet.ends_on_faces`), as `ends.share` already did for a flight. Ramping
   Midland Road's pavement raised the cycle bridge's abutment to 20.7 m while its way's end stayed on
   the bank at 19.9 m (rule 3, "deck end off the road").
-- [ ] **One square drew more of its bridges' structure**: 4_1 (the cycleway and footway bridges near
-  2400, -100) about 3,000 triangles more, with no more draw calls; over the views shot the squares
-  drew 50,000 fewer triangles and 2 fewer calls. Not looked at in the game yet.
+- [x] **One square drew more of its bridges' structure**: 4_1 (the Dundas Aqueduct's towpaths near
+  2400, -100) about 3,000 triangles more, with no more draw calls: its arch, open again (above).
