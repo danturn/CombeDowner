@@ -3501,6 +3501,31 @@ def ramp_to_caps(v, tris, on_cap, caps, under=None):
             v[3 * i + 2] = round(h + (z - h) * d / CAP_RAMP, 2)
 
 
+CAP_UNDER = 2.0     # metres: a piece this far below a cap it touches at one corner passes under the deck
+
+
+def off_caps(tris, v, on_cap):
+    """The pieces that touch a deck's cap at a lone corner only, their other corners far below it,
+    given a corner of their own there at their own height. A towpath passing under a deck, its edge
+    running to the deck's corner, shared that corner at the deck's height, and its edge stood up
+    there in a thin stone post from the towpath to the deck (Ferry Lane over the canal)."""
+    lands = {n for _, n, ids, _ in tris if len(on_cap.intersection(ids)) >= 2}
+    round_it = {}
+    for _, n, ids, _ in tris:
+        if n in lands:
+            continue
+        for i in on_cap.intersection(ids):
+            round_it.setdefault((n, i), []).extend(v[3 * j + 2] for j in ids if j != i)
+    own = {}
+    for (n, i), zs in round_it.items():
+        z = sum(zs) / len(zs)
+        if v[3 * i + 2] - z > CAP_UNDER:
+            own[n, i] = len(v) // 3
+            v.extend([v[3 * i], v[3 * i + 1], round(z, 2)])
+    for t in tris:
+        t[2] = [own.get((t[1], i), i) for i in t[2]]
+
+
 def _one_polygon(g, was):
     """g as one polygon, its largest part, or `was` if moving its corners left nothing of it."""
     parts = [q for q in getattr(g, "geoms", [g]) if q.geom_type == "Polygon" and q.area > 1e-6]
@@ -6674,6 +6699,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             return abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) <= 2 * CAP_MERGE * longest
         tris = [t for t in tris if not sliver(t[2])]
         deck_tris = [t for t in deck_tris if not sliver(t[2])]
+        off_caps(tris, v, on_cap)
     for kind, n, ids, _ in tris:
         out[kind] += ids
         (walk if piece_of[n][0] == "pavement" else kerbside).update(ids)
