@@ -3306,6 +3306,7 @@ def deck_runs(rd, ends=(), ground=None):
     return out
 
 
+DECK_RUN_ON = 10.0     # metres a deck's line runs on past an end cut at the square's side, for the heights beside it
 RUN_BEND = 0.5      # metres: within this much of each other, two stretches of a deck's line both say where along it a point is
 
 
@@ -3315,10 +3316,25 @@ def run_z(o, x, y):
     apart on a steep deck), so stretches about as near as each other there share the say."""
     if "_seg" not in o:
         c = np.asarray(o["line"].coords)
+        # (an end cut at the square's side, running on in the air, carries straight on past it: held
+        # at the end, a point beside it where the side crosses the deck on the skew took the end's
+        # height in one square and the next square's line's in the other, a crack across the deck)
+        ext = [None, None]
+        if len(c) > 1:
+            for k, (end, e, f) in enumerate(((0, c[0], c[1]), (len(c) - 1, c[-1], c[-2]))):
+                L = float(np.hypot(*(e - f)))
+                if end not in o["caps"] and L > 1e-6:
+                    ext[k] = e + (e - f) / L * DECK_RUN_ON
+        c = np.vstack([q for q in (ext[0], c, ext[1]) if q is not None])
         d = c[1:] - c[:-1]
         n = np.hypot(d[:, 0], d[:, 1])
-        o["_seg"] = (c[:-1], d, n, np.concatenate([[0.0], np.cumsum(n)]))
-    a, d, n, cum = o["_seg"]
+        o["_seg"] = (c[:-1], d, n, np.concatenate([[0.0], np.cumsum(n)]), ext[0] is not None, ext[1] is not None)
+    a, d, n, cum, first, last = o["_seg"]
+    z = list(o["z"])
+    if first:
+        z.insert(0, z[0] + (z[0] - z[1]) / (n[1] or 1.0) * DECK_RUN_ON)
+    if last:
+        z.append(z[-1] + (z[-1] - z[-2]) / (n[-2] or 1.0) * DECK_RUN_ON)
     raw = ((x - a[:, 0]) * d[:, 0] + (y - a[:, 1]) * d[:, 1]) / np.maximum(n * n, 1e-12)
     t = np.clip(raw, 0.0, 1.0)
     gap = np.hypot(a[:, 0] + d[:, 0] * t - x, a[:, 1] + d[:, 1] * t - y)
@@ -3327,7 +3343,7 @@ def run_z(o, x, y):
     w = np.where((raw > 0) & (raw < 1), np.exp(-(gap - gap.min()) / RUN_BEND), 0.0)
     w[int(np.argmin(gap))] = 1.0
     along = float((w * (cum[:-1] + t * n)).sum() / w.sum())
-    return float(np.interp(along, cum, o["z"]))
+    return float(np.interp(along, cum, z))
 
 
 def cap_lines(runs, footprint):
@@ -3456,6 +3472,33 @@ CAP_NEAR = 1.0      # metres from a deck's cap within which a corner both levels
 CAP_LAND = 1.0      # metres: a deck's end further than this off the faces it meets keeps its own height
 CAP_PAIR = DECK_TOLERANCE    # metres: a deck's corner on a cap this near one of the ground's there is moved on to it
 CAP_MERGE = 0.06    # metres: corners on a cap rounded or laid this near each other are one
+CAP_RAMP = 2.5      # metres from a deck's cap over which the faces meeting it rise or fall to its height
+CAP_WEDGE = 0.3     # metres: a corner nearer its height than this is left where it is
+CAP_PULL = 3.0      # metres: a corner further off its height than this is on another level, and left
+
+
+def ramp_to_caps(v, tris, on_cap, caps, under=None):
+    """The corners of the ground's faces that meet a deck at its cap, near the cap, brought towards the
+    cap's height, all the way at the cap and less with distance, over CAP_RAMP. A corner of paving no
+    street's level reaches lies on the ground, and where a deck lands on an embankment that left a
+    wedge of paving falling from the cap to the foot of the bank in a few centimetres (Midland Road's
+    cycle bridge). Only the faces that share a corner with a cap, and not under the deck's end."""
+    pieces = {n for _, n, ids, _ in tris if on_cap.intersection(ids)}
+    pts = {i for _, n, ids, _ in tris if n in pieces for i in ids} - on_cap
+    if not pts:
+        return
+    tree = STRtree([c[0] for c in caps])
+    for i in sorted(pts):
+        p = Point(v[3 * i], v[3 * i + 1])
+        if under is not None and under.contains(p):
+            continue
+        k = tree.query_nearest(p, max_distance=CAP_RAMP)
+        if not len(k):
+            continue
+        line, h = caps[int(k[0])][0], caps[int(k[0])][1]
+        d, z = line.distance(p), v[3 * i + 2]
+        if CAP_WEDGE < abs(z - h) <= CAP_PULL and d < CAP_RAMP:
+            v[3 * i + 2] = round(h + (z - h) * d / CAP_RAMP, 2)
 
 
 def _one_polygon(g, was):
@@ -6674,6 +6717,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             else:
                 v[3 * k + 2] = round(min(max(g, z - PAVE_FALL), z + PAVE_FALL), 2)
     meet_flights(v, at, walk - kerbside, [r for r in rd if _drawn_flight(r, ground)], br, railings)
+    if cap_at:
+        # (not beside a flight's treads: the faces there meet the treads, as meet_flights left them)
+        treads = unary_union([b for b, _ in tread_lines]).buffer(FLIGHT_REACH) if tread_lines else None
+        ramp_to_caps(v, tris, set(cap_at.values()), caps, unary_union([g for g in (under_zone, treads) if g is not None]) if under_zone is not None or treads is not None else None)
     for k in (*PATH_FACE.values(), "bed"):
         if not out[k]:
             del out[k]

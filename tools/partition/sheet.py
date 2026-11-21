@@ -420,6 +420,12 @@ def ends_on_faces(tile, out=0.5):
             if e[0] == "abutment" and len(e) > 6 and e[6] == 2 and math.dist(e[1:3], (x, y)) < 0.05:
                 e[3] = round(float(h), 2)
                 moved += 1
+                # (and the bridge's own point there with it, as ends.share moves it for a flight: the
+                # way's line on the bank's slope otherwise stands under the deck's end it leads to)
+                for r in tile.get("rd") or []:
+                    for q in r["p"]:
+                        if not (len(q) > 3 and q[3]) and math.dist(q[:2], (x, y)) < 0.05:
+                            q[2] = e[3]
     return moved
 
 
