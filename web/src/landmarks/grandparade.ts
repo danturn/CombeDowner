@@ -41,6 +41,10 @@ export const OUT = -6.5;
 const STEP = 1;                   // metres between the heights of the pavement read along its edge
 const NONE = -99;                 // no pavement read there
 const PAVE_UP = 0.15;             // the paving's top over the street's level, where there's no pavement to meet
+// how deep the paving is under its lower end: down past the map's paving beside it, which by the
+// bridge (the footway onto it) lies up to 0.9 m lower, so you don't see under its edge there, and
+// still within the entablature on its river side
+const PAVE_DEEP = 1.4;
 
 export function paradeArgs(c: PlaceCtx, height: number): (number | string)[] {
   const pts: number[][] = [];
@@ -130,7 +134,7 @@ export function colonnade(args: (number | string)[]): THREE.Object3D {
     // the paving out to it from the set piece's edge, sloping as the map's pavement there does, to meet it at its height
     for (let i = 0; i < n; i++) {
       const a = x0 + ((x1 - x0) * i) / n, b = x0 + ((x1 - x0) * (i + 1)) / n;
-      k.add(paving, sloped(b - a, OUT - BAL + 0.2, top(a), top(b), 0.45), (a + b) / 2, 0, (BAL - 0.2 + OUT) / 2, 0, 2);
+      k.add(paving, sloped(b - a, OUT - BAL + 0.2, top(a), top(b), PAVE_DEEP), (a + b) / 2, 0, (BAL - 0.2 + OUT) / 2, 0, 2);
     }
     const bay = Math.round((x - P0) / BAYW);
     if (bay % 2 === 0) {

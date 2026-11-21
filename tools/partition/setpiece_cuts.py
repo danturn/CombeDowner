@@ -163,6 +163,18 @@ def _corner(q):
     return None if p.is_empty else p
 
 
+def held_outlines(centre, sq, rd):
+    """The outlines of the set pieces reaching square sq that carry a street on a bridge of their own
+    (a point of its span inside), or None: what the square lays inside them is the set piece's."""
+    got = _run(centre, sq, None, None)
+    if got is None:
+        return None
+    spans = [Point(q[:2]) for r in rd or () if r["c"] not in FOOTPATHS for q in r["p"] if len(q) > 3 and q[3] == 1]
+    rings = [p for p in (_shape([r]) for r in got["fill"] + got["split"]) if p is not None]
+    held = [p for p in rings if any(p.contains(q) for q in spans)]
+    return unary_union(held) if held else None
+
+
 def _outlines(centre, sq):
     got = _run(centre, sq, None, None)
     return None if got is None else _shape(got["fill"] + got["split"])
