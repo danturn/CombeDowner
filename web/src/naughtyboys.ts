@@ -936,7 +936,7 @@ export class NaughtyBoys {
     }
     // steep ground slows them like it slows you
     if (spd > 0) {
-      const ahead = this.map.ground(c.x + dirX * spd * 0.15, c.z + dirZ * spd * 0.15) - this.map.ground(c.x, c.z);
+      const ahead = this.map.walkTop(c.x + dirX * spd * 0.15, c.z + dirZ * spd * 0.15, c.y - c.hop) - (c.y - c.hop);
       const grade = ahead / (spd * 0.15);
       if (grade > 0.35) spd *= Math.max(0.35, 1 - (grade - 0.35) * 1.2);
     }
@@ -959,7 +959,7 @@ export class NaughtyBoys {
       if (prog < 0.35) {
         const over = this.map.sweep(c, { x: nx, z: nz }, c.y + 1.05, RADIUS);
         // (not over the back wall of a house dug into the hill, though, and down inside it)
-        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.ground(over.x, over.z))) { p = over; c.hopV = 4.2; c.hop = 0.001; }
+        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.walkTop(over.x, over.z, c.y)) && !this.map.dropAhead(c.x, c.z, dirX, dirZ, c.y)) { p = over; c.hopV = 4.2; c.hop = 0.001; }
         else if ((c.stuckT += dt) > 0.5) { c.stuckT = 0; roundIt(); }
       } else c.stuckT = Math.max(0, c.stuckT - dt);
     }
@@ -972,7 +972,7 @@ export class NaughtyBoys {
       c.hopV -= 22 * dt; c.hop += c.hopV * dt;
       if (c.hop <= 0) { c.hop = 0; c.hopV = 0; }
     }
-    c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop;
+    c.y = this.map.hopTop(c.x, c.z, c.y - c.hop, c.hop > 0) + c.hop;
     const sp = Math.hypot(c.vx, c.vz);
     if (face === null && sp > 0.4) face = Math.atan2(-c.vx, -c.vz);
     if (face !== null) {
@@ -992,14 +992,14 @@ export class NaughtyBoys {
       const k = Math.min(1, dt * 8);
       c.vx += (c.fleeX * run - c.vx) * k; c.vz += (c.fleeZ * run - c.vz) * k;
     } else { const k = Math.exp(-4 * dt); c.vx *= k; c.vz *= k; }
-    if (Math.hypot(c.vx, c.vz) < 0.05) { c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop; return; }
+    if (Math.hypot(c.vx, c.vz) < 0.05) { c.y = this.map.hopTop(c.x, c.z, c.y - c.hop, c.hop > 0) + c.hop; return; }
     const nx = c.x + c.vx * dt, nz = c.z + c.vz * dt;
     let p = this.map.sweep(c, { x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
     if (run > 1 && c.hop === 0) {
       const want = Math.hypot(c.vx, c.vz) * dt, prog = ((p.x - c.x) * c.fleeX + (p.z - c.z) * c.fleeZ) / want;
       if (prog < 0.35) {
         const over = this.map.sweep(c, { x: nx, z: nz }, c.y + 1.05, RADIUS);
-        if (((over.x - c.x) * c.fleeX + (over.z - c.z) * c.fleeZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.ground(over.x, over.z))) { p = over; c.hopV = 4.2; c.hop = 0.001; }
+        if (((over.x - c.x) * c.fleeX + (over.z - c.z) * c.fleeZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.walkTop(over.x, over.z, c.y)) && !this.map.dropAhead(c.x, c.z, c.fleeX, c.fleeZ, c.y)) { p = over; c.hopV = 4.2; c.hop = 0.001; }
         else {
           // something big in the way: veer off round it, always the same side
           if (!c.detour) c.detour = Math.random() < 0.5 ? -1 : 1;
@@ -1019,7 +1019,7 @@ export class NaughtyBoys {
       c.hopV -= 22 * dt; c.hop += c.hopV * dt;
       if (c.hop <= 0) { c.hop = 0; c.hopV = 0; }
     }
-    c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop;
+    c.y = this.map.hopTop(c.x, c.z, c.y - c.hop, c.hop > 0) + c.hop;
     if (run > 0) {
       const face = Math.atan2(-c.vx, -c.vz), dy = Math.atan2(Math.sin(face - c.yaw), Math.cos(face - c.yaw));
       c.yaw += dy * Math.min(1, dt * 10);
@@ -1263,7 +1263,7 @@ export class NaughtyBoys {
     const taken = this.list.filter((c) => c.state === ALIVE);
     // naughty boys, anywhere but the pitches (the teams have their own times: turnOut)
     const clear = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45)
-      && !taken.some((c) => Math.hypot(c.baseX - x, c.baseZ - z) < 12);
+      && !taken.some((c) => Math.hypot(c.baseX - x, c.baseZ - z) < 12) && !this.map.atDeck(x, z);
     const spots = hauntsNear(this.map, anchor.x, anchor.z, 150).filter((h) => likes(h) > 0)
       .map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "bus" }));
     const near = spots.filter((h) => {
@@ -1582,7 +1582,7 @@ export class NaughtyBoys {
         const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, going ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
         fig.fade(c.state === DEAD ? (OUT_SECS - c.deadAnim) / FADE_SECS : 1);
         // feet on the ground: no steps while hopping a wall, and a thud when he lands
-        const air = c.dy - this.map.ground(c.dx, c.dz) > 0.15;
+        const air = c.dy - this.map.walkTop(c.dx, c.dz, c.dy) > 0.15;
         if (going && ((down && !air && c.speed > 0.8) || (c.hopping && !air))) this.onStep(c.dx, c.dy, c.dz, c.speed);
         c.hopping = air;
       } else if (fig.root.visible) fig.hide();

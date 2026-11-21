@@ -384,6 +384,11 @@ def held_ends(ends, rd):
     return out
 
 
+def steepest(p, i, h):
+    """The steeper grade from point i of a line, at height h, to either of its neighbours."""
+    return max((abs(h - p[j][2]) / max(math.dist(p[i][:2], p[j][:2]), 0.1) for j in (i - 1, i + 1) if 0 <= j < len(p)), default=0.0)
+
+
 def ends_on_faces(tile, out=0.5):
     """Each abutment held at its way's height (`se`, held 2) lands at the face it meets instead, where
     one is drawn just past the deck's end (its written height, as the deck's floor meets the street's):
@@ -420,6 +425,16 @@ def ends_on_faces(tile, out=0.5):
             if e[0] == "abutment" and len(e) > 6 and e[6] == 2 and math.dist(e[1:3], (x, y)) < 0.05:
                 e[3] = round(float(h), 2)
                 moved += 1
+                # (and the bridge's own point there with it, as ends.share moves it for a flight: the
+                # way's line on the bank's slope otherwise stands under the deck's end it leads to.
+                # Only where that leaves the line no steeper on either side: a cap standing off the
+                # line's run would otherwise put a kink and a step in the road at the bridge's end)
+                for r in tile.get("rd") or []:
+                    p = r["p"]
+                    for i, q in enumerate(p):
+                        if not (len(q) > 3 and q[3]) and math.dist(q[:2], (x, y)) < 0.05:
+                            if steepest(p, i, e[3]) <= steepest(p, i, q[2]) + 1e-6:
+                                q[2] = e[3]
     return moved
 
 

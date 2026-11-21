@@ -1770,6 +1770,120 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   check draws it (rule 33; only the ground sheet's wall corners differ), and the moored boat in 1_3
   (-684, 2019) has 2 m of front behind open ground (rule 48). Look at them in the game.
 
+## Bridge decks, stage 3: sides and parapets from the deck's own edges (21 November)
+
+- [ ] **A deck's level-1 run is carried 10 m on past a square's side** when the writer fits its
+  heights, so where a side crosses a deck on the skew both squares give the points on it the same
+  height. Before, one square clamped at its last point and the other projected along, and Midford
+  Road showed a 4 to 6 cm crack across the carriageway at the seam.
+- [ ] **The pavement corners beside a cap are ramped up to the cap's height** over 2.5 m
+  (`ramp_to_caps`), where they had fallen to the ground because they lay beyond the street's reach
+  (Midland Road's cycle bridge: a grey wedge 2 m high). Points under a deck and beside a flight's
+  treads are left alone. Only differences between 0.3 and 3 m are ramped: a bigger one is something
+  else, and a smaller one the kerb already covers.
+- [ ] **A path on a deck is drawn paved, not as earth**, as a bridge's walkway is: the cycle bridge
+  beside Midland Road showed a strip of brown dirt between its pavement and its truss.
+- [ ] **With `?decks=1`, sides, parapets, trusses, undersides and abutments follow the deck's outer
+  edges** as the faces draw them, not the record's line. A parapet stands along an edge over the
+  span, or anywhere along an approach that stands 0.5 m or more over the ground just outside it
+  (the same rule as the collision). An edge across the way (the deck's open end) and an edge along a
+  square's side get none. Beside an abutment on the bank the side goes down into the bank whatever
+  the bridge's kind, so a beam's end no longer stands on the bank's slope with nothing under it.
+- [ ] **Ferry Lane is one bridge in the data** (one record, an arch, spans 2979 to 2986.5 m east,
+  abutments at 2975 and 2990): the "two bridges" were the old parapets and sides stopping at the
+  record's span while the deck ran on to its cap at the towpath. They now run with the deck.
+- [x] **Midland Road's deck pavement had a small stepped notch** where the cycle bridge meets the road
+  bridge: the cycle bridge's edging strip lay between the two decks, drawn as coping, and its path
+  stood a kerb below the pavement. Edging with deck on every side is now drawn as paving, and a path
+  on a deck takes the pavement's lift (`DECK_LIFT`), stepping down to a path on the ground at its cap.
+  The two decks still meet up to 0.25 m apart in height there, as the writer fits each run.
+- [ ] **Each deck edge and triangle goes to the nearest bridge's deck stretch** (its span with the
+  step to each abutment), not to the nearest point of its whole way: Ferry Lane's deck corner went to
+  the lane running on north from it, whose span is 150 m away, and stood as a wall beside the arch.
+- [ ] **Where a deck stands in the air or over a way passing under it, its sides, ends and underside
+  are its own depth**, not walls to the ground, and run on past the span (Ferry Lane's end over the
+  towpath). Whether a way passes under is measured at the edge itself, so a skewed deck's corner over
+  the towpath counts. A parapet's end pier stands only where its foot is on the bank: over the
+  towpath they stood as loose pillars.
+- [ ] **Where the bank comes up under a deck short of its end, an abutment face stands across there**,
+  from the underside to the bank, and the sides between it and the end are walls (under Midland Road).
+- [ ] **An outline that doubles back over its own corner is split there**, and sliver triangles with no
+  width are left out when the game decides which side of an edge is deck: Ferry Lane's north edge
+  lost 2 m of its side to one.
+- [ ] **The Dundas Aqueduct's arch (4_1) is open with `?decks=1`**: stage 2 filled it with a flat wall.
+  That is the 3,000 more triangles in that square.
+- [ ] **A slanting stone strip on the towpath under Ferry Lane's deck end is a level-0 retaining wall**
+  (`sheetEdge`, where the ground sheet meets the lane's faces), not the bridge's; it was there before.
+- [ ] **A bridge's own point at an abutment now takes the abutment's height** when the abutment is
+  landed on the faces (`sheet.ends_on_faces`), as `ends.share` already did for a flight. Ramping
+  Midland Road's pavement raised the cycle bridge's abutment to 20.7 m while its way's end stayed on
+  the bank at 19.9 m (rule 3, "deck end off the road").
+- [x] **One square drew more of its bridges' structure**: 4_1 (the Dundas Aqueduct's towpaths near
+  2400, -100) about 3,000 triangles more, with no more draw calls: its arch, open again (above).
+- [ ] **An edge of a deck's piece with deck just outside it is inside the deck, and gets no face**
+  (world.ts `deckFaces`). At Ferry Lane's east end the stone edging overlaps the paving and pokes
+  4 cm into the road; the edging's own edge there stood a 0.9 m end face inside the deck, seen from
+  the towpath as a pale post under the deck's corner. The build still writes the overlap.
+- [ ] **A ground piece that touches a deck's cap at one lone corner, its other corners more than
+  `CAP_UNDER` (2 m) below, gets a corner of its own there** (`write_tile.off_caps`). The towpath under
+  Ferry Lane ran to the deck's corner and shared it at the deck's height, so its edge stood up as a
+  thin stone post from the towpath to the deck, and `ramp_to_caps` then lifted the towpath round it.
+  A piece less than 2 m below still shares the corner and is ramped.
+
+## Bridge decks, stage 4: naughty boys, cats and shots (21 November)
+
+- [ ] **Naughty boys and cats are not put down on a bridge or under one** (`map.atDeck`, in
+  `clearSpot` and in the gangs' and cats' spawn spots). They are put on the ground, which there may
+  be the river; they still walk on and off a deck from its ends, at the deck's height.
+- [ ] **A naughty boy's grade, hop and footsteps read the level he is on** (`map.walkTop`), so the
+  deck is flat to him and he doesn't think he's in the air over the river.
+- [ ] **A deck's parapet collision stands on every edge with deck on one side only and no ground's
+  face sharing it** (map.ts), not on edges one triangle has: the edging lies over the paving at
+  Ferry Lane's east end, so the edge there was had twice and naughty boys walked off it. Edges at a
+  square's side are walled as before.
+- [ ] **Nobody hops a barrier with a drop of more than 1.5 m behind it** (`map.dropAhead`, with
+  `?decks=1` only), and mid-hop across the gap at a deck's corner the feet stay at the height they
+  left from (`map.hopTop`). Naughty boys hopped Ferry Lane's parapet and fell 3 m to the bank.
+- [ ] **A deck is as thick to a shot as its underside is drawn** (`BRIDGE_DECK` of the bridge whose
+  span is nearest, 0.6 m away from any), so a splat sits on the underside rather than inside it.
+- [ ] **Rule 39 measures road markings on decks** against the decks' own road faces, where a square
+  has them, instead of leaving out a strip round every bridge.
+- [ ] **A shot into a deck's slab comes back with the deck's own face**: up on its top (ground), down on
+  its underside and back along the shot on its side (stone), so the paint splat sits on the face it hit.
+
+## Whole-map build of the bridge decks (21 November)
+
+The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a38b4).
+
+- [ ] **A bridge's end point moves to its deck's cap only where the line is no steeper for it**
+  (`sheet.steepest`). Moved every time, the cap stood off the line's run at Lower Stoke, Mill Lane,
+  Stanier Road and the arch at (-3436, 2392), and the road kinked and climbed a step at the bridge's
+  end (rule 1: 3 more kinked, 2 more too steep). Where the cap is left off, the line stands up to
+  0.3 m off the deck's end, as before stage 3 (Ferry Lane's west end, 0.27 m under it).
+- [ ] **The arches came back with faced decks**: the sides and underside drawn along the deck's
+  outline took an edge as one piece the whole length of the bridge, so Cleveland Bridge, North
+  Parade and Bathwick Hill's arches were drawn flat. Faces crossing an arch between piers are cut
+  every 3 m or so over it (base: every 2 m) and each end of an arch has the pier's face across it.
+  An arch over the canal is left as the deck's corners shape it. That costs about 200 more
+  triangles than base in 1_4 (Cleveland Bridge, in view), the only square in the bridge shots where
+  the arches put the count above base.
+- [ ] **Small rises in triangles drawn from the outline-drawn sides** (stage 3 code, the same with
+  base's squares): 0_2 +244 (Broad Quay's beam bridge), 1_3 +169, 2_3 +21, -1_2 +53, 1_4 +11 in
+  view. Every bridge shot is down overall (net -1,800 to -13,600 triangles).
+- [ ] **One more parked car in 1_3** at (-305, 2445): the square's rebuild placed it (+1 draw call,
+  +5,442 triangles in the Sydney Gardens footbridge shot). It is not part of the bridge.
+- [ ] **Check counts up by one or two after the rebuild** (all elsewhere the same or lower):
+  rule 39 give-way across a street with right of way 9 to 11 (Sydney Mews in 1_3, Lower Stoke in
+  3_0) and not square 19 to 21 (-2_3, 1_-1), road marking off the carriageway 3 to 4 (Mill Lane's
+  give-way line at (1541, 3967), 0.6 m off), rule 42 faces don't meet the next square's 235 to 236
+  (-3_3's side), rule 33 flight lands on nothing 45 to 46 (steps at (-44, 3136), 0.06 m off),
+  rule 54 deck point off its line 2 to 3 (-2_3, 10 cm), ways meet at different heights 6 to 7
+  (-1_3), path not drawn 66 to 67 in 0_3 and step between two pieces of path 18 to 19. They
+  follow from bridge ends' heights moving onto the decks' caps, and from squares last built before
+  Spencer's later tool changes; none is on a bridge's deck. Down: 1189 to 1188 face edges off the
+  ground, 201 to 200 ground over a path, 80 to 79 no room under a bridge, 329 to 327 steps in the
+  carriageway.
+
 ## Pulteney Bridge's foot on Grand Parade (21 November)
 
 - [ ] **A footpath riding a set piece's bridge is laid at the set piece's street level inside its
