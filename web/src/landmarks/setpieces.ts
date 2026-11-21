@@ -739,8 +739,8 @@ export function clearSetPieceGround(d: MapData, surface: (x: number, y: number, 
 }
 
 const FOOTPATHS = new Set(["footway", "steps", "cycleway", "path", "bridleway", "track"]);
-
 const GONE_REACH = 0.6;     // metres out from a wall that its door, bay window or sign stands
+const HELD_LEVEL = 1.0;     // metres a footpath's face on a set piece's own bridge may stand off its street and stay (the wedges were 3 m and more)
 
 function wallDist(x: number, y: number, a: number[], b: number[]): number {
   const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
@@ -901,8 +901,21 @@ export function maskSetPieces(d: MapData) {
     (d.so ??= []).push(...rings);
     // and on a bridge it builds itself, the footpaths' faces inside go with their paths: a footway the
     // map has along the bridge's side poked up through its street in a wedge where it fell and rose
-    // (a garden's paths, off any bridge, stay)
-    if (d.sf && held.length) clearFaces(d, (x, y) => hide(x, y), ["path"]);
+    // (a garden's paths, off any bridge, stay). Not those level with the street it carries, as the
+    // footway's along the bridge's end, between its outline and its shops: gone, they left a strip
+    // of bare ground below the paving there, a hole beside the bridge's foot
+    if (d.sf && held.length) {
+      const V = d.sf.v, deck = held.flatMap((r) => r.p.filter((q) => q[3] === 1));
+      const level = (k: number) => {
+        let best = Infinity, z = -Infinity;
+        for (const q of deck) {
+          const g = (q[0] - V[3 * k]) ** 2 + (q[1] - V[3 * k + 1]) ** 2;
+          if (g < best) { best = g; z = q[2]; }
+        }
+        return Math.abs(V[3 * k + 2] - z) <= HELD_LEVEL;
+      };
+      clearFaces(d, (x, y, a, b, c) => hide(x, y) && ![a, b, c].every(level), ["path"]);
+    }
     // the canopy over woods
     if (d.cn) {
       const C = d.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
