@@ -88,6 +88,8 @@ export interface SurfaceLevel { n: number; road?: ArrayLike<number>; service?: A
 /** ?decks=1 tries the decks' level: a square whose decks are faces (`sf.dk`) draws them, and stands you
  *  on them, instead of each bridge's strip. Off, the strips as before, to compare. */
 export const DECK_FACES = typeof location !== "undefined" && new URLSearchParams(location.search).get("decks") === "1";
+/** Metres a deck's edge off its span stands over the ground beside it to have a parapet (world.ts). */
+export const PARAPET_OVER = 0.5;
 export const facedDecks = (sf?: MapData["sf"]) => DECK_FACES && !!sf?.dk && !!sf.lv?.length;
 /** How far each kind of face is drawn over its written height (world.ts surfaceFaces). */
 export const FACE_LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04, grass: 0.04, dirt: 0.04, gravel: 0.04, bed: 0, stone: 0.17, steel: 0.17 };
@@ -676,8 +678,9 @@ export class GameMap {
             }
         }
       }
-      // A deck's parapets stand along its faces' outer edge over the span and the step down to each
-      // abutment, as they're drawn, a hand inside it, from its underside to a walker's chest
+      // A deck's parapets stand along its faces' outer edge over the span, and on the step down to each
+      // abutment while it stands PARAPET_OVER or more over the ground beside it, as they're drawn
+      // (world.ts bridgeStructures), from its underside to a walker's chest
       // (an outer edge is one only one triangle has: the lists keep no one winding)
       const NP = V.length / 3, sides = new Map<number, number>();
       const edge = (a: number, b: number) => Math.min(a, b) * NP + Math.max(a, b);
@@ -707,11 +710,21 @@ export class GameMap {
         const a = e.i[k], b = e.i[k + 1];
         if ((sides.get(edge(a, b)) ?? 0) !== 1) continue;
         const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
-        if (!sp || !sp[4]) continue;
+        if (!sp) continue;
         // (a side the ground stays level with has no parapet drawn, so none to walk into either)
         const [ax, ay, bx, by, , r] = sp, mx = (V[3 * a] + V[3 * b]) / 2, my = (V[3 * a + 1] + V[3 * b + 1]) / 2;
         if (r.ledge && !r.ledge[(bx - ax) * (my - ay) - (by - ay) * (mx - ax) > 0 ? 0 : 1]) continue;
         const ta = V[3 * a + 2] - this.z0, tb = V[3 * b + 2] - this.z0;
+        if (!sp[4]) {
+          // (outside the edge: the outlines run with their face on the left)
+          const ex = V[3 * b] - V[3 * a], ey = V[3 * b + 1] - V[3 * a + 1], l = Math.hypot(ex, ey) || 1, n = Math.max(1, Math.ceil(l / 1.5));
+          let over = false;
+          for (let k = 0; k < n && !over; k++) {
+            const f = (k + 0.5) / n;
+            over = ta + (tb - ta) * f + 0.17 - this.ground(V[3 * a] + ex * f + ey / l * 0.4, -(V[3 * a + 1] + ey * f - ex / l * 0.4)) >= PARAPET_OVER;
+          }
+          if (!over) continue;
+        }
         this.addSeg(V[3 * a], -V[3 * a + 1], V[3 * b], -V[3 * b + 1], ta + 1.25, 1, Math.min(ta, tb) - deckDrop(sp[5]), tb + 1.25);
       }
     }
