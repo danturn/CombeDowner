@@ -63,6 +63,8 @@ Found by the maintainer on the test site (build 23747f8). Stages 3 and 4 are exp
 - Under Midland Road on the cycle track, `?at=-2204,2456,325,15`: the bank runs up into the deck's underside, with no abutment wall at that end.
 - Ferry Lane, `?at=2989,1562,26,-10` and `?at=2991,1575,191,-5`: the left parapet stops short and the right has none, only a stone slab, dirt and a drop. From the bank the flat deck sits beside the stone arch on its own stepped walls instead of on top of it.
 
+Stage 3 (21 November): the Midford crack (heights fitted on past the square's side), the Midland wedge (pavement ramped to the cap), the brown strip (paths on decks paved), the Midland truss and underside (structure from the deck's edges, the side walled into the bank at the abutment) and Ferry Lane (one bridge in the data; parapets and sides now run with the deck to its cap) are fixed; see docs/partition-revisit.md. Left: the Midford "rough stone" is the faces' pavement texture, as everywhere; Midland's small pavement notch where the two decks meet; Pulteney's Grand Parade edge was not looked at.
+
 Trial squares: 1,2 (Widcombe footbridges, canal, towpath), 0,2 (Broad Quay, Wells Road bridge), 1,3 (Sydney Gardens canal bridges), Pulteney's square, Ferry Lane's 4,2, and one where a bridge crosses a square edge.
 
 ## Decisions (agreed)

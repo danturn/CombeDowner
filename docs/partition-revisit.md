@@ -1769,3 +1769,29 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   change to the faces near them: a flight in 3_5 (1759, 4820) lands 0.18 m off the ground as the
   check draws it (rule 33; only the ground sheet's wall corners differ), and the moored boat in 1_3
   (-684, 2019) has 2 m of front behind open ground (rule 48). Look at them in the game.
+
+## Bridge decks, stage 3: sides and parapets from the deck's own edges (21 November)
+
+- [ ] **A deck's level-1 run is carried 10 m on past a square's side** when the writer fits its
+  heights, so where a side crosses a deck on the skew both squares give the points on it the same
+  height. Before, one square clamped at its last point and the other projected along, and Midford
+  Road showed a 4 to 6 cm crack across the carriageway at the seam.
+- [ ] **The pavement corners beside a cap are ramped up to the cap's height** over 2.5 m
+  (`ramp_to_caps`), where they had fallen to the ground because they lay beyond the street's reach
+  (Midland Road's cycle bridge: a grey wedge 2 m high). Points under a deck and beside a flight's
+  treads are left alone. Only differences between 0.3 and 3 m are ramped: a bigger one is something
+  else, and a smaller one the kerb already covers.
+- [ ] **A path on a deck is drawn paved, not as earth**, as a bridge's walkway is: the cycle bridge
+  beside Midland Road showed a strip of brown dirt between its pavement and its truss.
+- [ ] **With `?decks=1`, sides, parapets, trusses, undersides and abutments follow the deck's outer
+  edges** as the faces draw them, not the record's line. A parapet stands along an edge over the
+  span, or anywhere along an approach that stands 0.5 m or more over the ground just outside it
+  (the same rule as the collision). An edge across the way (the deck's open end) and an edge along a
+  square's side get none. Beside an abutment on the bank the side goes down into the bank whatever
+  the bridge's kind, so a beam's end no longer stands on the bank's slope with nothing under it.
+- [ ] **Ferry Lane is one bridge in the data** (one record, an arch, spans 2979 to 2986.5 m east,
+  abutments at 2975 and 2990): the "two bridges" were the old parapets and sides stopping at the
+  record's span while the deck ran on to its cap at the towpath. They now run with the deck.
+- [ ] **Midland Road's deck pavement still has a small stepped notch** where the cycle bridge's
+  pavement meets the road bridge's: the two decks' outlines meet there at different heights, which
+  is the faces' join, not the structure. Left for stage 4's look at decks side by side.
