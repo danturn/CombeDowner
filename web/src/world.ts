@@ -2690,12 +2690,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const ids = [ia, ...on, ib];
         return ids.slice(1).map((b, k) => [ids[k], b]);
       };
+      const decked = (ia: number, ib: number) => {
+        const ax = V[3 * ia], ay = V[3 * ia + 1], dx = V[3 * ib] - ax, dy = V[3 * ib + 1] - ay, l = Math.hypot(dx, dy) || 1;
+        // (the outline runs with its face on the left: outside is to the right)
+        const x = ax + dx / 2 + (dy / l) * 0.03, y = ay + dy / 2 - (dx / l) * 0.03;
+        return onFace(x, y, (V[3 * ia + 2] + V[3 * ib + 2]) / 2 - Z0) !== null;
+      };
       for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) for (const [ia, ib] of parts(e.i[k], e.i[k + 1])) {
         if (seen.has(ia * NP + ib)) continue;
         seen.add(ia * NP + ib);
         const hi = left.get(ia * NP + ib), lo = left.get(ib * NP + ia);
-        // (along the square's side the deck runs on into the next square's: no edge there)
-        if (hi && !lo && !(onSide(ia) && onSide(ib))) { deckEdges.push(edgeOf(ia, ib, hi, false)); continue; }
+        // (along the square's side the deck runs on into the next square's: no edge there; and where one
+        // of its pieces overlaps another, as the edging can at the deck's end, an edge with deck just
+        // outside it is inside the deck: a face on it stood as a post under the deck's end)
+        if (hi && !lo && !(onSide(ia) && onSide(ib)) && !decked(ia, ib)) { deckEdges.push(edgeOf(ia, ib, hi, false)); continue; }
         // (where the other side is the ground's, it's a cap: the deck lands there, on its abutment)
         if (hi && lo && !level1.has(ib * NP + ia)) deckEdges.push(edgeOf(ia, ib, hi, true));
         // (at a cap the face across is the street's, at its own lift: a path on a deck is paved up to the
