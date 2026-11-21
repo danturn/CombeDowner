@@ -1850,3 +1850,19 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
   has them, instead of leaving out a strip round every bridge.
 - [ ] **A shot into a deck's slab comes back with the deck's own face**: up on its top (ground), down on
   its underside and back along the shot on its side (stone), so the paint splat sits on the face it hit.
+
+## Pulteney Bridge's foot on Grand Parade (21 November)
+
+- [ ] **A footpath riding a set piece's bridge is laid at the set piece's street level inside its
+  outline**, not as a deck of its own (`setpiece_cuts._footpaths_off_own_bridge`). The deck's
+  footprint reached a metre past the outline and cut a hole in the paving at the foot of the
+  downstream shop row, which the game drew as a dark notch. Check other set pieces that carry a
+  footpath on their bridge once there are more of them.
+- [ ] **Path faces stand inside Pulteney Bridge's outline, under the set piece**, at about (-898, 2270)
+  and (-889, 2276): check_map counts 2 "face rising into a bridge" and 1 "path strip along a
+  pavement" there. The game takes them away (`maskSetPieces`), so they are never seen. Leaving them
+  out of the build was tried: the ground sheet then counted those cells as bare, and grass showed
+  along the promenade's edge. Leaving them out needs the ground sheet to treat the outline as covered.
+- [ ] **The promenade's first metres stand 0.2-0.4 m above the paths beside it** at the west end
+  of Pulteney Bridge (about (-898, 2270)): the set piece's street is laid at 25.56 and the path
+  faces round it at 25.1-25.4. Left as it is; look at it in the game.

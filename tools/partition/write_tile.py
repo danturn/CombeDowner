@@ -4165,6 +4165,7 @@ CORNER_RAMP = 3.0       # metres the faces round such stretches take to come to 
 CORNER_MEET = 1.0       # metres: the square's paving this near such a stretch comes up to meet it
 CORNER_SNAP = 0.05      # metres: a corner this near the set piece's street's edge is on it
 CORNER_SLOT = 0.8       # metres: a slot or point of road there narrower than twice this is pavement
+CORNER_HAIR = 0.02      # metres: two corners of the pieces round such a corner this near are one
 PLAZA_HOLLOW = 0.5      # metres the ground under a plaza by a street may lie below that street before it's a hollow the survey made
 SEAM_LEVEL = 2.5        # metres a face may lie off a set piece's laid street where they meet before it's another level
 SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, flush, with no kerb
@@ -4433,7 +4434,46 @@ def corner_paving(pieces, corners, own_street, square):
             near = [(q.boundary.intersection(g.buffer(1e-3)).length, k) for k, g in out if k in street and g is not q]
             if near and max(near)[0] > 0:
                 out[i] = (max(near)[1], q)
-    return out
+    # (and two corners a hair apart are one: where the kerb's rounding or the corner's reach crosses
+    # the street's edge beside one of its corners, the crossing and the corner a centimetre off it,
+    # rounded to the centimetre, folded a sliver of road over the paving with the ground showing
+    # through)
+    return _corners_met(out, zone, CORNER_HAIR)
+
+
+def _corners_met(pieces, zone, d):
+    """pieces, (class, shape), with each corner inside zone that lies within d of one met before
+    moved onto it, the same way in every piece, so the pieces still meet."""
+    seen, cell = {}, lambda x, y: (int(x // d), int(y // d))
+    shapely.prepare(zone)
+    def to(x, y):
+        if not shapely.contains_xy(zone, x, y):
+            return x, y
+        i, j = cell(x, y)
+        for k in ((i + a, j + b) for a in (-1, 0, 1) for b in (-1, 0, 1)):
+            for q in seen.get(k, ()):
+                if (q[0] - x) ** 2 + (q[1] - y) ** 2 < d * d:
+                    return q
+        seen.setdefault((i, j), []).append((x, y))
+        return x, y
+    def ring(r):
+        out = []
+        for x, y in r.coords[:-1]:
+            q = to(x, y)
+            if not out or out[-1] != q:
+                out.append(q)
+        while len(out) > 1 and out[0] == out[-1]:
+            out.pop()
+        return out
+    met = []
+    for c, g in pieces:
+        if g.intersects(zone):
+            shell, holes = ring(g.exterior), [ring(r) for r in g.interiors]
+            q = Polygon(shell, [h for h in holes if len(h) > 2]).buffer(0) if len(shell) > 2 else Polygon()
+            if q.geom_type == "Polygon" and not q.is_empty:
+                g = q
+        met.append((c, g))
+    return met
 
 
 def _minus(a, b):
