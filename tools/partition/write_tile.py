@@ -4098,6 +4098,8 @@ CORNER_MEET = 1.0       # metres: the square's paving this near such a stretch c
 CORNER_SNAP = 0.05      # metres: a corner this near the set piece's street's edge is on it
 CORNER_SLOT = 0.8       # metres: a slot or point of road there narrower than twice this is pavement
 CORNER_HAIR = 0.02      # metres: two corners of the pieces round such a corner this near are one
+HELD_REACH = 1.0        # metres short of a set piece's own bridge that a footway onto it is paved as its street is
+HELD_LEVEL = 1.0        # metres off that bridge's street such a footway's face may stand and still be paved (as setpieces.ts)
 PLAZA_HOLLOW = 0.5      # metres the ground under a plaza by a street may lie below that street before it's a hollow the survey made
 SEAM_LEVEL = 2.5        # metres a face may lie off a set piece's laid street where they meet before it's another level
 SHARED_STREETS = ("pedestrian", "living_street")    # paved from wall to wall, flush, with no kerb
@@ -6563,7 +6565,21 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     rough_tree = STRtree([l for l, _ in rough]) if rough else None
     smooth_tree = STRtree(smooth) if smooth else None
 
+    # (a footway on a set piece's own bridge, and just short of it, is paved as the street it carries
+    # is: drawn as a path, it was a strip of gravel at the bridge's foot. Levelled as the footway still,
+    # which the set piece lays at its street's level, not as a pavement, which past its street's
+    # reach took the lumpy ground's)
+    held = setpiece_cuts.held_outlines(centre, sq, rd) if centre else None
+    paved_paths = held.buffer(HELD_REACH) if held is not None else None
+    if paved_paths is not None:
+        shapely.prepare(paved_paths)
+
     def path_kind(x, y):
+        if paved_paths is not None and shapely.contains_xy(paved_paths, x, y):
+            return "pave"
+        return own_path_kind(x, y)
+
+    def own_path_kind(x, y):
         if rough_tree is None:
             return "path"
         p = Point(x, y)
@@ -6623,6 +6639,18 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                     (a, b), c = pts[:2], pts[2]
                     turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
                     tris.append([kind, len(piece_of) - 1, ids, 1 if turn > 0 else -1])
+    # (but not where it falls away off the bridge's level, down the bank to the river: the game takes
+    # those faces away with the footway, as it did the wedge they stood up in under the bridge)
+    if paved_paths is not None:
+        spans = [q for r in rd if r["c"] not in setpiece_cuts.FOOTPATHS for q in r["p"]
+                 if len(q) > 3 and q[3] == 1 and shapely.contains_xy(held, q[0], q[1])]
+        def off_bridge(i):
+            x, y, z = v[3 * i:3 * i + 3]
+            return not spans or abs(z - min(spans, key=lambda q: (q[0] - x) ** 2 + (q[1] - y) ** 2)[2]) > HELD_LEVEL
+        for t in tris:
+            if t[0] == "pave" and piece_of[t[1]][0] == "path" and any(off_bridge(i) for i in t[2]):
+                t[0] = own_path_kind(sum(v[3 * i] for i in t[2]) / 3, sum(v[3 * i + 1] for i in t[2]) / 3)
+
     def mend_point(x, y, n, a, b):
         # A corner the face has no point of its own at lies on its edge's line, at the height along
         # it: levelled afresh, a pavement corner could take a different street's level and stand up
