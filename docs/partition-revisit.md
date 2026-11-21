@@ -1795,3 +1795,10 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
 - [ ] **Midland Road's deck pavement still has a small stepped notch** where the cycle bridge's
   pavement meets the road bridge's: the two decks' outlines meet there at different heights, which
   is the faces' join, not the structure. Left for stage 4's look at decks side by side.
+- [ ] **A bridge's own point at an abutment now takes the abutment's height** when the abutment is
+  landed on the faces (`sheet.ends_on_faces`), as `ends.share` already did for a flight. Ramping
+  Midland Road's pavement raised the cycle bridge's abutment to 20.7 m while its way's end stayed on
+  the bank at 19.9 m (rule 3, "deck end off the road").
+- [ ] **One square drew more of its bridges' structure**: 4_1 (the cycleway and footway bridges near
+  2400, -100) about 3,000 triangles more, with no more draw calls; over the views shot the squares
+  drew 50,000 fewer triangles and 2 fewer calls. Not looked at in the game yet.
