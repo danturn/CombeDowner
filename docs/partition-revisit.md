@@ -1851,6 +1851,39 @@ Each bridge's deck is now a second level of the street faces (`sf.lv`, `sf.dk`;
 - [ ] **A shot into a deck's slab comes back with the deck's own face**: up on its top (ground), down on
   its underside and back along the shot on its side (stone), so the paint splat sits on the face it hit.
 
+## Whole-map build of the bridge decks (21 November)
+
+The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a38b4).
+
+- [ ] **A bridge's end point moves to its deck's cap only where the line is no steeper for it**
+  (`sheet.steepest`). Moved every time, the cap stood off the line's run at Lower Stoke, Mill Lane,
+  Stanier Road and the arch at (-3436, 2392), and the road kinked and climbed a step at the bridge's
+  end (rule 1: 3 more kinked, 2 more too steep). Where the cap is left off, the line stands up to
+  0.3 m off the deck's end, as before stage 3 (Ferry Lane's west end, 0.27 m under it).
+- [ ] **The arches came back with faced decks**: the sides and underside drawn along the deck's
+  outline took an edge as one piece the whole length of the bridge, so Cleveland Bridge, North
+  Parade and Bathwick Hill's arches were drawn flat. Faces crossing an arch between piers are cut
+  every 3 m or so over it (base: every 2 m) and each end of an arch has the pier's face across it.
+  An arch over the canal is left as the deck's corners shape it. That costs about 200 more
+  triangles than base in 1_4 (Cleveland Bridge, in view), the only square in the bridge shots where
+  the arches put the count above base.
+- [ ] **Small rises in triangles drawn from the outline-drawn sides** (stage 3 code, the same with
+  base's squares): 0_2 +244 (Broad Quay's beam bridge), 1_3 +169, 2_3 +21, -1_2 +53, 1_4 +11 in
+  view. Every bridge shot is down overall (net -1,800 to -13,600 triangles).
+- [ ] **One more parked car in 1_3** at (-305, 2445): the square's rebuild placed it (+1 draw call,
+  +5,442 triangles in the Sydney Gardens footbridge shot). It is not part of the bridge.
+- [ ] **Check counts up by one or two after the rebuild** (all elsewhere the same or lower):
+  rule 39 give-way across a street with right of way 9 to 11 (Sydney Mews in 1_3, Lower Stoke in
+  3_0) and not square 19 to 21 (-2_3, 1_-1), road marking off the carriageway 3 to 4 (Mill Lane's
+  give-way line at (1541, 3967), 0.6 m off), rule 42 faces don't meet the next square's 235 to 236
+  (-3_3's side), rule 33 flight lands on nothing 45 to 46 (steps at (-44, 3136), 0.06 m off),
+  rule 54 deck point off its line 2 to 3 (-2_3, 10 cm), ways meet at different heights 6 to 7
+  (-1_3), path not drawn 66 to 67 in 0_3 and step between two pieces of path 18 to 19. They
+  follow from bridge ends' heights moving onto the decks' caps, and from squares last built before
+  Spencer's later tool changes; none is on a bridge's deck. Down: 1189 to 1188 face edges off the
+  ground, 201 to 200 ground over a path, 80 to 79 no room under a bridge, 329 to 327 steps in the
+  carriageway.
+
 ## Pulteney Bridge's foot on Grand Parade (21 November)
 
 - [ ] **A footpath riding a set piece's bridge is laid at the set piece's street level inside its

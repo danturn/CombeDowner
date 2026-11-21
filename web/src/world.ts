@@ -1923,7 +1923,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             dl: (A.dl ?? 0) + ((B.dl ?? 0) - (A.dl ?? 0)) * f, dr: (A.dr ?? 0) + ((B.dr ?? 0) - (A.dr ?? 0)) * f };
         };
         // arches (stone only): between supports, where the deck stands high enough above the ground for one
-        const arches: { a: number; b: number; spring: number; rise: number }[] = [];
+        const arches: { a: number; b: number; spring: number; rise: number; canal?: boolean }[] = [];
         if (stone) {
           for (let k = 0; k < supports.length - 1; k++) {
             const a = supports[k] + 1.4, b = supports[k + 1] - 1.4, span = b - a;
@@ -1936,7 +1936,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           // ends before the bank does) and rises as high as the deck lets it
           for (const O of openings) {
             const mid = lerpAt((O.a + O.b) / 2), spring = Math.min(O.bank, lerpAt(O.a).top - DECK, lerpAt(O.b).top - DECK);
-            arches.push({ a: O.a, b: O.b, spring, rise: Math.max(0, Math.min((O.b - O.a) * 0.45, mid.top - DECK - 0.15 - spring)) });
+            arches.push({ a: O.a, b: O.b, spring, rise: Math.max(0, Math.min((O.b - O.a) * 0.45, mid.top - DECK - 0.15 - spring)), canal: true });
           }
         }
         // an arch over a road or path is flattened until it keeps a walker's headroom over the edge
@@ -1957,6 +1957,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (const A of arches) if (sp >= A.a && sp <= A.b) return A.spring + A.rise * Math.sqrt(Math.max(0, 1 - ((sp - (A.a + A.b) / 2) / ((A.b - A.a) / 2)) ** 2));
           return null;
         };
+        // (where a face drawn along the deck's outline crosses an arch between piers it is cut there, and
+        // every 3 m or so over it, so the arch keeps its curve: an outline's edge can run the whole length of the
+        // bridge. An arch over the canal springs from the bank beside the towpath under the deck's end,
+        // and is left as the deck's own corners shape it)
+        const piered = arches.filter((A) => !A.canal);
+        const archCuts = piered.flatMap((A) => { const n = Math.max(2, Math.ceil((A.b - A.a) / 3)); return Array.from({ length: n + 1 }, (_, k) => A.a + ((A.b - A.a) * k) / n); }).sort((p, q) => p - q);
+        const cutsIn = (s0: number, s1: number) => { const lo = Math.min(s0, s1), hi = Math.max(s0, s1); return archCuts.filter((c) => c > lo + 1e-3 && c < hi - 1e-3); };
+        const inArch = (sp: number) => piered.some((A) => sp > A.a && sp < A.b);
+        const canalAt = (sp: number) => arches.some((A) => A.canal && sp >= A.a && sp <= A.b) ? archAt(sp) : null;
         // where another bridge's deck runs alongside at the same height and touching this one (the
         // other carriageway of a dual carriageway, each built as its own bridge), there's no parapet
         // between the two; with a gap between them, each keeps its own, so there's no drop between
@@ -2109,9 +2118,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
                 if (!onSpan(mid) && !(aloft(e.ax, e.ay, e.at, A.s) && aloft(e.bx, e.by, e.bt, B.s))) continue;
                 const out = [nrm[i][0], 0, -nrm[i][1]];
                 if (A.top - Math.min(A.g, ground(e.ax + nrm[i][0] * 0.3, -(e.ay + nrm[i][1] * 0.3))) <= 0.3 && B.top - Math.min(B.g, ground(e.bx + nrm[i][0] * 0.3, -(e.by + nrm[i][1] * 0.3))) <= 0.3) continue;
-                const fA = footAt(e.ax, e.ay, A.top, A.s), fB = footAt(e.bx, e.by, B.top, B.s), uA = along(A), uB = along(B);
-                facing(g, [e.ax, fA, -e.ay], [e.bx, fB, -e.by], [e.bx, B.top, -e.by], [e.ax, A.top, -e.ay], out,
-                  [uA, (fA - A.top) / 2.5], [uB, (fB - B.top) / 2.5], [uB, 0], [uA, 0], sideCol);
+                const uA = along(A), uB = along(B), fs = [0, ...cutsIn(A.s, B.s).map((c) => (c - A.s) / (B.s - A.s)).sort((p, q) => p - q), 1];
+                const bit = (f: number) => {
+                  const x = e.ax + (e.bx - e.ax) * f, y = e.ay + (e.by - e.ay) * f, top = A.top + (B.top - A.top) * f;
+                  return { x, y, top, u: uA + (uB - uA) * f, foot: footAt(x, y, top, A.s + (B.s - A.s) * f) };
+                };
+                for (let j = 0; j + 1 < fs.length; j++) {
+                  const P0 = bit(fs[j]), P1 = bit(fs[j + 1]);
+                  facing(g, [P0.x, P0.foot, -P0.y], [P1.x, P1.foot, -P1.y], [P1.x, P1.top, -P1.y], [P0.x, P0.top, -P0.y], out,
+                    [P0.u, (P0.foot - P0.top) / 2.5], [P1.u, (P1.foot - P1.top) / 2.5], [P1.u, 0], [P0.u, 0], sideCol);
+                }
                 e.claimed = true;
               }
               // the parapet over the span, and on along the approach while the deck stands over the
@@ -2151,8 +2167,49 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (const t of mine.tris) {
             const at = t.p.map(([x, y, h]) => ({ x, y, top: h + lift, ...where(x, y) }));
             if ((!onSpan((at[0].sp + at[1].sp + at[2].sp) / 3) && !at.every((q) => aloft(q.x, q.y, q.top - lift, q.sp))) || at.every((q) => q.top - ground(q.x, -q.y) <= 0.6)) continue;
-            const c = at.map((q) => [q.x, archAt(q.sp) ?? q.top - DECK, -q.y]);
-            facingTri(g, c[0], c[1], c[2], [0, -1, 0], [c[0][0] / 2.5, c[0][2] / 2.5], [c[1][0] / 2.5, c[1][2] / 2.5], [c[2][0] / 2.5, c[2][2] / 2.5], stone ? SOFFIT : UNDERSIDE);
+            // (cut across where it passes over an arch: each strip under the arch is its barrel, the rest flat)
+            type Q = { x: number; y: number; top: number; sp: number };
+            const cuts = cutsIn(Math.min(...at.map((q) => q.sp)), Math.max(...at.map((q) => q.sp)));
+            const strips: Q[][] = [];
+            let rest: Q[] = at;
+            const mix = (p: Q, q: Q, c: number): Q => { const f = (c - p.sp) / ((q.sp - p.sp) || 1); return { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, top: p.top + (q.top - p.top) * f, sp: c }; };
+            const clip = (poly: Q[], c: number, below: boolean) => {
+              const out: Q[] = [];
+              for (let k = 0; k < poly.length; k++) {
+                const p = poly[k], q = poly[(k + 1) % poly.length], pin = below ? p.sp <= c : p.sp >= c, qin = below ? q.sp <= c : q.sp >= c;
+                if (pin) out.push(p);
+                if (pin !== qin) out.push(mix(p, q, c));
+              }
+              return out;
+            };
+            for (const c of cuts) { strips.push(clip(rest, c, true)); rest = clip(rest, c, false); }
+            strips.push(rest);
+            for (const poly of strips) {
+              if (poly.length < 3) continue;
+              const mid = poly.reduce((t, q) => t + q.sp, 0) / poly.length, arched = inArch(mid);
+              const c = poly.map((q) => [q.x, (arched ? archAt(q.sp) : canalAt(q.sp)) ?? q.top - DECK, -q.y]);
+              for (let k = 1; k + 1 < c.length; k++)
+                facingTri(g, c[0], c[k], c[k + 1], [0, -1, 0], [c[0][0] / 2.5, c[0][2] / 2.5], [c[k][0] / 2.5, c[k][2] / 2.5], [c[k + 1][0] / 2.5, c[k + 1][2] / 2.5], stone ? SOFFIT : UNDERSIDE);
+            }
+          }
+          // each arch's ends, across the deck: the pier's face (or the abutment's) from its foot to the
+          // soffit, where the barrel springs from it
+          for (const A of piered) for (const [w, dir] of [[A.a, -1], [A.b, 1]] as [number, number][]) {
+            // (only where a pier or an abutment stands beyond it: an arch over the canal ends at the bank,
+            // and the towpath under the deck's end beyond stays open)
+            const past = w + dir * 0.5;
+            if (!supports.some((u) => Math.abs(u - w) < 1.6) || opened(past) || under(past)) continue;
+            const q = lerpAt(w), fwd = [-q.ny * dir, 0, -q.nx * dir], face = q.top - DECK;
+            if (passes(q.x, q.y, q.top)) continue;
+            const n = 1;
+            for (let k = 0; k < n; k++) {
+              const o1 = -Ws(-1) + ((Ws(1) + Ws(-1)) * k) / n, o2 = -Ws(-1) + ((Ws(1) + Ws(-1)) * (k + 1)) / n;
+              const foot = (o: number) => { const x = q.x + q.nx * o, y = q.y + q.ny * o; return Math.min(A.spring, wallFoot(x, y, ground(x, -y) - 0.3, A.spring)); };
+              const g1 = foot(o1), g2 = foot(o2);
+              if (face - Math.max(g1, g2) < 0.05) continue;
+              facing(g, at(q, o1, g1), at(q, o2, g2), at(q, o2, face), at(q, o1, face), fwd,
+                [o1 / 2.5, g1 / 2.5], [o2 / 2.5, g2 / 2.5], [o2 / 2.5, face / 2.5], [o1 / 2.5, face / 2.5], STONE);
+            }
           }
           for (const [a0, b0] of fronts) {
             const w = a0 === 0 ? b0 : a0, q = lerpAt(w), dir = a0 === 0 ? 1 : -1, fwd = [q.ny * dir, 0, q.nx * dir];
