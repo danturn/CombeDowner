@@ -2394,8 +2394,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             const foot = Math.min(...c.map(([x, y]) => ground(x, -y))) - 0.3, cap = q.top + up + 0.12;
             // (with the decks as faces, only where it stands on the bank: over the towpath or the water it
             // stood there as a loose pillar beside the deck's side)
-            if (decksFaced && floor(q) - DECK - foot > 1.2) continue;
-            prism(g, c, Math.min(foot, floor(q) - DECK), cap, col);
+            // (and as a strip, there it stops under the deck: down to the towpath it stood taller than the bridge)
+            const aloft = floor(q) - DECK - foot > 1.2;
+            if (decksFaced && aloft) continue;
+            prism(g, c, aloft ? floor(q) - DECK : Math.min(foot, floor(q) - DECK), cap, col);
             facing(g, [c[0][0], cap, -c[0][1]], [c[1][0], cap, -c[1][1]], [c[2][0], cap, -c[2][1]], [c[3][0], cap, -c[3][1]], [0, 1, 0], [0, 0], [0.3, 0], [0.3, 0.3], [0, 0.3], stone ? COPING : CONCRETE);
           }
         }
@@ -2617,14 +2619,34 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const u = (x - m.x) * m.ux + (y - m.y) * m.uy, v = -(x - m.x) * m.uy + (y - m.y) * m.ux;
     return u > -0.3 && u < m.deep && Math.abs(v) < m.hw + 0.3;
   });
+  // (whether a way passes under the edge from a to b, a walker's headroom below it, as the towpath
+  // under a street running on off its bridge's span)
+  const wayUnder = (a: number[], b: number[]) => (D.rd ?? []).some((w) => {
+    const reach = width(w) / 2 + (KERBED.has(w.c) ? pv(w) : 0.3) + 0.3;
+    return w.p.some((A, k) => {
+      const B = w.p[k + 1];
+      if (!B) return false;
+      const wx = B[0] - A[0], wy = B[1] - A[1], ww = wx * wx + wy * wy || 1;
+      for (let f = 0; f <= 1; f += 0.25) {
+        const x = a[0] + (b[0] - a[0]) * f, y = -(a[2] + (b[2] - a[2]) * f), top = a[1] + (b[1] - a[1]) * f;
+        const t = Math.min(1, Math.max(0, ((x - A[0]) * wx + (y - A[1]) * wy) / ww));
+        if (Math.hypot(x - A[0] - wx * t, y - A[1] - wy * t) < reach && top - (A[2] + (B[2] - A[2]) * t - Z0) >= 1.8) return true;
+      }
+      return false;
+    });
+  });
   const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo, cuts?: number[][]) => {
     if (inBore((a[0] + b[0]) / 2, -(a[2] + b[2]) / 2)) return;
-    // (a face over the water, or over the canal's bank higher than a walker's headroom, is a
-    // street running on off its bridge's span: no wall stands under it, in the water or across the towpath)
+    // (a face over the water, or over the canal's bank higher than a walker's headroom with the towpath
+    // passing under it, is a street running on off its bridge's span: no wall stands under it, in the
+    // water or across the towpath, and over the bank its edge is as deep as an arch's deck, as the
+    // bridge's own is, not a sheet's edge. Over the bank with nothing passing under, as where a deck's
+    // end lands on a footpath climbing from the towpath, the edge is closed down to the bank.)
+    let passing: boolean | undefined;
     const overWater = (q: number[], m: number) => {
       if (m >= q[1]) return m;
       const h = map.works?.across(q[0], -q[2]) ?? lockAt(canalD, q[0], -q[2]);
-      if (h !== null) return q[1] - (h - Z0) > 2.4 ? q[1] : Math.max(m, Math.min(q[1], h - Z0));
+      if (h !== null) return q[1] - (h - Z0) > 2.4 && (passing ??= wayUnder(a, b)) ? q[1] - BRIDGE_DECK.arch : Math.max(m, Math.min(q[1], h - Z0));
       return map.inWater(q[0], q[2]) ? q[1] : m;
     };
     ma = overWater(a, ma); mb = overWater(b, mb);
