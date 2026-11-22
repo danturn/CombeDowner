@@ -1686,16 +1686,18 @@ export class GameMap {
     const tile = this.tileAt(x, z);
     if (tile) return tile.underside(x, z, y);
     let low: number | null = null, drop = DECK_DEPTH;
+    // (with the decks as faces, only where a face is drawn, as deep as it's drawn: the strip's line
+    // stood off them, and beside the deck's edge it was a ceiling over the bank with nothing there)
+    const faced = this.deckTris.length > 0;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      if (faced && !this.decks[k].held) continue;
       const { p, half } = this.decks[k];
       const h = deckAt(p, x, z);
       if (nearDeck.off < half && h > y && (low === null || h < low)) { low = h; drop = this.decks[k].drop; }
     }
-    // (with the decks as faces, the faces' own height: the strip's line can stand off them)
-    if (this.deckTris.length) {
-      let face: number | null = null;
-      for (const h of this.deckFaceTops(x, z)) if (h > y && (face === null || h < face)) face = h;
-      if (face !== null) low = face;
+    if (faced) {
+      const tops = this.deckFaceTops(x, z, true);
+      for (let k = 0; k < tops.length; k += 2) if (tops[k] > y && (low === null || tops[k] < low)) { low = tops[k]; drop = tops[k + 1]; }
     }
     if (low === null) return null;
     // (an arch belongs to the deck whose road it's under: within a hand of the same height)
