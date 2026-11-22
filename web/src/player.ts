@@ -668,10 +668,13 @@ export class Player {
    *  until the deck is low enough to step up on to. */
   private duck(p: { x: number; z: number }) {
     if (!this.map.ceiling) return;
-    const y = this.pos.y, top = y + this.eyeHeight + HEAD;
-    const roof = (x: number, z: number) => this.map.ceiling!(x, z, y) ?? Infinity;
-    const here = roof(this.pos.x, this.pos.z);
-    const ok = (x: number, z: number) => { const r = roof(x, z); return r >= top || r >= here; };
+    const y = this.pos.y, need = this.eyeHeight + HEAD;
+    // (the room over where the feet will be, not the roof's height: under an arch whose barrel stays
+    // level while the bank rises to its springing the roof never got lower, but the room did, and
+    // the bank lifted you into the deck)
+    const room = (x: number, z: number) => (this.map.ceiling!(x, z, y) ?? Infinity) - Math.max(y, this.under(x, z, y));
+    const here = room(this.pos.x, this.pos.z);
+    const ok = (x: number, z: number) => { const r = room(x, z); return r >= need || r >= here; };
     if (ok(p.x, p.z)) return;
     if (ok(p.x, this.pos.z)) p.z = this.pos.z;
     else if (ok(this.pos.x, p.z)) p.x = this.pos.x;
