@@ -1937,3 +1937,11 @@ The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a3
 - [ ] **Midford Road's north parapet ends at a pier on the bank in square 2,-1** (112, -1922), seen from
   under the deck as a thin pale post. It is the parapet's end pier where the bank comes up to the
   deck; left as it is.
+- [ ] **A face's edge high over the canal's bank** (`world.sheetEdge`): with a way passing under it (the
+  towpath under Ferry Lane where it turns along the bank off the bridge's end) no wall stands under
+  it, as before, but its edge is now as deep as an arch's deck in stone rather than a sheet's edge
+  over the bank; with nothing passing under, it is walled down to the bank. Seen from the bank it
+  was a slab of tarmac hanging over the grass with nothing under it.
+- [ ] **A strip bridge's parapet end pier stops under the deck where its foot would be over a metre
+  below it** (`world.ts`, as with the decks as faces, which leave it out): at Ferry Lane both end piers
+  stood down on the towpath, taller than the parapet, across the towpath's way under the deck.
