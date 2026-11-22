@@ -1899,3 +1899,41 @@ The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a3
 - [ ] **The promenade's first metres stand 0.2-0.4 m above the paths beside it** at the west end
   of Pulteney Bridge (about (-898, 2270)): the set piece's street is laid at 25.56 and the path
   faces round it at 25.1-25.4. Left as it is; look at it in the game.
+
+## Ferry Lane's footpath end and walking under decks (22 November)
+
+- [ ] **A deck wider than the street it lands on gets a landing**: the open ground within 2 m past
+  its cap, between the cap and a face beside that street at the deck's height (within a metre), is
+  carried into that face (`write_tile.cap_landings`), so the cap has a face across it all the way.
+  At Ferry Lane's east end the 8.8 m deck landed on a 2.5 m lane, and a slot a metre wide and 3 m
+  deep lay between the deck's south half and the footpath. Ground next to a face below (a towpath)
+  is kept 0.3 m off it, so the two share no corner; the drop to the towpath is the bank's edge.
+  Only ground running along at least a metre of the deck's walk is filled (with the margin beside it,
+  as at Ferry Lane, where the footpath meets the deck at its corner): a stone or steel margin with
+  ground open in front of it alone may still end over the bank (a footbridge's half-metre margins in
+  0,2, a 2.3 m one in -3,4 had their corners pulled off the path they land on). A landing stops 0.3 m short of a wall, fence or hedge (seven
+  fences and hedges stood in paths in the first build), and is laid 6 cm off the cap for `onto_caps`
+  to close: the strip the faces' simplifying leaves against the cap joined slots that were never one.
+  Left: two short stretches of an end that had nothing to land on now land with their corners not
+  shared, 0.4 m at the narrow tip of Ferry Lane's slot by the lane (2990, 1566) and 0.3 m in 2,5
+  (545, 4040), where 3.2 m hung over open ground before (over the whole map rule 28
+  "not joined" went from 6 to 7, another end in -6,5 now joining, and "nothing to land on" from 25
+  to 14). Where two other ends now land, a 0-degree road point in
+  2,4 (844, 3580, rule 9) and a 10 cm kerb jog in 1,6 (102, 5441, rule 50); and Ferry's slot tip is a
+  0.07 m2 gap between the footpath and the lane (rule 27). One each, all at ends that were open.
+- [ ] **`ramp_to_caps` and `off_caps` take each kind of face in a piece on their own.** The partition
+  can make a footpath and the towpath it climbs from one piece: once the footpath landed on the cap,
+  the whole piece counted as landing, and a towpath corner was ramped 2 m up to the deck.
+- [ ] **Walking under something is judged by the room over where your feet will be** (`player.duck`),
+  not by whether the roof gets lower. Under an arch the barrel stays level while the bank rises to its
+  springing, and you walked on up the bank until your eyes were in the deck (Midford Road, and the
+  cycle track side of Midland Road). You now stop where your head meets the barrel.
+- [ ] **With decks as faces, a deck's underside is only where its faces are drawn, as deep as they are
+  drawn** (`map.underside`); a set piece's held bridge keeps its strip. The strip's line stood an
+  unseen ceiling over the bank beside Midford Road's deck.
+- [ ] **You can't walk along the towpath under Ferry Lane's deck end**: at about (2989, 1561) the arch's
+  barrel comes within 1.55 to 1.75 m of the towpath, under head height (1.8 m), on either side of it.
+  It was the same before these changes; the barrel there wants raising or the towpath dipping.
+- [ ] **Midford Road's north parapet ends at a pier on the bank in square 2,-1** (112, -1922), seen from
+  under the deck as a thin pale post. It is the parapet's end pier where the bank comes up to the
+  deck; left as it is.

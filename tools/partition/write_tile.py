@@ -3482,9 +3482,11 @@ def ramp_to_caps(v, tris, on_cap, caps, under=None):
     cap's height, all the way at the cap and less with distance, over CAP_RAMP. A corner of paving no
     street's level reaches lies on the ground, and where a deck lands on an embankment that left a
     wedge of paving falling from the cap to the foot of the bank in a few centimetres (Midland Road's
-    cycle bridge). Only the faces that share a corner with a cap, and not under the deck's end."""
-    pieces = {n for _, n, ids, _ in tris if on_cap.intersection(ids)}
-    pts = {i for _, n, ids, _ in tris if n in pieces for i in ids} - on_cap
+    cycle bridge). Only the faces that share a corner with a cap, and not under the deck's end.
+    (Each kind of face in a piece on its own: a footpath climbing to the deck can be one piece with the
+    towpath it leaves, which stays down by the water.)"""
+    pieces = {(n, kind) for kind, n, ids, _ in tris if on_cap.intersection(ids)}
+    pts = {i for kind, n, ids, _ in tris if (n, kind) in pieces for i in ids} - on_cap
     if not pts:
         return
     tree = STRtree([c[0] for c in caps])
@@ -3501,6 +3503,75 @@ def ramp_to_caps(v, tris, on_cap, caps, under=None):
             v[3 * i + 2] = round(h + (z - h) * d / CAP_RAMP, 2)
 
 
+LAND_REACH = 2.0    # metres past a deck's end over which a face beside the street it lands on is carried up to it
+LAND_CLEAR = 0.3    # metres a landing keeps off a face below it, so the two share no corner
+LAND_MOUTH = 1.0    # metres of a deck's walk a slot runs along before it's filled
+LAND_OFF = SURFACE_TOLERANCE + 0.01    # metres a landing is laid off its cap, within onto_caps' reach
+
+
+def cap_landings(caps, foot, walk, simple, under_zone, rd, barriers=None):
+    """For each stretch of a deck's end with nothing across it (a deck wider than the lane it lands on),
+    the open ground between it and a face beside that lane at the deck's height, within LAND_REACH, as
+    (which piece of `simple` to carry over it, the ground). Left open, it was a slot down to the
+    towpath between Ferry Lane's deck and the footpath climbing to it, the deck's end hanging over it.
+    Only ground running along the deck's walk (`walk`), and the margin beside it with it: a stone or
+    steel margin on its own may stand over the bank. A landing stops at a wall, fence or hedge
+    (`barriers`) rather than running on under it into a garden."""
+    if not caps or not simple:
+        return []
+    ways = [LineString([q[:3] for q in r["p"]]) for r in rd if len(r["p"]) > 1 and all(len(q) > 2 for q in r["p"])]
+    if not ways:
+        return []
+    way_tree, tree = STRtree(ways), STRtree(simple)
+    faces = unary_union(simple)
+
+    def level(j, part, z):
+        # (a face the deck lands level with, not the way passing under its end)
+        p = nearest_points(simple[j], part)[0]
+        w = ways[int(way_tree.nearest(p))]
+        return abs(w.interpolate(w.project(p)).z - z) <= CAP_LAND
+    out = []
+    for line, z, o, k in caps:
+        c = list(o["line"].coords)
+        (ex, ey), (nx, ny) = (c[0][:2], c[1][:2]) if k == 0 else (c[-1][:2], c[-2][:2])
+        L = math.hypot(ex - nx, ey - ny)
+        if L < 1e-6:
+            continue
+        ux, uy = (ex - nx) / L * LAND_REACH, (ey - ny) / L * LAND_REACH
+        (ax, ay), (bx, by) = line.coords[0][:2], line.coords[-1][:2]
+        band = Polygon([(ax, ay), (bx, by), (bx + ux, by + uy), (ax + ux, ay + uy)])
+        if not band.is_valid or band.area < 1e-3:
+            continue
+        free = _minus(_minus(band, foot), faces)
+        if under_zone is not None:
+            free = _minus(free, under_zone)
+        if barriers is not None and barriers.intersects(band):
+            free = _minus(free, barriers.buffer(LAND_CLEAR))
+        # (kept just off the cap, which onto_caps then closes: right against it, the strip the faces'
+        # simplifying leaves there joined slots along the end that were never one)
+        free = _minus(free, line.buffer(LAND_OFF))
+        mouth = line.intersection(walk.buffer(0.05)).buffer(LAND_OFF + 0.02)
+        if mouth.is_empty:
+            continue
+        for part in getattr(free, "geoms", [free]):
+            if part.geom_type != "Polygon" or part.area < 0.1 or part.boundary.intersection(mouth).length < LAND_MOUTH:
+                continue
+            near = [int(j) for j in tree.query(part.buffer(LAND_CLEAR))]
+            best, most = None, 0.5
+            for j in near:
+                touch = part.boundary.intersection(simple[j].buffer(0.02)).length
+                if touch > most and level(j, part, z):
+                    best, most = j, touch
+            if best is None:
+                continue
+            below = [simple[j] for j in near if j != best and simple[j].distance(part) < LAND_CLEAR and not level(j, part, z)]
+            got = _minus(part, unary_union(below).buffer(LAND_CLEAR)) if below else part
+            got = _one_polygon(got, None) if not got.is_empty else None
+            if got is not None and got.area >= 0.1 and got.boundary.intersection(mouth).length >= LAND_MOUTH:
+                out.append((best, got))
+    return out
+
+
 CAP_UNDER = 2.0     # metres: a piece this far below a cap it touches at one corner passes under the deck
 
 
@@ -3508,22 +3579,23 @@ def off_caps(tris, v, on_cap):
     """The pieces that touch a deck's cap at a lone corner only, their other corners far below it,
     given a corner of their own there at their own height. A towpath passing under a deck, its edge
     running to the deck's corner, shared that corner at the deck's height, and its edge stood up
-    there in a thin stone post from the towpath to the deck (Ferry Lane over the canal)."""
-    lands = {n for _, n, ids, _ in tris if len(on_cap.intersection(ids)) >= 2}
+    there in a thin stone post from the towpath to the deck (Ferry Lane over the canal). Each kind of
+    face in a piece on its own, as in ramp_to_caps."""
+    lands = {(n, kind) for kind, n, ids, _ in tris if len(on_cap.intersection(ids)) >= 2}
     round_it = {}
-    for _, n, ids, _ in tris:
-        if n in lands:
+    for kind, n, ids, _ in tris:
+        if (n, kind) in lands:
             continue
         for i in on_cap.intersection(ids):
-            round_it.setdefault((n, i), []).extend(v[3 * j + 2] for j in ids if j != i)
+            round_it.setdefault((n, kind, i), []).extend(v[3 * j + 2] for j in ids if j != i)
     own = {}
-    for (n, i), zs in round_it.items():
+    for (n, kind, i), zs in round_it.items():
         z = sum(zs) / len(zs)
         if v[3 * i + 2] - z > CAP_UNDER:
-            own[n, i] = len(v) // 3
+            own[n, kind, i] = len(v) // 3
             v.extend([v[3 * i], v[3 * i + 1], round(z, 2)])
     for t in tris:
-        t[2] = [own.get((t[1], i), i) for i in t[2]]
+        t[2] = [own.get((t[1], t[0], i), i) for i in t[2]]
 
 
 def _one_polygon(g, was):
@@ -6267,6 +6339,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                         cut_pieces.append((cls, g))
                         cut_simple.append(part)
             pieces, simple = cut_pieces, cut_simple
+        walk = unary_union([q for (cls, _), q in zip(deck_pieces, deck_simple) if cls not in ("stone", "steel")] or [Polygon()])
+        for j, land in cap_landings(caps, foot, walk, simple, under_zone, rd, barriers):
+            got = simple[j].union(land)
+            if got.geom_type == "Polygon":
+                simple[j] = got
         gap = _minus(_minus(foot.intersection(zone), unary_union([q for q in simple if q.intersects(zone)] or [Polygon()])), top)
         for part in getattr(gap, "geoms", [gap]):
             # (only the slivers simplifying left: a set piece's cut and the like stay open)
