@@ -73,6 +73,8 @@ Second round of play on the test site (22 November): Ferry Lane still very dodgy
 
 Third round (22 November, the live site without `?decks=1`, from Ferry Lane's footpath end): the lane's edge where it turns north along the bank off the deck's end stood over the towpath as a bare slab, and the parapet's end piers stood down on the towpath, taller than the bridge. A face's edge high over the canal's bank with the towpath under it is now drawn as deep as an arch's deck (walled down to the bank where nothing passes under), and a strip bridge's end pier stops under the deck where its foot would be over a metre below it.
 
+Fourth round (23 November, `?decks=1`): the gaps are now measured on every deck (`tools/bridge_gaps.mjs`: open edges, see-through from below, unwalled drops, headroom under it; numbers in docs/partition-revisit.md, "Gaps in the bridges, measured"). Parapet ends are closed and run on along the street past the deck's end while the bank falls away; the underside and sides reach every triangle partly in the air and hang to one level; a pier's cap has its underside; and a mapped bridge whose end stands over a way under it (Ferry Lane over the towpath) runs on over it in the structures pass.
+
 Trial squares: 1,2 (Widcombe footbridges, canal, towpath), 0,2 (Broad Quay, Wells Road bridge), 1,3 (Sydney Gardens canal bridges), Pulteney's square, Ferry Lane's 4,2, and one where a bridge crosses a square edge.
 
 ## Decisions (agreed)

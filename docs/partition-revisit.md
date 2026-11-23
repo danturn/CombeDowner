@@ -1945,3 +1945,56 @@ The whole map rebuilt with stages 3 and 4, checked against Spencer's main (964a3
 - [ ] **A strip bridge's parapet end pier stops under the deck where its foot would be over a metre
   below it** (`world.ts`, as with the decks as faces, which leave it out): at Ferry Lane both end piers
   stood down on the towpath, taller than the parapet, across the towpath's way under the deck.
+
+## Gaps in the bridges, measured (23 November)
+
+`tools/bridge_gaps.mjs` measures every deck drawn as faces (`?decks=1`) in the built game: (a) metres
+of open edge in its stone and steel and its deck's top, (b) square metres you can see the sky through
+looking up from under it, (c) metres of walkable edge, on the deck or within 15 m of it, with more than
+0.5 m down beside it and nothing at knee to chest height, (d) metres of way passing under it with less
+room than it needs (1.8 m on a path, 2.4 m on a cycle track, 4 m on a road). Whole map, before and after
+this round: see the table at the end of this section.
+
+- [ ] **A parapet's every end is closed**: one stopping part way along its deck's edge, or turning a
+  corner of it, was two thin skins with nothing across their end (Midford Road). Only an end the
+  bridge's line ends at stands on a pier, as before.
+- [ ] **A side reaching its deck's end runs on along the street's own edge beyond** (`world.ts runOn`),
+  straight on, up to 40 m, while that edge stands half a metre or more over the ground as it is drawn
+  (the sheet, let down under the street and falling away more steeply than the survey where the bank
+  drops off). Over the scrap of edge where the deck's outline turns across its end the run goes
+  straight to the street's edge, so the corner isn't mitred out across the pavement. The street's
+  parapets get collision (`map.addParapet`); the deck's still come from its outline in `map.ts`.
+- [ ] **The underside is drawn under any triangle of the deck partly in the air**, and a side face
+  where either end is in the air, not only where all of it is: where the bank came up under a
+  triangle's other corners it left a hole beside its neighbours (Midland Road from the cycle track).
+- [ ] **The side faces hang to the underside's level**: both now come down the bridge's deck depth
+  from the deck's points at the bridge's own lift. The side's foot was measured from the face's own
+  top (pavement or edging, 0.17 m) and the underside from the bridge's (0.07 m on a road bridge),
+  leaving a 10 cm slit along every edge of a road bridge's underside.
+- [ ] **A pier's cap has its underside**, seen from below between the columns.
+- [ ] **A mapped bridge whose end stands over a way passing under it runs on over it**
+  (`structures.py` rule 2f, which before left any stretch the data already has a bridge on): Ferry
+  Lane's record ends 2.3 m past the towpath, which was taken for the two meeting (`joined`), so the
+  deck's end stood over the towpath. An end within 2.5 m of another way is now a junction only within
+  1.5 m of its height. In `write_tile._ends_on_the_bank` a deck's end over a way 1.8 m or more below it,
+  where a street runs on from it at its height, keeps its span rather than being put down on the
+  bank there (applied to every end over a way at first, it left seven footbridges' ends in the air).
+- [ ] **Still open: Ferry Lane's towpath has 2.2 m under the arch**, enough to walk upright (1.8 m) but
+  short of the 2.4 m the measure asks over a cycle track: the deck's top is only 3.1 m over the towpath
+  in the data, and the arch's deck is 0.87 m deep. Wants the towpath dipping or a thinner deck there.
+- [ ] **Still open: the brick wedge under Midford Road's parapet at (123, -1933)** (a garden wall's
+  brick meeting the abutment), not yet traced.
+- [ ] **Still open: most of the open edge (a)** is the trunk decks in 2,4 (1.1 to 1.4 km each): bearing
+  blocks and V-piers whose ends and tops meet nothing within 5 cm. Not closed this round.
+
+Whole map, 161 decks, `?decks=1`, before and after this round:
+
+| | before | after |
+|---|---|---|
+| (a) open edge | 34,186 m (151 decks) | 22,073 m (151) |
+| (b) see-through from below | 1,402.8 m² (98) | 1,389 m² (97) |
+| (c) unwalled drop, on decks + approaches | 1,730.5 + 1,751 m (159) | 2,199 + 1,074 m (158) |
+| (d) way short of headroom | 134.5 m (39) | 130.5 m (38) |
+
+Triangles over the 59 squares with a deck: 106.70 M to 106.78 M (+0.07%); the most in 4,1 (+18k),
+1,3 (+16k), 2,4 (+11k). Meshes 13,726 to 13,735. Clash counts no higher than before; four went down.
