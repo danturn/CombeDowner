@@ -1496,6 +1496,27 @@ def _ends_on_the_bank(rd, sq, on_bank, ground=None, wet=None, edge=3.0):
         c = cell(q[0], q[1])
         return any(o != id(r) and math.dist(d[:2], q[:2]) < 3.0 and abs(d[2] - q[2]) < 1.0
                    for i in (-1, 0, 1) for j in (-1, 0, 1) for o, d in decks[(c[0] + i, c[1] + j)])
+    lines = [(LineString([q[:2] for q in r["p"]]), r) for r in rd if len(r["p"]) > 1]
+    tree = STRtree([l for l, _ in lines]) if lines else None
+
+    def over_a_way(r, q, room=1.8, reach=3.0):
+        # (the deck's end stands over a way passing under it and runs on into a street at its own
+        # height, as Ferry Lane's over the towpath: the bank there is the way's cutting, not ground
+        # to land on; a footbridge whose record just stops over a path still comes down to the bank)
+        pt = Point(q[:2])
+        near = [lines[int(k)][1] for k in (tree.query(pt.buffer(0.5)) if tree is not None else ())]
+        if not any(o is not r and any(math.dist(d[:2], q[:2]) < 0.5 and abs(d[2] - q[2]) < 1.0 for d in (o["p"][0], o["p"][-1]))
+                   for o in near):
+            return False
+        for k in (tree.query(pt.buffer(reach)) if tree is not None else ()):
+            line, o = lines[int(k)]
+            if o is r or line.distance(pt) > reach:
+                continue
+            p_ = o["p"]
+            m = min(range(len(p_)), key=lambda i: math.dist(p_[i][:2], q[:2]))
+            if q[2] - p_[m][2] >= room and not _flag(p_[m]):
+                return True
+        return False
     for r in rd:
         p = r["p"]
         if len(p) < 3:
@@ -1503,6 +1524,8 @@ def _ends_on_the_bank(rd, sq, on_bank, ground=None, wet=None, edge=3.0):
         for e in (0, -1):
             q = p[e]
             if _flag(q) != 1 or (sq and min(q[0] - sq[0], sq[2] - q[0], q[1] - sq[1], sq[3] - q[1]) < edge):
+                continue
+            if over_a_way(r, q):
                 continue
             if on_bank(q):
                 p[e] = q[:3]

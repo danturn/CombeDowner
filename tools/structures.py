@@ -518,9 +518,14 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
         crossroads, which the data gives both roads a point at)? Then they are a junction, not a crossing."""
         for a, b in ((k, j), (j, k)):
             run = pending[a]["run"]
-            for q in (run[0], run[-1]):
+            for e, q in ((0, run[0]), (-1, run[-1])):
                 if road_lines[b].distance(Point(q[:2])) < 2.5:
-                    return True
+                    # (not an end standing well over the other where it passes: Ferry Lane's, on its
+                    # deck over the towpath it stops just past)
+                    o = pending[b]
+                    m = min(range(len(o["run"])), key=lambda i: math.dist(o["run"][i][:2], q[:2]))
+                    if abs(pending[a]["z"][e] - o["z"][m]) < 1.5:
+                        return True
         if road_lines[k].crosses(road_lines[j]):
             x = road_lines[k].intersection(road_lines[j])
             x = x.geoms[0] if hasattr(x, "geoms") else x
@@ -1000,7 +1005,8 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
             near_j = [i for i, q in enumerate(o["run"]) if math.dist(q[:2], (x.x, x.y)) < 6]
             if not near_k or not near_j:
                 continue
-            if any(i in r["span"] | r["deck"] for i in near_k) or any(i in o["span"] | o["deck"] for i in near_j):
+            spanned_k, spanned_j = (any(i in w["span"] | w["deck"] for i in near) for w, near in ((r, near_k), (o, near_j)))
+            if spanned_k and spanned_j:
                 continue
             if r["tunnel_ranges"] and in_ranges([r["run"][i] for i in near_k], r["tunnel_ranges"]):
                 continue
@@ -1015,9 +1021,16 @@ def solve(pending, water_polys, rail_tracks, canal, elev, bm, detail, buildings=
             if abs(zk - zj) < 1.5:
                 continue
             (up, upi), (lo_, loi) = ((r, k), (o, j)) if zk > zj else ((o, j), (r, k))
+            # (a bridge in the data whose end stands over a way passing under it, the towpath under
+            # Ferry Lane's, runs on over it to the bank beyond, or the way went under the deck's end
+            # with too little room; one the data has under a bridge of its own is left as it is)
+            if (spanned_k if up is r else spanned_j) is False and (spanned_j if up is r else spanned_k):
+                continue
+            if any(i in up["deck"] for i in (near_k if up is r else near_j)):
+                continue
             reach = RW.get(lo_["c"], 4) / 2 + 2.5
             for i, q in enumerate(up["run"]):
-                if math.dist(q[:2], (x.x, x.y)) < reach and i not in up["tow"]:
+                if math.dist(q[:2], (x.x, x.y)) < reach and i not in up["tow"] and i not in up["span"]:
                     up["span"].add(i)
                     up["solid"].add(i)
     carry_spans()
