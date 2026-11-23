@@ -646,6 +646,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   let deckEdges: DeckEdge[] = [];
   let deckTris: { p: number[][]; kind: string }[] = [];
   let approachEdges: (DeckEdge & { ground: true })[] = [];
+  // (a street edge one deck's parapet has run on along: another deck ending at the same corner stops there)
+  const streetTaken = new Set<DeckEdge>();
+  // (the street's outline edges by a deck's end, by their corners' indices: the sheet's wall under
+  // them is the bridge's abutment, in its stone, not the square's own walling)
+  const abutting = new Set<string>();
   let deckOf = new Map<Road, { edges: DeckEdge[]; tris: { p: number[][]; kind: string }[] }>();
   const LEVEL = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "old";
   // ?roads=strips draws every street as strips along its line, as before the faces, to compare
@@ -1790,8 +1795,28 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  height, without the face's lift), so what holds a deck up stands under its faces, or null. */
   let onFace: (x: number, y: number, near: number) => number | null = () => null;
   function bridgeStructures(rd: Road[], g: Geo, steel: Geo, ways: Road[] = []) {
-    const ground = (x: number, z: number) => map.trueGround(x, z);
+    // (the lower of the survey and the ground as it's drawn: where the sheet is let down beside a
+    // street off a deck's end, by the survey alone the deck there stood on the bank with no underside)
+    const ground = (x: number, z: number) => { const d = drawnGround(x, z); return Number.isFinite(d) ? Math.min(map.trueGround(x, z), d) : map.trueGround(x, z); };
     const spot = (q: number[]) => `${Math.round(q[0] * 3)},${Math.round(q[1] * 3)}`;
+    let ends: number[][] | null = null;
+    // (the street's own faces, by 10 m cell: what stands beside a deck's edge at about its level)
+    let streetCells: Map<string, number[]> | null = null;
+    const streetTop = (x: number, y: number) => {
+      if (!streetCells) {
+        streetCells = new Map();
+        for (let t = 0; t < faceKind.length; t++) {
+          const F = faceXYZ, o = t * 9;
+          for (let i = Math.floor(Math.min(F[o], F[o + 3], F[o + 6]) / 10); i <= Math.floor(Math.max(F[o], F[o + 3], F[o + 6]) / 10); i++)
+            for (let j = Math.floor(Math.min(F[o + 1], F[o + 4], F[o + 7]) / 10); j <= Math.floor(Math.max(F[o + 1], F[o + 4], F[o + 7]) / 10); j++)
+              (streetCells.get(`${i},${j}`) ?? streetCells.set(`${i},${j}`, []).get(`${i},${j}`)!).push(t);
+        }
+      }
+      let top = -Infinity;
+      for (const t of streetCells.get(`${Math.floor(x / 10)},${Math.floor(y / 10)}`) ?? []) if (faceWeights(t, x, y) >= -1e-6) top = Math.max(top, faceZ(t));
+      return top;
+    };
+    const barrierEnds = () => (ends ??= map.areas().flatMap((m) => (m.d.br ?? []).filter((l) => l.p.length > 1).flatMap((l) => [l.p[0], l.p[l.p.length - 1]])));
     const decked = new Map<string, Road[]>();
     for (const w of ways) for (const q of w.p) if (q[3] === 1) { const k = spot(q), l = decked.get(k); if (l) l.push(w); else decked.set(k, [w]); }
     for (const r of rd) {
@@ -2013,13 +2038,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const onSpan = (sp: number) => sp >= 0 && sp <= s;
           // (whether the deck's edge stands PARAPET_OVER over the ground just outside it anywhere along it)
           const overGround = (e: DeckEdge) => {
-            // (beside the street the ground is as it's drawn, let down under it and falling away more
-            // steeply than the survey where the bank drops off: what you'd step off)
-            const low = (e as { ground?: boolean }).ground ? (x: number, z: number) => Math.min(map.ground(x, z), drawnGround(x, z)) : (x: number, z: number) => map.ground(x, z);
+            // (the ground as it's drawn, let down under the street and falling away more steeply than the
+            // survey where the bank drops off: what you'd step off, and what map.ts measures in play;
+            // by the survey, the deck's last edges near its cap stopped short of the street's run on)
+            const low = (x: number, z: number) => Math.min(map.ground(x, z), drawnGround(x, z));
             const l = Math.hypot(e.bx - e.ax, e.by - e.ay) || 1, n = Math.max(1, Math.ceil(l / 1.5)), ox = (e.by - e.ay) / l * 0.4, oy = -(e.bx - e.ax) / l * 0.4;
             for (let k = 0; k < n; k++) {
-              const f = (k + 0.5) / n;
-              if (e.at + (e.bt - e.at) * f + 0.17 - low(e.ax + (e.bx - e.ax) * f + ox, -(e.ay + (e.by - e.ay) * f + oy)) >= PARAPET_OVER) return true;
+              const f = (k + 0.5) / n, t = e.at + (e.bt - e.at) * f, x = e.ax + (e.bx - e.ax) * f + ox, y = e.ay + (e.by - e.ay) * f + oy;
+              // (not where a street runs in beside it at the deck's level, its own way on: a lane meeting
+              // the deck in a notch had a parapet down each side of it, standing across its mouth)
+              if (t + 0.17 - low(x, -y) >= PARAPET_OVER && t - streetTop(x, y) >= PARAPET_OVER) return true;
             }
             return false;
           };
@@ -2053,13 +2081,30 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             if (Math.abs(w - end) >= 0.5) fronts.push([Math.min(end, w), Math.max(end, w)]);
           }
           const banked = (sp: number) => fronts.some(([a0, b0]) => sp >= a0 - 0.1 && sp <= b0 + 0.1);
+          const walledAt = (x: number, y: number, top: number, sp: number) => !opened(sp) && !under(sp) && !passes(x, y, top) && (banked(sp) || Math.abs(sp) < 1.6 || Math.abs(sp - s) < 1.6 || supports.some((u) => Math.abs(u - sp) < 1.6));
           const footAt = (x: number, y: number, top: number, sp: number) => {
             const f = archAt(sp) ?? top - DECK;
             // (beside an abutment on the bank the side is its wall, down into the bank, whatever the bridge's
             // kind: a beam's or truss's stood its deck on the bank's slope with nothing under its end)
-            const walled = !opened(sp) && !under(sp) && !passes(x, y, top) && (banked(sp) || Math.abs(sp) < 1.6 || Math.abs(sp - s) < 1.6 || supports.some((u) => Math.abs(u - sp) < 1.6));
-            return walled ? Math.min(f, wallFoot(x, y, ground(x, -y) - 0.3, top - DECK)) : f;
+            return walledAt(x, y, top, sp) ? Math.min(f, wallFoot(x, y, ground(x, -y) - 0.3, top - DECK)) : f;
           };
+          // (where along the bridge the sides go from walled down to the bank to standing in the air: the
+          // side steps straight down there, and a face across the deck closes the step, so a side beside a
+          // pier is no V hanging between its neighbours with the underside open behind it)
+          const flips: { sp: number; on: boolean; front: boolean }[] = [];
+          {
+            let was: boolean | null = null;
+            for (let sp = -6; sp <= s + 6; sp += 0.25) {
+              const q = lerpAt(sp), now = walledAt(q.x, q.y, q.top, sp);
+              if (was !== null && now !== was) {
+                // (at the bank's front, exactly where its face across stands)
+                const fr = fronts.flatMap(([a0, b0]) => [a0, b0]).find((w) => Math.abs(w - (sp - 0.125)) < 0.4);
+                flips.push({ sp: fr ?? sp - 0.125, on: now, front: fr !== undefined });
+              }
+              was = now;
+            }
+          }
+          const steps = new Map<number, { side: number; x: number; y: number; foot: number; soffit: number }[]>();
           // the sides, chained into runs along the outline, each run on one side
           const key = (x: number, y: number) => `${Math.round(x * 100)},${Math.round(y * 100)}`;
           const sides = mine.edges.filter((e) => !e.cap), from = new Map<string, DeckEdge>();
@@ -2098,12 +2143,32 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               }
               if (!capAt.has(ahead ? key(e.bx, e.by) : key(e.ax, e.ay))) continue;
               const street: DeckEdge[] = [];
-              let s0 = last;
+              let s0 = last, low = 0, kept = 0;
               len = 0;
               while (len < 40) {
                 const n = ahead ? streetFrom.get(key(e.bx, e.by)) : streetInto.get(key(e.ax, e.ay));
-                if (!n || street.includes(n) || !(ahead ? straight(s0, n) : straight(n, s0)) || !overGround(n)) break;
+                if (n && !street.includes(n) && Math.hypot(n.bx - n.ax, n.by - n.ay) < 0.05) { street.push(n); e = n; continue; }
+                // (round the corner after a fold cut across, the street's edge being the outline's own way on)
+                const turns = !street.length && (ahead ? part.slice(-2) : part.slice(0, 2)).some((q) => (q as { fold?: boolean }).fold);
+                if (!n || street.includes(n) || streetTaken.has(n) || !(turns || (ahead ? straight(s0, n) : straight(n, s0)))) break;
+                // (over a metre or less of edge on the bank where the street goes on over the ground
+                // beyond, so the wall isn't broken by a step in the bank; one it ends on is dropped)
+                if (!overGround(n) && (low += Math.hypot(n.bx - n.ax, n.by - n.ay)) > 1.0) break;
+                if (overGround(n)) { low = 0; kept = street.length + 1; }
                 street.push(n); len += Math.hypot(n.bx - n.ax, n.by - n.ay); e = n; s0 = n;
+              }
+              street.length = kept;
+              for (const n of street) streetTaken.add(n);
+              // (on to a wall or fence of the map's starting just past where it ends, so the two are one
+              // line: a garden wall along the street beyond a bridge stood a step apart from the parapet's end)
+              const tip = street.length ? street[street.length - 1] : e, tx = ahead ? tip.bx : tip.ax, ty = ahead ? tip.by : tip.ay;
+              // (only as close as a wall's own trimming back leaves it: further off, the gap may be a way through)
+              let meet: number[] | null = null, best = 0.6;
+              for (const q of barrierEnds()) { const d = Math.hypot(q[0] - tx, q[1] - ty); if (d > 0.05 && d < best) { best = d; meet = q; } }
+              if (meet) {
+                const t = ahead ? tip.bt : tip.at;
+                street.push(ahead ? { ...tip, ax: tx, ay: ty, at: t, bx: meet[0], by: meet[1], bt: t, ground: true, toWall: true } as DeckEdge : { ...tip, ax: meet[0], ay: meet[1], at: t, bx: tx, by: ty, bt: t, ground: true, toWall: true } as DeckEdge);
+                approachEdges.push(street[street.length - 1] as (typeof approachEdges)[number]);
               }
               // (over the corner's scrap the run goes straight from the side to the street's edge: mitred
               // round its turn, the parapet's faces stood out across the pavement)
@@ -2111,7 +2176,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             }
             return [...before.reverse(), ...part, ...after];
           };
-          for (const c of chains) {
+          for (const c0 of chains) {
+            // (straight across where the outline folds back on itself over a short way, a slot of bank
+            // between the deck's end and a lane leaving it: one wall across its mouth, not one down each side)
+            const c: DeckEdge[] = [];
+            for (const e of c0) {
+              const p = c[c.length - 1];
+              if (p) {
+                const u = [p.bx - p.ax, p.by - p.ay], v = [e.bx - e.ax, e.by - e.ay], lu = Math.hypot(u[0], u[1]), lv = Math.hypot(v[0], v[1]);
+                if (lu <= 3 && lv <= 3 && (u[0] * v[0] + u[1] * v[1]) / ((lu * lv) || 1) < -0.3) {
+                  c[c.length - 1] = { ...p, bx: e.bx, by: e.by, bt: e.bt, fold: true } as DeckEdge;
+                  continue;
+                }
+              }
+              c.push(e);
+            }
             // (split where it turns a corner: across the end of the deck's edging, at a cap)
             const parts: DeckEdge[][] = [[]];
             for (let i = 0; i < c.length; i++) {
@@ -2135,8 +2214,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
                   const sa = where(e.ax, e.ay).sp, sb = where(e.bx, e.by).sp;
                   if (!aloft(e.ax, e.ay, e.at, sa) || !aloft(e.bx, e.by, e.bt, sb)) continue;
                   const ta = e.at + LEVEL_LIFT[e.kind], tb = e.bt + LEVEL_LIFT[e.kind], l = Math.hypot(e.bx - e.ax, e.by - e.ay) || 1;
-                  // (the underside hangs DECK under the deck's points at the bridge's own lift, whatever the face's)
-                  const fa = archAt(sa) ?? e.at + lift - DECK, fb = archAt(sb) ?? e.bt + lift - DECK;
+                  // (the underside hangs DECK under the deck's points at the bridge's own lift, whatever the face's;
+                  // where the sides beside it are walled down to the bank, so is the end, closing it)
+                  const fa = footAt(e.ax, e.ay, e.at + lift, sa), fb = footAt(e.bx, e.by, e.bt + lift, sb);
                   facing(g, [e.ax, fa, -e.ay], [e.bx, fb, -e.by], [e.bx, tb, -e.by], [e.ax, ta, -e.ay], [(e.by - e.ay) / l, 0, (e.bx - e.ax) / l],
                     [0, (fa - ta) / 2.5], [l / 2.5, (fb - tb) / 2.5], [l / 2.5, 0], [0, 0], sideCol);
                   e.claimed = true;
@@ -2146,7 +2226,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               const chainEnds: [boolean, boolean] = [pi === 0, pi === parts.length - 1];
               part = runOn(part);
               const street = (e: DeckEdge) => approachEdges.includes(e as (typeof approachEdges)[number]);
-              const { side } = where((part[0].ax + part[part.length - 1].bx) / 2, (part[0].ay + part[part.length - 1].by) / 2);
+              // (which side, from the deck's own edge: the street's run on can carry the middle across the way)
+              const { side } = where((deckPart[0].ax + deckPart[deckPart.length - 1].bx) / 2, (deckPart[0].ay + deckPart[deckPart.length - 1].by) / 2);
               if (r.ledge && !r.ledge[side > 0 ? 0 : 1]) continue;
               // each corner of the run, set in from the edge by the parapet's reach, mitred at bends
               const vs = [[part[0].ax, part[0].ay, part[0].at, part[0].kind], ...part.map((e) => [e.bx, e.by, e.bt, e.kind])] as [number, number, number, string][];
@@ -2166,13 +2247,21 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
                 if (street(e) || (!onSpan(mid) && !(aloft(e.ax, e.ay, e.at, A.s) || aloft(e.bx, e.by, e.bt, B.s)))) continue;
                 const out = [nrm[i][0], 0, -nrm[i][1]];
                 if (A.top - Math.min(A.g, ground(e.ax + nrm[i][0] * 0.3, -(e.ay + nrm[i][1] * 0.3))) <= 0.3 && B.top - Math.min(B.g, ground(e.bx + nrm[i][0] * 0.3, -(e.by + nrm[i][1] * 0.3))) <= 0.3) continue;
-                const uA = along(A), uB = along(B), fs = [0, ...cutsIn(A.s, B.s).map((c) => (c - A.s) / (B.s - A.s)).sort((p, q) => p - q), 1];
-                const bit = (f: number) => {
-                  const x = e.ax + (e.bx - e.ax) * f, y = e.ay + (e.by - e.ay) * f, top = A.top + (B.top - A.top) * f;
-                  return { x, y, top, u: uA + (uB - uA) * f, foot: footAt(x, y, top - LEVEL_LIFT[e.kind] + lift, A.s + (B.s - A.s) * f) };
+                const lo = Math.min(A.s, B.s), hi = Math.max(A.s, B.s), mine = flips.map((fl, i) => [fl.sp, i]).filter(([c]) => c > lo + 1e-3 && c < hi - 1e-3);
+                const fs = [0, ...[...cutsIn(A.s, B.s), ...mine.map(([c]) => c)].map((c) => (c - A.s) / (B.s - A.s)).sort((p, q) => p - q), 1];
+                const uA = along(A), uB = along(B), dirS = Math.sign(B.s - A.s) || 1;
+                // (each end's foot as it is just inside the stretch, so at a step the two sides of it differ)
+                const bit = (f: number, toward: number) => {
+                  const x = e.ax + (e.bx - e.ax) * f, y = e.ay + (e.by - e.ay) * f, top = A.top + (B.top - A.top) * f, sp = A.s + (B.s - A.s) * f;
+                  return { x, y, top, u: uA + (uB - uA) * f, foot: footAt(x, y, top - LEVEL_LIFT[e.kind] + lift, sp + Math.sign(toward - f) * dirS * 0.1) };
                 };
+                for (const [c, i] of mine) {
+                  const f = (c - A.s) / (B.s - A.s), x = e.ax + (e.bx - e.ax) * f, y = e.ay + (e.by - e.ay) * f, top = A.top + (B.top - A.top) * f - LEVEL_LIFT[e.kind] + lift;
+                  const a = footAt(x, y, top, c - 0.1), b = footAt(x, y, top, c + 0.1);
+                  (steps.get(i) ?? steps.set(i, []).get(i)!).push({ side, x, y, foot: Math.min(a, b), soffit: Math.max(a, b) });
+                }
                 for (let j = 0; j + 1 < fs.length; j++) {
-                  const P0 = bit(fs[j]), P1 = bit(fs[j + 1]);
+                  const P0 = bit(fs[j], fs[j + 1]), P1 = bit(fs[j + 1], fs[j]);
                   facing(g, [P0.x, P0.foot, -P0.y], [P1.x, P1.foot, -P1.y], [P1.x, P1.top, -P1.y], [P0.x, P0.top, -P0.y], out,
                     [P0.u, (P0.foot - P0.top) / 2.5], [P1.u, (P1.foot - P1.top) / 2.5], [P1.u, 0], [P0.u, 0], sideCol);
                 }
@@ -2180,7 +2269,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               }
               // the parapet over the span, and on along the approach while the deck stands over the
               // ground beside it (map.ts stands its collision on the same edges, by the same rule)
-              const keep = part.map((e, i) => onSpan((pts[i].s + pts[i + 1].s) / 2) || overGround(e));
+              const keep = part.map((e, i) => onSpan((pts[i].s + pts[i + 1].s) / 2) || overGround(e) || !!(e as { toWall?: boolean }).toWall);
               let cur: Pt[] = [], k0 = -1;
               const flush = (k1: number) => {
                 if (cur.length > 1) runs.push({ pts: cur, side, kind, posts: [k0 === 0 && chainEnds[0], k1 === part.length && chainEnds[1]] });
@@ -2194,6 +2283,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               flush(part.length);
             }
           }
+          for (const [i, at2] of steps) {
+            const fl = flips[i];
+            if (fl.front) continue;
+            // (across each piece of deck, from its right side to its left, where a deck has a gap down its middle)
+            const q = lerpAt(fl.sp), dir = fl.on ? -1 : 1, across = [...at2].sort((a, b) => ((a.x - q.x) * q.nx + (a.y - q.y) * q.ny) - ((b.x - q.x) * q.nx + (b.y - q.y) * q.ny));
+            for (let k = 0; k + 1 < across.length; k++) {
+              const L = across[k], R = across[k + 1];
+              if (L.side > 0 || R.side < 0 || Math.max(L.soffit - L.foot, R.soffit - R.foot) < 0.05) continue;
+              const l = Math.hypot(R.x - L.x, R.y - L.y);
+              facing(g, [L.x, L.foot, -L.y], [R.x, R.foot, -R.y], [R.x, R.soffit, -R.y], [L.x, L.soffit, -L.y], [q.ny * dir, 0, q.nx * dir],
+                [0, L.foot / 2.5], [l / 2.5, R.foot / 2.5], [l / 2.5, R.soffit / 2.5], [0, L.soffit / 2.5], sideCol);
+              k++;
+            }
+          }
           // (along a run its points are measured by the distance along it, for the stone's courses and
           // the posts' spacing: an edge bending off the line kept its point's place on the line)
           const measured = (pts: Pt[]) => {
@@ -2201,8 +2304,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             return pts.map((q, i) => (i ? { ...q, s: (d += Math.hypot(q.x - pts[i - 1].x, q.y - pts[i - 1].y)) } : { ...q }));
           };
           for (const { pts, side, kind: kd, posts } of runs) {
-            // (the deck's parapets stand in the map from its outline (map.ts); those along the street are added here)
             const w = side * Ws(side), m = side * (Ws(side) + hs(side)) / 2;
+            // (the deck's parapets stand in the map from its outline (map.ts); those along the street are added here)
             for (let i = 0; i + 1 < pts.length; i++) {
               if (!pts[i + 1].onStreet) continue;
               const A = pts[i], B = pts[i + 1], a = at(A, m, 0), b = at(B, m, 0);
@@ -2695,7 +2798,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       return false;
     });
   });
-  const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo, cuts?: number[][]) => {
+  const sheetEdge = (a: number[], b: number[], ma: number, mb: number, l: number, along: number, g: Geo, cuts?: number[][], abut: Geo | null = null) => {
     if (inBore((a[0] + b[0]) / 2, -(a[2] + b[2]) / 2)) return;
     // (a face over the water, or over the canal's bank higher than a walker's headroom with the towpath
     // passing under it, is a street running on off its bridge's span: no wall stands under it, in the
@@ -2721,7 +2824,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let k = 0; k + 1 < stops.length; k++) {
       const [f0, x0, y0, z0, m0] = stops[k], [f1, x1, y1, z1, m1] = stops[k + 1], p = [x0, y0, z0], q = [x1, y1, z1];
       const A = lo(p, m0), B = lo(q, m1), C = hi(q, m1), D = hi(p, m0), u0 = along + l * f0, u1 = along + l * f1;
-      if (tall) retaining.push([A, B, C, D, out, [u0, u1 - u0]]);
+      if (tall && abut) facing(abut, A, B, C, D, out, [u0 / 2.5, A[1] / 2.5], [u1 / 2.5, B[1] / 2.5], [u1 / 2.5, C[1] / 2.5], [u0 / 2.5, D[1] / 2.5], STONE);
+      else if (tall) retaining.push([A, B, C, D, out, [u0, u1 - u0]]);
       else facing(g, A, B, C, D, out, [u0, A[1]], [u1, B[1]], [u1, C[1]], [u0, D[1]], [1, 1, 1]);
     }
   };
@@ -2786,7 +2890,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const a = top(ia, kind), b = top(ib, kind), l = Math.hypot(b[0] - a[0], b[2] - a[2]);
       if (l < 1e-3) return;
       const foot = (q: number[]) => { const g = drawnGround(q[0], q[2]); return Math.min(q[1] - LEVEL_LIFT[kind] - 0.1, Number.isFinite(g) ? g - 0.03 : q[1] - 0.5); };
-      const fa = foot(a), fb = foot(b), tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
+      // (a deck's edge is the bridge's side however low: in the street's own surface, a short one
+      // showed as a wedge of paving under a parapet's end)
+      const fa = foot(a), fb = foot(b), tall = Math.max(a[1] - fa, b[1] - fb) > 0.45 || kind !== "steel";
       const g = tall ? geo.bridge : into(kind), s = tall ? 2.5 : 1;
       const out = [-(b[2] - a[2]) / l, 0, (b[0] - a[0]) / l];
       facing(g, [a[0], fa, a[2]], [b[0], fb, b[2]], b, a, out, [0, fa / s], [l / s, fb / s], [l / s, b[1] / s], [0, a[1] / s], tall ? STONE : kind === "steel" ? PLATE : [1, 1, 1]);
@@ -2859,6 +2965,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // the street's own outer edges near each deck's ends, for its parapets to run on along while the
     // approach stands over the ground beside it (bridgeStructures)
     approachEdges = [];
+    streetTaken.clear();
+    abutting.clear();
     const caps = deckEdges.filter((e) => e.cap);
     if (!caps.length || !sf.l) return;
     const near = new Set<number>(), REACH = 40;
@@ -2873,6 +2981,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (!kind || level1.has(ia * NP + ib) || !near.has(ck(Math.floor(V[3 * ia] / CELL_), Math.floor(V[3 * ia + 1] / CELL_)))) continue;
       if (faced.has(`${at2(ib)}|${at2(ia)}`) || (onSide(ia) && onSide(ib))) continue;
       approachEdges.push({ ...edgeOf(ia, ib, kind, false), ground: true });
+      const mx = (V[3 * ia] + V[3 * ib]) / 2, my = (V[3 * ia + 1] + V[3 * ib + 1]) / 2;
+      if (caps.some((c) => Math.hypot(c.ax - mx, c.ay - my) < 15 || Math.hypot(c.bx - mx, c.by - my) < 15)) abutting.add(`${ia},${ib}`);
     }
   }
   function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge" | "steel" | "grass" | "dirt" | "gravel" | "bed", Geo>) {
@@ -3023,7 +3133,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (meet && !other && !meet.onSeam(e.i[k], e.i[k + 1])) {
           // (a corner the sheet doesn't meet is the tip of a spike of no width in the outline: nothing to draw)
           const ma = meet.meets(e.i[k]), mb = meet.meets(e.i[k + 1]);
-          if (ma < Infinity && mb < Infinity) sheetEdge(a, b, ma, mb, l, along, geo[kind === "service" ? "road" : kind as keyof typeof geo], meet.alongEdge(e.i[k], e.i[k + 1]));
+          if (ma < Infinity && mb < Infinity) sheetEdge(a, b, ma, mb, l, along, geo[kind === "service" ? "road" : kind as keyof typeof geo], meet.alongEdge(e.i[k], e.i[k + 1]), abutting.has(`${e.i[k]},${e.i[k + 1]}`) ? geo.bridge : null);
           along += l;
           continue;
         }

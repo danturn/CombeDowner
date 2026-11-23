@@ -1998,3 +1998,48 @@ Whole map, 161 decks, `?decks=1`, before and after this round:
 
 Triangles over the 59 squares with a deck: 106.70 M to 106.78 M (+0.07%); the most in 4,1 (+18k),
 1,3 (+16k), 2,4 (+11k). Meshes 13,726 to 13,735. Clash counts no higher than before; four went down.
+
+## Gaps in the bridges, round 4 (23 November)
+
+- [ ] **The bridge drawing measures what stands in the air by the lower of the survey and the ground as
+  drawn**: where the sheet is let down beside a street off a deck's end, by the survey the deck stood on
+  the bank there and had no underside (Midland Road's 7.3 m² seen through from below were these, at
+  both ends, not under its middle). The same for whether a parapet stands on a deck's edge, so the
+  deck's last edges and the street's run on past them stand by one rule (Midford Road).
+- [ ] **A run's side is taken from the deck's own edge**, not the middle of the run with the street's
+  run on added.
+- [ ] **A parapet's run on crosses up to a metre of the street's edge on the bank** where the street
+  goes on over the ground beyond, steps over a zero-length edge, and carries on to a wall or fence of
+  the map's starting within 0.6 m of where it ends (Midford Road's garden wall, 0.3 m off). Further off
+  it doesn't, as the gap may be a way through.
+- [ ] **A street edge one deck's parapet has run on along isn't taken again by another's** (Ferry Lane's
+  service lane, over the towpath and on over the stream at (3056, 1708), is one record carrying two
+  bridges). Splitting the deck's edges and triangles between the two bridges was tried and dropped: it
+  wasn't what crossed the parapets there, and it left 28 m² more of Newbridge Road's deck (-4393, 3092)
+  seen through from below, where the deck's triangles fell to the other of its two bridges.
+- [ ] **Where a deck's outline folds back on itself over a short way** (each side 3 m or less, turning
+  back more than about 107 degrees), **its side and parapet go straight across the mouth**: at Ferry
+  Lane's east end a slot of bank between the deck's end and the lane leaving it had a wall down each side,
+  meeting in a V. The parapet turns the corner after it onto the lane's edge.
+- [ ] **No parapet where a street runs in beside a deck's edge at the deck's level** (within half a
+  metre): a parapet stands only over a drop.
+- [ ] **The sheet's wall under a street's edge within 15 m of a deck's end is the bridge's stone**, not
+  the square's own walling (the brick wedge under Midford Road's parapet at (123, -1933)). A deck's own
+  edge left to the ground's drawing is stone however short.
+- [ ] **A side walled down to the bank beside a pier or an abutment steps straight down where the
+  walling starts**, and a face across each piece of deck closes the step (paired right side to left,
+  so a deck with a gap down its middle gets one across each carriageway). Before, the side's foot
+  sloped from the deck's depth to the ground over one stretch, a V hanging between piers with the
+  underside open behind it (the trunk road's viaduct in 2,4). At the bank's front the step stands
+  where the abutment's face is. A slim pier's cap has its underside.
+- [ ] **The measure, corrected**: (c) counted a ledge of deck outside a parapet, behind it from the
+  walk, as an unwalled drop; it now also looks for a wall from a metre in (most of round 3's rise in
+  (c) on decks). (a) counted the foot of a parapet sunk 0.18 m into the pavement it stands on as an
+  open edge; an edge just under a face walked on is buried, not open. (d) now says where its least
+  clearance is.
+- [ ] **Still open: Ferry Lane's least clearance, 0.26 m**, is not the bridge: it is the ground sheet
+  lapping 0.27 m over the end of the footpath (2991.9, 1566.5) where it drops into its cutting to meet
+  the towpath under the deck's end. The deck's soffit is 2.1 m over the path there. That is the sheet
+  (check_map rule 23, "ground drawn over a path"), left for the ground work.
+- [ ] **Still open: the towpath's headroom under Ferry Lane** (2.2 m, short of 2.4 m for a cycle track),
+  waiting on the maintainer's decision whether to dip the towpath or thin the deck.

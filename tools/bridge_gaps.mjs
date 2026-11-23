@@ -6,7 +6,7 @@
 //  a. open edges: the edges of its stone and steel (deck sides, underside, parapets, piers, arches,
 //     abutments) and of its deck's top that only one triangle uses, once corners within a centimetre are
 //     one, and that nothing else drawn runs along or meets (within 5 cm; a bar's open end, under 20 cm across, isn't counted): a parapet left hollow at its
-//     end, a hole in the underside, a slot. An edge lying on the ground or on a face is not open.
+//     end, a hole in the underside, a slot. An edge lying on the ground or on a face, or sunk just under one, is not open.
 //     Metres of edge.
 //  b. see-through: every half metre over the deck where it stands a metre or more over the ground,
 //     looking straight up from the ground: nothing seen before the deck's top is a hole in it from
@@ -129,6 +129,18 @@ await page.evaluate(() => {
 await page.evaluate(probe);
 
 // (decks near each other are measured from one view)
+if (opt.tris) {
+  // (--tris "x,y,h": the triangles with an edge within 0.4 m of that point, to see what an open edge
+  // is meant to meet)
+  for (const s of opt.tris.split(/ +/)) {
+    const [x, y, h] = s.split(",").map(Number);
+    await page.evaluate((a) => { window.__at = a; }, `${x},${y},0,-30,40`);
+    await settle();
+    console.log(s);
+    for (const l of await page.evaluate(([x, y, h]) => window.__trisNear(x, y, h), [x, y, h])) console.log(" ", JSON.stringify(l));
+  }
+  await browser.close(); server.close(); process.exit(0);
+}
 if (opt.probe) {
   for (const s of opt.probe.split(/ +/)) {
     const [x, y] = s.split(",").map(Number);
@@ -319,6 +331,16 @@ function probe() {
     return clear;
   }
 
+  window.__trisNear = (x, y, h) => {
+    const map = window.__map(), z = -y, Y = h - (map.z0 ?? 0), T = trianglesIn(x - 1, z - 1, x + 1, z + 1), out = [];
+    for (const t of T.tris) {
+      const v = t.v;
+      const seg = (a, b) => { const d = [v[b] - v[a], v[b + 1] - v[a + 1], v[b + 2] - v[a + 2]], l2 = d[0] ** 2 + d[1] ** 2 + d[2] ** 2 || 1, f = Math.max(0, Math.min(1, ((x - v[a]) * d[0] + (Y - v[a + 1]) * d[1] + (z - v[a + 2]) * d[2]) / l2)); return Math.hypot(v[a] + d[0] * f - x, v[a + 1] + d[1] * f - Y, v[a + 2] + d[2] * f - z); };
+      if (Math.min(seg(0, 3), seg(3, 6), seg(6, 0)) > 0.4) continue;
+      out.push([t.what, t.n.map((q) => +q.toFixed(2)), [0, 3, 6].map((k) => [+v[k].toFixed(2), +(-v[k + 2]).toFixed(2), +(v[k + 1] + (map.z0 ?? 0)).toFixed(2)])]);
+    }
+    return out;
+  };
   // (--probe "x,y ...": everything drawn straight over data (x, y), from the ground up, to see what a sample met)
   window.__upHits = (x, y) => {
     const map = window.__map(), z = -y, T = trianglesIn(x - 2, z - 2, x + 2, z + 2), g = map.ground(x, z), out = [];
@@ -405,6 +427,9 @@ function probe() {
         const g = ground(p[0], p[2]);
         if (p[1] < g + 0.05) continue;
         if (Math.abs(top(p[0], p[2], p[1] + 0.05) - p[1]) < 0.05) continue;
+        // (or just under a face walked on, sunk into the deck it stands on: a parapet's foot)
+        const over = top(p[0], p[2], p[1] + 0.3);
+        if (over > p[1] && over <= p[1] + 0.3) continue;
         let met = false;
         for (const o of near(T, p[0] - MET, p[2] - MET, p[0] + MET, p[2] + MET)) {
           const u = T.tris[o];
@@ -465,8 +490,10 @@ function probe() {
           if (ti - to <= 0.5) continue;
           if (map.inWater(ox, -oy) || wet(T, ox, -oy, ti)) continue;
           const dir = [-nx * side, 0, ny * side];
-          // (every 5 cm from knee to chest, so a railing's bars stop it too)
-          const walled = Array.from({ length: 19 }, (_, k) => 0.25 + 0.05 * k).some((up) => firstHit(T, [ix, ti + up, -iy], dir, 0.8, false) < Infinity);
+          // (every 5 cm from knee to chest, so a railing's bars stop it too; from a metre in, so a ledge
+          // outside a parapet, behind it from the walk, is walled too)
+          const jx = x + nx * 1.0 * side, jy = y + ny * 1.0 * side;
+          const walled = Array.from({ length: 19 }, (_, k) => 0.25 + 0.05 * k).some((up) => firstHit(T, [ix, ti + up, -iy], dir, 0.8, false) < Infinity || firstHit(T, [jx, ti + up, -jy], dir, 1.6, false) < Infinity);
           if (walled) continue;
           seenC.add(k);
           if (onDeck || deckTop(x, -y) !== null) cDeck += 0.5; else cOff += 0.5;
@@ -502,7 +529,7 @@ function probe() {
             // (from a hand's breadth over the way, so its own face and kerb, a few centimetres over the
             // ground the walk stands on, aren't taken for a ceiling)
             const base = Math.max(surf, way), room = firstHit(T, [x, base + 0.25, z], UP, h - base, false) + 0.25;
-            if (least === null || room < least) least = room;
+            if (least === null || room < least) { least = room; where.least = [+x.toFixed(1), +y.toFixed(1), off === 0 ? "middle" : "edge", +(base + map.z0).toFixed(2), +(h + map.z0).toFixed(2), r.n || r.c]; }
             if (room < need) short = true;
           }
           const sk = `${Math.round((A[0] + tx * s) * 2)},${Math.round((A[1] + ty * s) * 2)}`;
