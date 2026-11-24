@@ -105,7 +105,6 @@ export const LEVEL_KINDS = ["road", "service", "pave", "path", "grass", "dirt", 
 const DECK_SLAB = 0.6;    // metres: how thick a deck is to a shot, where it is near no bridge's span
 const HOP_REACH = 1.2;   // metres past where a hop starts that it comes down
 const HOP_DROP = 1.5;    // metres: a longer drop than this the other side, and nobody hops it    // metres: how thick a deck is to a shot
-const FACE_KINDS_0 = ["road", "service", "pave", "path", "front", "drive", "grass", "dirt", "gravel", "bed"] as const;
 export interface MapData {
   id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
@@ -441,6 +440,7 @@ export class GameMap {
   // with ?decks=1, the decks' faces (sf.lv): each triangle's corners in scene coords as x, z, top, by cell
   private deckTris: number[] = [];
   private deckDepth: number[] = [];   // each deck triangle's depth to its underside, as drawn
+  private deckFirst = 0;              // where this square's own deck triangles start in those
   private deckTriCells = new Map<number, number[]>();
   // the arches drawn under bridges (world.ts), each stretch of barrel in scene coords: [ax, az, bx, bz,
   // half its width, the road's height over it at a and b, the barrel's at a and b], by cell
@@ -667,6 +667,7 @@ export class GameMap {
     }
     if (facedDecks(d.sf)) {
       const sf = d.sf!, V = sf.v, first = this.deckTris.length / 9;
+      this.deckFirst = first;
       for (const lv of sf.lv!) for (const kind of LEVEL_KINDS) {
         const T = lv[kind] ?? [], lift = DECK_LIFT[kind];
         for (let k = 0; k + 2 < T.length; k += 3) {
@@ -684,20 +685,7 @@ export class GameMap {
             }
         }
       }
-      // A deck's parapets stand along its faces' outer edge over the span, and on the step down to each
-      // abutment while it stands PARAPET_OVER or more over the ground beside it, as they're drawn
-      // (world.ts bridgeStructures), from its underside to a walker's chest
-      // (an outer edge has deck on one side only and no ground's face sharing it, where the deck lands:
-      // the lists keep no one winding, and the edging can lie over the paving at a deck's end)
-      const NP = V.length / 3, sides = new Map<number, number>();
-      const edge = (a: number, b: number) => Math.min(a, b) * NP + Math.max(a, b);
-      const note = (T: ArrayLike<number>) => {
-        for (let k = 0; k + 2 < T.length; k += 3) for (let m = 0; m < 3; m++) {
-          const e = edge(T[k + m], T[k + (m + 1) % 3]);
-          sides.set(e, (sides.get(e) ?? 0) + 1);
-        }
-      };
-      for (const kind of FACE_KINDS_0) note(sf[kind] ?? []);
+      // (its parapets are world.ts's, which stands their collision where it draws them: bridgeSolid)
       const spans: [number, number, number, number, boolean, Road][] = [];
       for (const r of d.rd) if (r.bridge && !r.held) for (let i = 0; i + 1 < r.p.length; i++) {
         const on = (q: number[]) => q[3] === 1 || q[3] === 2, A = r.p[i], B = r.p[i + 1];
@@ -717,32 +705,6 @@ export class GameMap {
       for (let n = first; n < D.length / 9; n++) {
         const sp = nearest((D[9 * n] + D[9 * n + 3] + D[9 * n + 6]) / 3, -(D[9 * n + 1] + D[9 * n + 4] + D[9 * n + 7]) / 3);
         this.deckDepth.push(sp ? BRIDGE_DECK[bridgeKind(sp[5])] : DECK_SLAB);
-      }
-      for (const lv of sf.lv!) for (const e of lv.e) for (let k = 0; k + 1 < e.i.length; k++) {
-        const a = e.i[k], b = e.i[k + 1];
-        if (sides.has(edge(a, b))) continue;
-        {
-          const ex = V[3 * b] - V[3 * a], ey = V[3 * b + 1] - V[3 * a + 1], l = Math.hypot(ex, ey) || 1, mx = V[3 * a] + ex / 2, my = V[3 * a + 1] + ey / 2;
-          const on = (sx: number) => this.deckFaceTops(mx + (ey / l) * 0.03 * sx, -(my - (ex / l) * 0.03 * sx)).length > 0;
-          if (on(1) === on(-1)) continue;
-        }
-        const sp = nearest((V[3 * a] + V[3 * b]) / 2, (V[3 * a + 1] + V[3 * b + 1]) / 2);
-        if (!sp) continue;
-        // (a side the ground stays level with has no parapet drawn, so none to walk into either)
-        const [ax, ay, bx, by, , r] = sp, mx = (V[3 * a] + V[3 * b]) / 2, my = (V[3 * a + 1] + V[3 * b + 1]) / 2;
-        if (r.ledge && !r.ledge[(bx - ax) * (my - ay) - (by - ay) * (mx - ax) > 0 ? 0 : 1]) continue;
-        const ta = V[3 * a + 2] - this.z0, tb = V[3 * b + 2] - this.z0;
-        if (!sp[4]) {
-          // (outside the edge: the outlines run with their face on the left)
-          const ex = V[3 * b] - V[3 * a], ey = V[3 * b + 1] - V[3 * a + 1], l = Math.hypot(ex, ey) || 1, n = Math.max(1, Math.ceil(l / 1.5));
-          let over = false;
-          for (let k = 0; k < n && !over; k++) {
-            const f = (k + 0.5) / n;
-            over = ta + (tb - ta) * f + 0.17 - this.ground(V[3 * a] + ex * f + ey / l * 0.4, -(V[3 * a + 1] + ey * f - ex / l * 0.4)) >= PARAPET_OVER;
-          }
-          if (!over) continue;
-        }
-        this.addSeg(V[3 * a], -V[3 * a + 1], V[3 * b], -V[3 * b + 1], ta + 1.25, 1, Math.min(ta, tb) - deckDrop(sp[5]), tb + 1.25);
       }
     }
     yield;
@@ -1224,6 +1186,12 @@ export class GameMap {
       if (deep) out.push(this.deckDepth[n]);
     }
     return out;
+  }
+
+  /** Each of this square's deck triangles' depth to its underside as world.ts draws it (bridgeSolid: thinner
+   *  where a way passing under is short of headroom), in the order of its `sf.lv`. */
+  setDeckDepths(depth: number[]) {
+    for (let k = 0; k < depth.length; k++) if (Number.isFinite(depth[k]) && this.deckFirst + k < this.deckDepth.length) this.deckDepth[this.deckFirst + k] = depth[k];
   }
 
   /** Whether scene (x, y, z) is inside a deck's slab (?decks=1): a shot hits it. */

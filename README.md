@@ -33,7 +33,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
   suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
   saw it. A bridge over the railway clears a train with room to spare, its steps or paths climbing
-  to it, and every bridge's deck meets the street or path beyond its end at the same height, with no lip, its parapets running on along the street past its end while the bank falls away beside it and ending on a pier, closed at every end, and its abutment closed down to the bank; a bridge whose end stands over a towpath carries on over it to the bank beyond, so you walk under it upright. Underneath, your head meets the bridge where it's drawn: a footbridge's thin deck, a
+  to it, and every bridge's deck meets the street or path beyond its end at the same height, with no lip, its parapets running on along the street past its end while the bank falls away beside it, meeting a garden wall that carries on from there and turning the corner onto a lane leaving the deck as one wall, ending on a pier, closed at every end, and its abutment closed down to the bank; a bridge whose end stands over a towpath carries on over it to the bank beyond, so you walk under it upright. Underneath, your head meets the bridge where it's drawn: a footbridge's thin deck, a
   concrete beam's deeper one, or a stone arch's barrel, which over the canal's towpath can be low
   enough to make you crouch. Every deck is solid from parapet to parapet, however narrow the path along it, and the
   parapets run unbroken round its bends and where its pieces join, stopping only where another
