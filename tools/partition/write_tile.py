@@ -973,6 +973,9 @@ def _opened(pts):
 # Points (4 m apart) a street's approach to its bridge may keep its profile for, and the steepest the
 # step back down to the ground may be where an approach has to stop short.
 APPROACH = 9
+# points a deck's end may run on along its way to reach the bank (structures.grow_marks): a deck ends
+# where the ground comes up to it, never in the air; its way's own ends (junctions) stop it
+END_REACH = 15
 ROAD_RAMP = 0.15
 MOUTH_HOLD = 3       # points (4 m apart) out from a tunnel's portal that a way keeps the city's heights for
 MOUTH_REACH = 10     # and further, up to this many, till the city's floor comes back up to the ground
@@ -1068,7 +1071,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     # build's lower approaches, the deck's end stood a metre over the ground.
     # (but not across another street, whose own height the ground is laid to)
     approach = _approaches(seg, zs, gs, spans | decks, ground, _across_streets(seg, streets) if streets and (spans or decks) else ())
-    grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow | approach)
+    grow_marks(zs, gs, spans, decks, reach=END_REACH, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow | approach)
     # (and a span's last points lying on the bank, as the lidar's true ground has it, are its abutment)
     for st in stretches(set(spans)):
         for order in (st, st[::-1]):

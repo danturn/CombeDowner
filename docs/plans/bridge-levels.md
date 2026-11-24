@@ -83,6 +83,15 @@ Fifth round (24 November, `?decks=1`): **each bridge is drawn as one closed soli
 - The build's `cap_landings` and the structures pass's end joins and rule 2f stay. Strip mode, without `?decks=1`, is drawn as before.
 - `?solids=1` counts each solid's open edges (welded at 1 cm, square sides left out), and `tools/bridge_gaps.mjs` reports them as (w).
 
+Sixth round (24 November, `?decks=1`): **a deck ends on the bank, never in the air.**
+- Within `END_REACH` (3 m) of where a deck meets the street, wherever its side stands over the ground with nothing passing under and no water, the side goes down into the bank as its abutment's wall. So does deck spread beside its span or past its abutments, and anywhere the room under it is too low to walk under. Each side is sampled every half metre, not at one change per edge. `?solids=1` counts the ends still hanging more than 0.3 m over the ground with no wall under them, and `tools/bridge_gaps.mjs` reports them as (f).
+- The build runs a span's end on along its way for up to `END_REACH` points (write_tile.py, `structures.grow_marks`), until the drawn ground comes within 0.3 m of the deck. It stops at the way's own ends (its junctions) and at the approach points whose ground is laid to the profile.
+- Narrow notches in a deck's outline (mouth under 4 m, up to 20 m²) are filled with deck (world.ts `fillNotches`, walked as deck through `map.addDeckFace`), and level-0 scraps lying inside a deck get no outline wall. That was Ferry Lane's thin post and the V between its pieces.
+- Kerb steps on the deck are zipped against the walls' rungs (`zipper`), so a step and the wall it meets share every height and leave no sliver.
+- Parapets: a short jog where the street's edge runs a little to one side of the deck's is taken straight. Where a parapet runs on into a mapped wall it ends on the wall's line and ramps to the wall's height over its last 2 m, with no end pier. Its outer face stands 12 cm proud of the deck's side, and the deck's own edge is a shade darker, so the two read as a parapet on a deck.
+- A railing's straight runs are one stretch, and its thin bars are three-sided (decks only: strip mode is unchanged).
+- A way that reaches in under a deck and stops there, short of its middle, counts as passing under (`passingUnder`), so an arch springs clear of it (North Parade's footway).
+
 Trial squares: 1,2 (Widcombe footbridges, canal, towpath), 0,2 (Broad Quay, Wells Road bridge), 1,3 (Sydney Gardens canal bridges), Pulteney's square, Ferry Lane's 4,2, and one where a bridge crosses a square edge.
 
 ## Decisions (agreed)
