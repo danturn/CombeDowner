@@ -2089,3 +2089,43 @@ the truss's open railing, which the measure counts as unwalled. Stone and steel 
 boxes, the street's parapets past the deck's ends and the walls' extra rungs at kerb steps. The
 squares' whole triangle counts vary between runs by more than that (how much of a square has loaded
 when it's counted), so only the stone and steel are compared.
+
+## Bridge decks: ends on the bank, round 6 (24 November)
+
+With `?decks=1`, a deck's end now stands on its abutment: within 3 m of where it meets the street,
+its side goes down into the bank wherever it stands over the ground with nothing under it (world.ts
+`bridgeSolid`; docs/plans/bridge-levels.md, sixth round). The build runs a span's end on along its way
+for up to 15 points (`write_tile.END_REACH`) until the drawn ground meets the deck. That moved one end
+on the whole map, Lower Stoke's in square 3,0, by 11.5 m. Everywhere else the approach's ground was
+already laid to the deck's height.
+
+- [ ] **Decision needed: Ferry Lane's footpath.** The footpath in the data meets the lane's end
+  at the bridge in plan, but 3 m lower, at the towpath, and the ground along it never rises to the
+  deck. So by the rule the deck can't run on along it. The lane's own end (north-east) lands on the
+  bank and is walked flush. From the footpath you walk on the ground under the deck's south-east piece
+  and can't step up on to it. That walk failed last round too, with a 1.6 m rise. Either the footpath
+  is graded up to the deck at its end (the build would lift a way that meets a deck's end), or it
+  stays a towpath path with no way on to the deck there.
+- [ ] **Open edge (a) is up** (5,353 m to 6,064 m), from the new abutment walls: where one stops
+  part way along a deck's side, its upright end edge (2 to 14 m tall on high decks) is a free edge of
+  the wall that nothing meets. A face across under the deck there was tried; its own far edge was then
+  free, and it raised (a) further.
+- [ ] **(w) has 4 edges left**: the service road's 2.7 m in square -2,3 (-3639, 2172), where two
+  pieces of the deck's top overlap end-on along the same line in opposite directions, so neither is on
+  the other's outline (no gap shows); and 3 edges (7.8 m) on Warminster Road in square 3,0 (1954, -693).
+
+Measured over all 161 decks (`tools/bridge_gaps.mjs`, before = ba72e189, after = this work):
+
+| | before | after |
+|---|---|---|
+| a. open edge | 5,353.1 m (131 decks) | 6,063.9 m (134) |
+| b. seen through from below | 14 m² (11) | 13.8 m² (11) |
+| c. unwalled drop, on decks + approaches | 346.5 + 856 m | 355 + 859.5 m |
+| d. way short of headroom | 108.5 m (33) | 82.5 m (31) |
+| w. open edges of the solids | 74 edges, 9.1 m (21 decks) | 4 edges, 10.5 m (2) |
+| f. floating ends | 71 ends, 195.5 m (52 decks) | 0 |
+
+(f) before is the new measure run on ba72e189's map with the end walls left out. Stone and steel
+triangles over the 46 squares with decks: 151,940 before, 120,599 after (136,481 at 1e454514).
+check_map's counts are unchanged.
+

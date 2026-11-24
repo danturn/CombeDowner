@@ -1716,6 +1716,21 @@ export class GameMap {
     if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
   }
   private structures = new Set<string>();
+  /** A piece of deck world.ts closes a narrow notch in a deck's outline with (fillNotches), walked as the
+   *  square's own deck faces are: its corners in data (x, y) and scene height, kept once. */
+  addDeckFace(c: number[][]) {
+    const k = "deck " + c.map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).join(" ");
+    if (this.structures.has(k)) return;
+    this.structures.add(k);
+    const n = this.deckTris.length / 9, seen = new Set<number>();
+    for (const q of c) this.deckTris.push(q[0], -q[1], q[2]);
+    for (let cx = Math.floor(Math.min(...c.map((q) => q[0])) / CELL); cx <= Math.floor(Math.max(...c.map((q) => q[0])) / CELL); cx++)
+      for (let cz = Math.floor(Math.min(...c.map((q) => -q[1])) / CELL); cz <= Math.floor(Math.max(...c.map((q) => -q[1])) / CELL); cz++) {
+        const ck = key(cx, cz);
+        if (!seen.has(ck)) { seen.add(ck); push(this.deckTriCells, ck, n); }
+      }
+    this.deckDepth.push(DECK_SLAB);
+  }
 
   /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
    *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of

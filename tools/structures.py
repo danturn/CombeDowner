@@ -1562,7 +1562,7 @@ def limit_grades(pending, chains, dips, detail):
 def grow_marks(z, ground, span, deck, reach=3, forbid=()):
     """Run each span (and deck) out, by at most `reach` points, to where the road meets the ground
     as it is drawn, so the game's deck reaches the banks rather than stopping short with a step
-    down (never onto a point in `forbid`). `ground` is the height of the drawn ground under
+    down or ending in the air (never onto a point in `forbid`, nor past the run's own ends). `ground` is the height of the drawn ground under
     each point, None off the grid."""
     n = len(z)
 
