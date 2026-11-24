@@ -18,6 +18,9 @@
 //     edges, the room from its surface up to the first thing drawn over it, against what it needs
 //     (a walker's head on a path, a cyclist's on a cycle track, a van on a road). Metres of way short,
 //     and the least room.
+//  w. watertight: the game's own count (?solids=1, world.ts bridgeSolid) of the edges of the bridge's
+//     solid (its deck's top, underside and walls, and its parapets) that only one triangle uses, welded
+//     to the centimetre, leaving out its edges along a square's side, where it runs on into the next.
 //
 //   cd web && npx vite build && cd .. && node tools/quiet.mjs -- node tools/bridge_gaps.mjs [--out gaps.json]
 //       [--only "ti_tj ..."] [--near "x,y x,y"] [--map combe-down] [--maps web/public/maps] [--dist web/dist]
@@ -118,7 +121,7 @@ const page = await context.newPage();
 await silence(page);
 await page.addInitScript(() => { globalThis.__keepArrays = true; });
 const at = (d) => `${d.x},${d.y},0,-30,40`;
-await page.goto(`http://127.0.0.1:${server.address().port}/?map=${opt.map}&decks=1&at=${at(decks[0])}`);
+await page.goto(`http://127.0.0.1:${server.address().port}/?map=${opt.map}&decks=1&solids=1&at=${at(decks[0])}`);
 await page.evaluate(() => { window.__budget = 40; });
 await page.waitForFunction(() => window.__map && window.__map() && window.__renderer, null, { timeout: 120000 });
 await page.evaluate(() => {
@@ -159,7 +162,13 @@ for (const [i, d] of decks.entries()) {
     if (!(await settle())) late++;
   }
   const got = await page.evaluate((d) => window.__gaps(d), d);
-  rows.push({ name: d.name, sq: d.sq, x: d.x, y: d.y, area: d.area, ...got });
+  // (the game's own count of its solid's open edges: world.ts bridgeSolid, with ?solids=1)
+  const w = await page.evaluate((d) => {
+    let best = null, far = 40;
+    for (const s of Object.values(window.__solidStats ?? {})) { const dd = Math.hypot(s.x - d.x, s.y - d.y); if (dd < far) { far = dd; best = s; } }
+    return best;
+  }, d);
+  rows.push({ name: d.name, sq: d.sq, x: d.x, y: d.y, area: d.area, ...got, w: w ? w.open : null, wm: w ? w.metres : null, wat: w?.at });
   say(`\r${i + 1}/${decks.length} decks${late ? ` (${late} views timed out)` : ""}   `);
 }
 say(`\n${await silenceNote(page)}\n`);
@@ -167,14 +176,15 @@ await browser.close();
 server.close();
 
 const f1 = (v) => (v ? v.toFixed(1) : "0");
-const head = `${"bridge".padEnd(34)} ${"square".padEnd(6)} ${"a open m".padStart(9)} ${"b see m2".padStart(9)} ${"c deck m".padStart(9)} ${"c appr m".padStart(9)} ${"d short m".padStart(9)} ${"d least".padStart(8)}`;
+const head = `${"bridge".padEnd(34)} ${"square".padEnd(6)} ${"a open m".padStart(9)} ${"b see m2".padStart(9)} ${"c deck m".padStart(9)} ${"c appr m".padStart(9)} ${"d short m".padStart(9)} ${"d least".padStart(8)} ${"w open".padStart(7)}`;
 console.log(head);
 for (const r of rows.sort((p, q) => (q.a + q.b + q.cDeck + q.cOff + q.d) - (p.a + p.b + p.cDeck + p.cOff + p.d)))
-  console.log(`${`${r.name} (${Math.round(r.x)},${Math.round(r.y)})`.slice(0, 34).padEnd(34)} ${r.sq.padEnd(6)} ${f1(r.a).padStart(9)} ${f1(r.b).padStart(9)} ${f1(r.cDeck).padStart(9)} ${f1(r.cOff).padStart(9)} ${f1(r.d).padStart(9)} ${(r.least === null ? "-" : r.least.toFixed(2)).padStart(8)}`);
+  console.log(`${`${r.name} (${Math.round(r.x)},${Math.round(r.y)})`.slice(0, 34).padEnd(34)} ${r.sq.padEnd(6)} ${f1(r.a).padStart(9)} ${f1(r.b).padStart(9)} ${f1(r.cDeck).padStart(9)} ${f1(r.cOff).padStart(9)} ${f1(r.d).padStart(9)} ${(r.least === null ? "-" : r.least.toFixed(2)).padStart(8)} ${(r.w === null ? "-" : String(r.w)).padStart(7)}`);
 const tot = (k) => rows.reduce((s, r) => s + r[k], 0);
 const totals = { decks: rows.length, a: +tot("a").toFixed(1), b: +tot("b").toFixed(1), cDeck: +tot("cDeck").toFixed(1), cOff: +tot("cOff").toFixed(1), d: +tot("d").toFixed(1),
+  w: rows.reduce((s, r) => s + (r.w ?? 0), 0), wm: +rows.reduce((s, r) => s + (r.wm ?? 0), 0).toFixed(1), withW: rows.filter((r) => r.w > 0).length, unmeasuredW: rows.filter((r) => r.w === null).length,
   withA: rows.filter((r) => r.a > 0).length, withB: rows.filter((r) => r.b > 0).length, withC: rows.filter((r) => r.cDeck + r.cOff > 0).length, withD: rows.filter((r) => r.d > 0).length };
-console.log(`total over ${totals.decks} decks: a ${totals.a} m open edge (${totals.withA} decks), b ${totals.b} m2 see-through (${totals.withB}), c ${totals.cDeck} m on decks + ${totals.cOff} m on approaches unwalled (${totals.withC}), d ${totals.d} m of way short of headroom (${totals.withD})`);
+console.log(`total over ${totals.decks} decks: a ${totals.a} m open edge (${totals.withA} decks), b ${totals.b} m2 see-through (${totals.withB}), c ${totals.cDeck} m on decks + ${totals.cOff} m on approaches unwalled (${totals.withC}), d ${totals.d} m of way short of headroom (${totals.withD}), w ${totals.w} open edges of the solids, ${totals.wm} m (${totals.withW} decks; ${totals.unmeasuredW} not reported)`);
 if (opt.out) fs.writeFileSync(opt.out, JSON.stringify({ totals, rows }, null, 1));
 
 async function settle() {

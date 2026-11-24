@@ -75,6 +75,14 @@ Third round (22 November, the live site without `?decks=1`, from Ferry Lane's fo
 
 Fourth round (23 November, `?decks=1`): the gaps are now measured on every deck (`tools/bridge_gaps.mjs`: open edges, see-through from below, unwalled drops, headroom under it; numbers in docs/partition-revisit.md, "Gaps in the bridges, measured"). Parapet ends are closed and run on along the street past the deck's end while the bank falls away; the underside and sides reach every triangle partly in the air and hang to one level; a pier's cap has its underside; and a mapped bridge whose end stands over a way under it (Ferry Lane over the towpath) runs on over it in the structures pass.
 
+Fifth round (24 November, `?decks=1`): **each bridge is drawn as one closed solid** (world.ts `bridgeSolid`), replacing the patches that sides, undersides and parapets had grown edge by edge.
+- A bridge is an island of joined level-1 triangles. Its top is the deck faces as built, keeping the cap points shared with level 0.
+- Its underside is the deck's top let down by its kind's depth (`BRIDGE_DECK`), point by point. Where a way passes under with less than `HEADROOM` (2.4 m) it is lifted to give that room, never thinner than `DECK_THINNEST` (0.35 m).
+- Walls run all round the outline from the top to the underside, on the same points, so the solid is closed. Where room under the bank is too low to walk under (`WALK_UNDER`, 1.8 m), or by a pier or abutment, the wall goes on down to the ground. Fronts close the step across the deck there.
+- Arches, piers, trusses and abutments are kept from the record's line as before. A pier now stands up to the underside. Parapets are closed boxes, mitred at corners and capped at their ends, on every outline edge but caps, square sides and edges inside the deck, wherever there is a drop of more than half a metre. They run on along the street past the deck's end while the bank falls away, and player collision is laid along the same line.
+- The build's `cap_landings` and the structures pass's end joins and rule 2f stay. Strip mode, without `?decks=1`, is drawn as before.
+- `?solids=1` counts each solid's open edges (welded at 1 cm, square sides left out), and `tools/bridge_gaps.mjs` reports them as (w).
+
 Trial squares: 1,2 (Widcombe footbridges, canal, towpath), 0,2 (Broad Quay, Wells Road bridge), 1,3 (Sydney Gardens canal bridges), Pulteney's square, Ferry Lane's 4,2, and one where a bridge crosses a square edge.
 
 ## Decisions (agreed)

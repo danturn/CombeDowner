@@ -2043,3 +2043,49 @@ Triangles over the 59 squares with a deck: 106.70 M to 106.78 M (+0.07%); the mo
   (check_map rule 23, "ground drawn over a path"), left for the ground work.
 - [ ] **Still open: the towpath's headroom under Ferry Lane** (2.2 m, short of 2.4 m for a cycle track),
   waiting on the maintainer's decision whether to dip the towpath or thin the deck.
+
+## Bridge decks as closed solids (24 November)
+
+With `?decks=1` each bridge is now drawn as one closed solid round its deck faces (world.ts
+`bridgeSolid`; docs/plans/bridge-levels.md, fifth round), in place of the sides, undersides and
+parapets that had been patched on edge by edge. Strip mode, without `?decks=1`, is unchanged.
+
+- [ ] **Decision to confirm: headroom under a deck.** Where a way passes under a deck with less than
+  `HEADROOM` (2.4 m, a cycle track's), the underside is lifted over it to give that room, but the deck is
+  never thinner than `DECK_THINNEST` (0.35 m). This takes the place of dipping the towpath. Under Ferry
+  Lane the towpath's least room is 2.16 m (2.11 m before): the deck is already at its thinnest there,
+  so the rest would have to come from the path. Both numbers are one named constant each in world.ts.
+- [ ] **Room under an abutment too low to walk under is walled in** (`WALK_UNDER`, 1.8 m): from each
+  supported end the deck's side goes down to the ground until the room under it reaches 1.8 m. Lower
+  than that it was a dark slot between the bank and the deck (Ferry Lane's far bank seen from the
+  towpath).
+- [ ] **Edges inside a deck are left in the data**: 40 decks have pieces overlapping at their ends
+  (144 edges, 275 m), where the edging overlaps the paving. They get no wall and no parapet, and an
+  edge used twice one way counts twice on the outline, so the solid still closes. The build could
+  stop making the overlaps.
+- [ ] **A street's parapet starts at a cap even where the deck's own side has no drop by its end**,
+  straight on from the deck's side (not from a scrap of the side turning across the end). Without it,
+  the approaches had 1,491.5 m of unwalled drop against 861 m before; with it, 856 m.
+- [ ] **The fold rule is gone**: a parapet no longer jumps across where a deck's outline folds back on
+  itself over a short way. With `cap_landings` the slot it bridged at Ferry Lane is now deck.
+- [ ] **A pier's top meets the underside** rather than standing 5 cm into it.
+
+Measured over all 161 decks (`tools/bridge_gaps.mjs`, before = 1e454514, after = this work):
+
+| | before | after |
+|---|---|---|
+| a. open edge | 17,977 m (148 decks) | 5,353 m (131) |
+| b. seen through from below | 890.5 m² (61) | 14 m² (11) |
+| c. unwalled drop, on decks + approaches | 1,592.5 + 861 m | 346.5 + 856 m |
+| d. way short of headroom | 133 m (38) | 108.5 m (33) |
+| w. open edges of the solids | – | 74 edges, 9.1 m (21 decks) |
+
+Still open: (w) is 74 edges on 21 decks, and all but one are the same thing: three short upright
+edges (3 to 13 cm) at a single point where a kerb's step meets the outline, so the side's rungs there
+make a sliver of no width. No light shows through it. The other is 2.7 m along a service road's deck
+in square -2,3 (-3639, 2172). Midland Road's 66 m of (c) on the deck is
+the truss's open railing, which the measure counts as unwalled. Stone and steel triangles over the
+46 squares with decks are up by about 15,500 (136,481 to 151,940, 11%), from the parapets' closed
+boxes, the street's parapets past the deck's ends and the walls' extra rungs at kerb steps. The
+squares' whole triangle counts vary between runs by more than that (how much of a square has loaded
+when it's counted), so only the stone and steel are compared.
