@@ -2328,6 +2328,25 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const street = alongStreet(e, mainSide(e, ahead), ahead);
       if (street.some((n) => !n.toWall)) parapetAlong(street, false);
     }
+    // (and a street leaving the deck's end at an angle, graded down the bank, has its side walled where
+    // it stands over the ground beside it, from the deck's end down: the run-on above only goes straight on)
+    const capPts = [...capAt].map((k) => k.split(",").map((v) => +v / 100));
+    const nearCap = (x: number, y: number) => capPts.some(([cx, cy]) => Math.hypot(cx - x, cy - y) < 1.0);
+    const deckBeyond = (n: DeckEdge) => {
+      const l = Math.hypot(n.bx - n.ax, n.by - n.ay) || 1, ox = (n.by - n.ay) / l * 0.4, oy = -(n.bx - n.ax) / l * 0.4;
+      return [0.25, 0.5, 0.75].some((f) => { const h = n.at + (n.bt - n.at) * f, d = onFace(n.ax + (n.bx - n.ax) * f + ox, n.ay + (n.by - n.ay) * f + oy, h); return d !== null && Math.abs(d - h) < 0.5; });
+    };
+    const loose = approachEdges.filter((n) => !streetTaken.has(n) && overGround(n) && !deckBeyond(n));
+    const looseFrom = new Map(loose.map((n) => [key(n.ax, n.ay), n]));
+    const looseInto = new Set(loose.map((n) => key(n.bx, n.by)));
+    for (const n0 of loose) {
+      if (streetTaken.has(n0) || looseInto.has(key(n0.ax, n0.ay))) continue;
+      const run: DeckEdge[] = [];
+      for (let n: DeckEdge | undefined = n0; n && !streetTaken.has(n) && !run.includes(n); n = looseFrom.get(key(n.bx, n.by))) run.push(n);
+      if (!nearCap(run[0].ax, run[0].ay) && !nearCap(run[run.length - 1].bx, run[run.length - 1].by)) continue;
+      for (const n of run) streetTaken.add(n);
+      parapetAlong(run, false);
+    }
 
     function parapetAlong(run: DeckEdge[], loop: boolean) {
       // each corner of the run, at the top of the face it stands on, and its foot to collide with: the
@@ -3459,12 +3478,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (let i = Math.floor((x - REACH) / CELL_); i <= Math.floor((x + REACH) / CELL_); i++)
         for (let j = Math.floor((y - REACH) / CELL_); j <= Math.floor((y + REACH) / CELL_); j++) near.add(ck(i, j));
     const at2 = (i: number) => `${Math.round(V[3 * i] * 100)},${Math.round(V[3 * i + 1] * 100)}`;
-    const faced = new Set<string>();
-    for (const k of left.keys()) faced.add(`${at2(Math.floor(k / NP))}|${at2(k % NP)}`);
+    // (each face edge's heights at its ends: where the face across an edge is a drop lower, as beside a
+    // street graded down a bank, the edge is still the street's outer edge)
+    const faced = new Map<string, number[]>();
+    for (const k of left.keys()) { const a = Math.floor(k / NP), b = k % NP; faced.set(`${at2(a)}|${at2(b)}`, [V[3 * a + 2], V[3 * b + 2]]); }
     for (const e of sf.e) for (let k = 0; k + 1 < e.i.length; k++) {
       const ia = e.i[k], ib = e.i[k + 1], kind = left.get(ia * NP + ib);
       if (!kind || level1.has(ia * NP + ib) || !near.has(ck(Math.floor(V[3 * ia] / CELL_), Math.floor(V[3 * ia + 1] / CELL_)))) continue;
-      if (faced.has(`${at2(ib)}|${at2(ia)}`) || (onSide(ia) && onSide(ib))) continue;
+      const across = faced.get(`${at2(ib)}|${at2(ia)}`);
+      if ((across && !(V[3 * ia + 2] - across[1] > PARAPET_OVER && V[3 * ib + 2] - across[0] > PARAPET_OVER)) || (onSide(ia) && onSide(ib))) continue;
       approachEdges.push({ ...edgeOf(ia, ib, kind), street: true });
       const mx = (V[3 * ia] + V[3 * ib]) / 2, my = (V[3 * ia + 1] + V[3 * ib + 1]) / 2;
       if (caps.some((c) => Math.hypot(c.ax - mx, c.ay - my) < 15 || Math.hypot(c.bx - mx, c.by - my) < 15)) abutting.add(`${ia},${ib}`);
