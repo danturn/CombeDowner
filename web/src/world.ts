@@ -2415,9 +2415,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const mid = pts.map((p, i) => ({ x: (p.x + inner[i].x) / 2, y: (p.y + inner[i].y) / 2, h: p.h }));
       // (its outer face stands a little proud of the deck's side, so the two read as a parapet on a deck)
       const over = pts.map((p, i) => ({ x: p.x - (inner[i].x - p.x) * (OVERHANG / 0.4), y: p.y - (inner[i].y - p.y) * (OVERHANG / 0.4) }));
+      // (it collides as thick as it's drawn, from its outer face to its inner: as a line down its middle,
+      // walking along its outer side put your eye in the stone)
+      const solid = pts.map((_, i) => ({ x: (over[i].x + inner[i].x) / 2, y: (over[i].y + inner[i].y) / 2 }));
       for (let i = 0; i < segs; i++) {
-        const A = mid[i], B = mid[(i + 1) % n];
-        map.addParapet(A.x, A.y, B.x, B.y, pts[i].h + 1.25, pts[(i + 1) % n].h + 1.25, Math.min(pts[i].foot, pts[(i + 1) % n].foot));
+        const A = solid[i], B = solid[(i + 1) % n];
+        map.addParapet(A.x, A.y, B.x, B.y, pts[i].h + 1.25, pts[(i + 1) % n].h + 1.25, Math.min(pts[i].foot, pts[(i + 1) % n].foot), (0.4 + OVERHANG) / 2);
       }
       // (a truss over its span only: its approaches have a beam bridge's railing)
       const spanOf = (p: { x: number; y: number }) => { const R = recAt(p.x, p.y); return R && R.kind === "truss" ? R : null; };
@@ -2904,7 +2907,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               lowA = bank(A); lowB = bank(B);
               // (the deck's own parapets are the map's; these stand on the bank, where it falls away)
               const m = (w + h) / 2, a = at(A, m, 0), b = at(B, m, 0);
-              map.addParapet(a[0], -a[2], b[0], -b[2], A.top + 1.25, B.top + 1.25, Math.min(gA, gB));
+              map.addParapet(a[0], -a[2], b[0], -b[2], A.top + 1.25, B.top + 1.25, Math.min(gA, gB), Math.abs(h - w) / 2);
             }
             if (kind === "arch" || kind === "beam") {
               const up = stone ? PARAPET : 0.35, col = stone ? STONE : CONCRETE;

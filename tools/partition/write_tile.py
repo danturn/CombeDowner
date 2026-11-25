@@ -2726,7 +2726,9 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=(), faces=()):
         return g is not None and q[2] < g - 0.3 and shapely.contains_xy(near_span, q[0], q[1])
     # (a road run on past a deck's end over the bank leaves the paths beside it on their own ground, a
     # grid's cell either side, so the ground between its points stays theirs; a path dug in under a
-    # bridge, at its own height)
+    # bridge, at its own height. Only the path's own width is theirs outright: further out the nearer
+    # way has the ground, or a grid point under the road's middle was held down at the path's level and
+    # the road stood in the air over it, with the ground rising to its edges in wedges)
     ramps = [LineString([q[:2] for q in r["p"]]) for r in rd if r.get("_ramp") and len(r["p"]) > 1]
     near_ramps = unary_union(ramps).buffer(EASE) if ramps else None
     for r in rd if ramps else ():
@@ -2737,7 +2739,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=(), faces=()):
         dug = lay | ({tuple(q[:2]) for q in p if len(q) < 4 and buried(q)} if overhead.intersects(LineString([q[:2] for q in p])) else set())
         for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2)}):
             for a, b in zip(st, st[1:]):
-                hold([p[a], p[b]], way_width(r) / 2 + T["dx"], way_width(r) / 2 + T["dx"],
+                hold([p[a], p[b]], way_width(r) / 2 + T["dx"], way_width(r) / 2 + 0.5,
                      own=tuple(p[a][:2]) in dug or tuple(p[b][:2]) in dug)
     for r in rd:
         p, lay = r["p"], r.get("_lay") or set()
@@ -6054,7 +6056,8 @@ def ramp_faces(ramps, rd, road, pave, path, deck, part, square):
     """The carriageway and pavements of a road run on past a deck's end (roads_on_past_decks) at the
     street's own width, where the partition fitted only the path it runs along; never over another
     way, another street's faces or a building. Within the deck's footprint they are the deck's own
-    (deck_level), so the path the road replaced isn't left there as a slab of paving."""
+    (deck_level), so the path the road replaced isn't left there as a slab of paving: returned apart, as
+    (carriageway, pavement) to lay on the deck, and never on the ground under it as well."""
     ways = [LineString([q[:2] for q in r["p"]]).buffer(way_width(r) / 2 + 0.1, cap_style="flat")
             for r in rd if r["c"] in GAME_PATHS and not r.get("_ramp") and len(r["p"]) > 1]
     houses = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
@@ -6069,7 +6072,10 @@ def ramp_faces(ramps, rd, road, pave, path, deck, part, square):
     spine = unary_union([l for l, _ in lines]).buffer(0.1)
     car = unary_union([g for g in getattr(car, "geoms", [car]) if g.geom_type == "Polygon" and g.intersects(spine)] or [Polygon()])
     side = unary_union([g for g in getattr(side, "geoms", [side]) if g.geom_type == "Polygon" and g.distance(car) < 0.05] or [Polygon()])
-    return road.union(car), pave.union(side), path.difference(car.union(side))
+    on_deck = (car.intersection(deck), side.intersection(deck)) if deck is not None else (Polygon(), Polygon())
+    if deck is not None:
+        car, side = _minus(car, deck), _minus(side, deck)
+    return road.union(car), pave.union(side), path.difference(car.union(side)).difference(on_deck[0].union(on_deck[1])), on_deck
 
 
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
@@ -6291,8 +6297,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     road, pave = shapes("carriageway"), shapes("pavement")
     path_faces = shapes("path")
     ramps = [r for r in rd if r.get("_ramp") and len(r["p"]) > 1]
+    ramp_on_deck = (Polygon(), Polygon())
     if ramps:
-        road, pave, path_faces = ramp_faces(ramps, rd, road, pave, path_faces, over, part, square)
+        road, pave, path_faces, ramp_on_deck = ramp_faces(ramps, rd, road, pave, path_faces, over, part, square)
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
                                              for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
     if unpaved:
@@ -6547,8 +6554,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     if runs:
         foot = bridge_decks(rd, past_cut=square).intersection(square)
         deck_pieces = deck_level(foot, _minus(foot, deck) if deck is not None else Polygon(), runs,
-                                 shapes("carriageway", True), shapes("pavement", True), shapes("path", True),
-                                 holes=cut)
+                                 shapes("carriageway", True).union(ramp_on_deck[0]),
+                                 _minus(shapes("pavement", True).union(ramp_on_deck[1]), ramp_on_deck[0]),
+                                 _minus(shapes("path", True), ramp_on_deck[0].union(ramp_on_deck[1])), holes=cut)
         caps = [c for c in cap_lines(runs, over) if c[0].intersects(square)]
     deck_simple = list(shapely.coverage_simplify([q for _, q in deck_pieces], DECK_TOLERANCE)) if deck_pieces else []
     shared_xy, under_zone = set(), None
