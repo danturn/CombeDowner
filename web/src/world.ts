@@ -178,6 +178,8 @@ function zipper(A: number[], B: number[], pa: (k: number) => number[], pb: (k: n
  *  between them, as triangles to close each with (corners from the outline): a pocket with a mouth
  *  of NOTCH_MOUTH or less, at least twice as far round as across, that the mouth crosses nothing. */
 const NOTCH_MOUTH = 4, NOTCH_ROUND = 15, NOTCH_AREA = 20;
+/** Metres: a street's face beyond a deck's edge this near the deck's level is stepped across on to, not walled off. */
+const STEP_ACROSS = 0.3;
 function fillNotches(isl: { edges: { a: number; b: number; cap: number | null; seam: boolean; inner: boolean }[] }, V: ArrayLike<number>): number[][] {
   const X = (i: number) => V[3 * i], Y = (i: number) => V[3 * i + 1];
   const outline = isl.edges.filter((e) => !e.inner);
@@ -3273,6 +3275,45 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       return best;
     };
+    // the street's own faces on the ground, to find where a deck's edge runs on into one at its level
+    const STREET_KINDS = ["road", "service", "pave", "path", "drive"] as const;
+    const cells0 = new Map<number, number[]>(), tris0: number[] = [], kinds0: string[] = [];
+    for (const kind of STREET_KINDS) {
+      const T0 = sf[kind] ?? [];
+      for (let k = 0; k + 2 < T0.length; k += 3) {
+        const n = kinds0.length, t = [T0[k], T0[k + 1], T0[k + 2]], xs = t.map((v) => V[3 * v]), ys = t.map((v) => V[3 * v + 1]);
+        tris0.push(...t); kinds0.push(kind);
+        for (let i = Math.floor(Math.min(...xs) / CELL_); i <= Math.floor(Math.max(...xs) / CELL_); i++)
+          for (let j = Math.floor(Math.min(...ys) / CELL_); j <= Math.floor(Math.max(...ys) / CELL_); j++) (cells0.get(ck(i, j)) ?? cells0.set(ck(i, j), []).get(ck(i, j))!).push(n);
+      }
+    }
+    const streetAt = (x: number, y: number, near: number): string | null => {
+      for (const n of cells0.get(ck(Math.floor(x / CELL_), Math.floor(y / CELL_))) ?? []) {
+        const [a, b, c] = [tris0[3 * n], tris0[3 * n + 1], tris0[3 * n + 2]], ax = V[3 * a], ay = V[3 * a + 1], bx = V[3 * b], by = V[3 * b + 1], cx = V[3 * c], cy = V[3 * c + 1];
+        const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if (Math.abs(det) < 1e-9) continue;
+        const l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / det, l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / det;
+        if (l1 < -1e-6 || l2 < -1e-6 || l1 + l2 > 1 + 1e-6) continue;
+        if (Math.abs(l1 * V[3 * a + 2] + l2 * V[3 * b + 2] + (1 - l1 - l2) * V[3 * c + 2] - near) <= STEP_ACROSS) return kinds0[n];
+      }
+      return null;
+    };
+    // (an outline edge with the street's face running on beyond it, all along it and within a step of the
+    // deck's level, is where the deck meets that street though the two don't share its corners: a cap)
+    const runsOn = (ia: number, ib: number): string | null => {
+      const ax = V[3 * ia], ay = V[3 * ia + 1], dx = V[3 * ib] - ax, dy = V[3 * ib + 1] - ay, l = Math.hypot(dx, dy);
+      if (l < 0.02) return null;
+      let got: string | null = null;
+      for (let k = 0, n = Math.max(2, Math.ceil(l / 0.5)); k <= n; k++) {
+        const f = Math.min(0.98, Math.max(0.02, k / n)), h = V[3 * ia + 2] + (V[3 * ib + 2] - V[3 * ia + 2]) * f;
+        const x = ax + dx * f + dy / l * 0.15, y = ay + dy * f - dx / l * 0.15, s = streetAt(x, y, h);
+        // (or another deck's face at its level, where this edge's corner runs into it)
+        const d = s ? null : onFace(x, y, h - Z0);
+        if (!s && (d === null || Math.abs(d - (h - Z0)) > STEP_ACROSS)) return null;
+        got ??= s;
+      }
+      return got;
+    };
     const x1 = T.x0 + (T.nx - 1) * T.dx, y1 = T.y0 + (T.ny - 1) * T.dy;
     const onSide = (i: number) => !core && (Math.abs(V[3 * i] - T.x0) < 0.05 || Math.abs(V[3 * i] - x1) < 0.05 || Math.abs(V[3 * i + 1] - T.y0) < 0.05 || Math.abs(V[3 * i + 1] - y1) < 0.05);
     const edgeOf = (ia: number, ib: number, kind: string) => ({
@@ -3358,7 +3399,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         for (const [k, kinds] of owner) for (let n = (owner.get((k % NP) * NP + Math.floor(k / NP)) ?? []).length; n < kinds.length; n++) {
           const a = Math.floor(k / NP), b = k % NP, kind = kinds[n];
           // (where the other side is the ground's, it's a cap: the deck lands there, on its abutment)
-          const across = left.get(b * NP + a), cap = across && !level1.has(b * NP + a) ? STREET_LIFT[across] : null;
+          const across = left.get(b * NP + a), on = across ? null : runsOn(a, b);
+          const cap = across && !level1.has(b * NP + a) ? STREET_LIFT[across] : on ? STREET_LIFT[on] : null;
           // (along the square's side the deck runs on into the next square's; and where one of its pieces
           // overlaps another, as the edging can at the deck's end, an edge with deck just outside is inside it)
           isl.edges.push({ a, b, kind, cap, seam: onSide(a) && onSide(b), inner: cap === null && decked(a, b) });
