@@ -800,7 +800,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (d < reach) {
           const v = j * T.nx + i;
           if (LEVEL) {
-            const hc = map.trueGround(ax + vx * t, -(ay + vy * t));
+            // (beside a bridge, from the ground at the point itself: what it crosses keeps its own ground,
+            // and the bank beside a deck over the canal was pulled down to the water's level)
+            const hc = r.bridge ? map.trueGround(x, -y) : map.trueGround(ax + vx * t, -(ay + vy * t));
             if (hard && d < own) underTo[v] = Math.min(underTo[v], hc - depth);
             else roundTo[v] = Math.min(roundTo[v], hc - (d < own ? depth : 0.05));
           } else sink[v] = Math.max(sink[v], depth);
@@ -1361,6 +1363,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (++tfin % 4 === 3) yield;
   }
   yield;
+  // the bridges' stone (bridgeSolid, bridgeStructures), which the canal's walls up to a deck are built in
+  const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
+  // (both sides of it for the canal's walls, which face either way as the canal runs)
+  const bridgeMat = (side: THREE.Side = THREE.FrontSide): THREE.Material =>
+    S[`bridgeMat${side}`] ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true, side })));
   // the canal's banks, where the ground is cut away for them (works.ts), their verges laid on the
   // ground as it's drawn and in its colours there
   if (works) {
@@ -1368,9 +1375,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const i = Math.min(T.nx - 1, Math.max(0, Math.round((x - T.x0) / T.dx))), j = Math.min(T.ny - 1, Math.max(0, Math.round((y - T.y0) / T.dy))), v = j * T.nx + i;
       return new THREE.Color(tCol[v * 3], tCol[v * 3 + 1], tCol[v * 3 + 2]);
     };
-    const g = works.geometry(map.z0, (x, y) => drawnBare(x, -y) + map.z0, colour);
-    if (g) {
-      const m = new THREE.Mesh(g, S.worksMat ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide }))));
+    const made = works.geometry(map.z0, (x, y) => drawnBare(x, -y) + map.z0, colour, { colour: new THREE.Color(...STONE), scale: 7 / 2.5 });
+    for (const [g, mat] of made ? [[made.banks, S.worksMat ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex, side: THREE.DoubleSide })))], [made.abutments, bridgeMat(THREE.DoubleSide)]] as const : []) {
+      if (!g) continue;
+      const m = new THREE.Mesh(g, mat);
       m.receiveShadow = true;
       freeOnUpload(g);
       g.computeBoundingSphere();
@@ -1717,7 +1725,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // it or along it) or in the canal, and an arch over a road is flattened until it clears it. A street
   // is one bridge through a junction on its deck, and where a deck runs on into another's in the air
   // there is no abutment. What the bridge crosses keeps its own ground underneath.
-  const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
   const CONCRETE = [0.7, 0.69, 0.66], UNDERSIDE = [0.5, 0.5, 0.48], STEEL = [0.2, 0.27, 0.29], PLATE = [0.47, 0.5, 0.52], TRUSS = [0.3, 0.37, 0.38];
   const PARAPET = 1.05;       // above the pavement
   // (how deep each kind's deck is, the ceiling under it shares: map.ts BRIDGE_DECK)
@@ -1927,11 +1934,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const END_REACH = 3;
   /** The lowest a deck's underside can be at data (x, y), its top at `top` (scene), for each way passing
    *  under it there to have HEADROOM over it, or -Infinity. */
-  function headroomFloor(ways: Road[], x: number, y: number, top: number) {
+  function headroomFloor(ways: Road[], x: number, y: number, top: number, beyond = 1.0) {
     let need = -Infinity;
     for (const w of ways) {
       if (w.held) continue;
-      const reach = width(w) / 2 + (KERBED.has(w.c) ? pv(w) : 0.3) + 1.0;
+      const reach = width(w) / 2 + (KERBED.has(w.c) ? pv(w) : 0.3) + beyond;
       for (let k = 0; k + 1 < w.p.length; k++) {
         const A = w.p[k], B = w.p[k + 1];
         if ((A[3] === 1 && B[3] === 1) || Math.min(A[0], B[0]) > x + reach || Math.max(A[0], B[0]) < x - reach || Math.min(A[1], B[1]) > y + reach || Math.max(A[1], B[1]) < y - reach) continue;
@@ -2072,9 +2079,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const ends: { x: number; y: number; room: number; walled: boolean }[] = [];
     // (each stretch of wall hung, for the abutments' fronts to meet)
     const hung: number[][] = [];
-    const hangSide = (A: { x: number; y: number; soffit: number }, B: { x: number; y: number; soffit: number }, out: number[]) => {
+    const hangSide = (A: { x: number; y: number; soffit: number }, B: { x: number; y: number; soffit: number }, out: number[], face = out) => {
       hung.push([A.x, A.y, B.x, B.y, out[2], out[0]]);
-      hang(A.x, A.y, B.x, B.y, A.soffit, B.soffit, footUnder(A.x, A.y, A.soffit), footUnder(B.x, B.y, B.soffit), out, sideCol);
+      hang(A.x, A.y, B.x, B.y, A.soffit, B.soffit, footUnder(A.x, A.y, A.soffit), footUnder(B.x, B.y, B.soffit), face, sideCol);
     };
     for (const e of outline) {
       if (e.seam) continue;
@@ -2084,14 +2091,24 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const x = X(e.a) + (X(e.b) - X(e.a)) * f, y = Y(e.a) + (Y(e.b) - Y(e.a)) * f;
         return { x, y, top: H(e.a) + (H(e.b) - H(e.a)) * f + R.lift, soffit: S.get(e.a)! + (S.get(e.b)! - S.get(e.a)!) * f, sp: R.where(x, y).sp };
       };
+      // (where the deck lands on a street standing over the ground, the street's hollow under it is
+      // closed off under the deck's end, down to the bank, wherever no way under runs on through it)
+      const capped = e.cap !== null;
       const walled = (f: number) => {
         const q = at(f);
+        if (capped) return q.soffit - ground(q.x, -q.y) > 0.05 && headroomFloor(ways, q.x, q.y, q.top, 0) === -Infinity && !map.inWater(q.x, -q.y);
         if (R.walled(q.x, q.y, q.top, q.sp)) return true;
         const room = q.soffit - ground(q.x, -q.y);
-        return room > 0.05 && (room < WALK_UNDER || nearEnd(q.x, q.y) || offSpan(q.x, q.y, R)) && clear(q.x, q.y, q.top, R, q.sp);
+        if (room <= 0.05) return false;
+        // (beside the canal, or within an abutment's reach of it, on the dry bank off its banks and with
+        // no arch over it, the abutment runs on to the canal's wall: the bank under the deck there is
+        // closed in, not seen sloping away)
+        if ([0, -END_REACH, END_REACH].some((d) => R.opened(q.sp + d))) return R.archAt(q.sp) === null && (map.works?.across(q.x, q.y) ?? null) === null && !R.passes(q.x, q.y, q.top)
+          && headroomFloor(ways, q.x, q.y, q.top) === -Infinity && !map.inWater(q.x, -q.y);
+        return (room < WALK_UNDER || nearEnd(q.x, q.y) || offSpan(q.x, q.y, R)) && clear(q.x, q.y, q.top, R, q.sp);
       };
       const l = Math.hypot(X(e.b) - X(e.a), Y(e.b) - Y(e.a)) || 1, n = Math.max(1, Math.ceil(l / 0.5)), out = [(Y(e.b) - Y(e.a)) / l, 0, (X(e.b) - X(e.a)) / l];
-      const w = Array.from({ length: n + 1 }, (_, k) => walled(k / n));
+      const w = Array.from({ length: n + 1 }, (_, k) => walled(k / n)), inward = capped ? out.map((c) => -c) : out;
       // (where it changes along the edge, found to a centimetre or so)
       const edge = (k: number) => {
         let lo = (k - 1) / n, hi = k / n;
@@ -2102,9 +2119,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (let k = 1; k <= n; k++) {
         if (w[k] === w[k - 1]) continue;
         if (w[k]) from = edge(k);
-        else if (from !== null) { hangSide(at(from), at(edge(k)), out); from = null; }
+        else if (from !== null) { hangSide(at(from), at(edge(k)), out, inward); from = null; }
       }
-      if (from !== null) hangSide(at(from), at(1), out);
+      if (from !== null) hangSide(at(from), at(1), out, inward);
       if (stats) for (let k = 0; k <= n; k++) {
         const q = at(k / n);
         if (nearEnd(q.x, q.y) && clear(q.x, q.y, q.top, R, q.sp)) ends.push({ x: q.x, y: q.y, room: q.soffit - ground(q.x, -q.y), walled: w[k] });
@@ -3045,7 +3062,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     mat.customProgramCacheKey = () => id;
     return (S[id] = mat);
   };
-  const bridgeMat: THREE.Material = S.bridgeMat ??= wetBy(lampLit(new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true })));
   const steelMat: THREE.Material = S.steelMat ??= lampLit(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
@@ -3165,7 +3181,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     yield;
     addKinds([[geo.pave, roadMats.pave as THREE.MeshLambertMaterial, "pave"], [geo.drive, S.driveMat, "drive"]], "paved");
     yield;
-    add(geo.bridge.build(), bridgeMat, true, false, "stone");
+    add(geo.bridge.build(), bridgeMat(), true, false, "stone");
     add(geo.steel.build(), steelMat, true, false, "steel");
     add(geo.front.build(), S.pathMat!, false, true, "front");
     add(geo.bed.build(), roadMats.ballast, false, false, "ballast");
