@@ -1776,11 +1776,13 @@ def roads_on_past_decks(rd, ground, houses=(), water=(), log=None):
             if d[2] - q[2] <= ROAD_ON_LOW or g0 is None or tips[(round(q[0] / ROAD_ON_NEAR), round(q[1] / ROAD_ON_NEAR))] > 1:
                 continue
             way = p if e == 0 else p[::-1]
-            line = [list(d[:2])] + [list(a[:2]) for a in way]
+            # (from the deck's end straight on to the path's second point: the path's own end, beside the
+            # deck's end, would turn the road sideways across the bank there)
+            line = [list(d[:2]), list(d[:2])] + [list(a[:2]) for a in way[1:]]
             levels = [way[0][2]] + [a[2] for a in way]
-            # (level to the path's end, and on while the deck spread past its end beside the street it
-            # lands on reaches across the road: the two meet there at the deck's height)
-            flat = math.dist(d[:2], q[:2])
+            # (level while the deck spread past its end beside the street it lands on reaches across the
+            # road: the two meet there at the deck's height)
+            flat = 0.0
             if foot is not None:
                 along = LineString(line)
                 half = way_width(o) / 2 + max(o.get("pv") or (0,))
@@ -1818,7 +1820,7 @@ def roads_on_past_decks(rd, ground, houses=(), water=(), log=None):
                     stop = "never meets the ground"
                     break
                 # (a way joining the path keeps its own ground: the road can't run on past it)
-                if k + 1 < len(line) - 1 and points[(round(b[0], 1), round(b[1], 1))] > 1:
+                if k and k + 1 < len(line) - 1 and points[(round(b[0], 1), round(b[1], 1))] > 1:
                     stop = "a junction on the path"
                     break
                 if n > 1e-6:
@@ -3006,6 +3008,10 @@ def deck_reach(rd):
                     side[s_] = max(side[s_], line.distance(pt) + half)
         side = [round(v, 2) for v in side]
         r["dk"] = side[0] if side[0] == side[1] else side
+        if rtree is not None and side != [round(way_width(r) / 2 + v, 2) for v in pv]:
+            # (a path riding on this bridge widens this bridge only: the same street's deck at another
+            # bridge, or where it lands on one at a junction, is as wide as the street)
+            r["_dkat"] = [list(c) for c in line.coords]
 
 
 STRUCTURES = {"arch": "arch", "humpback": "arch", "beam": "beam", "girder": "beam", "truss": "truss",
@@ -3379,9 +3385,31 @@ def _deck_band(r, line, extra):
     deckSides): one side can stop at its kerb while the other carries a pavement, and cut as wide as
     the wider on both, a deck's top stood out past the narrow side's parapet."""
     dk = r.get("dk")
+    if r.get("_dkat") and LineString(r["_dkat"]).distance(line) > 1.0:
+        dk = [way_width(r) / 2 + w for w in ((r.get("pv") or [0, 0]) if r["c"] in KERBED else [0, 0])]
+        dk = dk if dk[0] != dk[1] else [dk[0], dk[1] + 1e-3]
     if isinstance(dk, list) and len(dk) == 2 and dk[0] != dk[1]:
         return unary_union([line.buffer(dk[0] + extra, single_sided=True), line.buffer(-(dk[1] + extra), single_sided=True)])
     return line.buffer(deck_half(r) + extra, cap_style="flat")
+
+
+DECK_POCKET = 2.5      # metres: a pocket of air in a deck's outline narrower than twice this is closed
+DECK_POCKET_AREA = 12.0   # square metres: the largest pocket closed
+
+
+def fill_deck_pockets(deck):
+    """A deck with its small pockets closed: where two pieces of deck meet at an angle (a bridge's end and
+    a lane turning off it along the bank) they leave a notch of air between them, which their parapets
+    then turned in round, zigzagging across the corner. A pocket is closed when it is small and the deck
+    lies round most of it, so a gap between two separate decks side by side stays open."""
+    if deck.is_empty:
+        return deck
+    shut = deck.buffer(DECK_POCKET, join_style="mitre").buffer(-DECK_POCKET, join_style="mitre")
+    gaps = _minus(shut, deck)
+    edge = deck.boundary
+    keep = [g for g in getattr(gaps, "geoms", [gaps]) if g.geom_type == "Polygon" and 0.05 < g.area <= DECK_POCKET_AREA
+            and g.exterior.intersection(edge.buffer(0.01)).length >= 0.6 * g.exterior.length]
+    return unary_union([deck] + keep) if keep else deck
 
 
 def bridge_decks(rd, ground=None, under=False, past_cut=None):
@@ -3398,7 +3426,7 @@ def bridge_decks(rd, ground=None, under=False, past_cut=None):
     decks = [_deck_band(r, _past_cut(r, line, past_cut) if past_cut is not None else line, 0.5) for r in rd if len(r["p"]) > 1 for line in deck_stretches(r)]
     if not decks:
         return (None, None) if under else None
-    deck = unary_union(decks)
+    deck = fill_deck_pockets(unary_union(decks))
     if ground is None:
         return (deck, None) if under else deck
     # (a road at grade under a deck high enough to walk under keeps its faces there: cut out with the
@@ -6016,11 +6044,12 @@ def _level(area, ground, step=1.0):
 def ramp_faces(ramps, rd, road, pave, path, deck, part, square):
     """The carriageway and pavements of a road run on past a deck's end (roads_on_past_decks) at the
     street's own width, where the partition fitted only the path it runs along; never over another
-    way, another street's faces, a building or the deck."""
+    way, another street's faces or a building. Within the deck's footprint they are the deck's own
+    (deck_level), so the path the road replaced isn't left there as a slab of paving."""
     ways = [LineString([q[:2] for q in r["p"]]).buffer(way_width(r) / 2 + 0.1, cap_style="flat")
             for r in rd if r["c"] in GAME_PATHS and not r.get("_ramp") and len(r["p"]) > 1]
     houses = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
-    blocked = unary_union(ways + houses + [road, pave] + ([deck] if deck is not None else []))
+    blocked = unary_union(ways + houses + [road, pave])
     lines = [(LineString([q[:2] for q in r["p"]]), r) for r in ramps]
     car = unary_union([l.buffer(way_width(r) / 2, cap_style="flat") for l, r in lines])
     side = unary_union([l.buffer(way_width(r) / 2 + max(r.get("pv") or (0,)), cap_style="flat") for l, r in lines])
@@ -11377,6 +11406,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     for r in rd:
         r.pop("_laid", None)
         r.pop("_ramp", None)
+        r.pop("_dkat", None)
     flights_onto_paving(rd, face_heights(tile["sf"], kinds=("road", "service", "pave")))
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
