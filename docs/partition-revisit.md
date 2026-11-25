@@ -2129,3 +2129,54 @@ Measured over all 161 decks (`tools/bridge_gaps.mjs`, before = ba72e189, after =
 triangles over the 46 squares with decks: 151,940 before, 120,599 after (136,481 at 1e454514).
 check_map's counts are unchanged.
 
+
+## Bridge decks: no end in mid-air, round 7 (25 November)
+
+With `?decks=1`. Where a deck's end stands over the bank and the way on from it is a path lying more
+than 0.6 m below it, the road runs on past the end at its full width and comes down over the bank at
+**1 in 8** until it meets the drawn ground; the path starts there (`write_tile.roads_on_past_decks`;
+docs/plans/bridge-levels.md, seventh round). 1 in 8 is a steep street's grade that walks and drives
+well; a gentler one would need more bank than Ferry Lane has.
+
+Compromises:
+- [ ] The road run on is cut round the paths beside it: at Ferry Lane it runs down beside the towpath, and
+  its edge over the towpath is a retaining wall with the street's parapet on it. Its pavement on the canal
+  side, cut off beyond the towpath, is left to the towpath's verge.
+- [ ] The ground grid is 4 m. The paths beside a road run on keep their own ground a cell either side, so
+  where the two are closer than that, the bank between them is held at the path's height and the road's
+  edge stands over it as a wall rather than as a slope.
+- [ ] It stays level until its width has left the deck's spread, so there's no step at the cap; that makes
+  the slope start a few metres past the deck's end.
+- [ ] At the foot of Ferry Lane's run on, the road meets a lower piece of the towpath's edge with a step of
+  up to 0.56 m (walked, but a step rather than a slope).
+- [ ] check_map's counts went up at Ferry Lane only (no other square's map changed): rule 1 "road off its
+  ground" 5 to 13 (the run on's points over the towpath's held ground), rule 20 "no road drawn" and
+  "something on the pavement" by 1 to 3 each, and one each of rules 7, 9, 28 and 31. They come from the run
+  on standing as an embankment beside the towpath, which the rules don't yet know as such.
+- [ ] Only ends that are a record's end are handled. Paths meeting a deck part way along a record (Bridge
+  Road, Stanier Road, Pulteney Road, Sydney Wharf, Meadow Lane, Winsley Hill) are left as they were; none of
+  them was seen ending in the air, but they haven't been walked.
+
+The whole map's build ran it at one end, Ferry Lane's (2990, 1566): 23.1 m at 1 in 8, 2.97 m down. No end
+was left out.
+
+Open edge (a) was up last round from walls stopping part way along a deck's sides. Where the walls under both
+sides stop at one place across the deck, over the ground, a face across under the deck now joins their ends
+(world.ts `bridgeSolid`); Warminster Road alone went from 715 m to 33 m. Road markings on a bridge are now drawn
+on its deck: they were drawn on the ground under it, the white lines seen under Midford Road's bridge.
+
+Measured over all 161 decks (before = e6c2c360, after = this work):
+
+| | before | after |
+|---|---|---|
+| a. open edge | 6,063.9 m (134 decks) | 4,118.7 m (121) |
+| b. seen through from below | 13.8 m² (11) | 13.8 m² (11) |
+| c. unwalled drop, on decks + approaches | 355 + 859.5 m | 355.5 + 879 m |
+| d. way short of headroom | 82.5 m (31) | 82 m (30) |
+| w. open edges of the solids | 4 edges, 10.5 m (2) | 4 edges, 10.5 m (2) |
+| f. floating ends | 0 | 0 |
+
+- [ ] Stone and steel triangles over the 46 squares with decks: 120,599 before, 121,290 after (+691, the
+  fronts, drawn in as few pieces as keep their top on the underside, and Ferry Lane's run on).
+- [ ] (w)'s 3 edges on Warminster Road (1954, -693) are a corner of the deck's outline lying 3 mm off the
+  straight foot of the wall beside it: a T-junction the count sees as open, with no gap to see.

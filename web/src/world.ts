@@ -2067,6 +2067,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     };
     const clear = (x: number, y: number, top: number, R: Rec, sp: number) => !R.opened(sp) && !R.passes(x, y, top) && headroomFloor(ways, x, y, top) === -Infinity && !map.inWater(x, -y);
     const ends: { x: number; y: number; room: number; walled: boolean }[] = [];
+    // (each stretch of wall hung, for the abutments' fronts to meet)
+    const hung: number[][] = [];
+    const hangSide = (A: { x: number; y: number; soffit: number }, B: { x: number; y: number; soffit: number }, out: number[]) => {
+      hung.push([A.x, A.y, B.x, B.y, out[2], out[0]]);
+      hang(A.x, A.y, B.x, B.y, A.soffit, B.soffit, footUnder(A.x, A.y, A.soffit), footUnder(B.x, B.y, B.soffit), out, sideCol);
+    };
     for (const e of outline) {
       if (e.seam) continue;
       const R = recAt((X(e.a) + X(e.b)) / 2, (Y(e.a) + Y(e.b)) / 2);
@@ -2093,12 +2099,69 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (let k = 1; k <= n; k++) {
         if (w[k] === w[k - 1]) continue;
         if (w[k]) from = edge(k);
-        else if (from !== null) { const A = at(from), B = at(edge(k)); hang(A.x, A.y, B.x, B.y, A.soffit, B.soffit, footUnder(A.x, A.y, A.soffit), footUnder(B.x, B.y, B.soffit), out, sideCol); from = null; }
+        else if (from !== null) { hangSide(at(from), at(edge(k)), out); from = null; }
       }
-      if (from !== null) { const A = at(from), B = at(1); hang(A.x, A.y, B.x, B.y, A.soffit, B.soffit, footUnder(A.x, A.y, A.soffit), footUnder(B.x, B.y, B.soffit), out, sideCol); }
+      if (from !== null) hangSide(at(from), at(1), out);
       if (stats) for (let k = 0; k <= n; k++) {
         const q = at(k / n);
         if (nearEnd(q.x, q.y) && clear(q.x, q.y, q.top, R, q.sp)) ends.push({ x: q.x, y: q.y, room: q.soffit - ground(q.x, -q.y), walled: w[k] });
+      }
+    }
+    // where the walls under both sides stop at one place across the deck, over the ground, a face across
+    // under the deck joins their ends, so the abutment is a closed block and no wall ends in the air
+    const tips: { x: number; y: number; nx: number; ny: number; wx: number; wy: number; done: boolean }[] = [];
+    for (const [ax, ay, bx, by, ex, ey] of hung) {
+      for (const [x, y, w] of [[ax, ay, 1], [bx, by, -1]]) {
+        let n = 0;
+        for (const h of hung) n += (Math.hypot(x - h[0], y - h[1]) < 0.04 ? 1 : 0) + (Math.hypot(x - h[2], y - h[3]) < 0.04 ? 1 : 0);
+        if (n === 1) tips.push({ x, y, nx: -ey, ny: ex, wx: ex * w, wy: ey * w, done: false });
+      }
+    }
+    for (const A of tips) {
+      if (A.done) continue;
+      // (straight across the deck from it, to the outline on the far side)
+      let far = Infinity;
+      for (const e of outline) {
+        const px = X(e.a) - A.x, py = Y(e.a) - A.y, qx = X(e.b) - A.x, qy = Y(e.b) - A.y;
+        const da = px * A.ny - py * A.nx, db = qx * A.ny - qy * A.nx;
+        if ((da > 0) === (db > 0) || da === db) continue;
+        const f = da / (da - db), t = (px + (qx - px) * f) * A.nx + (py + (qy - py) * f) * A.ny;
+        if (t > 0.3 && t < far) far = t;
+      }
+      if (far > 40) continue;
+      const qx = A.x + A.nx * far, qy = A.y + A.ny * far;
+      let B: (typeof tips)[number] | null = null, best = 0.6;
+      for (const T of tips) if (T !== A && !T.done && Math.hypot(T.x - qx, T.y - qy) < best) { best = Math.hypot(T.x - qx, T.y - qy); B = T; }
+      if (!B) continue;
+      const len = Math.hypot(B.x - A.x, B.y - A.y), n = Math.max(1, Math.ceil(len / 2)), pts: { x: number; y: number; top: number }[] = [];
+      let ok = true;
+      for (let k = 0; k <= n && ok; k++) {
+        const f = Math.min(1 - 1e-3, Math.max(1e-3, k / n)), x = A.x + (B.x - A.x) * f, y = A.y + (B.y - A.y) * f, top = soffitAt(x, y), R = recAt(x, y);
+        if (top === null || !R || !clear(x, y, top + R.deck, R, R.where(x, y).sp)) ok = false;
+        else pts.push({ x: A.x + (B.x - A.x) * k / n, y: A.y + (B.y - A.y) * k / n, top });
+      }
+      // (nothing may pass under anywhere along it)
+      for (let k = 1, m = Math.ceil(len / 0.5); k < m && ok; k++) {
+        const x = A.x + (B.x - A.x) * k / m, y = A.y + (B.y - A.y) * k / m, top = soffitAt(x, y), R = recAt(x, y);
+        if (top === null || !R || !clear(x, y, top + R.deck, R, R.where(x, y).sp)) ok = false;
+      }
+      if (!ok) continue;
+      A.done = B.done = true;
+      // (facing away from the walls it closes, into the open under the deck)
+      const fwd = [-(A.wx + B.wx), 0, A.wy + B.wy];
+      if (Math.hypot(fwd[0], fwd[2]) < 0.2) { fwd[0] = -A.wx; fwd[2] = A.wy; }
+      // (in as few pieces as keep its top on or just inside the underside and its foot in the bank)
+      const feet = pts.map((P) => footUnder(P.x, P.y, P.top));
+      for (let i = 0; i < n;) {
+        let j = i + 1;
+        while (j < n && pts.slice(i + 1, j + 1).every((_, m) => {
+          const k = i + 1 + m, f = (k - i) / (j + 1 - i);
+          const d = pts[i].top + (pts[j + 1].top - pts[i].top) * f - pts[k].top;
+          return d > -0.03 && d < 0.25 && feet[i] + (feet[j + 1] - feet[i]) * f < feet[k] + 0.25;
+        })) j++;
+        const P = pts[i], Q = pts[j];
+        hang(P.x, P.y, Q.x, Q.y, P.top, Q.top, feet[i], feet[j], fwd, sideCol);
+        i = j;
       }
     }
     // across the deck, under each record's line: the abutment's face at the bank's front, the ends and

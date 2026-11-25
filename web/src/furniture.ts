@@ -860,8 +860,9 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   for (const [ax, ay, bx, by, za, zb, kind] of D.mk ?? []) {
     const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1;
     const w = (kind ? 0.15 : 0.1) / 2, nx = -dy / l * w, ny = dx / l * w;
-    const ya = map.ground(ax, -ay) + 0.085, yb = map.ground(bx, -by) + 0.085;
-    void za; void zb;
+    // (on a bridge, on its deck's drawn top, not on the ground under it)
+    const on = (x: number, y: number, z: number) => { const d = map.deck(x, -y, z - Z0 + 0.3); return d !== null ? d + 0.015 : map.ground(x, -y) + 0.085; };
+    const ya = on(ax, ay, za), yb = on(bx, by, zb);
     const A = [ax + nx, ya, -(ay + ny)], B = [bx + nx, yb, -(by + ny)], C = [bx - nx, yb, -(by - ny)], Dd = [ax - nx, ya, -(ay - ny)];
     pos.push(...A, ...Dd, ...C, ...A, ...C, ...B);
     if (++mk % 400 === 399) yield;
