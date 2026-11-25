@@ -1727,6 +1727,133 @@ def ramp_off_decks(rd, ground, T, near=0.05, most=20):
     return ramped
 
 
+ROAD_ON = 0.125            # the steepest the road run on past a deck's end over a path comes down (1 in 8)
+ROAD_ON_LOW = 0.6          # metres a path's end may lie under the deck's end before the road runs on to it
+ROAD_ON_MET = 0.1          # metres over the ground at which the road run on has come down to it
+ROAD_ON_LONGEST = 60.0     # metres: a path that hasn't met the road coming down by then has no room for it
+ROAD_ON_NEAR = 0.5         # metres between two ways' ends that are joined
+
+
+def roads_on_past_decks(rd, ground, houses=(), water=(), log=None):
+    """A bridge can't end in the air. Where a street's bridge ends at a junction and a path leaves the
+    end of its deck lower down (the data's path starting under the deck's end, at the bottom of the
+    bank), the street carries on along the path's line at its own full width, coming down over the
+    bank no steeper than ROAD_ON until it meets the drawn ground; only there does the path begin.
+    The road run on is an approach on its own embankment, the ground laid up to it (lay_ground), and
+    street_surfaces lays its faces at the street's width (`_ramp`). It doesn't go past a junction on
+    the path, through a building or into water, nor off the square's grid; where it can't fit it is
+    left out and listed. Returns the roads run on and the ends left, as (x, y, ...)."""
+    ends = {}
+    for r in rd:
+        if r["c"] in GAME_PATHS or len(r["p"]) < 2:
+            continue
+        for q in (r["p"][0], r["p"][-1]):
+            if _flag(q) in (1, 2):
+                k = (round(q[0], 1), round(q[1], 1))
+                if k not in ends or q[2] > ends[k][1][2]:
+                    ends[k] = (r, q)
+    if not ends:
+        return [], []
+    tips = collections.Counter((round(q[0] / ROAD_ON_NEAR), round(q[1] / ROAD_ON_NEAR))
+                               for r in rd if len(r["p"]) > 1 for q in (r["p"][0], r["p"][-1]))
+    points = collections.Counter((round(q[0], 1), round(q[1], 1)) for r in rd for q in r["p"])
+    blocked = unary_union([g.buffer(0) for g in list(houses) + list(water) if g.geom_type in ("Polygon", "MultiPolygon")] or [Polygon()])
+    foot = bridge_decks(rd)
+    made, left, out = [], [], []
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in GAME_PATHS or r["c"] in ("steps", "pedestrian") or len(p) < 2 or any(_flag(q) for q in p):
+            continue
+        for e in (0, len(p) - 1):
+            q = p[e]
+            near = [(math.dist(q[:2], d[:2]), o, d) for o, d in ends.values()
+                    if math.dist(q[:2], d[:2]) <= way_width(o) / 2 + max(o.get("pv") or (0,)) + ROAD_ON_NEAR]
+            if not near:
+                continue
+            _, o, d = min(near, key=lambda t: t[0])
+            g0 = ground(q[0], q[1])
+            # (a path whose end is joined to another way's, or that already climbs to the deck, is left as it is)
+            if d[2] - q[2] <= ROAD_ON_LOW or g0 is None or tips[(round(q[0] / ROAD_ON_NEAR), round(q[1] / ROAD_ON_NEAR))] > 1:
+                continue
+            way = p if e == 0 else p[::-1]
+            line = [list(d[:2])] + [list(a[:2]) for a in way]
+            levels = [way[0][2]] + [a[2] for a in way]
+            # (level to the path's end, and on while the deck spread past its end beside the street it
+            # lands on reaches across the road: the two meet there at the deck's height)
+            flat = math.dist(d[:2], q[:2])
+            if foot is not None:
+                along = LineString(line)
+                half = way_width(o) / 2 + max(o.get("pv") or (0,))
+                for t in np.arange(flat, min(along.length, flat + ROAD_ON_LONGEST), 0.25):
+                    c, c2 = along.interpolate(t), along.interpolate(min(along.length, t + 0.1))
+                    ux, uy = c2.x - c.x, c2.y - c.y
+                    L = math.hypot(ux, uy) or 1.0
+                    across = LineString([(c.x - uy / L * half, c.y + ux / L * half), (c.x + uy / L * half, c.y - ux / L * half)])
+                    if not across.intersects(foot):
+                        break
+                    flat = float(t)
+            height = lambda at: round(float(d[2] - ROAD_ON * max(0.0, at - flat)), 2)
+            run, s, got, stop = [[d[0], d[1], d[2]]], 0.0, None, None
+            for k, (a, b) in enumerate(zip(line, line[1:])):
+                n = math.dist(a, b)
+                for t in (np.arange(0.5, n + 0.25, 0.5) if n > 1e-6 and k else ()):
+                    t = min(t, n)
+                    if s + t <= flat:
+                        continue
+                    x, y = a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n
+                    g, z = ground(x, y), height(s + t)
+                    if g is None:
+                        stop = "off the grid"
+                        break
+                    # (the path's own level, where it lies under the ground the old build left banked up
+                    # at the deck's end: the ground is dug to it, and the road comes down to meet it)
+                    at = min(g, levels[k] + (levels[k + 1] - levels[k]) * t / n)
+                    if z <= at + ROAD_ON_MET:
+                        got = (k, [round(float(x), 1), round(float(y), 1), round(float(at), 2)], s + t - flat)
+                        break
+                if stop or got:
+                    break
+                s += n
+                if s > ROAD_ON_LONGEST + flat:
+                    stop = "never meets the ground"
+                    break
+                # (a way joining the path keeps its own ground: the road can't run on past it)
+                if k + 1 < len(line) - 1 and points[(round(b[0], 1), round(b[1], 1))] > 1:
+                    stop = "a junction on the path"
+                    break
+                if n > 1e-6:
+                    run.append([b[0], b[1], height(s)])
+            if not got:
+                left.append((d[0], d[1], stop or "the path ends first"))
+                continue
+            k, end, length = got
+            run.append(end)
+            road = LineString([a[:2] for a in run])
+            if road.buffer(way_width(o) / 2, cap_style="flat").intersection(blocked).area > 0.5:
+                left.append((d[0], d[1], "a building or water in the way"))
+                continue
+            rest = [end] + [list(a) for a in way[k:]]
+            rest = [a for i, a in enumerate(rest) if i == 0 or math.dist(a[:2], end[:2]) > 0.3]
+            if len(rest) < 2:
+                left.append((d[0], d[1], "nothing of the path left past it"))
+                continue
+            r["p"] = rest if e == 0 else rest[::-1]
+            ramp = {key: o[key] for key in ("c", "n", "w", "pv", "ms", "ow") if key in o}
+            ramp["p"] = run
+            ramp["_ramp"] = ramp["_laid"] = True
+            ramp["_lay"] = {tuple(a[:2]) for a in run[1:]}
+            out.append(ramp)
+            made.append((d[0], d[1], round(float(length), 1), round(float(d[2] - end[2]), 2)))
+            break
+    rd.extend(out)
+    if log:
+        for m in made:
+            log(f"  road run on past a deck's end at ({m[0]:.0f}, {m[1]:.0f}): {m[2]} m long, {m[3]} m down")
+        for m in left:
+            log(f"  road not run on past a deck's end at ({m[0]:.0f}, {m[1]:.0f}): {m[2]}")
+    return made, left
+
+
 def even_bridge_pavements(rd, houses=()):
     """A bridge's pavements as wide as each other. The game stands both parapets at the wider
     pavement's edge, so a narrower one on the other side left a slot between the pavement and the
@@ -2545,9 +2672,10 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=(), faces=()):
                   for q in r["p"] if flagged(q, 1)}
     mouths = [tuple(q[:2]) for t in tunnels or () if len(t["p"]) > 1 for q in (t["p"][0], t["p"][-1])]
 
-    def hold(run, reach, core=0.0):
+    def hold(run, reach, core=0.0, own=False):
         # (the ground under a street or the railway on the ground stays as the base tile laid it,
-        # which is what it lies on: nothing laid beside it may ease it away)
+        # which is what it lies on: nothing laid beside it may ease it away; `own`: held at the way's
+        # own height instead)
         for a, b in zip(run, run[1:]):
             got = _grid_points(T, [a, b], reach)
             if got is None:
@@ -2559,7 +2687,7 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=(), faces=()):
             win = (d < reach) & (d < flat_w[W])
             # (and under its carriageway nothing laid beside it wins, however near)
             flat_w[W][win] = np.where(d[win] < core, 0.0, d[win])
-            flat_z[W][win] = grid[W][win]
+            flat_z[W][win] = (a[2] + (b[2] - a[2]) * t)[win] if own else grid[W][win]
             flat_f[W][win] = reach
             flat_in[W] |= win
 
@@ -2594,6 +2722,21 @@ def lay_ground(T, rd, houses=(), rails=(), tunnels=(), faces=()):
     def buried(q):
         g = ground_at(T, q[0], q[1], split=False)
         return g is not None and q[2] < g - 0.3 and shapely.contains_xy(near_span, q[0], q[1])
+    # (a road run on past a deck's end over the bank leaves the paths beside it on their own ground, a
+    # grid's cell either side, so the ground between its points stays theirs; a path dug in under a
+    # bridge, at its own height)
+    ramps = [LineString([q[:2] for q in r["p"]]) for r in rd if r.get("_ramp") and len(r["p"]) > 1]
+    near_ramps = unary_union(ramps).buffer(EASE) if ramps else None
+    for r in rd if ramps else ():
+        p, lay = r["p"], r.get("_lay") or set()
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(p) < 2 \
+                or not near_ramps.intersects(LineString([q[:2] for q in p])):
+            continue
+        dug = lay | ({tuple(q[:2]) for q in p if len(q) < 4 and buried(q)} if overhead.intersects(LineString([q[:2] for q in p])) else set())
+        for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2)}):
+            for a, b in zip(st, st[1:]):
+                hold([p[a], p[b]], way_width(r) / 2 + T["dx"], way_width(r) / 2 + T["dx"],
+                     own=tuple(p[a][:2]) in dug or tuple(p[b][:2]) in dug)
     for r in rd:
         p, lay = r["p"], r.get("_lay") or set()
         street = r["c"] not in GAME_PATHS or r["c"] == "pedestrian"
@@ -2707,6 +2850,9 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
     on_span = {tuple(q[:2]) for r in rd for q in r["p"] if len(q) > 3 and q[3] == 1}
     for r in rd:
         lay = r.pop("_lay", None) or set()
+        # (a road run on past a deck's end keeps its grade: its faces are laid to it, not to the ground)
+        if r.get("_ramp"):
+            continue
         for q in r["p"]:
             g = ground(q[0], q[1]) if len(q) < 4 and tuple(q[:2]) in lay and tuple(q[:2]) not in on_span else None
             if g is not None and abs(q[2] - g) > 0.4:
@@ -2716,6 +2862,8 @@ def settle_on_laid_ground(rd, change, ground, reach=3):
     ends = {(q[0], q[1]) for r in streets for q in (r["p"][0], r["p"][-1]) if len(q) > 3 and q[3] == 1}
     for r in streets:
         p = r["p"]
+        if r.get("_ramp"):
+            continue
         for i in (0, len(p) - 1):
             # (the street's faces are drawn on the ground, so even a small drop there shows as a
             # step down from the deck)
@@ -5865,6 +6013,27 @@ def _level(area, ground, step=1.0):
     return steep <= SEATING_LEVEL * step
 
 
+def ramp_faces(ramps, rd, road, pave, path, deck, part, square):
+    """The carriageway and pavements of a road run on past a deck's end (roads_on_past_decks) at the
+    street's own width, where the partition fitted only the path it runs along; never over another
+    way, another street's faces, a building or the deck."""
+    ways = [LineString([q[:2] for q in r["p"]]).buffer(way_width(r) / 2 + 0.1, cap_style="flat")
+            for r in rd if r["c"] in GAME_PATHS and not r.get("_ramp") and len(r["p"]) > 1]
+    houses = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
+    blocked = unary_union(ways + houses + [road, pave] + ([deck] if deck is not None else []))
+    lines = [(LineString([q[:2] for q in r["p"]]), r) for r in ramps]
+    car = unary_union([l.buffer(way_width(r) / 2, cap_style="flat") for l, r in lines])
+    side = unary_union([l.buffer(way_width(r) / 2 + max(r.get("pv") or (0,)), cap_style="flat") for l, r in lines])
+    car = car.difference(blocked).intersection(square)
+    side = side.difference(car).difference(blocked).intersection(square)
+    # (only what is still joined to the road: a strip of its pavement cut off beyond another way, the
+    # towpath beside it, is that way's verge)
+    spine = unary_union([l for l, _ in lines]).buffer(0.1)
+    car = unary_union([g for g in getattr(car, "geoms", [car]) if g.geom_type == "Polygon" and g.intersects(spine)] or [Polygon()])
+    side = unary_union([g for g in getattr(side, "geoms", [side]) if g.geom_type == "Polygon" and g.distance(car) < 0.05] or [Polygon()])
+    return road.union(car), pave.union(side), path.difference(car.union(side))
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
                     standing=None, filled=None, tunnels=(), rail=None, past=(), far=None, centre=None, walls_past=(),
                     seating=(), plants=(), railings=None, shops=(), ends=()):
@@ -6083,6 +6252,9 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                                square, cap_lines(runs, over))
     road, pave = shapes("carriageway"), shapes("pavement")
     path_faces = shapes("path")
+    ramps = [r for r in rd if r.get("_ramp") and len(r["p"]) > 1]
+    if ramps:
+        road, pave, path_faces = ramp_faces(ramps, rd, road, pave, path_faces, over, part, square)
     strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
                                              for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
     if unpaved:
@@ -11075,6 +11247,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     deck_reach(rd)
     dip_paths_under_spans(rd)
     ramp_off_decks(rd, road_ground, T)
+    ran_on, not_run_on = roads_on_past_decks(rd, road_ground, houses, water, log=print if verbose else None)
     bore_widths(tile.get("tn"), rd, roads, houses_near)
     rail_portals = json.load(open(rail)).get("portals") or [] if os.path.exists(rail) else []
     lids = lid_areas(rail_portals, T, houses_near)
@@ -11203,6 +11376,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                sq[0], sq[1])
     for r in rd:
         r.pop("_laid", None)
+        r.pop("_ramp", None)
     flights_onto_paving(rd, face_heights(tile["sf"], kinds=("road", "service", "pave")))
     # the pavement run on to the walls is the street's own width from here on
     paving = filled[0][1] if filled else None
@@ -11306,7 +11480,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                   + "; moved " + (", ".join(f"{k} {v}" for k, v in moved.items() if v) or "none"))
     tile["_gone"] = gone
     tile["_moved"] = moved
-    tile["_counts"] = dict(cx=cx_count, pb=pb_count, bd=collections.Counter(BOUNDARY_TIDY))
+    tile["_counts"] = dict(cx=cx_count, pb=pb_count, bd=collections.Counter(BOUNDARY_TIDY),
+                           rn=collections.Counter([f"at ({m[0]:.0f}, {m[1]:.0f}) {m[2]} m" for m in ran_on]
+                                                  + [f"not at ({m[0]:.0f}, {m[1]:.0f}): {m[2]}" for m in not_run_on]))
     return tile
 
 

@@ -92,6 +92,13 @@ Sixth round (24 November, `?decks=1`): **a deck ends on the bank, never in the a
 - A railing's straight runs are one stretch, and its thin bars are three-sided (decks only: strip mode is unchanged).
 - A way that reaches in under a deck and stops there, short of its middle, counts as passing under (`passingUnder`), so an arch springs clear of it (North Parade's footway).
 
+Seventh round (25 November, `?decks=1`): **a bridge can't end in mid-air.**
+- Where a deck's end stands over the bank and the way that carries on from it is a path lying well below it (more than 0.6 m), the road itself runs on past the deck's end at its full width, carriageway and pavements, and comes down over the bank at 1 in 8 (`write_tile.ROAD_ON`) until it meets the drawn ground. Only there does the path begin (`write_tile.roads_on_past_decks`, after `ramp_off_decks`). It stays level until its width has left the deck's spread, so there's no step at the cap.
+- It never runs through a building or into water, past a junction on the path, or past the path's own end; a path whose end is joined to another way's is left alone. Ends it can't fit are logged in the build's `rn` counts with the reason. No steps are invented.
+- Its faces are cut round the paths beside it and the deck's own spread (`ramp_faces`), and only the pieces joined to the road are kept, so a strip cut off beyond a towpath stays the towpath's verge. The ground is laid to its grade, while paths beside it keep their own ground a grid cell either side, and a path dug in under the bridge keeps its own height.
+- Where the walls under both sides of a deck stop at one place across it, over the ground with nothing passing under, a face across under the deck joins their ends (world.ts `bridgeSolid`), so the abutment is a closed block and no wall ends with an upright edge in the air.
+- Road markings on a bridge are drawn on its deck (furniture.ts), not on the ground beneath it, where they showed as thin white lines under the bridge (Midford Road).
+
 Trial squares: 1,2 (Widcombe footbridges, canal, towpath), 0,2 (Broad Quay, Wells Road bridge), 1,3 (Sydney Gardens canal bridges), Pulteney's square, Ferry Lane's 4,2, and one where a bridge crosses a square edge.
 
 ## Decisions (agreed)
