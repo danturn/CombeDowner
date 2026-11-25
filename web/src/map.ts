@@ -725,6 +725,11 @@ export class GameMap {
       // (the decks over it: bridges, and the roads leading on to them)
       const under = (x: number, y: number) => {
         let low: number | null = null;
+        // (where the decks are faces, those: a record's strip reaches on over its approach's bank)
+        if (this.deckTris.length) {
+          for (const h of this.deckFaceTops(x, -y)) low = Math.min(low ?? Infinity, h + this.z0);
+          return low;
+        }
         for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(-y / CELL))) ?? []) {
           const { p, half } = this.decks[k];
           const h = deckAt(p, x, -y);
