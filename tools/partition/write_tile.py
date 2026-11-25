@@ -3661,6 +3661,14 @@ def deck_level(foot, kept, runs, road, pave, path, holes=None):
     for g in getattr(margin, "geoms", [margin]):
         if g.geom_type != "Polygon" or g.area <= 0.05:
             continue
+        # (a piece wider than the edging, as where a pocket between two decks was decked over, is paved
+        # as the deck beside it is)
+        if not g.buffer(-DECK_EDGING).is_empty:
+            near = [(g.boundary.intersection(f.buffer(0.02)).length, cls) for cls, f in out]
+            got = max(near, key=lambda t: t[0])
+            if got[0] > 0.5:
+                out.append((got[1], g))
+                continue
         c = g.representative_point()
         o = runs[int(tree.nearest(c))]
         out.append(("stone" if bridge_kind(o["r"]) == "arch" else "steel", g))
@@ -3669,6 +3677,7 @@ def deck_level(foot, kept, runs, road, pave, path, holes=None):
     return [(cls, q) for cls, g in out for q in getattr(g, "geoms", [g]) if q.geom_type == "Polygon" and q.area > 0.05]
 
 
+DECK_EDGING = 0.4   # metres: a deck's edging is narrower than twice this; a wider piece of its top is paved
 CAP_SNAP = 0.02     # metres: a corner this near a deck's cap is on it, and shared with the faces across it
 CAP_NEAR = 1.0      # metres from a deck's cap within which a corner both levels have is shared
 CAP_LAND = 1.0      # metres: a deck's end further than this off the faces it meets keeps its own height
