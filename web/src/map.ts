@@ -1708,11 +1708,11 @@ export class GameMap {
   }
   /** A bridge's parapet along its approach (world.ts), where it's drawn over a bank falling away
    *  beside it: data (ax, ay) to (bx, by), its top at ta and tb and its foot (scene), kept once. */
-  addParapet(ax: number, ay: number, bx: number, by: number, ta: number, tb: number, foot: number) {
+  addParapet(ax: number, ay: number, bx: number, by: number, ta: number, tb: number, foot: number, half = 0) {
     const k = [ax, ay, bx, by].map((v) => v.toFixed(2)).join(" ");
     if (this.structures.has(k)) return;
     this.structures.add(k);
-    this.addSeg(ax, -ay, bx, -by, ta, 1, foot, tb);
+    this.addSeg(ax, -ay, bx, -by, ta, 1, foot, tb, half);
     if (this.stamp.length < this.sAx.length) this.stamp = new Uint32Array(this.sAx.length + 256);
   }
   private structures = new Set<string>();
