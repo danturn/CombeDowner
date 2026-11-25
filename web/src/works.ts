@@ -193,12 +193,30 @@ export class CanalWorks {
       // and where a lock's walls end beside a stretch, it's split there, so the banks come out from
       // under the paving at the paving's own height (which climbs with the wing walls), not at a
       // guess between the stretch's two points standing over it or under it
+      // Under a bridge, where the bank rises behind the wall, the wall goes right up to the deck's
+      // underside as the abutment, rather than a slope of grass rising under the deck from its top. Only
+      // under the deck: the stretch is split every STEP there, or the wall's top ran up to the underside
+      // from the next point along in a long slope.
+      const rise = (S: Station, j: number) => {
+        const side = j === 0 ? 1 : -1, o = (S.half + S.w[j]) * side, deck = under?.(S.x + S.nx * o, S.y + S.ny * o);
+        return deck != null && deck > S.bank + 0.5 && S.g[j] > S.bank ? Math.max(S.top[j], deck - DECK) : null;
+      };
+      const STEP = 0.5;
       const all: (Station | null)[] = [];
       st.forEach((a, k) => {
         all.push(a);
         const b = st[k + 1];
-        if (a && b) for (const t of wallEnds(canal, a, b)) all.push(between(canal, a, b, t));
+        if (!a || !b) return;
+        const ts = new Set(wallEnds(canal, a, b));
+        const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / STEP);
+        if (under) {
+          const up = Array.from({ length: n + 1 }, (_, m) => { const S = m === 0 ? a : m === n ? b : between(canal, a, b, m / n); return [0, 1].some((j) => rise(S, j) !== null); });
+          for (let m = 0; m <= n; m++) if (up[m] || (m > 0 && up[m - 1]) || (m < n && up[m + 1])) ts.add(m / n);
+        }
+        for (const t of [...ts].filter((t) => t > 1e-3 && t < 1 - 1e-3).sort((p, q) => p - q)) all.push(between(canal, a, b, t));
       });
+      const risen = all.map((S) => S && [rise(S, 0), rise(S, 1)]);
+      all.forEach((S, k) => { if (S) for (const j of [0, 1]) S.top[j] = risen[k]![j] ?? S.top[j]; });
       for (let k = 0; k < all.length - 1; k++) {
         const a = all[k], b = all[k + 1];
         if (!a || !b) continue;

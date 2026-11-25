@@ -1920,8 +1920,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const HEADROOM = 2.4, DECK_THINNEST = 0.35;
   /** Room under a deck at its abutment lower than a walker's head is walled in down to the bank. */
   const WALK_UNDER = 1.8;
-  /** How far a parapet's outer face stands out past the deck's side under it. */
-  const OVERHANG = 0.12;
+  /** How far a parapet's outer face stands out past the deck's side under it: it runs on down over the
+   *  side as one face, a hair proud so the two never flicker. */
+  const OVERHANG = 0.02;
   /** Metres from where a deck meets the street that its sides stand on the bank (its abutment). */
   const END_REACH = 3;
   /** The lowest a deck's underside can be at data (x, y), its top at `top` (scene), for each way passing
@@ -2441,7 +2442,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (let i = from; i < to; i++) {
             const P0 = pts[at(i)], P1 = pts[at(i + 1)], I0 = inner[at(i)], I1 = inner[at(i + 1)], O0 = over[at(i)], O1 = over[at(i + 1)], l = seg(P0, P1) || 1, u1 = u + l / 2.5;
             const out = [(P1.y - P0.y) / l, 0, (P1.x - P0.x) / l], inn = [-out[0], 0, -out[2]];
-            quad([O0.x, P0.h, -O0.y], [O1.x, P1.h, -O1.y], [O1.x, T(P1), -O1.y], [O0.x, T(P0), -O0.y], out, [u, 0], [u1, 0], [u1, up / 2], [u, up / 2], col);
+            // (on the deck its outer face goes on down to the deck's underside: the parapet and the deck's
+            // side are one wall of stone, with no ledge or shadow between them)
+            const B0 = P0.street ? P0.h : Math.min(P0.h, P0.foot), B1 = P1.street ? P1.h : Math.min(P1.h, P1.foot);
+            quad([O0.x, B0, -O0.y], [O1.x, B1, -O1.y], [O1.x, T(P1), -O1.y], [O0.x, T(P0), -O0.y], out, [u, (B0 - P0.h) / 2], [u1, (B1 - P1.h) / 2], [u1, up / 2], [u, up / 2], col);
             quad([I0.x, P0.h, -I0.y], [I1.x, P1.h, -I1.y], [I1.x, T(P1), -I1.y], [I0.x, T(P0), -I0.y], inn, [u, 0], [u1, 0], [u1, up / 2], [u, up / 2], col);
             quad([O0.x, T(P0), -O0.y], [O1.x, T(P1), -O1.y], [I1.x, T(P1), -I1.y], [I0.x, T(P0), -I0.y], [0, 1, 0], [u, 0], [u1, 0], [u1, 0.2], [u, 0.2], topCol);
             quad([O0.x, P0.h, -O0.y], [O1.x, P1.h, -O1.y], [I1.x, P1.h, -I1.y], [I0.x, P0.h, -I0.y], [0, -1, 0], [u, 0], [u1, 0], [u1, 0.2], [u, 0.2], col);
@@ -3481,15 +3485,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (let i = Math.floor((x - REACH) / CELL_); i <= Math.floor((x + REACH) / CELL_); i++)
         for (let j = Math.floor((y - REACH) / CELL_); j <= Math.floor((y + REACH) / CELL_); j++) near.add(ck(i, j));
     const at2 = (i: number) => `${Math.round(V[3 * i] * 100)},${Math.round(V[3 * i + 1] * 100)}`;
-    // (each face edge's heights at its ends: where the face across an edge is a drop lower, as beside a
-    // street graded down a bank, the edge is still the street's outer edge)
+    // (each face edge's heights at its ends: where the face across an edge is a drop lower at either end,
+    // as beside a street graded down a bank, the edge is still the street's outer edge, so its wall runs
+    // on down to where the drop is a kerb's)
     const faced = new Map<string, number[]>();
     for (const k of left.keys()) { const a = Math.floor(k / NP), b = k % NP; faced.set(`${at2(a)}|${at2(b)}`, [V[3 * a + 2], V[3 * b + 2]]); }
     for (const e of sf.e) for (let k = 0; k + 1 < e.i.length; k++) {
       const ia = e.i[k], ib = e.i[k + 1], kind = left.get(ia * NP + ib);
       if (!kind || level1.has(ia * NP + ib) || !near.has(ck(Math.floor(V[3 * ia] / CELL_), Math.floor(V[3 * ia + 1] / CELL_)))) continue;
       const across = faced.get(`${at2(ib)}|${at2(ia)}`);
-      if ((across && !(V[3 * ia + 2] - across[1] > PARAPET_OVER && V[3 * ib + 2] - across[0] > PARAPET_OVER)) || (onSide(ia) && onSide(ib))) continue;
+      if ((across && !(V[3 * ia + 2] - across[1] > PARAPET_OVER || V[3 * ib + 2] - across[0] > PARAPET_OVER)) || (onSide(ia) && onSide(ib))) continue;
       approachEdges.push({ ...edgeOf(ia, ib, kind), street: true });
       const mx = (V[3 * ia] + V[3 * ib]) / 2, my = (V[3 * ia + 1] + V[3 * ib + 1]) / 2;
       if (caps.some((c) => Math.hypot(c.ax - mx, c.ay - my) < 15 || Math.hypot(c.bx - mx, c.by - my) < 15)) abutting.add(`${ia},${ib}`);
