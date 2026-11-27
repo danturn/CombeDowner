@@ -2180,3 +2180,27 @@ Measured over all 161 decks (before = e6c2c360, after = this work):
   fronts, drawn in as few pieces as keep their top on the underside, and Ferry Lane's run on).
 - [ ] (w)'s 3 edges on Warminster Road (1954, -693) are a corner of the deck's outline lying 3 mm off the
   straight foot of the wall beside it: a T-junction the count sees as open, with no gap to see.
+
+### Bridge stage 3: closed solids, notch fill baked, landings (after the Ferry Lane round)
+
+Over all 160 decks, before = round 8 maps (cd9bd3a7), after = this work:
+
+| | before | after |
+|---|---|---|
+| a. open edge | 4,118.7 m (121 decks) | 4,165.7 m (129) |
+| b. seen through from below | 13.8 m² (11) | 12.3 m² (10) |
+| c. unwalled drop, on decks + approaches | 355.5 + 879 m | 350 + 607.5 m |
+| d. way short of headroom | 82 m (30) | 79 m (30) |
+| w. open edges of the solids | 4 edges, 10.5 m (2) | 1 edge, 2.7 m (1) |
+| f. floating ends | 0 | 0 |
+
+- [ ] (a) is up 47 m: the free ends of the thin walls under trunk decks in 2_4 and 2_5 and of the
+  approach walls, and Sydney Gardens' abutment now counted as stone. None shows as a gap in the shots.
+- [ ] (w)'s one edge is 2.7 m on a service bridge in -2_3 (-3631, 2186).
+- [ ] Stone and steel triangles over the 46 squares with decks: 121,290 before, 121,791 after (+0.4%;
+  the approach walls cost +4,576 until straight runs of parapet were drawn as one block).
+- [ ] Rule 54 keeps one 15.6 m² hit at Ferry Lane's bend (2997, 1570): the record's round outer corner,
+  outside the parapet, with nothing missing to see.
+- [ ] Rule 28's deck ends with nothing to land on: 14 before, 13 after. A pocket between decks is paved
+  only where the deck's faces run round more than 0.6 of it; at half they run down one side only, and
+  paving it left pave ending over open ground or into a building.

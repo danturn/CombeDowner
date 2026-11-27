@@ -3664,11 +3664,13 @@ def deck_level(foot, kept, runs, road, pave, path, holes=None):
         if g.geom_type != "Polygon" or g.area <= 0.05:
             continue
         # (a piece wider than the edging, as where a pocket between two decks was decked over, is paved
-        # as the deck beside it is)
+        # as the deck beside it is: one between two decks' records with the deck's faces round most of
+        # it, not a strip along one deck's end, whose paving would stop at nothing)
         if not g.buffer(-DECK_EDGING).is_empty:
             near = [(g.boundary.intersection(f.buffer(0.02)).length, cls) for cls, f in out]
             got = max(near, key=lambda t: t[0])
-            if got[0] > 0.5:
+            between = {id(o["r"]) for o in runs if o["line"].distance(g) < deck_half(o["r"]) + DECK_EDGING}
+            if got[0] > 0.5 and len(between) > 1 and sum(t[0] for t in near) > POCKET_SHARE * g.boundary.length:
                 out.append((got[1], g))
                 continue
         c = g.representative_point()
@@ -3679,6 +3681,7 @@ def deck_level(foot, kept, runs, road, pave, path, holes=None):
     return [(cls, q) for cls, g in out for q in getattr(g, "geoms", [g]) if q.geom_type == "Polygon" and q.area > 0.05]
 
 
+POCKET_SHARE = 0.6  # of its outline, at least, a pocket of deck shares with the deck's faces round it: at half, they run down one side only
 DECK_EDGING = 0.4   # metres: a deck's edging is narrower than twice this; a wider piece of its top is paved
 CAP_SNAP = 0.02     # metres: a corner this near a deck's cap is on it, and shared with the faces across it
 CAP_NEAR = 1.0      # metres from a deck's cap within which a corner both levels have is shared
@@ -7148,6 +7151,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
             j = street.get((round(v[3 * i], 2), round(v[3 * i + 1], 2)), i)
             return j if abs(v[3 * j + 2] - v[3 * i + 2]) <= WELD_RISE else i
         deck_tris = [[kind, n, [one(i) for i in ids], turn] for kind, n, ids, turn in deck_tris]
+        fills = notch_fills(deck_tris, tris, v, sq)
+        if fills:
+            piece_of.append(("stone", "d"))
+            deck_tris += [["stone", len(piece_of) - 1, ids, 1] for ids in fills]
         lv = dict(n=1)
         for kind, n, ids, _ in deck_tris:
             lv.setdefault(kind, []).extend(ids)
@@ -7161,6 +7168,98 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # (paths are written level across, to be drawn at these heights rather than on the ground)
     out["pl"] = 1
     return out if any(out.get(k) for k in SF_LISTS) else None
+
+
+NOTCH_MOUTH = 4      # metres across, at most, a notch in a deck's outline that is decked over
+NOTCH_ROUND = 15     # metres round, at most, from one side of a notch's mouth to the other
+NOTCH_AREA = 20      # m2: the largest notch decked over
+
+
+def notch_fills(deck_tris, tris, v, sq):
+    """Triangles closing the narrow notches in the decks' outline, where two pieces of deck meet at an
+    angle with a pocket of air between them: a pocket with a mouth of NOTCH_MOUTH or less, at least twice
+    as far round as across, that the mouth crosses nothing, and that runs past no cap (where a face of
+    the street lies across the edge) and no side of the square. The game closed these as it loaded, but
+    the map's own faces left them open, for every check that reads the map."""
+    X, Y = (lambda i: v[3 * i]), (lambda i: v[3 * i + 1])
+    outline = _half_edges(deck_tris, v, lambda i: i)
+    ground = set(_half_edges(tris, v, lambda i: i))
+    edge = box(*sq).boundary.buffer(0.02)
+    shapely.prepare(edge)
+    cap = lambda a, b: (b, a) in ground
+    seam = lambda a, b: shapely.contains_xy(edge, X(a), Y(a)) and shapely.contains_xy(edge, X(b), Y(b))
+    nxt = collections.defaultdict(list)
+    for a, b in outline:
+        nxt[a].append(b)
+
+    def crosses(ax, ay, bx, by):
+        o = lambda px, py, qx, qy, rx, ry: (qx - px) * (ry - py) - (qy - py) * (rx - px)
+        for c, d in outline:
+            cx, cy, dx, dy = X(c), Y(c), X(d), Y(d)
+            if o(ax, ay, bx, by, cx, cy) * o(ax, ay, bx, by, dx, dy) < -1e-9 and o(cx, cy, dx, dy, ax, ay) * o(cx, cy, dx, dy, bx, by) < -1e-9:
+                return True
+        return False
+    out, used = [], set()
+    for a0, b0 in outline:
+        if (a0, b0) in used:
+            continue
+        ring, a = [], a0
+        # (only rings that run round without a branch: where the outline meets itself, leave it be)
+        while (len(nxt[a]) == 1) and (a, nxt[a][0]) not in used:
+            used.add((a, nxt[a][0]))
+            ring.append((a, nxt[a][0]))
+            a = nxt[a][0]
+        n = len(ring)
+        if n < 4 or a != ring[0][0] or any(len(nxt[e[0]]) != 1 for e in ring):
+            continue
+        taken = set()
+        for i in range(n):
+            if i in taken:
+                continue
+            best, best_s, run = None, 0, 0.0
+            for s_ in range(1, n - 1):
+                e = ring[(i + s_ - 1) % n]
+                if cap(*e) or seam(*e) or (i + s_ - 1) % n in taken:
+                    break
+                run += math.hypot(X(e[1]) - X(e[0]), Y(e[1]) - Y(e[0]))
+                if run > NOTCH_ROUND:
+                    break
+                if s_ < 2:
+                    continue
+                pa, pb = ring[i][0], e[1]
+                mouth = math.hypot(X(pb) - X(pa), Y(pb) - Y(pa))
+                if mouth > NOTCH_MOUTH or mouth < 0.3 or run < 2 * mouth:
+                    continue
+                poly = [ring[(i + k) % n][0] for k in range(s_ + 1)]
+                area = sum(X(p_) * Y(q_) - X(q_) * Y(p_) for p_, q_ in zip(poly, poly[1:] + poly[:1])) / 2
+                if area > -0.5 or area < -NOTCH_AREA or crosses(X(pa), Y(pa), X(pb), Y(pb)):
+                    continue
+                best, best_s = poly, s_
+            if not best:
+                continue
+            taken.update((i + k) % n for k in range(best_s))
+            # (the pocket runs clockwise round itself: cut into triangles by its ears, each anticlockwise)
+            r2 = best[::-1]
+            turn = lambda p_, q_, r_: (X(q_) - X(p_)) * (Y(r_) - Y(p_)) - (Y(q_) - Y(p_)) * (X(r_) - X(p_))
+            inside = lambda p_, a_, b_, c_: turn(a_, b_, p_) >= -1e-9 and turn(b_, c_, p_) >= -1e-9 and turn(c_, a_, p_) >= -1e-9
+            cut = []
+            for _ in range(200):
+                if len(r2) <= 3:
+                    break
+                for k in range(len(r2)):
+                    a_, b_, c_ = r2[k - 1], r2[k], r2[(k + 1) % len(r2)]
+                    if turn(a_, b_, c_) <= 1e-6 or any(p_ not in (a_, b_, c_) and inside(p_, a_, b_, c_) for p_ in r2):
+                        continue
+                    cut.append([a_, b_, c_])
+                    del r2[k]
+                    break
+                else:
+                    break
+            if len(r2) == 3 and turn(*r2) > 1e-6:
+                cut.append(list(r2))
+            if len(r2) <= 3:
+                out += cut
+    return out
 
 
 WELD_RISE = 0.05      # metres apart in height a deck's corner and the street's under it may be and still be one point
