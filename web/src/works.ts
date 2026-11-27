@@ -51,6 +51,7 @@ interface Station {
   w: [number, number]; v: [number, number];       // each bank's width from the water's edge, and its verge's (left, right)
   g: [number, number]; top: [number, number];     // the ground at each verge's outer edge, and the bank's wall top (= the bank if there's no wall)
   tow: number;                                    // the towpath's side: 1 left, -1 right, 0 neither
+  deck?: [boolean, boolean];                      // each bank's wall run up to a bridge's deck over it
 }
 
 /** A stretch of a canal tunnel between two of the canal's points: the water down the middle and
@@ -193,12 +194,36 @@ export class CanalWorks {
       // and where a lock's walls end beside a stretch, it's split there, so the banks come out from
       // under the paving at the paving's own height (which climbs with the wing walls), not at a
       // guess between the stretch's two points standing over it or under it
+      // Under a bridge, where the bank rises behind the wall, the wall goes right up to the deck's
+      // underside as the abutment, rather than a slope of grass rising under the deck from its top. Only
+      // under the deck: the stretch is split every STEP there, or the wall's top ran up to the underside
+      // from the next point along in a long slope.
+      const deckOver = (S: Station, j: number) => {
+        const o = (S.half + S.w[j]) * (j === 0 ? 1 : -1), deck = under?.(S.x + S.nx * o, S.y + S.ny * o);
+        return deck != null && deck > S.bank + 0.5 ? deck : null;
+      };
+      const rise = (S: Station, j: number) => {
+        const deck = deckOver(S, j);
+        return deck !== null && S.g[j] > S.bank ? Math.max(S.top[j], deck - DECK) : null;
+      };
+      // (and whether it reaches the deck, as the bridge's own abutment)
+      const reaches = (S: Station, j: number) => { const deck = deckOver(S, j); return deck !== null && S.top[j] > deck - DECK - 0.05; };
+      const STEP = 0.5;
       const all: (Station | null)[] = [];
       st.forEach((a, k) => {
         all.push(a);
         const b = st[k + 1];
-        if (a && b) for (const t of wallEnds(canal, a, b)) all.push(between(canal, a, b, t));
+        if (!a || !b) return;
+        const ts = new Set(wallEnds(canal, a, b));
+        const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / STEP);
+        if (under) {
+          const up = Array.from({ length: n + 1 }, (_, m) => { const S = m === 0 ? a : m === n ? b : between(canal, a, b, m / n); return [0, 1].some((j) => rise(S, j) !== null); });
+          for (let m = 0; m <= n; m++) if (up[m] || (m > 0 && up[m - 1]) || (m < n && up[m + 1])) ts.add(m / n);
+        }
+        for (const t of [...ts].filter((t) => t > 1e-3 && t < 1 - 1e-3).sort((p, q) => p - q)) all.push(between(canal, a, b, t));
       });
+      const risen = all.map((S) => S && [rise(S, 0), rise(S, 1)]);
+      all.forEach((S, k) => { if (S) { for (const j of [0, 1]) S.top[j] = risen[k]![j] ?? S.top[j]; S.deck = [reaches(S, 0), reaches(S, 1)]; } });
       for (let k = 0; k < all.length - 1; k++) {
         const a = all[k], b = all[k + 1];
         if (!a || !b) continue;
@@ -370,13 +395,17 @@ export class CanalWorks {
 
   /** The canal's banks for drawing: the channel's sides, the coping, the banks, the walls and the
    *  verges, in scene coordinates. drawn: the height the square's ground is drawn at, at data
-   *  (x, y) (above sea level), for the verges' outer edges to lie on. colour: the ground's colour there. */
-  geometry(z0: number, drawn: (x: number, y: number) => number, colour: (x: number, y: number) => THREE.Color): THREE.BufferGeometry | null {
+   *  (x, y) (above sea level), for the verges' outer edges to lie on. colour: the ground's colour there.
+   *  abutment: a wall run up to a bridge's deck is drawn apart from the rest, in the bridge's stone (its
+   *  colour here, and its texture's scale against the ground's), as the deck's abutment. */
+  geometry(z0: number, drawn: (x: number, y: number) => number, colour: (x: number, y: number) => THREE.Color,
+    abutment: { colour: THREE.Color; scale: number }): { banks: THREE.BufferGeometry; abutments: THREE.BufferGeometry | null } | null {
     if (!this.segs.length) return null;
     const G = this.G;
-    const pos: number[] = [], col: number[] = [], uv: number[] = [];
+    const banks = { pos: [] as number[], col: [] as number[], uv: [] as number[], scale: 1 }, stones = { pos: [] as number[], col: [] as number[], uv: [] as number[], scale: abutment.scale };
+    let into = banks;
     const STONE = new THREE.Color("#b3a37f"), COPING = new THREE.Color("#a89c86"), TOWPATH = new THREE.Color("#a39478"), GRASS = new THREE.Color("#6e7f4c");
-    const vert = (x: number, y: number, h: number, c: THREE.Color, u: number, w: number) => { pos.push(x, h - z0, -y); col.push(c.r, c.g, c.b); uv.push(u, w); };
+    const vert = (x: number, y: number, h: number, c: THREE.Color, u: number, w: number) => { into.pos.push(x, h - z0, -y); into.col.push(c.r, c.g, c.b); into.uv.push(u * into.scale, w * into.scale); };
     // a quad from four points [x, y, height], with the ground texture laid flat (or up a wall)
     let cur: Seg | null = null, crowded = false;
     // (past the river's edge where the canal opens into one, nothing is laid: what reaches over it is cut off there)
@@ -512,8 +541,12 @@ export class CanalWorks {
             return { ex, ey, ox, oy, e: S.bank + up, top: top + up, g: drawn(ox, oy), nx: S.nx * side, ny: S.ny * side };
           };
           const p = mid(t0), q = mid(t1);
-          if (Math.abs(p.top - p.e) > 0.02 || Math.abs(q.top - q.e) > 0.02)
-            quad([[p.ex, p.ey, p.e], [q.ex, q.ey, q.e], [q.ex, q.ey, q.top], [p.ex, p.ey, p.top]], STONE, true);
+          if (Math.abs(p.top - p.e) > 0.02 || Math.abs(q.top - q.e) > 0.02) {
+            const deck = !!(A.deck?.[k] || B.deck?.[k]);
+            if (deck) into = stones;
+            quad([[p.ex, p.ey, p.e], [q.ex, q.ey, q.e], [q.ex, q.ey, q.top], [p.ex, p.ey, p.top]], deck ? abutment.colour : STONE, true);
+            into = banks;
+          }
           const gp = colour(p.ox, p.oy), gq = colour(q.ox, q.oy);
           quad([[p.ex, p.ey, p.top], [q.ex, q.ey, q.top], [q.ox, q.oy, q.g], [p.ox, p.oy, p.g]], [gp, gq, gq, gp]);
           // and a skirt hanging just under the edge, so no hairline shows where it meets the ground
@@ -562,11 +595,14 @@ export class CanalWorks {
         }
       }
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
-    g.computeVertexNormals();
-    return g;
+    const build = (t: typeof banks) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(t.pos, 3));
+      g.setAttribute("color", new THREE.Float32BufferAttribute(t.col, 3));
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(t.uv, 2));
+      g.computeVertexNormals();
+      return g;
+    };
+    return { banks: build(banks), abutments: stones.pos.length ? build(stones) : null };
   }
 }

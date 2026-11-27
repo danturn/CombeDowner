@@ -2379,10 +2379,15 @@ def markings(m, f, sheet, note, at, sq, fig):
     if not sheet.ok: return
     cars = sheet.union(("road", "service"))
     if cars.is_empty: return
-    # (near the square's own sides the next square's faces carry on; a bridge's deck is its own)
+    # (near the square's own sides the next square's faces carry on; a bridge's deck is its own, and
+    # where the decks are faces, its carriageway is theirs)
     own = box(*m["b"]).buffer(-0.5)
-    decks = [LineString([q[:2] for q in r["p"]]).buffer(_road_half(r["c"], r.get("w")) + 2) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
-    if decks: own = own.difference(shapely.union_all(decks))
+    faced = Sheet(m, 0) if (m.get("sf") or {}).get("dk") else None
+    if faced is not None and faced.ok:
+        cars = cars.union(faced.union(("road", "service")))
+    else:
+        decks = [LineString([q[:2] for q in r["p"]]).buffer(_road_half(r["c"], r.get("w")) + 2) for r in m.get("rd") or [] if len(r["p"]) > 1 and any(_flags(r))]
+        if decks: own = own.difference(shapely.union_all(decks))
     streets = _streets_round(m, f)
     if not streets: return
     stree = shapely.STRtree([l for _, l in streets])
@@ -2793,6 +2798,7 @@ def street_holes(m, f, sheet, note, at, inner, fig):
 
 DECK_OFF = 0.02      # metres a deck's point may stand off its deck's line
 DECK_HOLE = 0.5      # m2: a smaller piece of a deck's footprint left undrawn is the simplifying
+DECK_LANDING = 0.3   # metres: a street's face this near a deck's height over its footprint is where it lands
 DECK_BARE = 0.5      # metres: a shorter stretch of a deck's end over nothing is a corner's rounding
 
 
@@ -2817,6 +2823,19 @@ def deck_faces(m, sheet, note, at, sq, fig):
     drawn = decks.union(LEVEL_KINDS)
     if foot is not None:
         bare = foot.intersection(sq).difference(drawn).difference(solid)
+        # (where a deck lands on a street, as one as wide as its street at a junction does, the street's
+        # own faces at the deck's height cover that part of its footprint: the way on, not a hole)
+        if not bare.is_empty:
+            near = sheet.tree.query(bare, predicate="intersects")
+            landing = []
+            for t in near:
+                c = shapely.centroid(sheet.polys[t])
+                o = min(own, key=lambda o: o["line"].distance(c))
+                z = (sheet.A[t, 2] + sheet.B[t, 2] + sheet.C[t, 2]) / 3
+                if abs(z - run_z(o, c.x, c.y)) <= DECK_LANDING:
+                    landing.append(sheet.polys[t])
+            if landing:
+                bare = bare.difference(shapely.union_all(landing).buffer(0.05))
         for g in getattr(bare, "geoms", [bare]):
             if g.geom_type != "Polygon" or g.area < DECK_HOLE: continue
             c = g.representative_point()

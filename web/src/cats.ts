@@ -429,7 +429,7 @@ export class Cats {
       if (prog < 0.4) {
         const over = this.map.sweep(c, { x: nx, z: nz }, c.y + 1.1, RADIUS);
         // (but not over the back wall of a house dug into the hill and down inside it)
-        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.ground(over.x, over.z))) { p = over; c.hopV = 4.6; c.hop = 0.001; }
+        if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6 && !this.map.shutIn(over.x, over.z, this.map.walkTop(over.x, over.z, c.y)) && !this.map.dropAhead(c.x, c.z, dirX, dirZ, c.y)) { p = over; c.hopV = 4.6; c.hop = 0.001; }
         else if ((c.stuckT += dt) > 0.4) { c.stuckT = 0; roundIt(); }
       } else c.stuckT = Math.max(0, c.stuckT - dt);
     }
@@ -444,7 +444,7 @@ export class Cats {
       c.hopV -= 20 * dt; c.hop += c.hopV * dt;
       if (c.hop <= 0) { c.hop = 0; c.hopV = 0; c.pouncing = false; }
     }
-    c.y = this.map.walkTop(c.x, c.z, c.y - c.hop) + c.hop;
+    c.y = this.map.hopTop(c.x, c.z, c.y - c.hop, c.hop > 0) + c.hop;
     const sp = Math.hypot(c.vx, c.vz);
     if (face === null && sp > 0.3) face = Math.atan2(-c.vx, -c.vz);
     if (face !== null) {
@@ -459,7 +459,7 @@ export class Cats {
     if (!c) return false;
     // on a residential street (here or anywhere in Bath that's loaded), out of everyone's way; only
     // a swarm coming for someone will pour in from any street, or anywhere at all
-    const away = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < near * 0.8);
+    const away = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < near * 0.8) && !this.map.atDeck(x, z);
     let at = homeSpot(this.map, anchor.x, anchor.z, near, far, 0.4, away, 8, 8);
     if (!at && !after) return false;
     if (!at) at = streetSpot(this.map, anchor.x, anchor.z, near, far, 0.4, away, 8, 8);
@@ -597,7 +597,7 @@ export class Cats {
       const near = Math.hypot(c.dx - eye.x, c.dz - eye.z) < DRAW_DIST;
       if (near && (c.state === ALIVE || (c.state === DEAD && c.deadAnim < CORPSE_SECS))) {
         fig.root.visible = true;
-        const air = c.dy - this.map.ground(c.dx, c.dz) > 0.12;
+        const air = c.dy - this.map.walkTop(c.dx, c.dz, c.dy) > 0.12;
         fig.pose(c.dx, c.dy, c.dz, c.dyaw, c.state === ALIVE ? c.speed : 0, air && c.state === ALIVE, c.clawAnim, !!after, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
       } else if (fig.root.visible) fig.hide();
     }

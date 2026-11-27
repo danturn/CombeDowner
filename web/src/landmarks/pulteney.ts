@@ -139,7 +139,9 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
     const z1 = zs(-1);
     BACKS.forEach(([a, b, h], i) => {
       const mat = i % 3 === 1 ? render : S, eaves = deck((a + b) / 2) + h, d = deck((a + b) / 2);
-      k.slab(mat, a, b, low - 0.4, eaves, UP, z1);
+      // (past the bridge's end, over the bank, down to the bridge's foot: on the street's level there it
+      // stood over the lower ground with nothing under it)
+      k.slab(mat, a, b, a < L0 ? -4 : low - 0.4, eaves, UP, z1);
       k.roof(roofs, a, b, eaves, UP, z1, 1.6 + (i % 2) * 0.6);
       k.slab(S2, b - 1.4, b - 0.6, eaves, eaves + 2.6, UP + 1.2, UP + 2.0);
       for (let x = a + 1.4; x < b - 0.8; x += 2.4) {

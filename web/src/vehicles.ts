@@ -251,6 +251,11 @@ export interface Loose extends Mover { n: number; vx: number; vz: number; mass: 
 export interface Shove { list: Iterable<Loose>; hit: (o: Loose, dvx: number, dvz: number, spin: number) => void }
 const BOUNCE = 0.3;                             // how much two cars bounce apart when they meet
 
+/** The height one wheel sits a vehicle at, `far` from its middle. A wheel out over a deck's edge reads
+ *  the ground far below and pulled the vehicle down off the deck, through it into the canal: one
+ *  further off the middle's height than a slope could put it is taken as level with the middle. */
+export function wheelOn(h: number, mid: number, far: number) { return Math.abs(h - mid) > 0.5 + 0.3 * far ? mid : h; }
+
 /**
  * Where the box of mover o is pushing into a row of circles of radius r along mover m (at these
  * distances along it): the way out for m, how deep it's in, and the point they touch. Null if they don't.
@@ -1024,7 +1029,8 @@ export class Vehicle implements Mover {
     vf += push * dt;
     // the hill pulls it along (stopped and off the throttle, the handbrake holds it)
     const half = S.wb / 2;
-    const slope = (this.ground(this.x + c * half, this.z - s * half, this.y) - this.ground(this.x - c * half, this.z + s * half, this.y)) / S.wb;
+    const mid = this.ground(this.x, this.z, this.y);
+    const slope = (wheelOn(this.ground(this.x + c * half, this.z - s * half, this.y), mid, half) - wheelOn(this.ground(this.x - c * half, this.z + s * half, this.y), mid, half)) / S.wb;
     const held = Math.abs(thr) < 0.05 && Math.abs(vf) < 1.5;
     if (!held || over) vf -= 9.8 * slope * (S.offroad ? 0.45 : 0.75) * dt;   // a Land Rover's low range takes the hills
     // rolling resistance, more on grass and a lot on its side, and the air
@@ -1330,9 +1336,9 @@ export class Vehicle implements Mover {
     if (!this.moved && !rolling) return;
     this.moved = false;
     const S = this.spec, c = Math.cos(this.a), s = Math.sin(this.a), half = S.wb / 2;
-    const g = (x: number, z: number) => this.ground(x, z, this.y);
-    const hF = g(this.x + c * half, this.z - s * half), hR = g(this.x - c * half, this.z + s * half);
-    const hRt = g(this.x + s * this.hw, this.z + c * this.hw), hLt = g(this.x - s * this.hw, this.z - c * this.hw);
+    const mid = this.ground(this.x, this.z, this.y), g = (x: number, z: number, far: number) => wheelOn(this.ground(x, z, this.y), mid, far);
+    const hF = g(this.x + c * half, this.z - s * half, half), hR = g(this.x - c * half, this.z + s * half, half);
+    const hRt = g(this.x + s * this.hw, this.z + c * this.hw, this.hw), hLt = g(this.x - s * this.hw, this.z - c * this.hw, this.hw);
     this.y = (hF + hR) / 2;
     this.roll += (target - this.roll) * Math.min(1, dt * (this.tip ? 6 : 3));
     const over = Math.abs(Math.sin(this.roll));
