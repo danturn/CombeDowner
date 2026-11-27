@@ -2102,9 +2102,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (room <= 0.05) return false;
         // (beside the canal, or within an abutment's reach of it, on the dry bank off its banks and with
         // no arch over it, the abutment runs on to the canal's wall: the bank under the deck there is
-        // closed in, not seen sloping away)
-        if ([0, -END_REACH, END_REACH].some((d) => R.opened(q.sp + d))) return R.archAt(q.sp) === null && (map.works?.across(q.x, q.y) ?? null) === null && !R.passes(q.x, q.y, q.top)
-          && headroomFloor(ways, q.x, q.y, q.top) === -Infinity && !map.inWater(q.x, -q.y);
+        // closed in, not seen sloping away; elsewhere near an opening it's walled as any side is, or an
+        // end there was left hanging over the bank)
+        if ([0, -END_REACH, END_REACH].some((d) => R.opened(q.sp + d)) && R.archAt(q.sp) === null && (map.works?.across(q.x, q.y) ?? null) === null && !R.passes(q.x, q.y, q.top)
+          && headroomFloor(ways, q.x, q.y, q.top) === -Infinity && !map.inWater(q.x, -q.y)) return true;
         return (room < WALK_UNDER || nearEnd(q.x, q.y) || offSpan(q.x, q.y, R)) && clear(q.x, q.y, q.top, R, q.sp);
       };
       const l = Math.hypot(X(e.b) - X(e.a), Y(e.b) - Y(e.a)) || 1, n = Math.max(1, Math.ceil(l / 0.5)), out = [(Y(e.b) - Y(e.a)) / l, 0, (X(e.b) - X(e.a)) / l];
@@ -2399,6 +2400,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (Math.min(seg(p, c), seg(c, q)) < 1.0 && off(p, c, q) < 0.4) { q.foot = Math.min(q.foot, c.foot); p.foot = Math.min(p.foot, c.foot); pts.splice(i, 1); changed = true; break; }
         }
       }
+      // (corners in a straight line, level or evenly sloping, are one stretch: the faces' edges it follows
+      // are cut at every line of the street's grid, and each corner kept was four more faces of stone)
+      const between = (p: C, c: C, q: C, k: "h" | "foot") => { const l = seg(p, q) || 1, f = seg(p, c) / l; return Math.abs(p[k] + (q[k] - p[k]) * f - c[k]); };
+      for (let i = 1; i < pts.length - 1;) {
+        const p = pts[i - 1], c = pts[i], q = pts[i + 1];
+        if (p.street === c.street && c.street === q.street && off(p, c, q) < 0.03 && between(p, c, q, "h") < 0.02 && (c.street || between(p, c, q, "foot") < 0.05)) pts.splice(i, 1);
+        else i++;
+      }
       if (pts.length < 2) return;
       // (where it runs on into the map's own wall, it ends on the wall's line at the wall's height, so the
       // two are one wall: no step down and none to the side)
@@ -2465,14 +2474,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
             quad([O0.x, B0, -O0.y], [O1.x, B1, -O1.y], [O1.x, T(P1), -O1.y], [O0.x, T(P0), -O0.y], out, [u, (B0 - P0.h) / 2], [u1, (B1 - P1.h) / 2], [u1, up / 2], [u, up / 2], col);
             quad([I0.x, P0.h, -I0.y], [I1.x, P1.h, -I1.y], [I1.x, T(P1), -I1.y], [I0.x, T(P0), -I0.y], inn, [u, 0], [u1, 0], [u1, up / 2], [u, up / 2], col);
             quad([O0.x, T(P0), -O0.y], [O1.x, T(P1), -O1.y], [I1.x, T(P1), -I1.y], [I0.x, T(P0), -I0.y], [0, 1, 0], [u, 0], [u1, 0], [u1, 0.2], [u, 0.2], topCol);
-            quad([O0.x, P0.h, -O0.y], [O1.x, P1.h, -O1.y], [I1.x, P1.h, -I1.y], [I0.x, P0.h, -I0.y], [0, -1, 0], [u, 0], [u1, 0], [u1, 0.2], [u, 0.2], col);
+            // (its bottom runs from the outer face's foot in to the inner face's, inside the deck where it
+            // goes down past it, so the parapet stays one closed block)
+            quad([O0.x, B0, -O0.y], [O1.x, B1, -O1.y], [I1.x, P1.h, -I1.y], [I0.x, P0.h, -I0.y], [0, -1, 0], [u, 0], [u1, 0], [u1, 0.2], [u, 0.2], col);
             u = u1;
           }
           // its ends closed, and where one stands on the bank a pier there, a little proud of it and down
           // into the bank, so it ends on something
           for (const [i, j, last] of loop && from === 0 && to === segs ? [] : [[from, from + 1, false], [to, to - 1, true]] as const) {
             const P0 = pts[at(i)], I0 = inner[at(i)], O0 = over[at(i)], P1 = pts[at(j)], l = seg(P0, P1) || 1, fx = (P0.x - P1.x) / l, fy = (P0.y - P1.y) / l;
-            quad([O0.x, P0.h, -O0.y], [I0.x, P0.h, -I0.y], [I0.x, T(P0), -I0.y], [O0.x, T(P0), -O0.y], [fx, 0, -fy], [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], col);
+            const B0 = P0.street ? P0.h : Math.min(P0.h, P0.foot);
+            quad([O0.x, B0, -O0.y], [I0.x, P0.h, -I0.y], [I0.x, T(P0), -I0.y], [O0.x, T(P0), -O0.y], [fx, 0, -fy], [0, (B0 - P0.h) / 2], [0.2, 0], [0.2, 0.5], [0, 0.5], col);
             if (loop || (last ? to !== segs : from !== 0) || meets[last ? 1 : 0] !== null) continue;
             const nx = -(inward(Math.min(i, j))[0]), ny = -(inward(Math.min(i, j))[1]);
             const c = [[-0.6, 0.1], [0.1, 0.1], [0.1, -0.5], [-0.6, -0.5]].map(([a, b]) => [P0.x + fx * a + nx * b, P0.y + fy * a + ny * b]);
