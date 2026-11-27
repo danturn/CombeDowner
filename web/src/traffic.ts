@@ -39,7 +39,7 @@ import { COACH, COACH_LAMPS, coachDecals, coachSteerable } from "./coaches";
 import { charred, glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { CAR_LAMPS, contact, type Siren, twist } from "./vehicles";
+import { CAR_LAMPS, contact, type Siren, twist, wheelOn } from "./vehicles";
 import { AMBER, GREEN, type Signal, lightAt, signalClock, signalsOf } from "./signals";
 import { timeOfDay, watchDay } from "./daylight";
 import { tag } from "./kinds";
@@ -1137,7 +1137,8 @@ export class Traffic {
       // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed;
       // one that's only just turned up has none yet, and finds its height from along its road)
       const was = c.top ? c.y : this.arriving(c);
-      const hF = this.ground(c.x + cs * half, c.z - sn * half, was), hR = this.ground(c.x - cs * half, c.z + sn * half, was);
+      const mid = this.ground(c.x, c.z, was);
+      const hF = wheelOn(this.ground(c.x + cs * half, c.z - sn * half, was), mid, half), hR = wheelOn(this.ground(c.x - cs * half, c.z + sn * half, was), mid, half);
       c.y = (hF + hR) / 2;
       // rolled over about its middle, its lowest corner on the ground (or above it, in the air)
       const up = Math.abs(Math.cos(c.roll)), side = Math.abs(Math.sin(c.roll));

@@ -7140,6 +7140,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         if not out[k]:
             del out[k]
     if deck_tris:
+        # (where a deck's corner stands on a corner of the street's own, the two are one point: with a
+        # copy each, a few centimetres apart in height, a hairline opened across the road between them)
+        street = {(round(v[3 * i], 2), round(v[3 * i + 1], 2)): i for _, _, ids, _ in tris for i in ids}
+
+        def one(i):
+            j = street.get((round(v[3 * i], 2), round(v[3 * i + 1], 2)), i)
+            return j if abs(v[3 * j + 2] - v[3 * i + 2]) <= WELD_RISE else i
+        deck_tris = [[kind, n, [one(i) for i in ids], turn] for kind, n, ids, turn in deck_tris]
         lv = dict(n=1)
         for kind, n, ids, _ in deck_tris:
             lv.setdefault(kind, []).extend(ids)
@@ -7155,6 +7163,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     return out if any(out.get(k) for k in SF_LISTS) else None
 
 
+WELD_RISE = 0.05      # metres apart in height a deck's corner and the street's under it may be and still be one point
 FLIGHT_FIT = 0.45       # metres a pavement may stand over a flight's treads beside it and be laid down to them
 FLIGHT_REACH = 0.6      # metres out past a flight's treads that the faces beside it meet them
 FLIGHT_LANDING = 0.3    # metres from a flight's ends within which the faces are left as they are
